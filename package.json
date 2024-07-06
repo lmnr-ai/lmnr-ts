@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "TypeScript SDK for Laminar AI",
   "main": "src/index.ts",
   "scripts": {
@@ -24,8 +24,13 @@
   },
   "homepage": "https://github.com/lmnr-ai/ts-sdk#readme",
   "dependencies": {
+    "browser-or-node": "^3.0.0",
     "ts-node": "^10.9.2",
     "tsup": "^8.1.0",
-    "typescript": "^5.5.2"
+    "typescript": "^5.5.2",
+    "websocket": "^1.0.35"
+  },
+  "devDependencies": {
+    "@types/websocket": "^1.0.10"
   }
 }
