@@ -1,5 +1,7 @@
 import { NodeWebSocketMessage, RegisterDebuggerRequest, Tool, ToolCall, WebSocketError } from "./types";
 import { v4 as uuidv4 } from 'uuid';
+import { WebSocket } from 'ws';
+
 
 export class RemoteDebugger {
     private readonly projectApiKey: string;
@@ -11,56 +13,52 @@ export class RemoteDebugger {
     constructor(projectApiKey: string, tools: Tool[]) {
         this.projectApiKey = projectApiKey;
         this.tools = tools;
-        const WebSocketClient = require('websocket').client;
-        this.socket = new WebSocketClient();
-        
-        this.socket.on('connectFailed', (error: any) => {
-            console.log('Connect Error: ' + error.toString());
-        });
+        this.socket = new  WebSocket(this.url, [], {headers: {'Authorization': `Bearer ${this.projectApiKey}`}});
     }
 
     public async start(): Promise<string> {
         this.sessionId = this.generateSessionId();
         console.log(this.formatSessionId());
 
-        this.socket.on('connect', (connection: any) => {
-            connection.send(JSON.stringify({
+        this.socket.on('open', () => {
+            this.socket.send(JSON.stringify({
                 debuggerSessionId: this.sessionId
             } as RegisterDebuggerRequest));
-            connection.on('message', (data: NodeWebSocketMessage) => {
-                try {
-                    const toolCall = JSON.parse(data["utf8Data"]!) as ToolCall;
-                    const matchingTool = this.tools.find(tool => tool.name === toolCall.function.name);
-                    if (!matchingTool) {
-                        throw new WebSocketError(
-                            `Tool ${toolCall.function.name} not found. Registered tools: ${this.tools.map(tool => tool.name).join(', ')}`
-                        );
-                    }
-                    let args = {}
-                    try {
-                        args = JSON.parse(toolCall.function.arguments);
-                    } catch (e) {}
-                    const result = matchingTool(args);
-                    connection.send(JSON.stringify(result));
-                } catch (e) {
-                    if (e instanceof WebSocketError) {
-                        throw e;
-                    }
-                }
-            });
         });
 
-        this.socket.connect(
-            this.url,
-            '',  // protocols. If specified, server tries to match one of these, and fails
-            null,  // origin. Makes more sense in a browser context
-            {'Authorization': `Bearer ${this.projectApiKey}`}
-        );
+        this.socket.on('message', (data: NodeWebSocketMessage) => {
+            try {
+                const toolCall = JSON.parse(data.toString()) as ToolCall;
+                const matchingTool = this.tools.find(tool => tool.name === toolCall.function.name);
+                if (!matchingTool) {
+                    console.error(
+                        `Tool ${toolCall.function.name} not found. Registered tools: ${this.tools.map(tool => tool.name).join(', ')}`
+                    );
+                    return;
+                }
+                let args = {}
+                try {
+                    args = JSON.parse(toolCall.function.arguments);
+                } catch (e) {}
+                const result = matchingTool(args);
+                this.socket.send(JSON.stringify(result));
+            } catch (e) {
+                this.socket.send(JSON.stringify({
+                    deregister: true,
+                    debuggerSessionId: this.sessionId
+                } as RegisterDebuggerRequest));
+                this.socket.close();
+            }
+        });
 
         return this.sessionId;
     }
 
     public stop() {
+        this.socket.send(JSON.stringify({
+            deregister: true,
+            debuggerSessionId: this.sessionId
+        } as RegisterDebuggerRequest));
         this.socket.close();
     }
 

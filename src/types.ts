@@ -40,4 +40,9 @@ export type RegisterDebuggerRequest = {
     debuggerSessionId: string;
 }
 
+export type DeregisterDebuggerRequest = {
+    deregister: true;
+    debuggerSessionId: string;
+}
+
 export class WebSocketError extends Error {}

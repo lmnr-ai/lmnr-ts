@@ -1,5 +1,6 @@
 import { NodeInput, EndpointRunResponse, EndpointRunRequest, NodeWebSocketMessage, ToolCall, WebSocketError } from './types';
 import { isBrowser, isNode } from 'browser-or-node';
+import { WebSocket } from 'ws';
 
 export { NodeInput, EndpointRunResponse, EndpointRunRequest, ChatMessage } from './types';
 export { RemoteDebugger as LaminarRemoteDebugger } from './remote_debugger';
@@ -13,7 +14,8 @@ export class Laminar {
     constructor(projectApiKey: string) {
         this.projectApiKey = projectApiKey;
         this.url = 'https://api.lmnr.ai/v2/endpoint/run'
-        this.ws_url = 'wss://api.lmnr.ai/v2/endpoint/ws'
+        // this.ws_url = 'wss://api.lmnr.ai/v2/endpoint/ws'
+        this.ws_url = 'ws://localhost:8000/v2/endpoint/ws'
     }
 
     public async run(request: EndpointRunRequest): Promise<EndpointRunResponse> {
@@ -68,53 +70,41 @@ export class Laminar {
         metadata = {},
         tools = [],
     }: EndpointRunRequest): Promise<EndpointRunResponse> {
-        const WebSocketClient = require('websocket').client;
-        const socket = new WebSocketClient();
+        const socket = new  WebSocket(this.ws_url, [], {headers: {'Authorization': `Bearer ${this.projectApiKey}`}});
         let response: EndpointRunResponse | null = null;
-
-        socket.on('connectFailed', (error: any) => {
-            console.log('Connect Error: ' + error.toString());
-        });
         
-        socket.on('connect', (connection: any) => {
-            connection.send(JSON.stringify({
+        socket.on('open', () => {
+            socket.send(JSON.stringify({
                 inputs,
                 endpoint,
                 env,
                 metadata,
                 tools,
             }));
-            connection.on('message', (data: NodeWebSocketMessage) => {
-                try {
-                    const toolCall = JSON.parse(data["utf8Data"]!) as ToolCall;
-                    const matchingTool = tools.find(tool => tool.name === toolCall.function.name);
-                    if (!matchingTool) {
-                        throw new WebSocketError(
-                            `Tool ${toolCall.function.name} not found. Registered tools: ${tools.map(tool => tool.name).join(', ')}`
-                        );
-                    }
-                    let args = {}
-                    try {
-                        args = JSON.parse(toolCall.function.arguments);
-                    } catch (e) {}
-                    const result = matchingTool(args);
-                    connection.send(JSON.stringify(result));
-                } catch (e) {
-                    if (e instanceof WebSocketError) {
-                        throw e;
-                    }
-                    response = JSON.parse(data["utf8Data"]!) as EndpointRunResponse;
-                    connection.close();
-                }
-            });
         });
-
-        socket.connect(
-            this.ws_url,
-            '',  // protocols. If specified, server tries to match one of these, and fails
-            null,  // origin. Makes more sense in a browser context
-            {'Authorization': `Bearer ${this.projectApiKey}`}
-        );
+        socket.on('message', (data: NodeWebSocketMessage) => {
+            try {
+                const toolCall = JSON.parse(data.toString()) as ToolCall;
+                const matchingTool = tools.find(tool => tool.name === toolCall.function.name);
+                if (!matchingTool) {
+                    throw new WebSocketError(
+                        `Tool ${toolCall.function.name} not found. Registered tools: ${tools.map(tool => tool.name).join(', ')}`
+                    );
+                }
+                let args = {}
+                try {
+                    args = JSON.parse(toolCall.function.arguments);
+                } catch (e) {}
+                const result = matchingTool(args);
+                socket.send(JSON.stringify(result));
+            } catch (e) {
+                if (e instanceof WebSocketError) {
+                    throw e;
+                }
+                response = JSON.parse(data.toString()) as EndpointRunResponse;
+                socket.close();
+            }
+        });
 
         // TODO: Implement a better way to wait for the response
         while (!response) {
