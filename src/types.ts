@@ -5,12 +5,14 @@ export type ChatMessage = {
 
 export type NodeInput = ChatMessage[] | string;
 
+export type Tool = (...args: any) => NodeInput | Promise<NodeInput>;
+
 export type EndpointRunRequest = {
     inputs: Record<string, NodeInput>;
     endpoint: string;
     env?: Record<string, string>;
     metadata?: Record<string, string>;
-    tools?: ((params: Record<string, any>) => NodeInput | Promise<NodeInput>)[];
+    tools?: Tool[];
 }
 
 export type EndpointRunResponse = {
@@ -34,4 +36,8 @@ export type NodeWebSocketMessage = {
     utf8Data?: string;
 }
 
-const bar = ({a }: {a: string}): string => a;
+export type RegisterDebuggerRequest = {
+    debuggerSessionId: string;
+}
+
+export class WebSocketError extends Error {}

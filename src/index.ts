@@ -1,9 +1,8 @@
-import { NodeInput, EndpointRunResponse, EndpointRunRequest, NodeWebSocketMessage, ToolCall } from './types';
+import { NodeInput, EndpointRunResponse, EndpointRunRequest, NodeWebSocketMessage, ToolCall, WebSocketError } from './types';
 import { isBrowser, isNode } from 'browser-or-node';
 
 export { NodeInput, EndpointRunResponse, EndpointRunRequest, ChatMessage } from './types';
-
-class WebSocketError extends Error {}
+export { RemoteDebugger as LaminarRemoteDebugger } from './remote_debugger';
 
 export class Laminar {
     private readonly projectApiKey: string;
