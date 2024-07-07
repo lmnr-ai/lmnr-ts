@@ -14,8 +14,7 @@ export class Laminar {
     constructor(projectApiKey: string) {
         this.projectApiKey = projectApiKey;
         this.url = 'https://api.lmnr.ai/v2/endpoint/run'
-        // this.ws_url = 'wss://api.lmnr.ai/v2/endpoint/ws'
-        this.ws_url = 'ws://localhost:8000/v2/endpoint/ws'
+        this.ws_url = 'wss://api.lmnr.ai/v2/endpoint/ws'
     }
 
     public async run(request: EndpointRunRequest): Promise<EndpointRunResponse> {
