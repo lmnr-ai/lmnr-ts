@@ -31,6 +31,10 @@ export type ToolCall = {
     function: ToolFunctionCall;
 }
 
+export type ToolError = {
+    error: string;
+}
+
 export type NodeWebSocketMessage = {
     type: 'utf8' | 'binary';
     utf8Data?: string;

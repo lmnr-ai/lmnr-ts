@@ -57,10 +57,15 @@ This only works in Node execution context; browser context is not supported.
 
 Example use:
 
-```typescript
+```js
 import { Laminar, NodeInput } from '@lmnr-ai/lmnr';
 
-const myTool = ({arg1, arg2}: {arg1: string, arg2: number}): NodeInput => {
+const myTool = ({
+  arg1, arg2
+  }: {
+    arg1: string,
+    arg2: number
+  }): NodeInput => {
   // this tool teaches LLMs the beauty of JavaScript!
   return arg1 + arg2;
 }
@@ -83,7 +88,7 @@ If your pipeline contains tool call nodes, they will be able to call your local 
 If you want to test them from the Laminar workshop in your browser, you can attach to your
 locally running debugger.
 
-### Step by step instructions to use `LaminarRemoteDebugger`:
+### Step-by-step instructions to use `LaminarRemoteDebugger`:
 
 #### 1. Create your pipeline with tool call nodes
 
@@ -94,15 +99,20 @@ Add tool calls to your pipeline; node names must match the functions you want to
 Example:
 
 ```js
-import { LaminarRemoteDebugger } from '@lmnr-ai/lmnr';
+import { LaminarRemoteDebugger, NodeInput } from '@lmnr-ai/lmnr';
 
-const myTool = ({arg1, arg2}: {arg1: string, arg2: number}): NodeInput => {
+const myTool = ({
+  arg1, arg2
+  }: {
+    arg1: string,
+    arg2: number
+  }): NodeInput => {
   // this tool teaches LLMs the beauty of JavaScript!
   return arg1 + arg2;
 }
 
-debugger = LaminarRemoteDebugger('<YOUR_PROJECT_API_KEY>', [my_tool]);
-debugger.start();
+const dbgr = new LaminarRemoteDebugger('<YOUR_PROJECT_API_KEY>', [myTool]);
+dbgr.start();
 // the session id will be printed to console.
 // It is also returned from this promise, but you may not want to `await` it
 ```
@@ -118,10 +128,3 @@ Set up `DEBUGGER_SESSION_ID` environment variable in your pipeline.
 
 You can run as many sessions as you need, experimenting with your flows.
 
-#### 5. Stop the debugger
-
-In order to stop the session, do
-
-```js
-debugger.stop()
-```

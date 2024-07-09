@@ -1,4 +1,11 @@
-import { NodeWebSocketMessage, RegisterDebuggerRequest, Tool, ToolCall, WebSocketError } from "./types";
+import {
+    DeregisterDebuggerRequest,
+    NodeWebSocketMessage,
+    RegisterDebuggerRequest,
+    Tool,
+    ToolCall,
+    ToolError,
+} from "./types";
 import { v4 as uuidv4 } from 'uuid';
 import { WebSocket } from 'ws';
 
@@ -31,17 +38,25 @@ export class RemoteDebugger {
                 const toolCall = JSON.parse(data.toString()) as ToolCall;
                 const matchingTool = this.tools.find(tool => tool.name === toolCall.function.name);
                 if (!matchingTool) {
-                    console.error(
-                        `Tool ${toolCall.function.name} not found. Registered tools: ${this.tools.map(tool => tool.name).join(', ')}`
-                    );
+                    const errMsg = `Tool ${toolCall.function.name} not found. Registered tools: ${this.tools.map(tool => tool.name).join(', ')}`
+                    console.error(errMsg);
+                    this.socket.send(JSON.stringify({
+                        error: errMsg
+                    } as ToolError));
                     return;
                 }
                 let args = {}
                 try {
                     args = JSON.parse(toolCall.function.arguments);
                 } catch (e) {}
-                const result = matchingTool(args);
-                this.socket.send(JSON.stringify(result));
+                try {
+                    const result = matchingTool(args); // NodeInput
+                    this.socket.send(JSON.stringify(result));
+                } catch (e) {
+                    this.socket.send(JSON.stringify({
+                        error: (e as Error).message
+                    } as ToolError));
+                }
             } catch (e) {
                 this.socket.send(JSON.stringify({
                     deregister: true,
@@ -58,7 +73,7 @@ export class RemoteDebugger {
         this.socket.send(JSON.stringify({
             deregister: true,
             debuggerSessionId: this.sessionId
-        } as RegisterDebuggerRequest));
+        } as DeregisterDebuggerRequest));
         this.socket.close();
     }
 
