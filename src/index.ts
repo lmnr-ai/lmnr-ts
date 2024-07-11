@@ -1,4 +1,4 @@
-import { NodeInput, EndpointRunResponse, EndpointRunRequest, NodeWebSocketMessage, ToolCall, WebSocketError } from './types';
+import { EndpointRunResponse, EndpointRunRequest, NodeWebSocketMessage, WebSocketError, ToolCallRequest, ToolCallResponse, ToolCallError } from './types';
 import { isBrowser, isNode } from 'browser-or-node';
 import { WebSocket } from 'ws';
 
@@ -53,11 +53,10 @@ export class Laminar {
 
     private async _ws_run(request: EndpointRunRequest): Promise<EndpointRunResponse> {
         if (isBrowser) {
-            throw new Error('Running tools in the browser is not supported yet. Please use the Node.js environment.');
+            throw new Error('Running tools in the browser is not supported. Please use the Node.js environment.');
         } else if (isNode) {
             return this._ws_run_node(request);
-        }
-        else {
+        } else {
             throw new Error('Unsupported environment');
         }
     }
@@ -71,6 +70,7 @@ export class Laminar {
     }: EndpointRunRequest): Promise<EndpointRunResponse> {
         const socket = new  WebSocket(this.ws_url, [], {headers: {'Authorization': `Bearer ${this.projectApiKey}`}});
         let response: EndpointRunResponse | null = null;
+        let reqId: string | null = null;
         
         socket.on('open', () => {
             socket.send(JSON.stringify({
@@ -83,19 +83,32 @@ export class Laminar {
         });
         socket.on('message', (data: NodeWebSocketMessage) => {
             try {
-                const toolCall = JSON.parse(data.toString()) as ToolCall;
-                const matchingTool = tools.find(tool => tool.name === toolCall.function.name);
+                const toolCall = JSON.parse(data.toString()) as ToolCallRequest;
+                reqId = toolCall.reqId;
+                const matchingTool = tools.find(tool => tool.name === toolCall.toolCall.function.name);
                 if (!matchingTool) {
                     throw new WebSocketError(
-                        `Tool ${toolCall.function.name} not found. Registered tools: ${tools.map(tool => tool.name).join(', ')}`
+                        `Tool ${toolCall.toolCall.function.name} not found. ` +
+                         `Registered tools: ${tools.map(tool => tool.name).join(', ')}`
                     );
                 }
                 let args = {}
                 try {
-                    args = JSON.parse(toolCall.function.arguments);
+                    args = JSON.parse(toolCall.toolCall.function.arguments);
                 } catch (e) {}
-                const result = matchingTool(args);
-                socket.send(JSON.stringify(result));
+                try {
+                    const result = matchingTool(args);
+                    const toolResponse = {
+                        reqId,
+                        response: result
+                    } as ToolCallResponse;
+                    socket.send(JSON.stringify(toolResponse));
+                } catch (e) {
+                    socket.send(JSON.stringify({
+                        reqId,
+                        error: (e as Error).message
+                    } as ToolCallError));
+                }
             } catch (e) {
                 if (e instanceof WebSocketError) {
                     throw e;

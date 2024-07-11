@@ -3,8 +3,9 @@ import {
     NodeWebSocketMessage,
     RegisterDebuggerRequest,
     Tool,
-    ToolCall,
-    ToolError,
+    ToolCallRequest,
+    ToolCallError,
+    ToolCallResponse,
 } from "./types";
 import { v4 as uuidv4 } from 'uuid';
 import { WebSocket } from 'ws';
@@ -25,7 +26,8 @@ export class RemoteDebugger {
 
     public async start(): Promise<string> {
         this.sessionId = this.generateSessionId();
-        console.log(this.formatSessionId());
+        console.log(this.formatSessionIdAndRegisteredTools());
+        let reqId: string | null = null;
 
         this.socket.on('open', () => {
             this.socket.send(JSON.stringify({
@@ -35,29 +37,38 @@ export class RemoteDebugger {
 
         this.socket.on('message', (data: NodeWebSocketMessage) => {
             try {
-                const toolCall = JSON.parse(data.toString()) as ToolCall;
-                const matchingTool = this.tools.find(tool => tool.name === toolCall.function.name);
+                const toolCall = JSON.parse(data.toString()) as ToolCallRequest;
+                reqId = toolCall.reqId;
+                const matchingTool = this.tools.find(tool => tool.name === toolCall.toolCall.function.name);
                 if (!matchingTool) {
-                    const errMsg = `Tool ${toolCall.function.name} not found. Registered tools: ${this.tools.map(tool => tool.name).join(', ')}`
+                    const errMsg = `Tool ${toolCall.toolCall.function.name} not found. ` + 
+                        `Registered tools: ${this.tools.map(tool => tool.name).join(', ')}`;
                     console.error(errMsg);
                     this.socket.send(JSON.stringify({
+                        reqId,
                         error: errMsg
-                    } as ToolError));
+                    } as ToolCallError));
                     return;
                 }
                 let args = {}
                 try {
-                    args = JSON.parse(toolCall.function.arguments);
+                    args = JSON.parse(toolCall.toolCall.function.arguments);
                 } catch (e) {}
                 try {
                     const result = matchingTool(args); // NodeInput
-                    this.socket.send(JSON.stringify(result));
+                    const toolResponse = {
+                        reqId,
+                        response: result
+                    } as ToolCallResponse;
+                    this.socket.send(JSON.stringify(toolResponse));
                 } catch (e) {
                     this.socket.send(JSON.stringify({
+                        reqId,
                         error: (e as Error).message
-                    } as ToolError));
+                    } as ToolCallError));
                 }
             } catch (e) {
+                console.error(`Received invalid message: ${data.toString()}`);
                 this.socket.send(JSON.stringify({
                     deregister: true,
                     debuggerSessionId: this.sessionId
@@ -85,11 +96,15 @@ export class RemoteDebugger {
         return uuidv4();
     }
 
-    private formatSessionId(): string {
+    private formatSessionIdAndRegisteredTools(): string {
         return `
 ========================================
 Debugger Session ID:
 ${this.sessionId}
+========================================
+
+Registered functions:
+${this.tools.map(tool => '- ' + tool.name).join(',\n')}
 ========================================
 `
     }

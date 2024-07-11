@@ -60,6 +60,7 @@ Example use:
 ```js
 import { Laminar, NodeInput } from '@lmnr-ai/lmnr';
 
+// make sure to setup arguments as object
 const myTool = ({
   arg1, arg2
   }: {
@@ -101,6 +102,7 @@ Example:
 ```js
 import { LaminarRemoteDebugger, NodeInput } from '@lmnr-ai/lmnr';
 
+// make sure to setup arguments as object
 const myTool = ({
   arg1, arg2
   }: {

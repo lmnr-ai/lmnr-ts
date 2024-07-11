@@ -20,6 +20,11 @@ export type EndpointRunResponse = {
     runId: string;
 }
 
+export type ToolCallRequest = {
+    reqId: string;
+    toolCall: ToolCall;
+}
+
 export type ToolFunctionCall = {
     name: string;
     arguments: string;
@@ -31,8 +36,9 @@ export type ToolCall = {
     function: ToolFunctionCall;
 }
 
-export type ToolError = {
-    error: string;
+export type ToolCallResponse = {
+    reqId: string;
+    response: NodeInput;
 }
 
 export type NodeWebSocketMessage = {
@@ -47,6 +53,11 @@ export type RegisterDebuggerRequest = {
 export type DeregisterDebuggerRequest = {
     deregister: true;
     debuggerSessionId: string;
+}
+
+export type ToolCallError = {
+    reqId: string;
+    error: string;
 }
 
 export class WebSocketError extends Error {}
