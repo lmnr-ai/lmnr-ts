@@ -26,14 +26,13 @@
   "dependencies": {
     "@types/ws": "^8.5.10",
     "browser-or-node": "^3.0.0",
-    "ts-node": "^10.9.2",
-    "tsup": "^8.1.0",
-    "typescript": "^5.5.2",
     "uuid": "^10.0.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/uuid": "^10.0.0",
-    "bufferutil": "^4.0.8"
+    "bufferutil": "^4.0.8",
+    "tsup": "^8.2.1",
+    "typescript": "^5.5.3"
   }
 }
