@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "description": "TypeScript SDK for Laminar AI",
   "main": "src/index.ts",
   "scripts": {
@@ -9,7 +9,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lmnr-ai/ts-sdk.git"
+    "url": "git+https://github.com/lmnr-ai/lmnr-ts.git"
   },
   "keywords": [
     "laminar",
@@ -17,22 +17,19 @@
     "sdk",
     "lmnr.ai"
   ],
-  "author": "founders@laminar.ai",
+  "author": "founders@lmnr.ai",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/lmnr-ai/ts-sdk/issues"
+    "url": "https://github.com/lmnr-ai/lmnr-ts/issues"
   },
-  "homepage": "https://github.com/lmnr-ai/ts-sdk#readme",
-  "dependencies": {
-    "@types/ws": "^8.5.10",
-    "browser-or-node": "^3.0.0",
-    "uuid": "^10.0.0",
-    "ws": "^8.18.0"
-  },
+  "homepage": "https://github.com/lmnr-ai/lmnr-ts#README",
   "devDependencies": {
     "@types/uuid": "^10.0.0",
     "bufferutil": "^4.0.8",
     "tsup": "^8.2.1",
     "typescript": "^5.5.3"
+  },
+  "dependencies": {
+    "@types/node": "^22.5.0"
   }
 }
