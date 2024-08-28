@@ -12,7 +12,7 @@ npm install @lmnr-ai/lmnr
 - Make Laminar endpoint calls that can run your own functions as tools from your NodeJS code
 - `LaminarRemoteDebugger` to execute your own functions while you test your flows in workshop
 
-## Making Laminar endpoint calls
+## Making Laminar pipeline calls
 
 After you are ready to use your pipeline in your code, deploy it in Laminar by selecting the target version for the pipeline.
 
@@ -21,7 +21,7 @@ Once your pipeline target is set, you can call it from JS in just a few lines.
 Example use:
 
 ```typescript
-import { Laminar, NodeInput } from '@lmnr-ai/lmnr';
+import { Laminar } from '@lmnr-ai/lmnr';
 
 const l = new Laminar('<YOUR_PROJECT_API_KEY>');
 const result = await l.run({
