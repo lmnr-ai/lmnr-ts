@@ -48,7 +48,7 @@ export class CollectorSingleton {
 }
 
 class Client {
-    private readonly baseUrl = "http://localhost:8000";
+    private readonly baseUrl = "https://api.lmnr.ai";
     private projectApiKey: string;
 
     constructor(projectApiKey: string) {
