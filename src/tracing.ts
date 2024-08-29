@@ -3,19 +3,32 @@ import { Span, Trace } from "./types";
 export class Collector {
     private readonly flushInterval: number = 2.0; // seconds
     private readonly client = new Client(process.env.LMNR_PROJECT_API_KEY || "");
+    private readonly maxQueueSize: number = 1000;
     private queue: (Span | Trace)[];
+    private flushTimeout: NodeJS.Timeout | number | null;
 
     constructor() {
         this.queue = [];
-        setInterval(this.flush, this.flushInterval * 1000);
+        this.flushTimeout = setTimeout(this.flush.bind(this), this.flushInterval * 1000);
     }
 
     public addTask(task: Span | Trace) {
         this.queue.push(task);
+        if (this.queue.length >= this.maxQueueSize) {
+            this.flush();
+        }
+        
+        if (!this.flushTimeout) {
+            this.flushTimeout = setTimeout(this.flush.bind(this), this.flushInterval * 1000);
+        }
     }
     
     private flush() {
-        if (!this.queue || this.queue.length === 0) {
+        if (this.flushTimeout != null) {
+            clearTimeout(this.flushTimeout);
+            this.flushTimeout = null;
+        }
+        if (this.queue.length === 0) {
             return;
         }
         this.client.batchPost(this.queue);
@@ -61,7 +74,8 @@ class Client {
             body,
         }).then((response) => {
             if (!response.ok) {
-                console.error("Failed to send traces. Response: ", response);
+                console.error("Failed to send traces. Response: ");
+                response.text().then((text) => console.error(text));
             }
         }).catch((error) => {
             console.error("Failed to send traces. Error: ", error);

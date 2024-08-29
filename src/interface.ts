@@ -1,6 +1,14 @@
 import { CURRENT_TRACING_VERSION } from "./constants";
 import { Collector, CollectorSingleton } from "./tracing";
-import { EvaluateEvent, Span, Trace, Event } from "./types";
+import { EvaluateEvent, Span, Trace, Event, SpanType, DEFAULT_SPAN_TYPE } from "./types";
+import { newUUID } from "./utils";
+
+interface CreateSpanProps {
+    input?: any | null;
+    metadata?: Record<string, any> | null;
+    attributes?: Record<string, any>;
+    spanType?: SpanType;
+};
 
 export class ObservationContext {
     protected observation: Span | Trace;
@@ -21,23 +29,25 @@ export class ObservationContext {
 
     public span(
         name: string,
-        input?: any | null,
-        metadata?: Record<string, any> | null,
-        attributes?: Record<string, any>,
-        spanType?: 'DEFAULT' | 'LLM'
+        {
+            input,
+            metadata,
+            attributes,
+            spanType,
+        }: CreateSpanProps = {}
     ): SpanContext {
         const parent = this as ObservationContext;
-        const parentSpanId = 
+        const parentSpanId =
             parent instanceof SpanContext ? parent.observation.id : null;
-        
+
         const traceId = parent instanceof TraceContext
             ? parent.observation.id
-            : (parent.observation as  Span).traceId;
+            : (parent.observation as Span).traceId;
 
         const span = {
             version: CURRENT_TRACING_VERSION,
-            spanType: spanType ?? 'DEFAULT',
-            id: crypto.randomUUID(),
+            spanType: spanType ?? DEFAULT_SPAN_TYPE,
+            id: newUUID(),
             parentSpanId,
             traceId,
             name,
@@ -57,48 +67,68 @@ export class ObservationContext {
     }
 }
 
+interface UpdateSpanProps {
+    input?: any | null;
+    output?: any | null;
+    metadata?: Record<string, any> | null;
+    attributes?: Record<string, any>;
+    evaluateEvents?: EvaluateEvent[];
+    override?: boolean;
+};
+
+interface SpanEventProps {
+    value?: string | number | boolean;
+    timestamp?: Date;
+};
+
+interface SpanEvaluateEventProps {
+    timestamp?: Date;
+};
+
 export class SpanContext extends ObservationContext {
     private inerSpan: Span;
-    
+
     constructor(span: Span, parent: ObservationContext) {
         super(span, parent);
         this.inerSpan = span;
     }
 
-    public end(
-        input?: any | null,
-        output?: any | null,
-        metadata?: Record<string, any> | null,
-        attributes?: Record<string, any>,
-        evaluateEvents?: EvaluateEvent[],
-        override?: boolean
-    ): SpanContext {
+    public end({
+        input,
+        output,
+        metadata,
+        attributes,
+        evaluateEvents,
+        override
+    }: UpdateSpanProps = {}): SpanContext {
         if (this.children && Object.keys(this.children).length > 0) {
             console.warn(`Ending span ${this.observation.id}, but it has children that have not been finalized.` +
                 ` Children: ${Object.values(this.children).map((child) => child.inerSpan.name)}`);
-            }
+        }
 
-        
         delete this.getParent().children[this.inerSpan.id];
         this.innerUpdate(input, output, metadata, attributes, evaluateEvents, override, true);
-        
+
         return this;
     }
 
-    public update(
-        input?: any | null,
-        output?: any | null,
-        metadata?: Record<string, any> | null,
-        attributes?: Record<string, any>,
-        evaluateEvents?: EvaluateEvent[],
-        override?: boolean
-    ): SpanContext {
+    public update({
+        input,
+        output,
+        metadata,
+        attributes,
+        evaluateEvents,
+        override
+    }: UpdateSpanProps): SpanContext {
         return this.innerUpdate(input, output, metadata, attributes, evaluateEvents, override, false);
     }
 
-    public event(templateName: string, value?: string | number | boolean, timestamp?: Date): SpanContext {
+    public event(templateName: string, {
+        value,
+        timestamp,
+    }: SpanEventProps = {}): SpanContext {
         const event = {
-            id: crypto.randomUUID(),
+            id: newUUID(),
             templateName,
             timestamp: timestamp ?? new Date(),
             spanId: this.inerSpan.id,
@@ -109,10 +139,13 @@ export class SpanContext extends ObservationContext {
         return this;
     }
 
-    public evalueateEvent(templateName: string, data: string): SpanContext {
+    public evalueateEvent(templateName: string, data: string, {
+        timestamp
+    }: SpanEvaluateEventProps = {}): SpanContext {
         const event = {
             name: templateName,
             data,
+            timestamp: timestamp ?? new Date(),
         } as EvaluateEvent;
 
         this.inerSpan.evaluateEvents.push(event);
@@ -149,6 +182,14 @@ export class SpanContext extends ObservationContext {
     }
 }
 
+interface UpdateTraceProps {
+    success?: boolean;
+    userId?: string | null;
+    sessionId?: string | null;
+    release?: string;
+    metadata?: Record<string, any> | null;
+};
+
 export class TraceContext extends ObservationContext {
     private trace: Trace;
 
@@ -158,13 +199,13 @@ export class TraceContext extends ObservationContext {
         this.collector.addTask(this.trace);
     }
 
-    public update(
-        success?: boolean,
-        userId?: string | null,
-        sessionId?: string | null,
-        release?: string,
-        metadata?: Record<string, any> | null
-    ): TraceContext {
+    public update({
+        success,
+        userId,
+        sessionId,
+        release,
+        metadata
+    }: UpdateTraceProps = {}): TraceContext {
         const newMetadata = metadata ? { ...this.observation.metadata, ...metadata } : this.observation.metadata;
         this.trace.success = success ?? this.trace.success;
         this.trace.userId = userId ?? this.trace.userId;
@@ -178,17 +219,29 @@ export class TraceContext extends ObservationContext {
     }
 }
 
-export const trace = () => {
+interface TraceProps {
+    userId?: string | null;
+    sessionId?: string | null;
+    release?: string;
+    metadata?: Record<string, any> | null;
+};
+
+export const trace = ({
+    userId,
+    sessionId,
+    release,
+    metadata,
+}: TraceProps = {}): TraceContext => {
     const trace = {
-        id: crypto.randomUUID(),
+        id: newUUID(),
         version: CURRENT_TRACING_VERSION,
         success: true,
         startTime: new Date(),
         endTime: null,
-        userId: null,
-        sessionId: null,
-        release: "v1",
-        metadata: null,
+        userId: userId ?? null,
+        sessionId: sessionId ?? newUUID(),
+        release: release ?? "v1",
+        metadata: metadata ?? null,
     } as Trace;
 
     return new TraceContext(trace, null);

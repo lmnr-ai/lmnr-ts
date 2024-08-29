@@ -20,6 +20,7 @@ export type PipelineRunResponse = {
 export type EvaluateEvent = {
     name: string;
     data: string;
+    timestamp?: Date;
 }
 
 export type Event = {
@@ -30,9 +31,12 @@ export type Event = {
     value: number | string | null; // number must be integer
 }
 
+export type SpanType = 'DEFAULT' | 'LLM';
+export const DEFAULT_SPAN_TYPE: SpanType = 'DEFAULT';
+
 export type Span = {
     version: string;
-    spanType: 'DEFAULT' | 'LLM';
+    spanType: SpanType;
     id: string; // UUID
     parentSpanId: string | null; // UUID
     traceId: string; // UUID
