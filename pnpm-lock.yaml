@@ -8,13 +8,13 @@ importers:
 
   .:
     dependencies:
-      '@types/node':
-        specifier: ^22.5.0
-        version: 22.5.0
       uuid:
         specifier: ^10.0.0
         version: 10.0.0
     devDependencies:
+      '@types/node':
+        specifier: ^22.5.0
+        version: 22.5.0
       '@types/uuid':
         specifier: ^10.0.0
         version: 10.0.0

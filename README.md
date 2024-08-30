@@ -12,6 +12,11 @@ npm install @lmnr-ai/lmnr
 - Events and semantic events right from the code
 - Make Laminar pipeline calls from your JS code
 
+## Prerequisite
+
+- Laminar project created at https://lmnr.ai
+- Export (or set using .env) a variable `LMNR_PROJECT_API_KEY` with the value from the project settings page
+
 ## Code instrumentation 
 
 For manual instrumetation you will need to import the following:
