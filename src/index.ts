@@ -1,6 +1,17 @@
 import { PipelineRunResponse, PipelineRunRequest } from './types';
 
-export { NodeInput, PipelineRunResponse, PipelineRunRequest, ChatMessage } from './types';
+export {
+    NodeInput,
+    PipelineRunResponse,
+    PipelineRunRequest,
+    ChatMessage,
+    Span,
+    Event,
+    EvaluateEvent,
+    Trace,
+} from './types';
+
+export { trace, SpanContext, TraceContext, ObservationContext } from './interface';
 
 export class Laminar {
     private readonly projectApiKey: string;

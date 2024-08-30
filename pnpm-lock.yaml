@@ -8,10 +8,13 @@ importers:
 
   .:
     dependencies:
+      uuid:
+        specifier: ^10.0.0
+        version: 10.0.0
+    devDependencies:
       '@types/node':
         specifier: ^22.5.0
         version: 22.5.0
-    devDependencies:
       '@types/uuid':
         specifier: ^10.0.0
         version: 10.0.0
@@ -669,6 +672,10 @@ packages:
   undici-types@6.19.8:
     resolution: {integrity: sha512-ve2KP6f/JnbPBFyobGHuerC9g1FYGn/F8n1LWTwNxCEzd6IfqTwUQcNXgEtmmQ6DlRrC1hrSrBnCZPokRrDHjw==}
 
+  uuid@10.0.0:
+    resolution: {integrity: sha512-8XkAphELsDnEGrDxUOHB3RGvXz6TeuYSGEZBOjtTtPm2lwhGBjLgOzLHB63IUWfBpNucQjND6d3AOudO+H3RWQ==}
+    hasBin: true
+
   webidl-conversions@4.0.2:
     resolution: {integrity: sha512-YQ+BmxuTgd6UXZW3+ICGfyqRyHXVlD5GtQr5+qjiNW7bF0cqrzX500HVXPBOvgXb5YnzDd+h0zqyv61KUD7+Sg==}
 
@@ -1212,6 +1219,8 @@ snapshots:
   typescript@5.5.3: {}
 
   undici-types@6.19.8: {}
+
+  uuid@10.0.0: {}
 
   webidl-conversions@4.0.2: {}
 
