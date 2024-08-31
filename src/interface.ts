@@ -266,7 +266,6 @@ export const trace = ({
     return new TraceContext(trace, null);
 }
 
-
 /**
  * Initializes the SDK with the provided project API key and environment variables.
  * 
