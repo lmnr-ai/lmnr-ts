@@ -58,10 +58,10 @@ export class Laminar {
 
     public async batchPostTraces(data: (Span | Trace)[]) {
         const body = JSON.stringify({
-            traces: data
+            observations: data
         });
         const headers = this.getHeaders();
-        const url = `${this.baseUrl}/v1/traces`;
+        const url = `${this.baseUrl}/v1/observations`;
         try {
             const response = await fetch(url, {
                 method: "POST",
