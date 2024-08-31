@@ -3,12 +3,10 @@ import { PipelineRunResponse, PipelineRunRequest, Span, Trace, EvaluationDatapoi
 export class Laminar {
     private readonly projectApiKey: string;
     private readonly baseUrl: string;
-    private readonly response: PipelineRunResponse | null = null;
 
     constructor(projectApiKey: string) {
         this.projectApiKey = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
-        // this.baseUrl = 'https://api.lmnr.ai'
-        this.baseUrl = 'http://localhost:8000';
+        this.baseUrl = 'https://api.lmnr.ai'
     }
 
     public async run({
