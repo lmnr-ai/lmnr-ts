@@ -39,13 +39,18 @@ In addition, `SpanContext` allows you to:
 ```javascript
 // `trace()` is the main entrypoint into the observation of your app
 // `ObservationContext` is a parent class for `SpanContext` and `TraceContext`
-import { trace, ObservationContext } from '@lmnr-ai/lmnr';
+import {
+    initialize as lmnrInitialize,
+    trace,
+    SpanContext,
+    TraceContext
+} from '@lmnr-ai/lmnr';
 
 import OpenAI from 'openai';
 
 const openai = new OpenAI({apiKey: process.env.OPENAI_API_KEY});
 
-const getRandomCountry = (s: ObservationContext): string => {
+const getRandomCountry = (s: SpanContext): string => {
     // create the span without registering the input
     const span = s.span('getRandomCountry');
     const countries = ['United States', 'Canada', 'Australia', 'Germany', 'Japan'];
@@ -57,7 +62,7 @@ const getRandomCountry = (s: ObservationContext): string => {
     return country;
 }
 
-const foo = (question: string, t: ObservationContext) => {
+const foo = (question: string, t: TraceContext) => {
     // create the span and register the input
     const span = t.span('foo', {input: {question}});
 
@@ -66,24 +71,39 @@ const foo = (question: string, t: ObservationContext) => {
     question += country;
     const result = openai.chat.completions.create({
         model: 'gpt-4o-mini',
-        messages: [{role: 'system', content: 'You are a helpful assistant.'}, {role: 'user', content: question}],
+        messages: [
+            {role: 'system', content: 'You are a helpful assistant.'}, 
+            {role: 'user', content: question}
+        ],
     }).then((response) => {
         const output = response.choices[0].message.content;
 
         // ask Laminar to check for a pre-defined event.
-        // In this example correctness is pre-defined in the UI as "The data is factually correct"
-        span.evalueateEvent('correctness', output ?? '');
+        // In this example the event will be called correctness,
+        // and the value will be determined by calling the "myCorrectnessEvaluator" pipeline
+        span.evaluateEvent(
+            'correctness',
+            'myCorrectnessEvaluator',
+            { llmOutput: output ?? '' }
+        );
         // end the span and register the output
-        span.end({output});
+        span.end({ output });
     });
 };
 
+lmnrInitialize({
+    projectApiKey: process.env.LMNR_PROJECT_API_KEY,
+    // this is the env that will be passed to the Laminar evaluator and
+    // be used during the event evaluation
+    env: {
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY
+    }
+})
 // Start the trace observation at the entry to your program
 const t = trace();
 
 // pass the trace context into the handler
 foo("What is the capital of ", t);
-
 ```
 
 ## Making Laminar pipeline calls

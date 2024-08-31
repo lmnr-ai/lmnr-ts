@@ -19,8 +19,10 @@ export type PipelineRunResponse = {
 
 export type EvaluateEvent = {
     name: string;
-    data: string;
+    evaluator: string;
+    data: Record<string, NodeInput>;
     timestamp?: Date;
+    env?: Record<string, NodeInput>;
 }
 
 export type Event = {

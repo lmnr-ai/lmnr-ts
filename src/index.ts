@@ -10,7 +10,13 @@ export {
     Trace,
 } from './types';
 
-export { trace, SpanContext, TraceContext, ObservationContext } from './interface';
+export {
+    initialize,
+    trace,
+    SpanContext,
+    TraceContext,
+    ObservationContext
+} from './interface';
 
 export { Laminar } from './client';
 export { Evaluation, Dataset, Datapoint } from './evaluations';

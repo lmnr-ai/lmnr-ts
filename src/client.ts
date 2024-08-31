@@ -1,12 +1,32 @@
 import { PipelineRunResponse, PipelineRunRequest, Span, Trace, EvaluationDatapoint, EvaluationStatus } from './types';
 
 export class Laminar {
-    private readonly projectApiKey: string;
     private readonly baseUrl: string;
+    private projectApiKey: string;
+    private env: Record<string, string> = {};
 
-    constructor(projectApiKey: string) {
+    constructor(projectApiKey: string, env?: Record<string, string>) {
         this.projectApiKey = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
         this.baseUrl = 'https://api.lmnr.ai'
+        if (env) {
+            this.env = env;
+        }
+    }
+
+    public setEnv(env?: Record<string, string>) {
+        if (env) {
+            this.env = env;
+        }
+    }
+
+    public setProjectApiKey(projectApiKey?: string) {
+        if (projectApiKey){
+            this.projectApiKey = projectApiKey;
+        }
+    }
+
+    public getEnv() {
+        return this.env;
     }
 
     public async run({

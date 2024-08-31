@@ -23,6 +23,18 @@ export class Collector {
             this.flushTimeout = setTimeout(this.flush.bind(this), this.flushInterval * 1000);
         }
     }
+
+    public setEnv(env?: Record<string, string>) {
+        this.client.setEnv(env);
+    }
+
+    public getEnv() {
+        return this.client.getEnv();
+    }
+
+    public setProjectApiKey(projectApiKey?: string) {
+        this.client.setProjectApiKey(projectApiKey);
+    }
     
     private flush() {
         if (this.flushTimeout != null) {
