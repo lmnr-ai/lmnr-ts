@@ -63,3 +63,19 @@ export type Trace = {
     release: string;
     metadata: Record<string, any> | null;
 }
+
+export type CreateEvaluationResponse = {
+    id: string,
+    createdAt: Date,
+    name: string,
+    status: 'Started' | 'Finished' | 'Error',
+    projectId: string,
+    metadata: Record<string, any> | null,
+}
+
+export type EvaluationDatapoint<D, T, O> = {
+    data: Record<string, any> & D;
+    target: Record<string, any> & T;
+    executorOutput: any & O,
+    scores: Record<string, number>;
+}
