@@ -115,8 +115,14 @@ export class Evaluation<D, T, O> {
             batchPromises.push(this.evaluateBatch(batch));
         }
     
-        await Promise.all(batchPromises);
-        console.log(`Evaluation ${response.id} complete`);
+        try{
+            await Promise.all(batchPromises);
+            await this.laminarClient.updateEvaluationStatus(response.name, 'Finished');
+            console.log(`Evaluation ${response.id} complete`);
+
+        } catch (e) {
+            console.error(`Error evaluating batch: ${e}`);
+        }
     }
 
     private async evaluateBatch(batch: Datapoint<D, T>[]): Promise<void> {
@@ -133,8 +139,8 @@ export class Evaluation<D, T, O> {
                 // if the evaluator returns a single number, use the evaluator name as the key
                 if (typeof value === 'number') {
                     scores[evaluatorName] = value;
-                // if the evaluator returns an object, use the object keys as the keys
                 } else {
+                    // if the evaluator returns an object, use the object keys as the keys
                     scores = {...scores, ...value};
                 }
             };

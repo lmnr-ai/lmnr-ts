@@ -1,4 +1,4 @@
-import { PipelineRunResponse, PipelineRunRequest, Span, Trace, EvaluationDatapoint } from './types';
+import { PipelineRunResponse, PipelineRunRequest, Span, Trace, EvaluationDatapoint, EvaluationStatus } from './types';
 
 export class Laminar {
     private readonly projectApiKey: string;
@@ -92,6 +92,31 @@ export class Laminar {
         } catch(error) {
             console.error("Failed to send evaluation results. Error: ", error);
         };
+    }
+
+    public async updateEvaluationStatus(
+        evaluationName: string,
+        status: EvaluationStatus,
+    ): Promise<void> {
+        const body = JSON.stringify({
+            name: evaluationName,
+            status,
+        });
+        const headers = this.getHeaders();
+        const url = `${this.baseUrl}/v1/evaluations`;
+        try {
+            const response = await fetch(url, {
+                method: "PUT",
+                headers,
+                body,
+            });
+            if (!response.ok) {
+                console.error("Failed to update evaluation status. Response: ");
+                response.text().then((text) => console.error(text));
+            }
+        } catch(error) {
+            console.error("Failed to update evaluation status. Error: ", error);
+        }
     }
 
     private getHeaders() {

@@ -68,7 +68,7 @@ export type CreateEvaluationResponse = {
     id: string,
     createdAt: Date,
     name: string,
-    status: 'Started' | 'Finished' | 'Error',
+    status: EvaluationStatus
     projectId: string,
     metadata: Record<string, any> | null,
 }
@@ -79,3 +79,5 @@ export type EvaluationDatapoint<D, T, O> = {
     executorOutput: any & O,
     scores: Record<string, number>;
 }
+
+export type EvaluationStatus = 'Started' | 'Finished' | 'Error';
