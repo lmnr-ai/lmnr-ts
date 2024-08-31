@@ -1,4 +1,4 @@
-# Typescript SDK for Laminar AI
+# Typescript SDK for Laminar
 
 ## Quickstart
 
@@ -12,7 +12,7 @@ npm install @lmnr-ai/lmnr
 - Events and semantic events right from the code
 - Make Laminar pipeline calls from your JS code
 
-## Prerequisite
+## Prerequisites
 
 - Laminar project created at https://lmnr.ai
 - Export (or set using .env) a variable `LMNR_PROJECT_API_KEY` with the value from the project settings page
@@ -106,6 +106,12 @@ const t = trace();
 foo("What is the capital of ", t);
 ```
 
+Here's the UI result you get by calling that function 4 times in parallel, awaiting an artificial 500ms delay in `getRandomCountry`.
+
+![](/images//exampleTrace.png).
+
+Yellow vertical bars represent the times where correctness was registered, because clearly gpt-4o-mini knows the capitals of these countries.
+
 ## Making Laminar pipeline calls
 
 After you are ready to use your pipeline in your code, deploy it in Laminar by selecting the target version for the pipeline.
@@ -128,7 +134,7 @@ const result = await l.run({
 
 Resulting in:
 
-```typecript
+```
 > console.log(result)
 {
   outputs: { output: { value: { role: 'user', content: 'hello' } } },
