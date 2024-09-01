@@ -30,8 +30,8 @@ Both `TraceContext` and `SpanContext` expose the following interfaces:
 - `update(props)` - update the current trace or span and return it. Returns `TraceContext` or `SpanContext`. Useful when some metadata becomes known later during the program execution
 
 In addition, `SpanContext` allows you to:
-- `event(templateName: string, props: SpanEventProps)` - emit a custom event at any point
-- `evaluateEvent(templateName: string, data: str, props: SpanEvaluateEventProps)` - register a possible event for automatic checking by Laminar.
+- `event(name: string, props: SpanEventProps)` - emit a custom event at any point
+- `evaluateEvent(name: string, evaluator: string, data: Record<string, NodeInput>, props: SpanEvaluateEventProps)` - register a possible event for automatic checking by Laminar.
 - `end(props: UpdateSpanProps)` – update the current span, and terminate it
 
 ### Example
@@ -130,7 +130,7 @@ const result = await l.run({
     pipeline: 'my_pipeline_name',
     inputs: {'input': [{'role': 'user', 'content': 'hello'}]},
     env: {'OPENAI_API_KEY': 'sk-some-key'}, // optional
-    metadata: {'session_id': 'your_custom_session_id'}, // optional
+    metadata: {'metadata_key': 'metadata_value'}, // optional
 });
 ```
 
