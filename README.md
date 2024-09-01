@@ -81,6 +81,8 @@ const foo = (question: string, t: TraceContext) => {
         // ask Laminar to check for a pre-defined event.
         // In this example the event will be called correctness,
         // and the value will be determined by calling the "myCorrectnessEvaluator" pipeline
+        //
+        // the last argument to the function represents the inputs to the evaluator pipeline
         span.evaluateEvent(
             'correctness',
             'myCorrectnessEvaluator',
