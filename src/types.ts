@@ -19,8 +19,10 @@ export type PipelineRunResponse = {
 
 export type EvaluateEvent = {
     name: string;
-    data: string;
+    evaluator: string;
+    data: Record<string, NodeInput>;
     timestamp?: Date;
+    env?: Record<string, NodeInput>;
 }
 
 export type Event = {
@@ -63,3 +65,21 @@ export type Trace = {
     release: string;
     metadata: Record<string, any> | null;
 }
+
+export type CreateEvaluationResponse = {
+    id: string,
+    createdAt: Date,
+    name: string,
+    status: EvaluationStatus
+    projectId: string,
+    metadata: Record<string, any> | null,
+}
+
+export type EvaluationDatapoint<D, T, O> = {
+    data: Record<string, any> & D;
+    target: Record<string, any> & T;
+    executorOutput: any & O,
+    scores: Record<string, number>;
+}
+
+export type EvaluationStatus = 'Started' | 'Finished' | 'Error';

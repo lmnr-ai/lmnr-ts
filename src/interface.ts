@@ -1,6 +1,6 @@
 import { CURRENT_TRACING_VERSION } from "./constants";
 import { Collector, CollectorSingleton } from "./tracing";
-import { EvaluateEvent, Span, Trace, Event, SpanType, DEFAULT_SPAN_TYPE } from "./types";
+import { EvaluateEvent, Span, Trace, Event, SpanType, DEFAULT_SPAN_TYPE, NodeInput } from "./types";
 import { newUUID } from "./utils";
 
 interface CreateSpanProps {
@@ -123,13 +123,13 @@ export class SpanContext extends ObservationContext {
         return this.innerUpdate(input, output, metadata, attributes, evaluateEvents, override, false);
     }
 
-    public event(templateName: string, {
+    public event(name: string, {
         value,
         timestamp,
     }: SpanEventProps = {}): SpanContext {
         const event = {
             id: newUUID(),
-            templateName,
+            templateName: name,
             timestamp: timestamp ?? new Date(),
             spanId: this.inerSpan.id,
             value: value ?? null,
@@ -139,13 +139,29 @@ export class SpanContext extends ObservationContext {
         return this;
     }
 
-    public evalueateEvent(templateName: string, data: string, {
+    /**
+     * Evaluate an event with the given name using the specified evaluator and data.
+     * 
+     * The evaluator refers to the name of the Laminar pipeline.
+     * The data is passed as input to the evaluator pipeline, meaning you must specify the data you want to evaluate. The prompt
+     * of the evaluator will be templated with the keys of the data object.
+     * Typically, you would pass the output of LLM generation, users' messages, and other relevant data to `data`.
+     * 
+     * @param {string} name - Name of the event.
+     * @param {string} evaluator - Name of the evaluator pipeline.
+     * @param {Record<string, NodeInput>} data - Data to be used when evaluating the event.
+     * @returns {SpanContext} The updated span context.
+     */
+    public evaluateEvent(name: string, evaluator: string, data: Record<string, NodeInput>, {
         timestamp
     }: SpanEvaluateEventProps = {}): SpanContext {
+        
         const event = {
-            name: templateName,
+            name,
+            evaluator,
             data,
             timestamp: timestamp ?? new Date(),
+            env: this.collector.getEnv(),
         } as EvaluateEvent;
 
         this.inerSpan.evaluateEvents.push(event);
@@ -168,6 +184,9 @@ export class SpanContext extends ObservationContext {
         const newMetadata = override ? metadata : { ...this.observation.metadata, ...(metadata ?? {}) };
         const newAttributes = override ? attributes : { ...this.inerSpan.attributes, ...(attributes ?? {}) };
         const newEvaluateEvents = override ? evaluateEvents : [...this.inerSpan.evaluateEvents, ...(evaluateEvents ?? [])];
+        (newEvaluateEvents ?? []).forEach((event) => {
+            event.env = {...(event.env ?? {}), ...this.collector.getEnv()};
+        });
 
         this.inerSpan.input = input || this.inerSpan.input;
         this.inerSpan.output = output || this.inerSpan.output;
@@ -245,4 +264,22 @@ export const trace = ({
     } as Trace;
 
     return new TraceContext(trace, null);
+}
+
+/**
+ * Initializes the SDK with the provided project API key and environment variables.
+ * 
+ * @param options - The options for initialization.
+ * @param options.projectApiKey - The project API key. Needed to authenticate with the Laminar API.
+ * @param options.env - The environment variables as a key-value pair. Passed to Laminar to be used in the evaluation.
+ */
+export const initialize = ({
+    projectApiKey, env
+} : {
+    projectApiKey?: string,
+    env?: Record<string, string>
+}) => {
+    const collector = CollectorSingleton.getInstance();
+    collector.setProjectApiKey(projectApiKey);
+    collector.setEnv(env ?? {});
 }

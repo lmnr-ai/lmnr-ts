@@ -1,8 +1,9 @@
+import { Laminar } from "./client";
 import { Span, Trace } from "./types";
 
 export class Collector {
     private readonly flushInterval: number = 2.0; // seconds
-    private readonly client = new Client(process.env.LMNR_PROJECT_API_KEY || "");
+    private readonly client = new Laminar(process.env.LMNR_PROJECT_API_KEY || "");
     private readonly maxQueueSize: number = 1000;
     private queue: (Span | Trace)[];
     private flushTimeout: NodeJS.Timeout | number | null;
@@ -22,6 +23,18 @@ export class Collector {
             this.flushTimeout = setTimeout(this.flush.bind(this), this.flushInterval * 1000);
         }
     }
+
+    public setEnv(env?: Record<string, string>) {
+        this.client.setEnv(env);
+    }
+
+    public getEnv() {
+        return this.client.getEnv();
+    }
+
+    public setProjectApiKey(projectApiKey?: string) {
+        this.client.setProjectApiKey(projectApiKey);
+    }
     
     private flush() {
         if (this.flushTimeout != null) {
@@ -31,8 +44,10 @@ export class Collector {
         if (this.queue.length === 0) {
             return;
         }
-        this.client.batchPost(this.queue);
-        this.queue = [];
+        this.client.batchPostTraces(this.queue)
+            .finally(() => {
+                this.queue = [];
+            });
     }
 }
 
@@ -44,41 +59,5 @@ export class CollectorSingleton {
             this.instance = new Collector();
         }
         return this.instance;
-    }
-}
-
-class Client {
-    private readonly baseUrl = "https://api.lmnr.ai";
-    private projectApiKey: string;
-
-    constructor(projectApiKey: string) {
-        this.projectApiKey = projectApiKey;
-    }
-
-    private getHeaders() {
-        return {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${this.projectApiKey}`,
-        };
-    };
-
-    public batchPost(data: (Span | Trace)[]) {
-        const body = JSON.stringify({
-            traces: data
-        });
-        const headers = this.getHeaders();
-        const url = `${this.baseUrl}/v1/traces`;
-        fetch(url, {
-            method: "POST",
-            headers,
-            body,
-        }).then((response) => {
-            if (!response.ok) {
-                console.error("Failed to send traces. Response: ");
-                response.text().then((text) => console.error(text));
-            }
-        }).catch((error) => {
-            console.error("Failed to send traces. Error: ", error);
-        });
     }
 }
