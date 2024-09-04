@@ -4,19 +4,10 @@ export {
     PipelineRunResponse,
     PipelineRunRequest,
     ChatMessage,
-    Span,
     Event,
     EvaluateEvent,
-    Trace,
 } from './types';
 
-export {
-    initialize,
-    trace,
-    SpanContext,
-    TraceContext,
-    ObservationContext
-} from './interface';
-
-export { Laminar } from './client';
+export { Laminar } from './laminar';
 export { Evaluation, Dataset, Datapoint } from './evaluations';
+export { observe } from './decorators';
