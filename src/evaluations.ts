@@ -1,4 +1,4 @@
-import { Laminar } from "./client";
+import { Laminar } from "./laminar";
 import { CreateEvaluationResponse, EvaluationDatapoint } from "./types";
 
 const DEFAULT_BATCH_SIZE = 5;
@@ -29,7 +29,7 @@ export abstract class Dataset<D, T> {
 export type Datapoint<D, T> = {
     /**
      * input to the executor function. Must be a record with string keys and any values.
-     */ 
+     */
     data: Record<string, any> & D;
     /**
      * input to the evaluator function (alongside the executor output).
@@ -72,10 +72,9 @@ interface EvaluatorConstructorProps<D, T, O> {
 export class Evaluation<D, T, O> {
     private name: string;
     private data: Datapoint<D, T>[] | Dataset<D, T>;
-    private executor: (data: D, ...args: any[])=> O;
+    private executor: (data: D, ...args: any[]) => O;
     private evaluators: Record<string, EvaluatorFunction<O, T>>;
     private evaluatorNames: string[];
-    private laminarClient: Laminar;
     private batchSize: number = DEFAULT_BATCH_SIZE;
 
     /**
@@ -91,12 +90,12 @@ export class Evaluation<D, T, O> {
         this.name = name;
         this.data = data;
         this.executor = executor;
-        this.evaluators = Object.fromEntries(evaluators.map((e, i) => [e.name.length > 0 ? e.name : `evaluator_${i+1}`, e]));
-        this.evaluatorNames = evaluators.map((e, i) => e.name.length > 0 ? e.name : `evaluator_${i+1}`);
+        this.evaluators = Object.fromEntries(evaluators.map((e, i) => [e.name.length > 0 ? e.name : `evaluator_${i + 1}`, e]));
+        this.evaluatorNames = evaluators.map((e, i) => e.name.length > 0 ? e.name : `evaluator_${i + 1}`);
         if (config) {
             this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
         }
-        this.laminarClient = new Laminar(config?.projectApiKey ?? process.env.LMNR_PROJECT_API_KEY  ?? "");
+        Laminar.initialize({ projectApiKey: config?.projectApiKey });
     }
 
     /** 
@@ -107,17 +106,17 @@ export class Evaluation<D, T, O> {
      * to get the output, and the output is then evaluated by each evaluator function.
      */
     public async run(): Promise<void> {
-        const response = await this.laminarClient.createEvaluation(this.name) as CreateEvaluationResponse;
+        const response = await Laminar.createEvaluation(this.name) as CreateEvaluationResponse;
         const batchPromises = [];
         const length = this.data instanceof Dataset ? this.data.size() : this.data.length;
         for (let i = 0; i < length; i += this.batchSize) {
             const batch = this.data.slice(i, i + this.batchSize);
             batchPromises.push(this.evaluateBatch(batch));
         }
-    
-        try{
+
+        try {
             await Promise.all(batchPromises);
-            await this.laminarClient.updateEvaluationStatus(response.name, 'Finished');
+            await Laminar.updateEvaluationStatus(response.name, 'Finished');
             console.log(`Evaluation ${response.id} complete`);
 
         } catch (e) {
@@ -141,7 +140,7 @@ export class Evaluation<D, T, O> {
                     scores[evaluatorName] = value;
                 } else {
                     // if the evaluator returns an object, use the object keys as the keys
-                    scores = {...scores, ...value};
+                    scores = { ...scores, ...value };
                 }
             };
 
@@ -153,6 +152,6 @@ export class Evaluation<D, T, O> {
             } as EvaluationDatapoint<D, T, O>);
         };
 
-        return this.laminarClient.postEvaluationResults(this.name, results);
+        return Laminar.postEvaluationResults(this.name, results);
     }
 }
