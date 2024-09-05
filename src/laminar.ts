@@ -105,7 +105,7 @@ export class Laminar {
      * @param currentSpanId - The ID of the current span.
      * @param currentTraceId - The ID of the current trace.
      * @returns A promise that resolves to the response of the pipeline run.
-     * @throws An error if the Laminar object is not initialized with a project API key.
+     * @throws An error if the Laminar object is not initialized with a project API key. Or if the request fails.
      */
     public static async run({
         pipeline,
@@ -146,7 +146,14 @@ export class Laminar {
             })
         });
 
-        return await response.json() as PipelineRunResponse;
+        if (!response.ok) {
+            throw new Error(`Failed to run pipeline ${pipeline}. Response: ${response.statusText}`);
+        }
+        try {
+            return await response.json() as PipelineRunResponse;
+        } catch (error) {
+            throw new Error(`Failed to parse response from pipeline ${pipeline}. Error: ${error}`);
+        }
     }
 
     /**

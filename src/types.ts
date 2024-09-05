@@ -5,7 +5,7 @@ export type ChatMessage = {
     content: string;
 }
 
-export type NodeInput = ChatMessage[] | string;
+export type NodeInput = ChatMessage[] | string | boolean | number;
 
 export type PipelineRunRequest = {
     inputs: Record<string, NodeInput>;
