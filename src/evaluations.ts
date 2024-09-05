@@ -104,7 +104,7 @@ export class Evaluation<D, T, O> {
      *
      * Creates a new evaluation if no evaluation with such name exists, or adds data to an existing one otherwise.
      * Evaluates data points in batches of `batchSize`. The executor function is called on each data point
-     * to get the output, and the output is then evaluated by each evaluator function.
+     * to get the output, and then evaluate it by each evaluator function.
      */
     public async run(): Promise<void> {
         const response = await Laminar.createEvaluation(this.name) as CreateEvaluationResponse;
