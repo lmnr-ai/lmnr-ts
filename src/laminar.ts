@@ -61,7 +61,6 @@ export class Laminar {
             apiKey: this.projectApiKey,
             baseUrl: this.baseUrl,
             silenceInitializationMessage: true,
-            disableBatch: true,
         });
     }
 
