@@ -17,7 +17,7 @@ export type PipelineRunRequest = {
 }
 
 export type PipelineRunResponse = {
-    outputs: Record<string, Record<string, NodeInput>>;
+    outputs: Record<string, Record<string, NodeInput | boolean | number>>;
     runId: StringUUID;
 }
 

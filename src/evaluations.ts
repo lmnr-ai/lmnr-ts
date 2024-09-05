@@ -9,12 +9,13 @@ const DEFAULT_BATCH_SIZE = 5;
 interface EvaluatorConfig {
     batchSize?: number;
     projectApiKey?: string;
+    baseUrl?: string;
 }
 
 export abstract class Dataset<D, T> {
     public slice(start: number, end: number): Datapoint<D, T>[] {
         const result = [];
-        for (let i = start; i < Math.min(end, this.size()); i++) {
+        for (let i = Math.max(start, 0); i < Math.min(end, this.size()); i++) {
             result.push(this.get(i));
         }
         return result;
@@ -95,7 +96,7 @@ export class Evaluation<D, T, O> {
         if (config) {
             this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
         }
-        Laminar.initialize({ projectApiKey: config?.projectApiKey });
+        Laminar.initialize({ projectApiKey: config?.projectApiKey, baseUrl: config?.baseUrl });
     }
 
     /** 
@@ -147,7 +148,7 @@ export class Evaluation<D, T, O> {
             results.push({
                 executorOutput: output,
                 data: datapoint.data,
-                target: target,
+                target,
                 scores,
             } as EvaluationDatapoint<D, T, O>);
         };
