@@ -17,7 +17,7 @@ And then in the code
 ```typescript
 import { Laminar as L } from '@lmnr-ai/lmnr'
 
-L.initialize('<PROJECT_API_KEY>')
+L.initialize({ projectApiKey: '<PROJECT_API_KEY>' })
 ```
 
 This will automatically instrument most of the LLM, Vector DB, and related
@@ -64,7 +64,7 @@ await observe({name: 'poemWriter', async () => {await poemWriter('laminar flow')
 
 You can send events in two ways:
 - `.event(name, value)` – for a pre-defined event with one of possible values.
-- `.evaluate_event(name, evaluator, data)` – for an event that is evaluated by evaluator pipeline based on the data.
+- `.evaluate_event(name, evaluator, data, env)` – for an event that is evaluated by evaluator pipeline based on the data.
 
 Note that to run an evaluate event, you need to crate an evaluator pipeline and create a target version for it.
 
