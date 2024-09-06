@@ -1,5 +1,5 @@
 import { PipelineRunResponse, PipelineRunRequest, EvaluationDatapoint, EvaluationStatus } from './types';
-import { AttributeValue, context, createContextKey, isSpanContextValid, TimeInput, trace } from '@opentelemetry/api';
+import { Attributes, AttributeValue, context, createContextKey, isSpanContextValid, TimeInput, trace } from '@opentelemetry/api';
 import { initialize as traceloopInitialize } from '@traceloop/node-server-sdk'
 import { otelSpanIdToUUID, otelTraceIdToUUID } from './utils';
 
@@ -156,16 +156,21 @@ export class Laminar {
     }
 
     /**
-     * Associates an event with the current span.
+     * Associates an event with the current span. If event with such name never
+     * existed, Laminar will create a new event and infer its type from the value.
+     * If the event already exists, Laminar will append the value to the event
+     * if and only if the value is of a matching type. Otherwise, the event won't
+     * be recorded. Supported types are string, number, and boolean. If the value
+     * is `null`, event is considered a boolean tag with the value of `true`.
      *
      * @param name - The name of the event.
-     * @param value - The value of the event. Must be a primitive type or a sequence of values of the same primitive type.
+     * @param value - The value of the event. Must be a primitive type. If not specified, boolean true is assumed in the backend.
      * @param timestamp - The timestamp of the event. If not specified, relies on the underlying OpenTelemetry implementation.
      *                    If specified as an integer, it must be epoch nanoseconds.
      */
     public static event(
         name: string,
-        value: AttributeValue,
+        value?: AttributeValue,
         timestamp?: TimeInput,
     ) {
         const currentSpan = trace.getActiveSpan();
@@ -177,9 +182,11 @@ export class Laminar {
             return;
         }
 
-        const event = {
+        const event: Attributes = {
             "lmnr.event.type": "default",
-            "lmnr.event.value": value,
+        }
+        if (value !== undefined) {
+            event["lmnr.event.value"] = value;
         }
 
         currentSpan.addEvent(name, event, timestamp);
