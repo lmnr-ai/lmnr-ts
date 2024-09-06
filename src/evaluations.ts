@@ -46,7 +46,7 @@ type EvaluatorFunctionReturn = number | Record<string, number>;
  * The score can be a single number or a record of string keys and number values. The latter is useful for evaluating
  * multiple criteria in one go instead of running multiple evaluators.
  */
-type EvaluatorFunction<O, T> = (output: O | Promise<O>, target: T, ...args: any[]) => EvaluatorFunctionReturn | Promise<EvaluatorFunctionReturn>;
+type EvaluatorFunction<O, T> = (output: O, target: T, ...args: any[]) => EvaluatorFunctionReturn | Promise<EvaluatorFunctionReturn>;
 
 interface EvaluatorConstructorProps<D, T, O> {
     /**
@@ -56,7 +56,7 @@ interface EvaluatorConstructorProps<D, T, O> {
     /**
      * The executor function. Takes the data point + any additional arguments and returns the output to evaluate.
      */
-    executor: (data: D, ...args: any[]) => O;
+    executor: (data: D, ...args: any[]) => O | Promise<O>;
     /**
      * List of evaluator functions. Each evaluator function takes the output of the executor _and_ the target data, and returns
      * a score. The score can be a single number or a record of string keys and number values.
@@ -73,7 +73,7 @@ interface EvaluatorConstructorProps<D, T, O> {
 export class Evaluation<D, T, O> {
     private name: string;
     private data: Datapoint<D, T>[] | Dataset<D, T>;
-    private executor: (data: D, ...args: any[]) => O;
+    private executor: (data: D, ...args: any[]) => O | Promise<O>;
     private evaluators: Record<string, EvaluatorFunction<O, T>>;
     private evaluatorNames: string[];
     private batchSize: number = DEFAULT_BATCH_SIZE;
@@ -108,51 +108,53 @@ export class Evaluation<D, T, O> {
      */
     public async run(): Promise<void> {
         const response = await Laminar.createEvaluation(this.name) as CreateEvaluationResponse;
-        const batchPromises = [];
         const length = this.data instanceof Dataset ? this.data.size() : this.data.length;
         for (let i = 0; i < length; i += this.batchSize) {
             const batch = this.data.slice(i, i + this.batchSize);
-            batchPromises.push(this.evaluateBatch(batch));
+            try {
+                await this.evaluateBatch(batch);
+            } catch (e) {
+                console.error(`Error evaluating batch: ${e}`);
+            }
         }
-
         try {
-            await Promise.all(batchPromises);
+            // After all batches are completed, update the evaluation status
             await Laminar.updateEvaluationStatus(response.name, 'Finished');
-            console.log(`Evaluation ${response.id} complete`);
-
         } catch (e) {
-            console.error(`Error evaluating batch: ${e}`);
+            console.error(`Error updating evaluation status: ${e}`);
         }
     }
-
+    
     private async evaluateBatch(batch: Datapoint<D, T>[]): Promise<void> {
-        let results = [];
-        for (const datapoint of batch) {
+        const batchPromises = batch.map(async (datapoint) => {
             const output = await this.executor(datapoint.data);
             const target = datapoint.target;
-
-            // iterate in order of evaluators
+    
             let scores: Record<string, EvaluatorFunctionReturn> = {};
             for (const evaluatorName of this.evaluatorNames) {
                 const evaluator = this.evaluators[evaluatorName];
                 const value = await evaluator(output, target);
-                // if the evaluator returns a single number, use the evaluator name as the key
+    
+                // If the evaluator returns a single number, use the evaluator name as the key
                 if (typeof value === 'number') {
                     scores[evaluatorName] = value;
                 } else {
-                    // if the evaluator returns an object, use the object keys as the keys
+                    // If the evaluator returns an object, merge its keys with the existing scores (flatten)
                     scores = { ...scores, ...value };
                 }
-            };
-
-            results.push({
+            }
+    
+            return {
                 executorOutput: output,
                 data: datapoint.data,
                 target,
                 scores,
-            } as EvaluationDatapoint<D, T, O>);
-        };
-
+            } as EvaluationDatapoint<D, T, O>;
+        });
+    
+        const results = await Promise.all(batchPromises);
+    
         return Laminar.postEvaluationResults(this.name, results);
     }
+    
 }
