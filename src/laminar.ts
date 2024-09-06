@@ -164,13 +164,13 @@ export class Laminar {
      * is `null`, event is considered a boolean tag with the value of `true`.
      *
      * @param name - The name of the event.
-     * @param value - The value of the event. Must be a primitive type.
+     * @param value - The value of the event. Must be a primitive type. If not specified, boolean true is assumed in the backend.
      * @param timestamp - The timestamp of the event. If not specified, relies on the underlying OpenTelemetry implementation.
      *                    If specified as an integer, it must be epoch nanoseconds.
      */
     public static event(
         name: string,
-        value: AttributeValue | null,
+        value?: AttributeValue,
         timestamp?: TimeInput,
     ) {
         const currentSpan = trace.getActiveSpan();
@@ -185,7 +185,7 @@ export class Laminar {
         const event: Attributes = {
             "lmnr.event.type": "default",
         }
-        if (value !== null) {
+        if (value !== undefined) {
             event["lmnr.event.value"] = value;
         }
 
