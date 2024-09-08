@@ -57,7 +57,7 @@ async const poemWriter = (topic = "turbulence") => {
 }
 
 // Observe the function like this
-await observe({name: 'poemWriter'}, async () => {await poemWriter('laminar flow')}})
+await observe({name: 'poemWriter'}, async () => {await poemWriter('laminar flow')})
 ```
 
 ### Sending events
