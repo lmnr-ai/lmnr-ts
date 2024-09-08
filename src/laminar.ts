@@ -1,6 +1,6 @@
 import { PipelineRunResponse, PipelineRunRequest, EvaluationDatapoint, EvaluationStatus } from './types';
 import { Attributes, AttributeValue, context, createContextKey, isSpanContextValid, TimeInput, trace } from '@opentelemetry/api';
-import { initialize as traceloopInitialize } from '@traceloop/node-server-sdk'
+import { InitializeOptions, initialize as traceloopInitialize } from '@traceloop/node-server-sdk'
 import { otelSpanIdToUUID, otelTraceIdToUUID } from './utils';
 
 
@@ -15,6 +15,7 @@ interface LaminarInitializeProps {
     projectApiKey?: string;
     env?: Record<string, string>;
     baseUrl?: string;
+    instrumentModules?: InitializeOptions["instrumentModules"];
 }
 
 export class Laminar {
@@ -41,7 +42,8 @@ export class Laminar {
     public static initialize({
         projectApiKey,
         env,
-        baseUrl
+        baseUrl,
+        instrumentModules
     }: LaminarInitializeProps) {
 
         let key = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
@@ -61,6 +63,7 @@ export class Laminar {
             apiKey: this.projectApiKey,
             baseUrl: this.baseUrl,
             silenceInitializationMessage: true,
+            instrumentModules,
         });
     }
 

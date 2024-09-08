@@ -30,7 +30,7 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
         name,
         sessionId,
         userId,
-    }: ObserveOptions, fn: F, ...args: A) {
+    }: ObserveOptions, fn: F, ...args: A): Promise<ReturnType<F>> {
 
     if (!Laminar.initialized()) {
         throw new Error('Laminar not initialized. Please call Laminar.initialize(projectApiKey) before using observe.');
@@ -42,5 +42,5 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     if (userId) {
         associationProperties = { ...associationProperties, "user_id": userId };
     }
-    return withTask<A, F>({ name: name ?? fn.name, associationProperties }, fn, ...args);
+    return await withTask<A, F>({ name: name ?? fn.name, associationProperties }, fn, ...args);
 }
