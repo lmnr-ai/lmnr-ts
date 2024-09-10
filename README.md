@@ -24,7 +24,7 @@ This will automatically instrument most of the LLM, Vector DB, and related
 calls with OpenTelemetry-compatible instrumentation.
 
 We rely on the amazing [OpenLLMetry](https://github.com/traceloop/openllmetry), open-source package
-by TraceLoop, to achieve that.
+by TraceLoop, to achieve that. Also this package uses Traceloop's [Openllmetry JS library](https://github.com/traceloop/openllmetry-js).
 
 ## Instrumentation
 
