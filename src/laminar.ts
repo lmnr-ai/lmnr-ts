@@ -19,7 +19,7 @@ interface LaminarInitializeProps {
 }
 
 export class Laminar {
-    private static baseUrl: string = 'https://api.lmnr.ai';
+    private static baseUrl: string = 'https://api.lmnr.ai:8443';
     private static projectApiKey: string;
     private static env: Record<string, string> = {};
     private static isInitialized: boolean = false;
