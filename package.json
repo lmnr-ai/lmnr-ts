@@ -32,7 +32,9 @@
     "typescript": "^5.5.4"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.11.2",
     "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.53.0",
     "@traceloop/ai-semantic-conventions": "^0.11.0",
     "@traceloop/node-server-sdk": "^0.11.1",
     "uuid": "^10.0.0"
