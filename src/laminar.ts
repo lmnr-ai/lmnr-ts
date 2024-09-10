@@ -2,7 +2,8 @@ import { PipelineRunResponse, PipelineRunRequest, EvaluationDatapoint, Evaluatio
 import { Attributes, AttributeValue, context, createContextKey, isSpanContextValid, TimeInput, trace } from '@opentelemetry/api';
 import { InitializeOptions, initialize as traceloopInitialize } from '@traceloop/node-server-sdk'
 import { otelSpanIdToUUID, otelTraceIdToUUID } from './utils';
-
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
+import { Metadata } from '@grpc/grpc-js';
 
 // quick patch to get the traceloop's default tracer, since their 
 // `getTracer` function is not exported.
@@ -19,7 +20,7 @@ interface LaminarInitializeProps {
 }
 
 export class Laminar {
-    private static baseUrl: string = 'https://api.lmnr.ai';
+    private static baseUrl: string = 'https://api.lmnr.ai:8443';
     private static projectApiKey: string;
     private static env: Record<string, string> = {};
     private static isInitialized: boolean = false;
@@ -34,8 +35,8 @@ export class Laminar {
      * @param env - Default environment passed to `run` and `evaluateEvent` requests,
      * unless overriden at request time. Usually, model provider keys are stored here.
      * @param baseUrl - Url of Laminar endpoint, or the custom open telemetry ingester.
-     * If not specified, defaults to https://api.lmnr.ai. For locally hosted Laminar,
-     * default setting must be http://localhost:8000.
+     * If not specified, defaults to https://api.lmnr.ai:8443. For locally hosted Laminar,
+     * default setting must be http://localhost:8001.
      *
      * @throws {Error} - If project API key is not set
      */
@@ -59,11 +60,19 @@ export class Laminar {
         }
         this.isInitialized = true;
         this.env = env ?? {};
+
+        const metadata = new Metadata();
+        metadata.set('authorization', `Bearer ${this.projectApiKey}`);
+        const exporter = new OTLPTraceExporter({
+            url: this.baseUrl,
+            metadata,
+        });
+
         traceloopInitialize({
-            apiKey: this.projectApiKey,
-            baseUrl: this.baseUrl,
+            exporter,
             silenceInitializationMessage: true,
             instrumentModules,
+            disableBatch: false,
         });
     }
 

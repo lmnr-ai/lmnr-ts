@@ -40,9 +40,9 @@ import { Laminar as L, observe } from '@lmnr-ai/lmnr';
 
 L.initialize({ projectApiKey: "<LMNR_PROJECT_API_KEY>" });
 
-const o = new OpenAI({ apiKey: '<OPENAI_API_KEY>' });
+const client = new OpenAI({ apiKey: '<OPENAI_API_KEY>' });
 
-async const poemWriter = (topic = "turbulence") => {
+const poemWriter = async (topic = "turbulence") => {
   const prompt = `write a poem about ${topic}`;
   const response = await client.chat.completions.create({
     model: "gpt-4o",
