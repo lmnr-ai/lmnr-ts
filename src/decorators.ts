@@ -1,4 +1,4 @@
-import { withTask } from '@traceloop/node-server-sdk'
+import { withTask } from './sdk/node-server-sdk'
 import { Laminar } from './laminar';
 
 interface ObserveOptions {
