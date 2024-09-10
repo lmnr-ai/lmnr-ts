@@ -72,6 +72,7 @@ export class Laminar {
             exporter,
             silenceInitializationMessage: true,
             instrumentModules,
+            disableBatch: false,
         });
     }
 
