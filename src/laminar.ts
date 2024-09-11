@@ -38,6 +38,8 @@ export class Laminar {
      * @param baseUrl - Url of Laminar endpoint, or the custom open telemetry ingester.
      * If not specified, defaults to https://api.lmnr.ai:8443. For locally hosted Laminar,
      * default setting must be http://localhost:8001.
+     * @param instrumentModules - List of modules to instrument. If not provided, all modules will be instrumented, which include
+     * LLM calls (OpenAI, Anthropic, etc), Langchain, VectorDB calls (Pinecone, Qdrant, etc).
      *
      * @throws {Error} - If project API key is not set
      */

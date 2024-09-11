@@ -1,4 +1,4 @@
-// import { initInstrumentations } from "./tracing";
+import { initInstrumentations } from "./tracing";
 
 export * from "./errors";
 export { InitializeOptions } from "./interfaces";
@@ -10,4 +10,4 @@ export * from "./tracing/association";
 export * from "./tracing/custom-metric";
 // export * from "./prompts";
 
-// initInstrumentations();
+initInstrumentations();
