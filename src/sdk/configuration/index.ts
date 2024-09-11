@@ -1,7 +1,6 @@
 import { InitializeOptions } from "../interfaces";
 import { validateConfiguration } from "./validation";
 import { startTracing } from "../tracing";
-import { initializeRegistry } from "../prompts/registry";
 import { diag, DiagConsoleLogger, DiagLogLevel } from "@opentelemetry/api";
 
 export let _configuration: InitializeOptions | undefined;
@@ -76,7 +75,7 @@ export const initialize = (options: InitializeOptions) => {
   }
 
   startTracing(_configuration);
-  initializeRegistry(_configuration);
+  // initializeRegistry(_configuration);
 };
 
 const logLevelToOtelLogLevel = (
