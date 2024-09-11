@@ -24,8 +24,8 @@ export class Telemetry {
 
   private constructor() {
     this.telemetryEnabled =
-      !process.env.LAMINAR_TELEMETRY ||
-      process.env.LAMINAR_TELEMETRY.toLowerCase() === "true";
+      !process.env.LMNR_TELEMETRY ||
+      process.env.LMNR_TELEMETRY.toLowerCase() === "true";
 
     if (this.telemetryEnabled) {
       this.posthog = new PostHog(

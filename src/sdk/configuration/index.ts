@@ -6,7 +6,7 @@ import { diag, DiagConsoleLogger, DiagLogLevel } from "@opentelemetry/api";
 export let _configuration: InitializeOptions | undefined;
 
 /**
- * Initializes the Traceloop SDK.
+ * Initializes the SDK.
  * Must be called once before any other SDK methods.
  *
  * @param options - The options to initialize the SDK. See the {@link InitializeOptions} for details.
@@ -19,10 +19,10 @@ export const initialize = (options: InitializeOptions) => {
 
   if (!options.baseUrl) {
     options.baseUrl =
-      process.env.TRACELOOP_BASE_URL || "https://api.traceloop.com";
+      process.env.LMNR_BASE_URL || "https://api.lmnr.ai:8443";
   }
   if (!options.apiKey) {
-    options.apiKey = process.env.TRACELOOP_API_KEY;
+    options.apiKey = process.env.LMNR_PROJECT_API_KEY;
   }
   if (!options.appName) {
     options.appName = process.env.npm_package_name;
@@ -68,7 +68,7 @@ export const initialize = (options: InitializeOptions) => {
 
   if (!options.silenceInitializationMessage) {
     console.log(
-      `Traceloop exporting traces to ${
+      `Laminar exporting traces to ${
         _configuration.exporter ? "a custom exporter" : _configuration.baseUrl
       }`,
     );

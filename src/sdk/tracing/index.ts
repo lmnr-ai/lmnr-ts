@@ -278,6 +278,7 @@ export const startTracing = (options: InitializeOptions) => {
       );
     }
 
+    // This sets the properties only if the context has them
     const associationProperties = context
       .active()
       .getValue(ASSOCATION_PROPERTIES_KEY);

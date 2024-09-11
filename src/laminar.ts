@@ -4,6 +4,7 @@ import { InitializeOptions, initialize as traceloopInitialize } from './sdk/node
 import { otelSpanIdToUUID, otelTraceIdToUUID } from './utils';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { Metadata } from '@grpc/grpc-js';
+import { ASSOCATION_PROPERTIES_KEY } from './sdk/tracing/tracing';
 
 // quick patch to get the traceloop's default tracer, since their 
 // `getTracer` function is not exported.
@@ -241,6 +242,7 @@ export class Laminar {
         currentSpan.addEvent(name, event, timestamp);
     }
 
+    
     /**
      * Sets the session information for the current span and returns the context to use for the following spans.
      * 
@@ -278,6 +280,7 @@ export class Laminar {
         }
         return context.active().setValue(createContextKey("association_properites"), associationProperties);
     }
+
 
     public static async createEvaluation(name: string) {
         const response = await fetch(`${this.baseUrl}/v1/evaluations`, {
