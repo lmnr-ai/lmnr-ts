@@ -53,9 +53,8 @@ let pineconeInstrumentation: PineconeInstrumentation | undefined;
 let chromadbInstrumentation: ChromaDBInstrumentation | undefined;
 let qdrantInstrumentation: QdrantInstrumentation | undefined;
 
-const instrumentations: Instrumentation[] = [];
-
 export const initInstrumentations = () => {
+  const instrumentations: Instrumentation[] = [];
   const exceptionLogger = (e: Error) => Telemetry.getInstance().logException(e);
   const enrichTokens =
     (process.env.TRACELOOP_ENRICH_TOKENS || "true").toLowerCase() === "true";
@@ -106,17 +105,17 @@ export const initInstrumentations = () => {
 
   qdrantInstrumentation = new QdrantInstrumentation({ exceptionLogger });
   instrumentations.push(qdrantInstrumentation);
+
+  return instrumentations;
 };
 
 export const manuallyInitInstrumentations = (
   instrumentModules: InitializeOptions["instrumentModules"],
 ) => {
+  const instrumentations: Instrumentation[] = [];
   const exceptionLogger = (e: Error) => Telemetry.getInstance().logException(e);
   const enrichTokens =
     (process.env.TRACELOOP_ENRICH_TOKENS || "true").toLowerCase() === "true";
-
-  // Clear the instrumentations array that was initialized by default
-  instrumentations.length = 0;
 
   if (instrumentModules?.openAI) {
     openAIInstrumentation = new OpenAIInstrumentation({
@@ -207,6 +206,8 @@ export const manuallyInitInstrumentations = (
     instrumentations.push(qdrantInstrumentation);
     qdrantInstrumentation.manuallyInstrument(instrumentModules.qdrant);
   }
+
+  return instrumentations;
 };
 
 /**
@@ -217,9 +218,15 @@ export const manuallyInitInstrumentations = (
  * @throws {InitializationError} if the configuration is invalid or if failed to fetch feature data.
  */
 export const startTracing = (options: InitializeOptions) => {
-  if (Object.keys(options.instrumentModules || {}).length > 0) {
-    manuallyInitInstrumentations(options.instrumentModules);
+  let instrumentations: Instrumentation[];
+  if (options.instrumentModules !== undefined) {
+    // If options.instrumentModules is empty, it will not initialize anything,
+    // so empty dict can essentially be passed to disable any kind of automatic instrumentation.
+    instrumentations = manuallyInitInstrumentations(options.instrumentModules);
+  } else {
+    instrumentations = initInstrumentations();
   }
+
   if (!shouldSendTraces()) {
     openAIInstrumentation?.setConfig({
       traceContent: false,

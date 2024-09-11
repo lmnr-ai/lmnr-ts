@@ -37,8 +37,26 @@ export class Laminar {
      * @param baseUrl - Url of Laminar endpoint, or the custom open telemetry ingester.
      * If not specified, defaults to https://api.lmnr.ai:8443. For locally hosted Laminar,
      * default setting must be http://localhost:8001.
-     * @param instrumentModules - List of modules to instrument. If not provided, all modules will be instrumented, which include
+     * @param instrumentModules - List of modules to instrument.
+     * If not specified, all auto-instrumentable modules will be instrumented, which include
      * LLM calls (OpenAI, Anthropic, etc), Langchain, VectorDB calls (Pinecone, Qdrant, etc).
+     * Pass an empty object {} to disable any kind of automatic instrumentation.
+     * If you only want to auto-instrument specific modules, then pass them in the object.
+     * 
+     * Example:
+     * ```typescript
+     * import { Laminar as L } from '@lmnr-ai/lmnr';
+     * import { OpenAI } from 'openai';
+     * import * as ChainsModule from "langchain/chains";
+     * 
+     * // Initialize Laminar while auto-instrumenting Langchain and OpenAI modules.
+     * L.initialize({ projectApiKey: "<LMNR_PROJECT_API_KEY>", instrumentModules: {
+     *  langchain: {
+     *      chainsModule: ChainsModule
+     *  },
+     *  openAI: OpenAI
+     * } });
+     * ```
      *
      * @throws {Error} - If project API key is not set
      */
