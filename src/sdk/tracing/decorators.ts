@@ -120,7 +120,7 @@ function withEntity<
               );
             }
           } catch (error) {
-            Telemetry.getInstance().logException(error);
+            Telemetry.getInstance().logException(error as any);
           }
         }
 
@@ -135,7 +135,7 @@ function withEntity<
                 );
               }
             } catch (error) {
-              Telemetry.getInstance().logException(error);
+              Telemetry.getInstance().logException(error as any);
             } finally {
               span.end();
             }
@@ -151,7 +151,7 @@ function withEntity<
             );
           }
         } catch (error) {
-          Telemetry.getInstance().logException(error);
+          Telemetry.getInstance().logException(error as any);
         } finally {
           span.end();
         }

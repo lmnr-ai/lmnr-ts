@@ -3,12 +3,12 @@ import * as fs from "fs";
 import * as path from "path";
 import { v4 as uuid } from "uuid";
 import { PostHog } from "posthog-node";
-import { version } from "../../../package.json";
+const { version } = require('../../../package.json');
 
 export class Telemetry {
   private static instance: Telemetry;
 
-  private static readonly ANON_ID_PATH = `${os.homedir()}/.cache/traceloop/telemetry_anon_id`;
+  private static readonly ANON_ID_PATH = `${os.homedir()}/.cache/lmnr/telemetry_anon_id`;
   private static readonly UNKNOWN_ANON_ID = "UNKNOWN";
 
   private telemetryEnabled: boolean;
@@ -24,12 +24,12 @@ export class Telemetry {
 
   private constructor() {
     this.telemetryEnabled =
-      !process.env.TRACELOOP_TELEMETRY ||
-      process.env.TRACELOOP_TELEMETRY.toLowerCase() === "true";
+      !process.env.LAMINAR_TELEMETRY ||
+      process.env.LAMINAR_TELEMETRY.toLowerCase() === "true";
 
     if (this.telemetryEnabled) {
       this.posthog = new PostHog(
-        "phc_JMTeAfG8OpaPsyHzSBtqquMvko1fmOHcW0gyqLCrF3t",
+        "phc_dUMdjfNKf11jcHgtn7juSnT4P1pO0tafsPUWt4PuwG7",
       );
     }
   }
