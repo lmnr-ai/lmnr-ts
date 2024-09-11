@@ -75,7 +75,6 @@ export const initialize = (options: InitializeOptions) => {
   }
 
   startTracing(_configuration);
-  // initializeRegistry(_configuration);
 };
 
 const logLevelToOtelLogLevel = (
