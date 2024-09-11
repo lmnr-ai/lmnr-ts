@@ -37,6 +37,22 @@ import { PineconeInstrumentation } from "@traceloop/instrumentation-pinecone";
 import { LangChainInstrumentation } from "@traceloop/instrumentation-langchain";
 import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
 import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
+import * as openai from "openai";
+import * as anthropic from "@anthropic-ai/sdk";
+// import * as azure from "@azure/openai";
+import * as cohere from "cohere-ai";
+import * as bedrock from "@aws-sdk/client-bedrock-runtime";
+import * as aiplatform from "@google-cloud/aiplatform";
+import * as vertexAI from "@google-cloud/vertexai";
+import * as pinecone from "@pinecone-database/pinecone";
+import * as ChainsModule from "langchain/chains";
+import * as AgentsModule from "langchain/agents";
+import * as ToolsModule from "langchain/tools";
+import * as RunnableModule from "@langchain/core/runnables";
+import * as VectorStoreModule from "@langchain/core/vectorstores";
+import * as llamaindex from "llamaindex";
+import * as chromadb from "chromadb";
+import * as qdrant from "@qdrant/js-client-rest";
 
 let _sdk: NodeSDK;
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor;
@@ -53,61 +69,63 @@ let pineconeInstrumentation: PineconeInstrumentation | undefined;
 let chromadbInstrumentation: ChromaDBInstrumentation | undefined;
 let qdrantInstrumentation: QdrantInstrumentation | undefined;
 
-export const initInstrumentations = () => {
-  const instrumentations: Instrumentation[] = [];
-  const exceptionLogger = (e: Error) => Telemetry.getInstance().logException(e);
-  const enrichTokens =
-    (process.env.TRACELOOP_ENRICH_TOKENS || "true").toLowerCase() === "true";
+// NOTE: Figure out about autoinstrumentation
+// Due to some reason, with current implementation, need to apply each of them manually.
+// export const initInstrumentations = () => {
+//   const instrumentations: Instrumentation[] = [];
+//   const exceptionLogger = (e: Error) => Telemetry.getInstance().logException(e);
+//   const enrichTokens =
+//     (process.env.TRACELOOP_ENRICH_TOKENS || "true").toLowerCase() === "true";
 
-  openAIInstrumentation = new OpenAIInstrumentation({
-    enrichTokens,
-    exceptionLogger,
-  });
-  instrumentations.push(openAIInstrumentation);
+//   openAIInstrumentation = new OpenAIInstrumentation({
+//     enrichTokens,
+//     exceptionLogger,
+//   });
+//   instrumentations.push(openAIInstrumentation);
 
-  anthropicInstrumentation = new AnthropicInstrumentation({ exceptionLogger });
-  instrumentations.push(anthropicInstrumentation);
+//   anthropicInstrumentation = new AnthropicInstrumentation({ exceptionLogger });
+//   instrumentations.push(anthropicInstrumentation);
 
-  azureOpenAIInstrumentation = new AzureOpenAIInstrumentation({
-    exceptionLogger,
-  });
-  instrumentations.push(azureOpenAIInstrumentation);
+//   azureOpenAIInstrumentation = new AzureOpenAIInstrumentation({
+//     exceptionLogger,
+//   });
+//   instrumentations.push(azureOpenAIInstrumentation);
 
-  cohereInstrumentation = new CohereInstrumentation({ exceptionLogger });
-  instrumentations.push(cohereInstrumentation);
+//   cohereInstrumentation = new CohereInstrumentation({ exceptionLogger });
+//   instrumentations.push(cohereInstrumentation);
 
-  vertexaiInstrumentation = new VertexAIInstrumentation({
-    exceptionLogger,
-  });
-  instrumentations.push(vertexaiInstrumentation);
+//   vertexaiInstrumentation = new VertexAIInstrumentation({
+//     exceptionLogger,
+//   });
+//   instrumentations.push(vertexaiInstrumentation);
 
-  aiplatformInstrumentation = new AIPlatformInstrumentation({
-    exceptionLogger,
-  });
-  instrumentations.push(aiplatformInstrumentation);
+//   aiplatformInstrumentation = new AIPlatformInstrumentation({
+//     exceptionLogger,
+//   });
+//   instrumentations.push(aiplatformInstrumentation);
 
-  bedrockInstrumentation = new BedrockInstrumentation({ exceptionLogger });
-  instrumentations.push(bedrockInstrumentation);
+//   bedrockInstrumentation = new BedrockInstrumentation({ exceptionLogger });
+//   instrumentations.push(bedrockInstrumentation);
 
-  pineconeInstrumentation = new PineconeInstrumentation({ exceptionLogger });
-  instrumentations.push(pineconeInstrumentation);
+//   pineconeInstrumentation = new PineconeInstrumentation({ exceptionLogger });
+//   instrumentations.push(pineconeInstrumentation);
 
-  langchainInstrumentation = new LangChainInstrumentation({ exceptionLogger });
-  instrumentations.push(langchainInstrumentation);
+//   langchainInstrumentation = new LangChainInstrumentation({ exceptionLogger });
+//   instrumentations.push(langchainInstrumentation);
 
-  llamaIndexInstrumentation = new LlamaIndexInstrumentation({
-    exceptionLogger,
-  });
-  instrumentations.push(llamaIndexInstrumentation);
+//   llamaIndexInstrumentation = new LlamaIndexInstrumentation({
+//     exceptionLogger,
+//   });
+//   instrumentations.push(llamaIndexInstrumentation);
 
-  chromadbInstrumentation = new ChromaDBInstrumentation({ exceptionLogger });
-  instrumentations.push(chromadbInstrumentation);
+//   chromadbInstrumentation = new ChromaDBInstrumentation({ exceptionLogger });
+//   instrumentations.push(chromadbInstrumentation);
 
-  qdrantInstrumentation = new QdrantInstrumentation({ exceptionLogger });
-  instrumentations.push(qdrantInstrumentation);
+//   qdrantInstrumentation = new QdrantInstrumentation({ exceptionLogger });
+//   instrumentations.push(qdrantInstrumentation);
 
-  return instrumentations;
-};
+//   return instrumentations;
+// };
 
 export const manuallyInitInstrumentations = (
   instrumentModules: InitializeOptions["instrumentModules"],
@@ -224,7 +242,28 @@ export const startTracing = (options: InitializeOptions) => {
     // so empty dict can essentially be passed to disable any kind of automatic instrumentation.
     instrumentations = manuallyInitInstrumentations(options.instrumentModules);
   } else {
-    instrumentations = initInstrumentations();
+    // TODO: Use initInstrumentations() instead of manuallyInitInstrumentations()
+    const instrumentModules = {
+      openAI: openai.OpenAI,
+      anthropic,
+      // azureOpenAI: azure, --> TODO: Figure this out
+      cohere,
+      bedrock,
+      google_vertexai: vertexAI,
+      google_aiplatform: aiplatform,
+      pinecone,
+      langchain: {
+        chainsModule: ChainsModule,
+        agentsModule: AgentsModule,
+        toolsModule: ToolsModule,
+        runnablesModule: RunnableModule,
+        vectorStoreModule: VectorStoreModule,
+      },
+      llamaIndex: llamaindex,
+      chromadb,
+      qdrant,
+    };
+    instrumentations = manuallyInitInstrumentations(instrumentModules);
   }
 
   if (!shouldSendTraces()) {
