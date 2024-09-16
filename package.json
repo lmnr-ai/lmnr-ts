@@ -65,6 +65,7 @@
     "@traceloop/instrumentation-chromadb": "^0.11.1",
     "@traceloop/instrumentation-cohere": "^0.11.1",
     "@traceloop/instrumentation-langchain": "^0.11.1",
+    "@traceloop/instrumentation-llamaindex": "^0.11.1",
     "@traceloop/instrumentation-openai": "^0.11.1",
     "@traceloop/instrumentation-pinecone": "^0.11.1",
     "@traceloop/instrumentation-qdrant": "^0.11.1",

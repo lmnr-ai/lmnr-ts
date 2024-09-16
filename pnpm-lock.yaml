@@ -62,6 +62,9 @@ importers:
       '@traceloop/instrumentation-langchain':
         specifier: ^0.11.1
         version: 0.11.1(@opentelemetry/api@1.9.0)
+      '@traceloop/instrumentation-llamaindex':
+        specifier: ^0.11.1
+        version: 0.11.1(@opentelemetry/api@1.9.0)
       '@traceloop/instrumentation-openai':
         specifier: ^0.11.1
         version: 0.11.1(@opentelemetry/api@1.9.0)
@@ -1201,6 +1204,10 @@ packages:
 
   '@traceloop/instrumentation-langchain@0.11.1':
     resolution: {integrity: sha512-KUn8Sm/apjdU9xvmFJOPeWw+aXicHslS8FUUyAYCt6PsTp+LiWEa4uivXR8CX/6EGrA7Rbw/jEorg3Vx79/iNA==}
+    engines: {node: '>=14'}
+
+  '@traceloop/instrumentation-llamaindex@0.11.1':
+    resolution: {integrity: sha512-3YP3svb0VU9Q51Ggud8QxjKfn35l+3ha0dGYg4wPo8Q5GRUjNTWl306473x5KGinbqIHQS8ozG7WHIs4Hvn16A==}
     engines: {node: '>=14'}
 
   '@traceloop/instrumentation-openai@0.11.1':
@@ -5012,6 +5019,18 @@ snapshots:
       '@opentelemetry/instrumentation': 0.53.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/semantic-conventions': 1.27.0
       '@traceloop/ai-semantic-conventions': 0.11.0
+      tslib: 2.7.0
+    transitivePeerDependencies:
+      - '@opentelemetry/api'
+      - supports-color
+
+  '@traceloop/instrumentation-llamaindex@0.11.1(@opentelemetry/api@1.9.0)':
+    dependencies:
+      '@opentelemetry/core': 1.26.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/instrumentation': 0.53.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/semantic-conventions': 1.27.0
+      '@traceloop/ai-semantic-conventions': 0.11.0
+      lodash: 4.17.21
       tslib: 2.7.0
     transitivePeerDependencies:
       - '@opentelemetry/api'
