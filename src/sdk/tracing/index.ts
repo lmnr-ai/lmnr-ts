@@ -13,20 +13,25 @@ import { SEMRESATTRS_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { Instrumentation } from "@opentelemetry/instrumentation";
 import { InitializeOptions } from "../interfaces";
 import {
-  ASSOCATION_PROPERTIES_KEY,
-  ENTITY_NAME_KEY,
-  WORKFLOW_NAME_KEY,
+  Detector,
+  DetectorSync,
+  IResource,
+  ResourceDetectionConfig,
+  envDetectorSync,
+  hostDetectorSync,
+  processDetectorSync,
+} from "@opentelemetry/resources"
+import {
+  ASSOCIATION_PROPERTIES_KEY,
 } from "./tracing";
 import { Telemetry } from "../telemetry/telemetry";
 import { _configuration } from "../configuration";
 import {
-  CONTEXT_KEY_ALLOW_TRACE_CONTENT,
   SpanAttributes,
 } from "@traceloop/ai-semantic-conventions";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
 import { AzureOpenAIInstrumentation } from "@traceloop/instrumentation-azure";
-import { LlamaIndexInstrumentation } from "@traceloop/instrumentation-llamaindex";
 import {
   AIPlatformInstrumentation,
   VertexAIInstrumentation,
@@ -50,9 +55,9 @@ import * as AgentsModule from "langchain/agents";
 import * as ToolsModule from "langchain/tools";
 import * as RunnableModule from "@langchain/core/runnables";
 import * as VectorStoreModule from "@langchain/core/vectorstores";
-import * as llamaindex from "llamaindex";
 import * as chromadb from "chromadb";
 import * as qdrant from "@qdrant/js-client-rest";
+import { context as contextApi } from '@opentelemetry/api';
 
 let _sdk: NodeSDK;
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor;
@@ -64,7 +69,6 @@ let vertexaiInstrumentation: VertexAIInstrumentation | undefined;
 let aiplatformInstrumentation: AIPlatformInstrumentation | undefined;
 let bedrockInstrumentation: BedrockInstrumentation | undefined;
 let langchainInstrumentation: LangChainInstrumentation | undefined;
-let llamaIndexInstrumentation: LlamaIndexInstrumentation | undefined;
 let pineconeInstrumentation: PineconeInstrumentation | undefined;
 let chromadbInstrumentation: ChromaDBInstrumentation | undefined;
 let qdrantInstrumentation: QdrantInstrumentation | undefined;
@@ -112,11 +116,6 @@ let qdrantInstrumentation: QdrantInstrumentation | undefined;
 
 //   langchainInstrumentation = new LangChainInstrumentation({ exceptionLogger });
 //   instrumentations.push(langchainInstrumentation);
-
-//   llamaIndexInstrumentation = new LlamaIndexInstrumentation({
-//     exceptionLogger,
-//   });
-//   instrumentations.push(llamaIndexInstrumentation);
 
 //   chromadbInstrumentation = new ChromaDBInstrumentation({ exceptionLogger });
 //   instrumentations.push(chromadbInstrumentation);
@@ -205,14 +204,6 @@ export const manuallyInitInstrumentations = (
     langchainInstrumentation.manuallyInstrument(instrumentModules.langchain);
   }
 
-  if (instrumentModules?.llamaIndex) {
-    llamaIndexInstrumentation = new LlamaIndexInstrumentation({
-      exceptionLogger,
-    });
-    instrumentations.push(llamaIndexInstrumentation);
-    llamaIndexInstrumentation.manuallyInstrument(instrumentModules.llamaIndex);
-  }
-
   if (instrumentModules?.chromadb) {
     chromadbInstrumentation = new ChromaDBInstrumentation({ exceptionLogger });
     instrumentations.push(chromadbInstrumentation);
@@ -228,12 +219,22 @@ export const manuallyInitInstrumentations = (
   return instrumentations;
 };
 
+function awaitAttributes(detector: DetectorSync): Detector {
+  return {
+    async detect(config?: ResourceDetectionConfig): Promise<IResource> {
+      const resource = detector.detect(config)
+      await resource.waitForAsyncAttributes?.()
+
+      return resource
+    },
+  }
+}
+
 /**
  * Initializes the Traceloop SDK.
  * Must be called once before any other SDK methods.
  *
  * @param options - The options to initialize the SDK. See the {@link InitializeOptions} for details.
- * @throws {InitializationError} if the configuration is invalid or if failed to fetch feature data.
  */
 export const startTracing = (options: InitializeOptions) => {
   let instrumentations: Instrumentation[];
@@ -259,7 +260,6 @@ export const startTracing = (options: InitializeOptions) => {
         runnablesModule: RunnableModule,
         vectorStoreModule: VectorStoreModule,
       },
-      llamaIndex: llamaindex,
       chromadb,
       qdrant,
     };
@@ -271,9 +271,6 @@ export const startTracing = (options: InitializeOptions) => {
       traceContent: false,
     });
     azureOpenAIInstrumentation?.setConfig({
-      traceContent: false,
-    });
-    llamaIndexInstrumentation?.setConfig({
       traceContent: false,
     });
     vertexaiInstrumentation?.setConfig({
@@ -308,26 +305,10 @@ export const startTracing = (options: InitializeOptions) => {
     : new BatchSpanProcessor(traceExporter);
 
   _spanProcessor.onStart = (span: Span) => {
-    const workflowName = context.active().getValue(WORKFLOW_NAME_KEY);
-    if (workflowName) {
-      span.setAttribute(
-        SpanAttributes.TRACELOOP_WORKFLOW_NAME,
-        workflowName as string,
-      );
-    }
-
-    const entityName = context.active().getValue(ENTITY_NAME_KEY);
-    if (entityName) {
-      span.setAttribute(
-        SpanAttributes.TRACELOOP_ENTITY_PATH,
-        entityName as string,
-      );
-    }
-
     // This sets the properties only if the context has them
     const associationProperties = context
       .active()
-      .getValue(ASSOCATION_PROPERTIES_KEY);
+      .getValue(ASSOCIATION_PROPERTIES_KEY);
     if (associationProperties) {
       for (const [key, value] of Object.entries(associationProperties)) {
         span.setAttribute(
@@ -367,6 +348,11 @@ export const startTracing = (options: InitializeOptions) => {
     instrumentations,
     // We should re-consider removing irrelevant spans here in the future
     // sampler: new TraceloopSampler(),
+    resourceDetectors: [
+      awaitAttributes(envDetectorSync),
+      awaitAttributes(processDetectorSync),
+      awaitAttributes(hostDetectorSync),
+    ],
   });
 
   _sdk.start();
@@ -376,14 +362,6 @@ export const shouldSendTraces = () => {
   if (!_configuration) {
     diag.warn("Traceloop not initialized");
     return false;
-  }
-
-  const contextShouldSendPrompts = context
-    .active()
-    .getValue(CONTEXT_KEY_ALLOW_TRACE_CONTENT);
-
-  if (contextShouldSendPrompts !== undefined) {
-    return contextShouldSendPrompts;
   }
 
   if (

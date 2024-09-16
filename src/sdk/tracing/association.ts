@@ -1,5 +1,5 @@
 import { context } from "@opentelemetry/api";
-import { ASSOCATION_PROPERTIES_KEY } from "./tracing";
+import { ASSOCIATION_PROPERTIES_KEY } from "./tracing";
 
 export function withAssociationProperties<
   A extends unknown[],
@@ -16,6 +16,6 @@ export function withAssociationProperties<
 
   const newContext = context
     .active()
-    .setValue(ASSOCATION_PROPERTIES_KEY, properties);
+    .setValue(ASSOCIATION_PROPERTIES_KEY, properties);
   return context.with(newContext, fn, thisArg, ...args);
 }

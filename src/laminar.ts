@@ -4,6 +4,7 @@ import { InitializeOptions, initialize as traceloopInitialize } from './sdk/node
 import { otelSpanIdToUUID, otelTraceIdToUUID } from './utils';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { Metadata } from '@grpc/grpc-js';
+import { ASSOCIATION_PROPERTIES_KEY } from './sdk/tracing/tracing';
 
 // quick patch to get the traceloop's default tracer, since their 
 // `getTracer` function is not exported.
@@ -296,7 +297,17 @@ export class Laminar {
         if (userId) {
             associationProperties = { ...associationProperties, "user_id": userId };
         }
-        return context.active().setValue(createContextKey("association_properites"), associationProperties);
+
+        let entityContext = context.active();
+        const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY);
+        if (associationProperties) {
+            entityContext = entityContext.setValue(
+                ASSOCIATION_PROPERTIES_KEY,
+                { ...(currentAssociationProperties ?? {}), ...associationProperties },
+            );
+        }
+
+        return entityContext;
     }
 
     public static async createEvaluation(name: string) {

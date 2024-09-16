@@ -1,5 +1,4 @@
-import { withTask } from './sdk/node-server-sdk'
-import { Laminar } from './laminar';
+import { withEntity } from './sdk/node-server-sdk'
 
 interface ObserveOptions {
     name?: string;
@@ -32,9 +31,6 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
         userId,
     }: ObserveOptions, fn: F, ...args: A): Promise<ReturnType<F>> {
 
-    if (!Laminar.initialized()) {
-        throw new Error('Laminar not initialized. Please call Laminar.initialize(projectApiKey) before using observe.');
-    };
     let associationProperties = {};
     if (sessionId) {
         associationProperties = { ...associationProperties, "session_id": sessionId };
@@ -42,5 +38,6 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     if (userId) {
         associationProperties = { ...associationProperties, "user_id": userId };
     }
-    return await withTask<A, F>({ name: name ?? fn.name, associationProperties }, fn, ...args);
+
+    return await withEntity<A, F>({ name: name ?? fn.name, associationProperties }, fn, undefined, ...args);
 }
