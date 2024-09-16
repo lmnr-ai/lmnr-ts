@@ -1,9 +1,10 @@
 import { PipelineRunResponse, PipelineRunRequest, EvaluationDatapoint, EvaluationStatus } from './types';
 import { Attributes, AttributeValue, context, createContextKey, isSpanContextValid, TimeInput, trace } from '@opentelemetry/api';
-import { InitializeOptions, initialize as traceloopInitialize } from '@traceloop/node-server-sdk'
+import { InitializeOptions, initialize as traceloopInitialize } from './sdk/node-server-sdk'
 import { otelSpanIdToUUID, otelTraceIdToUUID } from './utils';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { Metadata } from '@grpc/grpc-js';
+import { ASSOCIATION_PROPERTIES_KEY } from './sdk/tracing/tracing';
 
 // quick patch to get the traceloop's default tracer, since their 
 // `getTracer` function is not exported.
@@ -37,6 +38,26 @@ export class Laminar {
      * @param baseUrl - Url of Laminar endpoint, or the custom open telemetry ingester.
      * If not specified, defaults to https://api.lmnr.ai:8443. For locally hosted Laminar,
      * default setting must be http://localhost:8001.
+     * @param instrumentModules - List of modules to instrument.
+     * If not specified, all auto-instrumentable modules will be instrumented, which include
+     * LLM calls (OpenAI, Anthropic, etc), Langchain, VectorDB calls (Pinecone, Qdrant, etc).
+     * Pass an empty object {} to disable any kind of automatic instrumentation.
+     * If you only want to auto-instrument specific modules, then pass them in the object.
+     * 
+     * Example:
+     * ```typescript
+     * import { Laminar as L } from '@lmnr-ai/lmnr';
+     * import { OpenAI } from 'openai';
+     * import * as ChainsModule from "langchain/chains";
+     * 
+     * // Initialize Laminar while auto-instrumenting Langchain and OpenAI modules.
+     * L.initialize({ projectApiKey: "<LMNR_PROJECT_API_KEY>", instrumentModules: {
+     *  langchain: {
+     *      chainsModule: ChainsModule
+     *  },
+     *  openAI: OpenAI
+     * } });
+     * ```
      *
      * @throws {Error} - If project API key is not set
      */
@@ -276,7 +297,17 @@ export class Laminar {
         if (userId) {
             associationProperties = { ...associationProperties, "user_id": userId };
         }
-        return context.active().setValue(createContextKey("association_properites"), associationProperties);
+
+        let entityContext = context.active();
+        const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY);
+        if (associationProperties) {
+            entityContext = entityContext.setValue(
+                ASSOCIATION_PROPERTIES_KEY,
+                { ...(currentAssociationProperties ?? {}), ...associationProperties },
+            );
+        }
+
+        return entityContext;
     }
 
     public static async createEvaluation(name: string) {
