@@ -5,6 +5,7 @@ import { otelSpanIdToUUID, otelTraceIdToUUID } from './utils';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { Metadata } from '@grpc/grpc-js';
 import { ASSOCIATION_PROPERTIES_KEY } from './sdk/tracing/tracing';
+import { forceFlush } from './sdk/node-server-sdk';
 
 // quick patch to get the traceloop's default tracer, since their 
 // `getTracer` function is not exported.
@@ -93,7 +94,7 @@ export class Laminar {
             exporter,
             silenceInitializationMessage: true,
             instrumentModules,
-            disableBatch: true,
+            disableBatch: false,
         });
     }
 
@@ -308,6 +309,10 @@ export class Laminar {
         }
 
         return entityContext;
+    }
+
+    public static async shutdown() {
+        await forceFlush();
     }
 
     public static async createEvaluation(name: string) {
