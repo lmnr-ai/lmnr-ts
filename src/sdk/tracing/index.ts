@@ -3,24 +3,12 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import {
   SimpleSpanProcessor,
   BatchSpanProcessor,
-  SpanProcessor,
 } from "@opentelemetry/sdk-trace-node";
 import { baggageUtils } from "@opentelemetry/core";
 import { Span, context, diag } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
-import { Resource } from "@opentelemetry/resources";
-import { SEMRESATTRS_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { Instrumentation } from "@opentelemetry/instrumentation";
 import { InitializeOptions } from "../interfaces";
-import {
-  Detector,
-  DetectorSync,
-  IResource,
-  ResourceDetectionConfig,
-  envDetectorSync,
-  hostDetectorSync,
-  processDetectorSync,
-} from "@opentelemetry/resources"
 import {
   ASSOCIATION_PROPERTIES_KEY,
 } from "./tracing";
@@ -29,6 +17,8 @@ import { _configuration } from "../configuration";
 import {
   SpanAttributes,
 } from "@traceloop/ai-semantic-conventions";
+import {NodeTracerProvider} from "@opentelemetry/sdk-trace-node";
+import {registerInstrumentations} from "@opentelemetry/instrumentation";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
 import { AzureOpenAIInstrumentation } from "@traceloop/instrumentation-azure";
@@ -44,7 +34,6 @@ import { LangChainInstrumentation } from "@traceloop/instrumentation-langchain";
 import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
 import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
 
-let _sdk: NodeSDK;
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor;
 let openAIInstrumentation: OpenAIInstrumentation | undefined;
 let anthropicInstrumentation: AnthropicInstrumentation | undefined;
@@ -215,17 +204,6 @@ const manuallyInitInstrumentations = (
   }
 };
 
-function awaitAttributes(detector: DetectorSync): Detector {
-  return {
-    async detect(config?: ResourceDetectionConfig): Promise<IResource> {
-      const resource = detector.detect(config)
-      await resource.waitForAsyncAttributes?.()
-
-      return resource
-    },
-  }
-}
-
 /**
  * Initializes the Traceloop SDK.
  * Must be called once before any other SDK methods.
@@ -309,31 +287,13 @@ export const startTracing = (options: InitializeOptions) => {
     });
   }
 
-  const spanProcessors: SpanProcessor[] = [_spanProcessor];
-  if (options.processor) {
-    spanProcessors.push(options.processor);
-  }
-
-  _sdk = new NodeSDK({
-    resource: new Resource({
-      [SEMRESATTRS_SERVICE_NAME]:
-        options.appName || process.env.npm_package_name,
-    }),
-    spanProcessors,
-    contextManager: options.contextManager,
-    textMapPropagator: options.propagator,
-    traceExporter,
+  const provider = new NodeTracerProvider();
+  provider.addSpanProcessor(_spanProcessor);
+  provider.register();
+  registerInstrumentations({
     instrumentations,
-    // We should re-consider removing irrelevant spans here in the future
-    // sampler: new TraceloopSampler(),
-    resourceDetectors: [
-      awaitAttributes(envDetectorSync),
-      awaitAttributes(processDetectorSync),
-      awaitAttributes(hostDetectorSync),
-    ],
+    tracerProvider: provider,
   });
-
-  _sdk.start();
 };
 
 export const shouldSendTraces = () => {
