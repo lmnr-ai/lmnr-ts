@@ -1,9 +1,13 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-import { NodeSDK } from "@opentelemetry/sdk-node";
 import {
   SimpleSpanProcessor,
   BatchSpanProcessor,
-} from "@opentelemetry/sdk-trace-node";
+} from "@opentelemetry/sdk-trace-base";
+import * as semver from 'semver';
+import {
+  AsyncHooksContextManager,
+  AsyncLocalStorageContextManager,
+} from '@opentelemetry/context-async-hooks';
 import { baggageUtils } from "@opentelemetry/core";
 import { Span, context, diag } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
@@ -17,7 +21,7 @@ import { _configuration } from "../configuration";
 import {
   SpanAttributes,
 } from "@traceloop/ai-semantic-conventions";
-import {NodeTracerProvider} from "@opentelemetry/sdk-trace-node";
+import {BasicTracerProvider, SDKRegistrationConfig} from "@opentelemetry/sdk-trace-base";
 import {registerInstrumentations} from "@opentelemetry/instrumentation";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
@@ -47,6 +51,25 @@ let llamaIndexInstrumentation: LlamaIndexInstrumentation | undefined;
 let pineconeInstrumentation: PineconeInstrumentation | undefined;
 let chromadbInstrumentation: ChromaDBInstrumentation | undefined;
 let qdrantInstrumentation: QdrantInstrumentation | undefined;
+
+
+class NodeTracerProvider extends BasicTracerProvider {
+  constructor(config = {}) {
+    super(config);
+  }
+
+  override register(config: SDKRegistrationConfig = {}): void {
+    if (config.contextManager === undefined) {
+      const ContextManager = semver.gte(process.version, '14.8.0')
+        ? AsyncLocalStorageContextManager
+        : AsyncHooksContextManager;
+      config.contextManager = new ContextManager();
+      config.contextManager!.enable();
+    }
+
+    super.register(config);
+  }
+}
 
 
 const instrumentations: Instrumentation[] = [];
@@ -313,5 +336,5 @@ export const shouldSendTraces = () => {
 };
 
 export const forceFlush = async () => {
-  await _spanProcessor.forceFlush();
+  await _spanProcessor?.forceFlush();
 };

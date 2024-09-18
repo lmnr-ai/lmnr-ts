@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.4.10-alpha",
+  "version": "0.4.10-alpha.1",
   "description": "TypeScript SDK for Laminar AI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -34,6 +34,7 @@
     "@pinecone-database/pinecone": "^3.0.2",
     "@qdrant/js-client-rest": "^1.11.0",
     "@types/node": "^22.5.4",
+    "@types/semver": "^7.5.8",
     "@types/uuid": "^10.0.0",
     "bufferutil": "^4.0.8",
     "chromadb": "^1.8.1",
@@ -49,13 +50,13 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.11.2",
     "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/context-async-hooks": "^1.26.0",
     "@opentelemetry/core": "^1.26.0",
     "@opentelemetry/exporter-trace-otlp-grpc": "^0.53.0",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.53.0",
     "@opentelemetry/instrumentation": "^0.53.0",
     "@opentelemetry/sdk-node": "^0.53.0",
     "@opentelemetry/sdk-trace-base": "^1.26.0",
-    "@opentelemetry/sdk-trace-node": "^1.26.0",
     "@opentelemetry/semantic-conventions": "^1.27.0",
     "@traceloop/ai-semantic-conventions": "^0.11.0",
     "@traceloop/instrumentation-anthropic": "^0.11.1",
@@ -70,6 +71,7 @@
     "@traceloop/instrumentation-qdrant": "^0.11.1",
     "@traceloop/instrumentation-vertexai": "^0.11.1",
     "posthog-node": "^4.2.0",
+    "semver": "^7.6.3",
     "uuid": "^10.0.0"
   }
 }

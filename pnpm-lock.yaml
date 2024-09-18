@@ -14,6 +14,9 @@ importers:
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.0
+      '@opentelemetry/context-async-hooks':
+        specifier: ^1.26.0
+        version: 1.26.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/core':
         specifier: ^1.26.0
         version: 1.26.0(@opentelemetry/api@1.9.0)
@@ -30,9 +33,6 @@ importers:
         specifier: ^0.53.0
         version: 0.53.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-trace-base':
-        specifier: ^1.26.0
-        version: 1.26.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/sdk-trace-node':
         specifier: ^1.26.0
         version: 1.26.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/semantic-conventions':
@@ -77,6 +77,9 @@ importers:
       posthog-node:
         specifier: ^4.2.0
         version: 4.2.0
+      semver:
+        specifier: ^7.6.3
+        version: 7.6.3
       uuid:
         specifier: ^10.0.0
         version: 10.0.0
@@ -108,6 +111,9 @@ importers:
       '@types/node':
         specifier: ^22.5.4
         version: 22.5.4
+      '@types/semver':
+        specifier: ^7.5.8
+        version: 7.5.8
       '@types/uuid':
         specifier: ^10.0.0
         version: 10.0.0
@@ -1261,6 +1267,9 @@ packages:
 
   '@types/retry@0.12.0':
     resolution: {integrity: sha512-wWKOClTTiizcZhXnPY4wikVAwmdYHp8q6DmC+EJUzAMsycb7HB32Kh9RN4+0gExjmPmZSAQjgURXIGATPegAvA==}
+
+  '@types/semver@7.5.8':
+    resolution: {integrity: sha512-I8EUhyrgfLrcTkzV3TSsGyl1tSuPrEDzr0yd5m90UgNxQkyDXULk3b6MlQqTCpZpNtWe1K0hzclnZkTcLBe2UQ==}
 
   '@types/shimmer@1.2.0':
     resolution: {integrity: sha512-UE7oxhQLLd9gub6JKIAhDq06T0F6FnztwMNRvYgjeQSBeMc1ZG/tA47EwfduvkuQS8apbkM/lpLpWsaCeYsXVg==}
@@ -5122,6 +5131,8 @@ snapshots:
       form-data: 2.5.1
 
   '@types/retry@0.12.0': {}
+
+  '@types/semver@7.5.8': {}
 
   '@types/shimmer@1.2.0': {}
 
