@@ -316,21 +316,18 @@ export const startTracing = (options: InitializeOptions) => {
   const provider = new NodeTracerProvider();
   provider.addSpanProcessor(_spanProcessor);
   provider.register();
-  instrumentations.push(new HttpInstrumentation({
-    enabled: false,
-    disableIncomingRequestInstrumentation: true,
-    disableOutgoingRequestInstrumentation: true,
-  }));
-  instrumentations.push(new FetchInstrumentation({
-    enabled: false,
-    ignoreNetworkEvents: true,
-  }));
-  instrumentations.push(new UndiciInstrumentation({
-    enabled: false,
-    ignoreRequestHook: (request) => {
-      return true;
-    },
-  }));
+  const http_instrumentation = new HttpInstrumentation({
+    enabled: true,
+  });
+  http_instrumentation.disable();
+  const fetch_instrumentation = new FetchInstrumentation({
+    enabled: true,
+  });
+  fetch_instrumentation.disable();
+  const undici_instrumentation = new UndiciInstrumentation({
+    enabled: true,
+  });
+  undici_instrumentation.disable();
   registerInstrumentations({
     instrumentations,
     tracerProvider: provider,
