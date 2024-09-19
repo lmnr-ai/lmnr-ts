@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.4.10-alpha.1",
+  "version": "0.4.10-alpha.2",
   "description": "TypeScript SDK for Laminar AI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -55,6 +55,7 @@
     "@opentelemetry/exporter-trace-otlp-grpc": ">=0.53.0",
     "@opentelemetry/exporter-trace-otlp-proto": ">=0.53.0",
     "@opentelemetry/instrumentation": ">=0.53.0",
+    "@opentelemetry/instrumentation-http": "^0.53.0",
     "@opentelemetry/sdk-node": ">=0.53.0",
     "@opentelemetry/sdk-trace-base": ">=1.26.0",
     "@opentelemetry/semantic-conventions": ">=1.27.0",

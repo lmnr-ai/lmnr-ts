@@ -23,6 +23,7 @@ import {
 } from "@traceloop/ai-semantic-conventions";
 import {BasicTracerProvider, SDKRegistrationConfig} from "@opentelemetry/sdk-trace-base";
 import {registerInstrumentations} from "@opentelemetry/instrumentation";
+import {HttpInstrumentation} from "@opentelemetry/instrumentation-http";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
 import { AzureOpenAIInstrumentation } from "@traceloop/instrumentation-azure";
@@ -313,6 +314,9 @@ export const startTracing = (options: InitializeOptions) => {
   const provider = new NodeTracerProvider();
   provider.addSpanProcessor(_spanProcessor);
   provider.register();
+  instrumentations.push(new HttpInstrumentation({
+    enabled: false,
+  }));
   registerInstrumentations({
     instrumentations,
     tracerProvider: provider,
