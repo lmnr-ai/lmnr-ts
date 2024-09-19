@@ -318,12 +318,18 @@ export const startTracing = (options: InitializeOptions) => {
   provider.register();
   instrumentations.push(new HttpInstrumentation({
     enabled: false,
+    disableIncomingRequestInstrumentation: true,
+    disableOutgoingRequestInstrumentation: true,
   }));
   instrumentations.push(new FetchInstrumentation({
     enabled: false,
+    ignoreNetworkEvents: true,
   }));
   instrumentations.push(new UndiciInstrumentation({
     enabled: false,
+    ignoreRequestHook: (request) => {
+      return true;
+    },
   }));
   registerInstrumentations({
     instrumentations,
