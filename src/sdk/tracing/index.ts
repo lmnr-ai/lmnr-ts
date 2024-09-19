@@ -24,6 +24,8 @@ import {
 import {BasicTracerProvider, SDKRegistrationConfig} from "@opentelemetry/sdk-trace-base";
 import {registerInstrumentations} from "@opentelemetry/instrumentation";
 import {HttpInstrumentation} from "@opentelemetry/instrumentation-http";
+import {FetchInstrumentation} from "@opentelemetry/instrumentation-fetch";
+import {UndiciInstrumentation} from "@opentelemetry/instrumentation-undici";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
 import { AzureOpenAIInstrumentation } from "@traceloop/instrumentation-azure";
@@ -315,6 +317,12 @@ export const startTracing = (options: InitializeOptions) => {
   provider.addSpanProcessor(_spanProcessor);
   provider.register();
   instrumentations.push(new HttpInstrumentation({
+    enabled: false,
+  }));
+  instrumentations.push(new FetchInstrumentation({
+    enabled: false,
+  }));
+  instrumentations.push(new UndiciInstrumentation({
     enabled: false,
   }));
   registerInstrumentations({
