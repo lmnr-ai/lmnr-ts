@@ -1,13 +1,4 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-import {
-  SimpleSpanProcessor,
-  BatchSpanProcessor,
-} from "@opentelemetry/sdk-trace-base";
-import * as semver from 'semver';
-import {
-  AsyncHooksContextManager,
-  AsyncLocalStorageContextManager,
-} from '@opentelemetry/context-async-hooks';
 import { baggageUtils } from "@opentelemetry/core";
 import { Span, context, diag } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
@@ -21,11 +12,8 @@ import { _configuration } from "../configuration";
 import {
   SpanAttributes,
 } from "@traceloop/ai-semantic-conventions";
-import {BasicTracerProvider, SDKRegistrationConfig} from "@opentelemetry/sdk-trace-base";
+import { NodeTracerProvider, SimpleSpanProcessor, BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
 import {registerInstrumentations} from "@opentelemetry/instrumentation";
-import {HttpInstrumentation} from "@opentelemetry/instrumentation-http";
-import {FetchInstrumentation} from "@opentelemetry/instrumentation-fetch";
-import {UndiciInstrumentation} from "@opentelemetry/instrumentation-undici";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
 import { AzureOpenAIInstrumentation } from "@traceloop/instrumentation-azure";
@@ -54,25 +42,6 @@ let llamaIndexInstrumentation: LlamaIndexInstrumentation | undefined;
 let pineconeInstrumentation: PineconeInstrumentation | undefined;
 let chromadbInstrumentation: ChromaDBInstrumentation | undefined;
 let qdrantInstrumentation: QdrantInstrumentation | undefined;
-
-
-class NodeTracerProvider extends BasicTracerProvider {
-  constructor(config = {}) {
-    super(config);
-  }
-
-  override register(config: SDKRegistrationConfig = {}): void {
-    if (config.contextManager === undefined) {
-      const ContextManager = semver.gte(process.version, '14.8.0')
-        ? AsyncLocalStorageContextManager
-        : AsyncHooksContextManager;
-      config.contextManager = new ContextManager();
-      config.contextManager!.enable();
-    }
-
-    super.register(config);
-  }
-}
 
 
 const instrumentations: Instrumentation[] = [];
@@ -316,18 +285,6 @@ export const startTracing = (options: InitializeOptions) => {
   const provider = new NodeTracerProvider();
   provider.addSpanProcessor(_spanProcessor);
   provider.register();
-  const http_instrumentation = new HttpInstrumentation({
-    enabled: true,
-  });
-  http_instrumentation.disable();
-  const fetch_instrumentation = new FetchInstrumentation({
-    enabled: true,
-  });
-  fetch_instrumentation.disable();
-  const undici_instrumentation = new UndiciInstrumentation({
-    enabled: true,
-  });
-  undici_instrumentation.disable();
   registerInstrumentations({
     instrumentations,
     tracerProvider: provider,

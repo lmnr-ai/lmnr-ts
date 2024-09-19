@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.4.10-alpha.5",
+  "version": "0.4.10",
   "description": "TypeScript SDK for Laminar AI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -50,16 +50,13 @@
   "dependencies": {
     "@grpc/grpc-js": ">=1.9.9",
     "@opentelemetry/api": ">=1.9.0",
-    "@opentelemetry/context-async-hooks": ">=1.26.0",
     "@opentelemetry/core": ">=1.26.0",
     "@opentelemetry/exporter-trace-otlp-grpc": ">=0.53.0",
     "@opentelemetry/exporter-trace-otlp-proto": ">=0.53.0",
     "@opentelemetry/instrumentation": ">=0.53.0",
-    "@opentelemetry/instrumentation-fetch": "^0.53.0",
-    "@opentelemetry/instrumentation-http": "^0.53.0",
-    "@opentelemetry/instrumentation-undici": "^0.6.0",
     "@opentelemetry/sdk-node": ">=0.53.0",
-    "@opentelemetry/sdk-trace-base": ">=1.26.0",
+    "@opentelemetry/sdk-trace-base": "^1.26.0",
+    "@opentelemetry/sdk-trace-node": "^1.26.0",
     "@opentelemetry/semantic-conventions": ">=1.27.0",
     "@traceloop/ai-semantic-conventions": "^0.11.0",
     "@traceloop/instrumentation-anthropic": "^0.11.1",
@@ -74,7 +71,6 @@
     "@traceloop/instrumentation-qdrant": "^0.11.1",
     "@traceloop/instrumentation-vertexai": "^0.11.1",
     "posthog-node": ">=3.1.3",
-    "semver": ">=6.3.1",
     "uuid": ">=9.0.0"
   }
 }
