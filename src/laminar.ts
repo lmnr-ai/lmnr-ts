@@ -22,7 +22,8 @@ interface LaminarInitializeProps {
 }
 
 export class Laminar {
-    private static baseUrl: string = 'https://api.lmnr.ai:8443';
+    // private static baseUrl: string = 'https://api.lmnr.ai';
+    private static baseUrl: string = 'http://localhost:8085';
     private static projectApiKey: string;
     private static env: Record<string, string> = {};
     private static isInitialized: boolean = false;
@@ -86,7 +87,7 @@ export class Laminar {
         const metadata = new Metadata();
         metadata.set('authorization', `Bearer ${this.projectApiKey}`);
         const exporter = new OTLPTraceExporter({
-            url: this.baseUrl,
+            url: `http://localhost:8095`,
             metadata,
         });
 
@@ -324,15 +325,19 @@ export class Laminar {
             })
         });
 
+        if (!response.ok) {
+            throw new Error(`Failed to create evaluation ${name}. Response: ${response.statusText}`);
+        }
+
         return await response.json();
     }
 
     public static async postEvaluationResults<D, T, O>(
-        evaluationName: string,
+        evaluationId: string,
         data: EvaluationDatapoint<D, T, O>[]
     ): Promise<void> {
         const body = JSON.stringify({
-            name: evaluationName,
+            evaluationId,
             points: data,
         });
         const headers = this.getHeaders();
@@ -353,15 +358,14 @@ export class Laminar {
     }
 
     public static async updateEvaluationStatus(
-        evaluationName: string,
+        evaluationId: string,
         status: EvaluationStatus,
     ): Promise<void> {
         const body = JSON.stringify({
-            name: evaluationName,
-            status,
+            status: status,
         });
         const headers = this.getHeaders();
-        const url = `${this.baseUrl}/v1/evaluations`;
+        const url = `${this.baseUrl}/v1/evaluations/${evaluationId}`;
         try {
             const response = await fetch(url, {
                 method: "PUT",

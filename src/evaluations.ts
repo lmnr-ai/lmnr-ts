@@ -1,7 +1,12 @@
 import { Laminar } from "./laminar";
 import { CreateEvaluationResponse, EvaluationDatapoint } from "./types";
+import cliProgress from "cli-progress";
 
 const DEFAULT_BATCH_SIZE = 5;
+
+const getEvaluationUrl = (projectId: string, evaluationId: string) => {
+    return `https://www.lmnr.ai/project/${projectId}/evaluations/${evaluationId}`;
+}
 
 /**
  * Configuration for the Evaluator
@@ -71,6 +76,7 @@ interface EvaluatorConstructorProps<D, T, O> {
 }
 
 export class Evaluation<D, T, O> {
+    private id: string | null = null;
     private name: string;
     private data: Datapoint<D, T>[] | Dataset<D, T>;
     private executor: (data: D, ...args: any[]) => O | Promise<O>;
@@ -107,21 +113,36 @@ export class Evaluation<D, T, O> {
      * to get the output, and then evaluate it by each evaluator function.
      */
     public async run(): Promise<void> {
-        const response = await Laminar.createEvaluation(this.name) as CreateEvaluationResponse;
+        const evaluation = await Laminar.createEvaluation(this.name) as CreateEvaluationResponse;
+        this.id = evaluation.id;
+
+        process.stdout.write(`\nRunning evaluation ${evaluation.name}...\n\n`);
+        process.stdout.write(`Check progress and results at ${getEvaluationUrl(evaluation.projectId, evaluation.id)}\n\n`);
+
+        const progress = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
         const length = this.data instanceof Dataset ? this.data.size() : this.data.length;
+        progress.start(length, 0);
+        
         for (let i = 0; i < length; i += this.batchSize) {
             const batch = this.data.slice(i, i + this.batchSize);
             try {
                 await this.evaluateBatch(batch);
             } catch (e) {
                 console.error(`Error evaluating batch: ${e}`);
+            } finally {
+                // Update progress regardless of success
+                progress.update(batch.length);
             }
         }
+
         try {
             // After all batches are completed, update the evaluation status
-            await Laminar.updateEvaluationStatus(response.name, 'Finished');
+            await Laminar.updateEvaluationStatus(evaluation.name, 'Finished');
         } catch (e) {
             console.error(`Error updating evaluation status: ${e}`);
+        } finally {
+            progress.stop();
+            process.stdout.write('\n');
         }
     }
     
@@ -154,7 +175,6 @@ export class Evaluation<D, T, O> {
     
         const results = await Promise.all(batchPromises);
     
-        return Laminar.postEvaluationResults(this.name, results);
+        return Laminar.postEvaluationResults(this.id!, results);
     }
-    
 }
