@@ -22,6 +22,7 @@ interface EvaluatorConfig {
     batchSize?: number;
     projectApiKey?: string;
     baseUrl?: string;
+    httpPort?: number;
 }
 
 export abstract class Dataset<D, T> {
@@ -147,7 +148,7 @@ class Evaluation<D, T, O> {
         if (config) {
             this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
         }
-        Laminar.initialize({ projectApiKey: config?.projectApiKey, baseUrl: config?.baseUrl });
+        Laminar.initialize({ projectApiKey: config?.projectApiKey, baseUrl: config?.baseUrl, httpPort: config?.httpPort });
     }
 
     /** 

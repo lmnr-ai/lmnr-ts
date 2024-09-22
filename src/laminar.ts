@@ -18,11 +18,14 @@ interface LaminarInitializeProps {
     projectApiKey?: string;
     env?: Record<string, string>;
     baseUrl?: string;
+    httpPort?: number;
+    grpcPort?: number;
     instrumentModules?: InitializeOptions["instrumentModules"];
 }
 
 export class Laminar {
-    private static baseUrl: string = 'https://api.lmnr.ai';
+    private static baseHttpUrl: string;
+    private static baseGrpcUrl: string;
     private static projectApiKey: string;
     private static env: Record<string, string> = {};
     private static isInitialized: boolean = false;
@@ -38,6 +41,10 @@ export class Laminar {
      * unless overriden at request time. Usually, model provider keys are stored here.
      * @param baseUrl - Laminar API url.
      * If not specified, defaults to https://api.lmnr.ai.
+     * @param httpPort - Laminar API http port.
+     * If not specified, defaults to 443.
+     * @param grpcPort - Laminar API grpc port.
+     * If not specified, defaults to 8443.
      * @param instrumentModules - List of modules to instrument.
      * If not specified, all auto-instrumentable modules will be instrumented, which include
      * LLM calls (OpenAI, Anthropic, etc), Langchain, VectorDB calls (Pinecone, Qdrant, etc).
@@ -65,6 +72,8 @@ export class Laminar {
         projectApiKey,
         env,
         baseUrl,
+        httpPort,
+        grpcPort,
         instrumentModules
     }: LaminarInitializeProps) {
 
@@ -76,16 +85,17 @@ export class Laminar {
             );
         }
         this.projectApiKey = key;
-        if (baseUrl) {
-            this.baseUrl = baseUrl;
-        }
+
+        this.baseHttpUrl = `${baseUrl ?? 'https://api.lmnr.ai'}:${httpPort ?? 443}`;
+        this.baseGrpcUrl = `${baseUrl ?? 'https://api.lmnr.ai'}:${grpcPort ?? 8443}`;
+
         this.isInitialized = true;
         this.env = env ?? {};
 
         const metadata = new Metadata();
         metadata.set('authorization', `Bearer ${this.projectApiKey}`);
         const exporter = new OTLPTraceExporter({
-            url: `${this.baseUrl}:8443`,
+            url: this.baseGrpcUrl,
             metadata,
         });
 
@@ -165,7 +175,7 @@ export class Laminar {
         }
         const envirionment = env === undefined ? this.env : env;
 
-        const response = await fetch(`${this.baseUrl}/v1/pipeline/run`, {
+        const response = await fetch(`${this.baseHttpUrl}/v1/pipeline/run`, {
             method: 'POST',
             headers: this.getHeaders(),
             body: JSON.stringify({
@@ -315,7 +325,7 @@ export class Laminar {
     }
 
     public static async createEvaluation(name: string): Promise<CreateEvaluationResponse> {
-        const response = await fetch(`${this.baseUrl}/v1/evaluations`, {
+        const response = await fetch(`${this.baseHttpUrl}/v1/evaluations`, {
             method: 'POST',
             headers: this.getHeaders(),
             body: JSON.stringify({
@@ -339,7 +349,7 @@ export class Laminar {
             points: data,
         });
         const headers = this.getHeaders();
-        const url = `${this.baseUrl}/v1/evaluation-datapoints`;
+        const url = `${this.baseHttpUrl}/v1/evaluation-datapoints`;
         try {
             const response = await fetch(url, {
                 method: "POST",
@@ -369,7 +379,7 @@ export class Laminar {
             status: status,
         });
         const headers = this.getHeaders();
-        const url = `${this.baseUrl}/v1/evaluations/${evaluationId}`;
+        const url = `${this.baseHttpUrl}/v1/evaluations/${evaluationId}`;
         
         const response = await fetch(url, {
             method: "POST",

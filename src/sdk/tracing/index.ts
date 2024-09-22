@@ -276,6 +276,7 @@ export const startTracing = (options: InitializeOptions) => {
       processor: options.disableBatch ? "simple" : "batch",
     });
   } else {
+    // TODO: Remove this code, must not reach here
     Telemetry.getInstance().capture("tracer:init", {
       exporter: options.baseUrl ?? "",
       processor: options.disableBatch ? "simple" : "batch",
