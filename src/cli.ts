@@ -5,12 +5,6 @@ import * as esbuild from "esbuild";
 
 const pjson = require('../package.json');
 
-// declare global {
-//     var _evaluation: Evaluation<any, any, any> | undefined;
-//     // If true, then we need to set the evaluation globally without running it
-//     var _set_global_evaluation: boolean;
-// }
-
 export function loadModule({
   filename,
   moduleText,

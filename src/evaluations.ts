@@ -252,5 +252,3 @@ export function evaluate<D, T, O>(name: string, {
         }
     })();
 }
-
-export {}
