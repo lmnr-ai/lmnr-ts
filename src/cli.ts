@@ -57,7 +57,7 @@ async function cli() {
               write: false,  // will be loaded in memory as a temp file
               platform: "node" as esbuild.Platform,
               bundle: true,
-              external: ["*"],
+              external: ["node_modules/*"],
             };
 
             const result = await esbuild.build(buildOptions);
