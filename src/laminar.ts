@@ -22,8 +22,7 @@ interface LaminarInitializeProps {
 }
 
 export class Laminar {
-    // private static baseUrl: string = 'https://api.lmnr.ai';
-    private static baseUrl: string = 'http://localhost:8085';
+    private static baseUrl: string = 'https://api.lmnr.ai';
     private static projectApiKey: string;
     private static env: Record<string, string> = {};
     private static isInitialized: boolean = false;
@@ -37,9 +36,8 @@ export class Laminar {
      * If not specified, it will try to read from the LMNR_PROJECT_API_KEY environment variable.
      * @param env - Default environment passed to `run` and `evaluateEvent` requests,
      * unless overriden at request time. Usually, model provider keys are stored here.
-     * @param baseUrl - Url of Laminar endpoint, or the custom open telemetry ingester.
-     * If not specified, defaults to https://api.lmnr.ai:8443. For locally hosted Laminar,
-     * default setting must be http://localhost:8001.
+     * @param baseUrl - Laminar API url.
+     * If not specified, defaults to https://api.lmnr.ai.
      * @param instrumentModules - List of modules to instrument.
      * If not specified, all auto-instrumentable modules will be instrumented, which include
      * LLM calls (OpenAI, Anthropic, etc), Langchain, VectorDB calls (Pinecone, Qdrant, etc).
@@ -87,7 +85,7 @@ export class Laminar {
         const metadata = new Metadata();
         metadata.set('authorization', `Bearer ${this.projectApiKey}`);
         const exporter = new OTLPTraceExporter({
-            url: `http://localhost:8095`,
+            url: `${this.baseUrl}:8443`,
             metadata,
         });
 
