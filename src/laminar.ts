@@ -1,4 +1,4 @@
-import { PipelineRunResponse, PipelineRunRequest, EvaluationDatapoint, EvaluationStatus } from './types';
+import { PipelineRunResponse, PipelineRunRequest, EvaluationDatapoint, EvaluationStatus, UpdateEvaluationResponse, CreateEvaluationResponse } from './types';
 import { Attributes, AttributeValue, context, createContextKey, isSpanContextValid, TimeInput, trace } from '@opentelemetry/api';
 import { InitializeOptions, initialize as traceloopInitialize } from './sdk/node-server-sdk'
 import { otelSpanIdToUUID, otelTraceIdToUUID } from './utils';
@@ -316,7 +316,7 @@ export class Laminar {
         await forceFlush();
     }
 
-    public static async createEvaluation(name: string) {
+    public static async createEvaluation(name: string): Promise<CreateEvaluationResponse> {
         const response = await fetch(`${this.baseUrl}/v1/evaluations`, {
             method: 'POST',
             headers: this.getHeaders(),
@@ -357,28 +357,32 @@ export class Laminar {
         };
     }
 
+    /**
+     * Updates the status of an evaluation. Returns the updated evaluation object.
+     * 
+     * @param evaluationId - The ID of the evaluation to update.
+     * @param status - The status to set for the evaluation.
+     */
     public static async updateEvaluationStatus(
         evaluationId: string,
         status: EvaluationStatus,
-    ): Promise<void> {
+    ): Promise<UpdateEvaluationResponse> {
         const body = JSON.stringify({
             status: status,
         });
         const headers = this.getHeaders();
         const url = `${this.baseUrl}/v1/evaluations/${evaluationId}`;
-        try {
-            const response = await fetch(url, {
-                method: "PUT",
-                headers,
-                body,
-            });
-            if (!response.ok) {
-                console.error("Failed to update evaluation status. Response: ");
-                response.text().then((text) => console.error(text));
-            }
-        } catch (error) {
-            console.error("Failed to update evaluation status. Error: ", error);
+        
+        const response = await fetch(url, {
+            method: "POST",
+            headers,
+            body,
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to update evaluation status ${evaluationId}. Response: ${await response.text()}`);
         }
+
+        return await response.json() as UpdateEvaluationResponse;
     }
 
     private static getHeaders() {

@@ -46,3 +46,7 @@ export const otelTraceIdToUUID = (traceId: string): string => {
 
     return id.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
 }
+
+export function isNumber(value: unknown): value is number {
+    return typeof value === 'number';
+}
