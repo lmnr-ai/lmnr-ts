@@ -88,6 +88,7 @@ interface EvaluatorConstructorProps<D, T, O> {
  */
 class EvaluationReporter {
     private cliProgress: cliProgress.SingleBar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);;
+    private progressCounter: number = 0;
 
     constructor() {}
 
@@ -98,7 +99,8 @@ class EvaluationReporter {
     }
 
     public update(batchLength: number) {
-        this.cliProgress.update(batchLength);
+        this.progressCounter += batchLength;
+        this.cliProgress.update(this.progressCounter);
     }
 
     // Call either error or stop, not both
