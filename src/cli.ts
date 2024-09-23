@@ -12,6 +12,8 @@ export function loadModule({
   filename: string;
   moduleText: string;
 }) {
+  // TODO: Figure out how to remove all ts-ignores
+  // TODO: Cleanup by setting the original values of _evaluation and _set_global_evaluation back
   // @ts-ignore
   globalThis._evaluation = undefined;  // @ts-ignore
   globalThis._set_global_evaluation = true;  // @ts-ignore

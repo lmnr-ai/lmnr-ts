@@ -148,7 +148,7 @@ class Evaluation<D, T, O> {
         if (config) {
             this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
         }
-        Laminar.initialize({ projectApiKey: config?.projectApiKey, baseUrl: config?.baseUrl, httpPort: config?.httpPort });
+        Laminar.initialize({ projectApiKey: config?.projectApiKey, baseUrl: config?.baseUrl, httpPort: config?.httpPort, instrumentModules: {} });
     }
 
     /** 
@@ -171,15 +171,13 @@ class Evaluation<D, T, O> {
             await Laminar.updateEvaluationStatus(evaluation.id, 'Error');
             this.progressReporter.stopWithError(e as Error);
             this.isFinished = true;
+            return;
         }
 
-        // If not error, then need to update here
-        if (!this.isFinished) {
-            // If we update with status "Finished", we expect averageScores to be not empty
-            const updatedEvaluation = await Laminar.updateEvaluationStatus(evaluation.id, 'Finished');
-            this.progressReporter.stop(updatedEvaluation.averageScores!);
-            this.isFinished = true;
-        }
+        // If we update with status "Finished", we expect averageScores to be not empty
+        const updatedEvaluation = await Laminar.updateEvaluationStatus(evaluation.id, 'Finished');
+        this.progressReporter.stop(updatedEvaluation.averageScores!);
+        this.isFinished = true;
     }
 
     // TODO: Calculate duration of the evaluation and add it to the summary
@@ -241,15 +239,13 @@ class Evaluation<D, T, O> {
     }
 }
 
-export function evaluate<D, T, O>(name: string, {
+export async function evaluate<D, T, O>(name: string, {
     data, executor, evaluators, config
-}: EvaluatorConstructorProps<D, T, O>) {
-    (async () => {
-        const evaluation = new Evaluation(name, { data, executor, evaluators, config });
-        if (globalThis._set_global_evaluation) {
-            globalThis._evaluation = evaluation;
-        } else {
-            await evaluation.run();
-        }
-    })();
+}: EvaluatorConstructorProps<D, T, O>): Promise<void> {
+    const evaluation = new Evaluation(name, { data, executor, evaluators, config });
+    if (globalThis._set_global_evaluation) {
+        globalThis._evaluation = evaluation;
+    } else {
+        await evaluation.run();
+    }
 }
