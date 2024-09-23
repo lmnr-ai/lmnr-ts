@@ -9,5 +9,5 @@ export {
 } from './types';
 
 export { Laminar } from './laminar';
-export { Evaluation, Dataset, Datapoint } from './evaluations';
+export { evaluate, Dataset, Datapoint } from './evaluations';
 export { observe } from './decorators';

@@ -44,7 +44,10 @@ export type CreateEvaluationResponse = {
     status: EvaluationStatus
     projectId: StringUUID,
     metadata: Record<string, any> | null,
+    averageScores: Record<string, number> | null,
 }
+
+export type UpdateEvaluationResponse = CreateEvaluationResponse;
 
 export type EvaluationDatapoint<D, T, O> = {
     data: Record<string, any> & D;

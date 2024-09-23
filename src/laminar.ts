@@ -1,4 +1,4 @@
-import { PipelineRunResponse, PipelineRunRequest, EvaluationDatapoint, EvaluationStatus } from './types';
+import { PipelineRunResponse, PipelineRunRequest, EvaluationDatapoint, EvaluationStatus, UpdateEvaluationResponse, CreateEvaluationResponse } from './types';
 import { Attributes, AttributeValue, context, createContextKey, isSpanContextValid, TimeInput, trace } from '@opentelemetry/api';
 import { InitializeOptions, initialize as traceloopInitialize } from './sdk/node-server-sdk'
 import { otelSpanIdToUUID, otelTraceIdToUUID } from './utils';
@@ -18,11 +18,14 @@ interface LaminarInitializeProps {
     projectApiKey?: string;
     env?: Record<string, string>;
     baseUrl?: string;
+    httpPort?: number;
+    grpcPort?: number;
     instrumentModules?: InitializeOptions["instrumentModules"];
 }
 
 export class Laminar {
-    private static baseUrl: string = 'https://api.lmnr.ai:8443';
+    private static baseHttpUrl: string;
+    private static baseGrpcUrl: string;
     private static projectApiKey: string;
     private static env: Record<string, string> = {};
     private static isInitialized: boolean = false;
@@ -36,9 +39,12 @@ export class Laminar {
      * If not specified, it will try to read from the LMNR_PROJECT_API_KEY environment variable.
      * @param env - Default environment passed to `run` and `evaluateEvent` requests,
      * unless overriden at request time. Usually, model provider keys are stored here.
-     * @param baseUrl - Url of Laminar endpoint, or the custom open telemetry ingester.
-     * If not specified, defaults to https://api.lmnr.ai:8443. For locally hosted Laminar,
-     * default setting must be http://localhost:8001.
+     * @param baseUrl - Laminar API url.
+     * If not specified, defaults to https://api.lmnr.ai.
+     * @param httpPort - Laminar API http port.
+     * If not specified, defaults to 443.
+     * @param grpcPort - Laminar API grpc port.
+     * If not specified, defaults to 8443.
      * @param instrumentModules - List of modules to instrument.
      * If not specified, all auto-instrumentable modules will be instrumented, which include
      * LLM calls (OpenAI, Anthropic, etc), Langchain, VectorDB calls (Pinecone, Qdrant, etc).
@@ -66,6 +72,8 @@ export class Laminar {
         projectApiKey,
         env,
         baseUrl,
+        httpPort,
+        grpcPort,
         instrumentModules
     }: LaminarInitializeProps) {
 
@@ -77,16 +85,17 @@ export class Laminar {
             );
         }
         this.projectApiKey = key;
-        if (baseUrl) {
-            this.baseUrl = baseUrl;
-        }
+
+        this.baseHttpUrl = `${baseUrl ?? 'https://api.lmnr.ai'}:${httpPort ?? 443}`;
+        this.baseGrpcUrl = `${baseUrl ?? 'https://api.lmnr.ai'}:${grpcPort ?? 8443}`;
+
         this.isInitialized = true;
         this.env = env ?? {};
 
         const metadata = new Metadata();
         metadata.set('authorization', `Bearer ${this.projectApiKey}`);
         const exporter = new OTLPTraceExporter({
-            url: this.baseUrl,
+            url: this.baseGrpcUrl,
             metadata,
         });
 
@@ -166,7 +175,7 @@ export class Laminar {
         }
         const envirionment = env === undefined ? this.env : env;
 
-        const response = await fetch(`${this.baseUrl}/v1/pipeline/run`, {
+        const response = await fetch(`${this.baseHttpUrl}/v1/pipeline/run`, {
             method: 'POST',
             headers: this.getHeaders(),
             body: JSON.stringify({
@@ -315,28 +324,32 @@ export class Laminar {
         await forceFlush();
     }
 
-    public static async createEvaluation(name: string) {
-        const response = await fetch(`${this.baseUrl}/v1/evaluations`, {
+    public static async createEvaluation(name?: string): Promise<CreateEvaluationResponse> {
+        const response = await fetch(`${this.baseHttpUrl}/v1/evaluations`, {
             method: 'POST',
             headers: this.getHeaders(),
             body: JSON.stringify({
-                name,
+                name: name ?? null,
             })
         });
+
+        if (!response.ok) {
+            throw new Error(`Failed to create evaluation ${name}. Response: ${response.statusText}`);
+        }
 
         return await response.json();
     }
 
     public static async postEvaluationResults<D, T, O>(
-        evaluationName: string,
+        evaluationId: string,
         data: EvaluationDatapoint<D, T, O>[]
     ): Promise<void> {
         const body = JSON.stringify({
-            name: evaluationName,
+            evaluationId,
             points: data,
         });
         const headers = this.getHeaders();
-        const url = `${this.baseUrl}/v1/evaluation-datapoints`;
+        const url = `${this.baseHttpUrl}/v1/evaluation-datapoints`;
         try {
             const response = await fetch(url, {
                 method: "POST",
@@ -352,29 +365,32 @@ export class Laminar {
         };
     }
 
+    /**
+     * Updates the status of an evaluation. Returns the updated evaluation object.
+     * 
+     * @param evaluationId - The ID of the evaluation to update.
+     * @param status - The status to set for the evaluation.
+     */
     public static async updateEvaluationStatus(
-        evaluationName: string,
+        evaluationId: string,
         status: EvaluationStatus,
-    ): Promise<void> {
+    ): Promise<UpdateEvaluationResponse> {
         const body = JSON.stringify({
-            name: evaluationName,
-            status,
+            status: status,
         });
         const headers = this.getHeaders();
-        const url = `${this.baseUrl}/v1/evaluations`;
-        try {
-            const response = await fetch(url, {
-                method: "PUT",
-                headers,
-                body,
-            });
-            if (!response.ok) {
-                console.error("Failed to update evaluation status. Response: ");
-                response.text().then((text) => console.error(text));
-            }
-        } catch (error) {
-            console.error("Failed to update evaluation status. Error: ", error);
+        const url = `${this.baseHttpUrl}/v1/evaluations/${evaluationId}`;
+        
+        const response = await fetch(url, {
+            method: "POST",
+            headers,
+            body,
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to update evaluation status ${evaluationId}. Response: ${await response.text()}`);
         }
+
+        return await response.json() as UpdateEvaluationResponse;
     }
 
     private static getHeaders() {
