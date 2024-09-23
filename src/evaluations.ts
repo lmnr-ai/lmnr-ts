@@ -136,10 +136,10 @@ class Evaluation<D, T, O> {
 
     /**
      * Create a new evaluation and prepare data.
-     * @param name Name of the evaluation.
      * @param props.data List of data points to evaluate. `data` is the input to the executor function, `target` is the input to the evaluator function.
      * @param props.executor The executor function. Takes the data point + any additional arguments and returns the output to evaluate.
      * @param props.evaluators List of evaluator functions. Each evaluator function takes the output of the executor and the target data, and returns.
+     * @param props.name Optional name of the evaluation.
      * @param props.config Optional override configurations for the evaluator.
      */
     constructor({
@@ -245,6 +245,17 @@ class Evaluation<D, T, O> {
     }
 }
 
+/**
+ * If added to the file which is called through lmnr eval command, then simply registers the evaluation.
+ * Otherwise, returns a promise which resolves when the evaluation is finished.
+ * If the evaluation has no async logic, then it will be executed synchronously.
+ *
+ * @param props.data List of data points to evaluate. `data` is the input to the executor function, `target` is the input to the evaluator function.
+ * @param props.executor The executor function. Takes the data point + any additional arguments and returns the output to evaluate.
+ * @param props.evaluators List of evaluator functions. Each evaluator function takes the output of the executor and the target data, and returns.
+ * @param props.name Optional name of the evaluation.
+ * @param props.config Optional override configurations for the evaluator.
+ */
 export async function evaluate<D, T, O>({
     data, executor, evaluators, name, config
 }: EvaluationConstructorProps<D, T, O>): Promise<void> {
