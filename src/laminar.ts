@@ -324,12 +324,12 @@ export class Laminar {
         await forceFlush();
     }
 
-    public static async createEvaluation(name: string): Promise<CreateEvaluationResponse> {
+    public static async createEvaluation(name?: string): Promise<CreateEvaluationResponse> {
         const response = await fetch(`${this.baseHttpUrl}/v1/evaluations`, {
             method: 'POST',
             headers: this.getHeaders(),
             body: JSON.stringify({
-                name,
+                name: name ?? null,
             })
         });
 

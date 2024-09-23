@@ -61,7 +61,7 @@ type EvaluatorFunctionReturn = number | Record<string, number>;
  */
 type EvaluatorFunction<O, T> = (output: O, target: T, ...args: any[]) => EvaluatorFunctionReturn | Promise<EvaluatorFunctionReturn>;
 
-interface EvaluatorConstructorProps<D, T, O> {
+interface EvaluationConstructorProps<D, T, O> {
     /**
      * List of data points to evaluate. `data` is the input to the executor function, `target` is the input to the evaluator function.
      */
@@ -77,6 +77,10 @@ interface EvaluatorConstructorProps<D, T, O> {
      * `evaluator_${index}`, where index is the index of the evaluator function in the list starting from 1.
      */
     evaluators: EvaluatorFunction<O, T>[];
+    /**
+     * Name of the evaluation.
+     */
+    name?: string;
     /**
      * Optional override configurations for the evaluator.
      */
@@ -122,7 +126,7 @@ class EvaluationReporter {
 
 class Evaluation<D, T, O> {
     private isFinished: boolean = false;
-    private name: string;
+    private name?: string;
     private progressReporter: EvaluationReporter;
     private data: Datapoint<D, T>[] | Dataset<D, T>;
     private executor: (data: D, ...args: any[]) => O | Promise<O>;
@@ -138,9 +142,9 @@ class Evaluation<D, T, O> {
      * @param props.evaluators List of evaluator functions. Each evaluator function takes the output of the executor and the target data, and returns.
      * @param props.config Optional override configurations for the evaluator.
      */
-    constructor(name: string, {
-        data, executor, evaluators, config
-    }: EvaluatorConstructorProps<D, T, O>) {
+    constructor({
+        data, executor, evaluators, name, config
+    }: EvaluationConstructorProps<D, T, O>) {
         this.name = name;
         this.progressReporter = new EvaluationReporter();
         this.data = data;
@@ -241,10 +245,10 @@ class Evaluation<D, T, O> {
     }
 }
 
-export async function evaluate<D, T, O>(name: string, {
-    data, executor, evaluators, config
-}: EvaluatorConstructorProps<D, T, O>): Promise<void> {
-    const evaluation = new Evaluation(name, { data, executor, evaluators, config });
+export async function evaluate<D, T, O>({
+    data, executor, evaluators, name, config
+}: EvaluationConstructorProps<D, T, O>): Promise<void> {
+    const evaluation = new Evaluation({ data, executor, evaluators, name, config });
     if (globalThis._set_global_evaluation) {
         globalThis._evaluation = evaluation;
     } else {
