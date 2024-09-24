@@ -9,7 +9,6 @@ Check our [open-source repo](https://github.com/lmnr-ai/lmnr) and don't forget t
  <a href="https://www.npmjs.com/package/@lmnr-ai/lmnr"> ![NPM Version](https://img.shields.io/npm/v/%40lmnr-ai%2Flmnr?label=lmnr&logo=npm&logoColor=CB3837) </a>
  ![NPM Downloads](https://img.shields.io/npm/dm/%40lmnr-ai%2Flmnr)
 
-
 ## Quickstart
 
 ```sh
@@ -27,13 +26,14 @@ L.initialize({ projectApiKey: '<PROJECT_API_KEY>' })
 This will automatically instrument most of the LLM, Vector DB, and related
 calls with OpenTelemetry-compatible instrumentation.
 
-We rely on the amazing [OpenLLMetry](https://github.com/traceloop/openllmetry), open-source package
-by TraceLoop, to achieve that. Also this package uses Traceloop's [Openllmetry JS library](https://github.com/traceloop/openllmetry-js).
+[Read docs](https://docs.lmnr.ai) to learn more.
+
+Autoinstrumentations are provided by [OpenLLMetry](https://github.com/traceloop/openllmetry-js), open-source package by TraceLoop.
 
 ## Instrumentation
 
-In addition to automatic instrumentation, we provide a simple `@observe()` decorator, if you want more fine-grained tracing
-or to trace other functions.
+In addition to automatic instrumentation, we provide a simple `@observe()` decorator.
+This can be useful if you want to trace a request handler or a function which combines multiple LLM calls.
 
 ### Example
 
