@@ -1,6 +1,10 @@
 # Laminar Typescript
 
-OpenTelemetry log sender for [Laminar](https://github.com/lmnr-ai/lmnr) for TS code.
+JavaScript/TypeScript SDK for [Laminar](https://www.lmnr.ai).
+
+[Laminar](https://www.lmnr.ai) is an open-source platform for engineering LLM products. Trace, evaluate, annotate, and analyze LLM data. Bring LLM applications to production with confidence.
+
+Check our [open-source repo](https://github.com/lmnr-ai/lmnr) and don't forget to star it ⭐
 
  <a href="https://www.npmjs.com/package/@lmnr-ai/lmnr"> ![NPM Version](https://img.shields.io/npm/v/%40lmnr-ai%2Flmnr?label=lmnr&logo=npm&logoColor=CB3837) </a>
  ![NPM Downloads](https://img.shields.io/npm/dm/%40lmnr-ai%2Flmnr)
@@ -66,7 +70,7 @@ You can send events in two ways:
 - `.event(name, value)` – for a pre-defined event with one of possible values.
 - `.evaluate_event(name, evaluator, data, env)` – for an event that is evaluated by evaluator pipeline based on the data.
 
-Note that to run an evaluate event, you need to crate an evaluator pipeline and create a target version for it.
+Note that to run an evaluate event, you need to create an evaluator pipeline and create a target version for it.
 
 Read our [docs](https://docs.lmnr.ai) to learn more about event types and how they are created and evaluated.
 
@@ -96,7 +100,7 @@ Install the package:
 npm install @lmnr-ai/lmnr
 ```
 
-Create a new directory and create a file named "my-first-eval.ts" with the following code:
+Create a new directory and create a file named `my-first-eval.ts` with the following code:
 
 ```typescript
 import { evaluate } from '@lmnr-ai/lmnr';
