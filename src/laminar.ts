@@ -1,5 +1,5 @@
 import { PipelineRunResponse, PipelineRunRequest, EvaluationDatapoint, EvaluationStatus, UpdateEvaluationResponse, CreateEvaluationResponse } from './types';
-import { Attributes, AttributeValue, context, createContextKey, isSpanContextValid, TimeInput, trace } from '@opentelemetry/api';
+import { Attributes, AttributeValue, context, isSpanContextValid, TimeInput, trace } from '@opentelemetry/api';
 import { InitializeOptions, initialize as traceloopInitialize } from './sdk/node-server-sdk'
 import { otelSpanIdToUUID, otelTraceIdToUUID } from './utils';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';

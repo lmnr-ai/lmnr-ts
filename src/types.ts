@@ -54,6 +54,7 @@ export type EvaluationDatapoint<D, T, O> = {
     target: Record<string, any> & T;
     executorOutput: any & O,
     scores: Record<string, number>;
+    traceId: string;
 }
 
 export type EvaluationStatus = 'Started' | 'Finished' | 'Error';
@@ -65,7 +66,7 @@ export type EvaluationStatus = 'Started' | 'Finished' | 'Error';
  * Pipeline spans are top-level spans created by the pipeline runner.
  * Executor and evaluator spans are top-level spans added automatically when doing evaluations.
  */
-export type SpanType = 'DEFAULT' | 'LLM' | 'PIPELINE' | 'EXECUTOR' | 'EVALUATOR'
+export type SpanType = 'DEFAULT' | 'LLM' | 'PIPELINE' | 'EXECUTOR' | 'EVALUATOR' | 'EVALUATION'
 
 
 /**

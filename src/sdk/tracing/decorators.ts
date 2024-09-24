@@ -60,15 +60,14 @@ export function withEntity<
             ) {
               span.setAttribute(
                 SPAN_INPUT,
-                serialize({ args: [], kwargs: input[0] }),
+                serialize(input[0]),
               );
             } else {
+              // pass an array of the arguments without names
+              // Need to convert it to hashmap from argument name to value, if we figure out how to do it elegantly
               span.setAttribute(
                 SPAN_INPUT,
-                serialize({
-                  args: input,
-                  kwargs: {},
-                }),
+                serialize(input),
               );
             }
           } catch (error) {

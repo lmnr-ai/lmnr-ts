@@ -9,9 +9,6 @@ import {
 } from "./tracing";
 import { Telemetry } from "../telemetry/telemetry";
 import { _configuration } from "../configuration";
-import {
-  SpanAttributes,
-} from "@traceloop/ai-semantic-conventions";
 import { NodeTracerProvider, SimpleSpanProcessor, BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
 import {registerInstrumentations} from "@opentelemetry/instrumentation";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
