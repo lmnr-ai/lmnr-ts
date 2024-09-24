@@ -67,7 +67,7 @@ export function withEntity<
               // Need to convert it to hashmap from argument name to value, if we figure out how to do it elegantly
               span.setAttribute(
                 SPAN_INPUT,
-                serialize(input),
+                serialize(input.length > 0 ? input : {}),
               );
             }
           } catch (error) {
