@@ -81,10 +81,6 @@ export interface InitializeOptions {
    */
   contextManager?: ContextManager;
 
-  /**
-   * Explicitly specify modules to instrument. Optional.
-   * This is a workaround specific to Next.js, see https://www.traceloop.com/docs/openllmetry/getting-started-nextjs
-   */
   instrumentModules?: {
     openAI?: typeof openai.OpenAI;
     anthropic?: typeof anthropic;

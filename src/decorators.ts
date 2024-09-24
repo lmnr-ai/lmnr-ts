@@ -1,9 +1,11 @@
 import { withEntity } from './sdk/node-server-sdk'
+import { TraceType } from './types';
 
 interface ObserveOptions {
     name?: string;
     sessionId?: string;
     userId?: string;
+    traceType?: TraceType;
 }
 
 /**
@@ -29,6 +31,7 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
         name,
         sessionId,
         userId,
+        traceType,
     }: ObserveOptions, fn: F, ...args: A): Promise<ReturnType<F>> {
 
     let associationProperties = {};
@@ -37,6 +40,9 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     }
     if (userId) {
         associationProperties = { ...associationProperties, "user_id": userId };
+    }
+    if (traceType) {
+        associationProperties = { ...associationProperties, "trace_type": traceType };
     }
 
     return await withEntity<A, F>({ name: name ?? fn.name, associationProperties }, fn, undefined, ...args);

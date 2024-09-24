@@ -4,11 +4,9 @@ import {
   ASSOCIATION_PROPERTIES_KEY,
   getTracer,
 } from "./tracing";
-import {
-  SpanAttributes,
-} from "@traceloop/ai-semantic-conventions";
 import { shouldSendTraces } from ".";
 import { Telemetry } from "../telemetry/telemetry";
+import { SPAN_INPUT, SPAN_OUTPUT } from "./attributes";
 
 export type DecoratorConfig = {
   name: string;
@@ -61,16 +59,15 @@ export function withEntity<
               !(input[0] instanceof Map)
             ) {
               span.setAttribute(
-                SpanAttributes.TRACELOOP_ENTITY_INPUT,
-                serialize({ args: [], kwargs: input[0] }),
+                SPAN_INPUT,
+                serialize(input[0]),
               );
             } else {
+              // pass an array of the arguments without names
+              // Need to convert it to hashmap from argument name to value, if we figure out how to do it elegantly
               span.setAttribute(
-                SpanAttributes.TRACELOOP_ENTITY_INPUT,
-                serialize({
-                  args: input,
-                  kwargs: {},
-                }),
+                SPAN_INPUT,
+                serialize(input.length > 0 ? input : {}),
               );
             }
           } catch (error) {
@@ -84,7 +81,7 @@ export function withEntity<
             try {
               if (shouldSendTraces()) {
                 span.setAttribute(
-                  SpanAttributes.TRACELOOP_ENTITY_OUTPUT,
+                  SPAN_OUTPUT,
                   serialize(resolvedRes),
                 );
               }
@@ -100,7 +97,7 @@ export function withEntity<
         try {
           if (shouldSendTraces()) {
             span.setAttribute(
-              SpanAttributes.TRACELOOP_ENTITY_OUTPUT,
+              SPAN_OUTPUT,
               serialize(res),
             );
           }

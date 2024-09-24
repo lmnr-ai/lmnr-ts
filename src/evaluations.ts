@@ -1,7 +1,11 @@
 import { Laminar } from "./laminar";
 import { CreateEvaluationResponse, EvaluationDatapoint } from "./types";
 import cliProgress from "cli-progress";
-import { isNumber } from "./utils";
+import { isNumber, otelTraceIdToUUID } from "./utils";
+import { observe } from "./decorators";
+import { trace } from "@opentelemetry/api";
+import { SPAN_TYPE } from "./sdk/tracing/attributes";
+import { InitializeOptions } from "./sdk/interfaces";
 
 const DEFAULT_BATCH_SIZE = 5;
 
@@ -23,6 +27,8 @@ interface EvaluatorConfig {
     projectApiKey?: string;
     baseUrl?: string;
     httpPort?: number;
+    grpcPort?: number;
+    instrumentModules?: InitializeOptions['instrumentModules'];
 }
 
 export abstract class Dataset<D, T> {
@@ -76,7 +82,7 @@ interface EvaluationConstructorProps<D, T, O> {
      * If the score is a single number, it will be named after the evaluator function. If the function is anonymous, it will be named
      * `evaluator_${index}`, where index is the index of the evaluator function in the list starting from 1.
      */
-    evaluators: EvaluatorFunction<O, T>[];
+    evaluators: Record<string, EvaluatorFunction<O, T>>;
     /**
      * Name of the evaluation.
      */
@@ -131,14 +137,13 @@ class Evaluation<D, T, O> {
     private data: Datapoint<D, T>[] | Dataset<D, T>;
     private executor: (data: D, ...args: any[]) => O | Promise<O>;
     private evaluators: Record<string, EvaluatorFunction<O, T>>;
-    private evaluatorNames: string[];
     private batchSize: number = DEFAULT_BATCH_SIZE;
 
     /**
      * Create a new evaluation and prepare data.
      * @param props.data List of data points to evaluate. `data` is the input to the executor function, `target` is the input to the evaluator function.
      * @param props.executor The executor function. Takes the data point + any additional arguments and returns the output to evaluate.
-     * @param props.evaluators List of evaluator functions. Each evaluator function takes the output of the executor and the target data, and returns.
+     * @param props.evaluators Map from evaluator name to evaluator function. Each evaluator function takes the output of the executor and the target data, and returns.
      * @param props.name Optional name of the evaluation.
      * @param props.config Optional override configurations for the evaluator.
      */
@@ -149,12 +154,11 @@ class Evaluation<D, T, O> {
         this.progressReporter = new EvaluationReporter();
         this.data = data;
         this.executor = executor;
-        this.evaluators = Object.fromEntries(evaluators.map((e, i) => [e.name.length > 0 ? e.name : `evaluator_${i + 1}`, e]));
-        this.evaluatorNames = evaluators.map((e, i) => e.name.length > 0 ? e.name : `evaluator_${i + 1}`);
+        this.evaluators = evaluators;
         if (config) {
             this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
         }
-        Laminar.initialize({ projectApiKey: config?.projectApiKey, baseUrl: config?.baseUrl, httpPort: config?.httpPort, instrumentModules: {} });
+        Laminar.initialize({ projectApiKey: config?.projectApiKey, baseUrl: config?.baseUrl, httpPort: config?.httpPort, grpcPort: config?.grpcPort, instrumentModules: config?.instrumentModules });
     }
 
     /** 
@@ -184,6 +188,8 @@ class Evaluation<D, T, O> {
         const updatedEvaluation = await Laminar.updateEvaluationStatus(evaluation.id, 'Finished');
         this.progressReporter.stop(updatedEvaluation.averageScores!);
         this.isFinished = true;
+
+        await Laminar.shutdown();
     }
 
     // TODO: Calculate duration of the evaluation and add it to the summary
@@ -207,32 +213,47 @@ class Evaluation<D, T, O> {
     
     private async evaluateBatch(batch: Datapoint<D, T>[]): Promise<EvaluationDatapoint<D, T, O>[]> {
         const batchPromises = batch.map(async (datapoint) => {
-            const output = await this.executor(datapoint.data);
-            const target = datapoint.target;
-    
-            let scores: Record<string, number> = {};
-            for (const evaluatorName of this.evaluatorNames) {
-                const evaluator = this.evaluators[evaluatorName];
-                const value = await evaluator(output, target);
-    
-                // If the evaluator returns a single number, use the evaluator name as the key
-                if (isNumber(value)) {
-                    if (isNaN(value)) {
-                        throw new Error(`Evaluator ${evaluatorName} returned NaN`);
+            let ret: EvaluationDatapoint<D, T, O> | undefined;
+            
+            // NOTE: If you decide to move this observe to another place, note that traceId is assigned inside it for EvaluationDatapoint
+            await observe({name: "evaluation", traceType: "EVALUATION"}, async () => {
+                trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATION");
+
+                const output = await observe({name: "executor"}, async (data: Record<string, any> & D) => {
+                    trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EXECUTOR");
+                    return await this.executor(data);
+                }, datapoint.data);
+                const target = datapoint.target;
+        
+                let scores: Record<string, number> = {};
+                for (const [evaluatorName, evaluator] of Object.entries(this.evaluators)) {
+                    const value = await observe({name: evaluatorName}, async (output: O, target: T) => {
+                        trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATOR");
+                        return await evaluator(output, target);
+                    }, output, target);
+        
+                    // If the evaluator returns a single number, use the evaluator name as the key
+                    if (isNumber(value)) {
+                        if (isNaN(value)) {
+                            throw new Error(`Evaluator ${evaluatorName} returned NaN`);
+                        }
+                        scores[evaluatorName] = value;
+                    } else {
+                        // If the evaluator returns an object, merge its keys with the existing scores (flatten)
+                        scores = { ...scores, ...value };
                     }
-                    scores[evaluatorName] = value;
-                } else {
-                    // If the evaluator returns an object, merge its keys with the existing scores (flatten)
-                    scores = { ...scores, ...value };
                 }
-            }
-    
-            return {
-                executorOutput: output,
-                data: datapoint.data,
-                target,
-                scores,
-            } as EvaluationDatapoint<D, T, O>;
+        
+                ret = {
+                    executorOutput: output,
+                    data: datapoint.data,
+                    target,
+                    scores,
+                    traceId: otelTraceIdToUUID(trace.getActiveSpan()!.spanContext().traceId),
+                } as EvaluationDatapoint<D, T, O>;
+            });
+
+            return ret!;
         });
     
         const results = await Promise.all(batchPromises);
@@ -252,7 +273,7 @@ class Evaluation<D, T, O> {
  *
  * @param props.data List of data points to evaluate. `data` is the input to the executor function, `target` is the input to the evaluator function.
  * @param props.executor The executor function. Takes the data point + any additional arguments and returns the output to evaluate.
- * @param props.evaluators List of evaluator functions. Each evaluator function takes the output of the executor and the target data, and returns.
+ * @param props.evaluators Map from evaluator name to evaluator function. Each evaluator function takes the output of the executor and the target data, and returns.
  * @param props.name Optional name of the evaluation.
  * @param props.config Optional override configurations for the evaluator.
  */

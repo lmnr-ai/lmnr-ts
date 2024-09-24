@@ -1,18 +1,13 @@
 import { PipelineRunResponse, PipelineRunRequest, EvaluationDatapoint, EvaluationStatus, UpdateEvaluationResponse, CreateEvaluationResponse } from './types';
-import { Attributes, AttributeValue, context, createContextKey, isSpanContextValid, TimeInput, trace } from '@opentelemetry/api';
+import { Attributes, AttributeValue, context, isSpanContextValid, TimeInput, trace } from '@opentelemetry/api';
 import { InitializeOptions, initialize as traceloopInitialize } from './sdk/node-server-sdk'
 import { otelSpanIdToUUID, otelTraceIdToUUID } from './utils';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { Metadata } from '@grpc/grpc-js';
 import { ASSOCIATION_PROPERTIES_KEY } from './sdk/tracing/tracing';
 import { forceFlush } from './sdk/node-server-sdk';
+import { SESSION_ID, USER_ID } from './sdk/tracing/attributes';
 
-// quick patch to get the traceloop's default tracer, since their 
-// `getTracer` function is not exported.
-// Another option would be to import directly 
-// like so: `import { getTracer } from '@traceloop/node-server-sdk/dist/src/lib/tracing/tracing';`
-// which isn't too nice either.
-const DEFAULT_TRACER_NAME = 'traceloop.tracer';
 
 interface LaminarInitializeProps {
     projectApiKey?: string;
@@ -294,10 +289,10 @@ export class Laminar {
         const currentSpan = trace.getActiveSpan();
         if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
             if (sessionId) {
-                currentSpan.setAttribute("traceloop.association.properties.session_id", sessionId);
+                currentSpan.setAttribute(SESSION_ID, sessionId);
             }
             if (userId) {
-                currentSpan.setAttribute("traceloop.association.properties.user_id", userId);
+                currentSpan.setAttribute(USER_ID, userId);
             }
         }
         let associationProperties = {};
