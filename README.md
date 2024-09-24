@@ -90,7 +90,7 @@ L.event('topic alignment', poem.includes(topic))
 L.evaluateEvent('excessiveWordiness', 'checkWordy', {'textInput': 'poem'})
 ```
 
-## Running offline evaluations on your data
+## Evaluations
 
 ### Quickstart
 
@@ -100,7 +100,7 @@ Install the package:
 npm install @lmnr-ai/lmnr
 ```
 
-Create a new directory and create a file named `my-first-eval.ts` with the following code:
+Create a file named `my-first-eval.ts` with the following code:
 
 ```typescript
 import { evaluate } from '@lmnr-ai/lmnr';
@@ -138,7 +138,7 @@ You can run evaluations locally by providing executor (part of the logic used in
 
 `evaluate` takes in the following parameters:
 - `data` – an array of `Datapoint` objects, where each `Datapoint` has two keys: `target` and `data`, each containing a key-value object.
-- `executor` – the logic you want to evaluate. This function must take `data` as the first argument, and produce any output. *
+- `executor` – the logic you want to evaluate. This function must take `data` as the first argument, and produce any output.
 - `evaluators` – Object which maps evaluator names to evaluators. Each evaluator is a function that takes output of executor as the first argument, `target` as the second argument and produces numeric scores. Each function can produce either a single number or `Record<string, number>` of scores.
 - `name` – optional name for the evaluation. Automatically generated if not provided.
 - `config` – optional additional override parameters.
