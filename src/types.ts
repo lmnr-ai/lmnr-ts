@@ -57,3 +57,22 @@ export type EvaluationDatapoint<D, T, O> = {
 }
 
 export type EvaluationStatus = 'Started' | 'Finished' | 'Error';
+
+/**
+ * Span types to categorize spans.
+ * 
+ * LLM spans are auto-instrumented LLM spans.
+ * Pipeline spans are top-level spans created by the pipeline runner.
+ * Executor and evaluator spans are top-level spans added automatically when doing evaluations.
+ */
+export type SpanType = 'DEFAULT' | 'LLM' | 'PIPELINE' | 'EXECUTOR' | 'EVALUATOR'
+
+
+/**
+ * Trace types to categorize traces.
+ * They are used as association properties passed to all spans in a trace.
+ * 
+ * EVENT traces are traces created by the event runner.
+ * They are used to mark traces created by the "online" evaluations for semantic events.
+ */
+export type TraceType = 'DEFAULT' | 'EVENT' | 'EVALUATION'

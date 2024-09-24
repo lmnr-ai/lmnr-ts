@@ -28,6 +28,7 @@ import { PineconeInstrumentation } from "@traceloop/instrumentation-pinecone";
 import { LangChainInstrumentation } from "@traceloop/instrumentation-langchain";
 import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
 import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
+import { ASSOCIATION_PROPERTIES } from "./attributes";
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor;
 let openAIInstrumentation: OpenAIInstrumentation | undefined;
@@ -263,7 +264,7 @@ export const startTracing = (options: InitializeOptions) => {
     if (associationProperties) {
       for (const [key, value] of Object.entries(associationProperties)) {
         span.setAttribute(
-          `${SpanAttributes.TRACELOOP_ASSOCIATION_PROPERTIES}.${key}`,
+          `${ASSOCIATION_PROPERTIES}.${key}`,
           value,
         );
       }

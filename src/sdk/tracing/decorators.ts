@@ -4,11 +4,9 @@ import {
   ASSOCIATION_PROPERTIES_KEY,
   getTracer,
 } from "./tracing";
-import {
-  SpanAttributes,
-} from "@traceloop/ai-semantic-conventions";
 import { shouldSendTraces } from ".";
 import { Telemetry } from "../telemetry/telemetry";
+import { SPAN_INPUT, SPAN_OUTPUT } from "./attributes";
 
 export type DecoratorConfig = {
   name: string;
@@ -61,12 +59,12 @@ export function withEntity<
               !(input[0] instanceof Map)
             ) {
               span.setAttribute(
-                SpanAttributes.TRACELOOP_ENTITY_INPUT,
+                SPAN_INPUT,
                 serialize({ args: [], kwargs: input[0] }),
               );
             } else {
               span.setAttribute(
-                SpanAttributes.TRACELOOP_ENTITY_INPUT,
+                SPAN_INPUT,
                 serialize({
                   args: input,
                   kwargs: {},
@@ -84,7 +82,7 @@ export function withEntity<
             try {
               if (shouldSendTraces()) {
                 span.setAttribute(
-                  SpanAttributes.TRACELOOP_ENTITY_OUTPUT,
+                  SPAN_OUTPUT,
                   serialize(resolvedRes),
                 );
               }
@@ -100,7 +98,7 @@ export function withEntity<
         try {
           if (shouldSendTraces()) {
             span.setAttribute(
-              SpanAttributes.TRACELOOP_ENTITY_OUTPUT,
+              SPAN_OUTPUT,
               serialize(res),
             );
           }
