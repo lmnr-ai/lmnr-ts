@@ -96,7 +96,7 @@ Install the package:
 npm install @lmnr-ai/lmnr
 ```
 
-Create a new directory and create a file named "eval.ts" with the following code:
+Create a new directory and create a file named "my-first-eval.ts" with the following code:
 
 ```typescript
 import { evaluate } from '@lmnr-ai/lmnr';
@@ -121,7 +121,7 @@ Run the following commands:
 
 ```sh
 export LMNR_PROJECT_API_KEY=<LMNR_PROJECT_API_KEY>  # get from Laminar project settings
-npx lmnr eval eval.ts
+npx lmnr eval my-first-eval.ts
 ```
 
 Visit the URL printed in the console to see the results.
