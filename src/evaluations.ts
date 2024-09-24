@@ -82,7 +82,7 @@ interface EvaluationConstructorProps<D, T, O> {
      * If the score is a single number, it will be named after the evaluator function. If the function is anonymous, it will be named
      * `evaluator_${index}`, where index is the index of the evaluator function in the list starting from 1.
      */
-    evaluators: EvaluatorFunction<O, T>[];
+    evaluators: Record<string, EvaluatorFunction<O, T>>;
     /**
      * Name of the evaluation.
      */
@@ -154,7 +154,7 @@ class Evaluation<D, T, O> {
         this.progressReporter = new EvaluationReporter();
         this.data = data;
         this.executor = executor;
-        this.evaluators = Object.fromEntries(evaluators.map((e, i) => [e.name.length > 0 ? e.name : `evaluator_${i + 1}`, e]));
+        this.evaluators = evaluators;
         if (config) {
             this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
         }
