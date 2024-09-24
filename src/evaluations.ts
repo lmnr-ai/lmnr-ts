@@ -1,7 +1,7 @@
 import { Laminar } from "./laminar";
 import { CreateEvaluationResponse, EvaluationDatapoint } from "./types";
 import cliProgress from "cli-progress";
-import { isNumber } from "./utils";
+import { isNumber, otelTraceIdToUUID } from "./utils";
 import { observe } from "./decorators";
 import { trace } from "@opentelemetry/api";
 import { SPAN_TYPE } from "./sdk/tracing/attributes";
@@ -249,7 +249,7 @@ class Evaluation<D, T, O> {
                     data: datapoint.data,
                     target,
                     scores,
-                    traceId: trace.getActiveSpan()!.spanContext().traceId ?? '',
+                    traceId: otelTraceIdToUUID(trace.getActiveSpan()!.spanContext().traceId),
                 } as EvaluationDatapoint<D, T, O>;
             });
 
