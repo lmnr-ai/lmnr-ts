@@ -1,7 +1,7 @@
 import { PipelineRunResponse, PipelineRunRequest, EvaluationDatapoint, EvaluationStatus, UpdateEvaluationResponse, CreateEvaluationResponse } from './types';
 import { Attributes, AttributeValue, context, isSpanContextValid, TimeInput, trace } from '@opentelemetry/api';
 import { InitializeOptions, initialize as traceloopInitialize } from './sdk/node-server-sdk'
-import { otelSpanIdToUUID, otelTraceIdToUUID } from './utils';
+import { otelSpanIdToUUID, otelTraceIdToUUID, StringUUID } from './utils';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { Metadata } from '@grpc/grpc-js';
 import { ASSOCIATION_PROPERTIES_KEY } from './sdk/tracing/tracing';
@@ -336,7 +336,7 @@ export class Laminar {
     }
 
     public static async postEvaluationResults<D, T, O>(
-        evaluationId: string,
+        evaluationId: StringUUID,
         data: EvaluationDatapoint<D, T, O>[]
     ): Promise<void> {
         const body = JSON.stringify({
