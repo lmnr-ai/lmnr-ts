@@ -2,7 +2,9 @@ import { Span, context } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
 import {
   ASSOCIATION_PROPERTIES_KEY,
+  getSpanPath,
   getTracer,
+  SPAN_PATH_KEY,
 } from "./tracing";
 import { shouldSendTraces } from ".";
 import { Telemetry } from "../telemetry/telemetry";
@@ -39,6 +41,10 @@ export function withEntity<
       { ...(currentAssociationProperties ?? {}), ...associationProperties },
     );
   }
+
+  const currentSpanPath = getSpanPath(entityContext);
+  const spanPath = currentSpanPath ? `${currentSpanPath}.${name}` : name;
+  entityContext = entityContext.setValue(SPAN_PATH_KEY, spanPath);
 
   if (shouldSuppressTracing) {
     entityContext = suppressTracing(entityContext);

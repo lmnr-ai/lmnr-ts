@@ -6,6 +6,7 @@ import { Instrumentation } from "@opentelemetry/instrumentation";
 import { InitializeOptions } from "../interfaces";
 import {
   ASSOCIATION_PROPERTIES_KEY,
+  SPAN_PATH_KEY,
 } from "./tracing";
 import { Telemetry } from "../telemetry/telemetry";
 import { _configuration } from "../configuration";
@@ -25,7 +26,7 @@ import { PineconeInstrumentation } from "@traceloop/instrumentation-pinecone";
 import { LangChainInstrumentation } from "@traceloop/instrumentation-langchain";
 import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
 import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
-import { ASSOCIATION_PROPERTIES } from "./attributes";
+import { ASSOCIATION_PROPERTIES, SPAN_PATH } from "./attributes";
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor;
 let openAIInstrumentation: OpenAIInstrumentation | undefined;
@@ -254,6 +255,11 @@ export const startTracing = (options: InitializeOptions) => {
     : new BatchSpanProcessor(traceExporter);
 
   _spanProcessor.onStart = (span: Span) => {
+    const spanPath = context.active().getValue(SPAN_PATH_KEY);
+    if (spanPath) {
+      span.setAttribute(SPAN_PATH, spanPath as string);
+    }
+
     // This sets the properties only if the context has them
     const associationProperties = context
       .active()

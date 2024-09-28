@@ -1,7 +1,7 @@
 import { Laminar } from "./laminar";
-import { CreateEvaluationResponse, EvaluationDatapoint } from "./types";
+import { EvaluationDatapoint } from "./types";
 import cliProgress from "cli-progress";
-import { isNumber, otelTraceIdToUUID } from "./utils";
+import { isNumber, otelTraceIdToUUID, StringUUID } from "./utils";
 import { observe } from "./decorators";
 import { trace } from "@opentelemetry/api";
 import { SPAN_TYPE } from "./sdk/tracing/attributes";
@@ -176,7 +176,7 @@ class Evaluation<D, T, O> {
         const evaluation = await Laminar.createEvaluation(this.name);
         this.progressReporter.start({name: evaluation.name, projectId: evaluation.projectId, id: evaluation.id, length: this.getLength()});
         try {
-            await this.evaluateInBatches(evaluation);
+            await this.evaluateInBatches(evaluation.id);
         } catch (e) {
             await Laminar.updateEvaluationStatus(evaluation.id, 'Error');
             this.progressReporter.stopWithError(e as Error);
@@ -186,14 +186,15 @@ class Evaluation<D, T, O> {
 
         // If we update with status "Finished", we expect averageScores to be not empty
         const updatedEvaluation = await Laminar.updateEvaluationStatus(evaluation.id, 'Finished');
-        this.progressReporter.stop(updatedEvaluation.averageScores!);
+        const averageScores = updatedEvaluation.stats.averageScores;
+        this.progressReporter.stop(averageScores);
         this.isFinished = true;
 
         await Laminar.shutdown();
     }
 
     // TODO: Calculate duration of the evaluation and add it to the summary
-    public async evaluateInBatches(evaluation: CreateEvaluationResponse): Promise<void> {
+    public async evaluateInBatches(evaluationId: StringUUID): Promise<void> {
         for (let i = 0; i < this.getLength(); i += this.batchSize) {
             const batch = this.data.slice(i, i + this.batchSize);
             try {
@@ -201,7 +202,7 @@ class Evaluation<D, T, O> {
 
                 // TODO: This must happen on the background, while the next batch is being evaluated
                 // If we do this, then we can calculate the duration of the evaluation and add it to the summary
-                await Laminar.postEvaluationResults(evaluation.id, results);
+                await Laminar.postEvaluationResults(evaluationId, results);
             } catch (e) {
                 console.error(`Error evaluating batch: ${e}`);
             } finally {
