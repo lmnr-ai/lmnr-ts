@@ -18,6 +18,9 @@ npm install @lmnr-ai/lmnr
 And then in the code
 
 ```typescript
+# Only if you are using Next.js
+export NEXT_OTEL_FETCH_DISABLED=1
+
 import { Laminar as L } from '@lmnr-ai/lmnr'
 
 L.initialize({ projectApiKey: '<PROJECT_API_KEY>' })
