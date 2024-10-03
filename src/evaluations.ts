@@ -285,7 +285,7 @@ class Evaluation<D, T, O> {
  * @param props.data List of data points to evaluate. `data` is the input to the executor function, `target` is the input to the evaluator function.
  * @param props.executor The executor function. Takes the data point + any additional arguments and returns the output to evaluate.
  * @param props.evaluators Map from evaluator name to evaluator function. Each evaluator function takes the output of the executor and the target data, and returns.
- * @param props.groupId Group name which is same as the feature you are evaluation in your project or application. Defaults to "default".
+ * @param props.groupId Group name which is same as the feature you are evaluating in your project or application. Defaults to "default".
  * @param props.name Optional name of the evaluation. Used to easily identify the evaluation in the group.
  * @param props.config Optional override configurations for the evaluator.
  */
