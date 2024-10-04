@@ -120,7 +120,8 @@ evaluate({
     executor: (data) => writePoem(data),
     evaluators: {
         containsPoem: (output, target) => target.poem.includes(output) ? 1 : 0
-    }
+    },
+    groupId: 'my_first_feature'
 })
 ```
 
