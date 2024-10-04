@@ -1,4 +1,4 @@
-import { PipelineRunResponse, PipelineRunRequest, EvaluationDatapoint, EvaluationStatus, UpdateEvaluationResponse, CreateEvaluationResponse } from './types';
+import { PipelineRunResponse, PipelineRunRequest, EvaluationDatapoint, CreateEvaluationResponse } from './types';
 import { Attributes, AttributeValue, context, isSpanContextValid, TimeInput, trace } from '@opentelemetry/api';
 import { InitializeOptions, initialize as traceloopInitialize } from './sdk/node-server-sdk'
 import { otelSpanIdToUUID, otelTraceIdToUUID, StringUUID } from './utils';
@@ -319,12 +319,14 @@ export class Laminar {
         await forceFlush();
     }
 
-    public static async createEvaluation(name?: string): Promise<CreateEvaluationResponse> {
+    public static async createEvaluation<D, T, O>({groupId, name, data}: {groupId?: string, name?: string, data: EvaluationDatapoint<D, T, O>[]}): Promise<CreateEvaluationResponse> {
         const response = await fetch(`${this.baseHttpUrl}/v1/evaluations`, {
             method: 'POST',
             headers: this.getHeaders(),
             body: JSON.stringify({
+                groupId: groupId ?? null,
                 name: name ?? null,
+                points: data,
             })
         });
 
@@ -332,60 +334,7 @@ export class Laminar {
             throw new Error(`Failed to create evaluation ${name}. Response: ${response.statusText}`);
         }
 
-        return await response.json();
-    }
-
-    public static async postEvaluationResults<D, T, O>(
-        evaluationId: StringUUID,
-        data: EvaluationDatapoint<D, T, O>[]
-    ): Promise<void> {
-        const body = JSON.stringify({
-            evaluationId,
-            points: data,
-        });
-        const headers = this.getHeaders();
-        const url = `${this.baseHttpUrl}/v1/evaluation-datapoints`;
-        try {
-            const response = await fetch(url, {
-                method: "POST",
-                headers,
-                body,
-            });
-            if (!response.ok) {
-                console.error("Failed to send evaluation results. Response: ");
-                response.text().then((text) => console.error(text));
-            }
-        } catch (error) {
-            console.error("Failed to send evaluation results. Error: ", error);
-        };
-    }
-
-    /**
-     * Updates the status of an evaluation. Returns the updated evaluation object.
-     * 
-     * @param evaluationId - The ID of the evaluation to update.
-     * @param status - The status to set for the evaluation.
-     */
-    public static async updateEvaluationStatus(
-        evaluationId: string,
-        status: EvaluationStatus,
-    ): Promise<UpdateEvaluationResponse> {
-        const body = JSON.stringify({
-            status: status,
-        });
-        const headers = this.getHeaders();
-        const url = `${this.baseHttpUrl}/v1/evaluations/${evaluationId}`;
-        
-        const response = await fetch(url, {
-            method: "POST",
-            headers,
-            body,
-        });
-        if (!response.ok) {
-            throw new Error(`Failed to update evaluation status ${evaluationId}. Response: ${await response.text()}`);
-        }
-
-        return await response.json() as UpdateEvaluationResponse;
+        return await response.json() as CreateEvaluationResponse;
     }
 
     private static getHeaders() {

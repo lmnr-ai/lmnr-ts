@@ -40,19 +40,10 @@ export type Event = {
 export type CreateEvaluationResponse = {
     id: StringUUID,
     createdAt: Date,
+    groupId: string,
     name: string,
-    status: EvaluationStatus
     projectId: StringUUID,
-    metadata: Record<string, any> | null,
 }
-
-type EvaluationStats = {
-    averageScores: Record<string, number>;
-}
-
-export type UpdateEvaluationResponse = {
-    stats: EvaluationStats;
-};
 
 export type EvaluationDatapoint<D, T, O> = {
     data: Record<string, any> & D;
@@ -61,8 +52,6 @@ export type EvaluationDatapoint<D, T, O> = {
     scores: Record<string, number>;
     traceId: string;
 }
-
-export type EvaluationStatus = 'Started' | 'Finished' | 'Error';
 
 /**
  * Span types to categorize spans.

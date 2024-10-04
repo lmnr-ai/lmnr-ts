@@ -1,7 +1,7 @@
 import { Laminar } from "./laminar";
 import { EvaluationDatapoint } from "./types";
 import cliProgress from "cli-progress";
-import { isNumber, otelTraceIdToUUID, StringUUID } from "./utils";
+import { isNumber, otelTraceIdToUUID } from "./utils";
 import { observe } from "./decorators";
 import { trace } from "@opentelemetry/api";
 import { SPAN_TYPE } from "./sdk/tracing/attributes";
@@ -17,6 +17,26 @@ declare global {
 
 const getEvaluationUrl = (projectId: string, evaluationId: string) => {
     return `https://www.lmnr.ai/project/${projectId}/evaluations/${evaluationId}`;
+}
+
+const getAverageScores = (results: EvaluationDatapoint<any, any, any>[]): Record<string, number> => {
+    const perScoreValues: Record<string, number[]> = {};
+    for (const result of results) {
+        for (const key in result.scores) {
+            if (perScoreValues[key]) {
+                perScoreValues[key].push(result.scores[key]);
+            } else {
+                perScoreValues[key] = [result.scores[key]];
+            }
+        }
+    }
+
+    const averageScores: Record<string, number> = {};
+    for (const key in perScoreValues) {
+        averageScores[key] = perScoreValues[key].reduce((a, b) => a + b, 0) / perScoreValues[key].length;
+    }
+
+    return averageScores;
 }
 
 /**
@@ -84,6 +104,10 @@ interface EvaluationConstructorProps<D, T, O> {
      */
     evaluators: Record<string, EvaluatorFunction<O, T>>;
     /**
+     * Optional group id of the evaluation. Defaults to "default".
+     */
+    groupId?: string;
+    /**
      * Name of the evaluation.
      */
     name?: string;
@@ -102,9 +126,7 @@ class EvaluationReporter {
 
     constructor() {}
 
-    public start({name, projectId, id, length}: {name: string, projectId: string, id: string, length: number}) {
-        process.stdout.write(`\nRunning evaluation ${name}...\n\n`);
-        process.stdout.write(`Check progress and results at ${getEvaluationUrl(projectId, id)}\n\n`);
+    public start({length}: {length: number}) {
         this.cliProgress.start(length, 0);
     }
 
@@ -120,11 +142,12 @@ class EvaluationReporter {
     }
 
     // Call either error or stop, not both
-    public stop(averageScores: Record<string, number>) {
+    public stop({averageScores, projectId, evaluationId}: {averageScores: Record<string, number>, projectId: string, evaluationId: string}) {
         this.cliProgress.stop();
+        process.stdout.write(`\nCheck progress and results at ${getEvaluationUrl(projectId, evaluationId)}\n`);
         process.stdout.write('\nAverage scores:\n');
         for (const key in averageScores) {
-            process.stdout.write(`${key}: ${averageScores[key]}\n`);
+            process.stdout.write(`${key}: ${JSON.stringify(averageScores[key])}\n`);
         }
         process.stdout.write('\n');
     }
@@ -132,84 +155,72 @@ class EvaluationReporter {
 
 class Evaluation<D, T, O> {
     private isFinished: boolean = false;
-    private name?: string;
     private progressReporter: EvaluationReporter;
     private data: Datapoint<D, T>[] | Dataset<D, T>;
     private executor: (data: D, ...args: any[]) => O | Promise<O>;
     private evaluators: Record<string, EvaluatorFunction<O, T>>;
+    private groupId?: string;
+    private name?: string;
     private batchSize: number = DEFAULT_BATCH_SIZE;
 
-    /**
-     * Create a new evaluation and prepare data.
-     * @param props.data List of data points to evaluate. `data` is the input to the executor function, `target` is the input to the evaluator function.
-     * @param props.executor The executor function. Takes the data point + any additional arguments and returns the output to evaluate.
-     * @param props.evaluators Map from evaluator name to evaluator function. Each evaluator function takes the output of the executor and the target data, and returns.
-     * @param props.name Optional name of the evaluation.
-     * @param props.config Optional override configurations for the evaluator.
-     */
     constructor({
-        data, executor, evaluators, name, config
+        data, executor, evaluators, groupId, name, config
     }: EvaluationConstructorProps<D, T, O>) {
-        this.name = name;
+        if (Object.keys(evaluators).length === 0) {
+            throw new Error('No evaluators provided');
+        }
+
+        // Validate evaluator keys
+        for (const key in evaluators) {
+            if (!/^[\w\s-]+$/.test(key)) {
+                throw new Error(`Invalid evaluator key: "${key}". Keys must only contain letters, digits, hyphens, underscores, or spaces.`);
+            }
+        }
+
         this.progressReporter = new EvaluationReporter();
         this.data = data;
         this.executor = executor;
         this.evaluators = evaluators;
+        this.groupId = groupId;
+        this.name = name;
         if (config) {
             this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
         }
         Laminar.initialize({ projectApiKey: config?.projectApiKey, baseUrl: config?.baseUrl, httpPort: config?.httpPort, grpcPort: config?.grpcPort, instrumentModules: config?.instrumentModules });
     }
 
-    /** 
-     * Runs the evaluation.
-     *
-     * Creates a new evaluation.
-     * Evaluates data points in batches of `batchSize`. The executor function is called on each data point
-     * to get the output, and then evaluate it by each evaluator function.
-     */
     public async run(): Promise<void> {
         if (this.isFinished) {
             throw new Error('Evaluation is already finished');
         }
 
-        const evaluation = await Laminar.createEvaluation(this.name);
-        this.progressReporter.start({name: evaluation.name, projectId: evaluation.projectId, id: evaluation.id, length: this.getLength()});
+        this.progressReporter.start({length: this.getLength()});
+        let resultDatapoints: EvaluationDatapoint<D, T, O>[];
         try {
-            await this.evaluateInBatches(evaluation.id);
+            resultDatapoints = await this.evaluateInBatches();
         } catch (e) {
-            await Laminar.updateEvaluationStatus(evaluation.id, 'Error');
             this.progressReporter.stopWithError(e as Error);
             this.isFinished = true;
             return;
         }
 
-        // If we update with status "Finished", we expect averageScores to be not empty
-        const updatedEvaluation = await Laminar.updateEvaluationStatus(evaluation.id, 'Finished');
-        const averageScores = updatedEvaluation.stats.averageScores;
-        this.progressReporter.stop(averageScores);
+        const evaluation = await Laminar.createEvaluation({groupId: this.groupId, name: this.name, data: resultDatapoints});
+        const averageScores = getAverageScores(resultDatapoints);
+        this.progressReporter.stop({averageScores, projectId: evaluation.projectId, evaluationId: evaluation.id});
         this.isFinished = true;
 
         await Laminar.shutdown();
     }
 
-    // TODO: Calculate duration of the evaluation and add it to the summary
-    public async evaluateInBatches(evaluationId: StringUUID): Promise<void> {
+    public async evaluateInBatches(): Promise<EvaluationDatapoint<D, T, O>[]> {
+        const resultDatapoints: EvaluationDatapoint<D, T, O>[] = [];
         for (let i = 0; i < this.getLength(); i += this.batchSize) {
             const batch = this.data.slice(i, i + this.batchSize);
-            try {
-                const results = await this.evaluateBatch(batch);
-
-                // TODO: This must happen on the background, while the next batch is being evaluated
-                // If we do this, then we can calculate the duration of the evaluation and add it to the summary
-                await Laminar.postEvaluationResults(evaluationId, results);
-            } catch (e) {
-                console.error(`Error evaluating batch: ${e}`);
-            } finally {
-                // Update progress regardless of success
-                this.progressReporter.update(batch.length);
-            }
+            const batchDatapoints = await this.evaluateBatch(batch);
+            resultDatapoints.push(...batchDatapoints);
+            this.progressReporter.update(batch.length);
         }
+        return resultDatapoints;
     }
     
     private async evaluateBatch(batch: Datapoint<D, T>[]): Promise<EvaluationDatapoint<D, T, O>[]> {
@@ -233,14 +244,12 @@ class Evaluation<D, T, O> {
                         return await evaluator(output, target);
                     }, output, target);
         
-                    // If the evaluator returns a single number, use the evaluator name as the key
                     if (isNumber(value)) {
                         if (isNaN(value)) {
                             throw new Error(`Evaluator ${evaluatorName} returned NaN`);
                         }
                         scores[evaluatorName] = value;
                     } else {
-                        // If the evaluator returns an object, merge its keys with the existing scores (flatten)
                         scores = { ...scores, ...value };
                     }
                 }
@@ -275,13 +284,14 @@ class Evaluation<D, T, O> {
  * @param props.data List of data points to evaluate. `data` is the input to the executor function, `target` is the input to the evaluator function.
  * @param props.executor The executor function. Takes the data point + any additional arguments and returns the output to evaluate.
  * @param props.evaluators Map from evaluator name to evaluator function. Each evaluator function takes the output of the executor and the target data, and returns.
- * @param props.name Optional name of the evaluation.
+ * @param props.groupId Group name which is same as the feature you are evaluating in your project or application. Defaults to "default".
+ * @param props.name Optional name of the evaluation. Used to easily identify the evaluation in the group.
  * @param props.config Optional override configurations for the evaluator.
  */
 export async function evaluate<D, T, O>({
-    data, executor, evaluators, name, config
+    data, executor, evaluators, groupId, name, config
 }: EvaluationConstructorProps<D, T, O>): Promise<void> {
-    const evaluation = new Evaluation({ data, executor, evaluators, name, config });
+    const evaluation = new Evaluation({ data, executor, evaluators, name, groupId, config });
     if (globalThis._set_global_evaluation) {
         globalThis._evaluation = evaluation;
     } else {
