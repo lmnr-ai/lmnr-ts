@@ -127,7 +127,6 @@ class EvaluationReporter {
     constructor() {}
 
     public start({length}: {length: number}) {
-        process.stdout.write(`\nRunning evaluation...\n\n`);
         this.cliProgress.start(length, 0);
     }
 
@@ -145,7 +144,7 @@ class EvaluationReporter {
     // Call either error or stop, not both
     public stop({averageScores, projectId, evaluationId}: {averageScores: Record<string, number>, projectId: string, evaluationId: string}) {
         this.cliProgress.stop();
-        process.stdout.write(`Check progress and results at ${getEvaluationUrl(projectId, evaluationId)}\n\n`);
+        process.stdout.write(`\nCheck progress and results at ${getEvaluationUrl(projectId, evaluationId)}\n`);
         process.stdout.write('\nAverage scores:\n');
         for (const key in averageScores) {
             process.stdout.write(`${key}: ${JSON.stringify(averageScores[key])}\n`);
