@@ -32,8 +32,8 @@ export class Laminar {
      * @param project_api_key - Laminar project api key. You can generate one by going
      * to the projects settings page on the Laminar dashboard.
      * If not specified, it will try to read from the LMNR_PROJECT_API_KEY environment variable.
-     * @param env - Default environment passed to `run` and `evaluateEvent` requests,
-     * unless overriden at request time. Usually, model provider keys are stored here.
+     * @param env - Default environment passed to `run` requests, unless overriden at request
+     * time. Usually, model provider keys are stored here.
      * @param baseUrl - Laminar API url.
      * If not specified, defaults to https://api.lmnr.ai.
      * @param httpPort - Laminar API http port.
@@ -225,43 +225,6 @@ export class Laminar {
         }
         if (value !== undefined) {
             event["lmnr.event.value"] = value;
-        }
-
-        currentSpan.addEvent(name, event, timestamp);
-    }
-
-    /**
-     * Sends an event for evaluation to the Laminar backend.
-     * 
-     * @param name - The name of the event.
-     * @param evaluator - The name of the pipeline that evaluates the event.
-     * @param data - A map from input node name to its value in the evaluator pipeline.
-     * @param env - Environment variables required to run the pipeline.
-     * @param timestamp - If specified as an integer, it must be epoch nanoseconds.
-     *                    If not specified, relies on the underlying OpenTelemetry implementation.
-     */
-    public static evaluateEvent(
-        name: string,
-        evaluator: string,
-        data: Record<string, any>,
-        env?: Record<string, string>,
-        timestamp?: TimeInput,
-    ) {
-        const currentSpan = trace.getActiveSpan();
-
-        if (currentSpan === undefined || !isSpanContextValid(currentSpan.spanContext())) {
-            console.warn("Laminar().evaluateEvent()\` called outside of span context." +
-                ` Evaluate event '${name}' will not be recorded in the trace.` +
-                " Make sure to annotate the function with a decorator"
-            );
-            return;
-        }
-
-        const event = {
-            "lmnr.event.type": "evaluate",
-            "lmnr.event.evaluator": evaluator,
-            "lmnr.event.data": JSON.stringify(data),
-            "lmnr.event.env": JSON.stringify(env ?? {}),
         }
 
         currentSpan.addEvent(name, event, timestamp);
