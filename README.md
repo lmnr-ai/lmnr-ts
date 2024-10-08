@@ -69,13 +69,9 @@ await observe({name: 'poemWriter'}, async () => await poemWriter('laminar flow')
 
 ### Sending events
 
-You can send events in two ways:
-- `.event(name, value)` – for a pre-defined event with one of possible values.
-- `.evaluate_event(name, evaluator, data, env)` – for an event that is evaluated by evaluator pipeline based on the data.
+You can send laminar events using `L.event(name, value)`.
 
-Note that to run an evaluate event, you need to create an evaluator pipeline and create a target version for it.
-
-Read our [docs](https://docs.lmnr.ai) to learn more about event types and how they are created and evaluated.
+Read our [docs](https://docs.lmnr.ai) to learn more about events and examples.
 
 ### Example
 
@@ -86,11 +82,6 @@ const poem = response.choices[0].message.content;
 
 // this will register True or False value with Laminar
 L.event('topic alignment', poem.includes(topic))
-
-// this will run the pipeline `checkWordy` with `poem` set as the value
-// of `textInput` node, and write the result as an event with name
-// "excessiveWordiness"
-L.evaluateEvent('excessiveWordiness', 'checkWordy', {'textInput': 'poem'})
 ```
 
 ## Evaluations
