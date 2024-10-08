@@ -34,7 +34,8 @@ export class Laminar {
      * If not specified, it will try to read from the LMNR_PROJECT_API_KEY environment variable.
      * @param env - Default environment passed to `run` requests, unless overriden at request
      * time. Usually, model provider keys are stored here.
-     * @param baseUrl - Laminar API url.
+     * @param baseUrl - Laminar API url. Do not include the port, use
+     * `httpPort` and `grpcPort` instead.
      * If not specified, defaults to https://api.lmnr.ai.
      * @param httpPort - Laminar API http port.
      * If not specified, defaults to 443.
@@ -80,6 +81,11 @@ export class Laminar {
             );
         }
         this.projectApiKey = key;
+        if (baseUrl?.match(/:\d{1,5}$/g)) {
+            throw new Error(
+                'Port should be passed separately in `httpPort` and `grpcPort`'
+            );
+        }
 
         this.baseHttpUrl = `${baseUrl ?? 'https://api.lmnr.ai'}:${httpPort ?? 443}`;
         this.baseGrpcUrl = `${baseUrl ?? 'https://api.lmnr.ai'}:${grpcPort ?? 8443}`;
