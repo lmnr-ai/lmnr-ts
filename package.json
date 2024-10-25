@@ -29,6 +29,7 @@
   "homepage": "https://github.com/lmnr-ai/lmnr-ts#README",
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.27.3",
+    "@aws-sdk/client-bedrock-runtime": "^3.679.0",
     "@azure/openai": "1.0.0-beta.13",
     "@google-cloud/aiplatform": "^3.29.0",
     "@google-cloud/vertexai": "^1.7.0",
@@ -41,7 +42,10 @@
     "@types/semver": "^7.5.8",
     "@types/uuid": "^10.0.0",
     "bufferutil": "^4.0.8",
+    "chromadb": "^1.9.2",
+    "cohere-ai": "^7.14.0",
     "langchain": "^0.3.2",
+    "llamaindex": "^0.7.10",
     "openai": "^4.62.1",
     "runnables": "link:@langchain/core/runnables",
     "tsup": "^8.3.0",
