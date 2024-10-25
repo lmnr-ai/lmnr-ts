@@ -9,5 +9,7 @@ export {
 } from './types';
 
 export { Laminar } from './laminar';
-export { evaluate, Dataset, Datapoint } from './evaluations';
+export { evaluate, Datapoint } from './evaluations';
+export { Dataset, LaminarDataset } from './datasets';
 export { observe } from './decorators';
+export { LaminarAttributes } from './sdk/tracing/attributes';

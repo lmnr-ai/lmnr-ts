@@ -1,12 +1,25 @@
-import { PipelineRunResponse, PipelineRunRequest, EvaluationDatapoint, CreateEvaluationResponse } from './types';
-import { Attributes, AttributeValue, context, isSpanContextValid, TimeInput, trace } from '@opentelemetry/api';
+import {
+    PipelineRunResponse,
+    PipelineRunRequest,
+    EvaluationDatapoint,
+    CreateEvaluationResponse,
+    GetDatapointsResponse
+} from './types';
+import {
+    Attributes,
+    AttributeValue,
+    context,
+    isSpanContextValid,
+    TimeInput,
+    trace
+} from '@opentelemetry/api';
 import { InitializeOptions, initialize as traceloopInitialize } from './sdk/node-server-sdk'
-import { otelSpanIdToUUID, otelTraceIdToUUID, StringUUID } from './utils';
+import { otelSpanIdToUUID, otelTraceIdToUUID } from './utils';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { Metadata } from '@grpc/grpc-js';
 import { ASSOCIATION_PROPERTIES_KEY } from './sdk/tracing/tracing';
 import { forceFlush } from './sdk/node-server-sdk';
-import { SESSION_ID, USER_ID } from './sdk/tracing/attributes';
+import { SESSION_ID, USER_ID, LaminarAttributes } from './sdk/tracing/attributes';
 
 
 interface LaminarInitializeProps {
@@ -47,8 +60,7 @@ export class Laminar {
      * Pass an empty object {} to disable any kind of automatic instrumentation.
      * If you only want to auto-instrument specific modules, then pass them in the object.
      * 
-     * Example:
-     * ```typescript
+     * @example
      * import { Laminar as L } from '@lmnr-ai/lmnr';
      * import { OpenAI } from 'openai';
      * import * as ChainsModule from "langchain/chains";
@@ -60,7 +72,6 @@ export class Laminar {
      *  },
      *  openAI: OpenAI
      * } });
-     * ```
      *
      * @throws {Error} - If project API key is not set
      */
@@ -119,7 +130,8 @@ export class Laminar {
     /**
      * Sets the environment that will be sent to Laminar requests.
      * 
-     * @param env - The environment variables to override. If not provided, the current environment will not be modified.
+     * @param env - The environment variables to override. If not provided, the
+     * current environment will not be modified.
      */
     public static setEnv(env?: Record<string, string>) {
         if (env) {
@@ -130,7 +142,8 @@ export class Laminar {
     /**
      * Sets the project API key for authentication with Laminar.
      *
-     * @param projectApiKey - The API key to be set. If not provided, the existing API key will not be modified.
+     * @param projectApiKey - The API key to be set. If not provided, the existing
+     * API key will not be modified.
      */
     public static setProjectApiKey(projectApiKey?: string) {
         if (projectApiKey) {
@@ -143,12 +156,14 @@ export class Laminar {
      *
      * @param pipeline - The name of the Laminar pipeline. Pipeline must have a target version.
      * @param inputs - The inputs for the pipeline. Map from an input node name to input data.
-     * @param env - The environment variables for the pipeline execution. Typically used for model provider keys.
+     * @param env - The environment variables for the pipeline execution.
+     * Typically used for model provider keys.
      * @param metadata - Additional metadata for the pipeline run.
      * @param currentSpanId - The ID of the current span.
      * @param currentTraceId - The ID of the current trace.
      * @returns A promise that resolves to the response of the pipeline run.
-     * @throws An error if the Laminar object is not initialized with a project API key. Or if the request fails.
+     * @throws An error if the Laminar object is not initialized with a project API
+     * key or if the request fails.
      */
     public static async run({
         pipeline,
@@ -208,9 +223,11 @@ export class Laminar {
      * is `null`, event is considered a boolean tag with the value of `true`.
      *
      * @param name - The name of the event.
-     * @param value - The value of the event. Must be a primitive type. If not specified, boolean true is assumed in the backend.
-     * @param timestamp - The timestamp of the event. If not specified, relies on the underlying OpenTelemetry implementation.
-     *                    If specified as an integer, it must be epoch nanoseconds.
+     * @param value - The value of the event. Must be a primitive type. If not
+     * specified, boolean true is assumed in the backend.
+     * @param timestamp - The timestamp of the event. If not specified, relies on
+     * the underlying OpenTelemetry implementation.
+     * If specified as an integer, it must be epoch nanoseconds.
      */
     public static event(
         name: string,
@@ -237,24 +254,25 @@ export class Laminar {
     }
 
     /**
-     * Sets the session information for the current span and returns the context to use for the following spans.
+     * Sets the session information for the current span and returns the
+     * context to use for the following spans.
      * 
-     * Example:
-     * ```typescript
+     * @param sessionId - The session ID to associate with the span.
+     * @param userId - The user ID to associate with the span.
+     * @returns The updated context with the association properties.
+     * 
+     * @example
      * import { context as contextApi } from '@opentelemetry/api';
      * import { Laminar } from '@lmnr-ai/laminar';
      * const context = Laminar.contextWithSession({ sessionId: "1234", userId: "5678" });
      * contextApi.with(context, () => {
      *    // Your code here
      * });
-     * ```
-     * 
-     * @param sessionId - The session ID to associate with the span.
-     * @param userId - The user ID to associate with the span.
-     * @returns The updated context with the association properties.
      */
-    public static contextWithSession({ sessionId, userId }: { sessionId?: string, userId?: string }) {
-
+    public static contextWithSession({
+        sessionId,
+        userId
+    }: { sessionId?: string, userId?: string }) {
         const currentSpan = trace.getActiveSpan();
         if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
             if (sessionId) {
@@ -284,11 +302,48 @@ export class Laminar {
         return entityContext;
     }
 
+    /**
+     * Set attributes for the current span. Useful for manual
+     * instrumentation.
+     * @param attributes - The attributes to set for the current span.
+     * 
+     * @example
+     * import { Laminar as L, observe } from '@lmnr-ai/laminar';
+     * await observe({ name: 'mySpanName', spanType: 'LLM' }, async (msg: string) => {
+     *   const response = await myCustomCallToOpenAI(msg);
+     *   L.setSpanAttributes({
+     *     [LaminarAttributes.PROVIDER]: 'openai',
+     *     [LaminarAttributes.REQUEST_MODEL]: "requested_model",
+     *     [LaminarAttributes.RESPONSE_MODEL]: response.model,
+     *     [LaminarAttributes.INPUT_TOKEN_COUNT]: response.usage.prompt_tokens,
+     *     [LaminarAttributes.OUTPUT_TOKEN_COUNT]: response.usage.completion_tokens,
+     *   })
+     * }, userMessage);
+     */
+    public static setSpanAttributes(
+        attributes: Record<typeof LaminarAttributes[keyof typeof LaminarAttributes], AttributeValue>
+    ) {
+        const currentSpan = trace.getActiveSpan();
+        if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
+            for (const [key, value] of Object.entries(attributes)) {
+                currentSpan.setAttribute(key, value);
+            }
+        }
+    }
+
     public static async shutdown() {
         await forceFlush();
     }
 
-    public static async createEvaluation<D, T, O>({groupId, name, data}: {groupId?: string, name?: string, data: EvaluationDatapoint<D, T, O>[]}): Promise<CreateEvaluationResponse> {
+    public static async createEvaluation<D, T, O>({
+        groupId,
+        name,
+        data
+    }: {
+        groupId?: string,
+        name?: string,
+        data: EvaluationDatapoint<D, T, O>[]
+    }): Promise<CreateEvaluationResponse> {
         const response = await fetch(`${this.baseHttpUrl}/v1/evaluations`, {
             method: 'POST',
             headers: this.getHeaders(),
@@ -304,6 +359,32 @@ export class Laminar {
         }
 
         return await response.json() as CreateEvaluationResponse;
+    }
+
+    public static async getDatapoints<D, T>({
+        datasetName,
+        offset,
+        limit,
+    }: {
+        datasetName: string,
+        offset: number,
+        limit: number,
+    }): Promise<GetDatapointsResponse<D, T>> {
+        const params = new URLSearchParams({
+            name: datasetName,
+            offset: offset.toString(),
+            limit: limit.toString()
+        });
+        const response = await fetch(`${this.baseHttpUrl}/v1/datasets/datapoints?${params.toString()}`, {
+            method: 'GET',
+            headers: this.getHeaders(),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to get datapoints for dataset ${datasetName}. Response: ${response.statusText}`);
+        }
+
+        return await response.json() as GetDatapointsResponse<D, T>;
     }
 
     private static getHeaders() {

@@ -11,7 +11,7 @@ import {
 import { Telemetry } from "../telemetry/telemetry";
 import { _configuration } from "../configuration";
 import { NodeTracerProvider, SimpleSpanProcessor, BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
-import {registerInstrumentations} from "@opentelemetry/instrumentation";
+import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
 import { AzureOpenAIInstrumentation } from "@traceloop/instrumentation-azure";
@@ -26,7 +26,7 @@ import { PineconeInstrumentation } from "@traceloop/instrumentation-pinecone";
 import { LangChainInstrumentation } from "@traceloop/instrumentation-langchain";
 import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
 import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
-import { ASSOCIATION_PROPERTIES, SPAN_PATH } from "./attributes";
+import { ASSOCIATION_PROPERTIES, ASSOCIATION_PROPERTIES_OVERRIDES, SPAN_PATH } from "./attributes";
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor;
 let openAIInstrumentation: OpenAIInstrumentation | undefined;
@@ -266,10 +266,11 @@ export const startTracing = (options: InitializeOptions) => {
       .getValue(ASSOCIATION_PROPERTIES_KEY);
     if (associationProperties) {
       for (const [key, value] of Object.entries(associationProperties)) {
-        span.setAttribute(
-          `${ASSOCIATION_PROPERTIES}.${key}`,
-          value,
-        );
+        if (Object.keys(ASSOCIATION_PROPERTIES_OVERRIDES).includes(key)) {
+          span.setAttribute(ASSOCIATION_PROPERTIES_OVERRIDES[key], value);
+        } else {
+          span.setAttribute(`${ASSOCIATION_PROPERTIES}.${key}`, value);
+        }
       }
     }
   };

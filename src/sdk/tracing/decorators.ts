@@ -81,7 +81,15 @@ export function withEntity<
           }
         }
 
+        // Remove span type from association properties after the span is created
+        const { "span_type": spanType, ...rest } = associationProperties ?? {};
+        entityContext = entityContext.setValue(
+          ASSOCIATION_PROPERTIES_KEY,
+          { ...(currentAssociationProperties ?? {}), ...rest },
+        );
+
         const res = fn.apply(thisArg, args);
+
         if (res instanceof Promise) {
           return res.then((resolvedRes) => {
             try {

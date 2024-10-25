@@ -1,3 +1,4 @@
+import { Datapoint } from "./evaluations";
 import { StringUUID } from "./utils";
 
 export type ChatMessage = {
@@ -51,6 +52,12 @@ export type EvaluationDatapoint<D, T, O> = {
     executorOutput: any & O,
     scores: Record<string, number>;
     traceId: string;
+}
+
+export type GetDatapointsResponse<D, T> = {
+    items: Datapoint<D, T>[];
+    totalCount: number;
+    anyInProject: boolean;
 }
 
 /**
