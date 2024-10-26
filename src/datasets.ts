@@ -3,7 +3,7 @@ import { Laminar as L } from './laminar';
 
 const DEFAULT_FETCH_SIZE = 25;
 
-export abstract class Dataset<D, T> {
+export abstract class EvaluationDataset<D, T> {
   public async slice(start: number, end: number): Promise<Datapoint<D, T>[]> {
     const result = [];
     for (let i = Math.max(start, 0); i < Math.min(end, await this.size()); i++) {
@@ -15,7 +15,7 @@ export abstract class Dataset<D, T> {
   public abstract get(index: number): Promise<Datapoint<D, T>> | Datapoint<D, T>;
 }
 
-export class LaminarDataset<D, T> extends Dataset<D, T> {
+export class LaminarDataset<D, T> extends EvaluationDataset<D, T> {
   private fetchedItems: Datapoint<D, T>[] = [];
   private len: number | null = null;
   private offset: number = 0;

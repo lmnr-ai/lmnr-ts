@@ -10,6 +10,6 @@ export {
 
 export { Laminar } from './laminar';
 export { evaluate, Datapoint } from './evaluations';
-export { Dataset, LaminarDataset } from './datasets';
+export { EvaluationDataset as Dataset, LaminarDataset } from './datasets';
 export { observe } from './decorators';
 export { LaminarAttributes } from './sdk/tracing/attributes';
