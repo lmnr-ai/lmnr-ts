@@ -41,7 +41,6 @@ This can be useful if you want to trace a request handler or a function which co
 ### Example
 
 ```javascript
-const { Configuration, OpenAIApi } = require("openai");
 import { OpenAI } from 'openai';
 import { Laminar as L, observe } from '@lmnr-ai/lmnr';
 
@@ -96,7 +95,7 @@ npm install @lmnr-ai/lmnr
 
 Create a file named `my-first-eval.ts` with the following code:
 
-```typescript
+```javascript
 import { evaluate } from '@lmnr-ai/lmnr';
 
 const writePoem = ({topic}: {topic: string}) => {
@@ -136,6 +135,7 @@ You can run evaluations locally by providing executor (part of the logic used in
 - `executor` – the logic you want to evaluate. This function must take `data` as the first argument, and produce any output.
 - `evaluators` – Object which maps evaluator names to evaluators. Each evaluator is a function that takes output of executor as the first argument, `target` as the second argument and produces numeric scores. Each function can produce either a single number or `Record<string, number>` of scores.
 - `name` – optional name for the evaluation. Automatically generated if not provided.
+- `groupId` – optional group name for evaluation. Evaluations within the same group can be compared visually side by side.
 - `config` – optional additional override parameters.
 
 \* If you already have the outputs of executors you want to evaluate, you can specify the executor as an identity function, that takes in `data` and returns only needed value(s) from it.

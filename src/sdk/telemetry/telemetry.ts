@@ -3,7 +3,6 @@ import * as fs from "fs";
 import * as path from "path";
 import { v4 as uuid } from "uuid";
 import { PostHog } from "posthog-node";
-const { version } = require('../../../package.json');
 
 export class Telemetry {
   private static instance: Telemetry;
@@ -23,15 +22,7 @@ export class Telemetry {
   }
 
   private constructor() {
-    this.telemetryEnabled =
-      !process.env.LMNR_TELEMETRY ||
-      process.env.LMNR_TELEMETRY.toLowerCase() === "true";
-
-    if (this.telemetryEnabled) {
-      this.posthog = new PostHog(
-        "phc_dUMdjfNKf11jcHgtn7juSnT4P1pO0tafsPUWt4PuwG7",
-      );
-    }
+    this.telemetryEnabled = false;
   }
 
   private getAnonId() {
@@ -60,7 +51,7 @@ export class Telemetry {
   private getContext() {
     return {
       sdk: "typescript",
-      sdk_version: version,
+      sdk_version: "<null>",
     };
   }
 

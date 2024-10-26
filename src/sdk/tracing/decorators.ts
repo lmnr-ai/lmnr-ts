@@ -7,7 +7,6 @@ import {
   SPAN_PATH_KEY,
 } from "./tracing";
 import { shouldSendTraces } from ".";
-import { Telemetry } from "../telemetry/telemetry";
 import { SPAN_INPUT, SPAN_OUTPUT } from "./attributes";
 
 export type DecoratorConfig = {
@@ -77,7 +76,7 @@ export function withEntity<
               );
             }
           } catch (error) {
-            Telemetry.getInstance().logException(error as any);
+            console.warn("Failed to serialize input", error);
           }
         }
 
@@ -100,7 +99,7 @@ export function withEntity<
                 );
               }
             } catch (error) {
-              Telemetry.getInstance().logException(error as any);
+              console.warn("Failed to serialize async output", error);
             } finally {
               span.end();
             }
@@ -116,7 +115,7 @@ export function withEntity<
             );
           }
         } catch (error) {
-          Telemetry.getInstance().logException(error as any);
+          console.warn("Failed to serialize output", error);
         } finally {
           span.end();
         }

@@ -1,7 +1,7 @@
 import { Laminar } from "./laminar";
 import { EvaluationDatapoint } from "./types";
 import cliProgress from "cli-progress";
-import { Dataset } from "./datasets";
+import { EvaluationDataset } from "./datasets";
 import { otelTraceIdToUUID } from "./utils";
 import { observe } from "./decorators";
 import { trace } from "@opentelemetry/api";
@@ -46,11 +46,35 @@ const getAverageScores =
  * Configuration for the Evaluator
  */
 interface EvaluatorConfig {
+    /**
+     * The number of data points to evaluate in one batch. This many
+     * data points will be evaluated in parallel. Defaults to 5.
+     */
     batchSize?: number;
+    /**
+     * The project API key to use for the evaluation. If not provided,
+     * the API key from the environment variable `LMNR_PROJECT_API_KEY` will be used.
+     */
     projectApiKey?: string;
+    /**
+     * The base URL of the Laminar API. If not provided, the default is 
+     * `https://api.lmnr.ai`. Useful with self-hosted Laminar instances.
+     * Do NOT include the port in the URL, use `httpPort` and `grpcPort` instead.
+     */
     baseUrl?: string;
+    /**
+     * The HTTP port of the Laminar API. If not provided, the default is 443.
+     */
     httpPort?: number;
+    /**
+     * The gRPC port of the Laminar API. If not provided, the default is 8443.
+     */
     grpcPort?: number;
+    /**
+     * Object with modules to instrument. If not provided, all
+     * available modules are instrumented.
+     * See {@link https://docs.lmnr.ai/tracing/automatic-instrumentation}
+     */
     instrumentModules?: InitializeOptions['instrumentModules'];
 }
 
@@ -86,7 +110,7 @@ interface EvaluationConstructorProps<D, T, O> {
      * List of data points to evaluate. `data` is the input to the executor function,
      * `target` is the input to the evaluator function.
      */
-    data: (Datapoint<D, T>[]) | Dataset<D, T>;
+    data: (Datapoint<D, T>[]) | EvaluationDataset<D, T>;
     /**
      * The executor function. Takes the data point + any additional arguments
      * and returns the output to evaluate.
@@ -102,13 +126,14 @@ interface EvaluationConstructorProps<D, T, O> {
      */
     evaluators: Record<string, EvaluatorFunction<O, T>>;
     /**
-     * Optional group id of the evaluation. Defaults to "default".
-     */
-    groupId?: string;
-    /**
-     * Name of the evaluation.
+     * Name of the evaluation. If not provided, a random name will be assigned.
      */
     name?: string;
+    /**
+     * Optional group id of the evaluation. Only evaluations within the same
+     * group_id can be visually compared. Defaults to "default".
+     */
+    groupId?: string;
     /**
      * Optional override configurations for the evaluator.
      */
@@ -161,7 +186,7 @@ class EvaluationReporter {
 class Evaluation<D, T, O> {
     private isFinished: boolean = false;
     private progressReporter: EvaluationReporter;
-    private data: Datapoint<D, T>[] | Dataset<D, T>;
+    private data: Datapoint<D, T>[] | EvaluationDataset<D, T>;
     private executor: (data: D, ...args: any[]) => O | Promise<O>;
     private evaluators: Record<string, EvaluatorFunction<O, T>>;
     private groupId?: string;
@@ -304,7 +329,7 @@ class Evaluation<D, T, O> {
     }
 
     private async getLength(): Promise<number> {
-        return this.data instanceof Dataset ? await this.data.size() : this.data.length;
+        return this.data instanceof EvaluationDataset ? await this.data.size() : this.data.length;
     }
 }
 

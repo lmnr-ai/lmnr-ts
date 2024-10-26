@@ -299,7 +299,6 @@ export const startTracing = (options: InitializeOptions) => {
 
 export const shouldSendTraces = () => {
   if (!_configuration) {
-    diag.warn("Traceloop not initialized");
     return false;
   }
 
