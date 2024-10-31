@@ -83,9 +83,6 @@ importers:
       esbuild:
         specifier: '>=0.23'
         version: 0.23.1
-      posthog-node:
-        specifier: '>=4.0'
-        version: 4.2.0
       uuid:
         specifier: '>=10.0.0'
         version: 10.0.0
@@ -2656,10 +2653,6 @@ packages:
   postgres-range@1.1.4:
     resolution: {integrity: sha512-i/hbxIE9803Alj/6ytL7UHQxRvZkI9O4Sy+J3HGc4F4oo/2eQAjTSNJ0bfxyse3bH0nuVesCk+3IRLaMtG3H6w==}
 
-  posthog-node@4.2.0:
-    resolution: {integrity: sha512-hgyCYMyzMvuF3qWMw6JvS8gT55v7Mtp5wKWcnDrw+nu39D0Tk9BXD7I0LOBp0lGlHEPaXCEVYUtviNKrhMALGA==}
-    engines: {node: '>=15.0.0'}
-
   prebuild-install@7.1.2:
     resolution: {integrity: sha512-UnNke3IQb6sgarcZIDU3gbMeTp/9SSU1DAIkil7PrqG1vZlBtY5msYccSKSHDqa3hNg436IXK+SNImReuA1wEQ==}
     engines: {node: '>=10'}
@@ -2798,9 +2791,6 @@ packages:
     resolution: {integrity: sha512-DOmrlGSXNk1DM0ljiQA+i+o0rSLhtii1je5wgk60j49d1jHT5YYttBv1iWOnYSTG+fZZESUOSNiAl89SIet+Cg==}
     engines: {node: '>=18.0.0', npm: '>=8.0.0'}
     hasBin: true
-
-  rusha@0.8.14:
-    resolution: {integrity: sha512-cLgakCUf6PedEu15t8kbsjnwIFFR2D4RfL+W3iWFJ4iac7z4B0ZI8fxy4R3J956kAI68HclCFGL8MPoUVC3qVA==}
 
   rxjs@7.8.1:
     resolution: {integrity: sha512-AA3TVj+0A2iuIoQkWEK/tqFjBq2j+6PO6Y0zJcvzLAFhEFIO3HL0vls9hWLncZbAAbK0mar7oZ4V079I/qPMxg==}
@@ -6650,13 +6640,6 @@ snapshots:
 
   postgres-range@1.1.4: {}
 
-  posthog-node@4.2.0:
-    dependencies:
-      axios: 1.7.7
-      rusha: 0.8.14
-    transitivePeerDependencies:
-      - debug
-
   prebuild-install@7.1.2:
     dependencies:
       detect-libc: 2.0.3
@@ -6862,8 +6845,6 @@ snapshots:
       '@rollup/rollup-win32-ia32-msvc': 4.24.0
       '@rollup/rollup-win32-x64-msvc': 4.24.0
       fsevents: 2.3.3
-
-  rusha@0.8.14: {}
 
   rxjs@7.8.1:
     dependencies:

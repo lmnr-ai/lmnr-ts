@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.4.16",
+  "version": "0.4.17",
   "description": "TypeScript SDK for Laminar AI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -78,7 +78,6 @@
     "argparse": ">=2.0",
     "cli-progress": ">=3.12",
     "esbuild": ">=0.23",
-    "posthog-node": ">=4.0",
     "uuid": ">=10.0.0"
   }
 }

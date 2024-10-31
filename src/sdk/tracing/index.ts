@@ -8,7 +8,6 @@ import {
   ASSOCIATION_PROPERTIES_KEY,
   SPAN_PATH_KEY,
 } from "./tracing";
-import { Telemetry } from "../telemetry/telemetry";
 import { _configuration } from "../configuration";
 import { NodeTracerProvider, SimpleSpanProcessor, BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
@@ -26,7 +25,7 @@ import { PineconeInstrumentation } from "@traceloop/instrumentation-pinecone";
 import { LangChainInstrumentation } from "@traceloop/instrumentation-langchain";
 import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
 import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
-import { ASSOCIATION_PROPERTIES, ASSOCIATION_PROPERTIES_OVERRIDES, SPAN_PATH } from "./attributes";
+import { ASSOCIATION_PROPERTIES, ASSOCIATION_PROPERTIES_OVERRIDES, SPAN_INSTRUMENTATION_SOURCE, SPAN_PATH } from "./attributes";
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor;
 let openAIInstrumentation: OpenAIInstrumentation | undefined;
@@ -46,62 +45,51 @@ let qdrantInstrumentation: QdrantInstrumentation | undefined;
 const instrumentations: Instrumentation[] = [];
 
 const initInstrumentations = () => {
-  const exceptionLogger = (e: Error) => Telemetry.getInstance().logException(e);
   const enrichTokens =
     (process.env.TRACELOOP_ENRICH_TOKENS || "true").toLowerCase() === "true";
 
   openAIInstrumentation = new OpenAIInstrumentation({
     enrichTokens,
-    exceptionLogger,
   });
   instrumentations.push(openAIInstrumentation);
 
-  anthropicInstrumentation = new AnthropicInstrumentation({ exceptionLogger });
+  anthropicInstrumentation = new AnthropicInstrumentation();
   instrumentations.push(anthropicInstrumentation);
 
-  azureOpenAIInstrumentation = new AzureOpenAIInstrumentation({
-    exceptionLogger,
-  });
+  azureOpenAIInstrumentation = new AzureOpenAIInstrumentation();
   instrumentations.push(azureOpenAIInstrumentation);
 
-  cohereInstrumentation = new CohereInstrumentation({ exceptionLogger });
+  cohereInstrumentation = new CohereInstrumentation();
   instrumentations.push(cohereInstrumentation);
 
-  vertexaiInstrumentation = new VertexAIInstrumentation({
-    exceptionLogger,
-  });
+  vertexaiInstrumentation = new VertexAIInstrumentation();
   instrumentations.push(vertexaiInstrumentation);
 
-  aiplatformInstrumentation = new AIPlatformInstrumentation({
-    exceptionLogger,
-  });
+  aiplatformInstrumentation = new AIPlatformInstrumentation();
   instrumentations.push(aiplatformInstrumentation);
 
-  bedrockInstrumentation = new BedrockInstrumentation({ exceptionLogger });
+  bedrockInstrumentation = new BedrockInstrumentation();
   instrumentations.push(bedrockInstrumentation);
 
-  pineconeInstrumentation = new PineconeInstrumentation({ exceptionLogger });
+  pineconeInstrumentation = new PineconeInstrumentation();
   instrumentations.push(pineconeInstrumentation);
 
-  langchainInstrumentation = new LangChainInstrumentation({ exceptionLogger });
+  langchainInstrumentation = new LangChainInstrumentation();
   instrumentations.push(langchainInstrumentation);
 
-  llamaIndexInstrumentation = new LlamaIndexInstrumentation({
-    exceptionLogger,
-  });
+  llamaIndexInstrumentation = new LlamaIndexInstrumentation();
   instrumentations.push(llamaIndexInstrumentation);
 
-  chromadbInstrumentation = new ChromaDBInstrumentation({ exceptionLogger });
+  chromadbInstrumentation = new ChromaDBInstrumentation();
   instrumentations.push(chromadbInstrumentation);
 
-  qdrantInstrumentation = new QdrantInstrumentation({ exceptionLogger });
+  qdrantInstrumentation = new QdrantInstrumentation();
   instrumentations.push(qdrantInstrumentation);
 };
 
 const manuallyInitInstrumentations = (
   instrumentModules: InitializeOptions["instrumentModules"],
 ) => {
-  const exceptionLogger = (e: Error) => Telemetry.getInstance().logException(e);
   const enrichTokens =
     (process.env.TRACELOOP_ENRICH_TOKENS || "true").toLowerCase() === "true";
 
@@ -110,37 +98,32 @@ const manuallyInitInstrumentations = (
   if (instrumentModules?.openAI) {
     openAIInstrumentation = new OpenAIInstrumentation({
       enrichTokens,
-      exceptionLogger,
     });
     instrumentations.push(openAIInstrumentation);
     openAIInstrumentation.manuallyInstrument(instrumentModules.openAI);
   }
 
   if (instrumentModules?.anthropic) {
-    anthropicInstrumentation = new AnthropicInstrumentation({
-      exceptionLogger,
-    });
+    anthropicInstrumentation = new AnthropicInstrumentation();
     instrumentations.push(anthropicInstrumentation);
     anthropicInstrumentation.manuallyInstrument(instrumentModules.anthropic);
   }
 
   if (instrumentModules?.azureOpenAI) {
-    const instrumentation = new AzureOpenAIInstrumentation({ exceptionLogger });
+    const instrumentation = new AzureOpenAIInstrumentation();
     instrumentations.push(instrumentation as Instrumentation);
     azureOpenAIInstrumentation = instrumentation;
     instrumentation.manuallyInstrument(instrumentModules.azureOpenAI);
   }
 
   if (instrumentModules?.cohere) {
-    cohereInstrumentation = new CohereInstrumentation({ exceptionLogger });
+    cohereInstrumentation = new CohereInstrumentation();
     instrumentations.push(cohereInstrumentation);
     cohereInstrumentation.manuallyInstrument(instrumentModules.cohere);
   }
 
   if (instrumentModules?.google_vertexai) {
-    vertexaiInstrumentation = new VertexAIInstrumentation({
-      exceptionLogger,
-    });
+    vertexaiInstrumentation = new VertexAIInstrumentation();
     instrumentations.push(vertexaiInstrumentation);
     vertexaiInstrumentation.manuallyInstrument(
       instrumentModules.google_vertexai,
@@ -148,9 +131,7 @@ const manuallyInitInstrumentations = (
   }
 
   if (instrumentModules?.google_aiplatform) {
-    aiplatformInstrumentation = new AIPlatformInstrumentation({
-      exceptionLogger,
-    });
+    aiplatformInstrumentation = new AIPlatformInstrumentation();
     instrumentations.push(aiplatformInstrumentation);
     aiplatformInstrumentation.manuallyInstrument(
       instrumentModules.google_aiplatform,
@@ -158,41 +139,37 @@ const manuallyInitInstrumentations = (
   }
 
   if (instrumentModules?.bedrock) {
-    bedrockInstrumentation = new BedrockInstrumentation({ exceptionLogger });
+    bedrockInstrumentation = new BedrockInstrumentation();
     instrumentations.push(bedrockInstrumentation);
     bedrockInstrumentation.manuallyInstrument(instrumentModules.bedrock);
   }
 
   if (instrumentModules?.pinecone) {
-    const instrumentation = new PineconeInstrumentation({ exceptionLogger });
+    const instrumentation = new PineconeInstrumentation();
     instrumentations.push(instrumentation as Instrumentation);
     instrumentation.manuallyInstrument(instrumentModules.pinecone);
   }
 
   if (instrumentModules?.langchain) {
-    langchainInstrumentation = new LangChainInstrumentation({
-      exceptionLogger,
-    });
+    langchainInstrumentation = new LangChainInstrumentation();
     instrumentations.push(langchainInstrumentation);
     langchainInstrumentation.manuallyInstrument(instrumentModules.langchain);
   }
 
   if (instrumentModules?.llamaIndex) {
-    llamaIndexInstrumentation = new LlamaIndexInstrumentation({
-      exceptionLogger,
-    });
+    llamaIndexInstrumentation = new LlamaIndexInstrumentation();
     instrumentations.push(llamaIndexInstrumentation);
     llamaIndexInstrumentation.manuallyInstrument(instrumentModules.llamaIndex);
   }
 
   if (instrumentModules?.chromadb) {
-    chromadbInstrumentation = new ChromaDBInstrumentation({ exceptionLogger });
+    chromadbInstrumentation = new ChromaDBInstrumentation();
     instrumentations.push(chromadbInstrumentation);
     chromadbInstrumentation.manuallyInstrument(instrumentModules.chromadb);
   }
 
   if (instrumentModules?.qdrant) {
-    qdrantInstrumentation = new QdrantInstrumentation({ exceptionLogger });
+    qdrantInstrumentation = new QdrantInstrumentation();
     instrumentations.push(qdrantInstrumentation);
     qdrantInstrumentation.manuallyInstrument(instrumentModules.qdrant);
   }
@@ -260,6 +237,8 @@ export const startTracing = (options: InitializeOptions) => {
       span.setAttribute(SPAN_PATH, spanPath as string);
     }
 
+    span.setAttribute(SPAN_INSTRUMENTATION_SOURCE, "javascript");
+
     // This sets the properties only if the context has them
     const associationProperties = context
       .active()
@@ -274,19 +253,6 @@ export const startTracing = (options: InitializeOptions) => {
       }
     }
   };
-
-  if (options.exporter) {
-    Telemetry.getInstance().capture("tracer:init", {
-      exporter: "custom",
-      processor: options.disableBatch ? "simple" : "batch",
-    });
-  } else {
-    // TODO: Remove this code, must not reach here
-    Telemetry.getInstance().capture("tracer:init", {
-      exporter: options.baseUrl ?? "",
-      processor: options.disableBatch ? "simple" : "batch",
-    });
-  }
 
   const provider = new NodeTracerProvider();
   provider.addSpanProcessor(_spanProcessor);
