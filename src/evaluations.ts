@@ -401,12 +401,13 @@ class Evaluation<D, T, O> {
  * @param props.config Optional override configurations for the evaluator.
  */
 export async function evaluate<D, T, O>({
-    data, executor, evaluators, groupId, name, config
+    data, executor, evaluators, humanEvaluators, groupId, name, config
 }: EvaluationConstructorProps<D, T, O>): Promise<void> {
     const evaluation = new Evaluation({
         data,
         executor,
         evaluators,
+        humanEvaluators,
         name,
         groupId,
         config
