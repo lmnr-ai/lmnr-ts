@@ -344,14 +344,20 @@ export class Laminar {
         name?: string,
         data: EvaluationDatapoint<D, T, O>[]
     }): Promise<CreateEvaluationResponse> {
-        const response = await fetch(`${this.baseHttpUrl}/v1/evaluations`, {
-            method: 'POST',
-            headers: this.getHeaders(),
-            body: JSON.stringify({
+        let body = '';
+        try {
+            body = JSON.stringify({
                 groupId: groupId ?? null,
                 name: name ?? null,
                 points: data,
-            })
+            });
+        } catch (error) {
+            throw new Error(`Failed to serialize evaluation data for ${name}. Error: ${error}`);
+        }
+        const response = await fetch(`${this.baseHttpUrl}/v1/evaluations`, {
+            method: 'POST',
+            headers: this.getHeaders(),
+            body,
         });
 
         if (!response.ok) {

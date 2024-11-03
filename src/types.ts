@@ -47,9 +47,9 @@ export type CreateEvaluationResponse = {
 }
 
 export type EvaluationDatapoint<D, T, O> = {
-    data: Record<string, any> & D;
-    target: Record<string, any> & T;
-    executorOutput: any & O,
+    data: D;
+    target?: T;
+    executorOutput?: O;
     scores: Record<string, number>;
     traceId: string;
     humanEvaluators?: Record<string, HumanEvaluator>;
