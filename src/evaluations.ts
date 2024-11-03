@@ -84,14 +84,14 @@ interface EvaluatorConfig {
  */
 export type Datapoint<D, T> = {
     /**
-     * input to the executor function. Must be a record with string keys and any values.
+     * input to the executor function. Must be json serializable. Required.
      */
-    data: Record<string, any> & D;
+    data: D;
     /**
      * input to the evaluator function (alongside the executor output).
-     * Must be a record with string keys and any values.
+     * Must be json serializable.
      */
-    target: Record<string, any> & T;
+    target?: T;
 }
 
 type EvaluatorFunctionReturn = number | Record<string, number>;
@@ -102,7 +102,7 @@ type EvaluatorFunctionReturn = number | Record<string, number>;
  * of string keys and number values. The latter is useful for evaluating
  * multiple criteria in one go instead of running multiple evaluators.
  */
-type EvaluatorFunction<O, T> = (output: O, target: T, ...args: any[]) =>
+type EvaluatorFunction<O, T> = (output: O, target: T | undefined, ...args: any[]) =>
     EvaluatorFunctionReturn | Promise<EvaluatorFunctionReturn>;
 
 /**
@@ -322,7 +322,7 @@ class Evaluation<D, T, O> {
 
                 const output = await observe(
                     { name: "executor" },
-                    async (data: Record<string, any> & D) => {
+                    async (data: D) => {
                         trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EXECUTOR");
                         return await this.executor(data);
                     },
@@ -334,7 +334,7 @@ class Evaluation<D, T, O> {
                 for (const [evaluatorName, evaluator] of Object.entries(this.evaluators)) {
                     const value = await observe(
                         { name: evaluatorName },
-                        async (output: O, target: T) => {
+                        async (output: O, target?: T) => {
                             trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATOR");
                             return await evaluator(output, target);
                         },
