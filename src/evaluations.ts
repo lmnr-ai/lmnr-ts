@@ -2,7 +2,7 @@ import { Laminar } from "./laminar";
 import { EvaluationDatapoint } from "./types";
 import cliProgress from "cli-progress";
 import { EvaluationDataset } from "./datasets";
-import { otelTraceIdToUUID } from "./utils";
+import { otelSpanIdToUUID, otelTraceIdToUUID } from "./utils";
 import { observe } from "./decorators";
 import { trace } from "@opentelemetry/api";
 import { SPAN_TYPE } from "./sdk/tracing/attributes";
@@ -138,10 +138,10 @@ interface EvaluationConstructorProps<D, T, O> {
      */
     evaluators: Record<string, EvaluatorFunction<O, T>>;
     /**
-     * [Beta] Record from human evaluator names to instances of {@link HumanEvaluator}.
+     * [Beta] Array of instances of {@link HumanEvaluator}.
      * For now, HumanEvaluator only holds the queue name.
      */
-    humanEvaluators?: Record<string, HumanEvaluator>;
+    humanEvaluators?: HumanEvaluator[];
     /**
      * Name of the evaluation. If not provided, a random name will be assigned.
      */
@@ -206,7 +206,7 @@ class Evaluation<D, T, O> {
     private data: Datapoint<D, T>[] | EvaluationDataset<D, T>;
     private executor: (data: D, ...args: any[]) => O | Promise<O>;
     private evaluators: Record<string, EvaluatorFunction<O, T>>;
-    private humanEvaluators?: Record<string, HumanEvaluator>;
+    private humanEvaluators?: HumanEvaluator[];
     private groupId?: string;
     private name?: string;
     private batchSize: number = DEFAULT_BATCH_SIZE;
@@ -225,27 +225,6 @@ class Evaluation<D, T, O> {
                 throw new Error(
                     `Invalid evaluator key: "${key}".` +
                     "Keys must only contain letters, digits, hyphens, underscores, or spaces."
-                );
-            }
-        }
-        for (const key in humanEvaluators) {
-            if (!evaluatorNameRegex.test(key)) {
-                throw new Error(
-                    `Invalid human evaluator key: "${key}".` +
-                    "Keys must only contain letters, digits, hyphens, underscores, or spaces."
-                );
-            }
-        }
-
-        // Check for intersection between evaluator and human evaluator keys
-        if (humanEvaluators) {
-            const evaluatorKeys = new Set(Object.keys(evaluators));
-            const humanEvaluatorKeys = new Set(Object.keys(humanEvaluators));
-            const intersection = [...evaluatorKeys].filter(key => humanEvaluatorKeys.has(key));
-            if (intersection.length > 0) {
-                throw new Error(
-                    `Evaluator and human evaluator keys must not overlap. ` + 
-                    `Found overlapping keys: ${intersection.join(', ')}`
                 );
             }
         }
@@ -320,11 +299,15 @@ class Evaluation<D, T, O> {
             await observe({ name: "evaluation", traceType: "EVALUATION" }, async () => {
                 trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATION");
 
-                const output = await observe(
+                const { output, executorSpanId } = await observe(
                     { name: "executor" },
                     async (data: D) => {
+                        const executorSpanId = trace.getActiveSpan()!.spanContext().spanId;
                         trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EXECUTOR");
-                        return await this.executor(data);
+                        return {
+                            output: await this.executor(data),
+                            executorSpanId: otelSpanIdToUUID(executorSpanId)
+                        };
                     },
                     datapoint.data
                 );
@@ -362,6 +345,7 @@ class Evaluation<D, T, O> {
                     // In the future, we will allow to specify which evaluators are
                     // added to a particular datapoint, e.g. random sampling.
                     humanEvaluators: this.humanEvaluators,
+                    executorSpanId
                 } as EvaluationDatapoint<D, T, O>;
             });
 
@@ -391,9 +375,8 @@ class Evaluation<D, T, O> {
  * @param props.evaluators Map from evaluator name to evaluator function. Each
  * evaluator function takes the output of the executor and the target data, and
  * returns.
- * @param props.humanEvaluators [Beta] Record from human evaluator names to
- * instances of {@link HumanEvaluator}. For now, HumanEvaluator only holds the
- * queue name.
+ * @param props.humanEvaluators [Beta] Array of instances of {@link HumanEvaluator}.
+ * For now, HumanEvaluator only holds the queue name.
  * @param props.groupId Group name which is same as the feature you are evaluating
  * in your project or application. Defaults to "default".
  * @param props.name Optional name of the evaluation. Used to easily identify
