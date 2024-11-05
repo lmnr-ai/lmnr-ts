@@ -2,6 +2,10 @@ import { v4 as uuidv4 } from 'uuid';
 
 export type StringUUID = `${string}-${string}-${string}-${string}-${string}`;
 
+export const isStringUUID = (id: string): id is StringUUID => {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id);
+}
+
 export const newUUID = (): StringUUID => {
     // crypto.randomUUID is available in most of the modern browsers and node,
     // but is not available in "insecure" contexts, e.g. not https, not localhost
@@ -45,4 +49,8 @@ export const otelTraceIdToUUID = (traceId: string): string => {
     }
 
     return id.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+}
+
+export const uuidToOtelTraceId = (uuid: string): string => {
+    return uuid.replace(/-/g, '');
 }

@@ -1,4 +1,4 @@
-import { Span, context } from "@opentelemetry/api";
+import { Span, TraceFlags, context, trace } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
 import {
   ASSOCIATION_PROPERTIES_KEY,
@@ -7,13 +7,16 @@ import {
   SPAN_PATH_KEY,
 } from "./tracing";
 import { shouldSendTraces } from ".";
-import { SPAN_INPUT, SPAN_OUTPUT } from "./attributes";
+import { OVERRIDE_PARENT_SPAN, SPAN_INPUT, SPAN_OUTPUT } from "./attributes";
+import { isStringUUID, uuidToOtelTraceId } from "../../utils";
+import { RandomIdGenerator } from "@opentelemetry/sdk-trace-base";
 
 export type DecoratorConfig = {
   name: string;
   associationProperties?: { [name: string]: string };
   inputParameters?: unknown[];
   suppressTracing?: boolean;
+  traceId?: string;
 };
 
 export function withEntity<
@@ -25,6 +28,7 @@ export function withEntity<
     associationProperties,
     inputParameters,
     suppressTracing: shouldSuppressTracing,
+    traceId,
   }: DecoratorConfig,
   fn: F,
   thisArg?: ThisParameterType<F>,
@@ -44,6 +48,19 @@ export function withEntity<
   const currentSpanPath = getSpanPath(entityContext);
   const spanPath = currentSpanPath ? `${currentSpanPath}.${name}` : name;
   entityContext = entityContext.setValue(SPAN_PATH_KEY, spanPath);
+  if (traceId) {
+    if (isStringUUID(traceId)) {
+      const spanContext = {
+        traceId: uuidToOtelTraceId(traceId),
+        spanId: new RandomIdGenerator().generateSpanId(),
+        traceFlags: TraceFlags.SAMPLED,
+        isRemote: false,
+      };
+      entityContext = trace.setSpanContext(entityContext, spanContext);
+    } else {
+      console.warn(`Invalid trace ID ${traceId}. Expected a UUID.`);
+    }
+  }
 
   if (shouldSuppressTracing) {
     entityContext = suppressTracing(entityContext);
@@ -55,6 +72,10 @@ export function withEntity<
       {},
       entityContext,
       async (span: Span) => {
+        if (traceId && isStringUUID(traceId)) {
+          span.setAttribute(OVERRIDE_PARENT_SPAN, true);
+        }
+
         if (shouldSendTraces()) {
           try {
             const input = inputParameters ?? args;

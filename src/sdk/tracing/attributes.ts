@@ -5,6 +5,7 @@ export const SPAN_OUTPUT = "lmnr.span.output";
 export const SPAN_TYPE = "lmnr.span.type";
 export const SPAN_PATH = "lmnr.span.path";
 export const SPAN_INSTRUMENTATION_SOURCE = "lmnr.span.instrumentation_source";
+export const OVERRIDE_PARENT_SPAN = "lmnr.internal.override_parent_span";
 
 export const ASSOCIATION_PROPERTIES = "lmnr.association.properties";
 export const SESSION_ID = "lmnr.association.properties.session_id";
