@@ -45,8 +45,7 @@ let qdrantInstrumentation: QdrantInstrumentation | undefined;
 const instrumentations: Instrumentation[] = [];
 
 const initInstrumentations = () => {
-  const enrichTokens =
-    (process.env.TRACELOOP_ENRICH_TOKENS || "true").toLowerCase() === "true";
+  const enrichTokens = false;
 
   openAIInstrumentation = new OpenAIInstrumentation({
     enrichTokens,
@@ -90,8 +89,7 @@ const initInstrumentations = () => {
 const manuallyInitInstrumentations = (
   instrumentModules: InitializeOptions["instrumentModules"],
 ) => {
-  const enrichTokens =
-    (process.env.TRACELOOP_ENRICH_TOKENS || "true").toLowerCase() === "true";
+  const enrichTokens = false;
 
   instrumentations.length = 0;
 

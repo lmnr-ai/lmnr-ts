@@ -3,12 +3,12 @@ import { Laminar } from './laminar';
 import { TraceType } from './types';
 
 interface ObserveOptions {
-    name?: string;
-    sessionId?: string;
-    userId?: string;
-    traceType?: TraceType;
-    spanType?: 'DEFAULT' | 'LLM';
-    traceId?: string;
+  name?: string;
+  sessionId?: string;
+  userId?: string;
+  traceType?: TraceType;
+  spanType?: 'DEFAULT' | 'LLM';
+  traceId?: string;
 }
 
 /**
@@ -34,31 +34,31 @@ interface ObserveOptions {
  * });
  */
 export async function observe<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
-    {
-        name,
-        sessionId,
-        userId,
-        traceType,
-        spanType,
-        traceId,
-    }: ObserveOptions, fn: F, ...args: A): Promise<ReturnType<F>> {
-    let associationProperties = {};
-    if (sessionId) {
-        associationProperties = { ...associationProperties, "session_id": sessionId };
-    }
-    if (userId) {
-        associationProperties = { ...associationProperties, "user_id": userId };
-    }
-    if (traceType) {
-        associationProperties = { ...associationProperties, "trace_type": traceType };
-    }
-    if (spanType) {
-        associationProperties = { ...associationProperties, "span_type": spanType };
-    }
+  {
+    name,
+    sessionId,
+    userId,
+    traceType,
+    spanType,
+    traceId,
+  }: ObserveOptions, fn: F, ...args: A): Promise<ReturnType<F>> {
+  let associationProperties = {};
+  if (sessionId) {
+    associationProperties = { ...associationProperties, "session_id": sessionId };
+  }
+  if (userId) {
+    associationProperties = { ...associationProperties, "user_id": userId };
+  }
+  if (traceType) {
+    associationProperties = { ...associationProperties, "trace_type": traceType };
+  }
+  if (spanType) {
+    associationProperties = { ...associationProperties, "span_type": spanType };
+  }
 
-    return await withEntity<A, F>({
-        name: name ?? fn.name,
-        associationProperties,
-        traceId
-    }, fn, undefined, ...args);
+  return await withEntity<A, F>({
+    name: name ?? fn.name,
+    associationProperties,
+    traceId
+  }, fn, undefined, ...args);
 }
