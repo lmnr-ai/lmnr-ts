@@ -2,64 +2,64 @@ import { Datapoint, HumanEvaluator } from "./evaluations";
 import { StringUUID } from "./utils";
 
 export type ChatMessage = {
-    role: 'user' | 'assistant' | 'system';
-    content: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
 }
 
 export type NodeInput = ChatMessage[] | string | boolean | number;
 
 export type PipelineRunRequest = {
-    inputs: Record<string, NodeInput>;
-    pipeline: string;
-    env?: Record<string, string>;
-    metadata?: Record<string, string>;
-    currentSpanId?: StringUUID;
-    currentTraceId?: StringUUID;
+  inputs: Record<string, NodeInput>;
+  pipeline: string;
+  env?: Record<string, string>;
+  metadata?: Record<string, string>;
+  currentSpanId?: StringUUID;
+  currentTraceId?: StringUUID;
 }
 
 export type PipelineRunResponse = {
-    outputs: Record<string, Record<string, NodeInput>>;
-    runId: StringUUID;
+  outputs: Record<string, Record<string, NodeInput>>;
+  runId: StringUUID;
 }
 
 export type EvaluateEvent = {
-    name: string;
-    evaluator: string;
-    data: Record<string, NodeInput>;
-    timestamp?: Date;
-    env?: Record<string, NodeInput>;
+  name: string;
+  evaluator: string;
+  data: Record<string, NodeInput>;
+  timestamp?: Date;
+  env?: Record<string, NodeInput>;
 }
 
 export type Event = {
-    id: StringUUID;
-    templateName: string;
-    timestamp: Date;
-    spanId: StringUUID;
-    value: number | string | null; // number
+  id: StringUUID;
+  templateName: string;
+  timestamp: Date;
+  spanId: StringUUID;
+  value: number | string | null; // number
 }
 
 export type CreateEvaluationResponse = {
-    id: StringUUID,
-    createdAt: Date,
-    groupId: string,
-    name: string,
-    projectId: StringUUID,
+  id: StringUUID,
+  createdAt: Date,
+  groupId: string,
+  name: string,
+  projectId: StringUUID,
 }
 
 export type EvaluationDatapoint<D, T, O> = {
-    data: D;
-    target?: T;
-    executorOutput?: O;
-    scores: Record<string, number>;
-    traceId: string;
-    humanEvaluators?: HumanEvaluator[];
-    executorSpanId?: string;
+  data: D;
+  target?: T;
+  executorOutput?: O;
+  scores: Record<string, number>;
+  traceId: string;
+  humanEvaluators?: HumanEvaluator[];
+  executorSpanId?: string;
 }
 
 export type GetDatapointsResponse<D, T> = {
-    items: Datapoint<D, T>[];
-    totalCount: number;
-    anyInProject: boolean;
+  items: Datapoint<D, T>[];
+  totalCount: number;
+  anyInProject: boolean;
 }
 
 /**
