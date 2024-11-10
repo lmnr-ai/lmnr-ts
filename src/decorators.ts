@@ -42,6 +42,10 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     spanType,
     traceId,
   }: ObserveOptions, fn: F, ...args: A): Promise<ReturnType<F>> {
+  if (fn === undefined || typeof fn !== "function") {
+    throw new Error("Invalid `observe` usage. Second argument `fn` must be a function.");
+  }
+
   let associationProperties = {};
   if (sessionId) {
     associationProperties = { ...associationProperties, "session_id": sessionId };
