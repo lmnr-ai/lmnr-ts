@@ -10,6 +10,6 @@ export {
 export { Laminar } from './laminar';
 export { evaluate, Datapoint, HumanEvaluator } from './evaluations';
 export { EvaluationDataset as Dataset, LaminarDataset } from './datasets';
-export { observe } from './decorators';
+export { observe, withLabels } from './decorators';
 export { LaminarAttributes } from './sdk/tracing/attributes';
 export { Span } from '@opentelemetry/api';

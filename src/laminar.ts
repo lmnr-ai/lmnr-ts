@@ -22,7 +22,17 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { Metadata } from '@grpc/grpc-js';
 import { ASSOCIATION_PROPERTIES_KEY, getSpanPath, getTracer, SPAN_PATH_KEY } from './sdk/tracing/tracing';
 import { forceFlush } from './sdk/node-server-sdk';
-import { SESSION_ID, USER_ID, LaminarAttributes, SPAN_OUTPUT, SPAN_TYPE, SPAN_INPUT, OVERRIDE_PARENT_SPAN } from './sdk/tracing/attributes';
+import {
+  ASSOCIATION_PROPERTIES,
+  OVERRIDE_PARENT_SPAN,
+  SESSION_ID,
+  SPAN_INPUT,
+  SPAN_OUTPUT,
+  SPAN_PATH,
+  SPAN_TYPE,
+  USER_ID,
+  LaminarAttributes,
+} from './sdk/tracing/attributes';
 import { RandomIdGenerator } from '@opentelemetry/sdk-trace-base';
 
 
@@ -397,12 +407,14 @@ export class Laminar {
     spanType,
     context,
     traceId,
+    labels,
   }: {
     name: string,
     input?: any,
     spanType?: 'LLM' | 'DEFAULT',
     context?: Context,
     traceId?: string,
+    labels?: Record<string, string>,
   }): Span {
     let entityContext = context ?? contextApi.active();
     const currentSpanPath = getSpanPath(entityContext);
@@ -421,9 +433,14 @@ export class Laminar {
         console.warn(`Invalid trace ID ${traceId}. Expected a UUID.`);
       }
     }
+    const labelProperties = labels ? Object.entries(labels).reduce((acc, [key, value]) => {
+      acc[`${ASSOCIATION_PROPERTIES}.label.${key}`] = value;
+      return acc;
+    }, {} as Record<string, string>) : {};
     const attributes = {
       [SPAN_TYPE]: spanType ?? 'DEFAULT',
-      [SPAN_PATH_KEY]: spanPath,
+      [SPAN_PATH]: spanPath,
+      ...labelProperties,
     }
     const span = getTracer().startSpan(name, { attributes }, entityContext);
     if (traceId) {
