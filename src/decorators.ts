@@ -1,6 +1,8 @@
+import { Span, TraceFlags, context, trace } from "@opentelemetry/api";
 import { withEntity } from './sdk/node-server-sdk'
 import { Laminar } from './laminar';
 import { TraceType } from './types';
+import { ASSOCIATION_PROPERTIES_KEY } from "./sdk/tracing/tracing";
 
 interface ObserveOptions {
   name?: string;
@@ -65,4 +67,60 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     associationProperties,
     traceId
   }, fn, undefined, ...args);
+}
+
+/**
+ * Sets the labels for any spans inside the function. This is useful for adding
+ * labels to the spans created in the auto-instrumentations. Returns the result
+ * of the wrapped function, so you can use it in an `await` statement if needed.
+ * 
+ * Requirements:
+ * - Labels must be created in your project in advance.
+ * - Keys must be strings from your label names.
+ * - Values must be strings matching the label's allowed values.
+ * 
+ * @param labels - The labels to set.
+ * @returns The result of the wrapped function.
+ * 
+ * @example
+ * ```typescript
+ * import { withLabels } from '@lmnr-ai/lmnr';
+ * 
+ * const result = await withLabels({ endpoint: "ft-openai-<id>" }, () => {
+ *    openai.chat.completions.create({});
+ * });
+ * ```
+ */
+export function withLabels<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
+  labels: Record<string, string>,
+  fn: F,
+  ...args: A
+): ReturnType<F> {
+  let entityContext = context.active();
+  const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
+  const labelProperties = Object.entries(labels).reduce((acc, [key, value]) => {
+    acc[`label.${key}`] = value;
+    return acc;
+  }, {} as Record<string, string>);
+
+  entityContext = entityContext.setValue(
+    ASSOCIATION_PROPERTIES_KEY,
+    { ...currentAssociationProperties, ...labelProperties },
+  );
+
+  const result = context.with(entityContext, () => {
+    return fn.apply(undefined, args);
+  });
+
+  const newAssociationProperties = (entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {}) as Record<string, any>;
+  for (const [key, value] of Object.entries(labelProperties)) {
+    delete newAssociationProperties[`label.${key}`];
+  }
+
+  entityContext = entityContext.setValue(
+    ASSOCIATION_PROPERTIES_KEY,
+    newAssociationProperties,
+  );
+
+  return result;
 }
