@@ -268,6 +268,7 @@ export class Laminar {
   }
 
   /**
+   * DEPRECATED: use `withSession` and/or `withMetadata` instead.
    * Sets the session information for the current span and returns the
    * context to use for the following spans.
    * 
@@ -287,21 +288,22 @@ export class Laminar {
     sessionId,
     userId
   }: { sessionId?: string, userId?: string }): Context {
+    console.warn("Laminar().contextWithSession() is deprecated. Use withSession() instead.");
     const currentSpan = trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
       if (sessionId) {
-        currentSpan.setAttribute(SESSION_ID, sessionId);
+        currentSpan.setAttribute(SESSION_ID, JSON.stringify(sessionId));
       }
       if (userId) {
-        currentSpan.setAttribute(USER_ID, userId);
+        currentSpan.setAttribute(USER_ID, JSON.stringify(userId));
       }
     }
     let associationProperties = {};
     if (sessionId) {
-      associationProperties = { ...associationProperties, "session_id": sessionId };
+      associationProperties = { ...associationProperties, "session_id": JSON.stringify(sessionId) };
     }
     if (userId) {
-      associationProperties = { ...associationProperties, "user_id": userId };
+      associationProperties = { ...associationProperties, "user_id": JSON.stringify(userId) };
     }
 
     let entityContext = contextApi.active();
@@ -314,6 +316,94 @@ export class Laminar {
     }
 
     return entityContext;
+  }
+
+  /**
+   * Sets the session information for the current span and returns the
+   * context to use for the following spans. Returns the result of the
+   * function execution, so can be used in an `await` statement.
+   * 
+   * @param sessionId - The session ID to associate with the context.
+   * @param fn - Function to execute within the session context.
+   * @returns The result of the function execution.
+   * 
+   * @example
+   * import { Laminar, observe } from '@lmnr-ai/lmnr';
+   * const result = await Laminar.withSession("session1234", async () => {
+   *   // Your code here
+   * });
+   */
+  public static withSession<T>(
+    sessionId: string,
+    fn: () => T,
+  ) {
+    const currentSpan = trace.getActiveSpan();
+    if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
+      if (sessionId) {
+        currentSpan.setAttribute(SESSION_ID, JSON.stringify(sessionId));
+      }
+    }
+    let associationProperties = {};
+    if (sessionId) {
+      associationProperties = { ...associationProperties, "session_id": JSON.stringify(sessionId) };
+    }
+
+    let entityContext = contextApi.active();
+    const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY);
+    if (associationProperties && Object.keys(associationProperties).length > 0) {
+      entityContext = entityContext.setValue(
+        ASSOCIATION_PROPERTIES_KEY,
+        { ...(currentAssociationProperties ?? {}), ...associationProperties },
+      );
+    }
+    return contextApi.with(entityContext, fn);
+  }
+
+  /**
+   * Sets the metadata for the current span and returns the context to use for
+   * the following spans. Returns the result of the function execution, so can
+   * be used in an `await` statement.
+   * 
+   * @param metadata - The metadata to associate with the context. Will be sent
+   * as attributes, so must be serializable to JSON.
+   * @param fn - Function to execute within the metadata context.
+   * @returns The result of the function execution.
+   * 
+   * @example
+   * import { Laminar } from '@lmnr-ai/lmnr';
+   * const result = await Laminar.withMetadata(
+   *   {
+   *     "my_metadata_key": "my_metadata_value"
+   *   },
+   *   async () => {
+   *     // Your code here
+   *   }
+   * );
+   */
+  public static withMetadata<T>(
+    metadata: Record<string, any>,
+    fn: () => T,
+  ) {
+    const currentSpan = trace.getActiveSpan();
+    if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
+      for (const [key, value] of Object.entries(metadata)) {
+        currentSpan.setAttribute(`${ASSOCIATION_PROPERTIES}.metadata.${key}`, JSON.stringify(value));
+      }
+    }
+    let metadataAttributes = {};
+    for (const [key, value] of Object.entries(metadata)) {
+      metadataAttributes = { ...metadataAttributes, [`metadata.${key}`]: JSON.stringify(value) };
+    }
+
+    let entityContext = contextApi.active();
+    const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY);
+    if (metadataAttributes && Object.keys(metadataAttributes).length > 0) {
+      entityContext = entityContext.setValue(
+        ASSOCIATION_PROPERTIES_KEY,
+        { ...(currentAssociationProperties ?? {}), ...metadataAttributes },
+      );
+    }
+    return contextApi.with(entityContext, fn);
   }
 
   /**
@@ -340,7 +430,7 @@ export class Laminar {
     const currentSpan = trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
       for (const [key, value] of Object.entries(attributes)) {
-        currentSpan.setAttribute(key, value);
+        currentSpan.setAttribute(key, JSON.stringify(value));
       }
     }
   }
