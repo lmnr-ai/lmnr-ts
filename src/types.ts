@@ -62,6 +62,17 @@ export type GetDatapointsResponse<D, T> = {
   anyInProject: boolean;
 }
 
+export type SemanticSearchResult = {
+  datasetId: StringUUID;
+  data: Record<string, any>;
+  content: string;
+  score: number;
+}
+
+export type SemanticSearchResponse = {
+  results: SemanticSearchResult[];
+}
+
 /**
  * Span types to categorize spans.
  * 

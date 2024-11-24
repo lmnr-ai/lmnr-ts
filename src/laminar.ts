@@ -3,7 +3,8 @@ import {
   PipelineRunRequest,
   EvaluationDatapoint,
   CreateEvaluationResponse,
-  GetDatapointsResponse
+  GetDatapointsResponse,
+  SemanticSearchResponse
 } from './types';
 import {
   Attributes,
@@ -229,6 +230,46 @@ export class Laminar {
   }
 
   /**
+   * Perform a semantic search on a dataset.
+   * 
+   * @param query - The query string to search with.
+   * @param datasetId - The ID of the dataset to search in.
+   * @param limit - The maximum number of results to return.
+   * @param threshold - The minimum score for the results to be returned.
+   * @returns Response object containing the search results in descending order of relevance.
+   */
+  public static async semanticSearch({
+    query,
+    datasetId,
+    limit,
+    threshold,
+  }: {
+    query: string,
+    datasetId: string,
+    limit?: number,
+    threshold?: number,
+  }): Promise<SemanticSearchResponse> {
+    const body = JSON.stringify({
+      query,
+      datasetId,
+      limit,
+      threshold,
+    });
+
+    const response = await fetch(`${this.baseHttpUrl}/v1/semantic-search`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to perform semantic search. Response: ${response.statusText}`);
+    }
+
+    return await response.json() as SemanticSearchResponse;
+  }
+
+  /**
    * Associates an event with the current span. If event with such name never
    * existed, Laminar will create a new event and infer its type from the value.
    * If the event already exists, Laminar will append the value to the event
@@ -268,57 +309,6 @@ export class Laminar {
   }
 
   /**
-   * DEPRECATED: use `withSession` and/or `withMetadata` instead.
-   * Sets the session information for the current span and returns the
-   * context to use for the following spans.
-   * 
-   * @param sessionId - The session ID to associate with the context.
-   * @param userId - The user ID to associate with the context.
-   * @returns The updated context with the association properties.
-   * 
-   * @example
-   * import { context as contextApi } from '@opentelemetry/api';
-   * import { Laminar } from '@lmnr-ai/laminar';
-   * const context = Laminar.contextWithSession({ sessionId: "1234", userId: "5678" });
-   * contextApi.with(context, () => {
-   *    // Your code here
-   * });
-   */
-  public static contextWithSession({
-    sessionId,
-    userId
-  }: { sessionId?: string, userId?: string }): Context {
-    console.warn("Laminar().contextWithSession() is deprecated. Use withSession() instead.");
-    const currentSpan = trace.getActiveSpan();
-    if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
-      if (sessionId) {
-        currentSpan.setAttribute(SESSION_ID, JSON.stringify(sessionId));
-      }
-      if (userId) {
-        currentSpan.setAttribute(USER_ID, JSON.stringify(userId));
-      }
-    }
-    let associationProperties = {};
-    if (sessionId) {
-      associationProperties = { ...associationProperties, "session_id": JSON.stringify(sessionId) };
-    }
-    if (userId) {
-      associationProperties = { ...associationProperties, "user_id": JSON.stringify(userId) };
-    }
-
-    let entityContext = contextApi.active();
-    const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY);
-    if (associationProperties) {
-      entityContext = entityContext.setValue(
-        ASSOCIATION_PROPERTIES_KEY,
-        { ...(currentAssociationProperties ?? {}), ...associationProperties },
-      );
-    }
-
-    return entityContext;
-  }
-
-  /**
    * Sets the session information for the current span and returns the
    * context to use for the following spans. Returns the result of the
    * function execution, so can be used in an `await` statement.
@@ -336,7 +326,7 @@ export class Laminar {
   public static withSession<T>(
     sessionId: string,
     fn: () => T,
-  ) {
+  ): T {
     const currentSpan = trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
       if (sessionId) {
@@ -364,8 +354,8 @@ export class Laminar {
    * the following spans. Returns the result of the function execution, so can
    * be used in an `await` statement.
    * 
-   * @param metadata - The metadata to associate with the context. Will be sent
-   * as attributes, so must be serializable to JSON.
+   * @param metadata - The metadata to associate with the context. Set of string key
+   * string value pairs.
    * @param fn - Function to execute within the metadata context.
    * @returns The result of the function execution.
    * 
@@ -381,9 +371,9 @@ export class Laminar {
    * );
    */
   public static withMetadata<T>(
-    metadata: Record<string, any>,
+    metadata: Record<string, string>,
     fn: () => T,
-  ) {
+  ): T {
     const currentSpan = trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
       for (const [key, value] of Object.entries(metadata)) {
@@ -430,7 +420,7 @@ export class Laminar {
     const currentSpan = trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
       for (const [key, value] of Object.entries(attributes)) {
-        currentSpan.setAttribute(key, JSON.stringify(value));
+        currentSpan.setAttribute(key, value);
       }
     }
   }
