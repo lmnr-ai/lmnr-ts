@@ -107,4 +107,11 @@ export interface InitializeOptions {
    * Defaults to false.
    */
   silenceInitializationMessage?: boolean;
+
+  /**
+   * Whether to use an external tracer provider. Optional.
+   * Defaults to false. If true, the SDK will not initialize its own tracer provider.
+   * This is useful for advanced use cases where the user wants to manage the tracer provider themselves.
+   */
+  useExternalTracerProvider?: boolean;
 }
