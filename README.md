@@ -172,3 +172,19 @@ Resulting in:
   runId: '05383a95-d316-4091-a64b-06c54d12982a'
 }
 ```
+
+## Semantic search
+
+You can perform a semantic search on a dataset using the `semanticSearch` method.
+
+```typescript
+import { Laminar } from '@lmnr-ai/lmnr';
+
+const l = new Laminar('<YOUR_PROJECT_API_KEY>');
+const result = await l.semanticSearch({
+    query: 'hello',
+    datasetId: 'my_dataset_id',
+});
+```
+
+[Read docs](https://docs.lmnr.ai/datasets/indexing#searching) to learn more about semantic search.

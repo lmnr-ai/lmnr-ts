@@ -18,7 +18,8 @@ interface ObserveOptions {
  * functions and methods to create spans.
  *
  * @param name - Name of the span. Function name is used if not specified.
- * @param userId - User ID to associate with the span and the following context.
+ * @param userId - Deprecated. Use {@link Laminar.withMetadata} to set key-value pairs.
+ * User ID to associate with the span and the following context.
  * @param sessionId - Session ID to associate with the span and the following context.
  * @param traceType – Type of the trace. Unless it is within evaluation, it should be 'DEFAULT'.
  * @param spanType - Type of the span. 'DEFAULT' is used if not specified. If the type is 'LLM',
@@ -53,6 +54,7 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     associationProperties = { ...associationProperties, "session_id": sessionId };
   }
   if (userId) {
+    console.warn("`userId` is deprecated. Use `Laminar.withMetadata` to set key-value pairs.");
     associationProperties = { ...associationProperties, "user_id": userId };
   }
   if (traceType) {
