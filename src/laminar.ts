@@ -31,10 +31,13 @@ import {
   SPAN_OUTPUT,
   SPAN_PATH,
   SPAN_TYPE,
-  USER_ID,
   LaminarAttributes,
 } from './sdk/tracing/attributes';
 import { RandomIdGenerator } from '@opentelemetry/sdk-trace-base';
+
+// for docstring
+import { BasicTracerProvider, NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
+import { ProxyTracerProvider } from '@opentelemetry/api';
 
 
 interface LaminarInitializeProps {
@@ -44,6 +47,7 @@ interface LaminarInitializeProps {
   httpPort?: number;
   grpcPort?: number;
   instrumentModules?: InitializeOptions["instrumentModules"];
+  useExternalTracerProvider?: boolean;
 }
 
 export class Laminar {
@@ -74,6 +78,16 @@ export class Laminar {
    * LLM calls (OpenAI, Anthropic, etc), Langchain, VectorDB calls (Pinecone, Qdrant, etc).
    * Pass an empty object {} to disable any kind of automatic instrumentation.
    * If you only want to auto-instrument specific modules, then pass them in the object.
+   * @param useExternalTracerProvider - [ADVANCED] Only use if you are using another
+   * node-based tracer provider. Defaults to false.
+   * If `true`, the SDK will not initialize its own tracer provider. Be very careful.
+   * If you set this to `true`, but the external provider does not extend/implement 
+   * {@link BasicTracerProvider} or is not a {@link ProxyTracerProvider} that internally
+   * delegates to a {@link BasicTracerProvider}, the SDK will not function correctly.
+   * The only setting this has been tested with is `@opentelemetry/auto-instrumentations-node`.
+   * {@link https://opentelemetry.io/docs/zero-code/js/#configuring-the-module} - this 
+   * initializes a {@link ProxyTracerProvider} internally which delegates to a 
+   * {@link NodeTracerProvider}, which in turn, extends {@link BasicTracerProvider}.
    * 
    * @example
    * import { Laminar as L } from '@lmnr-ai/lmnr';
@@ -96,7 +110,8 @@ export class Laminar {
     baseUrl,
     httpPort,
     grpcPort,
-    instrumentModules
+    instrumentModules,
+    useExternalTracerProvider,
   }: LaminarInitializeProps) {
 
     let key = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
@@ -131,6 +146,7 @@ export class Laminar {
       silenceInitializationMessage: true,
       instrumentModules,
       disableBatch: false,
+      useExternalTracerProvider,
     });
   }
 

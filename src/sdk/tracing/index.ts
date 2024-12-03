@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import { baggageUtils } from "@opentelemetry/core";
-import { Span, context, diag } from "@opentelemetry/api";
+import { ProxyTracerProvider, Span, TracerProvider, context, diag, trace } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { Instrumentation } from "@opentelemetry/instrumentation";
 import { InitializeOptions } from "../interfaces";
@@ -9,7 +9,7 @@ import {
   SPAN_PATH_KEY,
 } from "./tracing";
 import { _configuration } from "../configuration";
-import { NodeTracerProvider, SimpleSpanProcessor, BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
+import { NodeTracerProvider, SimpleSpanProcessor, BatchSpanProcessor, BasicTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
@@ -182,7 +182,7 @@ const manuallyInitInstrumentations = (
 export const startTracing = (options: InitializeOptions) => {
   if (options.instrumentModules !== undefined) {
     // If options.instrumentModules is empty, it will not initialize anything,
-    // so empty dict can essentially be passed to disable any kind of automatic instrumentation.
+    // so empty dict can be passed to disable any kind of automatic instrumentation.
     manuallyInitInstrumentations(options.instrumentModules);
   } else {
     initInstrumentations();
@@ -252,13 +252,28 @@ export const startTracing = (options: InitializeOptions) => {
     }
   };
 
-  const provider = new NodeTracerProvider();
-  provider.addSpanProcessor(_spanProcessor);
-  provider.register();
-  registerInstrumentations({
-    instrumentations,
-    tracerProvider: provider,
-  });
+  if (options.useExternalTracerProvider) {
+    const globalProvider = trace.getTracerProvider();
+    let provider: TracerProvider;
+    if (globalProvider instanceof ProxyTracerProvider) {
+      provider = globalProvider.getDelegate() as NodeTracerProvider;
+    } else {
+      provider = globalProvider;
+    }
+    if ((provider as BasicTracerProvider).addSpanProcessor) {
+      (provider as BasicTracerProvider).addSpanProcessor(_spanProcessor);
+    } else {
+      throw new Error("The active tracer provider does not support adding a span processor");
+    }
+  } else {
+    const provider = new NodeTracerProvider();
+    provider.addSpanProcessor(_spanProcessor);
+    provider.register();
+    registerInstrumentations({
+      instrumentations,
+      tracerProvider: provider,
+    });
+  }
 };
 
 export const shouldSendTraces = () => {

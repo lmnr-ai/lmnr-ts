@@ -108,7 +108,14 @@ export function withEntity<
           { ...(currentAssociationProperties ?? {}), ...rest },
         );
 
-        const res = fn.apply(thisArg, args);
+        let res: unknown;
+        try {
+          res = fn.apply(thisArg, args);
+        } catch (error) {
+          processException(error as Error, span);
+          span.end();
+          throw error;
+        }
 
         if (res instanceof Promise) {
           return res.then((resolvedRes) => {
@@ -126,6 +133,11 @@ export function withEntity<
             }
 
             return resolvedRes;
+          })
+          .catch((error) => {
+            processException(error as Error, span);
+            span.end();
+            throw error;
           });
         }
         try {
@@ -168,4 +180,13 @@ function cleanInput(input: unknown): unknown {
 
 function serialize(input: unknown): string {
   return JSON.stringify(cleanInput(input));
+}
+
+function processException(error: Error, span: Span) {
+  span.addEvent("exception", {
+    "exception.type": error.name,
+    "exception.message": error.message,
+    "exception.stack": error.stack,
+    "exception.escaped": true,
+  });
 }
