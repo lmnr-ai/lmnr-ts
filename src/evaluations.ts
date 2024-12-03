@@ -102,7 +102,7 @@ type EvaluatorFunctionReturn = number | Record<string, number>;
  * of string keys and number values. The latter is useful for evaluating
  * multiple criteria in one go instead of running multiple evaluators.
  */
-type EvaluatorFunction<O, T> = (output: O, target: T | undefined, ...args: any[]) =>
+type EvaluatorFunction<O, T> = (output: O, target?: T, ...args: any[]) =>
   EvaluatorFunctionReturn | Promise<EvaluatorFunctionReturn>;
 
 /**
