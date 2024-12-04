@@ -22,14 +22,6 @@ export type PipelineRunResponse = {
   runId: StringUUID;
 }
 
-export type EvaluateEvent = {
-  name: string;
-  evaluator: string;
-  data: Record<string, NodeInput>;
-  timestamp?: Date;
-  env?: Record<string, NodeInput>;
-}
-
 export type Event = {
   id: StringUUID;
   templateName: string;
@@ -91,3 +83,17 @@ export type SpanType = 'DEFAULT' | 'LLM' | 'PIPELINE' | 'EXECUTOR' | 'EVALUATOR'
  * They are used to mark traces created by the "online" evaluations for semantic events.
  */
 export type TraceType = 'DEFAULT' | 'EVENT' | 'EVALUATION'
+
+
+/**
+ * Tracing levels to conditionally disable tracing.
+ * 
+ * OFF - No tracing is sent.
+ * META_ONLY - Only metadata is sent (e.g. tokens, costs, etc.).
+ * ALL - All data is sent.
+ */
+export enum TracingLevel {
+  OFF = 'off',
+  META_ONLY = 'meta_only',
+  ALL = 'all',
+}

@@ -245,6 +245,8 @@ export const startTracing = (options: InitializeOptions) => {
       for (const [key, value] of Object.entries(associationProperties)) {
         if (Object.keys(ASSOCIATION_PROPERTIES_OVERRIDES).includes(key)) {
           span.setAttribute(ASSOCIATION_PROPERTIES_OVERRIDES[key], value);
+        } else if (key === "tracing_level") {
+          span.setAttribute("lmnr.internal.tracing_level", value);
         } else {
           span.setAttribute(`${ASSOCIATION_PROPERTIES}.${key}`, value);
         }
