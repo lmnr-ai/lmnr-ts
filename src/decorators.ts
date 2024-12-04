@@ -1,7 +1,7 @@
 import { Span, TraceFlags, context, trace } from "@opentelemetry/api";
 import { withEntity } from './sdk/node-server-sdk'
 import { Laminar } from './laminar';
-import { TraceType } from './types';
+import { TraceType, TracingLevel } from './types';
 import { ASSOCIATION_PROPERTIES_KEY } from "./sdk/tracing/tracing";
 
 interface ObserveOptions {
@@ -118,6 +118,53 @@ export function withLabels<A extends unknown[], F extends (...args: A) => Return
   for (const [key, value] of Object.entries(labelProperties)) {
     delete newAssociationProperties[`label.${key}`];
   }
+
+  entityContext = entityContext.setValue(
+    ASSOCIATION_PROPERTIES_KEY,
+    newAssociationProperties,
+  );
+
+  return result;
+}
+
+/**
+ * Sets the tracing level for any spans inside the function. This is useful for
+ * conditionally disabling the tracing for certain functions.
+ * Tracing level must be one of the values in {@link TracingLevel}. Returns the
+ * result of the wrapped function, so you can use it in an `await` statement if
+ * needed.
+ * 
+ * @param tracingLevel - The tracing level to set.
+ * @returns The result of the wrapped function.
+ * 
+ * @example
+ * ```typescript
+ * import { withTracingLevel, TracingLevel } from '@lmnr-ai/lmnr';
+ * 
+ * const result = await withTracingLevel(TracingLevel.META_ONLY, () => {
+ *    openai.chat.completions.create({});
+ * });
+ * ```
+ */
+export function withTracingLevel<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
+  tracingLevel: TracingLevel,
+  fn: F,
+  ...args: A
+): ReturnType<F> {
+  let entityContext = context.active();
+  const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
+
+  entityContext = entityContext.setValue(
+    ASSOCIATION_PROPERTIES_KEY,
+    { ...currentAssociationProperties, "tracing_level": tracingLevel },
+  );
+
+  const result = context.with(entityContext, () => {
+    return fn.apply(undefined, args);
+  });
+
+  const newAssociationProperties = (entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {}) as Record<string, any>;
+  delete newAssociationProperties["tracing_level"];
 
   entityContext = entityContext.setValue(
     ASSOCIATION_PROPERTIES_KEY,
