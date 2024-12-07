@@ -33,7 +33,7 @@ import {
   SPAN_TYPE,
   LaminarAttributes,
 } from './sdk/tracing/attributes';
-import { RandomIdGenerator } from '@opentelemetry/sdk-trace-base';
+import { RandomIdGenerator, SpanProcessor } from '@opentelemetry/sdk-trace-base';
 
 // for docstring
 import { BasicTracerProvider, NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
@@ -48,6 +48,7 @@ interface LaminarInitializeProps {
   grpcPort?: number;
   instrumentModules?: InitializeOptions["instrumentModules"];
   useExternalTracerProvider?: boolean;
+  _spanProcessor?: SpanProcessor;
 }
 
 export class Laminar {
@@ -112,6 +113,7 @@ export class Laminar {
     grpcPort,
     instrumentModules,
     useExternalTracerProvider,
+    _spanProcessor,
   }: LaminarInitializeProps) {
 
     let key = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
@@ -141,12 +143,20 @@ export class Laminar {
       metadata,
     });
 
+    if (_spanProcessor) {
+      console.warn("Laminar using a custom span processor. This feature is " +
+        "added for tests only. Any use of this feature outside of tests " +
+        "is not supported and advised against."
+      );
+    }
+
     traceloopInitialize({
       exporter,
       silenceInitializationMessage: true,
       instrumentModules,
       disableBatch: false,
       useExternalTracerProvider,
+      processor: _spanProcessor,
     });
   }
 
@@ -346,12 +356,12 @@ export class Laminar {
     const currentSpan = trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
       if (sessionId) {
-        currentSpan.setAttribute(SESSION_ID, JSON.stringify(sessionId));
+        currentSpan.setAttribute(SESSION_ID, sessionId);
       }
     }
     let associationProperties = {};
     if (sessionId) {
-      associationProperties = { ...associationProperties, "session_id": JSON.stringify(sessionId) };
+      associationProperties = { ...associationProperties, "session_id": sessionId };
     }
 
     let entityContext = contextApi.active();
@@ -393,12 +403,12 @@ export class Laminar {
     const currentSpan = trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
       for (const [key, value] of Object.entries(metadata)) {
-        currentSpan.setAttribute(`${ASSOCIATION_PROPERTIES}.metadata.${key}`, JSON.stringify(value));
+        currentSpan.setAttribute(`${ASSOCIATION_PROPERTIES}.metadata.${key}`, value);
       }
     }
     let metadataAttributes = {};
     for (const [key, value] of Object.entries(metadata)) {
-      metadataAttributes = { ...metadataAttributes, [`metadata.${key}`]: JSON.stringify(value) };
+      metadataAttributes = { ...metadataAttributes, [`metadata.${key}`]: value };
     }
 
     let entityContext = contextApi.active();
@@ -539,7 +549,7 @@ export class Laminar {
       ...labelProperties,
     }
     const span = getTracer().startSpan(name, { attributes }, entityContext);
-    if (traceId) {
+    if (traceId && isStringUUID(traceId)) {
       span.setAttribute(OVERRIDE_PARENT_SPAN, true);
     }
     if (input) {
@@ -561,16 +571,28 @@ export class Laminar {
    * 
    * See {@link startSpan} docs for a usage example
    */
-  public static withSpan<T>(span: Span, fn: () => T, endOnExit?: boolean): T {
+  public static withSpan<T>(span: Span, fn: () => T, endOnExit?: boolean): T | Promise<T> {
     return contextApi.with(trace.setSpan(contextApi.active(), span), () => {
-      try{
+      try {
         const result = fn();
-        return result;
-      }
-      finally {
+        if (result instanceof Promise) {
+          return result.finally(() => {
+            if (endOnExit !== undefined && endOnExit) {
+              span.end();
+            }
+          });
+        }
         if (endOnExit !== undefined && endOnExit) {
           span.end();
         }
+        return result;
+      }
+      catch (error) {
+        span.recordException(error as Error);
+        if (endOnExit !== undefined && endOnExit) {
+          span.end();
+        }
+        throw error;
       }
     });
   }

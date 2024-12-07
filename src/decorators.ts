@@ -7,7 +7,6 @@ import { ASSOCIATION_PROPERTIES_KEY } from "./sdk/tracing/tracing";
 interface ObserveOptions {
   name?: string;
   sessionId?: string;
-  userId?: string;
   traceType?: TraceType;
   spanType?: 'DEFAULT' | 'LLM';
   traceId?: string;
@@ -40,7 +39,6 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
   {
     name,
     sessionId,
-    userId,
     traceType,
     spanType,
     traceId,
@@ -52,10 +50,6 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
   let associationProperties = {};
   if (sessionId) {
     associationProperties = { ...associationProperties, "session_id": sessionId };
-  }
-  if (userId) {
-    console.warn("`userId` is deprecated. Use `Laminar.withMetadata` to set key-value pairs.");
-    associationProperties = { ...associationProperties, "user_id": userId };
   }
   if (traceType) {
     associationProperties = { ...associationProperties, "trace_type": traceType };
