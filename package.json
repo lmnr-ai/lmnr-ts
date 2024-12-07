@@ -1,12 +1,12 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.4.25",
+  "version": "0.4.26",
   "description": "TypeScript SDK for Laminar AI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsup src/index.ts src/cli.ts --format esm,cjs --dts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "tsx --test test/*.test.ts"
   },
   "bin": {
     "lmnr": "./dist/cli.js"
@@ -48,6 +48,7 @@
     "llamaindex": "^0.7.10",
     "openai": "^4.75.0",
     "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   },
   "dependencies": {

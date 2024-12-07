@@ -78,11 +78,9 @@ export type SpanType = 'DEFAULT' | 'LLM' | 'PIPELINE' | 'EXECUTOR' | 'EVALUATOR'
 /**
  * Trace types to categorize traces.
  * They are used as association properties passed to all spans in a trace.
- * 
- * EVENT traces are traces created by the event runner.
- * They are used to mark traces created by the "online" evaluations for semantic events.
+ *
  */
-export type TraceType = 'DEFAULT' | 'EVENT' | 'EVALUATION'
+export type TraceType = 'DEFAULT' | 'EVALUATION'
 
 
 /**

@@ -9,7 +9,7 @@ import {
   SPAN_PATH_KEY,
 } from "./tracing";
 import { _configuration } from "../configuration";
-import { NodeTracerProvider, SimpleSpanProcessor, BatchSpanProcessor, BasicTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { NodeTracerProvider, SimpleSpanProcessor, BatchSpanProcessor, BasicTracerProvider, SpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
@@ -27,7 +27,7 @@ import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
 import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
 import { ASSOCIATION_PROPERTIES, ASSOCIATION_PROPERTIES_OVERRIDES, SPAN_INSTRUMENTATION_SOURCE, SPAN_PATH } from "./attributes";
 
-let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor;
+let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor;
 let openAIInstrumentation: OpenAIInstrumentation | undefined;
 let anthropicInstrumentation: AnthropicInstrumentation | undefined;
 let azureOpenAIInstrumentation: AzureOpenAIInstrumentation | undefined;
@@ -225,9 +225,10 @@ export const startTracing = (options: InitializeOptions) => {
       url: `${options.baseUrl}/v1/traces`,
       headers,
     });
-  _spanProcessor = options.disableBatch
-    ? new SimpleSpanProcessor(traceExporter)
-    : new BatchSpanProcessor(traceExporter);
+  _spanProcessor = options.processor ??
+    (options.disableBatch
+      ? new SimpleSpanProcessor(traceExporter)
+      : new BatchSpanProcessor(traceExporter));
 
   _spanProcessor.onStart = (span: Span) => {
     const spanPath = context.active().getValue(SPAN_PATH_KEY);
@@ -268,8 +269,9 @@ export const startTracing = (options: InitializeOptions) => {
       throw new Error("The active tracer provider does not support adding a span processor");
     }
   } else {
-    const provider = new NodeTracerProvider();
-    provider.addSpanProcessor(_spanProcessor);
+    const provider = new NodeTracerProvider({
+      spanProcessors: [_spanProcessor],
+    });
     provider.register();
     registerInstrumentations({
       instrumentations,

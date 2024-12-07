@@ -112,7 +112,7 @@ export function withEntity<
         try {
           res = fn.apply(thisArg, args);
         } catch (error) {
-          processException(error as Error, span);
+          span.recordException(error as Error);
           span.end();
           throw error;
         }
@@ -135,7 +135,7 @@ export function withEntity<
             return resolvedRes;
           })
           .catch((error) => {
-            processException(error as Error, span);
+            span.recordException(error as Error);
             span.end();
             throw error;
           });
@@ -180,13 +180,4 @@ function cleanInput(input: unknown): unknown {
 
 function serialize(input: unknown): string {
   return JSON.stringify(cleanInput(input));
-}
-
-function processException(error: Error, span: Span) {
-  span.addEvent("exception", {
-    "exception.type": error.name,
-    "exception.message": error.message,
-    "exception.stack": error.stack,
-    "exception.escaped": true,
-  });
 }
