@@ -2,6 +2,7 @@
 
 import { ArgumentParser } from "argparse";
 import * as esbuild from "esbuild";
+import * as glob from "glob";
 
 const pjson = require('../package.json');
 
@@ -32,7 +33,7 @@ async function cli() {
   // Use argparse, which is the port of the python library
   const parser = new ArgumentParser({
     prog: "lmnr",
-    description: "CLI for Laminar",
+    description: "CLI for Laminar. Use `lmnr <subcommand> --help` for more information.",
   });
 
   parser.add_argument("-v", "--version", { action: "version", version: pjson.version });
@@ -42,42 +43,88 @@ async function cli() {
     dest: "subcommand",
   });
 
-  const parser_eval = subparsers.add_parser("eval", {
+  const parserEval = subparsers.add_parser("eval", {
     description: "Run an evaluation",
+    help: "Run an evaluation",
   });
 
-  parser_eval.add_argument("file", {
-    help: "A file containing the evaluation to run",
+  parserEval.add_argument("file", {
+    help: "A file containing the evaluation to run. If no file is provided, " +
+      "the evaluation will run all `*.eval.ts|js` files in the `evals` directory.",
+    nargs: "?",
   });
 
-  parser_eval.set_defaults({
+  parserEval.add_argument("--fail-on-error", {
+    help: "Fail on error. If specified, will fail if encounters a file that cannot be run",
+    action: "store_true",
+  });
+
+  parserEval.set_defaults({
     func: async (args: any) => {
-      // TODO: Add various optimizations, e.g. minify, pure, tree shaking, etc.
-      const buildOptions = {
-        entryPoints: [args.file],
-        outfile: "tmp_out.js",
-        write: false,  // will be loaded in memory as a temp file
-        platform: "node" as esbuild.Platform,
-        bundle: true,
-        external: ["node_modules/*"],
-      };
+      const files = args.file
+        ? [args.file]
+        : glob.sync('evals/**/*.eval.{ts,js}')
 
-      const result = await esbuild.build(buildOptions);
+      files.sort();
 
-      if (!result.outputFiles) {
-        console.error("Error when building: No output files found");
+      if (files.length === 0) {
+        console.error("No evaluation files found. Please provide a file or " +
+          "ensure there are files in the `evals` directory.");
         process.exit(1);
       }
 
-      const outputFileText = result.outputFiles[0].text;
+      if (!args.file) {
+        console.log(`Located ${files.length} evaluation files in evals/`);
+      }
 
-      const evaluation = loadModule({
-        filename: args.file,
-        moduleText: outputFileText,
-      });
+      for (const file of files) {
+        console.log(`Loading ${file}...`);
+        // TODO: Add various optimizations, e.g. minify, pure, tree shaking, etc.
+        const buildOptions = {
+          entryPoints: [file],
+          outfile: `tmp_out_${file}.js`,
+          write: false,  // will be loaded in memory as a temp file
+          platform: "node" as esbuild.Platform,
+          bundle: true,
+          external: ["node_modules/*"],
+        };
 
-      // @ts-ignore
-      await evaluation.run();
+        const result = await esbuild.build(buildOptions);
+
+        if (!result.outputFiles) {
+          console.error("Error when building: No output files found");
+          if (args.fail_on_error) {
+            process.exit(1);
+          }
+          continue;
+        }
+
+        const outputFileText = result.outputFiles[0].text;
+
+        const evaluation = loadModule({
+          filename: args.file,
+          moduleText: outputFileText,
+        });
+
+        // @ts-ignore
+        if (!evaluation?.run) {
+          console.error(`Evaluation ${file} does not properly call evaluate()`);
+          if (args.fail_on_error) {
+            process.exit(1);
+          }
+          continue;
+        }
+
+        // @ts-ignore
+        await evaluation.run();
+      }
+    }
+  });
+
+  parser.set_defaults({
+    func: async (args: any) => {
+      parser.print_help();
+      process.exit(0);
     }
   });
 
