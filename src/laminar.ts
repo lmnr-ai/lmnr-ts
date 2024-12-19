@@ -17,7 +17,7 @@ import {
   trace,
   TraceFlags
 } from '@opentelemetry/api';
-import { InitializeOptions, initialize as traceloopInitialize } from './sdk/node-server-sdk'
+import { InitializeOptions, initializeTracing } from './sdk/node-server-sdk'
 import { isStringUUID, otelSpanIdToUUID, otelTraceIdToUUID, uuidToOtelTraceId } from './utils';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { Metadata } from '@grpc/grpc-js';
@@ -113,7 +113,6 @@ export class Laminar {
     grpcPort,
     instrumentModules,
     useExternalTracerProvider,
-    _spanProcessor,
   }: LaminarInitializeProps) {
 
     let key = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
@@ -143,20 +142,13 @@ export class Laminar {
       metadata,
     });
 
-    if (_spanProcessor) {
-      console.warn("Laminar using a custom span processor. This feature is " +
-        "added for tests only. Any use of this feature outside of tests " +
-        "is not supported and advised against."
-      );
-    }
 
-    traceloopInitialize({
+    initializeTracing({
       exporter,
       silenceInitializationMessage: true,
       instrumentModules,
       disableBatch: false,
       useExternalTracerProvider,
-      processor: _spanProcessor,
     });
   }
 

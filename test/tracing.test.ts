@@ -1,16 +1,31 @@
-import { afterEach, describe, it } from "node:test";
-import { InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
-import { Laminar, LaminarAttributes, observe, TracingLevel, withLabels, withTracingLevel } from "../src/index";
-import assert from "node:assert";
-
-const exporter = new InMemorySpanExporter();
-const processor = new SimpleSpanProcessor(exporter);
-Laminar.initialize({
-  projectApiKey: "test",
-  _spanProcessor: processor,
-});
+import { afterEach, beforeEach, describe, it, mock } from "node:test";
+import {
+  InMemorySpanExporter,
+  SimpleSpanProcessor,
+} from "@opentelemetry/sdk-trace-base";
+import {
+  Laminar,
+  LaminarAttributes,
+  observe,
+  TracingLevel,
+  withLabels,
+  withTracingLevel,
+} from "../src/index";
+import assert from "node:assert/strict";
+import { initializeTracing } from "../src/sdk/configuration";
 
 describe("tracing", () => {
+  const exporter = new InMemorySpanExporter();
+  const processor = new SimpleSpanProcessor(exporter);
+  
+  beforeEach(() => {
+    // This only uses underlying OpenLLMetry initialization, not Laminar's
+    // initialization, but this is sufficient for testing.
+    // Laminar.initialize() is tested in the other suite.
+    initializeTracing({ processor, exporter });
+  });
+
+
   afterEach(() => {
     exporter.reset();
   });
