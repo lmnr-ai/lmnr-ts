@@ -1,15 +1,29 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import { baggageUtils } from "@opentelemetry/core";
-import { ProxyTracerProvider, Span, TracerProvider, context, diag, trace } from "@opentelemetry/api";
+import {
+  ProxyTracerProvider,
+  TracerProvider,
+  context,
+  diag,
+  trace,
+} from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { Instrumentation } from "@opentelemetry/instrumentation";
+import { Span } from "@opentelemetry/sdk-trace-base";
 import { InitializeOptions } from "../interfaces";
 import {
   ASSOCIATION_PROPERTIES_KEY,
   SPAN_PATH_KEY,
 } from "./tracing";
 import { _configuration } from "../configuration";
-import { NodeTracerProvider, SimpleSpanProcessor, BatchSpanProcessor, BasicTracerProvider, SpanProcessor } from "@opentelemetry/sdk-trace-node";
+import {
+  NodeTracerProvider,
+  SimpleSpanProcessor,
+  BatchSpanProcessor,
+  BasicTracerProvider,
+  SpanProcessor,
+  ReadableSpan,
+} from "@opentelemetry/sdk-trace-node";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
@@ -25,7 +39,13 @@ import { PineconeInstrumentation } from "@traceloop/instrumentation-pinecone";
 import { LangChainInstrumentation } from "@traceloop/instrumentation-langchain";
 import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
 import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
-import { ASSOCIATION_PROPERTIES, ASSOCIATION_PROPERTIES_OVERRIDES, SPAN_INSTRUMENTATION_SOURCE, SPAN_PATH } from "./attributes";
+import {
+  ASSOCIATION_PROPERTIES,
+  ASSOCIATION_PROPERTIES_OVERRIDES,
+  OVERRIDE_PARENT_SPAN,
+  SPAN_INSTRUMENTATION_SOURCE,
+  SPAN_PATH,
+} from "./attributes";
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor;
 let openAIInstrumentation: OpenAIInstrumentation | undefined;
@@ -173,6 +193,12 @@ const manuallyInitInstrumentations = (
   }
 };
 
+const isNextSpan = (span: ReadableSpan) => {
+  return span.attributes['next.span_name'] !== undefined 
+    || span.attributes['next.span_type'] !== undefined
+    || span.attributes['next.clientComponentLoadCount'] !== undefined;
+}
+
 /**
  * Initializes the Traceloop SDK.
  * Must be called once before any other SDK methods.
@@ -230,10 +256,22 @@ export const startTracing = (options: InitializeOptions) => {
       ? new SimpleSpanProcessor(traceExporter)
       : new BatchSpanProcessor(traceExporter));
 
+  const nextSpanIds = new Set<string>();
+
   _spanProcessor.onStart = (span: Span) => {
     const spanPath = context.active().getValue(SPAN_PATH_KEY);
     if (spanPath) {
       span.setAttribute(SPAN_PATH, spanPath as string);
+    }
+
+    if (span.parentSpanId && nextSpanIds.has(span.parentSpanId)) {
+      // FIXME: seems like this `if` block is never entered.
+      // `nextSpanIds` does get populated, but it seems like the parent span
+      // gets the `next` attributes later than the child span starts.
+      //
+      // Alternative solution with `onEnd` is not working either – first of all
+      // span is immutable in onEnd, but also the if is not entered there either.
+      span.setAttribute(OVERRIDE_PARENT_SPAN, true);
     }
 
     span.setAttribute(SPAN_INSTRUMENTATION_SOURCE, "javascript");
@@ -252,6 +290,15 @@ export const startTracing = (options: InitializeOptions) => {
           span.setAttribute(`${ASSOCIATION_PROPERTIES}.${key}`, value);
         }
       }
+    }
+  };
+
+  const originalOnEnd = _spanProcessor.onEnd.bind(_spanProcessor);
+  _spanProcessor.onEnd = (span: ReadableSpan) => {
+    if (isNextSpan(span)) {
+      nextSpanIds.add(span.spanContext().spanId);
+    } else {
+      originalOnEnd(span);
     }
   };
 
