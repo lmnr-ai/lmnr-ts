@@ -114,4 +114,15 @@ export interface InitializeOptions {
    * This is useful for advanced use cases where the user wants to manage the tracer provider themselves.
    */
   useExternalTracerProvider?: boolean;
+
+  /**
+   * Whether to preserve Next.js spans. Optional.
+   * Defaults to false.
+   * Next.js instrumentation is very verbose and can result in
+   * a lot of noise in the traces. By default, Laminar
+   * will ignore the Next.js spans (looking at the attributes like `next.span_name`)
+   * and set the topmost non-Next span as the root span in the trace.
+   * This option allows to preserve the Next.js spans.
+   */
+  preserveNextJsSpans?: boolean;
 }

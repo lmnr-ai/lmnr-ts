@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import { baggageUtils } from "@opentelemetry/core";
 import {
+  Context,
   ProxyTracerProvider,
   TracerProvider,
   context,
@@ -61,6 +62,7 @@ let pineconeInstrumentation: PineconeInstrumentation | undefined;
 let chromadbInstrumentation: ChromaDBInstrumentation | undefined;
 let qdrantInstrumentation: QdrantInstrumentation | undefined;
 
+const NUM_TRACKED_NEXT_SPANS = 10000;
 
 const instrumentations: Instrumentation[] = [];
 
@@ -193,6 +195,12 @@ const manuallyInitInstrumentations = (
   }
 };
 
+// Next.js instrumentation is very verbose and can result in
+// a lot of noise in the traces. By default, Laminar
+// will ignore the Next.js spans (looking at the attributes like `next.span_name`)
+// and set the topmost non-Next span as the root span in the trace.
+// Here's the set of possible attributes as of Next.js 15.1
+// See also: https://github.com/vercel/next.js/blob/790efc5941e41c32bb50cd915121209040ea432c/packages/next/src/server/lib/trace/tracer.ts#L297
 const isNextSpan = (span: ReadableSpan) => {
   return span.attributes['next.span_name'] !== undefined 
     || span.attributes['next.span_type'] !== undefined
@@ -257,21 +265,24 @@ export const startTracing = (options: InitializeOptions) => {
       : new BatchSpanProcessor(traceExporter));
 
   const nextSpanIds = new Set<string>();
+  // In the program runtime, the set may become very large, so every now and then
+  // we remove half of the elements from the set to keep it from growing too much.
+  // We use the fact that JS Set preserves insertion order to remove the oldest elements.
+  const addNextSpanId = (spanId: string) => {
+    if (nextSpanIds.size >= NUM_TRACKED_NEXT_SPANS) {
+      const toRemove = Array.from(nextSpanIds).slice(0, NUM_TRACKED_NEXT_SPANS / 2);
+      toRemove.forEach(id => nextSpanIds.delete(id));
+    }
+    nextSpanIds.add(spanId);
+  };
 
-  _spanProcessor.onStart = (span: Span) => {
+  const originalOnEnd = _spanProcessor.onEnd.bind(_spanProcessor);
+  const originalOnStart = _spanProcessor.onStart.bind(_spanProcessor);
+
+  _spanProcessor.onStart = (span: Span, parentContext: Context) => {
     const spanPath = context.active().getValue(SPAN_PATH_KEY);
     if (spanPath) {
       span.setAttribute(SPAN_PATH, spanPath as string);
-    }
-
-    if (span.parentSpanId && nextSpanIds.has(span.parentSpanId)) {
-      // FIXME: seems like this `if` block is never entered.
-      // `nextSpanIds` does get populated, but it seems like the parent span
-      // gets the `next` attributes later than the child span starts.
-      //
-      // Alternative solution with `onEnd` is not working either – first of all
-      // span is immutable in onEnd, but also the if is not entered there either.
-      span.setAttribute(OVERRIDE_PARENT_SPAN, true);
     }
 
     span.setAttribute(SPAN_INSTRUMENTATION_SOURCE, "javascript");
@@ -291,17 +302,39 @@ export const startTracing = (options: InitializeOptions) => {
         }
       }
     }
+    // OVERRIDE_PARENT_SPAN makes the current span the root span in the trace.
+    // The backend looks for this attribute and deletes the parentSpanId if the
+    // attribute is present. We do that to make the topmost non-Next.js span
+    // the root span in the trace.
+    if (span.parentSpanId 
+        && nextSpanIds.has(span.parentSpanId) 
+        && !options.preserveNextJsSpans
+    ) {
+      span.setAttribute(OVERRIDE_PARENT_SPAN, true);
+    }
+    originalOnStart(span, parentContext);
+    // If we know by this time that this span is created by Next.js,
+    // we add it to the set of nextSpanIds.
+    if (isNextSpan(span) && !options.preserveNextJsSpans) {
+      addNextSpanId(span.spanContext().spanId);
+    }
   };
 
-  const originalOnEnd = _spanProcessor.onEnd.bind(_spanProcessor);
   _spanProcessor.onEnd = (span: ReadableSpan) => {
-    if (isNextSpan(span)) {
-      nextSpanIds.add(span.spanContext().spanId);
+    // Sometimes we only have know that this span is a Next.js only at the end.
+    // We add it to the set of nextSpanIds in that case. Also, we do not call
+    // the original onEnd, so that we don't send it to the backend.
+    if ((isNextSpan(span) || nextSpanIds.has(span.spanContext().spanId)) && !options.preserveNextJsSpans) {
+      addNextSpanId(span.spanContext().spanId);
     } else {
+      // By default, we call the original onEnd.
       originalOnEnd(span);
     }
   };
 
+  // This is an experimental workaround for the issue where Laminar fails
+  // to work when there is another tracer provider already initialized.
+  // See: https://github.com/lmnr-ai/lmnr/issues/231
   if (options.useExternalTracerProvider) {
     const globalProvider = trace.getTracerProvider();
     let provider: TracerProvider;
@@ -316,6 +349,7 @@ export const startTracing = (options: InitializeOptions) => {
       throw new Error("The active tracer provider does not support adding a span processor");
     }
   } else {
+    // Default behavior, if no external tracer provider is used.
     const provider = new NodeTracerProvider({
       spanProcessors: [_spanProcessor],
     });
