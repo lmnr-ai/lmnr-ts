@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, it, mock } from "node:test";
+import { afterEach, after, beforeEach, describe, it } from "node:test";
 import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
@@ -12,7 +12,8 @@ import {
   withTracingLevel,
 } from "../src/index";
 import assert from "node:assert/strict";
-import { initializeTracing } from "../src/sdk/configuration";
+import { context, trace } from "@opentelemetry/api";
+import { _resetConfiguration, initializeTracing } from "../src/sdk/configuration";
 
 describe("tracing", () => {
   const exporter = new InMemorySpanExporter();
@@ -22,12 +23,19 @@ describe("tracing", () => {
     // This only uses underlying OpenLLMetry initialization, not Laminar's
     // initialization, but this is sufficient for testing.
     // Laminar.initialize() is tested in the other suite.
+    _resetConfiguration();
     initializeTracing({ processor, exporter });
   });
 
 
   afterEach(() => {
     exporter.reset();
+  });
+
+  after(() => {
+    processor.shutdown();
+    trace.disable();
+    context.disable();
   });
 
   it("observes a wrapped function", async () => {

@@ -48,7 +48,7 @@ interface LaminarInitializeProps {
   grpcPort?: number;
   instrumentModules?: InitializeOptions["instrumentModules"];
   useExternalTracerProvider?: boolean;
-  _spanProcessor?: SpanProcessor;
+  preserveNextJsSpans?: boolean;
 }
 
 export class Laminar {
@@ -113,6 +113,7 @@ export class Laminar {
     grpcPort,
     instrumentModules,
     useExternalTracerProvider,
+    preserveNextJsSpans,
   }: LaminarInitializeProps) {
 
     let key = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
@@ -149,6 +150,7 @@ export class Laminar {
       instrumentModules,
       disableBatch: false,
       useExternalTracerProvider,
+      preserveNextJsSpans,
     });
   }
 

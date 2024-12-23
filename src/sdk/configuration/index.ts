@@ -66,3 +66,7 @@ const logLevelToOtelLogLevel = (
       return DiagLogLevel.ERROR;
   }
 };
+
+export const _resetConfiguration = () => {
+  _configuration = undefined;
+};

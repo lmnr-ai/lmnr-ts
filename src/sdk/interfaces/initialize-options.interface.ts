@@ -125,4 +125,10 @@ export interface InitializeOptions {
    * This option allows to preserve the Next.js spans.
    */
   preserveNextJsSpans?: boolean;
+
+  /**
+   * Whether to reset the configuration. Optional.
+   * Defaults to false.
+   */
+  _resetConfiguration?: boolean;
 }

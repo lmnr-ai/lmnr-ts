@@ -5,7 +5,6 @@ import {
   ProxyTracerProvider,
   TracerProvider,
   context,
-  diag,
   trace,
 } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
@@ -43,6 +42,7 @@ import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
 import {
   ASSOCIATION_PROPERTIES,
   ASSOCIATION_PROPERTIES_OVERRIDES,
+  EXTRACTED_FROM_NEXT_JS,
   OVERRIDE_PARENT_SPAN,
   SPAN_INSTRUMENTATION_SOURCE,
   SPAN_PATH,
@@ -195,6 +195,8 @@ const manuallyInitInstrumentations = (
   }
 };
 
+const NEXT_JS_SPAN_ATTRIBUTES = ['next.span_name', 'next.span_type', 'next.clientComponentLoadCount', 'next.page', 'next.rsc', 'next.route', 'next.segment'];
+
 // Next.js instrumentation is very verbose and can result in
 // a lot of noise in the traces. By default, Laminar
 // will ignore the Next.js spans (looking at the attributes like `next.span_name`)
@@ -202,9 +204,7 @@ const manuallyInitInstrumentations = (
 // Here's the set of possible attributes as of Next.js 15.1
 // See also: https://github.com/vercel/next.js/blob/790efc5941e41c32bb50cd915121209040ea432c/packages/next/src/server/lib/trace/tracer.ts#L297
 const isNextJsSpan = (span: ReadableSpan) => {
-  return span.attributes['next.span_name'] !== undefined 
-    || span.attributes['next.span_type'] !== undefined
-    || span.attributes['next.clientComponentLoadCount'] !== undefined;
+    return NEXT_JS_SPAN_ATTRIBUTES.some(attr => span.attributes[attr] !== undefined);
 }
 
 /**
@@ -311,6 +311,8 @@ export const startTracing = (options: InitializeOptions) => {
         && !options.preserveNextJsSpans
     ) {
       span.setAttribute(OVERRIDE_PARENT_SPAN, true);
+      // to indicate that this span was originally parented by a Next.js span
+      span.setAttribute(EXTRACTED_FROM_NEXT_JS, true);
     }
     originalOnStart(span, parentContext);
     // If we know by this time that this span is created by Next.js,
