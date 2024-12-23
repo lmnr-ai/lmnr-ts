@@ -201,7 +201,7 @@ const manuallyInitInstrumentations = (
 // and set the topmost non-Next span as the root span in the trace.
 // Here's the set of possible attributes as of Next.js 15.1
 // See also: https://github.com/vercel/next.js/blob/790efc5941e41c32bb50cd915121209040ea432c/packages/next/src/server/lib/trace/tracer.ts#L297
-const isNextSpan = (span: ReadableSpan) => {
+const isNextJsSpan = (span: ReadableSpan) => {
   return span.attributes['next.span_name'] !== undefined 
     || span.attributes['next.span_type'] !== undefined
     || span.attributes['next.clientComponentLoadCount'] !== undefined;
@@ -264,16 +264,16 @@ export const startTracing = (options: InitializeOptions) => {
       ? new SimpleSpanProcessor(traceExporter)
       : new BatchSpanProcessor(traceExporter));
 
-  const nextSpanIds = new Set<string>();
+  const nextJsSpanIds = new Set<string>();
   // In the program runtime, the set may become very large, so every now and then
   // we remove half of the elements from the set to keep it from growing too much.
   // We use the fact that JS Set preserves insertion order to remove the oldest elements.
-  const addNextSpanId = (spanId: string) => {
-    if (nextSpanIds.size >= NUM_TRACKED_NEXT_SPANS) {
-      const toRemove = Array.from(nextSpanIds).slice(0, NUM_TRACKED_NEXT_SPANS / 2);
-      toRemove.forEach(id => nextSpanIds.delete(id));
+  const addNextJsSpanId = (spanId: string) => {
+    if (nextJsSpanIds.size >= NUM_TRACKED_NEXT_SPANS) {
+      const toRemove = Array.from(nextJsSpanIds).slice(0, NUM_TRACKED_NEXT_SPANS / 2);
+      toRemove.forEach(id => nextJsSpanIds.delete(id));
     }
-    nextSpanIds.add(spanId);
+    nextJsSpanIds.add(spanId);
   };
 
   const originalOnEnd = _spanProcessor.onEnd.bind(_spanProcessor);
@@ -307,7 +307,7 @@ export const startTracing = (options: InitializeOptions) => {
     // attribute is present. We do that to make the topmost non-Next.js span
     // the root span in the trace.
     if (span.parentSpanId 
-        && nextSpanIds.has(span.parentSpanId) 
+        && nextJsSpanIds.has(span.parentSpanId) 
         && !options.preserveNextJsSpans
     ) {
       span.setAttribute(OVERRIDE_PARENT_SPAN, true);
@@ -315,8 +315,8 @@ export const startTracing = (options: InitializeOptions) => {
     originalOnStart(span, parentContext);
     // If we know by this time that this span is created by Next.js,
     // we add it to the set of nextSpanIds.
-    if (isNextSpan(span) && !options.preserveNextJsSpans) {
-      addNextSpanId(span.spanContext().spanId);
+    if (isNextJsSpan(span) && !options.preserveNextJsSpans) {
+      addNextJsSpanId(span.spanContext().spanId);
     }
   };
 
@@ -324,8 +324,8 @@ export const startTracing = (options: InitializeOptions) => {
     // Sometimes we only have know that this span is a Next.js only at the end.
     // We add it to the set of nextSpanIds in that case. Also, we do not call
     // the original onEnd, so that we don't send it to the backend.
-    if ((isNextSpan(span) || nextSpanIds.has(span.spanContext().spanId)) && !options.preserveNextJsSpans) {
-      addNextSpanId(span.spanContext().spanId);
+    if ((isNextJsSpan(span) || nextJsSpanIds.has(span.spanContext().spanId)) && !options.preserveNextJsSpans) {
+      addNextJsSpanId(span.spanContext().spanId);
     } else {
       // By default, we call the original onEnd.
       originalOnEnd(span);
