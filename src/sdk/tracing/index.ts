@@ -1,15 +1,29 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import { baggageUtils } from "@opentelemetry/core";
-import { ProxyTracerProvider, Span, TracerProvider, context, diag, trace } from "@opentelemetry/api";
+import {
+  Context,
+  ProxyTracerProvider,
+  TracerProvider,
+  context,
+  trace,
+} from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { Instrumentation } from "@opentelemetry/instrumentation";
+import { Span } from "@opentelemetry/sdk-trace-base";
 import { InitializeOptions } from "../interfaces";
 import {
   ASSOCIATION_PROPERTIES_KEY,
   SPAN_PATH_KEY,
 } from "./tracing";
 import { _configuration } from "../configuration";
-import { NodeTracerProvider, SimpleSpanProcessor, BatchSpanProcessor, BasicTracerProvider, SpanProcessor } from "@opentelemetry/sdk-trace-node";
+import {
+  NodeTracerProvider,
+  SimpleSpanProcessor,
+  BatchSpanProcessor,
+  BasicTracerProvider,
+  SpanProcessor,
+  ReadableSpan,
+} from "@opentelemetry/sdk-trace-node";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
@@ -25,7 +39,17 @@ import { PineconeInstrumentation } from "@traceloop/instrumentation-pinecone";
 import { LangChainInstrumentation } from "@traceloop/instrumentation-langchain";
 import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
 import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
-import { ASSOCIATION_PROPERTIES, ASSOCIATION_PROPERTIES_OVERRIDES, SPAN_INSTRUMENTATION_SOURCE, SPAN_PATH } from "./attributes";
+import {
+  ASSOCIATION_PROPERTIES,
+  ASSOCIATION_PROPERTIES_OVERRIDES,
+  EXTRACTED_FROM_NEXT_JS,
+  OVERRIDE_PARENT_SPAN,
+  SPAN_INSTRUMENTATION_SOURCE,
+  SPAN_PATH,
+} from "./attributes";
+
+// for doc comment:
+import { withTracingLevel } from "../../decorators";
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor;
 let openAIInstrumentation: OpenAIInstrumentation | undefined;
@@ -41,6 +65,7 @@ let pineconeInstrumentation: PineconeInstrumentation | undefined;
 let chromadbInstrumentation: ChromaDBInstrumentation | undefined;
 let qdrantInstrumentation: QdrantInstrumentation | undefined;
 
+const NUM_TRACKED_NEXT_SPANS = 10000;
 
 const instrumentations: Instrumentation[] = [];
 
@@ -173,6 +198,18 @@ const manuallyInitInstrumentations = (
   }
 };
 
+const NEXT_JS_SPAN_ATTRIBUTES = ['next.span_name', 'next.span_type', 'next.clientComponentLoadCount', 'next.page', 'next.rsc', 'next.route', 'next.segment'];
+
+// Next.js instrumentation is very verbose and can result in
+// a lot of noise in the traces. By default, Laminar
+// will ignore the Next.js spans (looking at the attributes like `next.span_name`)
+// and set the topmost non-Next span as the root span in the trace.
+// Here's the set of possible attributes as of Next.js 15.1
+// See also: https://github.com/vercel/next.js/blob/790efc5941e41c32bb50cd915121209040ea432c/packages/next/src/server/lib/trace/tracer.ts#L297
+const isNextJsSpan = (span: ReadableSpan) => {
+    return NEXT_JS_SPAN_ATTRIBUTES.some(attr => span.attributes[attr] !== undefined);
+}
+
 /**
  * Initializes the Traceloop SDK.
  * Must be called once before any other SDK methods.
@@ -230,7 +267,22 @@ export const startTracing = (options: InitializeOptions) => {
       ? new SimpleSpanProcessor(traceExporter)
       : new BatchSpanProcessor(traceExporter));
 
-  _spanProcessor.onStart = (span: Span) => {
+  const nextJsSpanIds = new Set<string>();
+  // In the program runtime, the set may become very large, so every now and then
+  // we remove half of the elements from the set to keep it from growing too much.
+  // We use the fact that JS Set preserves insertion order to remove the oldest elements.
+  const addNextJsSpanId = (spanId: string) => {
+    if (nextJsSpanIds.size >= NUM_TRACKED_NEXT_SPANS) {
+      const toRemove = Array.from(nextJsSpanIds).slice(0, NUM_TRACKED_NEXT_SPANS / 2);
+      toRemove.forEach(id => nextJsSpanIds.delete(id));
+    }
+    nextJsSpanIds.add(spanId);
+  };
+
+  const originalOnEnd = _spanProcessor.onEnd.bind(_spanProcessor);
+  const originalOnStart = _spanProcessor.onStart.bind(_spanProcessor);
+
+  _spanProcessor.onStart = (span: Span, parentContext: Context) => {
     const spanPath = context.active().getValue(SPAN_PATH_KEY);
     if (spanPath) {
       span.setAttribute(SPAN_PATH, spanPath as string);
@@ -253,8 +305,41 @@ export const startTracing = (options: InitializeOptions) => {
         }
       }
     }
+    // OVERRIDE_PARENT_SPAN makes the current span the root span in the trace.
+    // The backend looks for this attribute and deletes the parentSpanId if the
+    // attribute is present. We do that to make the topmost non-Next.js span
+    // the root span in the trace.
+    if (span.parentSpanId 
+        && nextJsSpanIds.has(span.parentSpanId) 
+        && !options.preserveNextJsSpans
+    ) {
+      span.setAttribute(OVERRIDE_PARENT_SPAN, true);
+      // to indicate that this span was originally parented by a Next.js span
+      span.setAttribute(EXTRACTED_FROM_NEXT_JS, true);
+    }
+    originalOnStart(span, parentContext);
+    // If we know by this time that this span is created by Next.js,
+    // we add it to the set of nextSpanIds.
+    if (isNextJsSpan(span) && !options.preserveNextJsSpans) {
+      addNextJsSpanId(span.spanContext().spanId);
+    }
   };
 
+  _spanProcessor.onEnd = (span: ReadableSpan) => {
+    // Sometimes we only have know that this span is a Next.js only at the end.
+    // We add it to the set of nextSpanIds in that case. Also, we do not call
+    // the original onEnd, so that we don't send it to the backend.
+    if ((isNextJsSpan(span) || nextJsSpanIds.has(span.spanContext().spanId)) && !options.preserveNextJsSpans) {
+      addNextJsSpanId(span.spanContext().spanId);
+    } else {
+      // By default, we call the original onEnd.
+      originalOnEnd(span);
+    }
+  };
+
+  // This is an experimental workaround for the issue where Laminar fails
+  // to work when there is another tracer provider already initialized.
+  // See: https://github.com/lmnr-ai/lmnr/issues/231
   if (options.useExternalTracerProvider) {
     const globalProvider = trace.getTracerProvider();
     let provider: TracerProvider;
@@ -269,6 +354,7 @@ export const startTracing = (options: InitializeOptions) => {
       throw new Error("The active tracer provider does not support adding a span processor");
     }
   } else {
+    // Default behavior, if no external tracer provider is used.
     const provider = new NodeTracerProvider({
       spanProcessors: [_spanProcessor],
     });
@@ -282,7 +368,14 @@ export const startTracing = (options: InitializeOptions) => {
 
 export const shouldSendTraces = () => {
   if (!_configuration) {
-    return false;
+    /**
+     * We've only seen this happen in Next.js where apparently
+     * the initialization in `instrumentation.ts` somehow does not
+     * respect `Object.freeze`. Unlike original OpenLLMetry/Traceloop,
+     * we return true here, because we have other mechanisms
+     * {@link withTracingLevel} to disable tracing inputs and outputs.
+     */
+    return true;
   }
 
   if (
