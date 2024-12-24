@@ -48,6 +48,9 @@ import {
   SPAN_PATH,
 } from "./attributes";
 
+// for doc comment:
+import { withTracingLevel } from "../../decorators";
+
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor;
 let openAIInstrumentation: OpenAIInstrumentation | undefined;
 let anthropicInstrumentation: AnthropicInstrumentation | undefined;
@@ -365,7 +368,14 @@ export const startTracing = (options: InitializeOptions) => {
 
 export const shouldSendTraces = () => {
   if (!_configuration) {
-    return false;
+    /**
+     * We've only seen this happen in Next.js where apparently
+     * the initialization in `instrumentation.ts` somehow does not
+     * respect `Object.freeze`. Unlike original OpenLLMetry/Traceloop,
+     * we return true here, because we have other mechanisms
+     * {@link withTracingLevel} to disable tracing inputs and outputs.
+     */
+    return true;
   }
 
   if (
