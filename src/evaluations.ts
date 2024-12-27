@@ -244,7 +244,7 @@ class Evaluation<D, T, O> {
       baseUrl: config?.baseUrl,
       httpPort: config?.httpPort,
       grpcPort: config?.grpcPort,
-      instrumentModules: config?.instrumentModules
+      instrumentModules: config?.instrumentModules,
     });
   }
 
