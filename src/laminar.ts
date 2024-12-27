@@ -49,6 +49,7 @@ interface LaminarInitializeProps {
   instrumentModules?: InitializeOptions["instrumentModules"];
   useExternalTracerProvider?: boolean;
   preserveNextJsSpans?: boolean;
+  disableBatch?: boolean;
 }
 
 export class Laminar {
@@ -57,6 +58,7 @@ export class Laminar {
   private static projectApiKey: string;
   private static env: Record<string, string> = {};
   private static isInitialized: boolean = false;
+  private static disableBatch: boolean = false;
 
   /**
    * Initialize Laminar context across the application.
@@ -114,6 +116,7 @@ export class Laminar {
     instrumentModules,
     useExternalTracerProvider,
     preserveNextJsSpans,
+    disableBatch,
   }: LaminarInitializeProps) {
 
     let key = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
@@ -148,7 +151,7 @@ export class Laminar {
       exporter,
       silenceInitializationMessage: true,
       instrumentModules,
-      disableBatch: false,
+      disableBatch,
       useExternalTracerProvider,
       preserveNextJsSpans,
     });
