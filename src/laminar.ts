@@ -33,7 +33,7 @@ import {
   SPAN_TYPE,
   LaminarAttributes,
 } from './sdk/tracing/attributes';
-import { RandomIdGenerator, SpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { RandomIdGenerator } from '@opentelemetry/sdk-trace-base';
 
 // for docstring
 import { BasicTracerProvider, NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
