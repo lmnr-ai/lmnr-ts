@@ -76,6 +76,10 @@ interface EvaluatorConfig {
    * See {@link https://docs.lmnr.ai/tracing/automatic-instrumentation}
    */
   instrumentModules?: InitializeOptions['instrumentModules'];
+  /**
+   * If true, then the spans will not be batched.
+   */
+  disableTraceBatch?: boolean;
 }
 
 /**
@@ -210,6 +214,7 @@ class Evaluation<D, T, O> {
   private groupId?: string;
   private name?: string;
   private batchSize: number = DEFAULT_BATCH_SIZE;
+  private disableTraceBatch: boolean = false;
 
   constructor({
     data, executor, evaluators, humanEvaluators, groupId, name, config
@@ -238,6 +243,7 @@ class Evaluation<D, T, O> {
     this.name = name;
     if (config) {
       this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
+      this.disableTraceBatch = config.disableTraceBatch ?? false;
     }
     Laminar.initialize({
       projectApiKey: config?.projectApiKey,
@@ -245,6 +251,7 @@ class Evaluation<D, T, O> {
       httpPort: config?.httpPort,
       grpcPort: config?.grpcPort,
       instrumentModules: config?.instrumentModules,
+      disableBatch: this.disableTraceBatch,
     });
   }
 
