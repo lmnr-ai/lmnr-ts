@@ -79,7 +79,17 @@ interface EvaluatorConfig {
   /**
    * If true, then the spans will not be batched.
    */
-  disableTraceBatch?: boolean;
+  traceDisableBatch?: boolean;
+  /**
+   * Timeout for trace export. Defaults to 30_000 (30 seconds), which is over
+   * the default OTLP exporter timeout of 10_000 (10 seconds).
+   */
+  traceExportTimeoutMillis?: number;
+  /**
+   * Defines default log level for SDK and all instrumentations.
+   */
+  logLevel?: "debug" | "info" | "warn" | "error";
+
 }
 
 /**
@@ -214,7 +224,8 @@ class Evaluation<D, T, O> {
   private groupId?: string;
   private name?: string;
   private batchSize: number = DEFAULT_BATCH_SIZE;
-  private disableTraceBatch: boolean = false;
+  private traceDisableBatch: boolean = false;
+  private traceExportTimeoutMillis?: number
 
   constructor({
     data, executor, evaluators, humanEvaluators, groupId, name, config
@@ -243,7 +254,8 @@ class Evaluation<D, T, O> {
     this.name = name;
     if (config) {
       this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
-      this.disableTraceBatch = config.disableTraceBatch ?? false;
+      this.traceDisableBatch = config.traceDisableBatch ?? false;
+      this.traceExportTimeoutMillis = config.traceExportTimeoutMillis;
     }
     Laminar.initialize({
       projectApiKey: config?.projectApiKey,
@@ -251,7 +263,8 @@ class Evaluation<D, T, O> {
       httpPort: config?.httpPort,
       grpcPort: config?.grpcPort,
       instrumentModules: config?.instrumentModules,
-      disableBatch: this.disableTraceBatch,
+      disableBatch: this.traceDisableBatch,
+      traceExportTimeoutMillis: this.traceExportTimeoutMillis
     });
   }
 

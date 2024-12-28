@@ -265,7 +265,8 @@ export const startTracing = (options: InitializeOptions) => {
   _spanProcessor = options.processor ??
     (options.disableBatch
       ? new SimpleSpanProcessor(traceExporter)
-      : new BatchSpanProcessor(traceExporter));
+      : new BatchSpanProcessor(traceExporter)
+    );
 
   const nextJsSpanIds = new Set<string>();
   // In the program runtime, the set may become very large, so every now and then
