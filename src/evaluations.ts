@@ -296,7 +296,7 @@ class Evaluation<D, T, O> {
     });
     this.isFinished = true;
 
-    Laminar.shutdown();
+    await Laminar.shutdown();
   }
 
   public async evaluateInBatches(): Promise<EvaluationDatapoint<D, T, O>[]> {

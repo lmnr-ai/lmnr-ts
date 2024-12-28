@@ -47,7 +47,6 @@ import {
   SPAN_INSTRUMENTATION_SOURCE,
   SPAN_PATH,
 } from "./attributes";
-import { MonitoredOTLPExporter } from "./monitored-exporter";
 
 // for doc comment:
 import { withTracingLevel } from "../../decorators";
