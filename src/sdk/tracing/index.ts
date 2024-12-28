@@ -359,7 +359,11 @@ export const startTracing = (options: InitializeOptions) => {
     const provider = new NodeTracerProvider({
       spanProcessors: [_spanProcessor],
     });
-    provider.register();
+    try {
+      provider.register();
+    } catch (e) {
+      console.error('Error registering tracer provider');
+    }
     registerInstrumentations({
       instrumentations,
       tracerProvider: provider,

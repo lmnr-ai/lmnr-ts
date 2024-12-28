@@ -257,6 +257,10 @@ class Evaluation<D, T, O> {
       this.traceDisableBatch = config.traceDisableBatch ?? false;
       this.traceExportTimeoutMillis = config.traceExportTimeoutMillis;
     }
+    if (Laminar.initialized()) {
+      return;
+    }
+    console.log('Initializing Laminar');
     Laminar.initialize({
       projectApiKey: config?.projectApiKey,
       baseUrl: config?.baseUrl,
