@@ -19,7 +19,6 @@ import {
 } from '@opentelemetry/api';
 import { InitializeOptions, initializeTracing } from './sdk/node-server-sdk'
 import { isStringUUID, otelSpanIdToUUID, otelTraceIdToUUID, uuidToOtelTraceId } from './utils';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { Metadata } from '@grpc/grpc-js';
 import { ASSOCIATION_PROPERTIES_KEY, getSpanPath, getTracer, SPAN_PATH_KEY } from './sdk/tracing/tracing';
 import { forceFlush } from './sdk/node-server-sdk';
@@ -34,10 +33,12 @@ import {
   LaminarAttributes,
 } from './sdk/tracing/attributes';
 import { RandomIdGenerator } from '@opentelemetry/sdk-trace-base';
+import { MonitoredOTLPExporter } from './sdk/tracing/monitored-exporter';
 
 // for docstring
 import { BasicTracerProvider, NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { ProxyTracerProvider } from '@opentelemetry/api';
+import { BatchSpanProcessor, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 
 
 interface LaminarInitializeProps {
@@ -47,9 +48,11 @@ interface LaminarInitializeProps {
   httpPort?: number;
   grpcPort?: number;
   instrumentModules?: InitializeOptions["instrumentModules"];
-  useExternalTracerProvider?: boolean;
   preserveNextJsSpans?: boolean;
   disableBatch?: boolean;
+  traceExportTimeoutMillis?: number;
+  logLevel?: "debug" | "info" | "warn" | "error";
+  useExternalTracerProvider?: boolean;
 }
 
 export class Laminar {
@@ -81,6 +84,13 @@ export class Laminar {
    * LLM calls (OpenAI, Anthropic, etc), Langchain, VectorDB calls (Pinecone, Qdrant, etc).
    * Pass an empty object {} to disable any kind of automatic instrumentation.
    * If you only want to auto-instrument specific modules, then pass them in the object.
+   * @param preserveNextJsSpans - Whether to preserve thorough/verbose spans created by Next.js.
+   * By default, Laminar ignores the Next.js spans, but keeps spans nested within them.
+   * @param disableBatch - Whether to disable batching of spans. Useful for debug
+   * environments. If true, spans will be sent immediately using {@link SimpleSpanProcessor}
+   * instead of {@link BatchSpanProcessor}.
+   * @param traceExportTimeoutMillis - Timeout for trace export. Defaults to 30_000 (30 seconds),
+   * which is over the default OTLP exporter timeout of 10_000 (10 seconds).
    * @param useExternalTracerProvider - [ADVANCED] Only use if you are using another
    * node-based tracer provider. Defaults to false.
    * If `true`, the SDK will not initialize its own tracer provider. Be very careful.
@@ -117,6 +127,8 @@ export class Laminar {
     useExternalTracerProvider,
     preserveNextJsSpans,
     disableBatch,
+    traceExportTimeoutMillis,
+    logLevel,
   }: LaminarInitializeProps) {
 
     let key = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
@@ -141,9 +153,11 @@ export class Laminar {
 
     const metadata = new Metadata();
     metadata.set('authorization', `Bearer ${this.projectApiKey}`);
-    const exporter = new OTLPTraceExporter({
+    const exporter = new MonitoredOTLPExporter({
       url: this.baseGrpcUrl,
       metadata,
+      // default is 10 seconds, increase to 30 seconds
+      timeoutMillis: traceExportTimeoutMillis ?? 30000,
     });
 
 
@@ -154,6 +168,7 @@ export class Laminar {
       disableBatch,
       useExternalTracerProvider,
       preserveNextJsSpans,
+      logLevel: logLevel ?? "error",
     });
   }
 
