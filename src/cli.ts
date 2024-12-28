@@ -3,6 +3,7 @@
 import { ArgumentParser } from "argparse";
 import * as esbuild from "esbuild";
 import * as glob from "glob";
+import { context, trace, propagation } from "@opentelemetry/api";
 
 const pjson = require('../package.json');
 
@@ -117,6 +118,15 @@ async function cli() {
 
         // @ts-ignore
         await evaluation.run();
+
+        // FIXME: Now every evaluation file creates a new tracer provider.
+        // Attempt to re-initialize it in the same process breaks it.
+        // For now, we disable all APIs after running each file, but ideally
+        // we should keep a global tracer provider that is initialized once
+        // here in the CLI.
+        context.disable();
+        trace.disable();
+        propagation.disable();
       }
     }
   });
