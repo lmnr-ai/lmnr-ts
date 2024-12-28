@@ -33,7 +33,7 @@ import {
   LaminarAttributes,
 } from './sdk/tracing/attributes';
 import { RandomIdGenerator } from '@opentelemetry/sdk-trace-base';
-import { MonitoredOTLPExporter } from './sdk/tracing/monitored-exporter';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 
 // for docstring
 import { BasicTracerProvider, NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
@@ -153,7 +153,7 @@ export class Laminar {
 
     const metadata = new Metadata();
     metadata.set('authorization', `Bearer ${this.projectApiKey}`);
-    const exporter = new MonitoredOTLPExporter({
+    const exporter = new OTLPTraceExporter({
       url: this.baseGrpcUrl,
       metadata,
       // default is 10 seconds, increase to 30 seconds
