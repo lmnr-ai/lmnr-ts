@@ -49,7 +49,7 @@ describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
 
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.label.endpoint'], undefined);
+    assert.strictEqual(spans[0].attributes['lmnr.span.path'], "test");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
   });
 
@@ -74,6 +74,7 @@ describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify("my_input"));
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(spans[0].attributes['lmnr.span.path'], "test");
   });
 
   it("observes a wrapped async function", async () => {
@@ -87,6 +88,7 @@ describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(spans[0].attributes['lmnr.span.path'], "test");
   });
 
   it("observes using withSpan with async functions", async () => {
@@ -110,6 +112,7 @@ describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify("my_input"));
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(spans[0].attributes['lmnr.span.path'], "test");
   });
 
   it("sets span name to function name if not provided to observe", async () => {
@@ -123,6 +126,7 @@ describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(spans[0].attributes['lmnr.span.path'], "fn");
   });
 
   it("sets span type to LLM when spanType is LLM in observe", async () => {
@@ -137,6 +141,7 @@ describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(spans[0].attributes['lmnr.span.path'], "test");
   });
 
   it("sets span type to LLM when spanType is LLM in startSpan", async () => {
@@ -152,6 +157,7 @@ describe("tracing", () => {
     assert.strictEqual(spans[0].name, "test");
     assert.strictEqual(spans[0].attributes['lmnr.span.type'], 'LLM');
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(spans[0].attributes['lmnr.span.path'], "test");
   });
 
   it("sets the trace id override in observe", async () => {
@@ -169,6 +175,7 @@ describe("tracing", () => {
     assert.strictEqual(spans[0].attributes["lmnr.internal.override_parent_span"], true);
     assert.strictEqual(spans[0].spanContext().traceId, "0123456789abcdef0123456789abcdef");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(spans[0].attributes['lmnr.span.path'], "test");
   });
 
   it("sets the trace id override in startSpan", async () => {
@@ -186,6 +193,7 @@ describe("tracing", () => {
     assert.strictEqual(spans[0].attributes["lmnr.internal.override_parent_span"], true);
     assert.strictEqual(spans[0].spanContext().traceId, "0123456789abcdef0123456789abcdef");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(spans[0].attributes['lmnr.span.path'], "test");
   });
 
   it("does not override the trace id in observe if it is not a valid uuid", async () => {
@@ -203,6 +211,7 @@ describe("tracing", () => {
     assert.strictEqual(spans[0].attributes["lmnr.internal.override_parent_span"], undefined);
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
     assert.notEqual(spans[0].spanContext().traceId, "not-a-uuid");
+    assert.strictEqual(spans[0].attributes['lmnr.span.path'], "test");
   });
 
   it("does not override the trace id in startSpan if it is not a valid uuid", async () => {
@@ -218,6 +227,7 @@ describe("tracing", () => {
     assert.strictEqual(spans[0].attributes["lmnr.internal.override_parent_span"], undefined);
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
     assert.notEqual(spans[0].spanContext().traceId, "not-a-uuid");
+    assert.strictEqual(spans[0].attributes['lmnr.span.path'], "test");
   });
 
   it("sets the session id in observe", async () => {
@@ -234,6 +244,7 @@ describe("tracing", () => {
 
     assert.strictEqual(spans[0].attributes['lmnr.association.properties.session_id'], "123");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(spans[0].attributes['lmnr.span.path'], "test");
   });
 
   it("observes nested functions", async () => {
@@ -250,9 +261,11 @@ describe("tracing", () => {
 
     assert.strictEqual(testSpan?.attributes['lmnr.span.input'], JSON.stringify([1, 2]));
     assert.strictEqual(testSpan?.attributes['lmnr.span.output'], "5");
+    assert.strictEqual(testSpan?.attributes['lmnr.span.path'], "test");
 
     assert.strictEqual(doubleSpan?.attributes['lmnr.span.input'], JSON.stringify([2]));
     assert.strictEqual(doubleSpan?.attributes['lmnr.span.output'], "4");
+    assert.strictEqual(doubleSpan?.attributes['lmnr.span.path'], "test.double");
 
     assert.strictEqual(doubleSpan?.parentSpanId, testSpan?.spanContext().spanId);
     assert.strictEqual(testSpan?.spanContext().traceId, doubleSpan?.spanContext().traceId);
@@ -277,6 +290,7 @@ describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(spans[0].attributes['lmnr.span.path'], "inner");
   });
 
   it("sets the labels on startSpan", async () => {
@@ -291,6 +305,7 @@ describe("tracing", () => {
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].attributes['lmnr.association.properties.label.endpoint'], "some-endpoint");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(spans[0].attributes['lmnr.span.path'], "test");
   });
 
   it("doesn't set the labels on the current span", async () => {
@@ -306,6 +321,7 @@ describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(spans[0].attributes['lmnr.span.path'], "test");
   });
 
   it("sets the labels on nested functions", async () => {

@@ -62,6 +62,7 @@ export class Laminar {
   private static env: Record<string, string> = {};
   private static isInitialized: boolean = false;
   private static disableBatch: boolean = false;
+  private static spanIdsToPaths: Map<string, string> = new Map();
 
   /**
    * Initialize Laminar context across the application.
@@ -535,7 +536,8 @@ export class Laminar {
     labels?: Record<string, string>,
   }): Span {
     let entityContext = context ?? contextApi.active();
-    const currentSpanPath = getSpanPath(entityContext);
+    const contextSpanPath = getSpanPath(entityContext);
+    const currentSpanPath = contextSpanPath ?? this.getStoredSpanPath();
     const spanPath = currentSpanPath ? `${currentSpanPath}.${name}` : name;
     entityContext = entityContext.setValue(SPAN_PATH_KEY, spanPath);
     if (traceId) {
@@ -567,6 +569,7 @@ export class Laminar {
     if (input) {
       span.setAttribute(SPAN_INPUT, JSON.stringify(input));
     }
+    this.spanIdsToPaths.set(span.spanContext().spanId, spanPath);
     return span;
   }
 
@@ -669,6 +672,11 @@ export class Laminar {
     }
 
     return await response.json() as GetDatapointsResponse<D, T>;
+  }
+
+  public static getStoredSpanPath(): string | undefined {
+    const currentSpanId = trace.getActiveSpan()?.spanContext().spanId;
+    return currentSpanId ? this.spanIdsToPaths.get(currentSpanId) : undefined;
   }
 
   private static getHeaders() {
