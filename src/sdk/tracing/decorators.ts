@@ -10,6 +10,7 @@ import { shouldSendTraces } from ".";
 import { OVERRIDE_PARENT_SPAN, SPAN_INPUT, SPAN_OUTPUT } from "./attributes";
 import { isStringUUID, uuidToOtelTraceId } from "../../utils";
 import { RandomIdGenerator } from "@opentelemetry/sdk-trace-base";
+import { Laminar } from "../../laminar";
 
 export type DecoratorConfig = {
   name: string;
@@ -45,7 +46,8 @@ export function withEntity<
     );
   }
 
-  const currentSpanPath = getSpanPath(entityContext);
+  const contextSpanPath = getSpanPath(entityContext);
+  const currentSpanPath = contextSpanPath ?? Laminar.getStoredSpanPath();
   const spanPath = currentSpanPath ? `${currentSpanPath}.${name}` : name;
   entityContext = entityContext.setValue(SPAN_PATH_KEY, spanPath);
   if (traceId) {
