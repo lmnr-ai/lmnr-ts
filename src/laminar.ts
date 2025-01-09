@@ -20,7 +20,7 @@ import {
 import { InitializeOptions, initializeTracing } from './sdk/node-server-sdk'
 import { isStringUUID, otelSpanIdToUUID, otelTraceIdToUUID, uuidToOtelTraceId } from './utils';
 import { Metadata } from '@grpc/grpc-js';
-import { ASSOCIATION_PROPERTIES_KEY, getSpanPath, getTracer, SPAN_PATH_KEY } from './sdk/tracing/tracing';
+import { ASSOCIATION_PROPERTIES_KEY, getTracer, SPAN_PATH_KEY } from './sdk/tracing/tracing';
 import { forceFlush } from './sdk/node-server-sdk';
 import {
   ASSOCIATION_PROPERTIES,
@@ -536,10 +536,6 @@ export class Laminar {
     labels?: Record<string, string>,
   }): Span {
     let entityContext = context ?? contextApi.active();
-    const contextSpanPath = getSpanPath(entityContext);
-    const currentSpanPath = contextSpanPath ?? this.getStoredSpanPath();
-    const spanPath = currentSpanPath ? `${currentSpanPath}.${name}` : name;
-    entityContext = entityContext.setValue(SPAN_PATH_KEY, spanPath);
     if (traceId) {
       if (isStringUUID(traceId)) {
         const spanContext = {
@@ -559,7 +555,6 @@ export class Laminar {
     }, {} as Record<string, string>) : {};
     const attributes = {
       [SPAN_TYPE]: spanType ?? 'DEFAULT',
-      [SPAN_PATH]: spanPath,
       ...labelProperties,
     }
     const span = getTracer().startSpan(name, { attributes }, entityContext);
@@ -569,7 +564,6 @@ export class Laminar {
     if (input) {
       span.setAttribute(SPAN_INPUT, JSON.stringify(input));
     }
-    this.spanIdsToPaths.set(span.spanContext().spanId, spanPath);
     return span;
   }
 
@@ -672,11 +666,6 @@ export class Laminar {
     }
 
     return await response.json() as GetDatapointsResponse<D, T>;
-  }
-
-  public static getStoredSpanPath(): string | undefined {
-    const currentSpanId = trace.getActiveSpan()?.spanContext().spanId;
-    return currentSpanId ? this.spanIdsToPaths.get(currentSpanId) : undefined;
   }
 
   private static getHeaders() {

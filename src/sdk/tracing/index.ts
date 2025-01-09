@@ -13,6 +13,7 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { InitializeOptions } from "../interfaces";
 import {
   ASSOCIATION_PROPERTIES_KEY,
+  getSpanPath,
   SPAN_PATH_KEY,
 } from "./tracing";
 import { _configuration } from "../configuration";
@@ -51,7 +52,8 @@ import {
 // for doc comment:
 import { withTracingLevel } from "../../decorators";
 
-let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor;
+let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor | undefined;
+let _spanIdToPath: Map<string, string> = new Map();
 let openAIInstrumentation: OpenAIInstrumentation | undefined;
 let anthropicInstrumentation: AnthropicInstrumentation | undefined;
 let azureOpenAIInstrumentation: AzureOpenAIInstrumentation | undefined;
@@ -284,10 +286,15 @@ export const startTracing = (options: InitializeOptions) => {
   const originalOnStart = _spanProcessor.onStart.bind(_spanProcessor);
 
   _spanProcessor.onStart = (span: Span, parentContext: Context) => {
-    const spanPath = context.active().getValue(SPAN_PATH_KEY);
-    if (spanPath) {
-      span.setAttribute(SPAN_PATH, spanPath as string);
-    }
+    const contextSpanPath = getSpanPath(parentContext ?? context.active());
+    const currentSpanPath = contextSpanPath
+       ?? (span.parentSpanId !== undefined
+        ? _spanIdToPath.get(span.parentSpanId)
+        : undefined);
+    const spanPath = currentSpanPath ? `${currentSpanPath}.${span.name}` : span.name;
+    span.setAttribute(SPAN_PATH, spanPath as string);
+    const spanId = span.spanContext().spanId;
+    _spanIdToPath.set(spanId, spanPath);
 
     span.setAttribute(SPAN_INSTRUMENTATION_SOURCE, "javascript");
 
