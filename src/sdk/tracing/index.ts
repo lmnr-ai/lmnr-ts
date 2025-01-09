@@ -293,6 +293,7 @@ export const startTracing = (options: InitializeOptions) => {
         : undefined);
     const spanPath = currentSpanPath ? `${currentSpanPath}.${span.name}` : span.name;
     span.setAttribute(SPAN_PATH, spanPath as string);
+    context.active().setValue(SPAN_PATH_KEY, spanPath);
     const spanId = span.spanContext().spanId;
     _spanIdToPath.set(spanId, spanPath);
 
