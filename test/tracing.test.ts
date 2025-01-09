@@ -12,7 +12,7 @@ import {
   withTracingLevel,
 } from "../src/index";
 import assert from "node:assert/strict";
-import { context, trace } from "@opentelemetry/api";
+import { context, Span, trace } from "@opentelemetry/api";
 import { _resetConfiguration, initializeTracing } from "../src/sdk/configuration";
 
 describe("tracing", () => {
@@ -349,6 +349,44 @@ describe("tracing", () => {
     assert.strictEqual(testSpan?.spanContext().traceId, doubleSpan?.spanContext().traceId);
     assert.strictEqual(doubleSpan?.attributes['lmnr.span.instrumentation_source'], "javascript");
     assert.strictEqual(testSpan?.attributes['lmnr.span.instrumentation_source'], "javascript");
+  });
+
+  it("sets the span path on manual spans within observe", async () => {
+    const double = (a: number, span: Span) => 
+      Laminar.withSpan(span, () => a * 2, true);
+    const fn = (a: number, b: number) => {
+      const span = Laminar.startSpan({name: "inner"});
+      return a + (double(b, span) as number);
+    };
+    const result = await observe({name: "test"}, fn, 1, 2);
+
+    assert.strictEqual(result, 5);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 2);
+    const testSpan = spans.find(span => span.name === "test");
+    const innerSpan = spans.find(span => span.name === "inner");
+    assert.strictEqual(testSpan?.attributes['lmnr.span.path'], "test");
+    assert.strictEqual(innerSpan?.attributes['lmnr.span.path'], "test.inner");
+  });
+
+  it("sets the span path on observed spans within manual spans", async () => {
+    const double = async (a: number) => 
+      await observe({name: "inner"}, (n) => n * 2, a);
+    const fn = async (a: number, b: number) => {
+      const span = Laminar.startSpan({name: "test"});
+      return a + (await Laminar.withSpan(span, () => double(b), true));
+    };
+    const result = await fn(1, 2);
+
+    assert.strictEqual(result, 5);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 2);
+    const testSpan = spans.find(span => span.name === "test");
+    const innerSpan = spans.find(span => span.name === "inner");
+    assert.strictEqual(testSpan?.attributes['lmnr.span.path'], "test");
+    assert.strictEqual(innerSpan?.attributes['lmnr.span.path'], "test.inner");
   });
 
   it("sets the tracing level attribute when withTracingLevel is used", async () => {
