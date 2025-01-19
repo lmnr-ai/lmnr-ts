@@ -20,7 +20,7 @@ import {
 import { InitializeOptions, initializeTracing } from './sdk/node-server-sdk'
 import { isStringUUID, otelSpanIdToUUID, otelTraceIdToUUID, uuidToOtelTraceId } from './utils';
 import { Metadata } from '@grpc/grpc-js';
-import { ASSOCIATION_PROPERTIES_KEY, getTracer, SPAN_PATH_KEY } from './sdk/tracing/tracing';
+import { ASSOCIATION_PROPERTIES_KEY, getTracer } from './sdk/tracing/tracing';
 import { forceFlush } from './sdk/node-server-sdk';
 import {
   ASSOCIATION_PROPERTIES,
@@ -28,7 +28,6 @@ import {
   SESSION_ID,
   SPAN_INPUT,
   SPAN_OUTPUT,
-  SPAN_PATH,
   SPAN_TYPE,
   LaminarAttributes,
 } from './sdk/tracing/attributes';
@@ -61,8 +60,6 @@ export class Laminar {
   private static projectApiKey: string;
   private static env: Record<string, string> = {};
   private static isInitialized: boolean = false;
-  private static disableBatch: boolean = false;
-  private static spanIdsToPaths: Map<string, string> = new Map();
 
   /**
    * Initialize Laminar context across the application.
@@ -155,12 +152,11 @@ export class Laminar {
     const metadata = new Metadata();
     metadata.set('authorization', `Bearer ${this.projectApiKey}`);
     const exporter = new OTLPTraceExporter({
-      url: this.baseGrpcUrl,
+      url: `${this.baseGrpcUrl}`,
       metadata,
       // default is 10 seconds, increase to 30 seconds
       timeoutMillis: traceExportTimeoutMillis ?? 30000,
     });
-
 
     initializeTracing({
       exporter,

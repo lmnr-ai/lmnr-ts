@@ -53,7 +53,7 @@ import {
 import { withTracingLevel } from "../../decorators";
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor | undefined;
-let _spanIdToPath: Map<string, string> = new Map();
+let _spanIdToPath: Map<string, string[]> = new Map();
 let openAIInstrumentation: OpenAIInstrumentation | undefined;
 let anthropicInstrumentation: AnthropicInstrumentation | undefined;
 let azureOpenAIInstrumentation: AzureOpenAIInstrumentation | undefined;
@@ -200,7 +200,15 @@ const manuallyInitInstrumentations = (
   }
 };
 
-const NEXT_JS_SPAN_ATTRIBUTES = ['next.span_name', 'next.span_type', 'next.clientComponentLoadCount', 'next.page', 'next.rsc', 'next.route', 'next.segment'];
+const NEXT_JS_SPAN_ATTRIBUTES = [
+  'next.span_name',
+  'next.span_type',
+  'next.clientComponentLoadCount',
+  'next.page',
+  'next.rsc',
+  'next.route', 
+  'next.segment'
+];
 
 // Next.js instrumentation is very verbose and can result in
 // a lot of noise in the traces. By default, Laminar
@@ -287,12 +295,12 @@ export const startTracing = (options: InitializeOptions) => {
 
   _spanProcessor.onStart = (span: Span, parentContext: Context) => {
     const contextSpanPath = getSpanPath(parentContext ?? context.active());
-    const currentSpanPath = contextSpanPath
+    const parentSpanPath = contextSpanPath
        ?? (span.parentSpanId !== undefined
         ? _spanIdToPath.get(span.parentSpanId)
         : undefined);
-    const spanPath = currentSpanPath ? `${currentSpanPath}.${span.name}` : span.name;
-    span.setAttribute(SPAN_PATH, spanPath as string);
+    const spanPath = parentSpanPath ? [...parentSpanPath, span.name] : [span.name];
+    span.setAttribute(SPAN_PATH, spanPath);
     context.active().setValue(SPAN_PATH_KEY, spanPath);
     const spanId = span.spanContext().spanId;
     _spanIdToPath.set(spanId, spanPath);
