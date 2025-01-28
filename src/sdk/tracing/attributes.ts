@@ -6,6 +6,7 @@ export const SPAN_TYPE = "lmnr.span.type";
 export const SPAN_PATH = "lmnr.span.path";
 export const SPAN_INSTRUMENTATION_SOURCE = "lmnr.span.instrumentation_source";
 export const OVERRIDE_PARENT_SPAN = "lmnr.internal.override_parent_span";
+export const TRACE_HAS_BROWSER_SESSION = "lmnr.internal.has_browser_session";
 export const EXTRACTED_FROM_NEXT_JS = "lmnr.span.extracted_from.next_js";
 
 export const ASSOCIATION_PROPERTIES = "lmnr.association.properties";
