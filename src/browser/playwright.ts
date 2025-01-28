@@ -15,6 +15,16 @@ const injectRrweb = async (page: Page) => {
   // Wait for the page to be in a ready state first
   await page.waitForLoadState('domcontentloaded');
 
+  const tryRunScript = async(script: (...args: any[]) => Promise<any>, maxAttempts: number = 3) => {
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        return await script();
+      } catch (error) {
+        await page.waitForLoadState('domcontentloaded');
+      }
+    }
+  };
+
   // Get current trace ID from active span
   const currentSpan = trace.getActiveSpan();
   const traceId = (currentSpan?.spanContext().traceId || '').padStart(32, '0');
@@ -27,87 +37,89 @@ const injectRrweb = async (page: Page) => {
   const projectApiKey = Laminar.getProjectApiKey();
   const sessionId = newUUID();
 
-  // Wait for any existing script load to complete
-  await page.waitForLoadState('networkidle');
-
   // Generate UUID session ID and set trace ID
-  await page.evaluate((args: string[]) => {
-    const traceId = args[0];
-    const sessionId = args[1];
-    (window as any).rrwebSessionId = sessionId;
-    (window as any).traceId = traceId;
-  }, [traceId, sessionId]);
+  await tryRunScript(async () => {
+    await page.evaluate((args: string[]) => {
+      const traceId = args[0];
+      const sessionId = args[1];
+      (window as any).rrwebSessionId = sessionId;
+      (window as any).traceId = traceId;
+    }, [traceId, sessionId]);
+  });
 
   // Load rrweb and set up recording
-  await page.addScriptTag({
-    url: "https://cdn.jsdelivr.net/npm/rrweb@latest/dist/rrweb.min.js",
+  await tryRunScript(async () => {
+    await page.addScriptTag({
+      url: "https://cdn.jsdelivr.net/npm/rrweb@latest/dist/rrweb.min.js",
+    });
   });
 
   await page.waitForFunction(() => (window as any).rrweb || 'rrweb' in window);
 
   // Update the recording setup to include trace ID
-  await page.evaluate((args: string[]) => {
-    const baseUrl = args[0];
-    const projectApiKey = args[1];
-    const serverUrl = `${baseUrl}/v1/browser-sessions/events`;
-    const BATCH_SIZE = 50;
-    const FLUSH_INTERVAL = 2000;
-    const HEARTBEAT_INTERVAL = 1000;  // 1 second heartbeat
+  await tryRunScript(async () => {
+    await page.evaluate((args: string[]) => {
+      const baseUrl = args[0];
+      const projectApiKey = args[1];
+      const serverUrl = `${baseUrl}/v1/browser-sessions/events`;
+      const BATCH_SIZE = 50;
+      const FLUSH_INTERVAL = 2000;
+      const HEARTBEAT_INTERVAL = 1000;  // 1 second heartbeat
 
-    (window as any).rrwebEventsBatch = [];
-    
-    (window as any).sendBatch = async (isEnd = false) => {
-      if ((window as any).rrwebEventsBatch.length === 0) return;
-              
-      const eventsPayload = {
-        sessionId: (window as any).rrwebSessionId,
-        traceId: (window as any).traceId,
-        events: (window as any).rrwebEventsBatch,
-        isEndOfSession: isEnd
+      (window as any).rrwebEventsBatch = [];
+      
+      (window as any).sendBatch = async (isEnd = false) => {
+        if ((window as any).rrwebEventsBatch.length === 0) return;
+                
+        const eventsPayload = {
+          sessionId: (window as any).rrwebSessionId,
+          traceId: (window as any).traceId,
+          events: (window as any).rrwebEventsBatch,
+          isEndOfSession: isEnd
+        };
+
+        try {
+          await fetch(serverUrl, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json', 
+              'Authorization': `Bearer ${projectApiKey}` 
+            },
+            body: JSON.stringify(eventsPayload),
+          });
+          (window as any).rrwebEventsBatch = [];
+        } catch (error) {
+          console.error('Failed to send events:', error);
+        }
       };
 
-      try {
-        await fetch(serverUrl, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json', 
-            'Authorization': `Bearer ${projectApiKey}` 
-          },
-          body: JSON.stringify(eventsPayload),
+      setInterval(() => (window as any).sendBatch(false), FLUSH_INTERVAL);
+
+      // Add heartbeat event
+      setInterval(() => {
+        (window as any).rrwebEventsBatch.push({
+          type: 6, // Custom event type
+          data: { source: 'heartbeat' },
+          timestamp: Date.now()
         });
-        (window as any).rrwebEventsBatch = [];
-      } catch (error) {
-        console.error('Failed to send events:', error);
-      }
-    };
+      }, HEARTBEAT_INTERVAL);
 
-    setInterval(() => (window as any).sendBatch(false), FLUSH_INTERVAL);
-
-    // Add heartbeat event
-    setInterval(() => {
-      (window as any).rrwebEventsBatch.push({
-        type: 6, // Custom event type
-        data: { source: 'heartbeat' },
-        timestamp: Date.now()
-      });
-    }, HEARTBEAT_INTERVAL);
-
-    (window as any).rrweb.record({
-      emit(event: any) {
-        (window as any).rrwebEventsBatch.push(event);
-                  
-          if ((window as any).rrwebEventsBatch.length >= BATCH_SIZE) {
-            (window as any).sendBatch(false);
+      (window as any).rrweb.record({
+        emit(event: any) {
+          (window as any).rrwebEventsBatch.push(event);
+                    
+            if ((window as any).rrwebEventsBatch.length >= BATCH_SIZE) {
+              (window as any).sendBatch(false);
+            }
           }
-        }
-      });
+        });
 
-      window.addEventListener('beforeunload', () => {
-        (window as any).sendBatch(true);
+        window.addEventListener('beforeunload', () => {
+          (window as any).sendBatch(true);
       });
-  }, [httpUrl, projectApiKey]);
+    }, [httpUrl, projectApiKey]);
+  });
 
-  (page as any).__gotoPatchedLmnr = true;
 };
 
 let _originalWrapBrowserNewPage: BrowserNewPageType | undefined;
