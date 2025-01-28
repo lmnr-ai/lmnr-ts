@@ -51,6 +51,7 @@ import {
 
 // for doc comment:
 import { withTracingLevel } from "../../decorators";
+import { initBrowserTracing } from "../../browser";
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor | undefined;
 let _spanIdToPath: Map<string, string[]> = new Map();
@@ -111,6 +112,8 @@ const initInstrumentations = () => {
 
   qdrantInstrumentation = new QdrantInstrumentation();
   instrumentations.push(qdrantInstrumentation);
+
+  initBrowserTracing();
 };
 
 const manuallyInitInstrumentations = (
@@ -198,6 +201,8 @@ const manuallyInitInstrumentations = (
     instrumentations.push(qdrantInstrumentation);
     qdrantInstrumentation.manuallyInstrument(instrumentModules.qdrant);
   }
+
+  initBrowserTracing();
 };
 
 const NEXT_JS_SPAN_ATTRIBUTES = [

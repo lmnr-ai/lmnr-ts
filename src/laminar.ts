@@ -31,6 +31,11 @@ import {
   SPAN_TYPE,
   LaminarAttributes,
 } from './sdk/tracing/attributes';
+import {
+  wrapPlaywrightBrowser,
+  wrapPlaywrightContext,
+  wrapPlaywrightPage,
+} from './browser/playwright';
 import { RandomIdGenerator } from '@opentelemetry/sdk-trace-base';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 
@@ -670,4 +675,104 @@ export class Laminar {
       "Authorization": `Bearer ${this.projectApiKey}`,
     };
   };
+
+  /**
+   * Wraps a Playwright browser with session recordings.
+   * If you are using Stagehand, you can use {@link Laminar.wrapStagehand} instead.
+   * 
+   * @param browser - The Playwright browser to wrap.
+   * 
+   * @example
+   * import { Laminar } from '@lmnr-ai/lmnr';
+   * import { chromium } from 'playwright';
+   * 
+   * Laminar.initialize();
+   * 
+   * const browser = await chromium.launch();
+   * await Laminar.wrapPlaywrightBrowser(browser);
+   * 
+   * // Now you can use the browser with Playwright as usual
+   */
+  public static async wrapPlaywrightBrowser(browser: any) {
+    return wrapPlaywrightBrowser(browser);
+  }
+
+  /**
+   * Wraps a Playwright browser context with session recordings.
+   * It is recommended to use {@link Laminar.wrapPlaywrightBrowser} instead,
+   * only use this method if you need to wrap a specific context, but not the entire browser.
+   * 
+   * If you are using Stagehand, you can use {@link Laminar.wrapStagehand} instead.
+   * @param context - The Playwright browser context to wrap.
+   * 
+   * @example
+   * import { Laminar } from '@lmnr-ai/lmnr';
+   * import { chromium } from 'playwright';
+   * 
+   * Laminar.initialize();
+   * 
+   * const browser = await chromium.launch();
+   * const context = await browser.newContext();
+   * await Laminar.wrapPlaywrightContext(context);
+   * // Now you can use the context with Playwright as usual
+   */
+  public static async wrapPlaywrightContext(context: any) {
+    return wrapPlaywrightContext(context);
+  }
+
+  /**
+   * Wraps a Playwright page with session recordings.
+   * It is recommended to use {@link Laminar.wrapPlaywrightBrowser} instead,
+   * only use this method if you need to wrap a specific page, but not the entire browser.
+   * 
+   * If you are using Stagehand, you can use {@link Laminar.wrapStagehand} instead.
+   * @param page - The Playwright page to wrap.
+   * 
+   * @example
+   * import { Laminar } from '@lmnr-ai/lmnr';
+   * import { chromium } from 'playwright';
+   * 
+   * Laminar.initialize();
+   * 
+   * const browser = await chromium.launch();
+   * const page = await browser.newPage();
+   * await Laminar.wrapPlaywrightPage(page);
+   * // Now you can use the page with Playwright as usual
+   */
+  public static async wrapPlaywrightPage(page: any) {
+    return wrapPlaywrightPage(page);
+  }
+
+  /**
+   * Wraps a Stagehand page with session recordings.
+   * For raw playwright, use {@link Laminar.wrapPlaywrightBrowser} instead.
+   *
+   * @param stagehand - The Stagehand instance to wrap.
+   * 
+   * @example
+   * import { Stagehand } from "@browserbasehq/stagehand";
+   * import { Laminar } from "@lmnr-ai/lmnr";
+   * 
+   * Laminar.initialize();
+   * 
+   * const stagehand = new Stagehand();
+   * await stagehand.init();
+   * await Laminar.wrapStagehand(stagehand);
+   * // Now you can use the stagehand as usual
+   */
+  public static async wrapStagehand(stagehand: any) {
+    // FIXME. If any of the below are awaited,
+    // we'll end up with infinite recursion.
+    // This somehow works without awaiting, but it's brittle.
+    await wrapPlaywrightContext(stagehand.context);
+    wrapPlaywrightPage(stagehand.page);
+  }
+
+  public static getHttpUrl(): string {
+    return this.baseHttpUrl;
+  }
+
+  public static getProjectApiKey(): string {
+    return this.projectApiKey;
+  }
 }
