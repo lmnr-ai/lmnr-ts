@@ -131,4 +131,11 @@ export interface InitializeOptions {
    * Defaults to false.
    */
   _resetConfiguration?: boolean;
+
+  /**
+   * The maximum number of spans to export at a time. Optional.
+   * Defaults to the default OTLP span processor batch size.
+   * (512 at the time of writing)
+   */
+  maxExportBatchSize?: number;
 }

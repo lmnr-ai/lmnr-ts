@@ -280,7 +280,9 @@ export const startTracing = (options: InitializeOptions) => {
   _spanProcessor = options.processor ??
     (options.disableBatch
       ? new SimpleSpanProcessor(traceExporter)
-      : new BatchSpanProcessor(traceExporter)
+      : new BatchSpanProcessor(traceExporter, {
+        maxExportBatchSize: options.maxExportBatchSize,
+      })
     );
 
   const nextJsSpanIds = new Set<string>();

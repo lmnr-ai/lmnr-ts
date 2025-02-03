@@ -2,7 +2,7 @@ import {
   PipelineRunResponse,
   PipelineRunRequest,
   EvaluationDatapoint,
-  CreateEvaluationResponse,
+  InitEvaluationResponse,
   GetDatapointsResponse,
   SemanticSearchResponse
 } from './types';
@@ -18,7 +18,7 @@ import {
   TraceFlags
 } from '@opentelemetry/api';
 import { InitializeOptions, initializeTracing } from './sdk/node-server-sdk'
-import { isStringUUID, otelSpanIdToUUID, otelTraceIdToUUID, uuidToOtelTraceId } from './utils';
+import { isStringUUID, otelSpanIdToUUID, otelTraceIdToUUID, StringUUID, uuidToOtelTraceId } from './utils';
 import { Metadata } from '@grpc/grpc-js';
 import { ASSOCIATION_PROPERTIES_KEY, getTracer } from './sdk/tracing/tracing';
 import { forceFlush } from './sdk/node-server-sdk';
@@ -57,6 +57,7 @@ interface LaminarInitializeProps {
   traceExportTimeoutMillis?: number;
   logLevel?: "debug" | "info" | "warn" | "error";
   useExternalTracerProvider?: boolean;
+  maxExportBatchSize?: number;
 }
 
 export class Laminar {
@@ -132,6 +133,7 @@ export class Laminar {
     disableBatch,
     traceExportTimeoutMillis,
     logLevel,
+    maxExportBatchSize,
   }: LaminarInitializeProps) {
 
     let key = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
@@ -171,6 +173,7 @@ export class Laminar {
       useExternalTracerProvider,
       preserveNextJsSpans,
       logLevel: logLevel ?? "error",
+      maxExportBatchSize,
     });
   }
 
@@ -611,26 +614,18 @@ export class Laminar {
     await forceFlush();
   }
 
-  public static async createEvaluation<D, T, O>({
-    groupId,
+  public static async initEvaluation<D, T, O>({
+    groupName,
     name,
-    data
   }: {
-    groupId?: string,
+    groupName?: string,
     name?: string,
-    data: EvaluationDatapoint<D, T, O>[]
-  }): Promise<CreateEvaluationResponse> {
-    let body = '';
-    try {
-      body = JSON.stringify({
-        groupId: groupId ?? null,
-        name: name ?? null,
-        points: data,
-      });
-    } catch (error) {
-      throw new Error(`Failed to serialize evaluation data for ${name}. Error: ${error}`);
-    }
-    const response = await fetch(`${this.baseHttpUrl}/v1/evaluations`, {
+  }): Promise<InitEvaluationResponse> {
+    const body = JSON.stringify({
+      groupName: groupName ?? null,
+      name: name ?? null,
+    });
+    const response = await fetch(`${this.baseHttpUrl}/v1/evals`, {
       method: 'POST',
       headers: this.getHeaders(),
       body,
@@ -640,7 +635,43 @@ export class Laminar {
       throw new Error(`Failed to create evaluation ${name}. Response: ${response.statusText}`);
     }
 
-    return await response.json() as CreateEvaluationResponse;
+    return await response.json() as InitEvaluationResponse;
+  }
+
+  public static async saveEvalDatapoints<D, T, O>(
+    evalId: StringUUID,
+    datapoints: EvaluationDatapoint<D, T, O>[],
+    groupName?: string,
+  ): Promise<void> {
+    let body = '';
+    try {
+      const points = datapoints.map((point) => ({
+        ...point,
+        // only save the first 100 characters of data, target, and executorOutput
+        // full output is in the trace.
+        data: typeof point.data === 'string'
+          ? point.data.slice(0, 100)
+          : JSON.stringify(point.data).slice(0, 100),
+        target: typeof point.target === 'string'
+          ? point.target.slice(0, 100)
+          : JSON.stringify(point.target).slice(0, 100),
+        executorOutput: typeof point.executorOutput === 'string'
+          ? point.executorOutput.slice(0, 100)
+          : JSON.stringify(point.executorOutput).slice(0, 100),
+      }))
+      body = JSON.stringify({ points: datapoints, groupName });
+    } catch (error) {
+      throw new Error(`Failed to serialize evaluation data for ${evalId}. Error: ${error}`);
+    }
+    const response = await fetch(`${this.baseHttpUrl}/v1/evals/${evalId}/datapoints`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to save evaluation datapoints. Response: [${response.status}] ${response.statusText}`);
+    }
   }
 
   public static async getDatapoints<D, T>({

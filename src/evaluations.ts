@@ -2,13 +2,14 @@ import { Laminar } from "./laminar";
 import { EvaluationDatapoint } from "./types";
 import cliProgress from "cli-progress";
 import { EvaluationDataset } from "./datasets";
-import { otelSpanIdToUUID, otelTraceIdToUUID } from "./utils";
+import { otelSpanIdToUUID, otelTraceIdToUUID, Semaphore, StringUUID } from "./utils";
 import { observe } from "./decorators";
 import { trace } from "@opentelemetry/api";
 import { SPAN_TYPE } from "./sdk/tracing/attributes";
 import { InitializeOptions } from "./sdk/interfaces";
 
-const DEFAULT_BATCH_SIZE = 5;
+const DEFAULT_CONCURRENCY = 5;
+const MAX_EXPORT_BATCH_SIZE = 64;
 
 declare global {
   var _evaluation: Evaluation<any, any, any> | undefined;
@@ -47,10 +48,9 @@ const getAverageScores =
  */
 interface EvaluatorConfig {
   /**
-   * The number of data points to evaluate in one batch. This many
-   * data points will be evaluated in parallel. Defaults to 5.
+   * The number of data points to evaluate in parallel at a time. Defaults to 5.
    */
-  batchSize?: number;
+  concurrencyLimit?: number;
   /**
    * The project API key to use for the evaluation. If not provided,
    * the API key from the environment variable `LMNR_PROJECT_API_KEY` will be used.
@@ -90,6 +90,10 @@ interface EvaluatorConfig {
    */
   logLevel?: "debug" | "info" | "warn" | "error";
 
+  /**
+   * Maximum number of spans to export at a time. Defaults to 64.
+   */
+  traceExportBatchSize?: number;
 }
 
 /**
@@ -164,6 +168,10 @@ interface EvaluationConstructorProps<D, T, O> {
    * Optional group id of the evaluation. Only evaluations within the same
    * group_id can be visually compared. Defaults to "default".
    */
+  groupName?: string;
+  /**
+   * Deprecated. Use `groupName` instead.
+   */
   groupId?: string;
   /**
    * Optional override configurations for the evaluator.
@@ -221,14 +229,16 @@ class Evaluation<D, T, O> {
   private executor: (data: D, ...args: any[]) => O | Promise<O>;
   private evaluators: Record<string, EvaluatorFunction<O, T>>;
   private humanEvaluators?: HumanEvaluator[];
-  private groupId?: string;
+  private groupName?: string;
   private name?: string;
-  private batchSize: number = DEFAULT_BATCH_SIZE;
+  private concurrencyLimit: number = DEFAULT_CONCURRENCY;
   private traceDisableBatch: boolean = false;
   private traceExportTimeoutMillis?: number
+  private traceExportBatchSize: number = MAX_EXPORT_BATCH_SIZE;
+  private uploadPromises: Promise<any>[] = [];
 
   constructor({
-    data, executor, evaluators, humanEvaluators, groupId, name, config
+    data, executor, evaluators, humanEvaluators, groupName, name, config
   }: EvaluationConstructorProps<D, T, O>) {
     if (Object.keys(evaluators).length === 0) {
       throw new Error('No evaluators provided');
@@ -250,17 +260,22 @@ class Evaluation<D, T, O> {
     this.executor = executor;
     this.evaluators = evaluators;
     this.humanEvaluators = humanEvaluators;
-    this.groupId = groupId;
+    this.groupName = groupName;
     this.name = name;
     if (config) {
-      this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
+      if (config.concurrencyLimit && config.concurrencyLimit < 1) {
+        console.warn('concurrencyLimit must be greater than 0. Setting to default of ', DEFAULT_CONCURRENCY);
+        this.concurrencyLimit = DEFAULT_CONCURRENCY;
+      } else {
+        this.concurrencyLimit = config.concurrencyLimit ?? DEFAULT_CONCURRENCY;
+      }
       this.traceDisableBatch = config.traceDisableBatch ?? false;
       this.traceExportTimeoutMillis = config.traceExportTimeoutMillis;
+      this.traceExportBatchSize = config.traceExportBatchSize ?? MAX_EXPORT_BATCH_SIZE;
     }
     if (Laminar.initialized()) {
       return;
     }
-    console.log('Initializing Laminar');
     Laminar.initialize({
       projectApiKey: config?.projectApiKey,
       baseUrl: config?.baseUrl,
@@ -268,7 +283,8 @@ class Evaluation<D, T, O> {
       grpcPort: config?.grpcPort,
       instrumentModules: config?.instrumentModules,
       disableBatch: this.traceDisableBatch,
-      traceExportTimeoutMillis: this.traceExportTimeoutMillis
+      traceExportTimeoutMillis: this.traceExportTimeoutMillis,
+      maxExportBatchSize: this.traceExportBatchSize,
     });
   }
 
@@ -280,105 +296,121 @@ class Evaluation<D, T, O> {
     this.progressReporter.start({ length: await this.getLength() });
     let resultDatapoints: EvaluationDatapoint<D, T, O>[];
     try {
-      resultDatapoints = await this.evaluateInBatches();
+      const evaluation = await Laminar.initEvaluation({
+        groupName: this.groupName,
+        name: this.name,
+      });
+      resultDatapoints = await this.evaluateInBatches(evaluation.id);
+      const averageScores = getAverageScores(resultDatapoints);
+      if (this.uploadPromises.length > 0) {
+        await Promise.all(this.uploadPromises);
+      }
+      this.progressReporter.stop({
+        averageScores,
+        projectId: evaluation.projectId,
+        evaluationId: evaluation.id
+      });
+      this.isFinished = true;
+  
+      await Laminar.shutdown();
     } catch (e) {
       this.progressReporter.stopWithError(e as Error);
       this.isFinished = true;
       return;
     }
-
-    const evaluation = await Laminar.createEvaluation({
-      groupId: this.groupId,
-      name: this.name,
-      data: resultDatapoints
-    });
-    const averageScores = getAverageScores(resultDatapoints);
-    this.progressReporter.stop({
-      averageScores,
-      projectId: evaluation.projectId,
-      evaluationId: evaluation.id
-    });
-    this.isFinished = true;
-
-    await Laminar.shutdown();
   }
 
-  public async evaluateInBatches(): Promise<EvaluationDatapoint<D, T, O>[]> {
-    const resultDatapoints: EvaluationDatapoint<D, T, O>[] = [];
-    for (let i = 0; i < await this.getLength(); i += this.batchSize) {
-      const batch = await this.data.slice(i, i + this.batchSize);
-      const batchDatapoints = await this.evaluateBatch(batch);
-      resultDatapoints.push(...batchDatapoints);
-      this.progressReporter.update(batch.length);
+  public async evaluateInBatches(
+    evalId: StringUUID,
+  ): Promise<EvaluationDatapoint<D, T, O>[]> {
+    const semaphore = new Semaphore(this.concurrencyLimit);
+    const tasks: Promise<any>[] = [];
+
+    const evaluateTask = async (datapoint: Datapoint<D, T>, index: number): Promise<[number, EvaluationDatapoint<D, T, O>]> => {
+      try {
+        const result = await this.evaluateDatapoint(evalId, datapoint, index);
+        this.progressReporter.update(1);
+        return [index, result];
+      } finally {
+        semaphore.release();
+      }
     }
-    return resultDatapoints;
+
+    for (let i = 0; i < await this.getLength(); i++) {
+      await semaphore.acquire();
+      const datapoint = Array.isArray(this.data) ? this.data[i] : await this.data.get(i);
+      tasks.push(evaluateTask(datapoint, i));
+    }
+    const results = await Promise.all(tasks);
+
+    return results.sort((a, b) => a[0] - b[0]).map(([_, result]) => result);
   }
 
-  private async evaluateBatch(batch: Datapoint<D, T>[]): Promise<EvaluationDatapoint<D, T, O>[]> {
-    const batchPromises = batch.map(async (datapoint) => {
-      let ret: EvaluationDatapoint<D, T, O> | undefined;
+  private async evaluateDatapoint(
+    evalId: StringUUID,
+    datapoint: Datapoint<D, T>,
+    index: number
+  ): Promise<EvaluationDatapoint<D, T, O>> {
+    // NOTE: If you decide to move this observe to another place, note that
+    //       traceId is assigned inside it for EvaluationDatapoint
+    return observe({ name: "evaluation", traceType: "EVALUATION" }, async () => {
+      trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATION");
 
-      // NOTE: If you decide to move this observe to another place, note that
-      //       traceId is assigned inside it for EvaluationDatapoint
-      await observe({ name: "evaluation", traceType: "EVALUATION" }, async () => {
-        trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATION");
+      const { output, executorSpanId } = await observe(
+        { name: "executor" },
+        async (data: D) => {
+          const executorSpanId = trace.getActiveSpan()!.spanContext().spanId;
+          trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EXECUTOR");
+          return {
+            output: await this.executor(data),
+            executorSpanId: otelSpanIdToUUID(executorSpanId)
+          };
+        },
+        datapoint.data
+      );
+      const target = datapoint.target;
 
-        const { output, executorSpanId } = await observe(
-          { name: "executor" },
-          async (data: D) => {
-            const executorSpanId = trace.getActiveSpan()!.spanContext().spanId;
-            trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EXECUTOR");
-            return {
-              output: await this.executor(data),
-              executorSpanId: otelSpanIdToUUID(executorSpanId)
-            };
+      let scores: Record<string, number> = {};
+      for (const [evaluatorName, evaluator] of Object.entries(this.evaluators)) {
+        const value = await observe(
+          { name: evaluatorName },
+          async (output: O, target?: T) => {
+            trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATOR");
+            return await evaluator(output, target);
           },
-          datapoint.data
+          output,
+          target 
         );
-        const target = datapoint.target;
 
-        let scores: Record<string, number> = {};
-        for (const [evaluatorName, evaluator] of Object.entries(this.evaluators)) {
-          const value = await observe(
-            { name: evaluatorName },
-            async (output: O, target?: T) => {
-              trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATOR");
-              return await evaluator(output, target);
-            },
-            output,
-            target
-          );
-
-          if (typeof value === 'number') {
-            if (isNaN(value)) {
-              throw new Error(`Evaluator ${evaluatorName} returned NaN`);
-            }
-            scores[evaluatorName] = value;
-          } else {
-            scores = { ...scores, ...value };
+        if (typeof value === 'number') {
+          if (isNaN(value)) {
+            throw new Error(`Evaluator ${evaluatorName} returned NaN`);
           }
+          scores[evaluatorName] = value;
+        } else {
+          scores = { ...scores, ...value };
         }
+      }
 
-        ret = {
-          executorOutput: output,
-          data: datapoint.data,
-          target,
-          scores,
-          traceId: otelTraceIdToUUID(trace.getActiveSpan()!.spanContext().traceId),
-          // For now, all human evaluators are added to every datapoint
-          // In the future, we will allow to specify which evaluators are
-          // added to a particular datapoint, e.g. random sampling.
-          humanEvaluators: this.humanEvaluators,
-          executorSpanId
-        } as EvaluationDatapoint<D, T, O>;
-      });
+      const resultDatapoint = {
+        executorOutput: output,
+        data: datapoint.data,
+        target,
+        scores,
+        traceId: otelTraceIdToUUID(trace.getActiveSpan()!.spanContext().traceId),
+        // For now, all human evaluators are added to every datapoint
+        // In the future, we will allow to specify which evaluators are
+        // added to a particular datapoint, e.g. random sampling.
+        humanEvaluators: this.humanEvaluators,
+        executorSpanId,
+        index
+      } as EvaluationDatapoint<D, T, O>;
 
-      return ret!;
+      const uploadPromise = Laminar.saveEvalDatapoints(evalId, [resultDatapoint], this.groupName);
+      this.uploadPromises.push(uploadPromise);
+
+      return resultDatapoint;
     });
-
-    const results = await Promise.all(batchPromises);
-
-    return results;
   }
 
   private async getLength(): Promise<number> {
@@ -401,22 +433,27 @@ class Evaluation<D, T, O> {
  * returns.
  * @param props.humanEvaluators [Beta] Array of instances of {@link HumanEvaluator}.
  * For now, HumanEvaluator only holds the queue name.
- * @param props.groupId Group name which is same as the feature you are evaluating
- * in your project or application. Defaults to "default".
+ * @param props.groupId Deprecated. Use `groupName` instead. Group name,
+ * same as the feature you are evaluating in your project or application.
+ * Evaluations within the same group can be visually compared.
+ * Defaults to "default".
  * @param props.name Optional name of the evaluation. Used to easily identify
  * the evaluation in the group.
  * @param props.config Optional override configurations for the evaluator.
  */
 export async function evaluate<D, T, O>({
-  data, executor, evaluators, humanEvaluators, groupId, name, config
+  data, executor, evaluators, humanEvaluators, groupName, groupId, name, config
 }: EvaluationConstructorProps<D, T, O>): Promise<void> {
+  if (groupId) {
+    console.warn('groupId is deprecated. Use groupName instead.');
+  }
   const evaluation = new Evaluation({
     data,
     executor,
     evaluators,
     humanEvaluators,
     name,
-    groupId,
+    groupName: groupName ?? groupId,
     config
   });
   if (globalThis._set_global_evaluation) {

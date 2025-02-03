@@ -30,7 +30,7 @@ export type Event = {
   value: number | string | null; // number
 }
 
-export type CreateEvaluationResponse = {
+export type InitEvaluationResponse = {
   id: StringUUID,
   createdAt: Date,
   groupId: string,
@@ -44,6 +44,7 @@ export type EvaluationDatapoint<D, T, O> = {
   executorOutput?: O;
   scores: Record<string, number>;
   traceId: string;
+  index: number;
   humanEvaluators?: HumanEvaluator[];
   executorSpanId?: string;
 }
