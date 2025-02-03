@@ -642,6 +642,20 @@ export class Laminar {
   ): Promise<void> {
     let body = '';
     try {
+      const points = datapoints.map((point) => ({
+        ...point,
+        // only save the first 100 characters of data, target, and executorOutput
+        // full output is in the trace.
+        data: typeof point.data === 'string'
+          ? point.data.slice(0, 100)
+          : JSON.stringify(point.data).slice(0, 100),
+        target: typeof point.target === 'string'
+          ? point.target.slice(0, 100)
+          : JSON.stringify(point.target).slice(0, 100),
+        executorOutput: typeof point.executorOutput === 'string'
+          ? point.executorOutput.slice(0, 100)
+          : JSON.stringify(point.executorOutput).slice(0, 100),
+      }))
       body = JSON.stringify({ points: datapoints, groupName });
     } catch (error) {
       throw new Error(`Failed to serialize evaluation data for ${evalId}. Error: ${error}`);
