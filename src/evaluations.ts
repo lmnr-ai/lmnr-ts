@@ -283,7 +283,8 @@ class Evaluation<D, T, O> {
       grpcPort: config?.grpcPort,
       instrumentModules: config?.instrumentModules,
       disableBatch: this.traceDisableBatch,
-      traceExportTimeoutMillis: this.traceExportTimeoutMillis
+      traceExportTimeoutMillis: this.traceExportTimeoutMillis,
+      maxExportBatchSize: this.traceExportBatchSize,
     });
   }
 

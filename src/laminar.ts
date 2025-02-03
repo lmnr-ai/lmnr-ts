@@ -57,6 +57,7 @@ interface LaminarInitializeProps {
   traceExportTimeoutMillis?: number;
   logLevel?: "debug" | "info" | "warn" | "error";
   useExternalTracerProvider?: boolean;
+  maxExportBatchSize?: number;
 }
 
 export class Laminar {
@@ -132,6 +133,7 @@ export class Laminar {
     disableBatch,
     traceExportTimeoutMillis,
     logLevel,
+    maxExportBatchSize,
   }: LaminarInitializeProps) {
 
     let key = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
@@ -171,6 +173,7 @@ export class Laminar {
       useExternalTracerProvider,
       preserveNextJsSpans,
       logLevel: logLevel ?? "error",
+      maxExportBatchSize,
     });
   }
 
