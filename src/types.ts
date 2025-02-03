@@ -30,7 +30,7 @@ export type Event = {
   value: number | string | null; // number
 }
 
-export type CreateEvaluationResponse = {
+export type InitEvaluationResponse = {
   id: StringUUID,
   createdAt: Date,
   groupId: string,
