@@ -44,6 +44,7 @@ export type EvaluationDatapoint<D, T, O> = {
   executorOutput?: O;
   scores: Record<string, number>;
   traceId: string;
+  index: number;
   humanEvaluators?: HumanEvaluator[];
   executorSpanId?: string;
 }

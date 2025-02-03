@@ -378,7 +378,7 @@ class Evaluation<D, T, O> {
             return await evaluator(output, target);
           },
           output,
-          target
+          target 
         );
 
         if (typeof value === 'number') {
@@ -401,7 +401,8 @@ class Evaluation<D, T, O> {
         // In the future, we will allow to specify which evaluators are
         // added to a particular datapoint, e.g. random sampling.
         humanEvaluators: this.humanEvaluators,
-        executorSpanId
+        executorSpanId,
+        index
       } as EvaluationDatapoint<D, T, O>;
 
       const uploadPromise = Laminar.saveEvalDatapoints(evalId, [resultDatapoint], this.groupName);
