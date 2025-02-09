@@ -792,11 +792,8 @@ export class Laminar {
    * // Now you can use the stagehand as usual
    */
   public static async wrapStagehand(stagehand: any) {
-    // FIXME. If any of the below are awaited,
-    // we'll end up with infinite recursion.
-    // This somehow works without awaiting, but it's brittle.
     await wrapPlaywrightContext(stagehand.context);
-    wrapPlaywrightPage(stagehand.page);
+    await wrapPlaywrightPage(stagehand.page);
   }
 
   public static getHttpUrl(): string {

@@ -46,12 +46,15 @@ import {
   EXTRACTED_FROM_NEXT_JS,
   OVERRIDE_PARENT_SPAN,
   SPAN_INSTRUMENTATION_SOURCE,
+  SPAN_INSTRUMENTATION_VERSION,
+  SPAN_LANGUAGE_VERSION,
   SPAN_PATH,
 } from "./attributes";
 
 // for doc comment:
 import { withTracingLevel } from "../../decorators";
 import { initBrowserTracing } from "../../browser";
+import { getLangVersion, LIB_VERSION } from "../../version";
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor | undefined;
 let _spanIdToPath: Map<string, string[]> = new Map();
@@ -313,6 +316,10 @@ export const startTracing = (options: InitializeOptions) => {
     _spanIdToPath.set(spanId, spanPath);
 
     span.setAttribute(SPAN_INSTRUMENTATION_SOURCE, "javascript");
+    span.setAttribute(SPAN_INSTRUMENTATION_VERSION, LIB_VERSION);
+    if (getLangVersion()) {
+      span.setAttribute(SPAN_LANGUAGE_VERSION, getLangVersion());
+    }
 
     // This sets the properties only if the context has them
     const associationProperties = context
