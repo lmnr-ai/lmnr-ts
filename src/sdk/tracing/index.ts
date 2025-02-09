@@ -46,7 +46,7 @@ import {
   EXTRACTED_FROM_NEXT_JS,
   OVERRIDE_PARENT_SPAN,
   SPAN_INSTRUMENTATION_SOURCE,
-  SPAN_INSTRUMENTATION_VERSION,
+  SPAN_SDK_VERSION,
   SPAN_LANGUAGE_VERSION,
   SPAN_PATH,
 } from "./attributes";
@@ -54,7 +54,7 @@ import {
 // for doc comment:
 import { withTracingLevel } from "../../decorators";
 import { initBrowserTracing } from "../../browser";
-import { getLangVersion, LIB_VERSION } from "../../version";
+import { getLangVersion, SDK_VERSION } from "../../version";
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor | undefined;
 let _spanIdToPath: Map<string, string[]> = new Map();
@@ -316,7 +316,7 @@ export const startTracing = (options: InitializeOptions) => {
     _spanIdToPath.set(spanId, spanPath);
 
     span.setAttribute(SPAN_INSTRUMENTATION_SOURCE, "javascript");
-    span.setAttribute(SPAN_INSTRUMENTATION_VERSION, LIB_VERSION);
+    span.setAttribute(SPAN_SDK_VERSION, SDK_VERSION);
     if (getLangVersion()) {
       span.setAttribute(SPAN_LANGUAGE_VERSION, getLangVersion());
     }
