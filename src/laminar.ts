@@ -534,7 +534,7 @@ export class Laminar {
   }: {
     name: string,
     input?: any,
-    spanType?: 'LLM' | 'DEFAULT',
+    spanType?: 'LLM' | 'DEFAULT' | 'TOOL',
     context?: Context,
     traceId?: string,
     labels?: Record<string, string>,

@@ -73,7 +73,13 @@ export type SemanticSearchResponse = {
  * Pipeline spans are top-level spans created by the pipeline runner.
  * Executor and evaluator spans are top-level spans added automatically when doing evaluations.
  */
-export type SpanType = 'DEFAULT' | 'LLM' | 'PIPELINE' | 'EXECUTOR' | 'EVALUATOR' | 'EVALUATION'
+export type SpanType = 'DEFAULT'
+  | 'LLM'
+  | 'PIPELINE'
+  | 'EXECUTOR'
+  | 'EVALUATOR'
+  | 'EVALUATION'
+  | 'TOOL'
 
 
 /**
