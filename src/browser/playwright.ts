@@ -5,7 +5,6 @@ import { TRACE_HAS_BROWSER_SESSION } from '../sdk/tracing/attributes';
 import { readFile } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { Page } from 'playwright';
 
 type BrowserNewPageType = (...args: Parameters<any['newPage']>) => ReturnType<any['newPage']>;
 type BrowserContextNewPageType = (...args: Parameters<any['newPage']>) => ReturnType<any['newPage']>;
@@ -24,7 +23,7 @@ const getDirname = () => {
   return process.cwd();
 };
 
-const injectRrweb = async (page: Page) => {
+const injectRrweb = async (page: any) => {
   // Wait for the page to be in a ready state first
   await page.waitForLoadState('domcontentloaded');
   const tryRunScript = async(script: (...args: any[]) => Promise<any>, maxAttempts: number = 5) => {
