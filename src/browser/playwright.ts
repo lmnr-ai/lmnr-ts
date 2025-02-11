@@ -4,14 +4,27 @@ import { newUUID } from '../utils';
 import { TRACE_HAS_BROWSER_SESSION } from '../sdk/tracing/attributes';
 import { readFile } from 'fs/promises';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import { Page } from 'playwright';
 
 type BrowserNewPageType = (...args: Parameters<any['newPage']>) => ReturnType<any['newPage']>;
 type BrowserContextNewPageType = (...args: Parameters<any['newPage']>) => ReturnType<any['newPage']>;
 type BrowserNewContextType = (...args: Parameters<any['newContext']>) => ReturnType<any['newContext']>;
 
+// Cross-compatible directory resolution
+const getDirname = () => {
+  if (typeof __dirname !== 'undefined') {
+    return __dirname;
+  }
+  
+  if (typeof import.meta?.url !== 'undefined') {
+    return path.dirname(fileURLToPath(import.meta.url));
+  }
+  
+  return process.cwd();
+};
 
-
-const injectRrweb = async (page: any) => {
+const injectRrweb = async (page: Page) => {
   // Wait for the page to be in a ready state first
   await page.waitForLoadState('domcontentloaded');
   const tryRunScript = async(script: (...args: any[]) => Promise<any>, maxAttempts: number = 5) => {
@@ -39,15 +52,21 @@ const injectRrweb = async (page: any) => {
 
   // Load rrweb and set up recording
   if (!isRrwebPresent) {
-    const script = await readFile(path.join(__dirname, 'rrweb/rrweb.min.js'), 'utf8');
-    await page.evaluate(script);
-    // await page.addScriptTag({
-    //   content: script,
-    // });
-  
-    await page.waitForFunction(() => (window as any).lmnrRrweb || 'rrweb' in window, {
-      timeout: 5000,
+    const scriptPath = path.join(getDirname(), '..', 'assets', 'rrweb', 'rrweb.min.js');
+    const script = await readFile(scriptPath, 'utf8');
+    await tryRunScript(async () => {
+      await page.addScriptTag({
+        content: script,
+      });
+      const res= await page.waitForFunction(() => 'lmnrRrweb' in window || (window as any).lmnrRrweb, {
+        timeout: 5000,
+      });
+      if (!res) {
+        throw new Error('Failed to inject rrweb');
+      }
     });
+  
+   
   }
 
   const httpUrl = Laminar.getHttpUrl();
@@ -75,7 +94,7 @@ const injectRrweb = async (page: any) => {
 
       (window as any).lmnrRrwebEventsBatch = [];
       
-      (window as any).lmnrRrwebSendEventsBatch = async () => {
+      (window as any).lmnrSendRrwebEventsBatch = async () => {
         if ((window as any).lmnrRrwebEventsBatch.length === 0) return;
                 
         const eventsPayload = {
@@ -139,7 +158,7 @@ const injectRrweb = async (page: any) => {
       });
 
       window.addEventListener('beforeunload', async () => {
-        await (window as any).lmnrRrwebEventsBatch();
+        await (window as any).lmnrSendRrwebEventsBatch();
       });
     }, [httpUrl, projectApiKey]);
   });

@@ -8,6 +8,10 @@
     "build": "tsup src/index.ts src/cli.ts --format esm,cjs --dts --external puppeteer --external puppeteer-core --external playwright",
     "test": "tsx --test test/*.test.ts"
   },
+  "files": [
+    "dist",
+    "assets"
+  ],
   "bin": {
     "lmnr": "./dist/cli.js"
   },
