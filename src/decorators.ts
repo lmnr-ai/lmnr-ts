@@ -8,7 +8,7 @@ interface ObserveOptions {
   name?: string;
   sessionId?: string;
   traceType?: TraceType;
-  spanType?: 'DEFAULT' | 'LLM';
+  spanType?: 'DEFAULT' | 'LLM' | 'TOOL';
   traceId?: string;
 }
 
