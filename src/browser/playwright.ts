@@ -2,10 +2,13 @@ import { trace } from '@opentelemetry/api';
 import { Laminar } from '../laminar';
 import { newUUID } from '../utils';
 import { TRACE_HAS_BROWSER_SESSION } from '../sdk/tracing/attributes';
+import { readFile } from 'fs/promises';
+import path from 'path';
 
 type BrowserNewPageType = (...args: Parameters<any['newPage']>) => ReturnType<any['newPage']>;
 type BrowserContextNewPageType = (...args: Parameters<any['newPage']>) => ReturnType<any['newPage']>;
 type BrowserNewContextType = (...args: Parameters<any['newContext']>) => ReturnType<any['newContext']>;
+
 
 
 const injectRrweb = async (page: any) => {
@@ -23,7 +26,7 @@ const injectRrweb = async (page: any) => {
   };
 
   const isRrwebPresent = await page.evaluate(() => {
-    return typeof (window as any).rrweb !== 'undefined';
+    return typeof (window as any).lmnrRrweb !== 'undefined';
   });
 
   // Get current trace ID from active span
@@ -36,14 +39,14 @@ const injectRrweb = async (page: any) => {
 
   // Load rrweb and set up recording
   if (!isRrwebPresent) {
-    await tryRunScript(async () => {
-      await page.addScriptTag({
-        url: "https://cdn.jsdelivr.net/npm/rrweb@latest/dist/rrweb.min.js",
-      });
-    });
+    const script = await readFile(path.join(__dirname, 'rrweb/rrweb.min.js'), 'utf8');
+    await page.evaluate(script);
+    // await page.addScriptTag({
+    //   content: script,
+    // });
   
-    await page.waitForFunction(() => (window as any).rrweb || 'rrweb' in window, {
-      timeout: 10000,
+    await page.waitForFunction(() => (window as any).lmnrRrweb || 'rrweb' in window, {
+      timeout: 5000,
     });
   }
 
@@ -56,8 +59,8 @@ const injectRrweb = async (page: any) => {
     await page.evaluate((args: string[]) => {
       const traceId = args[0];
       const sessionId = args[1];
-      (window as any).rrwebSessionId = sessionId;
-      (window as any).traceId = traceId;
+      (window as any).lmnrRrwebSessionId = sessionId;
+      (window as any).lmnrTraceId = traceId;
     }, [traceId, sessionId]);
   });
 
@@ -70,15 +73,15 @@ const injectRrweb = async (page: any) => {
       const FLUSH_INTERVAL = 1000;
       const HEARTBEAT_INTERVAL = 1000;  // 1 second heartbeat
 
-      (window as any).rrwebEventsBatch = [];
+      (window as any).lmnrRrwebEventsBatch = [];
       
-      (window as any).sendBatch = async () => {
-        if ((window as any).rrwebEventsBatch.length === 0) return;
+      (window as any).lmnrRrwebSendEventsBatch = async () => {
+        if ((window as any).lmnrRrwebEventsBatch.length === 0) return;
                 
         const eventsPayload = {
-          sessionId: (window as any).rrwebSessionId,
-          traceId: (window as any).traceId,
-          events: (window as any).rrwebEventsBatch,
+          sessionId: (window as any).lmnrRrwebSessionId,
+          traceId: (window as any).lmnrTraceId,
+          events: (window as any).lmnrRrwebEventsBatch,
         };
 
         try {
@@ -112,31 +115,31 @@ const injectRrweb = async (page: any) => {
                 console.error('Possible CORS issue - check network tab for details');
             }
           }
-          (window as any).rrwebEventsBatch = [];
+          (window as any).lmnrRrwebEventsBatch = [];
         } catch (error) {
           console.error('Failed to send events:', error);
         }
       };
 
-      setInterval(() => (window as any).sendBatch(), FLUSH_INTERVAL);
+      setInterval(() => (window as any).lmnrSendRrwebEventsBatch(), FLUSH_INTERVAL);
 
       // Add heartbeat event
       setInterval(() => {
-        (window as any).rrwebEventsBatch.push({
+        (window as any).lmnrRrwebEventsBatch.push({
           type: 6, // Custom event type
           data: { source: 'heartbeat' },
           timestamp: Date.now()
         });
       }, HEARTBEAT_INTERVAL);
 
-      (window as any).rrweb.record({
+      (window as any).lmnrRrweb.record({
         emit(event: any) {
-          (window as any).rrwebEventsBatch.push(event);
+          (window as any).lmnrRrwebEventsBatch.push(event);
         }
       });
 
       window.addEventListener('beforeunload', async () => {
-        await (window as any).sendBatch();
+        await (window as any).lmnrRrwebEventsBatch();
       });
     }, [httpUrl, projectApiKey]);
   });
@@ -159,16 +162,11 @@ const handleRoute = async (route: any) => {
         const csp = value as string;
         const cspParts = csp.split(";");
         const modifiedParts = cspParts.map(part => {
-          if (part.includes('script-src')) {
-            return `${part.trim()} cdn.jsdelivr.net`;
-          } else if (part.includes('connect-src')) {
+          if (part.includes('connect-src')) {
             return `${part.trim()} ${httpUrl}`;
           }
           return part;
         });
-        if (!modifiedParts.some(part => part.includes('connect-src'))) {
-          modifiedParts.push(` connect-src 'self' ${httpUrl}`);
-        }
         const modifiedCsp = modifiedParts.join(';');
         newHeaders['Content-Security-Policy'] = modifiedCsp;
       } else {
@@ -216,7 +214,7 @@ export const wrapPlaywrightBrowser = async (browser: any) => {
     if (_originalWrapBrowserContextNewPage === undefined) {
       _originalWrapBrowserContextNewPage = context.newPage.bind(context);
     }
-    context.route('**cdn.jsdelivr.net/**', handleRoute);
+    context.route('**/*', handleRoute);
     context.newPage = patchedBrowserContextNewPage;
   }
   _originalWrapBrowserNewContext = browser.newContext.bind(browser);
@@ -224,7 +222,7 @@ export const wrapPlaywrightBrowser = async (browser: any) => {
 };
 
 export const wrapPlaywrightContext = async (context: any) => {
-  context.route('**cdn.jsdelivr.net/**', handleRoute);
+  context.route('**/*', handleRoute);
   _originalWrapBrowserContextNewPage = context.newPage.bind(context);
   context.newPage = patchedBrowserContextNewPage;
 };
