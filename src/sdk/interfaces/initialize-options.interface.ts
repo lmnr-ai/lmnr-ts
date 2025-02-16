@@ -81,25 +81,31 @@ export interface InitializeOptions {
    */
   contextManager?: ContextManager;
 
+  /**
+   * The modules to instrument. Optional. Suggested to use, if you don't see
+   * the autoinstrumentation working.
+   */
+  // In case of version mismatch, types are not resolved correctly.
+  // So we use any for now.
   instrumentModules?: {
-    openAI?: typeof openai.OpenAI;
-    anthropic?: typeof anthropic;
-    azureOpenAI?: typeof azure;
-    cohere?: typeof cohere;
-    bedrock?: typeof bedrock;
-    google_vertexai?: typeof vertexAI;
-    google_aiplatform?: typeof aiplatform;
-    pinecone?: typeof pinecone;
+    openAI?: typeof openai.OpenAI | any;
+    anthropic?: typeof anthropic | any;
+    azureOpenAI?: typeof azure | any;
+    cohere?: typeof cohere | any;
+    bedrock?: typeof bedrock | any;
+    google_vertexai?: typeof vertexAI | any;
+    google_aiplatform?: typeof aiplatform | any;
+    pinecone?: typeof pinecone | any;
     langchain?: {
-      chainsModule?: typeof ChainsModule;
-      agentsModule?: typeof AgentsModule;
-      toolsModule?: typeof ToolsModule;
-      runnablesModule?: typeof RunnableModule;
-      vectorStoreModule?: typeof VectorStoreModule;
+      chainsModule?: typeof ChainsModule | any;
+      agentsModule?: typeof AgentsModule | any;
+      toolsModule?: typeof ToolsModule | any;
+      runnablesModule?: typeof RunnableModule | any;
+      vectorStoreModule?: typeof VectorStoreModule | any;
     };
-    llamaIndex?: typeof llamaindex;
-    chromadb?: typeof chromadb;
-    qdrant?: typeof qdrant;
+    llamaIndex?: typeof llamaindex | any;
+    chromadb?: typeof chromadb | any;
+    qdrant?: typeof qdrant | any;
   };
 
   /**

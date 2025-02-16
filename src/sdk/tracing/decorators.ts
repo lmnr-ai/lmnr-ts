@@ -12,18 +12,24 @@ import { RandomIdGenerator } from "@opentelemetry/sdk-trace-base";
 export type DecoratorConfig = {
   name: string;
   associationProperties?: { [name: string]: string };
+  input?: unknown;
+  ignoreInput?: boolean;
+  ignoreOutput?: boolean;
   inputParameters?: unknown[];
   suppressTracing?: boolean;
   traceId?: string;
 };
 
-export function withEntity<
+export function observeBase<
   A extends unknown[],
   F extends (...args: A) => ReturnType<F>,
 >(
   {
     name,
     associationProperties,
+    input,
+    ignoreInput,
+    ignoreOutput,
     inputParameters,
     suppressTracing: shouldSuppressTracing,
     traceId,
@@ -71,24 +77,30 @@ export function withEntity<
           span.setAttribute(OVERRIDE_PARENT_SPAN, true);
         }
 
-        if (shouldSendTraces()) {
+        if (shouldSendTraces() && !ignoreInput) {
           try {
-            const input = inputParameters ?? args;
-            if (
-              input.length === 1 &&
-              typeof input[0] === "object" &&
-              !(input[0] instanceof Map)
+            const spanInput = inputParameters ?? args;
+            if (input !== undefined) {
+              span.setAttribute(
+                SPAN_INPUT,
+                serialize(input),
+              );
+            } else if (
+              spanInput.length === 1 &&
+              typeof spanInput[0] === "object" &&
+              !(spanInput[0] instanceof Map)
             ) {
               span.setAttribute(
                 SPAN_INPUT,
-                serialize(input[0]),
+                serialize(spanInput[0]),
               );
             } else {
               // pass an array of the arguments without names
-              // Need to convert it to hashmap from argument name to value, if we figure out how to do it elegantly
+              // Need to convert it to hashmap from argument name to value,
+              // if we figure out how to do it elegantly
               span.setAttribute(
                 SPAN_INPUT,
-                serialize(input.length > 0 ? input : {}),
+                serialize(spanInput.length > 0 ? spanInput : {}),
               );
             }
           } catch (error) {
@@ -115,7 +127,7 @@ export function withEntity<
         if (res instanceof Promise) {
           return res.then((resolvedRes) => {
             try {
-              if (shouldSendTraces()) {
+              if (shouldSendTraces() && !ignoreOutput) {
                 span.setAttribute(
                   SPAN_OUTPUT,
                   serialize(resolvedRes),
@@ -136,7 +148,7 @@ export function withEntity<
           });
         }
         try {
-          if (shouldSendTraces()) {
+          if (shouldSendTraces() && !ignoreOutput) {
             span.setAttribute(
               SPAN_OUTPUT,
               serialize(res),
@@ -154,25 +166,30 @@ export function withEntity<
   );
 }
 
-function cleanInput(input: unknown): unknown {
-  if (input instanceof Map) {
-    return Array.from(input.entries());
-  } else if (Array.isArray(input)) {
-    return input.map((value) => cleanInput(value));
-  } else if (!input) {
-    return input;
-  } else if (typeof input === "object") {
+const normalizePayload = (payload: unknown, seen: WeakSet<any>): unknown => {
+  if (payload instanceof Map) {
+    return Array.from(payload.entries());
+  } else if (Array.isArray(payload)) {
+    return payload.map((value) => normalizePayload(value, seen));
+  } else if (!payload) {
+    return payload;
+  } else if (typeof payload === "object") {
+    if (seen.has(payload)) {
+      return "[Circular reference]";
+    }
+    seen.add(payload);
+
     // serialize object one by one
     const output: any = {};
-    Object.entries(input as any).forEach(([key, value]) => {
-      output[key] = cleanInput(value);
+    Object.entries(payload as any).forEach(([key, value]) => {
+      output[key] = normalizePayload(value, seen);
     });
     return output;
   }
 
-  return input;
+  return payload;
 }
 
-function serialize(input: unknown): string {
-  return JSON.stringify(cleanInput(input));
+const serialize = (payload: unknown): string => {
+  return JSON.stringify(normalizePayload(payload, new WeakSet()));
 }
