@@ -49,15 +49,18 @@ import {
   SPAN_SDK_VERSION,
   SPAN_LANGUAGE_VERSION,
   SPAN_PATH,
+  SPAN_IDS_PATH,
 } from "./attributes";
 
 // for doc comment:
 import { withTracingLevel } from "../../decorators";
 import { initBrowserTracing } from "../../browser";
 import { getLangVersion, SDK_VERSION } from "../../version";
+import { otelSpanIdToUUID } from "../../utils";
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor | undefined;
 let _spanIdToPath: Map<string, string[]> = new Map();
+let _spanIdLists: Map<string, string[]> = new Map();
 let openAIInstrumentation: OpenAIInstrumentation | undefined;
 let anthropicInstrumentation: AnthropicInstrumentation | undefined;
 let azureOpenAIInstrumentation: AzureOpenAIInstrumentation | undefined;
@@ -309,10 +312,18 @@ export const startTracing = (options: InitializeOptions) => {
        ?? (span.parentSpanId !== undefined
         ? _spanIdToPath.get(span.parentSpanId)
         : undefined);
+    const spanId = span.spanContext().spanId;
+    const parentSpanIdsPath = span.parentSpanId ? (_spanIdLists.get(span.parentSpanId) ?? []) : [];
     const spanPath = parentSpanPath ? [...parentSpanPath, span.name] : [span.name];
+    const spanIdUuid = otelSpanIdToUUID(spanId);
+
+    const spanIdsPath = parentSpanIdsPath ? [...parentSpanIdsPath, spanIdUuid] : [spanIdUuid];
+    
+    span.setAttribute(SPAN_IDS_PATH, spanIdsPath);
+    _spanIdLists.set(spanId, spanIdsPath);
+
     span.setAttribute(SPAN_PATH, spanPath);
     context.active().setValue(SPAN_PATH_KEY, spanPath);
-    const spanId = span.spanContext().spanId;
     _spanIdToPath.set(spanId, spanPath);
 
     span.setAttribute(SPAN_INSTRUMENTATION_SOURCE, "javascript");

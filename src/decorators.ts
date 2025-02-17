@@ -1,5 +1,5 @@
 import { Span, TraceFlags, context, trace } from "@opentelemetry/api";
-import { withEntity } from './sdk/node-server-sdk'
+import { observeBase } from './sdk/node-server-sdk'
 import { Laminar } from './laminar';
 import { TraceType, TracingLevel } from './types';
 import { ASSOCIATION_PROPERTIES_KEY } from "./sdk/tracing/tracing";
@@ -10,6 +10,9 @@ interface ObserveOptions {
   traceType?: TraceType;
   spanType?: 'DEFAULT' | 'LLM' | 'TOOL';
   traceId?: string;
+  input?: unknown;
+  ignoreInput?: boolean;
+  ignoreOutput?: boolean;
 }
 
 /**
@@ -24,6 +27,10 @@ interface ObserveOptions {
  * @param spanType - Type of the span. 'DEFAULT' is used if not specified. If the type is 'LLM',
  * you must manually specify some attributes. See {@link Laminar.setSpanAttributes} for more
  * information.
+ * @param input - Force override the input for the span. If not specified, the input will be the
+ * arguments passed to the function.
+ * @param ignoreInput - Whether to ignore the input altogether.
+ * @param ignoreOutput - Whether to ignore the output altogether.
  * @returns Returns the result of the wrapped function.
  * @throws Exception - Re-throws the exception if the wrapped function throws an exception.
  * 
@@ -42,6 +49,9 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     traceType,
     spanType,
     traceId,
+    input,
+    ignoreInput,
+    ignoreOutput,
   }: ObserveOptions, fn: F, ...args: A): Promise<ReturnType<F>> {
   if (fn === undefined || typeof fn !== "function") {
     throw new Error("Invalid `observe` usage. Second argument `fn` must be a function.");
@@ -58,10 +68,13 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     associationProperties = { ...associationProperties, "span_type": spanType };
   }
 
-  return await withEntity<A, F>({
+  return await observeBase<A, F>({
     name: name ?? fn.name,
     associationProperties,
-    traceId
+    traceId,
+    input,
+    ignoreInput,
+    ignoreOutput,
   }, fn, undefined, ...args);
 }
 
