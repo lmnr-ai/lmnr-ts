@@ -98,7 +98,7 @@ const injectRrweb = async (page: any) => {
 
         if ((window as any).lmnrRrwebEventsBatch?.length > BATCH_SIZE) {
           // Drop oldest events to prevent memory issues
-          (window as any).lmnrRrwebEventsBatch.slice(-BATCH_SIZE);
+          (window as any).lmnrRrwebEventsBatch = (window as any).lmnrRrwebEventsBatch.slice(-BATCH_SIZE);
         }
       }, HEARTBEAT_INTERVAL);
 
@@ -213,7 +213,7 @@ const collectAndSendPageEvents = async (page: any, sessionId: StringUUID, traceI
     }
 
     const events = await page.evaluate(() => (window as any).lmnrGetAndClearEvents());
-    if (events == null && events.length === 0) {
+    if (events == null || events.length === 0) {
       return;
     }
 
