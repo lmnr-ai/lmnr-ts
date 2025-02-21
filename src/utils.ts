@@ -6,6 +6,8 @@ export const isStringUUID = (id: string): id is StringUUID => {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id);
 }
 
+export const NIL_UUID: StringUUID = '00000000-0000-0000-0000-000000000000';
+
 export const newUUID = (): StringUUID => {
   // crypto.randomUUID is available in most of the modern browsers and node,
   // but is not available in "insecure" contexts, e.g. not https, not localhost
