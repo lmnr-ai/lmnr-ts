@@ -57,6 +57,14 @@ export const uuidToOtelTraceId = (uuid: string): string => {
   return uuid.replace(/-/g, '');
 }
 
+// const tryImport = async (pkg: string) => {
+//   try {
+//     return await import(pkg);
+//   } catch {
+//     return null;
+//   }
+// };
+
 /**
  * This is a simple implementation of a semaphore to replicate
  * the behavior of the `asyncio.Semaphore` in Python.

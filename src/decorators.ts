@@ -20,8 +20,6 @@ interface ObserveOptions {
  * functions and methods to create spans.
  *
  * @param name - Name of the span. Function name is used if not specified.
- * @param userId - Deprecated. Use {@link Laminar.withMetadata} to set key-value pairs.
- * User ID to associate with the span and the following context.
  * @param sessionId - Session ID to associate with the span and the following context.
  * @param traceType – Type of the trace. Unless it is within evaluation, it should be 'DEFAULT'.
  * @param spanType - Type of the span. 'DEFAULT' is used if not specified. If the type is 'LLM',

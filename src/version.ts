@@ -1,6 +1,3 @@
-
-export const SDK_VERSION = '0.4.41';
-
 export const getLangVersion: () => string | undefined = () => {
   if (process?.versions?.node) {
     return `node@${process.versions.node}`;
