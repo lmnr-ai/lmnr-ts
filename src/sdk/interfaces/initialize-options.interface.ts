@@ -106,6 +106,11 @@ export interface InitializeOptions {
     llamaIndex?: typeof llamaindex | any;
     chromadb?: typeof chromadb | any;
     qdrant?: typeof qdrant | any;
+    playwright?: {
+      chromium?: any,
+      firefox?: any,
+      webkit?: any,
+    }
   };
 
   /**

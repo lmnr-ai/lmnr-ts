@@ -54,9 +54,11 @@ import {
 
 // for doc comment:
 import { withTracingLevel } from "../../decorators";
-import { initBrowserTracing } from "../../browser";
-import { getLangVersion, SDK_VERSION } from "../../version";
+import { getLangVersion } from "../../version";
+import { version as SDK_VERSION } from "../../../package.json";
 import { otelSpanIdToUUID } from "../../utils";
+import { PlaywrightInstrumentation } from "../../browser";
+import { StagehandInstrumentation } from "../../browser";
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor | undefined;
 let _spanIdToPath: Map<string, string[]> = new Map();
@@ -73,8 +75,10 @@ let llamaIndexInstrumentation: LlamaIndexInstrumentation | undefined;
 let pineconeInstrumentation: PineconeInstrumentation | undefined;
 let chromadbInstrumentation: ChromaDBInstrumentation | undefined;
 let qdrantInstrumentation: QdrantInstrumentation | undefined;
+let playwrightInstrumentation: PlaywrightInstrumentation | undefined;
+let stagehandInstrumentation: StagehandInstrumentation | undefined;
 
-const NUM_TRACKED_NEXT_SPANS = 10000;
+const NUM_TRACKED_NEXTJS_SPANS = 10000;
 
 const instrumentations: Instrumentation[] = [];
 
@@ -119,7 +123,11 @@ const initInstrumentations = () => {
   qdrantInstrumentation = new QdrantInstrumentation();
   instrumentations.push(qdrantInstrumentation);
 
-  initBrowserTracing();
+  playwrightInstrumentation = new PlaywrightInstrumentation();
+  instrumentations.push(playwrightInstrumentation);
+
+  stagehandInstrumentation = new StagehandInstrumentation(playwrightInstrumentation);
+  instrumentations.push(stagehandInstrumentation);
 };
 
 const manuallyInitInstrumentations = (
@@ -208,7 +216,17 @@ const manuallyInitInstrumentations = (
     qdrantInstrumentation.manuallyInstrument(instrumentModules.qdrant);
   }
 
-  initBrowserTracing();
+  if (instrumentModules?.playwright) {
+    playwrightInstrumentation = new PlaywrightInstrumentation();
+    instrumentations.push(playwrightInstrumentation);
+    playwrightInstrumentation.manuallyInstrument(instrumentModules.playwright);
+  }
+
+  // if (instrumentModules?.stagehand) {
+  //   stagehandInstrumentation = new StagehandInstrumentation(playwrightInstrumentation);
+  //   instrumentations.push(stagehandInstrumentation);
+  //   stagehandInstrumentation.manuallyInstrument(instrumentModules.stagehand);
+  // }
 };
 
 const NEXT_JS_SPAN_ATTRIBUTES = [
@@ -296,8 +314,8 @@ export const startTracing = (options: InitializeOptions) => {
   // we remove half of the elements from the set to keep it from growing too much.
   // We use the fact that JS Set preserves insertion order to remove the oldest elements.
   const addNextJsSpanId = (spanId: string) => {
-    if (nextJsSpanIds.size >= NUM_TRACKED_NEXT_SPANS) {
-      const toRemove = Array.from(nextJsSpanIds).slice(0, NUM_TRACKED_NEXT_SPANS / 2);
+    if (nextJsSpanIds.size >= NUM_TRACKED_NEXTJS_SPANS) {
+      const toRemove = Array.from(nextJsSpanIds).slice(0, NUM_TRACKED_NEXTJS_SPANS / 2);
       toRemove.forEach(id => nextJsSpanIds.delete(id));
     }
     nextJsSpanIds.add(spanId);
