@@ -1,3 +1,4 @@
+import { Span } from "@opentelemetry/api";
 import {
   InstrumentationBase,
   InstrumentationModuleDefinition,
@@ -13,6 +14,7 @@ import { cleanStagehandLLMClient } from "./utils";
 
 export class StagehandInstrumentation extends InstrumentationBase {
   private playwrightInstrumentation: PlaywrightInstrumentation;
+  private _parentSpan: Span | undefined;
   
   constructor(playwrightInstrumentation: PlaywrightInstrumentation) {
     super(
@@ -132,7 +134,13 @@ export class StagehandInstrumentation extends InstrumentationBase {
     
     return (original: Function) => {
       return async function patchedInit(this: any, ...args: any[]) {
-        // Call the original init method
+        // Make sure the parent span is set before calling the original init method
+        // so that playwright instrumentation does not set its default parent span
+        instrumentation._parentSpan = Laminar.startSpan({
+          name: 'Stagehand',
+        });
+        instrumentation.playwrightInstrumentation.setParentSpan(instrumentation._parentSpan);
+
         const result = await original.bind(this).apply(this, args);
 
         instrumentation._wrap(
@@ -154,6 +162,9 @@ export class StagehandInstrumentation extends InstrumentationBase {
     return (original: Function) => {
       return async function patchedClose(this: any, ...args: any[]) {
         await original.bind(this).apply(this, args);
+        if (instrumentation._parentSpan?.isRecording()) {
+          instrumentation._parentSpan?.end();
+        }
       };
     };
   }
@@ -215,7 +226,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
     const instrumentation = this;
     return (original: (...args: any[]) => Promise<any>) => {
       return async function patchedMethod(this: any, ...args: any[]) {
-        return await Laminar.withSpan(instrumentation.playwrightInstrumentation.parentSpan!, async () => 
+        return await Laminar.withSpan(instrumentation._parentSpan!, async () => 
           await laminarObserve(
             { name: `stagehand.${method}` },
             async (thisArg, ...rest) => await original.apply(thisArg, ...rest),

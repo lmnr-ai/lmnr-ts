@@ -52,7 +52,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
   private _patchedBrowsers: Set<Browser> = new Set();
   private _patchedContexts: Set<BrowserContext> = new Set();
   private _patchedPages: Set<Page> = new Set();
-  public parentSpan: Span | undefined;
+  private _parentSpan: Span | undefined;
 
   constructor() {
     super(
@@ -62,7 +62,12 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         enabled: true,
       }
     )
-    this.parentSpan = undefined;
+    this._parentSpan = undefined;
+  }
+
+  // It's the caller's responsibility to ensure the span is ended
+  public setParentSpan(span: Span) {
+    this._parentSpan = span;
   }
   
   protected init(): InstrumentationModuleDefinition {
@@ -181,9 +186,11 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     return (original: Function) => {
       return async function method(this: Browser, ...args: unknown[]) {
         const browser = await original.call(this, ...args);
-        plugin.parentSpan = Laminar.startSpan({
-          name: 'playwright',
-        });
+        if (!plugin._parentSpan) {
+          plugin._parentSpan = Laminar.startSpan({
+            name: 'playwright',
+          });
+        }
 
         plugin._wrap(
           browser,
@@ -214,9 +221,11 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     return (original: Function) => {
       return async function method(this: Browser, ...args: any[]) {
         const browser = await original.call(this, ...args);
-        plugin.parentSpan = Laminar.startSpan({
-          name: 'playwright',
-        });
+        if (!plugin._parentSpan) {
+          plugin._parentSpan = Laminar.startSpan({
+            name: 'playwright',
+          });
+        }
 
 
         plugin._wrap(
@@ -248,7 +257,9 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     return (original: Function) => {
       return async function method(this: Browser, ...args: unknown[]) {
         await original.call(this, ...args);
-        plugin.parentSpan?.end();
+        if (plugin._parentSpan?.isRecording()) {
+          plugin._parentSpan?.end();
+        }
       }
     }
   }
@@ -258,8 +269,8 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     return (original: Function) => {
       return async function method(this: Browser, ...args: unknown[]) {
         const context = await original.bind(this).apply(this, args);
-        if (!plugin.parentSpan) {
-          plugin.parentSpan = Laminar.startSpan({
+        if (!plugin._parentSpan) {
+          plugin._parentSpan = Laminar.startSpan({
             name: 'playwright',
           });
         }
@@ -287,8 +298,8 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     return (original: Function) => {
       return async function method(this: BrowserContext, ...args: unknown[]) {
         await original.bind(this).apply(this, args);
-        if (plugin.parentSpan && plugin.parentSpan.isRecording()) {
-          plugin.parentSpan.end();
+        if (plugin._parentSpan?.isRecording()) {
+          plugin._parentSpan.end();
         }
       }
     }
@@ -315,8 +326,8 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     return (original: Function) => {
       return async function method(this: BrowserContext, ...args: unknown[]) {
         const page = await original.bind(this).apply(this, args);
-        if (!plugin.parentSpan) {
-          plugin.parentSpan = Laminar.startSpan({
+        if (!plugin._parentSpan) {
+          plugin._parentSpan = Laminar.startSpan({
             name: 'playwright',
           });
         }
@@ -332,7 +343,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
   }
 
   public async patchPage(page: Page & StagehandPage) {
-    return await Laminar.withSpan(this.parentSpan!, async () => {
+    return await Laminar.withSpan(this._parentSpan!, async () => {
       // Note: be careful with await here, if the await is removed,
       // this creates a race condition, and playwright fails.
       return await this._patchPage(page);
@@ -396,7 +407,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         await page.addScriptTag({
           content: script,
         });
-        const res= await page.waitForFunction(() => 'lmnrRrweb' in window || (window as any).lmnrRrweb, {
+        const res = await (page as Page).waitForFunction(() => 'lmnrRrweb' in window || (window as any).lmnrRrweb, {
           timeout: 5000,
         });
         if (!res) {
