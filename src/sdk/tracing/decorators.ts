@@ -1,13 +1,14 @@
-import { Span, TraceFlags, context, trace } from "@opentelemetry/api";
+import { context, Span, trace, TraceFlags } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
+import { RandomIdGenerator } from "@opentelemetry/sdk-trace-base";
+
+import { isStringUUID, uuidToOtelTraceId } from "../../utils";
+import { shouldSendTraces } from ".";
+import { OVERRIDE_PARENT_SPAN, SPAN_INPUT, SPAN_OUTPUT } from "./attributes";
 import {
   ASSOCIATION_PROPERTIES_KEY,
   getTracer,
 } from "./tracing";
-import { shouldSendTraces } from ".";
-import { OVERRIDE_PARENT_SPAN, SPAN_INPUT, SPAN_OUTPUT } from "./attributes";
-import { isStringUUID, uuidToOtelTraceId } from "../../utils";
-import { RandomIdGenerator } from "@opentelemetry/sdk-trace-base";
 
 export type DecoratorConfig = {
   name: string;
@@ -109,6 +110,7 @@ export function observeBase<
         }
 
         // Remove span type from association properties after the span is created
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { "span_type": spanType, ...rest } = associationProperties ?? {};
         entityContext = entityContext.setValue(
           ASSOCIATION_PROPERTIES_KEY,
@@ -125,6 +127,7 @@ export function observeBase<
         }
 
         if (res instanceof Promise) {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
           return res.then((resolvedRes) => {
             try {
               if (shouldSendTraces() && !ignoreOutput) {
@@ -139,13 +142,14 @@ export function observeBase<
               span.end();
             }
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
             return resolvedRes;
           })
-          .catch((error) => {
-            span.recordException(error as Error);
-            span.end();
-            throw error;
-          });
+            .catch((error) => {
+              span.recordException(error as Error);
+              span.end();
+              throw error;
+            });
         }
         try {
           if (shouldSendTraces() && !ignoreOutput) {
@@ -182,14 +186,14 @@ const normalizePayload = (payload: unknown, seen: WeakSet<any>): unknown => {
     // serialize object one by one
     const output: any = {};
     Object.entries(payload as any).forEach(([key, value]) => {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       output[key] = normalizePayload(value, seen);
     });
     return output;
   }
 
   return payload;
-}
+};
 
-const serialize = (payload: unknown): string => {
-  return JSON.stringify(normalizePayload(payload, new WeakSet()));
-}
+const serialize = (payload: unknown): string =>
+  JSON.stringify(normalizePayload(payload, new WeakSet()));

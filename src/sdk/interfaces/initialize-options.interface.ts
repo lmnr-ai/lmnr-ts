@@ -1,21 +1,21 @@
-import { SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base";
-import { TextMapPropagator, ContextManager } from "@opentelemetry/api";
-import type * as openai from "openai";
 import type * as anthropic from "@anthropic-ai/sdk";
-import type * as azure from "@azure/openai";
-import type * as cohere from "cohere-ai";
 import type * as bedrock from "@aws-sdk/client-bedrock-runtime";
+import type * as azure from "@azure/openai";
 import type * as aiplatform from "@google-cloud/aiplatform";
 import type * as vertexAI from "@google-cloud/vertexai";
-import type * as pinecone from "@pinecone-database/pinecone";
-import type * as ChainsModule from "langchain/chains";
-import type * as AgentsModule from "langchain/agents";
-import type * as ToolsModule from "langchain/tools";
 import type * as RunnableModule from "@langchain/core/runnables";
 import type * as VectorStoreModule from "@langchain/core/vectorstores";
-import type * as llamaindex from "llamaindex";
-import type * as chromadb from "chromadb";
+import { ContextManager, TextMapPropagator } from "@opentelemetry/api";
+import { SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base";
+import type * as pinecone from "@pinecone-database/pinecone";
 import type * as qdrant from "@qdrant/js-client-rest";
+import type * as chromadb from "chromadb";
+import type * as cohere from "cohere-ai";
+import type * as AgentsModule from "langchain/agents";
+import type * as ChainsModule from "langchain/chains";
+import type * as ToolsModule from "langchain/tools";
+import type * as llamaindex from "llamaindex";
+import type * as openai from "openai";
 
 /**
  * Options for initializing the Traceloop SDK.
@@ -87,6 +87,7 @@ export interface InitializeOptions {
    */
   // In case of version mismatch, types are not resolved correctly.
   // So we use any for now.
+  /* eslint-disable @typescript-eslint/no-redundant-type-constituents */
   instrumentModules?: {
     openAI?: typeof openai.OpenAI | any;
     anthropic?: typeof anthropic | any;
@@ -112,6 +113,7 @@ export interface InitializeOptions {
       webkit?: any,
     }
   };
+  /* eslint-enable @typescript-eslint/no-redundant-type-constituents */
 
   /**
    * Whether to silence the initialization message. Optional.
@@ -122,7 +124,8 @@ export interface InitializeOptions {
   /**
    * Whether to use an external tracer provider. Optional.
    * Defaults to false. If true, the SDK will not initialize its own tracer provider.
-   * This is useful for advanced use cases where the user wants to manage the tracer provider themselves.
+   * This is useful for advanced use cases where the user wants to manage the
+   * tracer provider themselves.
    */
   useExternalTracerProvider?: boolean;
 

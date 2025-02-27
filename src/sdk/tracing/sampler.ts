@@ -1,9 +1,9 @@
+import { Attributes,Context, SpanKind } from "@opentelemetry/api";
 import {
   Sampler,
-  SamplingResult,
   SamplingDecision,
+  SamplingResult,
 } from "@opentelemetry/sdk-trace-base";
-import { Context, SpanKind, Attributes } from "@opentelemetry/api";
 
 const FILTERED_ATTRIBUTE_KEYS = ["next.span_name"];
 

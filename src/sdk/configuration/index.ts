@@ -1,7 +1,8 @@
+import { diag, DiagConsoleLogger, DiagLogLevel } from "@opentelemetry/api";
+
+import { InitializationError } from "../errors";
 import { InitializeOptions } from "../interfaces";
 import { startTracing } from "../tracing";
-import { diag, DiagConsoleLogger, DiagLogLevel } from "@opentelemetry/api";
-import { InitializationError } from "../errors";
 
 export let _configuration: InitializeOptions | undefined;
 
@@ -9,10 +10,12 @@ export let _configuration: InitializeOptions | undefined;
  * Initializes the SDK.
  * Must be called once before any other SDK methods.
  *
- * @param options - The options to initialize the SDK. See the {@link InitializeOptions} for details.
- * @throws {InitializationError} if the configuration is invalid or if failed to fetch feature data.
+ * @param options - The options to initialize the SDK. See the {@link InitializeOptions}
+ * for details.
+ * @throws {InitializationError} if the configuration is invalid or if failed to fetch
+ * feature data.
  */
-export let initializeTracing = (options: InitializeOptions) => {
+export const initializeTracing = (options: InitializeOptions) => {
   if (_configuration) {
     return;
   }
@@ -43,8 +46,9 @@ export let initializeTracing = (options: InitializeOptions) => {
 
   if (!options.silenceInitializationMessage) {
     console.log(
-      `Laminar exporting traces to ${
-        _configuration.exporter ? "a custom exporter" : _configuration.baseUrl
+      `Laminar exporting traces to ${_configuration.exporter
+        ? "a custom exporter"
+        : _configuration.baseUrl
       }`,
     );
   }

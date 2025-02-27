@@ -29,8 +29,6 @@ export class LaminarDataset<D, T> extends EvaluationDataset<D, T> {
   }
 
   private async fetchBatch() {
-    // Commented out until we allow users to set log level
-    // console.debug(`Dataset ${this.name}. Fetching batch from ${this.offset} to ${this.offset + this.fetchSize}`);
     const resp = await L.getDatapoints<D, T>({
       datasetName: this.name,
       offset: this.offset,

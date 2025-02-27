@@ -1,8 +1,8 @@
-import { Span, TraceFlags, context, trace } from "@opentelemetry/api";
-import { observeBase } from './sdk/node-server-sdk'
-import { Laminar } from './laminar';
-import { TraceType, TracingLevel } from './types';
+import { context } from "@opentelemetry/api";
+
+import { observeBase } from './sdk/node-server-sdk';
 import { ASSOCIATION_PROPERTIES_KEY } from "./sdk/tracing/tracing";
+import { TraceType, TracingLevel } from './types';
 
 interface ObserveOptions {
   name?: string;
@@ -31,11 +31,11 @@ interface ObserveOptions {
  * @param ignoreOutput - Whether to ignore the output altogether.
  * @returns Returns the result of the wrapped function.
  * @throws Exception - Re-throws the exception if the wrapped function throws an exception.
- * 
+ *
  * @example
  * ```typescript
  * import { observe } from '@lmnr-ai/lmnr';
- * 
+ *
  * await observe({ name: 'my_function' }, () => {
  *    // Your code here
  * });
@@ -66,6 +66,7 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     associationProperties = { ...associationProperties, "span_type": spanType };
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return await observeBase<A, F>({
     name: name ?? fn.name,
     associationProperties,
@@ -80,19 +81,19 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
  * Sets the labels for any spans inside the function. This is useful for adding
  * labels to the spans created in the auto-instrumentations. Returns the result
  * of the wrapped function, so you can use it in an `await` statement if needed.
- * 
+ *
  * Requirements:
  * - Labels must be created in your project in advance.
  * - Keys must be strings from your label names.
  * - Values must be strings matching the label's allowed values.
- * 
+ *
  * @param labels - The labels to set.
  * @returns The result of the wrapped function.
- * 
+ *
  * @example
  * ```typescript
  * import { withLabels } from '@lmnr-ai/lmnr';
- * 
+ *
  * const result = await withLabels({ endpoint: "ft-openai-<id>" }, () => {
  *    openai.chat.completions.create({});
  * });
@@ -115,12 +116,13 @@ export function withLabels<A extends unknown[], F extends (...args: A) => Return
     { ...currentAssociationProperties, ...labelProperties },
   );
 
-  const result = context.with(entityContext, () => {
-    return fn.apply(undefined, args);
-  });
+  const result = context.with(entityContext, () => fn(...args));
 
-  const newAssociationProperties = (entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {}) as Record<string, any>;
-  for (const [key, value] of Object.entries(labelProperties)) {
+  const newAssociationProperties = (
+    entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {}
+  ) as Record<string, any>;
+
+  for (const key of Object.keys(labelProperties)) {
     delete newAssociationProperties[`label.${key}`];
   }
 
@@ -138,14 +140,14 @@ export function withLabels<A extends unknown[], F extends (...args: A) => Return
  * Tracing level must be one of the values in {@link TracingLevel}. Returns the
  * result of the wrapped function, so you can use it in an `await` statement if
  * needed.
- * 
+ *
  * @param tracingLevel - The tracing level to set.
  * @returns The result of the wrapped function.
- * 
+ *
  * @example
  * ```typescript
  * import { withTracingLevel, TracingLevel } from '@lmnr-ai/lmnr';
- * 
+ *
  * const result = await withTracingLevel(TracingLevel.META_ONLY, () => {
  *    openai.chat.completions.create({});
  * });
@@ -164,11 +166,11 @@ export function withTracingLevel<A extends unknown[], F extends (...args: A) => 
     { ...currentAssociationProperties, "tracing_level": tracingLevel },
   );
 
-  const result = context.with(entityContext, () => {
-    return fn.apply(undefined, args);
-  });
+  const result = context.with(entityContext, () => fn(...args));
 
-  const newAssociationProperties = (entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {}) as Record<string, any>;
+  const newAssociationProperties = (
+    entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {}
+  ) as Record<string, any>;
   delete newAssociationProperties["tracing_level"];
 
   entityContext = entityContext.setValue(

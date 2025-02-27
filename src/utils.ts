@@ -2,9 +2,8 @@ import { v4 as uuidv4 } from 'uuid';
 
 export type StringUUID = `${string}-${string}-${string}-${string}-${string}`;
 
-export const isStringUUID = (id: string): id is StringUUID => {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id);
-}
+export const isStringUUID = (id: string): id is StringUUID =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id);
 
 export const NIL_UUID: StringUUID = '00000000-0000-0000-0000-000000000000';
 
@@ -18,7 +17,7 @@ export const newUUID = (): StringUUID => {
   } else {
     return uuidv4() as `${string}-${string}-${string}-${string}-${string}`;
   }
-}
+};
 
 export const otelSpanIdToUUID = (spanId: string): string => {
   let id = spanId.toLowerCase();
@@ -26,16 +25,18 @@ export const otelSpanIdToUUID = (spanId: string): string => {
     id = id.slice(2);
   }
   if (id.length !== 16) {
-    console.warn(`Span ID ${spanId} is not 16 hex chars long. This is not a valid OpenTelemetry span ID.`);
+    console.warn(`Span ID ${spanId} is not 16 hex chars long. ` +
+      'This is not a valid OpenTelemetry span ID.');
   }
 
   if (!/^[0-9a-f]+$/.test(id)) {
-    console.error(`Span ID ${spanId} is not a valid hex string. Generating a random UUID instead.`);
+    console.error(`Span ID ${spanId} is not a valid hex string. ` +
+      'Generating a random UUID instead.');
     return newUUID();
   }
 
   return id.padStart(32, '0').replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
-}
+};
 
 export const otelTraceIdToUUID = (traceId: string): string => {
   let id = traceId.toLowerCase();
@@ -43,19 +44,19 @@ export const otelTraceIdToUUID = (traceId: string): string => {
     id = id.slice(2);
   }
   if (id.length !== 32) {
-    console.warn(`Trace ID ${traceId} is not 32 hex chars long. This is not a valid OpenTelemetry trace ID.`);
+    console.warn(`Trace ID ${traceId} is not 32 hex chars long. ` +
+      'This is not a valid OpenTelemetry trace ID.');
   }
   if (!/^[0-9a-f]+$/.test(id)) {
-    console.error(`Trace ID ${traceId} is not a valid hex string. Generating a random UUID instead.`);
+    console.error(`Trace ID ${traceId} is not a valid hex string. ` +
+      'Generating a random UUID instead.');
     return newUUID();
   }
 
   return id.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
-}
+};
 
-export const uuidToOtelTraceId = (uuid: string): string => {
-  return uuid.replace(/-/g, '');
-}
+export const uuidToOtelTraceId = (uuid: string): string => uuid.replace(/-/g, '');
 
 // const tryImport = async (pkg: string) => {
 //   try {
@@ -80,42 +81,42 @@ export class Semaphore {
   private _waiters: ((...args: any[]) => any)[] = [];
 
   constructor(value = 1) {
-      if (value < 0) {
-          throw new Error("Semaphore value must be >= 0");
-      }
-      this._value = value;
-      this._waiters = [];
+    if (value < 0) {
+      throw new Error("Semaphore value must be >= 0");
+    }
+    this._value = value;
+    this._waiters = [];
   }
 
   async acquire() {
-      if (this._value > 0) {
-          this._value--;
-          return;
-      }
+    if (this._value > 0) {
+      this._value--;
+      return;
+    }
 
-      // Create a promise that will be resolved when a permit becomes available
-      return new Promise(resolve => {
-          this._waiters.push(resolve);
-      });
+    // Create a promise that will be resolved when a permit becomes available
+    return new Promise(resolve => {
+      this._waiters.push(resolve);
+    });
   }
 
   release() {
-      if (this._waiters.length > 0) {
-          // If there are waiters, wake up the first one
-          const resolve = this._waiters.shift();
-          resolve?.();
-      } else {
-          this._value++;
-      }
+    if (this._waiters.length > 0) {
+      // If there are waiters, wake up the first one
+      const resolve = this._waiters.shift();
+      resolve?.();
+    } else {
+      this._value++;
+    }
   }
 
   // Python-like context manager functionality
-  async using(fn: (...args: any[]) => any) {
-      try {
-          await this.acquire();
-          return await fn();
-      } finally {
-          this.release();
-      }
+  async using<T>(fn: (...args: any[]) => Promise<T>) {
+    try {
+      await this.acquire();
+      return await fn();
+    } finally {
+      this.release();
+    }
   }
 }

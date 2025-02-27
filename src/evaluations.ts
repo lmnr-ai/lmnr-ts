@@ -1,25 +1,26 @@
-import { Laminar } from "./laminar";
-import { EvaluationDatapoint } from "./types";
-import cliProgress from "cli-progress";
-import { EvaluationDataset } from "./datasets";
-import { otelSpanIdToUUID, otelTraceIdToUUID, Semaphore, StringUUID } from "./utils";
-import { observe } from "./decorators";
 import { trace } from "@opentelemetry/api";
-import { SPAN_TYPE } from "./sdk/tracing/attributes";
+import cliProgress from "cli-progress";
+
+import { EvaluationDataset } from "./datasets";
+import { observe } from "./decorators";
+import { Laminar } from "./laminar";
 import { InitializeOptions } from "./sdk/interfaces";
+import { SPAN_TYPE } from "./sdk/tracing/attributes";
+import { EvaluationDatapoint } from "./types";
+import { otelSpanIdToUUID, otelTraceIdToUUID, Semaphore, StringUUID } from "./utils";
 
 const DEFAULT_CONCURRENCY = 5;
 const MAX_EXPORT_BATCH_SIZE = 64;
 
 declare global {
+  // eslint-disable-next-line no-var
   var _evaluation: Evaluation<any, any, any> | undefined;
   // If true, then we need to set the evaluation globally without running it
+  // eslint-disable-next-line no-var
   var _set_global_evaluation: boolean;
 }
 
-const getEvaluationUrl = (projectId: string, evaluationId: string) => {
-  return `https://www.lmnr.ai/project/${projectId}/evaluations/${evaluationId}`;
-}
+const getEvaluationUrl = (projectId: string, evaluationId: string) => `https://www.lmnr.ai/project/${projectId}/evaluations/${evaluationId}`;
 
 const getAverageScores =
   <D, T, O>(results: EvaluationDatapoint<D, T, O>[]): Record<string, number> => {
@@ -41,7 +42,7 @@ const getAverageScores =
     }
 
     return averageScores;
-  }
+  };
 
 /**
  * Configuration for the Evaluator
@@ -57,7 +58,7 @@ interface EvaluatorConfig {
    */
   projectApiKey?: string;
   /**
-   * The base URL of the Laminar API. If not provided, the default is 
+   * The base URL of the Laminar API. If not provided, the default is
    * `https://api.lmnr.ai`. Useful with self-hosted Laminar instances.
    * Do NOT include the port in the URL, use `httpPort` and `grpcPort` instead.
    */
@@ -185,7 +186,7 @@ interface EvaluationConstructorProps<D, T, O> {
 class EvaluationReporter {
   private cliProgress: cliProgress.SingleBar = new cliProgress.SingleBar(
     {},
-    cliProgress.Presets.shades_classic
+    cliProgress.Presets.shades_classic,
   );
   private progressCounter: number = 0;
 
@@ -210,7 +211,7 @@ class EvaluationReporter {
   public stop({
     averageScores,
     projectId,
-    evaluationId
+    evaluationId,
   }: { averageScores: Record<string, number>, projectId: string, evaluationId: string }) {
     this.cliProgress.stop();
     process.stdout.write(`\nCheck results at ${getEvaluationUrl(projectId, evaluationId)}\n`);
@@ -222,7 +223,7 @@ class EvaluationReporter {
   }
 }
 
-class Evaluation<D, T, O> {
+export class Evaluation<D, T, O> {
   private isFinished: boolean = false;
   private progressReporter: EvaluationReporter;
   private data: Datapoint<D, T>[] | EvaluationDataset<D, T>;
@@ -233,12 +234,12 @@ class Evaluation<D, T, O> {
   private name?: string;
   private concurrencyLimit: number = DEFAULT_CONCURRENCY;
   private traceDisableBatch: boolean = false;
-  private traceExportTimeoutMillis?: number
+  private traceExportTimeoutMillis?: number;
   private traceExportBatchSize: number = MAX_EXPORT_BATCH_SIZE;
   private uploadPromises: Promise<any>[] = [];
 
   constructor({
-    data, executor, evaluators, humanEvaluators, groupName, name, config
+    data, executor, evaluators, humanEvaluators, groupName, name, config,
   }: EvaluationConstructorProps<D, T, O>) {
     if (Object.keys(evaluators).length === 0) {
       throw new Error('No evaluators provided');
@@ -250,7 +251,7 @@ class Evaluation<D, T, O> {
       if (!evaluatorNameRegex.test(key)) {
         throw new Error(
           `Invalid evaluator key: "${key}".` +
-          "Keys must only contain letters, digits, hyphens, underscores, or spaces."
+          "Keys must only contain letters, digits, hyphens, underscores, or spaces.",
         );
       }
     }
@@ -264,7 +265,10 @@ class Evaluation<D, T, O> {
     this.name = name;
     if (config) {
       if (config.concurrencyLimit && config.concurrencyLimit < 1) {
-        console.warn('concurrencyLimit must be greater than 0. Setting to default of ', DEFAULT_CONCURRENCY);
+        console.warn(
+          'concurrencyLimit must be greater than 0. Setting to default of ',
+          DEFAULT_CONCURRENCY,
+        );
         this.concurrencyLimit = DEFAULT_CONCURRENCY;
       } else {
         this.concurrencyLimit = config.concurrencyLimit ?? DEFAULT_CONCURRENCY;
@@ -308,10 +312,10 @@ class Evaluation<D, T, O> {
       this.progressReporter.stop({
         averageScores,
         projectId: evaluation.projectId,
-        evaluationId: evaluation.id
+        evaluationId: evaluation.id,
       });
       this.isFinished = true;
-  
+
       await Laminar.shutdown();
     } catch (e) {
       this.progressReporter.stopWithError(e as Error);
@@ -326,7 +330,8 @@ class Evaluation<D, T, O> {
     const semaphore = new Semaphore(this.concurrencyLimit);
     const tasks: Promise<any>[] = [];
 
-    const evaluateTask = async (datapoint: Datapoint<D, T>, index: number): Promise<[number, EvaluationDatapoint<D, T, O>]> => {
+    const evaluateTask = async (datapoint: Datapoint<D, T>, index: number):
+      Promise<[number, EvaluationDatapoint<D, T, O>]> => {
       try {
         const result = await this.evaluateDatapoint(evalId, datapoint, index);
         this.progressReporter.update(1);
@@ -334,7 +339,7 @@ class Evaluation<D, T, O> {
       } finally {
         semaphore.release();
       }
-    }
+    };
 
     for (let i = 0; i < await this.getLength(); i++) {
       await semaphore.acquire();
@@ -343,13 +348,14 @@ class Evaluation<D, T, O> {
     }
     const results = await Promise.all(tasks);
 
-    return results.sort((a, b) => a[0] - b[0]).map(([_, result]) => result);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return results.sort((a, b) => a[0] - b[0]).map(([, result]) => result);
   }
 
   private async evaluateDatapoint(
     evalId: StringUUID,
     datapoint: Datapoint<D, T>,
-    index: number
+    index: number,
   ): Promise<EvaluationDatapoint<D, T, O>> {
     // NOTE: If you decide to move this observe to another place, note that
     //       traceId is assigned inside it for EvaluationDatapoint
@@ -363,10 +369,10 @@ class Evaluation<D, T, O> {
           trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EXECUTOR");
           return {
             output: await this.executor(data),
-            executorSpanId: otelSpanIdToUUID(executorSpanId)
+            executorSpanId: otelSpanIdToUUID(executorSpanId),
           };
         },
-        datapoint.data
+        datapoint.data,
       );
       const target = datapoint.target;
 
@@ -379,7 +385,7 @@ class Evaluation<D, T, O> {
             return await evaluator(output, target);
           },
           output,
-          target 
+          target,
         );
 
         if (typeof value === 'number') {
@@ -403,7 +409,7 @@ class Evaluation<D, T, O> {
         // added to a particular datapoint, e.g. random sampling.
         humanEvaluators: this.humanEvaluators,
         executorSpanId,
-        index
+        index,
       } as EvaluationDatapoint<D, T, O>;
 
       const uploadPromise = Laminar.saveEvalDatapoints(evalId, [resultDatapoint], this.groupName);
@@ -442,7 +448,7 @@ class Evaluation<D, T, O> {
  * @param props.config Optional override configurations for the evaluator.
  */
 export async function evaluate<D, T, O>({
-  data, executor, evaluators, humanEvaluators, groupName, groupId, name, config
+  data, executor, evaluators, humanEvaluators, groupName, groupId, name, config,
 }: EvaluationConstructorProps<D, T, O>): Promise<void> {
   if (groupId) {
     console.warn('groupId is deprecated. Use groupName instead.');
@@ -454,7 +460,7 @@ export async function evaluate<D, T, O>({
     humanEvaluators,
     name,
     groupName: groupName ?? groupId,
-    config
+    config,
   });
   if (globalThis._set_global_evaluation) {
     globalThis._evaluation = evaluation;
