@@ -7,9 +7,9 @@ import {
 
 import path from "path";
 import { readFile } from "fs/promises";
+import { existsSync } from 'fs';
 
 import { newUUID, NIL_UUID, StringUUID } from '../utils';
-import { observe as laminarObserve } from '../decorators';
 import type * as PlaywrightLib from "playwright";
 import type { Page, Browser, BrowserContext } from 'playwright';
 import type { Page as StagehandPage } from '@browserbasehq/stagehand';
@@ -20,12 +20,33 @@ import { collectAndSendPageEvents } from "./utils";
 import { getDirname } from "./utils";
 import { Laminar } from '../laminar';
 
-const RRWEB_SCRIPT_PATH = path.join(
-  getDirname(),
-  '..',
-  'assets',
-  'rrweb', 'rrweb.min.js',
-);
+const RRWEB_SCRIPT_PATH = (() => {
+  const standardPath = path.join(getDirname(), '..', 'assets', 'rrweb', 'rrweb.min.js');
+  // Fallback paths for different environments and tests
+  const fallbackPaths = [
+    path.join(getDirname(), '..', '..', 'assets', 'rrweb', 'rrweb.min.js'), // For tests
+    path.join(process.cwd(), 'assets', 'rrweb', 'rrweb.min.js'), // Using cwd
+    path.join(process.cwd(), 'ts-sdk', 'assets', 'rrweb', 'rrweb.min.js') // Absolute path
+  ];
+  
+  try {
+    if (existsSync(standardPath)){
+      return standardPath;
+    }
+    
+    for (const fallbackPath of fallbackPaths) {
+      if (existsSync(fallbackPath)){
+        return fallbackPath;
+      }
+    }
+    
+    // If no path exists, return the standard path and let it fail with a clear error
+    return standardPath;
+  } catch (e) {
+    // In case fs.existsSync fails, return the standard path
+    return standardPath;
+  }
+})();
 
 export class PlaywrightInstrumentation extends InstrumentationBase {
   private _patchedBrowsers: Set<Browser> = new Set();
@@ -312,33 +333,21 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
   public async patchPage(page: Page & StagehandPage) {
     return await Laminar.withSpan(this.parentSpan!, async () => {
-      await laminarObserve(
-        {
-          name: `playwright.page`,
-          ignoreInput: true,
-          ignoreOutput: true,
-        },
-        async (p) => {
-          Laminar.setSpanAttributes({
-            "act_in_page": 'act' in p
-          })
-          return await this._patchPage(p);
-        },
-        page,
-      )
+      // Note: be careful with await here, if the await is removed,
+      // this creates a race condition, and playwright fails.
+      return await this._patchPage(page);
     });
   }
 
   private async _patchPage(page: Page & StagehandPage) {
-    this._patchedPages.add(page);
-
-    await this.injectRrweb(page);
-
     page.addListener("load", (p: Page) => {
       this.injectRrweb(p).catch(error => {
         console.error('Failed to inject rrweb:', error);
       });
     });
+
+    await this.injectRrweb(page);
+    this._patchedPages.add(page);
 
     trace.getActiveSpan()?.setAttribute(TRACE_HAS_BROWSER_SESSION, true);
 
@@ -346,6 +355,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     const sessionId = newUUID();
     const interval = setInterval(async () => {
       if (page.isClosed()) {
+        clearInterval(interval);
         return;
       }
       try {
@@ -355,7 +365,10 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
       }
     }, 2000);
 
-    page.addListener('close', () => clearInterval(interval));
+    page.addListener('close', async () => {
+      clearInterval(interval);
+      await collectAndSendPageEvents(page, sessionId, traceId);
+    });
   }
 
   private async injectRrweb(page: Page | StagehandPage) {
