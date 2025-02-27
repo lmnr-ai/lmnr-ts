@@ -1,24 +1,21 @@
-import { Span, trace } from '@opentelemetry/api';
+import type { Page as StagehandPage } from '@browserbasehq/stagehand';
+import { diag, Span, trace } from '@opentelemetry/api';
 import {
   InstrumentationBase,
   InstrumentationModuleDefinition,
   InstrumentationNodeModuleDefinition,
 } from "@opentelemetry/instrumentation";
-
-import path from "path";
-import { readFile } from "fs/promises";
 import { existsSync } from 'fs';
-
-import { newUUID, NIL_UUID, StringUUID } from '../utils';
+import { readFile } from "fs/promises";
+import path from "path";
 import type * as PlaywrightLib from "playwright";
-import type { Page, Browser, BrowserContext } from 'playwright';
-import type { Page as StagehandPage } from '@browserbasehq/stagehand';
+import type { Browser, BrowserContext, Page } from 'playwright';
 
 import { version as SDK_VERSION } from "../../package.json";
-import { TRACE_HAS_BROWSER_SESSION } from '../sdk/tracing/attributes';
-import { collectAndSendPageEvents } from "./utils";
-import { getDirname } from "./utils";
 import { Laminar } from '../laminar';
+import { TRACE_HAS_BROWSER_SESSION } from '../sdk/tracing/attributes';
+import { newUUID, NIL_UUID, StringUUID } from '../utils';
+import { collectAndSendPageEvents, getDirname } from "./utils";
 
 const RRWEB_SCRIPT_PATH = (() => {
   const standardPath = path.join(getDirname(), '..', 'assets', 'rrweb', 'rrweb.min.js');
@@ -26,28 +23,33 @@ const RRWEB_SCRIPT_PATH = (() => {
   const fallbackPaths = [
     path.join(getDirname(), '..', '..', 'assets', 'rrweb', 'rrweb.min.js'), // For tests
     path.join(process.cwd(), 'assets', 'rrweb', 'rrweb.min.js'), // Using cwd
-    path.join(process.cwd(), 'ts-sdk', 'assets', 'rrweb', 'rrweb.min.js') // Absolute path
+    path.join(process.cwd(), 'ts-sdk', 'assets', 'rrweb', 'rrweb.min.js'), // Absolute path
   ];
-  
+
   try {
-    if (existsSync(standardPath)){
+    if (existsSync(standardPath)) {
       return standardPath;
     }
-    
+
     for (const fallbackPath of fallbackPaths) {
-      if (existsSync(fallbackPath)){
+      if (existsSync(fallbackPath)) {
         return fallbackPath;
       }
     }
-    
+
     // If no path exists, return the standard path and let it fail with a clear error
     return standardPath;
-  } catch (e) {
+  } catch {
     // In case fs.existsSync fails, return the standard path
     return standardPath;
   }
 })();
 
+/* eslint-disable
+  @typescript-eslint/no-this-alias,
+  @typescript-eslint/no-unsafe-function-type,
+  @typescript-eslint/no-unsafe-return
+*/
 export class PlaywrightInstrumentation extends InstrumentationBase {
   private _patchedBrowsers: Set<Browser> = new Set();
   private _patchedContexts: Set<BrowserContext> = new Set();
@@ -60,8 +62,8 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
       SDK_VERSION,
       {
         enabled: true,
-      }
-    )
+      },
+    );
     this._parentSpan = undefined;
   }
 
@@ -69,7 +71,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
   public setParentSpan(span: Span) {
     this._parentSpan = span;
   }
-  
+
   protected init(): InstrumentationModuleDefinition {
     const module = new InstrumentationNodeModuleDefinition(
       "playwright",
@@ -88,83 +90,85 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     webkit?: typeof PlaywrightLib.webkit,
   }) {
     const browsers = [pwModule.chromium, pwModule.firefox, pwModule.webkit] as const;
-    
+
     for (const browserType of browsers) {
       if (browserType) {
         this._wrap(
           browserType,
           'launch',
-          this.patchBrowserLaunch()
+          this.patchBrowserLaunch(),
         );
 
         this._wrap(
           browserType,
           'connect',
-          this.patchBrowserConnect()
+          this.patchBrowserConnect(),
         );
 
         this._wrap(
           browserType,
           'connectOverCDP',
-          this.patchBrowserConnect()
+          this.patchBrowserConnect(),
         );
 
         this._wrap(
           browserType,
           'launchPersistentContext',
-          this.patchBrowserNewContext()
+          this.patchBrowserNewContext(),
         );
       }
     }
-    
-    return pwModule;  
+
+    return pwModule;
   }
 
   private patch(moduleExports: typeof PlaywrightLib, moduleVersion?: string) {
+    diag.debug(`patching playwright ${moduleVersion}`);
     const browsers = ['chromium', 'firefox', 'webkit'] as const;
-    
+
     for (const browserType of browsers) {
       if (moduleExports[browserType]) {
         // First we need to patch the browser launch to get access to the Page class
         this._wrap(
           moduleExports[browserType],
           `launch`,
-          this.patchBrowserLaunch()
+          this.patchBrowserLaunch(),
         );
 
         this._wrap(
           moduleExports[browserType],
           `connect`,
-          this.patchBrowserConnect()
+          this.patchBrowserConnect(),
         );
 
         this._wrap(
           moduleExports[browserType],
           'connectOverCDP',
-          this.patchBrowserConnect()
-          );
+          this.patchBrowserConnect(),
+        );
 
         this._wrap(
           moduleExports[browserType],
           'launchPersistentContext',
-          this.patchBrowserNewContext()
+          this.patchBrowserNewContext(),
         );
       }
     }
-    
-    return moduleExports;   
+
+    return moduleExports;
   }
 
   private unpatch(moduleExports: typeof PlaywrightLib, moduleVersion?: string) {
+    diag.debug(`unpatching playwright ${moduleVersion}`);
     const browsers = ['chromium', 'firefox', 'webkit'] as const;
-    
+
     for (const browserType of browsers) {
       if (moduleExports[browserType]) {
         // First we need to patch the browser launch to get access to the Page class
         this._wrap(
           moduleExports[browserType],
           `launch`,
-          this.patchBrowserLaunch()
+          this.patchBrowserLaunch(),
         );
       }
     }
@@ -183,170 +187,154 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
   private patchBrowserConnect() {
     const plugin = this;
-    return (original: Function) => {
-      return async function method(this: Browser, ...args: unknown[]) {
-        const browser = await original.call(this, ...args);
-        if (!plugin._parentSpan) {
-          plugin._parentSpan = Laminar.startSpan({
-            name: 'playwright',
-          });
-        }
-
-        plugin._wrap(
-          browser,
-          'newContext',
-          plugin.patchBrowserNewContext()
-        )
-
-        plugin._wrap(
-          browser,
-          'newPage',
-          plugin.patchBrowserNewPage()
-        )
-
-        plugin._wrap(
-          browser,
-          'close',
-          plugin.patchBrowserClose()
-        )
-
-        plugin._patchedBrowsers.add(browser);
-        return browser;
+    return (original: Function) => async function method(this: Browser, ...args: unknown[]) {
+      const browser = await original.call(this, ...args);
+      if (!plugin._parentSpan) {
+        plugin._parentSpan = Laminar.startSpan({
+          name: 'playwright',
+        });
       }
-    }
+
+      plugin._wrap(
+        browser,
+        'newContext',
+        plugin.patchBrowserNewContext(),
+      );
+
+      plugin._wrap(
+        browser,
+        'newPage',
+        plugin.patchBrowserNewPage(),
+      );
+
+      plugin._wrap(
+        browser,
+        'close',
+        plugin.patchBrowserClose(),
+      );
+
+      plugin._patchedBrowsers.add(browser);
+      return browser;
+    };
   }
 
   private patchBrowserLaunch() {
     const plugin = this;
-    return (original: Function) => {
-      return async function method(this: Browser, ...args: any[]) {
-        const browser = await original.call(this, ...args);
-        if (!plugin._parentSpan) {
-          plugin._parentSpan = Laminar.startSpan({
-            name: 'playwright',
-          });
-        }
-
-
-        plugin._wrap(
-          browser,
-          'newContext',
-          plugin.patchBrowserNewContext(),
-        )
-
-        plugin._wrap(
-          browser,
-          'newPage',
-          plugin.patchBrowserNewPage(),
-        )
-
-        plugin._wrap(
-          browser,
-          'close',
-          plugin.patchBrowserClose()
-        )
-
-        plugin._patchedBrowsers.add(browser);
-        return browser;
+    return (original: Function) => async function method(this: Browser, ...args: any[]) {
+      const browser = await original.call(this, ...args);
+      if (!plugin._parentSpan) {
+        plugin._parentSpan = Laminar.startSpan({
+          name: 'playwright',
+        });
       }
-    }
+
+
+      plugin._wrap(
+        browser,
+        'newContext',
+        plugin.patchBrowserNewContext(),
+      );
+
+      plugin._wrap(
+        browser,
+        'newPage',
+        plugin.patchBrowserNewPage(),
+      );
+
+      plugin._wrap(
+        browser,
+        'close',
+        plugin.patchBrowserClose(),
+      );
+
+      plugin._patchedBrowsers.add(browser);
+      return browser;
+    };
   }
 
   private patchBrowserClose() {
     const plugin = this;
-    return (original: Function) => {
-      return async function method(this: Browser, ...args: unknown[]) {
-        await original.call(this, ...args);
-        if (plugin._parentSpan?.isRecording()) {
-          plugin._parentSpan?.end();
-        }
+    return (original: Function) => async function method(this: Browser, ...args: unknown[]) {
+      await original.call(this, ...args);
+      if (plugin._parentSpan?.isRecording()) {
+        plugin._parentSpan?.end();
       }
-    }
+    };
   }
 
   private patchBrowserNewContext() {
     const plugin = this;
-    return (original: Function) => {
-      return async function method(this: Browser, ...args: unknown[]) {
-        const context = await original.bind(this).apply(this, args);
-        if (!plugin._parentSpan) {
-          plugin._parentSpan = Laminar.startSpan({
-            name: 'playwright',
-          });
-        }
-        plugin._wrap(
-          context,
-          'newPage',
-          plugin.patchBrowserContextNewPage(),
-        );
-        plugin._wrap(
-          context,
-          'close',
-          plugin.patchBrowserContextClose()
-        );
-        for (const page of context.pages()) {
-          plugin.patchPage(page);
-        }
-        plugin._patchedContexts.add(context);
-        return context;
+    return (original: Function) => async function method(this: Browser, ...args: unknown[]) {
+      const context = await original.bind(this).apply(this, args);
+      if (!plugin._parentSpan) {
+        plugin._parentSpan = Laminar.startSpan({
+          name: 'playwright',
+        });
       }
-    }
+      plugin._wrap(
+        context,
+        'newPage',
+        plugin.patchBrowserContextNewPage(),
+      );
+      plugin._wrap(
+        context,
+        'close',
+        plugin.patchBrowserContextClose(),
+      );
+      for (const page of context.pages()) {
+        await plugin.patchPage(page);
+      }
+      plugin._patchedContexts.add(context);
+      return context;
+    };
   }
 
   private patchBrowserContextClose() {
     const plugin = this;
-    return (original: Function) => {
-      return async function method(this: BrowserContext, ...args: unknown[]) {
-        await original.bind(this).apply(this, args);
-        if (plugin._parentSpan?.isRecording()) {
-          plugin._parentSpan.end();
-        }
+    return (original: Function) => async function method(this: BrowserContext, ...args: unknown[]) {
+      await original.bind(this).apply(this, args);
+      if (plugin._parentSpan?.isRecording()) {
+        plugin._parentSpan.end();
       }
-    }
+    };
   }
 
   private patchBrowserNewPage() {
-    const plugin = this;
-    return (original: Function) => {
-
-      return async function method(this: Browser, ...args: unknown[]) {
-        const page = await original.bind(this).apply(this, args);
-        if (!page) {
-          return null;
-        }
-        // TODO: investigate why this creates a separate empty span and no events
-        // await plugin.patchPage(page);
-        return page;
+    return (original: Function) => async function method(this: Browser, ...args: unknown[]) {
+      const page = await original.bind(this).apply(this, args);
+      if (!page) {
+        return null;
       }
-    }
+      // TODO: investigate why this creates a separate empty span and no events
+      // await plugin.patchPage(page);
+      return page;
+    };
   }
- 
+
   public patchBrowserContextNewPage() {
     const plugin = this;
-    return (original: Function) => {
-      return async function method(this: BrowserContext, ...args: unknown[]) {
-        const page = await original.bind(this).apply(this, args);
-        if (!plugin._parentSpan) {
-          plugin._parentSpan = Laminar.startSpan({
-            name: 'playwright',
-          });
-        }
-        if (!page) {
-          return null;
-        }
-        
-        await plugin.patchPage(page);
-
-        return page;
+    return (original: Function) => async function method(this: BrowserContext, ...args: unknown[]) {
+      const page = await original.bind(this).apply(this, args);
+      if (!plugin._parentSpan) {
+        plugin._parentSpan = Laminar.startSpan({
+          name: 'playwright',
+        });
       }
-    }
+      if (!page) {
+        return null;
+      }
+
+      await plugin.patchPage(page);
+
+      return page;
+    };
   }
 
   public async patchPage(page: Page & StagehandPage) {
     return await Laminar.withSpan(this._parentSpan!, async () => {
       // Note: be careful with await here, if the await is removed,
       // this creates a race condition, and playwright fails.
-      return await this._patchPage(page);
+      await this._patchPage(page);
     });
   }
 
@@ -364,16 +352,15 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
     const traceId = trace.getActiveSpan()?.spanContext().traceId as StringUUID ?? NIL_UUID;
     const sessionId = newUUID();
-    const interval = setInterval(async () => {
+    const interval = setInterval(() => {
       if (page.isClosed()) {
         clearInterval(interval);
         return;
       }
-      try {
-        await collectAndSendPageEvents(page, sessionId, traceId);
-      } catch (error) {
-        console.error('Event collection stopped:', error);
-      }
+      collectAndSendPageEvents(page, sessionId, traceId)
+        .catch(error => {
+          console.error('Event collection stopped:', error);
+        });
     }, 2000);
 
     page.addListener('close', async () => {
@@ -385,7 +372,10 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
   private async injectRrweb(page: Page | StagehandPage) {
     // Wait for the page to be in a ready state first
     await page.waitForLoadState('domcontentloaded');
-    const tryRunScript = async(script: (...args: any[]) => Promise<any>, maxAttempts: number = 5) => {
+    const tryRunScript = async (
+      script: (...args: any[]) => Promise<any>,
+      maxAttempts: number = 5,
+    ) => {
       for (let i = 0; i < maxAttempts; i++) {
         try {
           return await script();
@@ -395,11 +385,11 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     };
-  
+
     const isRrwebPresent = await page.evaluate(() =>
-      typeof (window as any).lmnrRrweb !== 'undefined'
+      typeof (window as any).lmnrRrweb !== 'undefined',
     );
-  
+
     // Load rrweb and set up recording
     if (!isRrwebPresent) {
       const script = await readFile(RRWEB_SCRIPT_PATH, 'utf8');
@@ -407,23 +397,26 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         await page.addScriptTag({
           content: script,
         });
-        const res = await (page as Page).waitForFunction(() => 'lmnrRrweb' in window || (window as any).lmnrRrweb, {
-          timeout: 5000,
-        });
+        const res = await (page as Page).waitForFunction(
+          () => 'lmnrRrweb' in window || (window as any).lmnrRrweb,
+          {
+            timeout: 5000,
+          },
+        );
         if (!res) {
           throw new Error('Failed to inject rrweb');
         }
       });
     }
-  
+
     // Update the recording setup to include trace ID
     await tryRunScript(async () => {
       await page.evaluate(() => {
         const BATCH_SIZE = 1000; // Maximum events to store in memory
         const HEARTBEAT_INTERVAL = 1000;  // 1 second heartbeat
-  
+
         (window as any).lmnrRrwebEventsBatch = [];
-        
+
         const compressEventData = async (data: any) => {
           const jsonString = JSON.stringify(data);
           const blob = new Blob([jsonString], { type: 'application/json' });
@@ -431,40 +424,51 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
           const compressedResponse = new Response(compressedStream);
           const compressedData = await compressedResponse.arrayBuffer();
           return Array.from(new Uint8Array(compressedData));
-        }
-  
+        };
+
         (window as any).lmnrGetAndClearEvents = () => {
           const events = (window as any).lmnrRrwebEventsBatch;
           (window as any).lmnrRrwebEventsBatch = [];
           return events;
-        }
-  
-        setInterval(async () => {
-          const heartbeatEvent = {
-            type: 6, // Custom event type
-            data: await compressEventData({ source: 'heartbeat' }),
-            timestamp: Date.now()
-          };
-  
-          (window as any).lmnrRrwebEventsBatch?.push(heartbeatEvent);
-  
-          if ((window as any).lmnrRrwebEventsBatch?.length > BATCH_SIZE) {
-            // Drop oldest events to prevent memory issues
-            (window as any).lmnrRrwebEventsBatch = (window as any).lmnrRrwebEventsBatch.slice(-BATCH_SIZE);
-          }
+        };
+
+        setInterval(() => {
+          compressEventData({ source: 'heartbeat' }).then(data => {
+            const heartbeatEvent = {
+              type: 6, // Custom event type
+              data,
+              timestamp: Date.now(),
+            };
+
+            (window as any).lmnrRrwebEventsBatch?.push(heartbeatEvent);
+
+            if ((window as any).lmnrRrwebEventsBatch?.length > BATCH_SIZE) {
+              // Drop oldest events to prevent memory issues
+              (window as any).lmnrRrwebEventsBatch = (window as any).lmnrRrwebEventsBatch
+                .slice(-BATCH_SIZE);
+            }
+          })
+            .catch(error => {
+              console.error('Heartbeat failed:', error);
+            });
         }, HEARTBEAT_INTERVAL);
-  
+
         (window as any).lmnrRrweb.record({
           async emit(event: any) {
             const compressedEvent = {
               ...event,
-              data: await compressEventData(event.data)
+              data: await compressEventData(event.data),
             };
             (window as any).lmnrRrwebEventsBatch.push(compressedEvent);
-          }
+          },
         });
       });
     });
-  
+
   };
 }
+/* eslint-enable
+  @typescript-eslint/no-this-alias,
+  @typescript-eslint/no-unsafe-function-type,
+  @typescript-eslint/no-unsafe-return
+*/

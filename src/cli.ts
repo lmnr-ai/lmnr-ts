@@ -1,31 +1,37 @@
 #!/usr/bin/env node
 
+import { context, propagation, trace } from "@opentelemetry/api";
 import { ArgumentParser } from "argparse";
 import * as esbuild from "esbuild";
 import * as glob from "glob";
-import { context, trace, propagation } from "@opentelemetry/api";
 
+import { Evaluation } from "./evaluations";
+
+declare global {
+  // eslint-disable-next-line no-var
+  var _evaluation: Evaluation<any, any, any> | undefined;
+  // eslint-disable-next-line no-var
+  var _set_global_evaluation: boolean;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const pjson = require('../package.json');
 
 export function loadModule({
-  filename,
   moduleText,
 }: {
   filename: string;
   moduleText: string;
-}) {
-  // TODO: Figure out how to remove all ts-ignores
-  // TODO: Cleanup by setting the original values of _evaluation and _set_global_evaluation back
-  // @ts-ignore
-  globalThis._evaluation = undefined;  // @ts-ignore
-  globalThis._set_global_evaluation = true;  // @ts-ignore
+}): Evaluation<any, any, any> {
+  globalThis._evaluation = undefined;
+  globalThis._set_global_evaluation = true;
 
   // it needs "require" to be passed in
+  // eslint-disable-next-line
   new Function("require", moduleText)(require);
 
   // Return the modified _evals global variable
-  // @ts-ignore
-  return globalThis._evaluation;
+  return globalThis._evaluation!;
 }
 
 async function cli() {
@@ -64,7 +70,7 @@ async function cli() {
     func: async (args: any) => {
       const files = args.file
         ? [args.file]
-        : glob.sync('evals/**/*.eval.{ts,js}')
+        : glob.sync('evals/**/*.eval.{ts,js}');
 
       files.sort();
 
@@ -107,7 +113,6 @@ async function cli() {
           moduleText: outputFileText,
         });
 
-        // @ts-ignore
         if (!evaluation?.run) {
           console.error(`Evaluation ${file} does not properly call evaluate()`);
           if (args.fail_on_error) {
@@ -116,7 +121,6 @@ async function cli() {
           continue;
         }
 
-        // @ts-ignore
         await evaluation.run();
 
         // FIXME: Now every evaluation file creates a new tracer provider.
@@ -128,18 +132,21 @@ async function cli() {
         trace.disable();
         propagation.disable();
       }
-    }
+    },
   });
 
   parser.set_defaults({
-    func: async (args: any) => {
+    func: () => {
       parser.print_help();
       process.exit(0);
-    }
+    },
   });
 
   const parsed = parser.parse_args(args);
   await parsed.func(parsed);
 }
 
-cli();
+cli().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -1,11 +1,4 @@
-import {
-  PipelineRunResponse,
-  PipelineRunRequest,
-  EvaluationDatapoint,
-  InitEvaluationResponse,
-  GetDatapointsResponse,
-  SemanticSearchResponse
-} from './types';
+import { Metadata } from '@grpc/grpc-js';
 import {
   Attributes,
   AttributeValue,
@@ -15,30 +8,37 @@ import {
   Span,
   TimeInput,
   trace,
-  TraceFlags
+  TraceFlags,
 } from '@opentelemetry/api';
-import { InitializeOptions, initializeTracing } from './sdk/node-server-sdk'
-import { isStringUUID, otelSpanIdToUUID, otelTraceIdToUUID, StringUUID, uuidToOtelTraceId } from './utils';
-import { Metadata } from '@grpc/grpc-js';
-import { ASSOCIATION_PROPERTIES_KEY, getTracer } from './sdk/tracing/tracing';
-import { forceFlush } from './sdk/node-server-sdk';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
+import { RandomIdGenerator } from '@opentelemetry/sdk-trace-base';
+
+import { forceFlush,InitializeOptions, initializeTracing } from './sdk/node-server-sdk';
 import {
   ASSOCIATION_PROPERTIES,
+  LaminarAttributes,
   OVERRIDE_PARENT_SPAN,
   SESSION_ID,
   SPAN_INPUT,
   SPAN_OUTPUT,
   SPAN_TYPE,
-  LaminarAttributes,
 } from './sdk/tracing/attributes';
-
-import { RandomIdGenerator } from '@opentelemetry/sdk-trace-base';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
-
-// for docstring
-import { BasicTracerProvider, NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
-import { ProxyTracerProvider } from '@opentelemetry/api';
-import { BatchSpanProcessor, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { ASSOCIATION_PROPERTIES_KEY, getTracer } from './sdk/tracing/tracing';
+import {
+  EvaluationDatapoint,
+  GetDatapointsResponse,
+  InitEvaluationResponse,
+  PipelineRunRequest,
+  PipelineRunResponse,
+  SemanticSearchResponse,
+} from './types';
+import {
+  isStringUUID,
+  otelSpanIdToUUID,
+  otelTraceIdToUUID,
+  StringUUID,
+  uuidToOtelTraceId,
+} from './utils';
 
 
 interface LaminarInitializeProps {
@@ -94,19 +94,19 @@ export class Laminar {
    * @param useExternalTracerProvider - [ADVANCED] Only use if you are using another
    * node-based tracer provider. Defaults to false.
    * If `true`, the SDK will not initialize its own tracer provider. Be very careful.
-   * If you set this to `true`, but the external provider does not extend/implement 
+   * If you set this to `true`, but the external provider does not extend/implement
    * {@link BasicTracerProvider} or is not a {@link ProxyTracerProvider} that internally
    * delegates to a {@link BasicTracerProvider}, the SDK will not function correctly.
    * The only setting this has been tested with is `@opentelemetry/auto-instrumentations-node`.
-   * {@link https://opentelemetry.io/docs/zero-code/js/#configuring-the-module} - this 
-   * initializes a {@link ProxyTracerProvider} internally which delegates to a 
+   * {@link https://opentelemetry.io/docs/zero-code/js/#configuring-the-module} - this
+   * initializes a {@link ProxyTracerProvider} internally which delegates to a
    * {@link NodeTracerProvider}, which in turn, extends {@link BasicTracerProvider}.
-   * 
+   *
    * @example
    * import { Laminar as L } from '@lmnr-ai/lmnr';
    * import { OpenAI } from 'openai';
    * import * as ChainsModule from "langchain/chains";
-   * 
+   *
    * // Initialize Laminar while auto-instrumenting Langchain and OpenAI modules.
    * L.initialize({ projectApiKey: "<LMNR_PROJECT_API_KEY>", instrumentModules: {
    *  langchain: {
@@ -132,17 +132,17 @@ export class Laminar {
     maxExportBatchSize,
   }: LaminarInitializeProps) {
 
-    let key = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
+    const key = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
     if (key === undefined) {
       throw new Error(
         'Please initialize the Laminar object with your project API key ' +
-        'or set the LMNR_PROJECT_API_KEY environment variable'
+        'or set the LMNR_PROJECT_API_KEY environment variable',
       );
     }
     this.projectApiKey = key;
     if (baseUrl?.match(/:\d{1,5}$/g)) {
       throw new Error(
-        'Port should be passed separately in `httpPort` and `grpcPort`'
+        'Port should be passed separately in `httpPort` and `grpcPort`',
       );
     }
 
@@ -183,7 +183,7 @@ export class Laminar {
 
   /**
    * Sets the environment that will be sent to Laminar requests.
-   * 
+   *
    * @param env - The environment variables to override. If not provided, the
    * current environment will not be modified.
    */
@@ -240,7 +240,7 @@ export class Laminar {
     if (this.projectApiKey === undefined) {
       throw new Error(
         'Please initialize the Laminar object with your project API key ' +
-        'or set the LMNR_PROJECT_API_KEY environment variable'
+        'or set the LMNR_PROJECT_API_KEY environment variable',
       );
     }
     const envirionment = env === undefined ? this.env : env;
@@ -255,7 +255,7 @@ export class Laminar {
         metadata,
         parentSpanId,
         traceId,
-      })
+      }),
     });
 
     if (!response.ok) {
@@ -263,14 +263,15 @@ export class Laminar {
     }
     try {
       return await response.json() as PipelineRunResponse;
-    } catch (error) {
-      throw new Error(`Failed to parse response from pipeline ${pipeline}. Error: ${error}`);
+    } catch (error: any) {
+      throw new Error(`Failed to parse response from pipeline ${pipeline}. ` +
+        `Error: ${error}`);
     }
   }
 
   /**
    * Perform a semantic search on a dataset.
-   * 
+   *
    * @param query - The query string to search with.
    * @param datasetId - The ID of the dataset to search in.
    * @param limit - The maximum number of results to return.
@@ -330,16 +331,16 @@ export class Laminar {
   ) {
     const currentSpan = trace.getActiveSpan();
     if (currentSpan === undefined || !isSpanContextValid(currentSpan.spanContext())) {
-      console.warn("Laminar().event()\` called outside of span context." +
+      console.warn("`Laminar().event()` called outside of span context." +
         ` Event '${name}' will not be recorded in the trace.` +
-        " Make sure to annotate the function with a decorator"
+        " Make sure to annotate the function with a decorator",
       );
       return;
     }
 
     const event: Attributes = {
       "lmnr.event.type": "default",
-    }
+    };
     if (value !== undefined) {
       event["lmnr.event.value"] = value;
     }
@@ -351,11 +352,11 @@ export class Laminar {
    * Sets the session information for the current span and returns the
    * context to use for the following spans. Returns the result of the
    * function execution, so can be used in an `await` statement.
-   * 
+   *
    * @param sessionId - The session ID to associate with the context.
    * @param fn - Function to execute within the session context.
    * @returns The result of the function execution.
-   * 
+   *
    * @example
    * import { Laminar, observe } from '@lmnr-ai/lmnr';
    * const result = await Laminar.withSession("session1234", async () => {
@@ -392,12 +393,12 @@ export class Laminar {
    * Sets the metadata for the current span and returns the context to use for
    * the following spans. Returns the result of the function execution, so can
    * be used in an `await` statement.
-   * 
+   *
    * @param metadata - The metadata to associate with the context. Set of string key
    * string value pairs.
    * @param fn - Function to execute within the metadata context.
    * @returns The result of the function execution.
-   * 
+   *
    * @example
    * import { Laminar } from '@lmnr-ai/lmnr';
    * const result = await Laminar.withMetadata(
@@ -439,7 +440,7 @@ export class Laminar {
    * Set attributes for the current span. Useful for manual
    * instrumentation.
    * @param attributes - The attributes to set for the current span.
-   * 
+   *
    * @example
    * import { Laminar as L, observe } from '@lmnr-ai/laminar';
    * await observe({ name: 'mySpanName', spanType: 'LLM' }, async (msg: string) => {
@@ -454,7 +455,7 @@ export class Laminar {
    * }, userMessage);
    */
   public static setSpanAttributes(
-    attributes: Record<typeof LaminarAttributes[keyof typeof LaminarAttributes], AttributeValue>
+    attributes: Record<typeof LaminarAttributes[keyof typeof LaminarAttributes], AttributeValue>,
   ) {
     const currentSpan = trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
@@ -466,7 +467,8 @@ export class Laminar {
 
   /**
    * Set the output of the current span. Useful for manual instrumentation.
-   * @param output - Output of the span. Will be sent as an attribute, so must be serializable to JSON.
+   * @param output - Output of the span. Will be sent as an attribute, so must
+   * be serializable to JSON.
    */
   public static setSpanOutput(output: any) {
     if (output == null) {
@@ -482,7 +484,7 @@ export class Laminar {
    * Start a new span, but don't set it as active. Useful for
    * manual instrumentation. If span type is 'LLM', you should report usage
    * manually. See {@link setSpanAttributes} for more information.
-   * 
+   *
    * @param name - name of the span
    * @param input - input to the span. Will be sent as an attribute, so must
    * be JSON serializable
@@ -491,7 +493,7 @@ export class Laminar {
    * @param traceId - [EXPERIMENTAL] override the trace id for the span. If not
    * provided, uses the current trace id.
    * @returns The started span.
-   * 
+   *
    * @example
    * import { Laminar, observe } from '@lmnr-ai/lmnr';
    * const foo = async (span: Span) => {
@@ -506,13 +508,13 @@ export class Laminar {
    *     await openai_client.chat.completions.create();
    *   })
    * };
-   * 
+   *
    * const parentSpan = Laminar.startSpan({name: "outer"});
    * foo(parentSpan);
    * await bar(parentSpan);
    * // IMPORTANT: Don't forget to end the span!
    * parentSpan.end();
-   * 
+   *
    * // Results in:
    * // | outer
    * // |  | foo
@@ -556,7 +558,7 @@ export class Laminar {
     const attributes = {
       [SPAN_TYPE]: spanType ?? 'DEFAULT',
       ...labelProperties,
-    }
+    };
     const span = getTracer().startSpan(name, { attributes }, entityContext);
     if (traceId && isStringUUID(traceId)) {
       span.setAttribute(OVERRIDE_PARENT_SPAN, true);
@@ -568,16 +570,16 @@ export class Laminar {
   }
 
   /**
-   * A utility wrapper around OpenTelemetry's `context.with()`. Useful for 
+   * A utility wrapper around OpenTelemetry's `context.with()`. Useful for
    * passing spans around in manual instrumentation:
-   * 
+   *
    * @param span - Parent span to bind the execution to.
    * @param fn - Function to execute within the span context.
    * @param endOnExit - Whether to end the span after the function has
    * executed. Defaults to `false`. If `false`, you MUST manually call
    * `span.end()` at the end of the execution, so that spans are not lost.
    * @returns The result of the function execution.
-   * 
+   *
    * See {@link startSpan} docs for a usage example
    */
   public static withSpan<T>(span: Span, fn: () => T, endOnExit?: boolean): T | Promise<T> {
@@ -610,7 +612,7 @@ export class Laminar {
     await forceFlush();
   }
 
-  public static async initEvaluation<D, T, O>({
+  public static async initEvaluation({
     groupName,
     name,
   }: {
@@ -654,9 +656,9 @@ export class Laminar {
         executorOutput: typeof point.executorOutput === 'string'
           ? point.executorOutput.slice(0, 100)
           : JSON.stringify(point.executorOutput).slice(0, 100),
-      }))
-      body = JSON.stringify({ points: datapoints, groupName });
-    } catch (error) {
+      }));
+      body = JSON.stringify({ points, groupName });
+    } catch (error: any) {
       throw new Error(`Failed to serialize evaluation data for ${evalId}. Error: ${error}`);
     }
     const response = await fetch(`${this.baseHttpUrl}/v1/evals/${evalId}/datapoints`, {
@@ -666,7 +668,8 @@ export class Laminar {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to save evaluation datapoints. Response: [${response.status}] ${response.statusText}`);
+      throw new Error(`Failed to save evaluation datapoints. ` +
+        `Response: [${response.status}] ${response.statusText}`);
     }
   }
 
@@ -682,15 +685,19 @@ export class Laminar {
     const params = new URLSearchParams({
       name: datasetName,
       offset: offset.toString(),
-      limit: limit.toString()
+      limit: limit.toString(),
     });
-    const response = await fetch(`${this.baseHttpUrl}/v1/datasets/datapoints?${params.toString()}`, {
-      method: 'GET',
-      headers: this.getHeaders(),
-    });
+    const response = await fetch(
+      `${this.baseHttpUrl}/v1/datasets/datapoints?${params.toString()}`,
+      {
+        method: 'GET',
+        headers: this.getHeaders(),
+      },
+    );
 
     if (!response.ok) {
-      throw new Error(`Failed to get datapoints for dataset ${datasetName}. Response: ${response.statusText}`);
+      throw new Error(`Failed to get datapoints for dataset ${datasetName}. ` +
+        `Response: ${response.statusText}`);
     }
 
     return await response.json() as GetDatapointsResponse<D, T>;

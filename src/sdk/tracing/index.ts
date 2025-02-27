@@ -1,68 +1,65 @@
-/* eslint-disable @typescript-eslint/no-var-requires */
-import { baggageUtils } from "@opentelemetry/core";
+
 import {
   Context,
-  ProxyTracerProvider,
-  TracerProvider,
   context,
+  ProxyTracerProvider,
   trace,
+  TracerProvider,
 } from "@opentelemetry/api";
+import { baggageUtils } from "@opentelemetry/core";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
-import { Instrumentation } from "@opentelemetry/instrumentation";
+import { Instrumentation, registerInstrumentations } from "@opentelemetry/instrumentation";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { InitializeOptions } from "../interfaces";
 import {
-  ASSOCIATION_PROPERTIES_KEY,
-  getSpanPath,
-  SPAN_PATH_KEY,
-} from "./tracing";
-import { _configuration } from "../configuration";
-import {
-  NodeTracerProvider,
-  SimpleSpanProcessor,
-  BatchSpanProcessor,
   BasicTracerProvider,
-  SpanProcessor,
+  BatchSpanProcessor,
+  NodeTracerProvider,
   ReadableSpan,
+  SimpleSpanProcessor,
+  SpanProcessor,
 } from "@opentelemetry/sdk-trace-node";
-import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
-import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
 import { AzureOpenAIInstrumentation } from "@traceloop/instrumentation-azure";
+import { BedrockInstrumentation } from "@traceloop/instrumentation-bedrock";
+import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
+import { CohereInstrumentation } from "@traceloop/instrumentation-cohere";
+import { LangChainInstrumentation } from "@traceloop/instrumentation-langchain";
 import { LlamaIndexInstrumentation } from "@traceloop/instrumentation-llamaindex";
+import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
+import { PineconeInstrumentation } from "@traceloop/instrumentation-pinecone";
+import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
 import {
   AIPlatformInstrumentation,
   VertexAIInstrumentation,
 } from "@traceloop/instrumentation-vertexai";
-import { BedrockInstrumentation } from "@traceloop/instrumentation-bedrock";
-import { CohereInstrumentation } from "@traceloop/instrumentation-cohere";
-import { PineconeInstrumentation } from "@traceloop/instrumentation-pinecone";
-import { LangChainInstrumentation } from "@traceloop/instrumentation-langchain";
-import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
-import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
+
+import { version as SDK_VERSION } from "../../../package.json";
+import { PlaywrightInstrumentation, StagehandInstrumentation } from "../../browser";
+// for doc comment:
+import { otelSpanIdToUUID } from "../../utils";
+import { getLangVersion } from "../../version";
+import { _configuration } from "../configuration";
+import { InitializeOptions } from "../interfaces";
 import {
   ASSOCIATION_PROPERTIES,
   ASSOCIATION_PROPERTIES_OVERRIDES,
   EXTRACTED_FROM_NEXT_JS,
   OVERRIDE_PARENT_SPAN,
+  SPAN_IDS_PATH,
   SPAN_INSTRUMENTATION_SOURCE,
-  SPAN_SDK_VERSION,
   SPAN_LANGUAGE_VERSION,
   SPAN_PATH,
-  SPAN_IDS_PATH,
+  SPAN_SDK_VERSION,
 } from "./attributes";
-
-// for doc comment:
-import { withTracingLevel } from "../../decorators";
-import { getLangVersion } from "../../version";
-import { version as SDK_VERSION } from "../../../package.json";
-import { otelSpanIdToUUID } from "../../utils";
-import { PlaywrightInstrumentation } from "../../browser";
-import { StagehandInstrumentation } from "../../browser";
+import {
+  ASSOCIATION_PROPERTIES_KEY,
+  getSpanPath,
+  SPAN_PATH_KEY,
+} from "./tracing";
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor | undefined;
-let _spanIdToPath: Map<string, string[]> = new Map();
-let _spanIdLists: Map<string, string[]> = new Map();
+const _spanIdToPath: Map<string, string[]> = new Map();
+const _spanIdLists: Map<string, string[]> = new Map();
 let openAIInstrumentation: OpenAIInstrumentation | undefined;
 let anthropicInstrumentation: AnthropicInstrumentation | undefined;
 let azureOpenAIInstrumentation: AzureOpenAIInstrumentation | undefined;
@@ -235,8 +232,8 @@ const NEXT_JS_SPAN_ATTRIBUTES = [
   'next.clientComponentLoadCount',
   'next.page',
   'next.rsc',
-  'next.route', 
-  'next.segment'
+  'next.route',
+  'next.segment',
 ];
 
 // Next.js instrumentation is very verbose and can result in
@@ -245,15 +242,15 @@ const NEXT_JS_SPAN_ATTRIBUTES = [
 // and set the topmost non-Next span as the root span in the trace.
 // Here's the set of possible attributes as of Next.js 15.1
 // See also: https://github.com/vercel/next.js/blob/790efc5941e41c32bb50cd915121209040ea432c/packages/next/src/server/lib/trace/tracer.ts#L297
-const isNextJsSpan = (span: ReadableSpan) => {
-    return NEXT_JS_SPAN_ATTRIBUTES.some(attr => span.attributes[attr] !== undefined);
-}
+const isNextJsSpan = (span: ReadableSpan) =>
+  NEXT_JS_SPAN_ATTRIBUTES.some(attr => span.attributes[attr] !== undefined);
 
 /**
  * Initializes the Traceloop SDK.
  * Must be called once before any other SDK methods.
  *
- * @param options - The options to initialize the SDK. See the {@link InitializeOptions} for details.
+ * @param options - The options to initialize the SDK. See the {@link InitializeOptions}
+ * for details.
  */
 export const startTracing = (options: InitializeOptions) => {
   if (options.instrumentModules !== undefined) {
@@ -327,7 +324,7 @@ export const startTracing = (options: InitializeOptions) => {
   _spanProcessor.onStart = (span: Span, parentContext: Context) => {
     const contextSpanPath = getSpanPath(parentContext ?? context.active());
     const parentSpanPath = contextSpanPath
-       ?? (span.parentSpanId !== undefined
+      ?? (span.parentSpanId !== undefined
         ? _spanIdToPath.get(span.parentSpanId)
         : undefined);
     const spanId = span.spanContext().spanId;
@@ -336,7 +333,7 @@ export const startTracing = (options: InitializeOptions) => {
     const spanIdUuid = otelSpanIdToUUID(spanId);
 
     const spanIdsPath = parentSpanIdsPath ? [...parentSpanIdsPath, spanIdUuid] : [spanIdUuid];
-    
+
     span.setAttribute(SPAN_IDS_PATH, spanIdsPath);
     _spanIdLists.set(spanId, spanIdsPath);
 
@@ -369,9 +366,9 @@ export const startTracing = (options: InitializeOptions) => {
     // The backend looks for this attribute and deletes the parentSpanId if the
     // attribute is present. We do that to make the topmost non-Next.js span
     // the root span in the trace.
-    if (span.parentSpanId 
-        && nextJsSpanIds.has(span.parentSpanId) 
-        && !options.preserveNextJsSpans
+    if (span.parentSpanId
+      && nextJsSpanIds.has(span.parentSpanId)
+      && !options.preserveNextJsSpans
     ) {
       span.setAttribute(OVERRIDE_PARENT_SPAN, true);
       // to indicate that this span was originally parented by a Next.js span
@@ -389,7 +386,10 @@ export const startTracing = (options: InitializeOptions) => {
     // Sometimes we only have know that this span is a Next.js only at the end.
     // We add it to the set of nextSpanIds in that case. Also, we do not call
     // the original onEnd, so that we don't send it to the backend.
-    if ((isNextJsSpan(span) || nextJsSpanIds.has(span.spanContext().spanId)) && !options.preserveNextJsSpans) {
+    if (
+      (isNextJsSpan(span) || nextJsSpanIds.has(span.spanContext().spanId))
+      && !options.preserveNextJsSpans
+    ) {
       addNextJsSpanId(span.spanContext().spanId);
     } else {
       // By default, we call the original onEnd.
@@ -420,7 +420,7 @@ export const startTracing = (options: InitializeOptions) => {
     });
     try {
       provider.register();
-    } catch (e) {
+    } catch {
       console.error('Error registering tracer provider');
     }
     registerInstrumentations({

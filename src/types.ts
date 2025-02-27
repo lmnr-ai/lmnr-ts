@@ -68,7 +68,7 @@ export type SemanticSearchResponse = {
 
 /**
  * Span types to categorize spans.
- * 
+ *
  * LLM spans are auto-instrumented LLM spans.
  * Pipeline spans are top-level spans created by the pipeline runner.
  * Executor and evaluator spans are top-level spans added automatically when doing evaluations.
@@ -92,7 +92,7 @@ export type TraceType = 'DEFAULT' | 'EVALUATION'
 
 /**
  * Tracing levels to conditionally disable tracing.
- * 
+ *
  * OFF - No tracing is sent.
  * META_ONLY - Only metadata is sent (e.g. tokens, costs, etc.).
  * ALL - All data is sent.
