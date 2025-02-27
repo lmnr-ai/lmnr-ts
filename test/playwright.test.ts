@@ -46,7 +46,7 @@ describe("playwright", () => {
     // TODO: figure out if this can run in Github Actions
     it("exports all spans to a single trace", async () => {
         const browser = await chromium.launch({
-            headless: false,
+            headless: true,
         });
         const page = await browser.newPage();
     
