@@ -74,12 +74,34 @@ export class StagehandInstrumentation extends InstrumentationBase {
     }
   }
 
+  public manuallyInstrument(Stagehand: typeof StagehandLib.Stagehand) {
+    diag.debug('manually instrumenting stagehand');
+
+    // Since we can't replace the Stagehand constructor directly due to non-configurable property,
+    // we'll patch the prototype methods of the existing constructor
+
+    // First, patch the init method on the prototype
+    if (Stagehand && Stagehand.prototype) {
+      this._wrap(
+        Stagehand.prototype,
+        'init',
+        this.patchStagehandInit(),
+      );
+      this._wrap(
+        Stagehand.prototype,
+        'close',
+        this.patchStagehandClose(),
+      );
+    }
+  }
+
   private unpatch(moduleExports: typeof StagehandLib, moduleVersion?: string) {
     diag.debug(`unpatching stagehand ${moduleVersion}`);
     this._unwrap(moduleExports, 'Stagehand');
 
     if (moduleExports.Stagehand) {
       this._unwrap(moduleExports.Stagehand.prototype, 'init');
+      this._unwrap(moduleExports.Stagehand.prototype, 'close');
       if (moduleExports.Stagehand.prototype?.page) {
         this._unwrap(moduleExports.Stagehand.prototype.page, 'act');
         this._unwrap(moduleExports.Stagehand.prototype.page, 'extract');
@@ -123,6 +145,12 @@ export class StagehandInstrumentation extends InstrumentationBase {
           instrumentation.patchStagehandInit(),
         );
 
+        instrumentation._wrap(
+          this,
+          'close',
+          instrumentation.patchStagehandClose(),
+        );
+
         return this;
       } as unknown as typeof Original;
 
@@ -152,6 +180,16 @@ export class StagehandInstrumentation extends InstrumentationBase {
       await instrumentation.playwrightInstrumentation.patchPage(this.page);
       instrumentation.patchStagehandPage(this.stagehandPage);
       return result;
+    };
+  }
+
+  private patchStagehandClose() {
+    const instrumentation = this;
+    return (original: Function) => async function method(this: any, ...args: any[]) {
+      if (instrumentation._parentSpan && instrumentation._parentSpan.isRecording()) {
+        instrumentation._parentSpan.end();
+      }
+      await original.bind(this).apply(this, args);
     };
   }
 
@@ -214,7 +252,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
       async function method(this: any, ...args: any[]) {
         return await Laminar.withSpan(instrumentation._parentSpan!, async () =>
           await laminarObserve(
-            { name: `stagehand.${methodName}` },
+            { name: `stagehand.${methodName}`, input: args },
             async (thisArg, ...rest) => await original.apply(thisArg, ...rest),
             this, args,
           ),

@@ -1,13 +1,14 @@
 import { trace } from "@opentelemetry/api";
 import cliProgress from "cli-progress";
 
+import { LaminarClient } from "./client";
 import { EvaluationDataset } from "./datasets";
 import { observe } from "./decorators";
 import { Laminar } from "./laminar";
 import { InitializeOptions } from "./sdk/interfaces";
 import { SPAN_TYPE } from "./sdk/tracing/attributes";
 import { EvaluationDatapoint } from "./types";
-import { otelSpanIdToUUID, otelTraceIdToUUID, Semaphore, StringUUID } from "./utils";
+import { newUUID, otelSpanIdToUUID, otelTraceIdToUUID, Semaphore, StringUUID } from "./utils";
 
 const DEFAULT_CONCURRENCY = 5;
 const MAX_EXPORT_BATCH_SIZE = 64;
@@ -300,7 +301,7 @@ export class Evaluation<D, T, O> {
     this.progressReporter.start({ length: await this.getLength() });
     let resultDatapoints: EvaluationDatapoint<D, T, O>[];
     try {
-      const evaluation = await Laminar.initEvaluation({
+      const evaluation = await LaminarClient.initEvaluation({
         groupName: this.groupName,
         name: this.name,
       });
@@ -357,22 +358,37 @@ export class Evaluation<D, T, O> {
     datapoint: Datapoint<D, T>,
     index: number,
   ): Promise<EvaluationDatapoint<D, T, O>> {
-    // NOTE: If you decide to move this observe to another place, note that
-    //       traceId is assigned inside it for EvaluationDatapoint
     return observe({ name: "evaluation", traceType: "EVALUATION" }, async () => {
       trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATION");
+      const executorSpan = Laminar.startSpan({
+        name: "executor",
+        input: datapoint.data,
+      });
+      executorSpan.setAttribute(SPAN_TYPE, "EXECUTOR");
+      const executorSpanId = otelSpanIdToUUID(executorSpan.spanContext().spanId);
+      const datapointId = newUUID();
+      const partialDatapoint = {
+        id: datapointId,
+        data: datapoint.data,
+        traceId: otelTraceIdToUUID(trace.getActiveSpan()!.spanContext().traceId),
+        // For now, all human evaluators are added to every datapoint
+        // In the future, we will allow to specify which evaluators are
+        // added to a particular datapoint, e.g. random sampling.
+        humanEvaluators: this.humanEvaluators,
+        executorSpanId,
+        index,
+      } as EvaluationDatapoint<D, T, O>;
 
-      const { output, executorSpanId } = await observe(
-        { name: "executor" },
-        async (data: D) => {
-          const executorSpanId = trace.getActiveSpan()!.spanContext().spanId;
-          trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EXECUTOR");
-          return {
-            output: await this.executor(data),
-            executorSpanId: otelSpanIdToUUID(executorSpanId),
-          };
-        },
-        datapoint.data,
+      // first create the datapoint in the database and await
+      await LaminarClient.saveEvalDatapoints(
+        evalId,
+        [partialDatapoint],
+        this.groupName,
+      );
+
+      const output = await Laminar.withSpan(
+        executorSpan,
+        async () => await this.executor(datapoint.data),
       );
       const target = datapoint.target;
 
@@ -399,6 +415,7 @@ export class Evaluation<D, T, O> {
       }
 
       const resultDatapoint = {
+        id: datapointId,
         executorOutput: output,
         data: datapoint.data,
         target,
@@ -412,7 +429,11 @@ export class Evaluation<D, T, O> {
         index,
       } as EvaluationDatapoint<D, T, O>;
 
-      const uploadPromise = Laminar.saveEvalDatapoints(evalId, [resultDatapoint], this.groupName);
+      const uploadPromise = LaminarClient.saveEvalDatapoints(
+        evalId,
+        [resultDatapoint],
+        this.groupName,
+      );
       this.uploadPromises.push(uploadPromise);
 
       return resultDatapoint;
