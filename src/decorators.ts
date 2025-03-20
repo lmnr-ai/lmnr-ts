@@ -23,7 +23,7 @@ interface ObserveOptions {
  * @param sessionId - Session ID to associate with the span and the following context.
  * @param traceType – Type of the trace. Unless it is within evaluation, it should be 'DEFAULT'.
  * @param spanType - Type of the span. 'DEFAULT' is used if not specified. If the type is 'LLM',
- * you must manually specify some attributes. See {@link Laminar.setSpanAttributes} for more
+ * you must manually specify some attributes. See `Laminar.setSpanAttributes` for more
  * information.
  * @param input - Force override the input for the span. If not specified, the input will be the
  * arguments passed to the function.

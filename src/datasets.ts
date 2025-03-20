@@ -1,5 +1,5 @@
+import { LaminarClient } from './client';
 import { Datapoint } from './evaluations';
-import { Laminar as L } from './laminar';
 
 const DEFAULT_FETCH_SIZE = 25;
 
@@ -29,7 +29,7 @@ export class LaminarDataset<D, T> extends EvaluationDataset<D, T> {
   }
 
   private async fetchBatch() {
-    const resp = await L.getDatapoints<D, T>({
+    const resp = await LaminarClient.getDatapoints<D, T>({
       datasetName: this.name,
       offset: this.offset,
       limit: this.fetchSize,

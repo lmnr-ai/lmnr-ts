@@ -1,6 +1,7 @@
 import type * as anthropic from "@anthropic-ai/sdk";
 import type * as bedrock from "@aws-sdk/client-bedrock-runtime";
 import type * as azure from "@azure/openai";
+import type * as StagehandLib from "@browserbasehq/stagehand";
 import type * as aiplatform from "@google-cloud/aiplatform";
 import type * as vertexAI from "@google-cloud/vertexai";
 import type * as RunnableModule from "@langchain/core/runnables";
@@ -16,7 +17,7 @@ import type * as ChainsModule from "langchain/chains";
 import type * as ToolsModule from "langchain/tools";
 import type * as llamaindex from "llamaindex";
 import type * as openai from "openai";
-
+import type * as playwright from "playwright";
 /**
  * Options for initializing the Traceloop SDK.
  */
@@ -87,33 +88,34 @@ export interface InitializeOptions {
    */
   // In case of version mismatch, types are not resolved correctly.
   // So we use any for now.
-  /* eslint-disable @typescript-eslint/no-redundant-type-constituents */
+
   instrumentModules?: {
-    openAI?: typeof openai.OpenAI | any;
-    anthropic?: typeof anthropic | any;
-    azureOpenAI?: typeof azure | any;
-    cohere?: typeof cohere | any;
-    bedrock?: typeof bedrock | any;
-    google_vertexai?: typeof vertexAI | any;
-    google_aiplatform?: typeof aiplatform | any;
-    pinecone?: typeof pinecone | any;
+    openAI?: typeof openai.OpenAI;
+    anthropic?: typeof anthropic;
+    azureOpenAI?: typeof azure;
+    cohere?: typeof cohere;
+    bedrock?: typeof bedrock;
+    google_vertexai?: typeof vertexAI;
+    google_aiplatform?: typeof aiplatform;
+    pinecone?: typeof pinecone;
     langchain?: {
-      chainsModule?: typeof ChainsModule | any;
-      agentsModule?: typeof AgentsModule | any;
-      toolsModule?: typeof ToolsModule | any;
-      runnablesModule?: typeof RunnableModule | any;
-      vectorStoreModule?: typeof VectorStoreModule | any;
+      chainsModule?: typeof ChainsModule;
+      agentsModule?: typeof AgentsModule;
+      toolsModule?: typeof ToolsModule;
+      runnablesModule?: typeof RunnableModule;
+      vectorStoreModule?: typeof VectorStoreModule;
     };
-    llamaIndex?: typeof llamaindex | any;
-    chromadb?: typeof chromadb | any;
-    qdrant?: typeof qdrant | any;
+    llamaIndex?: typeof llamaindex;
+    chromadb?: typeof chromadb;
+    qdrant?: typeof qdrant;
     playwright?: {
-      chromium?: any,
-      firefox?: any,
-      webkit?: any,
-    }
+      chromium?: typeof playwright.chromium,
+      firefox?: typeof playwright.firefox,
+      webkit?: typeof playwright.webkit,
+    },
+    stagehand?: typeof StagehandLib.Stagehand,
   };
-  /* eslint-enable @typescript-eslint/no-redundant-type-constituents */
+
 
   /**
    * Whether to silence the initialization message. Optional.

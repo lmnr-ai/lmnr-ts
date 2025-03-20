@@ -39,10 +39,11 @@ export type InitEvaluationResponse = {
 }
 
 export type EvaluationDatapoint<D, T, O> = {
+  id: StringUUID;
   data: D;
   target?: T;
   executorOutput?: O;
-  scores: Record<string, number>;
+  scores?: Record<string, number>;
   traceId: string;
   index: number;
   humanEvaluators?: HumanEvaluator[];

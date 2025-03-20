@@ -219,11 +219,15 @@ const manuallyInitInstrumentations = (
     playwrightInstrumentation.manuallyInstrument(instrumentModules.playwright);
   }
 
-  // if (instrumentModules?.stagehand) {
-  //   stagehandInstrumentation = new StagehandInstrumentation(playwrightInstrumentation);
-  //   instrumentations.push(stagehandInstrumentation);
-  //   stagehandInstrumentation.manuallyInstrument(instrumentModules.stagehand);
-  // }
+  if (instrumentModules?.stagehand) {
+    if (!playwrightInstrumentation) {
+      playwrightInstrumentation = new PlaywrightInstrumentation();
+      instrumentations.push(playwrightInstrumentation);
+    }
+    stagehandInstrumentation = new StagehandInstrumentation(playwrightInstrumentation);
+    instrumentations.push(stagehandInstrumentation);
+    stagehandInstrumentation.manuallyInstrument(instrumentModules.stagehand);
+  }
 };
 
 const NEXT_JS_SPAN_ATTRIBUTES = [
