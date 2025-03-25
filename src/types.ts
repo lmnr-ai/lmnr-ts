@@ -103,3 +103,16 @@ export enum TracingLevel {
   META_ONLY = 'meta_only',
   ALL = 'all',
 }
+
+/**
+ * Laminar representation of an OpenTelemetry span context.
+ *
+ * spanId - The ID of the span.
+ * traceId - The ID of the trace.
+ * isRemote - Whether the span is remote.
+ */
+export type LaminarSpanContext = {
+  spanId: StringUUID;
+  traceId: StringUUID;
+  isRemote: boolean;
+}

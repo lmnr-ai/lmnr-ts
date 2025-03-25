@@ -44,15 +44,6 @@ export const initializeTracing = (options: InitializeOptions) => {
     );
   }
 
-  if (!options.silenceInitializationMessage) {
-    console.log(
-      `Laminar exporting traces to ${_configuration.exporter
-        ? "a custom exporter"
-        : _configuration.baseUrl
-      }`,
-    );
-  }
-
   startTracing(_configuration);
 };
 

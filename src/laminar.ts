@@ -8,32 +8,37 @@ import {
   Span,
   TimeInput,
   trace,
-  TraceFlags,
 } from '@opentelemetry/api';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
-import { RandomIdGenerator } from '@opentelemetry/sdk-trace-base';
+import pino from 'pino';
 
-import { LaminarClient } from './client';
 import { forceFlush, InitializeOptions, initializeTracing } from './sdk/node-server-sdk';
 import {
   ASSOCIATION_PROPERTIES,
   LaminarAttributes,
-  OVERRIDE_PARENT_SPAN,
   SESSION_ID,
   SPAN_INPUT,
   SPAN_OUTPUT,
   SPAN_TYPE,
 } from './sdk/tracing/attributes';
 import { ASSOCIATION_PROPERTIES_KEY, getTracer } from './sdk/tracing/tracing';
+import { LaminarSpanContext } from './types';
 import {
-  PipelineRunRequest,
-  PipelineRunResponse,
-  SemanticSearchResponse,
-} from './types';
-import {
-  isStringUUID,
-  uuidToOtelTraceId,
+  otelSpanIdToUUID,
+  otelTraceIdToUUID,
+  StringUUID,
+  tryToOtelSpanContext,
 } from './utils';
+
+const logger = pino({
+  level: "info",
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+    },
+  },
+});
 
 
 interface LaminarInitializeProps {
@@ -57,7 +62,6 @@ export class Laminar {
   private static projectApiKey: string;
   private static env: Record<string, string> = {};
   private static isInitialized: boolean = false;
-
   /**
    * Initialize Laminar context across the application.
    * This method must be called before using any other Laminar methods or decorators.
@@ -127,7 +131,7 @@ export class Laminar {
     maxExportBatchSize,
   }: LaminarInitializeProps) {
 
-    const key = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
+    const key = projectApiKey ?? process?.env?.LMNR_PROJECT_API_KEY;
     if (key === undefined) {
       throw new Error(
         'Please initialize the Laminar object with your project API key ' +
@@ -135,15 +139,15 @@ export class Laminar {
       );
     }
     this.projectApiKey = key;
-    if (baseUrl?.match(/:\d{1,5}$/g)) {
-      throw new Error(
-        'Port should be passed separately in `httpPort` and `grpcPort`',
-      );
-    }
-    const urlWithoutSlash = baseUrl?.replace(/\/$/, '');
+    const url = baseUrl ?? process?.env?.LMNR_BASE_URL ?? 'https://api.lmnr.ai';
+    const port = httpPort ?? (
+      url.match(/:\d{1,5}$/g)
+        ? parseInt(url.match(/:\d{1,5}$/g)![0].slice(1))
+        : 443);
+    const urlWithoutSlash = url.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
 
-    this.baseHttpUrl = `${urlWithoutSlash ?? 'https://api.lmnr.ai'}:${httpPort ?? 443}`;
-    this.baseGrpcUrl = `${urlWithoutSlash ?? 'https://api.lmnr.ai'}:${grpcPort ?? 8443}`;
+    this.baseHttpUrl = `${urlWithoutSlash}:${port}`;
+    this.baseGrpcUrl = `${urlWithoutSlash}:${grpcPort ?? 8443}`;
 
     this.isInitialized = true;
     this.env = env ?? {};
@@ -157,9 +161,9 @@ export class Laminar {
       timeoutMillis: traceExportTimeoutMillis ?? 30000,
     });
 
-    LaminarClient.initialize(this.projectApiKey, this.baseHttpUrl);
-
     initializeTracing({
+      baseUrl: this.baseHttpUrl,
+      apiKey: this.projectApiKey,
       exporter,
       silenceInitializationMessage: true,
       instrumentModules,
@@ -204,49 +208,6 @@ export class Laminar {
   }
 
   /**
-   * Runs the pipeline with the given inputs
-   *
-   * @param pipeline - The name of the Laminar pipeline. Pipeline must have a target version.
-   * @param inputs - The inputs for the pipeline. Map from an input node name to input data.
-   * @param env - The environment variables for the pipeline execution.
-   * Typically used for model provider keys.
-   * @param metadata - Additional metadata for the pipeline run.
-   * @param currentSpanId - The ID of the current span.
-   * @param currentTraceId - The ID of the current trace.
-   * @returns A promise that resolves to the response of the pipeline run.
-   * @throws An error if the Laminar object is not initialized with a project API
-   * key or if the request fails.
-   */
-  public static async run(request: PipelineRunRequest): Promise<PipelineRunResponse> {
-    const { env: requestEnv, ...rest } = request;
-    const env = { ...this.env, ...requestEnv };
-    return LaminarClient.runPipeline({ ...rest, env });
-  }
-
-  /**
-   * Perform a semantic search on a dataset.
-   *
-   * @param query - The query string to search with.
-   * @param datasetId - The ID of the dataset to search in.
-   * @param limit - The maximum number of results to return.
-   * @param threshold - The minimum score for the results to be returned.
-   * @returns Response object containing the search results in descending order of relevance.
-   */
-  public static async semanticSearch({
-    query,
-    datasetId,
-    limit,
-    threshold,
-  }: {
-    query: string,
-    datasetId: string,
-    limit?: number,
-    threshold?: number,
-  }): Promise<SemanticSearchResponse> {
-    return LaminarClient.semanticSearch({ query, datasetId, limit, threshold });
-  }
-
-  /**
    * Associates an event with the current span. If event with such name never
    * existed, Laminar will create a new event and infer its type from the value.
    * If the event already exists, Laminar will append the value to the event
@@ -268,7 +229,7 @@ export class Laminar {
   ) {
     const currentSpan = trace.getActiveSpan();
     if (currentSpan === undefined || !isSpanContextValid(currentSpan.spanContext())) {
-      console.warn("`Laminar().event()` called outside of span context." +
+      logger.warn("`Laminar().event()` called outside of span context." +
         ` Event '${name}' will not be recorded in the trace.` +
         " Make sure to annotate the function with a decorator",
       );
@@ -464,42 +425,27 @@ export class Laminar {
     input,
     spanType,
     context,
-    traceId,
+    parentSpanContext,
     labels,
   }: {
     name: string,
     input?: any,
     spanType?: 'LLM' | 'DEFAULT' | 'TOOL',
     context?: Context,
-    traceId?: string,
-    labels?: Record<string, string>,
+    parentSpanContext?: string | LaminarSpanContext,
+    labels?: string[],
   }): Span {
     let entityContext = context ?? contextApi.active();
-    if (traceId) {
-      if (isStringUUID(traceId)) {
-        const spanContext = {
-          traceId: uuidToOtelTraceId(traceId),
-          spanId: new RandomIdGenerator().generateSpanId(),
-          traceFlags: TraceFlags.SAMPLED,
-          isRemote: false,
-        };
-        entityContext = trace.setSpanContext(entityContext, spanContext);
-      } else {
-        console.warn(`Invalid trace ID ${traceId}. Expected a UUID.`);
-      }
+    if (parentSpanContext) {
+      const spanContext = tryToOtelSpanContext(parentSpanContext);
+      entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
     }
-    const labelProperties = labels ? Object.entries(labels).reduce((acc, [key, value]) => {
-      acc[`${ASSOCIATION_PROPERTIES}.label.${key}`] = value;
-      return acc;
-    }, {} as Record<string, string>) : {};
+    const labelProperties = labels ? { [`${ASSOCIATION_PROPERTIES}.labels`]: labels } : {};
     const attributes = {
       [SPAN_TYPE]: spanType ?? 'DEFAULT',
       ...labelProperties,
     };
     const span = getTracer().startSpan(name, { attributes }, entityContext);
-    if (traceId && isStringUUID(traceId)) {
-      span.setAttribute(OVERRIDE_PARENT_SPAN, true);
-    }
     if (input) {
       span.setAttribute(SPAN_INPUT, JSON.stringify(input));
     }
@@ -543,6 +489,26 @@ export class Laminar {
         throw error;
       }
     });
+  }
+
+  public static serializeLaminarSpanContext(span?: Span): string | null {
+    const laminarSpanContext = this.getLaminarSpanContext(span);
+    if (laminarSpanContext === null) {
+      return null;
+    }
+    return JSON.stringify(laminarSpanContext);
+  };
+
+  public static getLaminarSpanContext(span?: Span): LaminarSpanContext | null {
+    const currentSpan = span ?? trace.getActiveSpan();
+    if (currentSpan === undefined || !isSpanContextValid(currentSpan.spanContext())) {
+      return null;
+    }
+    return {
+      traceId: otelTraceIdToUUID(currentSpan.spanContext().traceId) as StringUUID,
+      spanId: otelSpanIdToUUID(currentSpan.spanContext().spanId) as StringUUID,
+      isRemote: currentSpan.spanContext().isRemote ?? false,
+    };
   }
 
   public static async shutdown() {

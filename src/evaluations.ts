@@ -1,8 +1,9 @@
 import { trace } from "@opentelemetry/api";
 import cliProgress from "cli-progress";
+import pino from "pino";
 
 import { LaminarClient } from "./client";
-import { EvaluationDataset } from "./datasets";
+import { EvaluationDataset, LaminarDataset } from "./datasets";
 import { observe } from "./decorators";
 import { Laminar } from "./laminar";
 import { InitializeOptions } from "./sdk/interfaces";
@@ -20,6 +21,16 @@ declare global {
   // eslint-disable-next-line no-var
   var _set_global_evaluation: boolean;
 }
+
+const logger = pino({
+  level: "info",
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+    },
+  },
+});
 
 const getEvaluationUrl = (projectId: string, evaluationId: string) => `https://www.lmnr.ai/project/${projectId}/evaluations/${evaluationId}`;
 
@@ -172,10 +183,6 @@ interface EvaluationConstructorProps<D, T, O> {
    */
   groupName?: string;
   /**
-   * Deprecated. Use `groupName` instead.
-   */
-  groupId?: string;
-  /**
    * Optional override configurations for the evaluator.
    */
   config?: EvaluatorConfig;
@@ -238,6 +245,7 @@ export class Evaluation<D, T, O> {
   private traceExportTimeoutMillis?: number;
   private traceExportBatchSize: number = MAX_EXPORT_BATCH_SIZE;
   private uploadPromises: Promise<any>[] = [];
+  private client: LaminarClient;
 
   constructor({
     data, executor, evaluators, humanEvaluators, groupName, name, config,
@@ -264,11 +272,32 @@ export class Evaluation<D, T, O> {
     this.humanEvaluators = humanEvaluators;
     this.groupName = groupName;
     this.name = name;
+
+    const key = config?.projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
+    if (key === undefined) {
+      throw new Error(
+        'Please initialize the Laminar object with your project API key ' +
+        'or set the LMNR_PROJECT_API_KEY environment variable',
+      );
+    }
+
+    const url = config?.baseUrl ?? process?.env?.LMNR_BASE_URL ?? 'https://api.lmnr.ai';
+    const httpPort = config?.httpPort ?? (
+      url.match(/:\d{1,5}$/g)
+        ? parseInt(url.match(/:\d{1,5}$/g)![0].slice(1))
+        : 443);
+    const urlWithoutSlash = url.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
+    const baseHttpUrl = `${urlWithoutSlash}:${httpPort}`;
+
+    this.client = new LaminarClient({
+      baseUrl: baseHttpUrl,
+      projectApiKey: key,
+    });
+
     if (config) {
       if (config.concurrencyLimit && config.concurrencyLimit < 1) {
-        console.warn(
-          'concurrencyLimit must be greater than 0. Setting to default of ',
-          DEFAULT_CONCURRENCY,
+        logger.warn(
+          `concurrencyLimit must be greater than 0. Setting to default of ${DEFAULT_CONCURRENCY}`,
         );
         this.concurrencyLimit = DEFAULT_CONCURRENCY;
       } else {
@@ -300,11 +329,11 @@ export class Evaluation<D, T, O> {
 
     this.progressReporter.start({ length: await this.getLength() });
     let resultDatapoints: EvaluationDatapoint<D, T, O>[];
+    if (this.data instanceof LaminarDataset) {
+      this.data.setClient(this.client);
+    }
     try {
-      const evaluation = await LaminarClient.initEvaluation({
-        groupName: this.groupName,
-        name: this.name,
-      });
+      const evaluation = await this.client.evals.init(this.name, this.groupName);
       resultDatapoints = await this.evaluateInBatches(evaluation.id);
       const averageScores = getAverageScores(resultDatapoints);
       if (this.uploadPromises.length > 0) {
@@ -380,11 +409,11 @@ export class Evaluation<D, T, O> {
       } as EvaluationDatapoint<D, T, O>;
 
       // first create the datapoint in the database and await
-      await LaminarClient.saveEvalDatapoints(
+      await this.client.evals.saveDatapoints({
         evalId,
-        [partialDatapoint],
-        this.groupName,
-      );
+        datapoints: [partialDatapoint],
+        groupName: this.groupName,
+      });
 
       const output = await Laminar.withSpan(
         executorSpan,
@@ -429,11 +458,11 @@ export class Evaluation<D, T, O> {
         index,
       } as EvaluationDatapoint<D, T, O>;
 
-      const uploadPromise = LaminarClient.saveEvalDatapoints(
+      const uploadPromise = this.client.evals.saveDatapoints({
         evalId,
-        [resultDatapoint],
-        this.groupName,
-      );
+        datapoints: [resultDatapoint],
+        groupName: this.groupName,
+      });
       this.uploadPromises.push(uploadPromise);
 
       return resultDatapoint;
@@ -460,27 +489,20 @@ export class Evaluation<D, T, O> {
  * returns.
  * @param props.humanEvaluators [Beta] Array of instances of {@link HumanEvaluator}.
  * For now, HumanEvaluator only holds the queue name.
- * @param props.groupId Deprecated. Use `groupName` instead. Group name,
- * same as the feature you are evaluating in your project or application.
- * Evaluations within the same group can be visually compared.
- * Defaults to "default".
  * @param props.name Optional name of the evaluation. Used to easily identify
  * the evaluation in the group.
  * @param props.config Optional override configurations for the evaluator.
  */
 export async function evaluate<D, T, O>({
-  data, executor, evaluators, humanEvaluators, groupName, groupId, name, config,
+  data, executor, evaluators, humanEvaluators, groupName, name, config,
 }: EvaluationConstructorProps<D, T, O>): Promise<void> {
-  if (groupId) {
-    console.warn('groupId is deprecated. Use groupName instead.');
-  }
   const evaluation = new Evaluation({
     data,
     executor,
     evaluators,
     humanEvaluators,
     name,
-    groupName: groupName ?? groupId,
+    groupName: groupName,
     config,
   });
   if (globalThis._set_global_evaluation) {

@@ -1,12 +1,21 @@
 import { LLMClient, Page as StagehandPage } from "@browserbasehq/stagehand";
 import path from "path";
+import pino from "pino";
 import { Page } from "playwright";
 import { fileURLToPath } from "url";
 
-import { version as SDK_VERSION } from '../../package.json';
-import { Laminar } from "..";
+import { LaminarClient } from "..";
 import { StringUUID } from "../utils";
-import { getLangVersion } from "../version";
+
+const logger = pino({
+  level: "info",
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+    },
+  },
+});
 
 export const getDirname = () => {
   if (typeof __dirname !== 'undefined') {
@@ -21,6 +30,7 @@ export const getDirname = () => {
 };
 
 export const collectAndSendPageEvents = async (
+  client: LaminarClient,
   page: Page & StagehandPage, // Playwright (or mb puppeteer) page with an async `evaluate` method
   sessionId: StringUUID,
   traceId: StringUUID,
@@ -38,40 +48,18 @@ export const collectAndSendPageEvents = async (
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    const events = await page.evaluate(() => (window as any).lmnrGetAndClearEvents());
+    const events = await page.evaluate(async () => await (window as any).lmnrGetAndClearEvents());
     if (events == null || events.length === 0) {
       return;
     }
 
-    const source = getLangVersion() ?? 'javascript';
-
-    const payload = {
+    await client.browserEvents.send({
       sessionId,
       traceId,
       events,
-      source,
-      sdkVersion: SDK_VERSION,
-    };
-
-    const headers = new Headers();
-    headers.set('Content-Type', 'application/json');
-    headers.set('Authorization', `Bearer ${Laminar.getProjectApiKey()}`);
-    headers.set('Accept', 'application/json');
-
-    const response = await fetch(
-      `${Laminar.getHttpUrl()}/v1/browser-sessions/events`,
-      {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-      },
-    );
-
-    if (!response.ok) {
-      console.error('Failed to send events:', response.statusText, await response.text());
-    }
+    });
   } catch (error) {
-    console.error('Error sending events:', error);
+    logger.error(`Error sending events: ${error instanceof Error ? error.message : String(error)}`);
   }
 };
 

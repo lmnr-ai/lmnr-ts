@@ -135,7 +135,7 @@ You can run evaluations locally by providing executor (part of the logic used in
 - `executor` – the logic you want to evaluate. This function must take `data` as the first argument, and produce any output.
 - `evaluators` – Object which maps evaluator names to evaluators. Each evaluator is a function that takes output of executor as the first argument, `target` as the second argument and produces numeric scores. Each function can produce either a single number or `Record<string, number>` of scores.
 - `name` – optional name for the evaluation. Automatically generated if not provided.
-- `groupId` – optional group name for evaluation. Evaluations within the same group can be compared visually side by side.
+- `groupName` – optional group name for evaluation. Evaluations within the same group can be compared visually side by side.
 - `config` – optional additional override parameters.
 
 \* If you already have the outputs of executors you want to evaluate, you can specify the executor as an identity function, that takes in `data` and returns only needed value(s) from it.
@@ -188,3 +188,52 @@ const result = await l.semanticSearch({
 ```
 
 [Read docs](https://docs.lmnr.ai/datasets/indexing#searching) to learn more about semantic search.
+
+## Client for HTTP operations
+
+Various interactions with Laminar [API](https://docs.lmnr.ai/api-reference/) are available in `LaminarClient`
+
+### Agent
+
+To run Laminar agent, you can invoke `client.agent.run`
+
+```javascript
+import { LaminarClient } from '@lmnr-ai/lmnr';
+
+const client = new LaminarClient({
+  projectApiKey:"<YOUR_PROJECT_API_KEY>",
+});
+
+const response = await client.agent.run({
+    prompt: "What is the weather in London today?",
+});
+
+// Be careful, `response` itself contains the state which may get large
+console.log(response.result.content)
+```
+
+#### Streaming
+
+Agent run supports streaming as well.
+
+```javascript
+import { LaminarClient } from '@lmnr-ai/lmnr';
+
+const client = new LaminarClient({
+  projectApiKey:"<YOUR_PROJECT_API_KEY>",
+});
+
+const response = await client.agent.run({
+    prompt: "What is the weather in London today?",
+});
+
+for await (const chunk of res) {
+  console.log(chunk.chunkType)
+  if (chunk.chunkType === 'step') {
+    console.log(chunk.summary);
+  } else if (chunk.chunkType === 'finalOutput') {
+    // Be careful, `chunk.content` contains the state which may get large
+    console.log(chunk.content.result);
+  }
+}
+```
