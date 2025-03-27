@@ -59,7 +59,7 @@ export class EvalsResource extends BaseResource {
   /**
    * Get evaluation datapoints.
    *
-   * @params {Object} options - Get datapoints options
+   * @param {Object} options - Get datapoints options
    * @param {string} options.datasetName - Name of the dataset
    * @param {number} options.offset - Offset at which to start the query
    * @param {number} options.limit - Maximum number of datapoints to return
