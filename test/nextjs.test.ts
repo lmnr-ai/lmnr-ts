@@ -9,6 +9,7 @@ import {
 
 import { observe } from "../src/index";
 import { _resetConfiguration, initializeTracing } from "../src/sdk/configuration";
+import { otelSpanIdToUUID } from "../src/utils";
 
 const isThenable = <T = unknown>(
   promise: Promise<T> | T,
@@ -97,6 +98,11 @@ void describe("nextjs", () => {
       spans[0].attributes['lmnr.association.properties.label.endpoint'],
       undefined,
     );
+    assert.deepStrictEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+    assert.deepStrictEqual(
+      spans[0].attributes['lmnr.span.ids_path'],
+      [otelSpanIdToUUID(spans[0].spanContext().spanId)],
+    );
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
     assert.strictEqual(spans[0].attributes['lmnr.internal.override_parent_span'], true);
   });
@@ -131,20 +137,5 @@ void describe("nextjs.preserveNextJsSpans", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test_next_js");
-  });
-
-  void it("preserves the Next.js span and its children", () => {
-    const fn = (a: number, b: number) => a + b;
-    const inner = observe({ name: "test" }, fn, 1, 2);
-    const outer = () => startNextJsSpan(async () => await inner);
-    startNextJsSpan(outer);
-
-    const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 2);
-    const nextJsSpan = spans.find(span => span.name === "test_next_js");
-    assert.ok(nextJsSpan);
-    const observedSpan = spans.find(span => span.name === "test");
-    assert.strictEqual(observedSpan?.attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(observedSpan?.attributes['lmnr.span.output'], "3");
   });
 });

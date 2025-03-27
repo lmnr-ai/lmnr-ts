@@ -162,10 +162,17 @@ void describe("tracing", () => {
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
   });
 
-  void it("sets the trace id override in observe", async () => {
+  void it("sets the parent span context in observe", async () => {
     const fn = (a: number, b: number) => a + b;
     const result = await observe(
-      { name: "test", traceId: "01234567-89ab-cdef-0123-456789abcdef" },
+      {
+        name: "test",
+        parentSpanContext: {
+          traceId: "01234567-89ab-cdef-0123-456789abcdef",
+          spanId: "00000000-0000-0000-0123-456789abcdef",
+          isRemote: false,
+        },
+      },
       fn,
       1, 2,
     );
@@ -178,16 +185,20 @@ void describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
     assert.strictEqual(spans[0].name, "test");
 
-    assert.strictEqual(spans[0].attributes["lmnr.internal.override_parent_span"], true);
     assert.strictEqual(spans[0].spanContext().traceId, "0123456789abcdef0123456789abcdef");
+    assert.strictEqual(spans[0].parentSpanId, "0123456789abcdef");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
   });
 
-  void it("sets the trace id override in startSpan", () => {
+  void it("sets the parent span context in startSpan", () => {
     const span = Laminar.startSpan({
       name: "test",
-      traceId: "01234567-89ab-cdef-0123-456789abcdef",
+      parentSpanContext: {
+        traceId: "01234567-89ab-cdef-0123-456789abcdef",
+        spanId: "00000000-0000-0000-0123-456789abcdef",
+        isRemote: false,
+      },
     });
     const result = Laminar.withSpan(span, () => 3, true);
 
@@ -197,41 +208,10 @@ void describe("tracing", () => {
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
 
-    assert.strictEqual(spans[0].attributes["lmnr.internal.override_parent_span"], true);
     assert.strictEqual(spans[0].spanContext().traceId, "0123456789abcdef0123456789abcdef");
+    assert.strictEqual(spans[0].parentSpanId, "0123456789abcdef");
+
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
-  });
-
-  void it("does not override the trace id in observe if it is not a valid uuid", async () => {
-    const fn = (a: number, b: number) => a + b;
-    const result = await observe({ name: "test", traceId: "not-a-uuid" }, fn, 1, 2);
-
-    assert.strictEqual(result, 3);
-    const spans = exporter.getFinishedSpans();
-
-    assert.strictEqual(spans.length, 1);
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
-    assert.strictEqual(spans[0].name, "test");
-
-    assert.strictEqual(spans[0].attributes["lmnr.internal.override_parent_span"], undefined);
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.notEqual(spans[0].spanContext().traceId, "not-a-uuid");
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
-  });
-
-  void it("does not override the trace id in startSpan if it is not a valid uuid", () => {
-    const span = Laminar.startSpan({ name: "test", traceId: "not-a-uuid" });
-    const result = Laminar.withSpan(span, () => 3, true);
-
-    assert.strictEqual(result, 3);
-
-    const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 1);
-    assert.strictEqual(spans[0].attributes["lmnr.internal.override_parent_span"], undefined);
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.notEqual(spans[0].spanContext().traceId, "not-a-uuid");
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
   });
 
@@ -281,7 +261,7 @@ void describe("tracing", () => {
   void it("sets the labels on wrapped functions", async () => {
     const fn = (a: number, b: number) => a + b;
     const result = await withLabels(
-      { endpoint: "some-endpoint" },
+      ["endpoint", "some-endpoint"],
       async (a, b) => await observe({ name: "inner" }, fn, a, b),
       1, 2,
     );
@@ -290,9 +270,9 @@ void describe("tracing", () => {
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
-    assert.strictEqual(
-      spans[0].attributes['lmnr.association.properties.label.endpoint'],
-      "some-endpoint",
+    assert.deepEqual(
+      (spans[0].attributes['lmnr.association.properties.labels'] as string[]).sort(),
+      ["some-endpoint", "endpoint"].sort(),
     );
 
     assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
@@ -302,23 +282,23 @@ void describe("tracing", () => {
   });
 
   void it("sets the labels on startSpan", () => {
-    const span = Laminar.startSpan({ name: "test", labels: { endpoint: "some-endpoint" } });
+    const span = Laminar.startSpan({ name: "test", labels: ["endpoint", "some-endpoint"] });
     const result = Laminar.withSpan(span, () => 3, true);
 
     assert.strictEqual(result, 3);
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
-    assert.strictEqual(
-      spans[0].attributes['lmnr.association.properties.label.endpoint'],
-      "some-endpoint",
+    assert.deepEqual(
+      (spans[0].attributes['lmnr.association.properties.labels'] as string[]).sort(),
+      ["some-endpoint", "endpoint"].sort(),
     );
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
   });
 
   void it("doesn't set the labels on the current span", async () => {
-    const fn = (a: number, b: number) => withLabels({ endpoint: "some-endpoint" }, () => a + b);
+    const fn = (a: number, b: number) => withLabels(["endpoint", "some-endpoint"], () => a + b);
     const result = await observe({ name: "test" }, fn, 1, 2);
 
     assert.strictEqual(result, 3);
@@ -327,7 +307,7 @@ void describe("tracing", () => {
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
     assert.strictEqual(
-      spans[0].attributes['lmnr.association.properties.label.endpoint'],
+      spans[0].attributes['lmnr.association.properties.labels'],
       undefined,
     );
     assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
@@ -340,7 +320,7 @@ void describe("tracing", () => {
     const double = (a: number) => a * 2;
     const fn = async (a: number, b: number) => a + await observe({ name: "double" }, double, b);
     const result = await withLabels(
-      { endpoint: "some-endpoint" },
+      ["endpoint", "some-endpoint"],
       async (a, b) => await observe({ name: "test" }, fn, a, b),
       1, 2,
     );
@@ -355,16 +335,16 @@ void describe("tracing", () => {
 
     assert.strictEqual(testSpan?.attributes['lmnr.span.input'], JSON.stringify([1, 2]));
     assert.strictEqual(testSpan?.attributes['lmnr.span.output'], "5");
-    assert.strictEqual(
-      testSpan?.attributes['lmnr.association.properties.label.endpoint'],
-      "some-endpoint",
+    assert.deepEqual(
+      (testSpan?.attributes['lmnr.association.properties.labels'] as string[]).sort(),
+      ["some-endpoint", "endpoint"].sort(),
     );
 
     assert.strictEqual(doubleSpan?.attributes['lmnr.span.input'], JSON.stringify([2]));
     assert.strictEqual(doubleSpan?.attributes['lmnr.span.output'], "4");
-    assert.strictEqual(
-      doubleSpan?.attributes['lmnr.association.properties.label.endpoint'],
-      "some-endpoint",
+    assert.deepEqual(
+      (doubleSpan?.attributes['lmnr.association.properties.labels'] as string[]).sort(),
+      ["some-endpoint", "endpoint"].sort(),
     );
 
     assert.strictEqual(doubleSpan?.parentSpanId, testSpan?.spanContext().spanId);

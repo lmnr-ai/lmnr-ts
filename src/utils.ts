@@ -1,4 +1,18 @@
+import { SpanContext, TraceFlags } from '@opentelemetry/api';
+import pino from 'pino';
 import { v4 as uuidv4 } from 'uuid';
+
+import { LaminarSpanContext } from './types';
+
+const logger = pino({
+  level: "info",
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+    },
+  },
+});
 
 export type StringUUID = `${string}-${string}-${string}-${string}-${string}`;
 
@@ -25,12 +39,12 @@ export const otelSpanIdToUUID = (spanId: string): string => {
     id = id.slice(2);
   }
   if (id.length !== 16) {
-    console.warn(`Span ID ${spanId} is not 16 hex chars long. ` +
+    logger.warn(`Span ID ${spanId} is not 16 hex chars long. ` +
       'This is not a valid OpenTelemetry span ID.');
   }
 
   if (!/^[0-9a-f]+$/.test(id)) {
-    console.error(`Span ID ${spanId} is not a valid hex string. ` +
+    logger.error(`Span ID ${spanId} is not a valid hex string. ` +
       'Generating a random UUID instead.');
     return newUUID();
   }
@@ -44,11 +58,11 @@ export const otelTraceIdToUUID = (traceId: string): string => {
     id = id.slice(2);
   }
   if (id.length !== 32) {
-    console.warn(`Trace ID ${traceId} is not 32 hex chars long. ` +
+    logger.warn(`Trace ID ${traceId} is not 32 hex chars long. ` +
       'This is not a valid OpenTelemetry trace ID.');
   }
   if (!/^[0-9a-f]+$/.test(id)) {
-    console.error(`Trace ID ${traceId} is not a valid hex string. ` +
+    logger.error(`Trace ID ${traceId} is not a valid hex string. ` +
       'Generating a random UUID instead.');
     return newUUID();
   }
@@ -57,14 +71,7 @@ export const otelTraceIdToUUID = (traceId: string): string => {
 };
 
 export const uuidToOtelTraceId = (uuid: string): string => uuid.replace(/-/g, '');
-
-// const tryImport = async (pkg: string) => {
-//   try {
-//     return await import(pkg);
-//   } catch {
-//     return null;
-//   }
-// };
+export const uuidToOtelSpanId = (uuid: string): string => uuid.replace(/-/g, '').slice(16);
 
 /**
  * This is a simple implementation of a semaphore to replicate
@@ -120,3 +127,49 @@ export class Semaphore {
     }
   }
 }
+
+export const tryToOtelSpanContext = (
+  spanContext: LaminarSpanContext | Record<string, unknown> | string | SpanContext,
+): SpanContext => {
+  if (typeof spanContext === 'string') {
+    try {
+      const record = JSON.parse(spanContext) as Record<string, unknown>;
+      return recordToOtelSpanContext(record);
+    } catch (e) {
+      throw new Error(`Failed to parse span context ${spanContext}. ` +
+        'The string must be a json representation of a LaminarSpanContext.'
+        + `Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  } else if (isRecord(spanContext)) {
+    // This covers the `LaminarSpanContext` case too.
+    return recordToOtelSpanContext(spanContext);
+  } else if (typeof spanContext.traceId === 'string'
+    && typeof spanContext.spanId === 'string'
+    && spanContext.traceId.length === 32
+    && spanContext.spanId.length === 16) {
+    logger.warn('The span context is already an OpenTelemetry SpanContext. ' +
+      'Returning it as is. Please use `LaminarSpanContext` objects instead.');
+    return spanContext;
+  }
+  else {
+    throw new Error(`Invalid span context ${JSON.stringify(spanContext)}. ` +
+      'Must be a LaminarSpanContext or its json representation.');
+  }
+};
+
+const recordToOtelSpanContext = (record: Record<string, unknown>): SpanContext => {
+  if (typeof record.spanId === 'string' && typeof record.traceId === 'string') {
+    return {
+      spanId: uuidToOtelSpanId(record?.spanId ?? record?.['span_id']),
+      traceId: uuidToOtelTraceId(record?.traceId ?? record?.['trace_id']),
+      isRemote: record?.isRemote ?? record?.['is_remote'] ?? false,
+      traceFlags: record?.traceFlags ?? TraceFlags.SAMPLED,
+    } as SpanContext;
+  } else {
+    throw new Error(`Invalid span context ${JSON.stringify(record)}. ` +
+      'Must be a json representation of a LaminarSpanContext.');
+  }
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && !Array.isArray(value) && value !== null;

@@ -32,9 +32,11 @@ import {
   AIPlatformInstrumentation,
   VertexAIInstrumentation,
 } from "@traceloop/instrumentation-vertexai";
+import pino from "pino";
 
 import { version as SDK_VERSION } from "../../../package.json";
 import { PlaywrightInstrumentation, StagehandInstrumentation } from "../../browser";
+import { LaminarClient } from "../../client";
 // for doc comment:
 import { otelSpanIdToUUID } from "../../utils";
 import { getLangVersion } from "../../version";
@@ -56,6 +58,16 @@ import {
   getSpanPath,
   SPAN_PATH_KEY,
 } from "./tracing";
+
+const logger = pino({
+  level: "info",
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+    },
+  },
+});
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor | undefined;
 const _spanIdToPath: Map<string, string[]> = new Map();
@@ -79,7 +91,7 @@ const NUM_TRACKED_NEXTJS_SPANS = 10000;
 
 const instrumentations: Instrumentation[] = [];
 
-const initInstrumentations = () => {
+const initInstrumentations = (client: LaminarClient) => {
   const enrichTokens = false;
 
   openAIInstrumentation = new OpenAIInstrumentation({
@@ -120,7 +132,7 @@ const initInstrumentations = () => {
   qdrantInstrumentation = new QdrantInstrumentation();
   instrumentations.push(qdrantInstrumentation);
 
-  playwrightInstrumentation = new PlaywrightInstrumentation();
+  playwrightInstrumentation = new PlaywrightInstrumentation(client);
   instrumentations.push(playwrightInstrumentation);
 
   stagehandInstrumentation = new StagehandInstrumentation(playwrightInstrumentation);
@@ -128,6 +140,7 @@ const initInstrumentations = () => {
 };
 
 const manuallyInitInstrumentations = (
+  client: LaminarClient,
   instrumentModules: InitializeOptions["instrumentModules"],
 ) => {
   const enrichTokens = false;
@@ -214,14 +227,14 @@ const manuallyInitInstrumentations = (
   }
 
   if (instrumentModules?.playwright) {
-    playwrightInstrumentation = new PlaywrightInstrumentation();
+    playwrightInstrumentation = new PlaywrightInstrumentation(client);
     instrumentations.push(playwrightInstrumentation);
     playwrightInstrumentation.manuallyInstrument(instrumentModules.playwright);
   }
 
   if (instrumentModules?.stagehand) {
     if (!playwrightInstrumentation) {
-      playwrightInstrumentation = new PlaywrightInstrumentation();
+      playwrightInstrumentation = new PlaywrightInstrumentation(client);
       instrumentations.push(playwrightInstrumentation);
     }
     stagehandInstrumentation = new StagehandInstrumentation(playwrightInstrumentation);
@@ -257,12 +270,16 @@ const isNextJsSpan = (span: ReadableSpan) =>
  * for details.
  */
 export const startTracing = (options: InitializeOptions) => {
+  const client = new LaminarClient({
+    baseUrl: options.baseUrl ?? 'https://api.lmnr.ai',
+    projectApiKey: options.apiKey ?? process.env.LMNR_PROJECT_API_KEY!,
+  });
   if (options.instrumentModules !== undefined) {
     // If options.instrumentModules is empty, it will not initialize anything,
     // so empty dict can be passed to disable any kind of automatic instrumentation.
-    manuallyInitInstrumentations(options.instrumentModules);
+    manuallyInitInstrumentations(client, options.instrumentModules);
   } else {
-    initInstrumentations();
+    initInstrumentations(client);
   }
 
   if (!shouldSendTraces()) {
@@ -332,8 +349,16 @@ export const startTracing = (options: InitializeOptions) => {
         ? _spanIdToPath.get(span.parentSpanId)
         : undefined);
     const spanId = span.spanContext().spanId;
-    const parentSpanIdsPath = span.parentSpanId ? (_spanIdLists.get(span.parentSpanId) ?? []) : [];
-    const spanPath = parentSpanPath ? [...parentSpanPath, span.name] : [span.name];
+    const parentSpanIdsPath = span.parentSpanId
+      ? ((!options.preserveNextJsSpans && nextJsSpanIds.has(span.parentSpanId))
+        ? []
+        : _spanIdLists.get(span.parentSpanId) ?? [])
+      : [];
+    const spanPath = (!options.preserveNextJsSpans
+      && span.parentSpanId && nextJsSpanIds.has(span.parentSpanId)
+    )
+      ? [span.name]
+      : parentSpanPath ? [...parentSpanPath, span.name] : [span.name];
     const spanIdUuid = otelSpanIdToUUID(spanId);
 
     const spanIdsPath = parentSpanIdsPath ? [...parentSpanIdsPath, spanIdUuid] : [spanIdUuid];
@@ -425,7 +450,7 @@ export const startTracing = (options: InitializeOptions) => {
     try {
       provider.register();
     } catch {
-      console.error('Error registering tracer provider');
+      logger.error('Error registering tracer provider');
     }
     registerInstrumentations({
       instrumentations,

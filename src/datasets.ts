@@ -21,6 +21,7 @@ export class LaminarDataset<D, T> extends EvaluationDataset<D, T> {
   private offset: number = 0;
   private fetchSize: number;
   private name: string;
+  private client: LaminarClient | undefined = undefined;
 
   constructor(name: string, fetchSize?: number) {
     super();
@@ -28,8 +29,15 @@ export class LaminarDataset<D, T> extends EvaluationDataset<D, T> {
     this.fetchSize = fetchSize || DEFAULT_FETCH_SIZE;
   }
 
+  public setClient(client: LaminarClient) {
+    this.client = client;
+  }
+
   private async fetchBatch() {
-    const resp = await LaminarClient.getDatapoints<D, T>({
+    if (!this.client) {
+      throw new Error('Client not set');
+    }
+    const resp = await this.client.evals.getDatapoints<D, T>({
       datasetName: this.name,
       offset: this.offset,
       limit: this.fetchSize,

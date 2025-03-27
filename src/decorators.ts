@@ -2,17 +2,17 @@ import { context } from "@opentelemetry/api";
 
 import { observeBase } from './sdk/node-server-sdk';
 import { ASSOCIATION_PROPERTIES_KEY } from "./sdk/tracing/tracing";
-import { TraceType, TracingLevel } from './types';
+import { LaminarSpanContext, TraceType, TracingLevel } from './types';
 
 interface ObserveOptions {
   name?: string;
   sessionId?: string;
   traceType?: TraceType;
   spanType?: 'DEFAULT' | 'LLM' | 'TOOL';
-  traceId?: string;
   input?: unknown;
   ignoreInput?: boolean;
   ignoreOutput?: boolean;
+  parentSpanContext?: string | LaminarSpanContext;
 }
 
 /**
@@ -46,10 +46,10 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     sessionId,
     traceType,
     spanType,
-    traceId,
     input,
     ignoreInput,
     ignoreOutput,
+    parentSpanContext,
   }: ObserveOptions, fn: F, ...args: A): Promise<ReturnType<F>> {
   if (fn === undefined || typeof fn !== "function") {
     throw new Error("Invalid `observe` usage. Second argument `fn` must be a function.");
@@ -70,10 +70,10 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
   return await observeBase<A, F>({
     name: name ?? fn.name,
     associationProperties,
-    traceId,
     input,
     ignoreInput,
     ignoreOutput,
+    parentSpanContext,
   }, fn, undefined, ...args);
 }
 
@@ -100,20 +100,21 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
  * ```
  */
 export function withLabels<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
-  labels: Record<string, string>,
+  labels: string[],
   fn: F,
   ...args: A
 ): ReturnType<F> {
   let entityContext = context.active();
   const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
-  const labelProperties = Object.entries(labels).reduce((acc, [key, value]) => {
-    acc[`label.${key}`] = value;
-    return acc;
-  }, {} as Record<string, string>);
+  const oldLabels = (currentAssociationProperties as Record<string, any>).labels ?? [];
+  const newLabels = [...oldLabels, ...labels];
 
   entityContext = entityContext.setValue(
     ASSOCIATION_PROPERTIES_KEY,
-    { ...currentAssociationProperties, ...labelProperties },
+    {
+      ...currentAssociationProperties,
+      labels: newLabels,
+    },
   );
 
   const result = context.with(entityContext, () => fn(...args));
@@ -122,13 +123,9 @@ export function withLabels<A extends unknown[], F extends (...args: A) => Return
     entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {}
   ) as Record<string, any>;
 
-  for (const key of Object.keys(labelProperties)) {
-    delete newAssociationProperties[`label.${key}`];
-  }
-
   entityContext = entityContext.setValue(
     ASSOCIATION_PROPERTIES_KEY,
-    newAssociationProperties,
+    { ...newAssociationProperties, labels: oldLabels },
   );
 
   return result;

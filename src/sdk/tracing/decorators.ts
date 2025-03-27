@@ -1,14 +1,25 @@
-import { context, Span, trace, TraceFlags } from "@opentelemetry/api";
+import { context, Span, trace } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
-import { RandomIdGenerator } from "@opentelemetry/sdk-trace-base";
+import pino from "pino";
 
-import { isStringUUID, uuidToOtelTraceId } from "../../utils";
+import { LaminarSpanContext } from "../../types";
+import { tryToOtelSpanContext } from "../../utils";
 import { shouldSendTraces } from ".";
-import { OVERRIDE_PARENT_SPAN, SPAN_INPUT, SPAN_OUTPUT } from "./attributes";
+import { SPAN_INPUT, SPAN_OUTPUT } from "./attributes";
 import {
   ASSOCIATION_PROPERTIES_KEY,
   getTracer,
 } from "./tracing";
+
+const logger = pino({
+  level: "info",
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+    },
+  },
+});
 
 export type DecoratorConfig = {
   name: string;
@@ -18,7 +29,7 @@ export type DecoratorConfig = {
   ignoreOutput?: boolean;
   inputParameters?: unknown[];
   suppressTracing?: boolean;
-  traceId?: string;
+  parentSpanContext?: string | LaminarSpanContext;
 };
 
 export function observeBase<
@@ -33,7 +44,7 @@ export function observeBase<
     ignoreOutput,
     inputParameters,
     suppressTracing: shouldSuppressTracing,
-    traceId,
+    parentSpanContext,
   }: DecoratorConfig,
   fn: F,
   thisArg?: ThisParameterType<F>,
@@ -50,18 +61,9 @@ export function observeBase<
     );
   }
 
-  if (traceId) {
-    if (isStringUUID(traceId)) {
-      const spanContext = {
-        traceId: uuidToOtelTraceId(traceId),
-        spanId: new RandomIdGenerator().generateSpanId(),
-        traceFlags: TraceFlags.SAMPLED,
-        isRemote: false,
-      };
-      entityContext = trace.setSpanContext(entityContext, spanContext);
-    } else {
-      console.warn(`Invalid trace ID ${traceId}. Expected a UUID.`);
-    }
+  if (parentSpanContext) {
+    const spanContext = tryToOtelSpanContext(parentSpanContext);
+    entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
   }
 
   if (shouldSuppressTracing) {
@@ -74,10 +76,6 @@ export function observeBase<
       {},
       entityContext,
       async (span: Span) => {
-        if (traceId && isStringUUID(traceId)) {
-          span.setAttribute(OVERRIDE_PARENT_SPAN, true);
-        }
-
         if (shouldSendTraces() && !ignoreInput) {
           try {
             const spanInput = inputParameters ?? args;
@@ -105,7 +103,8 @@ export function observeBase<
               );
             }
           } catch (error) {
-            console.warn("Failed to serialize input", error);
+            logger.warn("Failed to serialize input: " +
+              `${error instanceof Error ? error.message : String(error)}`);
           }
         }
 
@@ -137,7 +136,8 @@ export function observeBase<
                 );
               }
             } catch (error) {
-              console.warn("Failed to serialize async output", error);
+              logger.warn("Failed to serialize async output: " +
+                `${error instanceof Error ? error.message : String(error)}`);
             } finally {
               span.end();
             }
@@ -159,7 +159,8 @@ export function observeBase<
             );
           }
         } catch (error) {
-          console.warn("Failed to serialize output", error);
+          logger.warn("Failed to serialize output: " +
+            `${error instanceof Error ? error.message : String(error)}`);
         } finally {
           span.end();
         }

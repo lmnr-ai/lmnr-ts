@@ -4,8 +4,20 @@ import { context, propagation, trace } from "@opentelemetry/api";
 import { ArgumentParser } from "argparse";
 import * as esbuild from "esbuild";
 import * as glob from "glob";
+import pino from "pino";
 
+import { version } from "../package.json";
 import { Evaluation } from "./evaluations";
+
+const logger = pino({
+  level: "info",
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+    },
+  },
+});
 
 declare global {
   // eslint-disable-next-line no-var
@@ -13,9 +25,6 @@ declare global {
   // eslint-disable-next-line no-var
   var _set_global_evaluation: boolean;
 }
-
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pjson = require('../package.json');
 
 export function loadModule({
   moduleText,
@@ -43,7 +52,7 @@ async function cli() {
     description: "CLI for Laminar. Use `lmnr <subcommand> --help` for more information.",
   });
 
-  parser.add_argument("-v", "--version", { action: "version", version: pjson.version });
+  parser.add_argument("-v", "--version", { action: "version", version });
 
   const subparsers = parser.add_subparsers({
     title: "subcommands",
@@ -75,17 +84,17 @@ async function cli() {
       files.sort();
 
       if (files.length === 0) {
-        console.error("No evaluation files found. Please provide a file or " +
+        logger.error("No evaluation files found. Please provide a file or " +
           "ensure there are files in the `evals` directory.");
         process.exit(1);
       }
 
       if (!args.file) {
-        console.log(`Located ${files.length} evaluation files in evals/`);
+        logger.info(`Located ${files.length} evaluation files in evals/`);
       }
 
       for (const file of files) {
-        console.log(`Loading ${file}...`);
+        logger.info(`Loading ${file}...`);
         // TODO: Add various optimizations, e.g. minify, pure, tree shaking, etc.
         const buildOptions = {
           entryPoints: [file],
@@ -99,7 +108,7 @@ async function cli() {
         const result = await esbuild.build(buildOptions);
 
         if (!result.outputFiles) {
-          console.error("Error when building: No output files found");
+          logger.error("Error when building: No output files found");
           if (args.fail_on_error) {
             process.exit(1);
           }
@@ -114,7 +123,7 @@ async function cli() {
         });
 
         if (!evaluation?.run) {
-          console.error(`Evaluation ${file} does not properly call evaluate()`);
+          logger.error(`Evaluation ${file} does not properly call evaluate()`);
           if (args.fail_on_error) {
             process.exit(1);
           }
@@ -147,6 +156,6 @@ async function cli() {
 }
 
 cli().catch((err) => {
-  console.error(err);
+  logger.error(err);
   process.exit(1);
 });
