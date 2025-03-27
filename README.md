@@ -227,7 +227,7 @@ const response = await client.agent.run({
     prompt: "What is the weather in London today?",
 });
 
-for await (const chunk of res) {
+for await (const chunk of response) {
   console.log(chunk.chunkType)
   if (chunk.chunkType === 'step') {
     console.log(chunk.summary);

@@ -59,7 +59,10 @@ export class EvalsResource extends BaseResource {
   /**
    * Get evaluation datapoints.
    *
-   * @param {string} evalId - ID of the evaluation
+   * @params {Object} options - Get datapoints options
+   * @param {string} options.datasetName - Name of the dataset
+   * @param {number} options.offset - Offset at which to start the query
+   * @param {number} options.limit - Maximum number of datapoints to return
    * @returns {Promise<GetDatapointsResponse>} Response from the datapoint retrieval
    */
   public async getDatapoints<D, T>({
