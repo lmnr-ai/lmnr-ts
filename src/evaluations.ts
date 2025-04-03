@@ -10,6 +10,7 @@ import { InitializeOptions } from "./sdk/interfaces";
 import { SPAN_TYPE } from "./sdk/tracing/attributes";
 import { EvaluationDatapoint } from "./types";
 import { newUUID, otelSpanIdToUUID, otelTraceIdToUUID, Semaphore, StringUUID } from "./utils";
+import { url } from "inspector";
 
 const DEFAULT_CONCURRENCY = 5;
 const MAX_EXPORT_BATCH_SIZE = 64;
@@ -32,7 +33,19 @@ const logger = pino({
   },
 });
 
-const getEvaluationUrl = (projectId: string, evaluationId: string) => `https://www.lmnr.ai/project/${projectId}/evaluations/${evaluationId}`;
+const getEvaluationUrl = (projectId: string, evaluationId: string, baseUrl?: string): string => {
+  let url = baseUrl ?? "https://api.lmnr.ai";
+  if (url === "https://api.lmnr.ai") {
+    url = "https://www.lmnr.ai";
+  }
+  url = url.replace(/\/$/, '');
+
+  if (url.endsWith("localhost") || url.endsWith("127.0.0.1")) {
+    // We best effort assume that the frontend is running on port 5667
+    url = url + ":5667";
+  }
+  return `${url}/project/${projectId}/evaluations/${evaluationId}`;
+}
 
 const getAverageScores =
   <D, T, O>(results: EvaluationDatapoint<D, T, O>[]): Record<string, number> => {

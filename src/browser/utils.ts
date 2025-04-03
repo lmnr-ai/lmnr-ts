@@ -1,4 +1,4 @@
-import { LLMClient, Page as StagehandPage } from "@browserbasehq/stagehand";
+import { LLMClient } from "@browserbasehq/stagehand";
 import path from "path";
 import pino from "pino";
 import { Page } from "playwright";
@@ -31,7 +31,7 @@ export const getDirname = () => {
 
 export const collectAndSendPageEvents = async (
   client: LaminarClient,
-  page: Page & StagehandPage, // Playwright (or mb puppeteer) page with an async `evaluate` method
+  page: Page, // Playwright (or mb puppeteer) page with an async `evaluate` method
   sessionId: StringUUID,
   traceId: StringUUID,
 ) => {

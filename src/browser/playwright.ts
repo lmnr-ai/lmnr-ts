@@ -246,12 +246,13 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
   private patchBrowserNewContext() {
     const plugin = this;
     return (original: Function) => async function method(this: Browser, ...args: unknown[]) {
-      const context = await original.bind(this).apply(this, args);
+      const context: BrowserContext = await original.bind(this).apply(this, args);
       if (!plugin._parentSpan) {
         plugin._parentSpan = Laminar.startSpan({
           name: 'playwright',
         });
       }
+      // Patch pages that are created manually from Playwright
       plugin._wrap(
         context,
         'newPage',
@@ -262,9 +263,14 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         'close',
         plugin.patchBrowserContextClose(),
       );
+      // Patch pages created by browser, e.g. new tab
+      context.on('page', async (page) => plugin.patchPage(page));
+
+      // Patch pages that are already created
       for (const page of context.pages()) {
         await plugin.patchPage(page);
       }
+
       plugin._patchedContexts.add(context);
       return context;
     };
@@ -311,7 +317,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     };
   }
 
-  public async patchPage(page: Page & StagehandPage) {
+  public async patchPage(page: Page) {
     return await Laminar.withSpan(this._parentSpan!, async () => {
       // Note: be careful with await here, if the await is removed,
       // this creates a race condition, and playwright fails.
@@ -319,7 +325,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     });
   }
 
-  private async _patchPage(page: Page & StagehandPage) {
+  private async _patchPage(page: Page) {
     page.addListener("load", (p: Page) => {
       this.injectRrweb(p).catch(error => {
         logger.error("Failed to inject rrweb: " +
@@ -397,7 +403,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         const BATCH_SIZE = 1000; // Maximum events to store in memory
         const HEARTBEAT_INTERVAL = 1000;  // 1 second heartbeat
 
-        (window as any).lmnrRrwebEventsBatch = [];
+        (window as any).lmnrRrwebEventsBatch = new Set();
 
         const compressEventData = async (data: any) => {
           const jsonString = JSON.stringify(data);
@@ -410,8 +416,8 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
         (window as any).lmnrGetAndClearEvents = () => {
           const events = (window as any).lmnrRrwebEventsBatch;
-          (window as any).lmnrRrwebEventsBatch = [];
-          return events;
+          (window as any).lmnrRrwebEventsBatch = new Set();
+          return Array.from(events);
         };
 
         setInterval(() => {
@@ -422,12 +428,13 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
               timestamp: Date.now(),
             };
 
-            (window as any).lmnrRrwebEventsBatch?.push(heartbeatEvent);
+            (window as any).lmnrRrwebEventsBatch?.add(heartbeatEvent);
 
             if ((window as any).lmnrRrwebEventsBatch?.length > BATCH_SIZE) {
               // Drop oldest events to prevent memory issues
-              (window as any).lmnrRrwebEventsBatch = (window as any).lmnrRrwebEventsBatch
-                .slice(-BATCH_SIZE);
+              (window as any).lmnrRrwebEventsBatch = new Set(
+                Array.from((window as any).lmnrRrwebEventsBatch).slice(-BATCH_SIZE),
+              );
             }
           })
             .catch(error => {
