@@ -46,7 +46,7 @@ export const collectAndSendPageEvents = async (
       return;
     }
 
-    // Puppeteer pages have the same evaluate method, but Typescript
+    // Puppeteer pages have the same evaluate method, but TypeScript
     // isn't liking that the signature is different.
 
     /* eslint-disable @typescript-eslint/no-unsafe-return */

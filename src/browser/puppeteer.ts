@@ -386,7 +386,7 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
   }
 
   private async _patchPage(page: Page) {
-    page.on("load", () => {
+    page.on("domcontentloaded", () => {
       this.injectRrweb(page).catch(error => {
         logger.error("Failed to inject rrweb: " +
           `${error instanceof Error ? error.message : String(error)}`);
@@ -423,7 +423,6 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
 
   private async injectRrweb(page: Page) {
     // Wait for the page to be in a ready state first
-    // await page.waitForNavigation({ waitUntil: 'load' });
     const tryRunScript = async (
       script: (...args: any[]) => Promise<any>,
       maxAttempts: number = 5,

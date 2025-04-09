@@ -36,7 +36,7 @@ const getEvaluationUrl = (projectId: string, evaluationId: string, baseUrl?: str
   url = url.replace(/\/$/, '');
 
   if (url.endsWith("localhost") || url.endsWith("127.0.0.1")) {
-    // We best effort assume that the frontend is running on port 5667
+    // As a best effort, we assume that the frontend is running on port 5667
     url = url + ":5667";
   }
   return `${url}/project/${projectId}/evaluations/${evaluationId}`;

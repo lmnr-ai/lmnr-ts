@@ -65,7 +65,7 @@ export class Laminar {
    * @param project_api_key - Laminar project api key. You can generate one by going
    * to the projects settings page on the Laminar dashboard.
    * If not specified, it will try to read from the LMNR_PROJECT_API_KEY environment variable.
-   * @param env - Default environment passed to `run` requests, unless overriden at request
+   * @param env - Default environment passed to `run` requests, unless overridden at request
    * time. Usually, model provider keys are stored here.
    * @param baseUrl - Laminar API url. Do not include the port, use
    * `httpPort` and `grpcPort` instead.

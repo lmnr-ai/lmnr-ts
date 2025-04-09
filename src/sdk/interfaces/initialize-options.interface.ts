@@ -44,7 +44,7 @@ export interface InitializeOptions {
   baseUrl?: string;
 
   /**
-   * Sends traces and spans without batching, for local developement. Optional.
+   * Sends traces and spans without batching, for local development. Optional.
    * Defaults to false.
    */
   disableBatch?: boolean;
