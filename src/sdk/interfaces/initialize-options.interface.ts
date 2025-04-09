@@ -18,6 +18,8 @@ import type * as ToolsModule from "langchain/tools";
 import type * as llamaindex from "llamaindex";
 import type * as openai from "openai";
 import type * as playwright from "playwright";
+import type * as puppeteer from "puppeteer";
+
 /**
  * Options for initializing the Traceloop SDK.
  */
@@ -114,6 +116,7 @@ export interface InitializeOptions {
       webkit?: typeof playwright.webkit,
     },
     stagehand?: typeof StagehandLib.Stagehand,
+    puppeteer?: typeof puppeteer,
   };
 
 

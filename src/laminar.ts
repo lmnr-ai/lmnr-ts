@@ -11,6 +11,7 @@ import {
 } from '@opentelemetry/api';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import pino from 'pino';
+import pinoPretty from 'pino-pretty';
 
 import { forceFlush, InitializeOptions, initializeTracing } from './sdk/node-server-sdk';
 import {
@@ -30,15 +31,10 @@ import {
   tryToOtelSpanContext,
 } from './utils';
 
-const logger = pino({
-  level: "info",
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-    },
-  },
-});
+const logger = pino(pinoPretty({
+  colorize: true,
+  minimumLevel: "info",
+}));
 
 
 interface LaminarInitializeProps {

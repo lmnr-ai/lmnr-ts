@@ -1,6 +1,7 @@
 import { context, Span, trace } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
 import pino from "pino";
+import pinoPretty from "pino-pretty";
 
 import { LaminarSpanContext } from "../../types";
 import { tryToOtelSpanContext } from "../../utils";
@@ -11,15 +12,10 @@ import {
   getTracer,
 } from "./tracing";
 
-const logger = pino({
-  level: "info",
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-    },
-  },
-});
+const logger = pino(pinoPretty({
+  colorize: true,
+  minimumLevel: "info",
+}));
 
 export type DecoratorConfig = {
   name: string;

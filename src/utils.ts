@@ -1,18 +1,14 @@
 import { SpanContext, TraceFlags } from '@opentelemetry/api';
 import pino from 'pino';
+import pinoPretty from 'pino-pretty';
 import { v4 as uuidv4 } from 'uuid';
 
 import { LaminarSpanContext } from './types';
 
-const logger = pino({
-  level: "info",
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-    },
-  },
-});
+const logger = pino(pinoPretty({
+  colorize: true,
+  minimumLevel: "info",
+}));
 
 export type StringUUID = `${string}-${string}-${string}-${string}-${string}`;
 

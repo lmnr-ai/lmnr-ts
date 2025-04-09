@@ -1,4 +1,3 @@
-
 import {
   Context,
   context,
@@ -33,9 +32,11 @@ import {
   VertexAIInstrumentation,
 } from "@traceloop/instrumentation-vertexai";
 import pino from "pino";
+import pinoPretty from "pino-pretty";
 
 import { version as SDK_VERSION } from "../../../package.json";
 import { PlaywrightInstrumentation, StagehandInstrumentation } from "../../browser";
+import { PuppeteerInstrumentation } from "../../browser/puppeteer";
 import { LaminarClient } from "../../client";
 // for doc comment:
 import { otelSpanIdToUUID } from "../../utils";
@@ -59,15 +60,10 @@ import {
   SPAN_PATH_KEY,
 } from "./tracing";
 
-const logger = pino({
-  level: "info",
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-    },
-  },
-});
+const logger = pino(pinoPretty({
+  colorize: true,
+  minimumLevel: "info",
+}));
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor | undefined;
 const _spanIdToPath: Map<string, string[]> = new Map();
@@ -86,6 +82,7 @@ let chromadbInstrumentation: ChromaDBInstrumentation | undefined;
 let qdrantInstrumentation: QdrantInstrumentation | undefined;
 let playwrightInstrumentation: PlaywrightInstrumentation | undefined;
 let stagehandInstrumentation: StagehandInstrumentation | undefined;
+let puppeteerInstrumentation: PuppeteerInstrumentation | undefined;
 
 const NUM_TRACKED_NEXTJS_SPANS = 10000;
 
@@ -137,6 +134,9 @@ const initInstrumentations = (client: LaminarClient) => {
 
   stagehandInstrumentation = new StagehandInstrumentation(playwrightInstrumentation);
   instrumentations.push(stagehandInstrumentation);
+
+  puppeteerInstrumentation = new PuppeteerInstrumentation(client);
+  instrumentations.push(puppeteerInstrumentation);
 };
 
 const manuallyInitInstrumentations = (
@@ -230,6 +230,12 @@ const manuallyInitInstrumentations = (
     playwrightInstrumentation = new PlaywrightInstrumentation(client);
     instrumentations.push(playwrightInstrumentation);
     playwrightInstrumentation.manuallyInstrument(instrumentModules.playwright);
+  }
+
+  if (instrumentModules?.puppeteer) {
+    puppeteerInstrumentation = new PuppeteerInstrumentation(client);
+    instrumentations.push(puppeteerInstrumentation);
+    puppeteerInstrumentation.manuallyInstrument(instrumentModules.puppeteer);
   }
 
   if (instrumentModules?.stagehand) {

@@ -1,6 +1,7 @@
 import { trace } from "@opentelemetry/api";
 import cliProgress from "cli-progress";
 import pino from "pino";
+import pinoPretty from "pino-pretty";
 
 import { LaminarClient } from "./client";
 import { EvaluationDataset, LaminarDataset } from "./datasets";
@@ -10,7 +11,6 @@ import { InitializeOptions } from "./sdk/interfaces";
 import { SPAN_TYPE } from "./sdk/tracing/attributes";
 import { EvaluationDatapoint } from "./types";
 import { newUUID, otelSpanIdToUUID, otelTraceIdToUUID, Semaphore, StringUUID } from "./utils";
-import { url } from "inspector";
 
 const DEFAULT_CONCURRENCY = 5;
 const MAX_EXPORT_BATCH_SIZE = 64;
@@ -23,15 +23,10 @@ declare global {
   var _set_global_evaluation: boolean;
 }
 
-const logger = pino({
-  level: "info",
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-    },
-  },
-});
+const logger = pino(pinoPretty({
+  colorize: true,
+  minimumLevel: "info",
+}));
 
 const getEvaluationUrl = (projectId: string, evaluationId: string, baseUrl?: string): string => {
   let url = baseUrl ?? "https://api.lmnr.ai";
@@ -45,7 +40,7 @@ const getEvaluationUrl = (projectId: string, evaluationId: string, baseUrl?: str
     url = url + ":5667";
   }
   return `${url}/project/${projectId}/evaluations/${evaluationId}`;
-}
+};
 
 const getAverageScores =
   <D, T, O>(results: EvaluationDatapoint<D, T, O>[]): Record<string, number> => {

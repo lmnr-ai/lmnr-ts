@@ -5,19 +5,15 @@ import { ArgumentParser } from "argparse";
 import * as esbuild from "esbuild";
 import * as glob from "glob";
 import pino from "pino";
+import pinoPretty from "pino-pretty";
 
 import { version } from "../package.json";
 import { Evaluation } from "./evaluations";
 
-const logger = pino({
-  level: "info",
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-    },
-  },
-});
+const logger = pino(pinoPretty({
+  colorize: true,
+  minimumLevel: "info",
+}));
 
 declare global {
   // eslint-disable-next-line no-var
