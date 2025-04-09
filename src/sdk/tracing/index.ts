@@ -5,7 +5,6 @@ import {
   trace,
   TracerProvider,
 } from "@opentelemetry/api";
-import { baggageUtils } from "@opentelemetry/core";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { Instrumentation, registerInstrumentations } from "@opentelemetry/instrumentation";
 import { Span } from "@opentelemetry/sdk-trace-base";
@@ -326,9 +325,7 @@ export const startTracing = (options: InitializeOptions) => {
     });
   }
 
-  const headers = process.env.TRACELOOP_HEADERS
-    ? baggageUtils.parseKeyPairsIntoRecord(process.env.TRACELOOP_HEADERS)
-    : { Authorization: `Bearer ${options.apiKey}` };
+  const headers = { Authorization: `Bearer ${options.apiKey}` };
 
   const traceExporter =
     options.exporter ??
@@ -362,17 +359,17 @@ export const startTracing = (options: InitializeOptions) => {
   _spanProcessor.onStart = (span: Span, parentContext: Context) => {
     const contextSpanPath = getSpanPath(parentContext ?? context.active());
     const parentSpanPath = contextSpanPath
-      ?? (span.parentSpanId !== undefined
-        ? _spanIdToPath.get(span.parentSpanId)
+      ?? (span.parentSpanContext?.spanId !== undefined
+        ? _spanIdToPath.get(span.parentSpanContext.spanId)
         : undefined);
     const spanId = span.spanContext().spanId;
-    const parentSpanIdsPath = span.parentSpanId
-      ? ((!options.preserveNextJsSpans && nextJsSpanIds.has(span.parentSpanId))
+    const parentSpanIdsPath = span.parentSpanContext?.spanId
+      ? ((!options.preserveNextJsSpans && nextJsSpanIds.has(span.parentSpanContext.spanId))
         ? []
-        : _spanIdLists.get(span.parentSpanId) ?? [])
+        : _spanIdLists.get(span.parentSpanContext.spanId) ?? [])
       : [];
     const spanPath = (!options.preserveNextJsSpans
-      && span.parentSpanId && nextJsSpanIds.has(span.parentSpanId)
+      && span.parentSpanContext?.spanId && nextJsSpanIds.has(span.parentSpanContext.spanId)
     )
       ? [span.name]
       : parentSpanPath ? [...parentSpanPath, span.name] : [span.name];
@@ -389,8 +386,9 @@ export const startTracing = (options: InitializeOptions) => {
 
     span.setAttribute(SPAN_INSTRUMENTATION_SOURCE, "javascript");
     span.setAttribute(SPAN_SDK_VERSION, SDK_VERSION);
-    if (getLangVersion()) {
-      span.setAttribute(SPAN_LANGUAGE_VERSION, getLangVersion());
+    const langVersion = getLangVersion();
+    if (langVersion) {
+      span.setAttribute(SPAN_LANGUAGE_VERSION, langVersion);
     }
 
     // This sets the properties only if the context has them
@@ -412,8 +410,8 @@ export const startTracing = (options: InitializeOptions) => {
     // The backend looks for this attribute and deletes the parentSpanId if the
     // attribute is present. We do that to make the topmost non-Next.js span
     // the root span in the trace.
-    if (span.parentSpanId
-      && nextJsSpanIds.has(span.parentSpanId)
+    if (span.parentSpanContext?.spanId
+      && nextJsSpanIds.has(span.parentSpanContext.spanId)
       && !options.preserveNextJsSpans
     ) {
       span.setAttribute(OVERRIDE_PARENT_SPAN, true);
@@ -454,8 +452,9 @@ export const startTracing = (options: InitializeOptions) => {
     } else {
       provider = globalProvider;
     }
-    if ((provider as BasicTracerProvider).addSpanProcessor) {
-      (provider as BasicTracerProvider).addSpanProcessor(_spanProcessor);
+    // TODO: This probably fails after an otel 2.0 upgrade. We need to test this.
+    if ((provider as any).addSpanProcessor) {
+      (provider as any).addSpanProcessor(_spanProcessor);
     } else {
       throw new Error("The active tracer provider does not support adding a span processor");
     }
