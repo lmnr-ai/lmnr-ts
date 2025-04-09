@@ -27,6 +27,7 @@ import { LlamaIndexInstrumentation } from "@traceloop/instrumentation-llamaindex
 import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
 import { PineconeInstrumentation } from "@traceloop/instrumentation-pinecone";
 import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
+import { TogetherInstrumentation } from "@traceloop/instrumentation-together";
 import {
   AIPlatformInstrumentation,
   VertexAIInstrumentation,
@@ -83,6 +84,7 @@ let qdrantInstrumentation: QdrantInstrumentation | undefined;
 let playwrightInstrumentation: PlaywrightInstrumentation | undefined;
 let stagehandInstrumentation: StagehandInstrumentation | undefined;
 let puppeteerInstrumentation: PuppeteerInstrumentation | undefined;
+let togetherInstrumentation: TogetherInstrumentation | undefined;
 
 const NUM_TRACKED_NEXTJS_SPANS = 10000;
 
@@ -137,6 +139,9 @@ const initInstrumentations = (client: LaminarClient) => {
 
   puppeteerInstrumentation = new PuppeteerInstrumentation(client);
   instrumentations.push(puppeteerInstrumentation);
+
+  togetherInstrumentation = new TogetherInstrumentation();
+  instrumentations.push(togetherInstrumentation);
 };
 
 const manuallyInitInstrumentations = (
@@ -158,7 +163,7 @@ const manuallyInitInstrumentations = (
   if (instrumentModules?.anthropic) {
     anthropicInstrumentation = new AnthropicInstrumentation();
     instrumentations.push(anthropicInstrumentation);
-    anthropicInstrumentation.manuallyInstrument(instrumentModules.anthropic);
+    anthropicInstrumentation.manuallyInstrument(instrumentModules.anthropic as any);
   }
 
   if (instrumentModules?.azureOpenAI) {
@@ -224,6 +229,12 @@ const manuallyInitInstrumentations = (
     qdrantInstrumentation = new QdrantInstrumentation();
     instrumentations.push(qdrantInstrumentation);
     qdrantInstrumentation.manuallyInstrument(instrumentModules.qdrant);
+  }
+
+  if (instrumentModules?.together) {
+    togetherInstrumentation = new TogetherInstrumentation();
+    instrumentations.push(togetherInstrumentation);
+    togetherInstrumentation.manuallyInstrument(instrumentModules.together as any);
   }
 
   if (instrumentModules?.playwright) {
