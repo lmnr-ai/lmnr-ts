@@ -1,21 +1,18 @@
-import { LLMClient, Page as StagehandPage } from "@browserbasehq/stagehand";
+import { LLMClient } from "@browserbasehq/stagehand";
 import path from "path";
 import pino from "pino";
-import { Page } from "playwright";
+import pinoPretty from "pino-pretty";
+import { Page as PlaywrightPage } from "playwright";
+import { Page as PuppeteerPage } from "puppeteer";
 import { fileURLToPath } from "url";
 
 import { LaminarClient } from "..";
 import { StringUUID } from "../utils";
 
-const logger = pino({
-  level: "info",
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-    },
-  },
-});
+const logger = pino(pinoPretty({
+  colorize: true,
+  minimumLevel: "info",
+}));
 
 export const getDirname = () => {
   if (typeof __dirname !== 'undefined') {
@@ -31,7 +28,7 @@ export const getDirname = () => {
 
 export const collectAndSendPageEvents = async (
   client: LaminarClient,
-  page: Page & StagehandPage, // Playwright (or mb puppeteer) page with an async `evaluate` method
+  page: PlaywrightPage | PuppeteerPage,
   sessionId: StringUUID,
   traceId: StringUUID,
 ) => {
@@ -40,15 +37,23 @@ export const collectAndSendPageEvents = async (
       return;
     }
 
-    const hasFunction = await page.evaluate(
+    // Puppeteer pages have the same evaluate method, but Typescript
+    // isn't liking that the signature is different.
+    const hasFunction = await (page as PlaywrightPage).evaluate(
       () => typeof (window as any).lmnrGetAndClearEvents === 'function',
     );
     if (!hasFunction) {
       return;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    const events = await page.evaluate(async () => await (window as any).lmnrGetAndClearEvents());
+    // Puppeteer pages have the same evaluate method, but TypeScript
+    // isn't liking that the signature is different.
+
+    /* eslint-disable @typescript-eslint/no-unsafe-return */
+    const events = await (page as PlaywrightPage).evaluate(
+      async () => await (window as any).lmnrGetAndClearEvents(),
+    );
+    /* eslint-enable @typescript-eslint/no-unsafe-return */
     if (events == null || events.length === 0) {
       return;
     }
@@ -59,7 +64,12 @@ export const collectAndSendPageEvents = async (
       events,
     });
   } catch (error) {
-    logger.error(`Error sending events: ${error instanceof Error ? error.message : String(error)}`);
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("Execution context was destroyed")) {
+      logger.info(`Tried to flush events from a closed page. Continuing...`);
+    } else {
+      logger.error(`Error sending events: ${message}`);
+    }
   }
 };
 

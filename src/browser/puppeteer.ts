@@ -9,8 +9,9 @@ import { readFile } from "fs/promises";
 import path from "path";
 import pino from 'pino';
 import pinoPretty from 'pino-pretty';
-import type * as PlaywrightLib from "playwright";
-import type { Browser, BrowserContext, Page } from 'playwright';
+import type * as PuppeteerLib from "puppeteer";
+import type { Browser, BrowserContext, Page } from 'puppeteer';
+import type * as PuppeteerCoreLib from "puppeteer-core";
 
 import { version as SDK_VERSION } from "../../package.json";
 import { LaminarClient } from '../client';
@@ -57,7 +58,7 @@ const RRWEB_SCRIPT_PATH = (() => {
   @typescript-eslint/no-unsafe-function-type,
   @typescript-eslint/no-unsafe-return
 */
-export class PlaywrightInstrumentation extends InstrumentationBase {
+export class PuppeteerInstrumentation extends InstrumentationBase {
   private _patchedBrowsers: Set<Browser> = new Set();
   private _patchedContexts: Set<BrowserContext> = new Set();
   private _patchedPages: Set<Page> = new Set();
@@ -66,7 +67,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
   constructor(client: LaminarClient) {
     super(
-      "@lmnr/playwright-instrumentation",
+      "@lmnr/puppeteer-instrumentation",
       SDK_VERSION,
       {
         enabled: true,
@@ -81,117 +82,118 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     this._parentSpan = span;
   }
 
-  protected init(): InstrumentationModuleDefinition {
-    const module = new InstrumentationNodeModuleDefinition(
-      "playwright",
-      // TODO: test if the older versions work
-      ['>=1.0.0'],
+  protected init(): InstrumentationModuleDefinition[] {
+    const puppeteerInstrumentation = new InstrumentationNodeModuleDefinition(
+      "puppeteer",
+      // About two years before first writing this instrumentation
+      // and apparently no big breaking changes afterwards
+      // https://github.com/puppeteer/puppeteer/releases
+      ['>=19.0.0'],
       this.patch.bind(this),
       this.unpatch.bind(this),
     );
 
-    return module;
+    const puppeteerCoreInstrumentation = new InstrumentationNodeModuleDefinition(
+      "puppeteer-core",
+      ['>=19.0.0'],
+      this.patch.bind(this),
+      this.unpatch.bind(this),
+    );
+
+    return [puppeteerInstrumentation, puppeteerCoreInstrumentation];
   }
 
-  public manuallyInstrument(pwModule: {
-    chromium?: typeof PlaywrightLib.chromium,
-    firefox?: typeof PlaywrightLib.firefox,
-    webkit?: typeof PlaywrightLib.webkit,
-  }) {
-    const browsers = [pwModule.chromium, pwModule.firefox, pwModule.webkit] as const;
+  public manuallyInstrument(puppeteerModule: typeof PuppeteerLib | typeof PuppeteerCoreLib) {
+    this._wrap(
+      puppeteerModule,
+      'launch',
+      this.patchNewBrowser(),
+    );
 
-    for (const browserType of browsers) {
-      if (browserType) {
-        this._wrap(
-          browserType,
-          'launch',
-          this.patchNewBrowser(),
-        );
+    this._wrap(
+      puppeteerModule,
+      'connect',
+      this.patchNewBrowser(),
+    );
 
-        this._wrap(
-          browserType,
-          'connect',
-          this.patchNewBrowser(),
-        );
-
-        this._wrap(
-          browserType,
-          'connectOverCDP',
-          this.patchNewBrowser(),
-        );
-
-        this._wrap(
-          browserType,
-          'launchPersistentContext',
-          this.patchBrowserNewContext(),
-        );
-      }
-    }
-
-    return pwModule;
+    return puppeteerModule;
   }
 
-  private patch(moduleExports: typeof PlaywrightLib, moduleVersion?: string) {
-    diag.debug(`patching playwright ${moduleVersion}`);
-    const browsers = ['chromium', 'firefox', 'webkit'] as const;
+  private patch(
+    moduleExports: typeof PuppeteerLib | typeof PuppeteerCoreLib,
+    moduleVersion?: string,
+  ) {
+    diag.debug(`patching puppeteer ${moduleVersion}`);
+    this._wrap(
+      moduleExports,
+      `launch`,
+      this.patchNewBrowser(),
+    );
 
-    for (const browserType of browsers) {
-      if (moduleExports[browserType]) {
-        // First we need to patch the browser launch to get access to the Page class
-        this._wrap(
-          moduleExports[browserType],
-          `launch`,
-          this.patchNewBrowser(),
-        );
+    this._wrap(
+      moduleExports.PuppeteerNode.prototype,
+      `launch`,
+      this.patchNewBrowser(),
+    );
 
-        this._wrap(
-          moduleExports[browserType],
-          `connect`,
-          this.patchNewBrowser(),
-        );
+    this._wrap(
+      moduleExports,
+      `connect`,
+      this.patchNewBrowser(),
+    );
 
-        this._wrap(
-          moduleExports[browserType],
-          'connectOverCDP',
-          this.patchNewBrowser(),
-        );
+    this._wrap(
+      moduleExports.Puppeteer.prototype,
+      `connect`,
+      this.patchNewBrowser(),
+    );
 
-        this._wrap(
-          moduleExports[browserType],
-          'launchPersistentContext',
-          this.patchBrowserNewContext(),
-        );
-      }
-    }
+    this._wrap(
+      moduleExports.default,
+      `launch`,
+      this.patchNewBrowser(),
+    );
+
+    this._wrap(
+      moduleExports.default,
+      `connect`,
+      this.patchNewBrowser(),
+    );
 
     return moduleExports;
   }
 
-  private unpatch(moduleExports: typeof PlaywrightLib, moduleVersion?: string) {
-    diag.debug(`unpatching playwright ${moduleVersion}`);
-    const browsers = ['chromium', 'firefox', 'webkit'] as const;
+  private unpatch(moduleExports: typeof PuppeteerLib, moduleVersion?: string) {
+    diag.debug(`unpatching puppeteer ${moduleVersion}`);
+    this._unwrap(
+      moduleExports,
+      `launch`,
+    );
 
-    for (const browserType of browsers) {
-      if (moduleExports[browserType]) {
-        // First we need to patch the browser launch to get access to the Page class
-        this._wrap(
-          moduleExports[browserType],
-          `launch`,
-          this.patchNewBrowser(),
-        );
-      }
-    }
+    this._unwrap(
+      moduleExports,
+      `connect`,
+    );
 
-    for (const browser of this._patchedBrowsers) {
-      this._unwrap(browser, 'newContext');
-      this._unwrap(browser, 'newPage');
-    }
-    for (const context of this._patchedContexts) {
-      this._unwrap(context, 'newPage');
-    }
-    for (const page of this._patchedPages) {
-      this._unwrap(page, 'close');
-    }
+    this._unwrap(
+      moduleExports.PuppeteerNode.prototype,
+      `launch`,
+    );
+
+    this._unwrap(
+      moduleExports.Puppeteer.prototype,
+      `connect`,
+    );
+
+    this._unwrap(
+      moduleExports.default,
+      `connect`,
+    );
+
+    this._unwrap(
+      moduleExports.default,
+      `launch`,
+    );
   }
 
   private patchNewBrowser() {
@@ -200,24 +202,29 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
       const browser: Browser = await original.call(this, ...args);
       if (!plugin._parentSpan) {
         plugin._parentSpan = Laminar.startSpan({
-          name: 'playwright',
+          name: 'puppeteer',
         });
       }
 
-      for (const context of browser.contexts()) {
+      for (const context of browser.browserContexts()) {
         plugin._wrap(
           context,
           'newPage',
           plugin.patchBrowserContextNewPage(),
         );
-        await Promise.all(context.pages().map(page => plugin.patchPage(page)));
-        context.on('page', (page: Page) => plugin.patchPage(page));
+        await Promise.all((await context.pages()).map(page => plugin.patchPage(page)));
+        context.on('page', (page) => {
+          plugin.patchPage(page as Page).catch(error => {
+            logger.error("Failed to patch page: " +
+              `${error instanceof Error ? error.message : String(error)}`);
+          });
+        });
         plugin._patchedContexts.add(context);
       }
 
       plugin._wrap(
         browser,
-        'newContext',
+        'createBrowserContext',
         plugin.patchBrowserNewContext(),
       );
 
@@ -254,10 +261,10 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
       const context: BrowserContext = await original.bind(this).apply(this, args);
       if (!plugin._parentSpan) {
         plugin._parentSpan = Laminar.startSpan({
-          name: 'playwright',
+          name: 'puppeteer',
         });
       }
-      // Patch pages that are created manually from Playwright
+      // Patch pages that are created manually from Puppeteer
       plugin._wrap(
         context,
         'newPage',
@@ -269,12 +276,62 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         plugin.patchBrowserContextClose(),
       );
       // Patch pages created by browser, e.g. new tab
-      context.on('page', async (page) => plugin.patchPage(page));
+      context.on('page', (page) => {
+        plugin.patchPage(page as Page).catch(error => {
+          logger.error("Failed to patch page: " +
+            `${error instanceof Error ? error.message : String(error)}`);
+        });
+      });
 
       // Patch pages that are already created
-      for (const page of context.pages()) {
+      for (const page of await context.pages()) {
         await plugin.patchPage(page);
       }
+
+      plugin._patchedContexts.add(context);
+      return context;
+    };
+  }
+
+  private patchBrowserNewContextSync() {
+    const plugin = this;
+    return (original: Function) => function method(this: Browser, ...args: unknown[]) {
+      const context: BrowserContext = original.bind(this).apply(this, args);
+      if (!plugin._parentSpan) {
+        plugin._parentSpan = Laminar.startSpan({
+          name: 'puppeteer',
+        });
+      }
+      // Patch pages that are created manually from Puppeteer
+      plugin._wrap(
+        context,
+        'newPage',
+        plugin.patchBrowserContextNewPage(),
+      );
+      plugin._wrap(
+        context,
+        'close',
+        plugin.patchBrowserContextClose(),
+      );
+      // Patch pages created by browser, e.g. new tab
+      context.on('page', (page) => {
+        plugin.patchPage(page as Page).catch(error => {
+          logger.error("Failed to patch page: " +
+            `${error instanceof Error ? error.message : String(error)}`);
+        });
+      });
+
+      context.pages().then(pages => {
+        for (const page of pages) {
+          plugin.patchPage(page).catch(error => {
+            logger.error("Failed to patch page: " +
+              `${error instanceof Error ? error.message : String(error)}`);
+          });
+        }
+      }).catch(error => {
+        logger.error("Failed to patch pages: " +
+          `${error instanceof Error ? error.message : String(error)}`);
+      });
 
       plugin._patchedContexts.add(context);
       return context;
@@ -309,7 +366,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
       const page = await original.bind(this).apply(this, args);
       if (!plugin._parentSpan) {
         plugin._parentSpan = Laminar.startSpan({
-          name: 'playwright',
+          name: 'puppeteer',
         });
       }
       if (!page) {
@@ -324,15 +381,13 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
   public async patchPage(page: Page) {
     return await Laminar.withSpan(this._parentSpan!, async () => {
-      // Note: be careful with await here, if the await is removed,
-      // this creates a race condition, and playwright fails.
       await this._patchPage(page);
     });
   }
 
   private async _patchPage(page: Page) {
-    page.addListener("domcontentloaded", (p: Page) => {
-      this.injectRrweb(p).catch(error => {
+    page.on("domcontentloaded", () => {
+      this.injectRrweb(page).catch(error => {
         logger.error("Failed to inject rrweb: " +
           `${error instanceof Error ? error.message : String(error)}`);
       });
@@ -357,15 +412,17 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         });
     }, 2000);
 
-    page.addListener('close', async () => {
+    page.on('close', () => {
       clearInterval(interval);
-      await collectAndSendPageEvents(this._client, page, sessionId, traceId);
+      collectAndSendPageEvents(this._client, page, sessionId, traceId).catch(error => {
+        logger.error("Event collection stopped: " +
+          `${error instanceof Error ? error.message : String(error)}`);
+      });
     });
   }
 
   private async injectRrweb(page: Page) {
     // Wait for the page to be in a ready state first
-    await page.waitForLoadState('domcontentloaded');
     const tryRunScript = async (
       script: (...args: any[]) => Promise<any>,
       maxAttempts: number = 5,
@@ -374,8 +431,12 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         try {
           return await script();
         } catch (error) {
-          logger.error("Operation " + script.name + " failed: " +
-            `${error instanceof Error ? error.message : String(error)}`);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          if (errorMessage.includes("Execution context was destroyed")) {
+            logger.info(errorMessage);
+          } else {
+            logger.error("Operation " + script.name + " failed: " + errorMessage);
+          }
         }
         await new Promise(resolve => setTimeout(resolve, 500));
       }
@@ -390,7 +451,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
       const script = await readFile(RRWEB_SCRIPT_PATH, 'utf8');
       await tryRunScript(async function injectRrweb() {
         await page.evaluate(script);
-        const res = await page.waitForFunction(
+        const res = await (page).waitForFunction(
           () => 'lmnrRrweb' in window || (window as any).lmnrRrweb,
           {
             timeout: 5000,
@@ -450,7 +511,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
         (window as any).lmnrRrweb.record({
           async emit(event: any) {
-            // Ignore events from all tabs except the current one
+            // // Ignore events from all tabs except the current one
             if (document.visibilityState === 'hidden' || document.hidden) {
               return;
             }

@@ -11,6 +11,7 @@ import {
 } from '@opentelemetry/api';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import pino from 'pino';
+import pinoPretty from 'pino-pretty';
 
 import { forceFlush, InitializeOptions, initializeTracing } from './sdk/node-server-sdk';
 import {
@@ -30,15 +31,10 @@ import {
   tryToOtelSpanContext,
 } from './utils';
 
-const logger = pino({
-  level: "info",
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-    },
-  },
-});
+const logger = pino(pinoPretty({
+  colorize: true,
+  minimumLevel: "info",
+}));
 
 
 interface LaminarInitializeProps {
@@ -69,7 +65,7 @@ export class Laminar {
    * @param project_api_key - Laminar project api key. You can generate one by going
    * to the projects settings page on the Laminar dashboard.
    * If not specified, it will try to read from the LMNR_PROJECT_API_KEY environment variable.
-   * @param env - Default environment passed to `run` requests, unless overriden at request
+   * @param env - Default environment passed to `run` requests, unless overridden at request
    * time. Usually, model provider keys are stored here.
    * @param baseUrl - Laminar API url. Do not include the port, use
    * `httpPort` and `grpcPort` instead.

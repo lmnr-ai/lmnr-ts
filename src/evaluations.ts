@@ -1,6 +1,7 @@
 import { trace } from "@opentelemetry/api";
 import cliProgress from "cli-progress";
 import pino from "pino";
+import pinoPretty from "pino-pretty";
 
 import { LaminarClient } from "./client";
 import { EvaluationDataset, LaminarDataset } from "./datasets";
@@ -22,17 +23,24 @@ declare global {
   var _set_global_evaluation: boolean;
 }
 
-const logger = pino({
-  level: "info",
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-    },
-  },
-});
+const logger = pino(pinoPretty({
+  colorize: true,
+  minimumLevel: "info",
+}));
 
-const getEvaluationUrl = (projectId: string, evaluationId: string) => `https://www.lmnr.ai/project/${projectId}/evaluations/${evaluationId}`;
+const getEvaluationUrl = (projectId: string, evaluationId: string, baseUrl?: string): string => {
+  let url = baseUrl ?? "https://api.lmnr.ai";
+  if (url === "https://api.lmnr.ai") {
+    url = "https://www.lmnr.ai";
+  }
+  url = url.replace(/\/$/, '');
+
+  if (url.endsWith("localhost") || url.endsWith("127.0.0.1")) {
+    // As a best effort, we assume that the frontend is running on port 5667
+    url = url + ":5667";
+  }
+  return `${url}/project/${projectId}/evaluations/${evaluationId}`;
+};
 
 const getAverageScores =
   <D, T, O>(results: EvaluationDatapoint<D, T, O>[]): Record<string, number> => {

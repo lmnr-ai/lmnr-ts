@@ -1,4 +1,3 @@
-
 import {
   Context,
   context,
@@ -28,14 +27,17 @@ import { LlamaIndexInstrumentation } from "@traceloop/instrumentation-llamaindex
 import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
 import { PineconeInstrumentation } from "@traceloop/instrumentation-pinecone";
 import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
+import { TogetherInstrumentation } from "@traceloop/instrumentation-together";
 import {
   AIPlatformInstrumentation,
   VertexAIInstrumentation,
 } from "@traceloop/instrumentation-vertexai";
 import pino from "pino";
+import pinoPretty from "pino-pretty";
 
 import { version as SDK_VERSION } from "../../../package.json";
 import { PlaywrightInstrumentation, StagehandInstrumentation } from "../../browser";
+import { PuppeteerInstrumentation } from "../../browser/puppeteer";
 import { LaminarClient } from "../../client";
 // for doc comment:
 import { otelSpanIdToUUID } from "../../utils";
@@ -59,15 +61,10 @@ import {
   SPAN_PATH_KEY,
 } from "./tracing";
 
-const logger = pino({
-  level: "info",
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-    },
-  },
-});
+const logger = pino(pinoPretty({
+  colorize: true,
+  minimumLevel: "info",
+}));
 
 let _spanProcessor: SimpleSpanProcessor | BatchSpanProcessor | SpanProcessor | undefined;
 const _spanIdToPath: Map<string, string[]> = new Map();
@@ -86,6 +83,8 @@ let chromadbInstrumentation: ChromaDBInstrumentation | undefined;
 let qdrantInstrumentation: QdrantInstrumentation | undefined;
 let playwrightInstrumentation: PlaywrightInstrumentation | undefined;
 let stagehandInstrumentation: StagehandInstrumentation | undefined;
+let puppeteerInstrumentation: PuppeteerInstrumentation | undefined;
+let togetherInstrumentation: TogetherInstrumentation | undefined;
 
 const NUM_TRACKED_NEXTJS_SPANS = 10000;
 
@@ -137,6 +136,12 @@ const initInstrumentations = (client: LaminarClient) => {
 
   stagehandInstrumentation = new StagehandInstrumentation(playwrightInstrumentation);
   instrumentations.push(stagehandInstrumentation);
+
+  puppeteerInstrumentation = new PuppeteerInstrumentation(client);
+  instrumentations.push(puppeteerInstrumentation);
+
+  togetherInstrumentation = new TogetherInstrumentation();
+  instrumentations.push(togetherInstrumentation);
 };
 
 const manuallyInitInstrumentations = (
@@ -158,7 +163,7 @@ const manuallyInitInstrumentations = (
   if (instrumentModules?.anthropic) {
     anthropicInstrumentation = new AnthropicInstrumentation();
     instrumentations.push(anthropicInstrumentation);
-    anthropicInstrumentation.manuallyInstrument(instrumentModules.anthropic);
+    anthropicInstrumentation.manuallyInstrument(instrumentModules.anthropic as any);
   }
 
   if (instrumentModules?.azureOpenAI) {
@@ -226,10 +231,22 @@ const manuallyInitInstrumentations = (
     qdrantInstrumentation.manuallyInstrument(instrumentModules.qdrant);
   }
 
+  if (instrumentModules?.together) {
+    togetherInstrumentation = new TogetherInstrumentation();
+    instrumentations.push(togetherInstrumentation);
+    togetherInstrumentation.manuallyInstrument(instrumentModules.together as any);
+  }
+
   if (instrumentModules?.playwright) {
     playwrightInstrumentation = new PlaywrightInstrumentation(client);
     instrumentations.push(playwrightInstrumentation);
     playwrightInstrumentation.manuallyInstrument(instrumentModules.playwright);
+  }
+
+  if (instrumentModules?.puppeteer) {
+    puppeteerInstrumentation = new PuppeteerInstrumentation(client);
+    instrumentations.push(puppeteerInstrumentation);
+    puppeteerInstrumentation.manuallyInstrument(instrumentModules.puppeteer);
   }
 
   if (instrumentModules?.stagehand) {
