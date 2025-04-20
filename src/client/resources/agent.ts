@@ -9,7 +9,6 @@ import pinoPretty from "pino-pretty";
 import { otelSpanIdToUUID, otelTraceIdToUUID, StringUUID } from "../../utils";
 import { BaseResource } from "./index";
 
-
 const logger = pino(pinoPretty({
   colorize: true,
   minimumLevel: "info",
@@ -29,11 +28,16 @@ export type ActionResult = {
 /**
  * Agent output type
  *
- * @property {string} state - The state of the agent. May be relatively large.
+ * @property {string} agentState - The state of the agent. Can be used in subsequent runs to resume the agent.
+ * Only set if returnAgentState is true. Is a very large stringified JSON object.
+ * @property {string} storageState - The storage state of the browser, including auth, cookies, etc.
+ * Only set if returnStorageState is true. Is a relatively large stringified JSON object.
  * @property {ActionResult} result - The result of the agent run.
  */
 export type AgentOutput = {
-  result?: ActionResult;
+  result: ActionResult;
+  agentState?: string | null;
+  storageState?: string | null;
 };
 
 /**
@@ -45,7 +49,16 @@ export type RunAgentRequest = {
   modelProvider?: ModelProvider;
   model?: string;
   stream: boolean;
+  agentState?: string | null;
+  storageState?: string | null;
   enableThinking: boolean;
+  timeout?: number;
+  cdpUrl?: string;
+  maxSteps?: number;
+  thinkingTokenBudget?: number;
+  returnScreenshots?: boolean;
+  returnAgentState?: boolean;
+  returnStorageState?: boolean;
 };
 
 export type RunAgentStepChunk = {
@@ -53,6 +66,18 @@ export type RunAgentStepChunk = {
   messageId: StringUUID;
   actionResult: ActionResult;
   summary: string;
+  screenshot?: string | null;
+};
+
+// This chunk indicates that the explicit timeout has been reached.
+// This is the last chunk in the stream. The only difference between this and a normal step chunk is
+// the chunkType.
+export type RunAgentTimeoutChunk = {
+  chunkType: "timeout";
+  messageId: StringUUID;
+  actionResult: ActionResult;
+  summary: string;
+  screenshot?: string | null;
 };
 
 export type RunAgentFinalChunk = {
@@ -61,18 +86,33 @@ export type RunAgentFinalChunk = {
   content: AgentOutput;
 };
 
+export type RunAgentErrorChunk = {
+  chunkType: "error";
+  messageId: StringUUID;
+  error: string;
+};
+
 /**
  * Chunk type for streaming responses
  */
-export type RunAgentResponseChunk = RunAgentStepChunk | RunAgentFinalChunk;
+export type RunAgentResponseChunk = RunAgentStepChunk | RunAgentFinalChunk | RunAgentErrorChunk | RunAgentTimeoutChunk;
 
 type RunAgentOptions = {
   prompt: string;
   parentSpanContext?: string;
   modelProvider?: ModelProvider;
+  agentState?: string;
+  storageState?: string;
   model?: string;
   stream?: boolean;
   enableThinking?: boolean;
+  timeout?: number;
+  cdpUrl?: string;
+  maxSteps?: number;
+  thinkingTokenBudget?: number;
+  returnScreenshots?: boolean;
+  returnAgentState?: boolean;
+  returnStorageState?: boolean;
 };
 
 /**
@@ -92,7 +132,21 @@ export class AgentResource extends BaseResource {
    * @param { string } [options.parentSpanContext] - The parent span context for tracing
    * @param { string } [options.modelProvider] - LLM provider to use
    * @param { string } [options.model] - The model name as specified in the provider API
-   * @param { boolean } [options.enableThinking] - Whether to enable thinking. Defaults to true.
+   * @param { string } [options.agentState] - The agent state to resume the agent from as returned by a previous run.
+   * @param { string } [options.storageState] - The browser storage state as returned by a previous run.
+   * @param { boolean } [options.enableThinking] - Whether to enable thinking in the underlying LLM. Defaults to true.
+   * @param { number } [options.timeout] - The timeout in seconds for the agent. Note: This is a soft timeout.
+   * The agent will finish a step even after the timeout has been reached.
+   * @param { string } [options.cdpUrl] - The URL of an existing Chrome DevTools Protocol (CDP) browser instance.
+   * @param { number } [options.maxSteps] - The maximum number of steps the agent can take. Defaults to 100.
+   * @param { number } [options.thinkingTokenBudget] - The maximum number of tokens the underlying LLM can spend on thinking per step, if supported by the LLM provider.
+   * @param { boolean } [options.returnScreenshots] - IGNORED in non-streaming mode. Defaults to false. Set stream to true for doc comments.
+   * @param { boolean } [options.returnAgentState] - Whether to return the agent state.
+   * Agent state can be used to resume the agent in subsequent runs.
+   * CAUTION: Agent state is a very large object. Defaults to false.
+   * @param { boolean } [options.returnStorageState] - Whether to return the storage state.
+   * Storage state includes browser cookies, auth, etc.
+   * CAUTION: Storage state is a relatively large object. Defaults to false.
    * @returns { Promise<AgentOutput> } The agent output
    */
   public run(options: Omit<RunAgentOptions, 'stream'>): Promise<AgentOutput>;
@@ -105,7 +159,21 @@ export class AgentResource extends BaseResource {
    * @param { string } [options.parentSpanContext] - The parent span context for tracing
    * @param { string } [options.modelProvider] - LLM provider to use
    * @param { string } [options.model] - The model name as specified in the provider API
-   * @param { boolean } [options.enableThinking] - Whether to enable thinking. Defaults to true.
+   * @param { string } [options.agentState] - The agent state to resume the agent from as returned by a previous run.
+   * @param { string } [options.storageState] - The browser storage state as returned by a previous run.
+   * @param { boolean } [options.enableThinking] - Whether to enable thinking in the underlying LLM. Defaults to true.
+   * @param { number } [options.timeout] - The timeout in seconds for the agent. Note: This is a soft timeout.
+   * The agent will finish a step even after the timeout has been reached.
+   * @param { string } [options.cdpUrl] - The URL of an existing Chrome DevTools Protocol (CDP) browser instance.
+   * @param { number } [options.maxSteps] - The maximum number of steps the agent can take. Defaults to 100.
+   * @param { number } [options.thinkingTokenBudget] - The maximum number of tokens the underlying LLM can spend on thinking per step, if supported by the LLM provider.
+   * @param { boolean } [options.returnScreenshots] - IGNORED in non-streaming mode. Defaults to false. Set stream to true for doc comments.
+   * @param { boolean } [options.returnAgentState] - Whether to return the agent state.
+   * Agent state can be used to resume the agent in subsequent runs.
+   * CAUTION: Agent state is a very large object. Defaults to false.
+   * @param { boolean } [options.returnStorageState] - Whether to return the storage state.
+   * Storage state includes browser cookies, auth, etc.
+   * CAUTION: Storage state is a relatively large object. Defaults to false.
    * @returns { Promise<AgentOutput> } The agent output
    */
   public run(options: Omit<RunAgentOptions, 'stream'> & { stream?: false }): Promise<AgentOutput>;
@@ -118,7 +186,21 @@ export class AgentResource extends BaseResource {
    * @param { string } [options.parentSpanContext] - The parent span context for tracing
    * @param { string } [options.modelProvider] - LLM provider to use
    * @param { string } [options.model] - The model name as specified in the provider API
-   * @param { boolean } [options.enableThinking] - Whether to enable thinking. Defaults to true.
+   * @param { string } [options.agentState] - The agent state to resume the agent from as returned by a previous run.
+   * @param { string } [options.storageState] - The browser storage state as returned by a previous run.
+   * @param { boolean } [options.enableThinking] - Whether to enable thinking in the underlying LLM. Defaults to true.
+   * @param { number } [options.timeout] - The timeout in seconds for the agent. Note: This is a soft timeout.
+   * The agent will finish a step even after the timeout has been reached.
+   * @param { string } [options.cdpUrl] - The URL of an existing Chrome DevTools Protocol (CDP) browser instance.
+   * @param { number } [options.maxSteps] - The maximum number of steps the agent can take. Defaults to 100.
+   * @param { number } [options.thinkingTokenBudget] - The maximum number of tokens the underlying LLM can spend on thinking per step, if supported by the LLM provider.
+   * @param { boolean } [options.returnScreenshots] - Whether to return screenshots with each step. Defaults to false. Set stream to true for doc comments.
+   * @param { boolean } [options.returnAgentState] - Whether to return the agent state.
+   * Agent state can be used to resume the agent in subsequent runs.
+   * CAUTION: Agent state is a very large object. Defaults to false.
+   * @param { boolean } [options.returnStorageState] - Whether to return the storage state.
+   * Storage state includes browser cookies, auth, etc.
+   * CAUTION: Storage state is a relatively large object. Defaults to false.
    * @returns { Promise<ReadableStream<RunAgentResponseChunk>> } The agent output streamed
    */
   public run(options: Omit<RunAgentOptions, 'stream'> & { stream: true }):
@@ -133,7 +215,19 @@ export class AgentResource extends BaseResource {
    * @param { string } [options.modelProvider] - LLM provider to use
    * @param { string } [options.model] - The model name as specified in the provider API
    * @param { boolean } [options.stream] - Whether to stream the response. Defaults to false.
-   * @param { boolean } [options.enableThinking] - Whether to enable thinking. Defaults to true.
+   * @param { boolean } [options.enableThinking] - Whether to enable thinking in the underlying LLM. Defaults to true.
+   * @param { number } [options.timeout] - The timeout in seconds for the agent. Note: This is a soft timeout.
+   * The agent will finish a step even after the timeout has been reached.
+   * @param { string } [options.cdpUrl] - The URL of an existing Chrome DevTools Protocol (CDP) browser instance.
+   * @param { number } [options.maxSteps] - The maximum number of steps the agent can take. Defaults to 100.
+   * @param { number } [options.thinkingTokenBudget] - The maximum number of tokens the underlying LLM can spend on thinking per step, if supported by the LLM provider.
+   * @param { boolean } [options.returnScreenshots] - Whether to return screenshots with each step. Defaults to false.
+   * @param { boolean } [options.returnAgentState] - Whether to return the agent state.
+   * Agent state can be used to resume the agent in subsequent runs.
+   * CAUTION: Agent state is a very large object. Defaults to false.
+   * @param { boolean } [options.returnStorageState] - Whether to return the storage state.
+   * Storage state includes browser cookies, auth, etc.
+   * CAUTION: Storage state is a relatively large object. Defaults to false.
    * @returns { Promise<AgentOutput | ReadableStream<RunAgentResponseChunk>> }
    *    The agent output or a stream of response chunks
    */
@@ -144,6 +238,15 @@ export class AgentResource extends BaseResource {
     model,
     stream,
     enableThinking,
+    returnScreenshots,
+    returnAgentState,
+    returnStorageState,
+    timeout,
+    cdpUrl,
+    agentState,
+    storageState,
+    maxSteps,
+    thinkingTokenBudget,
   }: RunAgentOptions): Promise<AgentOutput | ReadableStream<RunAgentResponseChunk>> {
     // Handle parent span context from current context if not provided
     let requestParentSpanContext = parentSpanContext;
@@ -168,6 +271,15 @@ export class AgentResource extends BaseResource {
       model,
       stream: true,
       enableThinking: enableThinking ?? true,
+      timeout,
+      cdpUrl,
+      agentState,
+      storageState,
+      maxSteps,
+      thinkingTokenBudget,
+      returnScreenshots: returnScreenshots ?? false,
+      returnAgentState: returnAgentState ?? false,
+      returnStorageState: returnStorageState ?? false,
     };
 
     // For streaming case, return the ReadableStream directly
@@ -260,6 +372,7 @@ export class AgentResource extends BaseResource {
     const stream = await this.runStreaming(request);
     const reader = stream.getReader();
     let finalChunk: RunAgentResponseChunk | null = null;
+    let errorChunk: RunAgentErrorChunk | null = null;
 
     try {
       while (true) {
@@ -267,12 +380,20 @@ export class AgentResource extends BaseResource {
         if (done) break;
         if (value.chunkType === "finalOutput") {
           finalChunk = value;
+          break;
+        } else if (value.chunkType === "error") {
+          errorChunk = value;
+          break;
         }
       }
     } finally {
       reader.releaseLock();
     }
 
-    return finalChunk?.content || {};
+    if (errorChunk) {
+      throw new Error(errorChunk.error);
+    }
+
+    return finalChunk?.content || { result: { isDone: true } };
   }
 }

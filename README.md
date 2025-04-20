@@ -142,53 +142,6 @@ You can run evaluations locally by providing executor (part of the logic used in
 
 [Read docs](https://docs.lmnr.ai/evaluations/introduction) to learn more about evaluations.
 
-## Laminar pipelines as prompt chain managers
-
-You can create Laminar pipelines in the UI and manage chains of LLM calls there.
-
-After you are ready to use your pipeline in your code, deploy it in Laminar by selecting the target version for the pipeline.
-
-Once your pipeline target is set, you can call it from Python in just a few lines.
-Example use:
-
-```typescript
-import { Laminar } from '@lmnr-ai/lmnr';
-
-const l = new Laminar('<YOUR_PROJECT_API_KEY>');
-const result = await l.run({
-    pipeline: 'my_pipeline_name',
-    inputs: {'input': [{'role': 'user', 'content': 'hello'}]},
-    env: {'OPENAI_API_KEY': 'sk-some-key'}, // optional
-    metadata: {'metadata_key': 'metadata_value'}, // optional
-});
-```
-
-Resulting in:
-
-```
-> console.log(result)
-{
-  outputs: { output: { value: { role: 'user', content: 'hello' } } },
-  runId: '05383a95-d316-4091-a64b-06c54d12982a'
-}
-```
-
-## Semantic search
-
-You can perform a semantic search on a dataset using the `semanticSearch` method.
-
-```typescript
-import { Laminar } from '@lmnr-ai/lmnr';
-
-const l = new Laminar('<YOUR_PROJECT_API_KEY>');
-const result = await l.semanticSearch({
-    query: 'hello',
-    datasetId: 'my_dataset_id',
-});
-```
-
-[Read docs](https://docs.lmnr.ai/datasets/indexing#searching) to learn more about semantic search.
-
 ## Client for HTTP operations
 
 Various interactions with Laminar [API](https://docs.lmnr.ai/api-reference/) are available in `LaminarClient`
