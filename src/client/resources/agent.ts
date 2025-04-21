@@ -384,6 +384,13 @@ export class AgentResource extends BaseResource {
         } else if (value.chunkType === "error") {
           errorChunk = value;
           break;
+        } else if (value.chunkType === "timeout") {
+          errorChunk = {
+            chunkType: "error",
+            messageId: value.messageId,
+            error: "Timeout",
+          };
+          break;
         }
       }
     } finally {
