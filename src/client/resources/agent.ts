@@ -17,7 +17,7 @@ const logger = pino(pinoPretty({
 /**
  * Model provider options
  */
-export type ModelProvider = string;
+export type ModelProvider = 'anthropic' | 'bedrock' | 'openai' | 'gemini';
 
 export type ActionResult = {
   isDone: boolean;
@@ -134,7 +134,7 @@ export class AgentResource extends BaseResource {
    * @param { RunAgentOptions } options - The options for running the agent
    * @param { string } options.prompt - The prompt for the agent
    * @param { string } [options.parentSpanContext] - The parent span context for tracing
-   * @param { string } [options.modelProvider] - LLM provider to use
+   * @param { ModelProvider } [options.modelProvider] - LLM provider to use
    * @param { string } [options.model] - The model name as specified in the provider API
    * @param { string } [options.agentState] - The agent state to resume the agent from as returned
    * by a previous run.
@@ -171,7 +171,7 @@ export class AgentResource extends BaseResource {
    * @param { RunAgentOptions } options - The options for running the agent
    * @param { string } options.prompt - The prompt for the agent
    * @param { string } [options.parentSpanContext] - The parent span context for tracing
-   * @param { string } [options.modelProvider] - LLM provider to use
+   * @param { ModelProvider } [options.modelProvider] - LLM provider to use
    * @param { string } [options.model] - The model name as specified in the provider API
    * @param { string } [options.agentState] - The agent state to resume the agent from as
    * returned by a previous run.
@@ -209,7 +209,7 @@ export class AgentResource extends BaseResource {
    * @param { RunAgentOptions } options - The options for running the agent
    * @param { string } options.prompt - The prompt for the agent
    * @param { string } [options.parentSpanContext] - The parent span context for tracing
-   * @param { string } [options.modelProvider] - LLM provider to use
+   * @param { ModelProvider } [options.modelProvider] - LLM provider to use
    * @param { string } [options.model] - The model name as specified in the provider API
    * @param { string } [options.agentState] - The agent state to resume the agent from as
    * returned by a previous run.
@@ -248,7 +248,7 @@ export class AgentResource extends BaseResource {
    * @param { RunAgentOptions } options - The options for running the agent
    * @param { string } options.prompt - The prompt for the agent
    * @param { string } [options.parentSpanContext] - The parent span context for tracing
-   * @param { string } [options.modelProvider] - LLM provider to use
+   * @param { ModelProvider } [options.modelProvider] - LLM provider to use
    * @param { string } [options.model] - The model name as specified in the provider API
    * @param { boolean } [options.stream] - Whether to stream the response. Defaults to false.
    * @param { boolean } [options.enableThinking] - Whether to enable thinking in the underlying
