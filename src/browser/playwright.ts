@@ -205,6 +205,14 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
       }
 
       for (const context of browser.contexts()) {
+        for (const page of context.pages()) {
+          try {
+            await page.evaluate(() => (window as any).lmnrIsPageVisible = false);
+          } catch (error) {
+            logger.debug("Failed to set isPageVisible to false: " +
+              `${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
         plugin._wrap(
           context,
           'newPage',
@@ -273,6 +281,12 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
       // Patch pages that are already created
       for (const page of context.pages()) {
+        try {
+          await page.evaluate(() => (window as any).lmnrIsPageVisible = false);
+        } catch (error) {
+          logger.debug("Failed to set isPageVisible to false: " +
+            `${error instanceof Error ? error.message : String(error)}`);
+        }
         await plugin.patchPage(page);
       }
 
@@ -306,6 +320,9 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
   public patchBrowserContextNewPage() {
     const plugin = this;
     return (original: Function) => async function method(this: BrowserContext, ...args: unknown[]) {
+      for (const existingPage of this.pages()) {
+        await existingPage.evaluate(() => (window as any).lmnrIsPageVisible = false);
+      }
       const page = await original.bind(this).apply(this, args);
       if (!plugin._parentSpan) {
         plugin._parentSpan = Laminar.startSpan({
@@ -331,6 +348,26 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
   }
 
   private async _patchPage(page: Page) {
+    try {
+      page.evaluate(() => (window as any).lmnrIsPageVisible = true);
+    } catch (error) {
+      logger.debug("Failed to set isPageVisible to true: " +
+        `${error instanceof Error ? error.message : String(error)}`);
+    }
+    const originalBringToFront = page.bringToFront;
+    page.bringToFront = async () => {
+      for (const otherPage of page.context().pages()) {
+        try {
+          await otherPage.evaluate(() => (window as any).lmnrIsPageVisible = false);
+        } catch (error) {
+          logger.debug("Failed to set isPageVisible to false: " +
+            `${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      await originalBringToFront.call(page);
+      page.evaluate(() => (window as any).lmnrIsPageVisible = true);
+    };
+
     page.addListener("domcontentloaded", (p: Page) => {
       this.injectRrweb(p).catch(error => {
         logger.error("Failed to inject rrweb: " +
@@ -360,6 +397,15 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     page.addListener('close', async () => {
       clearInterval(interval);
       await collectAndSendPageEvents(this._client, page, sessionId, traceId);
+      for (const otherPage of page.context().pages().reverse()) {
+        try {
+          await otherPage.bringToFront();
+          break;
+        } catch (error) {
+          logger.debug("Failed to bring page to front: " +
+            `${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
     });
   }
 
@@ -427,6 +473,13 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
         setInterval(() => {
           compressEventData({ source: 'heartbeat' }).then(data => {
+            if (
+              document.visibilityState === 'hidden'
+              || document.hidden
+              || (window as any).lmnrIsPageVisible === false
+            ) {
+              return;
+            }
             const heartbeatEvent = {
               type: 6, // Custom event type
               data,
@@ -451,7 +504,11 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         (window as any).lmnrRrweb.record({
           async emit(event: any) {
             // Ignore events from all tabs except the current one
-            if (document.visibilityState === 'hidden' || document.hidden) {
+            if (
+              document.visibilityState === 'hidden'
+              || document.hidden
+              || (window as any).lmnrIsPageVisible === false
+            ) {
               return;
             }
             const compressedEvent = {

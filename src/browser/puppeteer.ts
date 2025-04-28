@@ -212,12 +212,49 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
           'newPage',
           plugin.patchBrowserContextNewPage(),
         );
-        await Promise.all((await context.pages()).map(page => plugin.patchPage(page)));
-        context.on('page', (page) => {
-          plugin.patchPage(page as Page).catch(error => {
-            logger.error("Failed to patch page: " +
+        for (const page of await context.pages()) {
+          try {
+            await page.evaluate(() => (window as any).lmnrIsPageVisible = false);
+          } catch (error) {
+            logger.debug("Failed to set isPageVisible to false: " +
               `${error instanceof Error ? error.message : String(error)}`);
-          });
+          }
+        }
+        await Promise.all((await context.pages()).map(page => plugin.patchPage(page)));
+        context.on('targetcreated', async (target) => {
+          const page = await target.page();
+          if (page) {
+            plugin.patchPage(page as Page).catch(error => {
+              logger.error("Failed to patch page: " +
+                `${error instanceof Error ? error.message : String(error)}`);
+            });
+          }
+        });
+        context.on('targetchanged', async (target) => {
+          const page = await target.page();
+          if (page) {
+            for (const otherPage of await context.pages()) {
+              await otherPage.evaluate(() => (window as any).lmnrIsPageVisible = false);
+            }
+            plugin.patchPage(page as Page).catch(error => {
+              logger.error("Failed to patch page: " +
+                `${error instanceof Error ? error.message : String(error)}`);
+            });
+          }
+        });
+        context.on('targetdestroyed', async (target) => {
+          const page = await target.page();
+          if (page) {
+            for (const otherPage of (await context.pages()).reverse()) {
+              try {
+                await otherPage.evaluate(() => (window as any).lmnrIsPageVisible = true);
+                break;
+              } catch (error) {
+                logger.debug("Failed to set isPageVisible to true: " +
+                  `${error instanceof Error ? error.message : String(error)}`);
+              }
+            }
+          }
         });
         plugin._patchedContexts.add(context);
       }
@@ -276,62 +313,35 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
         plugin.patchBrowserContextClose(),
       );
       // Patch pages created by browser, e.g. new tab
-      context.on('page', (page) => {
-        plugin.patchPage(page as Page).catch(error => {
-          logger.error("Failed to patch page: " +
-            `${error instanceof Error ? error.message : String(error)}`);
-        });
-      });
-
-      // Patch pages that are already created
-      for (const page of await context.pages()) {
-        await plugin.patchPage(page);
-      }
-
-      plugin._patchedContexts.add(context);
-      return context;
-    };
-  }
-
-  private patchBrowserNewContextSync() {
-    const plugin = this;
-    return (original: Function) => function method(this: Browser, ...args: unknown[]) {
-      const context: BrowserContext = original.bind(this).apply(this, args);
-      if (!plugin._parentSpan) {
-        plugin._parentSpan = Laminar.startSpan({
-          name: 'puppeteer',
-        });
-      }
-      // Patch pages that are created manually from Puppeteer
-      plugin._wrap(
-        context,
-        'newPage',
-        plugin.patchBrowserContextNewPage(),
-      );
-      plugin._wrap(
-        context,
-        'close',
-        plugin.patchBrowserContextClose(),
-      );
-      // Patch pages created by browser, e.g. new tab
-      context.on('page', (page) => {
-        plugin.patchPage(page as Page).catch(error => {
-          logger.error("Failed to patch page: " +
-            `${error instanceof Error ? error.message : String(error)}`);
-        });
-      });
-
-      context.pages().then(pages => {
-        for (const page of pages) {
-          plugin.patchPage(page).catch(error => {
+      context.on('targetcreated', async (target) => {
+        const page = await target.page();
+        if (page) {
+          plugin.patchPage(page as Page).catch(error => {
             logger.error("Failed to patch page: " +
               `${error instanceof Error ? error.message : String(error)}`);
           });
         }
-      }).catch(error => {
-        logger.error("Failed to patch pages: " +
-          `${error instanceof Error ? error.message : String(error)}`);
       });
+      context.on('targetchanged', async (target) => {
+        const page = await target.page();
+        if (page) {
+          plugin.patchPage(page as Page).catch(error => {
+            logger.error("Failed to patch page: " +
+              `${error instanceof Error ? error.message : String(error)}`);
+          });
+        }
+      });
+
+      // Patch pages that are already created
+      for (const page of await context.pages()) {
+        try {
+          await page.evaluate(() => (window as any).lmnrIsPageVisible = false);
+        } catch (error) {
+          logger.debug("Failed to set isPageVisible to false: " +
+            `${error instanceof Error ? error.message : String(error)}`);
+        }
+        await plugin.patchPage(page);
+      }
 
       plugin._patchedContexts.add(context);
       return context;
@@ -386,12 +396,36 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
   }
 
   private async _patchPage(page: Page) {
+    try {
+      page.evaluate(() => (window as any).lmnrIsPageVisible = true);
+    } catch (error) {
+      logger.debug("Failed to set isPageVisible to true: " +
+        `${error instanceof Error ? error.message : String(error)}`);
+    }
     page.on("domcontentloaded", () => {
       this.injectRrweb(page).catch(error => {
         logger.error("Failed to inject rrweb: " +
           `${error instanceof Error ? error.message : String(error)}`);
       });
     });
+
+    const originalBringToFront = page.bringToFront;
+    page.bringToFront = async () => {
+      for (const otherPage of (await page.browserContext().pages())) {
+        try {
+          await otherPage.evaluate(() => (window as any).lmnrIsPageVisible = false);
+        } catch (error) {
+          logger.debug("Failed to set isPageVisible to false: " +
+            `${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      page.evaluate(() => {
+        try {
+          (window as any).lmnrIsPageVisible = true;
+        } catch (error) { }
+      });
+      await originalBringToFront.call(page);
+    };
 
     await this.injectRrweb(page);
     this._patchedPages.add(page);
@@ -412,7 +446,7 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
         });
     }, 2000);
 
-    page.on('close', () => {
+    page.on('close', async () => {
       clearInterval(interval);
       collectAndSendPageEvents(this._client, page, sessionId, traceId).catch(error => {
         logger.error("Event collection stopped: " +
@@ -488,6 +522,13 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
 
         setInterval(() => {
           compressEventData({ source: 'heartbeat' }).then(data => {
+            if (
+              document.visibilityState === 'hidden'
+              || document.hidden
+              || (window as any).lmnrIsPageVisible === false
+            ) {
+              return;
+            }
             const heartbeatEvent = {
               type: 6, // Custom event type
               data,
@@ -511,8 +552,12 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
 
         (window as any).lmnrRrweb.record({
           async emit(event: any) {
-            // // Ignore events from all tabs except the current one
-            if (document.visibilityState === 'hidden' || document.hidden) {
+            // Ignore events from all tabs except the current one
+            if (
+              document.visibilityState === 'hidden'
+              || document.hidden
+              || (window as any).lmnrIsPageVisible === false
+            ) {
               return;
             }
             const compressedEvent = {
