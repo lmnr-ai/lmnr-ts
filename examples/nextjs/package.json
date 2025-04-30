@@ -14,8 +14,7 @@
     "ai": "^4.2.6",
     "next": "15.2.4",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "require-in-the-middle": "^7.5.2"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

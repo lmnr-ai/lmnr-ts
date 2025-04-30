@@ -4,7 +4,7 @@ This is a very simplistic chat UI app that mimics emotional support helpline/the
 
 This does not store any information in the database or any storage, only works for demo purposes.
 
-For AI interactions, the app uses Vercel's AI SDK.
+For LLM calls, the app uses Vercel's AI SDK.
 
 ## Installation
 
@@ -17,7 +17,7 @@ git clone https://github.com/lmnr-ai/lmnr-ts
 ### 2. Open the directory
 
 ```
-cd lmnr-python/examples/nextjs
+cd lmnr-ts/examples/nextjs
 ```
 
 ### 3. Set up the environment variables
@@ -26,7 +26,7 @@ cd lmnr-python/examples/nextjs
 cp .env.local.example .env.local
 ```
 
-And then fill in the `.env` file. Get [Laminar project API key](https://docs.lmnr.ai/tracing/introduction#2-initialize-laminar-in-your-application). Get [OpenAI API key](https://platform.openai.com/api-keys)
+And then fill in the `.env.local` file. Get [Laminar project API key](https://docs.lmnr.ai/tracing/introduction#2-initialize-laminar-in-your-application). Get [OpenAI API key](https://platform.openai.com/api-keys)
 
 ### 4. Install the dependencies
 
@@ -35,6 +35,11 @@ npm i
 ```
 
 or `pnpm i`
+
+### 5. [Optional] In real-world apps
+
+Don't forget that in `instrumentation.ts` Laminar TS SDK is imported from local dist,
+and you need to replace it with `const { Laminar } = await import("@lmnr-ai/lmnr");` if you copy this setup to other apps.
 
 ## Run the app
 
