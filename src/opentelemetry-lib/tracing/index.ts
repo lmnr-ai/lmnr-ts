@@ -5,10 +5,9 @@ import {
   trace,
   TracerProvider,
 } from "@opentelemetry/api";
-import { baggageUtils } from "@opentelemetry/core";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { Instrumentation, registerInstrumentations } from "@opentelemetry/instrumentation";
-import { Span } from "@opentelemetry/sdk-trace-base";
+import { AlwaysOnSampler, Span } from "@opentelemetry/sdk-trace-base";
 import {
   BasicTracerProvider,
   BatchSpanProcessor,
@@ -17,6 +16,7 @@ import {
   SimpleSpanProcessor,
   SpanProcessor,
 } from "@opentelemetry/sdk-trace-node";
+import { resourceFromAttributes } from "@opentelemetry/resources";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { AzureOpenAIInstrumentation } from "@traceloop/instrumentation-azure";
 import { BedrockInstrumentation } from "@traceloop/instrumentation-bedrock";
@@ -39,7 +39,6 @@ import { version as SDK_VERSION } from "../../../package.json";
 import { PlaywrightInstrumentation, StagehandInstrumentation } from "../../browser";
 import { PuppeteerInstrumentation } from "../../browser/puppeteer";
 import { LaminarClient } from "../../client";
-// for doc comment:
 import { otelSpanIdToUUID } from "../../utils";
 import { getLangVersion } from "../../version";
 import { _configuration } from "../configuration";
@@ -60,6 +59,7 @@ import {
   getSpanPath,
   SPAN_PATH_KEY,
 } from "./tracing";
+import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 
 const logger = pino(pinoPretty({
   colorize: true,
@@ -98,7 +98,7 @@ const initInstrumentations = (client: LaminarClient) => {
   });
   instrumentations.push(openAIInstrumentation);
 
-  anthropicInstrumentation = new AnthropicInstrumentation();
+  anthropicInstrumentation = new AnthropicInstrumentation()
   instrumentations.push(anthropicInstrumentation);
 
   azureOpenAIInstrumentation = new AzureOpenAIInstrumentation();
@@ -326,9 +326,7 @@ export const startTracing = (options: InitializeOptions) => {
     });
   }
 
-  const headers = process.env.TRACELOOP_HEADERS
-    ? baggageUtils.parseKeyPairsIntoRecord(process.env.TRACELOOP_HEADERS)
-    : { Authorization: `Bearer ${options.apiKey}` };
+  const headers = { Authorization: `Bearer ${options.apiKey}` };
 
   const traceExporter =
     options.exporter ??
@@ -376,8 +374,8 @@ export const startTracing = (options: InitializeOptions) => {
     )
       ? [span.name]
       : parentSpanPath ? [...parentSpanPath, span.name] : [span.name];
-    const spanIdUuid = otelSpanIdToUUID(spanId);
 
+    const spanIdUuid = otelSpanIdToUUID(spanId);
     const spanIdsPath = parentSpanIdsPath ? [...parentSpanIdsPath, spanIdUuid] : [spanIdUuid];
 
     span.setAttribute(SPAN_IDS_PATH, spanIdsPath);
@@ -443,37 +441,39 @@ export const startTracing = (options: InitializeOptions) => {
     }
   };
 
-  // This is an experimental workaround for the issue where Laminar fails
-  // to work when there is another tracer provider already initialized.
-  // See: https://github.com/lmnr-ai/lmnr/issues/231
-  if (options.useExternalTracerProvider) {
-    const globalProvider = trace.getTracerProvider();
-    let provider: TracerProvider;
-    if (globalProvider instanceof ProxyTracerProvider) {
-      provider = globalProvider.getDelegate() as NodeTracerProvider;
-    } else {
-      provider = globalProvider;
-    }
-    if ((provider as BasicTracerProvider).addSpanProcessor) {
-      (provider as BasicTracerProvider).addSpanProcessor(_spanProcessor);
-    } else {
-      throw new Error("The active tracer provider does not support adding a span processor");
-    }
+  const globalProvider = trace.getTracerProvider();
+  let provider: TracerProvider;
+  if ((globalProvider as ProxyTracerProvider).getDelegate) {
+    provider = (globalProvider as ProxyTracerProvider).getDelegate();
   } else {
-    // Default behavior, if no external tracer provider is used.
-    const provider = new NodeTracerProvider({
-      spanProcessors: [_spanProcessor],
-    });
-    try {
-      provider.register();
-    } catch {
-      logger.error('Error registering tracer provider');
-    }
-    registerInstrumentations({
-      instrumentations,
-      tracerProvider: provider,
-    });
+    provider = globalProvider;
   }
+
+  console.log(provider);
+
+  if ((provider as BasicTracerProvider).addSpanProcessor) {
+    console.log("adding span processor");
+    (provider as BasicTracerProvider).addSpanProcessor(_spanProcessor);
+  } else {
+    console.log("creating new provider");
+    const newProvider = new NodeTracerProvider({
+      spanProcessors: [_spanProcessor],
+      sampler: new AlwaysOnSampler(),
+      resource: resourceFromAttributes(
+        {
+          [ATTR_SERVICE_NAME]: "laminar-tracer-resource",
+        },
+      ),
+    });
+    // newProvider.register();
+    provider = newProvider;
+  }
+
+  console.log("registering instrumentations", instrumentations.length);
+  registerInstrumentations({
+    instrumentations,
+    tracerProvider: provider,
+  });
 };
 
 export const shouldSendTraces = () => {

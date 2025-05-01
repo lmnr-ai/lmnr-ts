@@ -7,8 +7,8 @@ import { LaminarClient } from "./client";
 import { EvaluationDataset, LaminarDataset } from "./datasets";
 import { observe } from "./decorators";
 import { Laminar } from "./laminar";
-import { InitializeOptions } from "./sdk/interfaces";
-import { SPAN_TYPE } from "./sdk/tracing/attributes";
+import { InitializeOptions } from "./opentelemetry-lib/interfaces";
+import { SPAN_TYPE } from "./opentelemetry-lib/tracing/attributes";
 import { EvaluationDatapoint } from "./types";
 import { newUUID, otelSpanIdToUUID, otelTraceIdToUUID, Semaphore, StringUUID } from "./utils";
 

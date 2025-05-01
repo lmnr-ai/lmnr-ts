@@ -15,7 +15,7 @@ import {
   withLabels,
   withTracingLevel,
 } from "../src/index";
-import { _resetConfiguration, initializeTracing } from "../src/sdk/configuration";
+import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 
 void describe("tracing", () => {
   const exporter = new InMemorySpanExporter();

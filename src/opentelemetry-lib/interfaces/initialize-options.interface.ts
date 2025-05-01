@@ -129,14 +129,6 @@ export interface InitializeOptions {
   silenceInitializationMessage?: boolean;
 
   /**
-   * Whether to use an external tracer provider. Optional.
-   * Defaults to false. If true, the SDK will not initialize its own tracer provider.
-   * This is useful for advanced use cases where the user wants to manage the
-   * tracer provider themselves.
-   */
-  useExternalTracerProvider?: boolean;
-
-  /**
    * Whether to preserve Next.js spans. Optional.
    * Defaults to false.
    * Next.js instrumentation is very verbose and can result in

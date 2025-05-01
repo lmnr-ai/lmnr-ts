@@ -5,7 +5,7 @@ import { context, trace } from "@opentelemetry/api";
 import { InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { chromium } from "@playwright/test";
 
-import { _resetConfiguration, initializeTracing } from "../src/sdk/configuration";
+import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 import { NIL_UUID, otelTraceIdToUUID } from "../src/utils";
 
 // This test fails to inject rrweb and send events,

@@ -13,7 +13,7 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import pino from 'pino';
 import pinoPretty from 'pino-pretty';
 
-import { forceFlush, InitializeOptions, initializeTracing } from './sdk/node-server-sdk';
+import { forceFlush, InitializeOptions, initializeTracing } from './opentelemetry-lib/node-server-sdk';
 import {
   ASSOCIATION_PROPERTIES,
   LaminarAttributes,
@@ -21,8 +21,8 @@ import {
   SPAN_INPUT,
   SPAN_OUTPUT,
   SPAN_TYPE,
-} from './sdk/tracing/attributes';
-import { ASSOCIATION_PROPERTIES_KEY, getTracer } from './sdk/tracing/tracing';
+} from './opentelemetry-lib/tracing/attributes';
+import { ASSOCIATION_PROPERTIES_KEY, getTracer } from './opentelemetry-lib/tracing/tracing';
 import { LaminarSpanContext } from './types';
 import {
   otelSpanIdToUUID,
@@ -48,7 +48,6 @@ interface LaminarInitializeProps {
   disableBatch?: boolean;
   traceExportTimeoutMillis?: number;
   logLevel?: "debug" | "info" | "warn" | "error";
-  useExternalTracerProvider?: boolean;
   maxExportBatchSize?: number;
 }
 
@@ -86,17 +85,7 @@ export class Laminar {
    * instead of {@link BatchSpanProcessor}.
    * @param traceExportTimeoutMillis - Timeout for trace export. Defaults to 30_000 (30 seconds),
    * which is over the default OTLP exporter timeout of 10_000 (10 seconds).
-   * @param useExternalTracerProvider - [ADVANCED] Only use if you are using another
-   * node-based tracer provider. Defaults to false.
-   * If `true`, the SDK will not initialize its own tracer provider. Be very careful.
-   * If you set this to `true`, but the external provider does not extend/implement
-   * {@link BasicTracerProvider} or is not a {@link ProxyTracerProvider} that internally
-   * delegates to a {@link BasicTracerProvider}, the SDK will not function correctly.
-   * The only setting this has been tested with is `@opentelemetry/auto-instrumentations-node`.
-   * {@link https://opentelemetry.io/docs/zero-code/js/#configuring-the-module} - this
-   * initializes a {@link ProxyTracerProvider} internally which delegates to a
-   * {@link NodeTracerProvider}, which in turn, extends {@link BasicTracerProvider}.
-   *
+   * 
    * @example
    * import { Laminar as L } from '@lmnr-ai/lmnr';
    * import { OpenAI } from 'openai';
@@ -119,7 +108,6 @@ export class Laminar {
     httpPort,
     grpcPort,
     instrumentModules,
-    useExternalTracerProvider,
     preserveNextJsSpans,
     disableBatch,
     traceExportTimeoutMillis,
@@ -164,9 +152,8 @@ export class Laminar {
       silenceInitializationMessage: true,
       instrumentModules,
       disableBatch,
-      useExternalTracerProvider,
       preserveNextJsSpans,
-      logLevel: logLevel ?? "error",
+      logLevel: logLevel ?? "warn",
       maxExportBatchSize,
     });
   }

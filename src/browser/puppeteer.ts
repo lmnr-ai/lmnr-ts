@@ -16,7 +16,7 @@ import type * as PuppeteerCoreLib from "puppeteer-core";
 import { version as SDK_VERSION } from "../../package.json";
 import { LaminarClient } from '../client';
 import { Laminar } from '../laminar';
-import { TRACE_HAS_BROWSER_SESSION } from '../sdk/tracing/attributes';
+import { TRACE_HAS_BROWSER_SESSION } from '../opentelemetry-lib/tracing/attributes';
 import { newUUID, NIL_UUID, StringUUID } from '../utils';
 import { collectAndSendPageEvents, getDirname } from "./utils";
 

@@ -8,7 +8,7 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 
 import { observe } from "../src/index";
-import { _resetConfiguration, initializeTracing } from "../src/sdk/configuration";
+import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 import { otelSpanIdToUUID } from "../src/utils";
 
 const isThenable = <T = unknown>(

@@ -40,7 +40,10 @@ export const initializeTracing = (options: InitializeOptions) => {
   if (options.logLevel) {
     diag.setLogger(
       new DiagConsoleLogger(),
-      logLevelToOtelLogLevel(options.logLevel),
+      {
+        logLevel: logLevelToOtelLogLevel(options.logLevel),
+        suppressOverrideMessage: true,
+      }
     );
   }
 
