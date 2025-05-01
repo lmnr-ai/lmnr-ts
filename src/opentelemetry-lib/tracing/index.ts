@@ -387,8 +387,9 @@ export const startTracing = (options: InitializeOptions) => {
 
     span.setAttribute(SPAN_INSTRUMENTATION_SOURCE, "javascript");
     span.setAttribute(SPAN_SDK_VERSION, SDK_VERSION);
-    if (getLangVersion()) {
-      span.setAttribute(SPAN_LANGUAGE_VERSION, getLangVersion());
+    const langVersion = getLangVersion();
+    if (langVersion) {
+      span.setAttribute(SPAN_LANGUAGE_VERSION, langVersion);
     }
 
     // This sets the properties only if the context has them
@@ -465,7 +466,7 @@ export const startTracing = (options: InitializeOptions) => {
         },
       ),
     });
-    // newProvider.register();
+    newProvider.register();
     provider = newProvider;
   }
 
