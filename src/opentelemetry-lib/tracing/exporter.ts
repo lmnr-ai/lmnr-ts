@@ -23,7 +23,7 @@ export class LaminarSpanExporter implements SpanExporter {
     apiKey?: string;
     forceHttp?: boolean;
     timeoutMillis?: number;
-  }) {
+  } = {}) {
     const url = options.baseUrl ?? process?.env?.LMNR_BASE_URL ?? 'https://api.lmnr.ai';
     const port = options.port ?? (
       url.match(/:\d{1,5}$/g)

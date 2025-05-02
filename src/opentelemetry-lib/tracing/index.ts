@@ -66,9 +66,32 @@ export const startTracing = (options: InitializeOptions) => {
     ),
   });
 
-  // If we are the first global tracer provider to be initialized in the process,
-  // we need to set the context manager. If we are not, we don't do anything
-  // to avoid logging scary errors.
+  tracerProvider = newProvider;
+
+  // Usually, we would do `tracerProvider.register()`, which does three things:
+  // 1. Sets the global tracer provider
+  // 2. Sets the global context manager to a default one, unless we specify a custom one
+  // 3. Sets the global propagator to a default one, unless we specify a custom one
+  // We don't do that, because Opentelemetry only allows setting these global
+  // OTel API instances once.
+  //
+  // Instead, we do the following:
+  // 1. Carry the global tracer provider around without globally registering it.
+  //    - Set this tracer provider in the auto-instrumentations from OpenLLMetry
+  //    - expose the `getTracer` function, which will return a tracer from our
+  //      tracer provider.
+  // 2. Set a context manager globally, only if we are the first ones to do so.
+  //    - If we are not the first ones, we don't set the global context manager.
+  //      - If an existing context manager is not broken, it suffices for our purposes
+  //        for carrying the parent span context.
+  //    - If any library tries to do so afterwards (and they will, e.g. @vercel/otel
+  //      or @sentry/node do tracerProvider.register() internally), there will be
+  //      an error message at their initialization.
+  //      - We recommend to initialize Laminar after other tracing libraries to avoid that
+  // 3. We don't do anything about the propagator, because no Laminar functionality
+  //    depends on it. We might want to revisit this in the future w.r.t. `LaminarSpanContext`.
+
+  // This is a small hack to only set the global context manager if there is none.
   if (!isGlobalContextManagerConfigured()) {
     const contextManager = new AsyncLocalStorageContextManager();
     contextManager.enable();
@@ -77,7 +100,6 @@ export const startTracing = (options: InitializeOptions) => {
   }
   logger.info('Global OTel Context Manager exists');
 
-  tracerProvider = newProvider;
 
   logger.info(`Laminar registering ${instrumentations.length} instrumentations`);
   // Similarly, we carry our global tracer provider around without globally

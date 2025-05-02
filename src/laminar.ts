@@ -112,7 +112,7 @@ export class Laminar {
     logLevel,
     maxExportBatchSize,
     forceHttp,
-  }: LaminarInitializeProps) {
+  }: LaminarInitializeProps = {}) {
 
     const key = projectApiKey ?? process?.env?.LMNR_PROJECT_API_KEY;
     if (key === undefined) {

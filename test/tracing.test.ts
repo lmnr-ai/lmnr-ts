@@ -16,6 +16,7 @@ import {
   withTracingLevel,
 } from "../src/index";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import { getParentSpanId } from "../src/opentelemetry-lib/tracing/compat";
 
 void describe("tracing", () => {
   const exporter = new InMemorySpanExporter();
@@ -185,7 +186,7 @@ void describe("tracing", () => {
     assert.strictEqual(spans[0].name, "test");
 
     assert.strictEqual(spans[0].spanContext().traceId, "0123456789abcdef0123456789abcdef");
-    assert.strictEqual(spans[0].parentSpanContext?.spanId, "0123456789abcdef");
+    assert.strictEqual(getParentSpanId(spans[0]), "0123456789abcdef");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
   });
@@ -208,7 +209,7 @@ void describe("tracing", () => {
     assert.strictEqual(spans[0].name, "test");
 
     assert.strictEqual(spans[0].spanContext().traceId, "0123456789abcdef0123456789abcdef");
-    assert.strictEqual(spans[0].parentSpanContext?.spanId, "0123456789abcdef");
+    assert.strictEqual(getParentSpanId(spans[0]), "0123456789abcdef");
 
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
@@ -251,7 +252,7 @@ void describe("tracing", () => {
     assert.strictEqual(doubleSpan?.attributes['lmnr.span.output'], "4");
     assert.deepEqual(doubleSpan?.attributes['lmnr.span.path'], ["test", "double"]);
 
-    assert.strictEqual(doubleSpan?.parentSpanContext?.spanId, testSpan?.spanContext().spanId);
+    assert.strictEqual(getParentSpanId(doubleSpan), testSpan?.spanContext().spanId);
     assert.strictEqual(testSpan?.spanContext().traceId, doubleSpan?.spanContext().traceId);
     assert.strictEqual(testSpan?.attributes['lmnr.span.instrumentation_source'], "javascript");
     assert.strictEqual(doubleSpan?.attributes['lmnr.span.instrumentation_source'], "javascript");
@@ -346,7 +347,7 @@ void describe("tracing", () => {
       ["some-endpoint", "endpoint"].sort(),
     );
 
-    assert.strictEqual(doubleSpan?.parentSpanContext?.spanId, testSpan?.spanContext().spanId);
+    assert.strictEqual(getParentSpanId(doubleSpan), testSpan?.spanContext().spanId);
     assert.strictEqual(testSpan?.spanContext().traceId, doubleSpan?.spanContext().traceId);
     assert.strictEqual(doubleSpan?.attributes['lmnr.span.instrumentation_source'], "javascript");
     assert.strictEqual(testSpan?.attributes['lmnr.span.instrumentation_source'], "javascript");

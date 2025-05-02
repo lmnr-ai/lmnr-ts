@@ -26,7 +26,7 @@ export const initializeLaminarInstrumentations = (
     httpPort?: number,
     suppressContentTracing?: boolean,
     instrumentModules?: InitializeOptions["instrumentModules"],
-  }
+  } = {}
 ) => {
   const url = options.baseUrl ?? process?.env?.LMNR_BASE_URL ?? 'https://api.lmnr.ai';
   const port = options.httpPort ?? (
@@ -39,7 +39,7 @@ export const initializeLaminarInstrumentations = (
     projectApiKey: options.apiKey ?? process.env.LMNR_PROJECT_API_KEY!,
   });
 
-  return options.instrumentModules !== undefined
+  return options?.instrumentModules !== undefined
     ? manuallyInitInstrumentations(client, options.instrumentModules, options.suppressContentTracing)
     : initInstrumentations(client, options.suppressContentTracing);
 }

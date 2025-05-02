@@ -85,7 +85,7 @@ export class LaminarSpanProcessor implements SpanProcessor {
   private readonly _spanIdToPath: Map<string, string[]> = new Map();
   private readonly _spanIdLists: Map<string, string[]> = new Map();
 
-  constructor(options: LaminarSpanProcessorOptions) {
+  constructor(options: LaminarSpanProcessorOptions = {}) {
     const exporter = options.exporter ?? new LaminarSpanExporter(options);
     this.instance = options.disableBatch
       ? new SimpleSpanProcessor(exporter)
