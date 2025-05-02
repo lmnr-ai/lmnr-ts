@@ -9,8 +9,8 @@ import { shouldSendTraces } from ".";
 import { SPAN_INPUT, SPAN_OUTPUT } from "./attributes";
 import {
   ASSOCIATION_PROPERTIES_KEY,
-  getTracer,
-} from "./tracing";
+} from "./utils";
+import { getTracer } from ".";
 
 const logger = pino(pinoPretty({
   colorize: true,

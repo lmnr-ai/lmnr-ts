@@ -4,6 +4,8 @@ export { observe, withLabels, withTracingLevel } from './decorators';
 export { Datapoint, evaluate, HumanEvaluator } from './evaluations';
 export { Laminar } from './laminar';
 export { LaminarAttributes } from './opentelemetry-lib/tracing/attributes';
+export { getTracer } from './opentelemetry-lib/tracing/index';
+export { LaminarSpanProcessor } from './opentelemetry-lib/';
 export {
   ChatMessage,
   Event,

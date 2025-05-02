@@ -8,12 +8,13 @@ import {
   Span,
   TimeInput,
   trace,
+  TracerProvider,
 } from '@opentelemetry/api';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import pino from 'pino';
 import pinoPretty from 'pino-pretty';
 
-import { forceFlush, InitializeOptions, initializeTracing } from './opentelemetry-lib/node-server-sdk';
+import { InitializeOptions, initializeTracing } from './opentelemetry-lib';
 import {
   ASSOCIATION_PROPERTIES,
   LaminarAttributes,
@@ -22,7 +23,8 @@ import {
   SPAN_OUTPUT,
   SPAN_TYPE,
 } from './opentelemetry-lib/tracing/attributes';
-import { ASSOCIATION_PROPERTIES_KEY, getTracer } from './opentelemetry-lib/tracing/tracing';
+import { ASSOCIATION_PROPERTIES_KEY } from './opentelemetry-lib/tracing/utils';
+import { forceFlush, getTracer } from './opentelemetry-lib/tracing/';
 import { LaminarSpanContext } from './types';
 import {
   otelSpanIdToUUID,
@@ -39,7 +41,6 @@ const logger = pino(pinoPretty({
 
 interface LaminarInitializeProps {
   projectApiKey?: string;
-  env?: Record<string, string>;
   baseUrl?: string;
   httpPort?: number;
   grpcPort?: number;
@@ -49,13 +50,12 @@ interface LaminarInitializeProps {
   traceExportTimeoutMillis?: number;
   logLevel?: "debug" | "info" | "warn" | "error";
   maxExportBatchSize?: number;
+  forceHttp?: boolean;
 }
 
 export class Laminar {
   private static baseHttpUrl: string;
-  private static baseGrpcUrl: string;
   private static projectApiKey: string;
-  private static env: Record<string, string> = {};
   private static isInitialized: boolean = false;
   /**
    * Initialize Laminar context across the application.
@@ -103,16 +103,15 @@ export class Laminar {
    */
   public static initialize({
     projectApiKey,
-    env,
     baseUrl,
     httpPort,
     grpcPort,
     instrumentModules,
-    preserveNextJsSpans,
     disableBatch,
     traceExportTimeoutMillis,
     logLevel,
     maxExportBatchSize,
+    forceHttp,
   }: LaminarInitializeProps) {
 
     const key = projectApiKey ?? process?.env?.LMNR_PROJECT_API_KEY;
@@ -131,30 +130,21 @@ export class Laminar {
     const urlWithoutSlash = url.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
 
     this.baseHttpUrl = `${urlWithoutSlash}:${port}`;
-    this.baseGrpcUrl = `${urlWithoutSlash}:${grpcPort ?? 8443}`;
 
     this.isInitialized = true;
-    this.env = env ?? {};
-
-    const metadata = new Metadata();
-    metadata.set('authorization', `Bearer ${this.projectApiKey}`);
-    const exporter = new OTLPTraceExporter({
-      url: `${this.baseGrpcUrl}`,
-      metadata,
-      // default is 10 seconds, increase to 30 seconds
-      timeoutMillis: traceExportTimeoutMillis ?? 30000,
-    });
 
     initializeTracing({
-      baseUrl: this.baseHttpUrl,
+      baseUrl: urlWithoutSlash,
       apiKey: this.projectApiKey,
-      exporter,
+      port: grpcPort,
+      forceHttp,
+      httpPort,
       silenceInitializationMessage: true,
       instrumentModules,
-      disableBatch,
-      preserveNextJsSpans,
       logLevel: logLevel ?? "warn",
+      disableBatch,
       maxExportBatchSize,
+      traceExportTimeoutMillis,
     });
   }
 
@@ -164,30 +154,6 @@ export class Laminar {
    */
   public static initialized(): boolean {
     return this.isInitialized;
-  }
-
-  /**
-   * Sets the environment that will be sent to Laminar requests.
-   *
-   * @param env - The environment variables to override. If not provided, the
-   * current environment will not be modified.
-   */
-  public static setEnv(env?: Record<string, string>) {
-    if (env) {
-      this.env = env;
-    }
-  }
-
-  /**
-   * Sets the project API key for authentication with Laminar.
-   *
-   * @param projectApiKey - The API key to be set. If not provided, the existing
-   * API key will not be modified.
-   */
-  public static setProjectApiKey(projectApiKey?: string) {
-    if (projectApiKey) {
-      this.projectApiKey = projectApiKey;
-    }
   }
 
   /**
@@ -492,6 +458,10 @@ export class Laminar {
       spanId: otelSpanIdToUUID(currentSpan.spanContext().spanId) as StringUUID,
       isRemote: currentSpan.spanContext().isRemote ?? false,
     };
+  }
+
+  public static async flush() {
+    await forceFlush();
   }
 
   public static async shutdown() {

@@ -7,13 +7,13 @@ import { chromium } from "@playwright/test";
 
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 import { NIL_UUID, otelTraceIdToUUID } from "../src/utils";
+import { Laminar } from "../src/laminar";
 
 // This test fails to inject rrweb and send events,
 // but for now it only tests tracing, so it's fine.
 
 void describe("playwright", () => {
   const exporter = new InMemorySpanExporter();
-  const processor = new SimpleSpanProcessor(exporter);
 
   void beforeEach(() => {
     // This only uses underlying OpenLLMetry initialization, not Laminar's
@@ -21,8 +21,8 @@ void describe("playwright", () => {
     // Laminar.initialize() is tested in the other suite.
     _resetConfiguration();
     initializeTracing({
-      processor,
       exporter,
+      disableBatch: true,
       instrumentModules: {
         playwright: {
           chromium: chromium,
@@ -37,13 +37,12 @@ void describe("playwright", () => {
   });
 
   void after(async () => {
-    await processor.shutdown();
+    await exporter.shutdown();
     trace.disable();
     context.disable();
   });
 
-  // TODO: figure out if this can run in Github Actions
-  void it("exports all spans to a single trace", async () => {
+  void it("creates a trace with a single span", async () => {
     const browser = await chromium.launch({
       headless: true,
     });
@@ -68,16 +67,12 @@ void describe("playwright", () => {
     await browser.close();
 
     const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
     const traceId = spans[0].spanContext().traceId;
 
     assert.notStrictEqual(
       otelTraceIdToUUID(traceId),
       NIL_UUID,
-    );
-
-    assert.strictEqual(
-      true,
-      spans.every((span) => span.spanContext().traceId === traceId),
     );
   });
 });

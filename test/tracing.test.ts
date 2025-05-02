@@ -19,14 +19,13 @@ import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib
 
 void describe("tracing", () => {
   const exporter = new InMemorySpanExporter();
-  const processor = new SimpleSpanProcessor(exporter);
 
   void beforeEach(() => {
     // This only uses underlying OpenLLMetry initialization, not Laminar's
     // initialization, but this is sufficient for testing.
     // Laminar.initialize() is tested in the other suite.
     _resetConfiguration();
-    initializeTracing({ processor, exporter });
+    initializeTracing({ exporter, disableBatch: true });
   });
 
 
@@ -35,7 +34,7 @@ void describe("tracing", () => {
   });
 
   void after(async () => {
-    await processor.shutdown();
+    await exporter.shutdown();
     trace.disable();
     context.disable();
   });

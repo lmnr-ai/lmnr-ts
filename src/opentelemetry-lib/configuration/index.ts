@@ -31,10 +31,6 @@ export const initializeTracing = (options: InitializeOptions) => {
     throw new InitializationError('"apiKey" must be a string');
   }
 
-  if (!options.appName) {
-    options.appName = process.env.npm_package_name;
-  }
-
   _configuration = Object.freeze(options);
 
   if (options.logLevel) {
