@@ -12,11 +12,7 @@ import {
   OTLPTraceExporter as ExporterHttp
 } from "@opentelemetry/exporter-trace-otlp-proto";
 import { ExportResult } from "@opentelemetry/core";
-import { diag } from "@opentelemetry/api";
-
-type OTelV1ReadableSpan = ReadableSpan & {
-  instrumentationLibrary: ReadableSpan['instrumentationScope'];
-}
+import { makeSpanOtelV2Compatible } from "./compat";
 
 export class LaminarSpanExporter implements SpanExporter {
   private exporter: SpanExporter;
@@ -69,20 +65,7 @@ export class LaminarSpanExporter implements SpanExporter {
     // OTel v2 has renamed the instrumentationLibrary field to instrumentationScope,
     // but spans may be created by older versions of the SDK that don't have that change.
     // This is a small hack to support those older spans.
-    let otelV1SpansCount = 0;
-    items.forEach(item => {
-      if (item.instrumentationScope && !(item as OTelV1ReadableSpan).instrumentationLibrary) {
-        Object.assign(item, {
-          instrumentationLibrary: item.instrumentationScope,
-        });
-      } else if ((item as OTelV1ReadableSpan).instrumentationLibrary && !item.instrumentationScope) {
-        otelV1SpansCount++;
-        Object.assign(item, {
-          instrumentationScope: (item as OTelV1ReadableSpan).instrumentationLibrary,
-        });
-      }
-    });
-    diag.debug(`Converted ${otelV1SpansCount} spans from OTel v1 to v2 format`);
+    items.forEach(makeSpanOtelV2Compatible);
     // ==== //
 
     return this.exporter.export(items, resultCallback);

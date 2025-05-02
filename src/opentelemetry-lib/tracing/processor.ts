@@ -9,10 +9,18 @@ import {
   SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import {
+  Span as OTelV2Span,
+  ReadableSpan as OTelV2ReadableSpan,
+} from "@opentelemetry/sdk-trace-base-v2";
+import {
   ASSOCIATION_PROPERTIES_KEY,
   getSpanPath,
   SPAN_PATH_KEY,
 } from "./utils";
+import {
+  getParentSpanId,
+  makeSpanOtelV2Compatible,
+} from "./compat";
 import {
   SPAN_IDS_PATH,
   SPAN_INSTRUMENTATION_SOURCE,
@@ -26,10 +34,6 @@ import { otelSpanIdToUUID } from "../../utils";
 import { getLangVersion } from "../../version";
 import { version as SDK_VERSION } from "../../../package.json";
 import { LaminarSpanExporter } from "./exporter";
-
-type OTelV1Span = ReadableSpan & {
-  parentSpanId?: string;
-};
 
 interface LaminarSpanProcessorOptions {
   /**
@@ -99,9 +103,9 @@ export class LaminarSpanProcessor implements SpanProcessor {
     return this.instance.shutdown();
   }
 
-  onStart(span: Span, parentContext: Context): void {
+  onStart(span: Span | OTelV2Span, parentContext: Context): void {
     const contextSpanPath = getSpanPath(parentContext ?? context.active());
-    const parentSpanId = this.parentSpanId(span);
+    const parentSpanId = getParentSpanId(span);
     const parentSpanPath = contextSpanPath
       ?? (parentSpanId !== undefined
         ? this._spanIdToPath.get(parentSpanId)
@@ -145,15 +149,13 @@ export class LaminarSpanProcessor implements SpanProcessor {
       }
     }
 
-    this.instance.onStart(span, parentContext);
+    makeSpanOtelV2Compatible(span);
+    this.instance.onStart((span as Span), parentContext);
   }
 
-  onEnd(span: ReadableSpan): void {
+  onEnd(span: ReadableSpan | OTelV2ReadableSpan): void {
     // By default, we call the original onEnd.
-    this.instance.onEnd(span);
-  }
-
-  private parentSpanId = (span: Span | OTelV1Span): string | undefined => {
-    return span.parentSpanContext?.spanId ?? (span as OTelV1Span).parentSpanId;
+    makeSpanOtelV2Compatible(span);
+    this.instance.onEnd(span as Span);
   }
 }

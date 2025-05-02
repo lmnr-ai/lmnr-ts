@@ -14,10 +14,9 @@ import { _configuration } from "../configuration";
 import { InitializeOptions } from "../interfaces";
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions";
 import { LaminarSpanProcessor } from "./processor";
-import { resourceFromAttributes } from "@opentelemetry/resources";
+import { createResource } from "./compat";
 import { initializeLaminarInstrumentations } from "./instrumentations";
 import { isGlobalContextManagerConfigured } from "./utils";
-import { Laminar } from "../../laminar";
 
 const logger = pino(pinoPretty({
   colorize: true,
@@ -59,7 +58,7 @@ export const startTracing = (options: InitializeOptions) => {
   const newProvider = new NodeTracerProvider({
     spanProcessors: [spanProcessor],
     sampler: new AlwaysOnSampler(),
-    resource: resourceFromAttributes(
+    resource: createResource(
       {
         [ATTR_SERVICE_NAME]: "laminar-tracer-resource",
         [ATTR_SERVICE_VERSION]: SDK_VERSION,
