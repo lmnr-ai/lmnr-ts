@@ -1,6 +1,5 @@
 import { diag, DiagConsoleLogger, DiagLogLevel } from "@opentelemetry/api";
 
-import { InitializationError } from "../errors";
 import { InitializeOptions } from "../interfaces";
 import { startTracing } from "../tracing";
 
@@ -27,20 +26,16 @@ export const initializeTracing = (options: InitializeOptions) => {
   if (!options.apiKey) {
     options.apiKey = process.env.LMNR_PROJECT_API_KEY;
   }
-  if (options.apiKey && typeof options.apiKey !== "string") {
-    throw new InitializationError('"apiKey" must be a string');
-  }
-
-  if (!options.appName) {
-    options.appName = process.env.npm_package_name;
-  }
 
   _configuration = Object.freeze(options);
 
   if (options.logLevel) {
     diag.setLogger(
       new DiagConsoleLogger(),
-      logLevelToOtelLogLevel(options.logLevel),
+      {
+        logLevel: logLevelToOtelLogLevel(options.logLevel),
+        suppressOverrideMessage: true,
+      },
     );
   }
 

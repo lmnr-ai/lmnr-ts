@@ -4,16 +4,12 @@ import { context, propagation, trace } from "@opentelemetry/api";
 import { ArgumentParser } from "argparse";
 import * as esbuild from "esbuild";
 import * as glob from "glob";
-import pino from "pino";
-import pinoPretty from "pino-pretty";
 
 import { version } from "../package.json";
 import { Evaluation } from "./evaluations";
+import { initializeLogger } from "./utils";
 
-const logger = pino(pinoPretty({
-  colorize: true,
-  minimumLevel: "info",
-}));
+const logger = initializeLogger();
 
 declare global {
   // eslint-disable-next-line no-var
@@ -81,7 +77,8 @@ async function cli() {
 
       if (files.length === 0) {
         logger.error("No evaluation files found. Please provide a file or " +
-          "ensure there are files in the `evals` directory.");
+          "ensure there are eval files that are named like `*.eval.{ts,js}` in" +
+          "the `evals` directory or its subdirectories.");
         process.exit(1);
       }
 
@@ -104,7 +101,8 @@ async function cli() {
         const result = await esbuild.build(buildOptions);
 
         if (!result.outputFiles) {
-          logger.error("Error when building: No output files found");
+          logger.error("Error when building: No output files found " +
+            "it is likely that all eval files are not valid TypeScript or JavaScript files.");
           if (args.fail_on_error) {
             process.exit(1);
           }

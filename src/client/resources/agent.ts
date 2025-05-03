@@ -3,16 +3,11 @@
  */
 
 import { trace } from "@opentelemetry/api";
-import pino from "pino";
-import pinoPretty from "pino-pretty";
 
-import { otelSpanIdToUUID, otelTraceIdToUUID, StringUUID } from "../../utils";
+import { initializeLogger, otelSpanIdToUUID, otelTraceIdToUUID, StringUUID } from "../../utils";
 import { BaseResource } from "./index";
 
-const logger = pino(pinoPretty({
-  colorize: true,
-  minimumLevel: "info",
-}));
+const logger = initializeLogger();
 
 /**
  * Model provider options
@@ -58,9 +53,11 @@ export type RunAgentRequest = {
   maxSteps?: number;
   thinkingTokenBudget?: number;
   startUrl?: string;
+  userAgent?: string;
   returnScreenshots?: boolean;
   returnAgentState?: boolean;
   returnStorageState?: boolean;
+  disableGiveControl?: boolean;
 };
 
 export type RunAgentStepChunk = {
@@ -114,9 +111,11 @@ type RunAgentOptions = {
   maxSteps?: number;
   thinkingTokenBudget?: number;
   startUrl?: string;
+  userAgent?: string;
   returnScreenshots?: boolean;
   returnAgentState?: boolean;
   returnStorageState?: boolean;
+  disableGiveControl?: boolean;
 };
 
 /**
@@ -153,6 +152,8 @@ export class AgentResource extends BaseResource {
    * @param { string } [options.startUrl] - The URL to start the agent on. Make sure it's a
    * valid URL - refer to https://playwright.dev/docs/api/class-page#page-goto
    * If not specified, the agent will infer this from the prompt.
+   * @param { string } [options.userAgent] - The user agent to set in the browser.
+   * If not specified, Laminar will use the default user agent.
    * @param { boolean } [options.returnScreenshots] - IGNORED in non-streaming mode.
    * Defaults to false. Set stream to true for doc comments.
    * @param { boolean } [options.returnAgentState] - Whether to return the agent state.
@@ -161,6 +162,8 @@ export class AgentResource extends BaseResource {
    * @param { boolean } [options.returnStorageState] - Whether to return the storage state.
    * Storage state includes browser cookies, auth, etc.
    * CAUTION: Storage state is a relatively large object. Defaults to false.
+   * @param { boolean } [options.disableGiveControl] - Whether to NOT direct the agent
+   * to give control back to the user for tasks such as logging in. Defaults to false.
    * @returns { Promise<AgentOutput> } The agent output
    */
   public run(options: Omit<RunAgentOptions, 'stream'>): Promise<AgentOutput>;
@@ -191,6 +194,8 @@ export class AgentResource extends BaseResource {
    * @param { string } [options.startUrl] - The URL to start the agent on. Make sure it's
    * a valid URL - refer to https://playwright.dev/docs/api/class-page#page-goto
    * If not specified, the agent will infer this from the prompt.
+   * @param { string } [options.userAgent] - The user agent to set in the browser.
+   * If not specified, Laminar will use the default user agent.
    * @param { boolean } [options.returnScreenshots] - IGNORED in non-streaming mode.
    * Defaults to false. Set stream to true for doc comments.
    * @param { boolean } [options.returnAgentState] - Whether to return the agent state.
@@ -199,6 +204,8 @@ export class AgentResource extends BaseResource {
    * @param { boolean } [options.returnStorageState] - Whether to return the storage state.
    * Storage state includes browser cookies, auth, etc.
    * CAUTION: Storage state is a relatively large object. Defaults to false.
+   * @param { boolean } [options.disableGiveControl] - Whether to NOT direct the agent
+   * to give control back to the user for tasks such as logging in. Defaults to false.
    * @returns { Promise<AgentOutput> } The agent output
    */
   public run(options: Omit<RunAgentOptions, 'stream'> & { stream?: false }): Promise<AgentOutput>;
@@ -229,6 +236,8 @@ export class AgentResource extends BaseResource {
    * @param { string } [options.startUrl] - The URL to start the agent on. Make sure it's
    * a valid URL - refer to https://playwright.dev/docs/api/class-page#page-goto
    * If not specified, the agent will infer this from the prompt.
+   * @param { string } [options.userAgent] - The user agent to set in the browser.
+   * If not specified, Laminar will use the default user agent.
    * @param { boolean } [options.returnScreenshots] - Whether to return screenshots with
    * each step. Defaults to false. Set stream to true for doc comments.
    * @param { boolean } [options.returnAgentState] - Whether to return the agent state.
@@ -237,6 +246,8 @@ export class AgentResource extends BaseResource {
    * @param { boolean } [options.returnStorageState] - Whether to return the storage state.
    * Storage state includes browser cookies, auth, etc.
    * CAUTION: Storage state is a relatively large object. Defaults to false.
+   * @param { boolean } [options.disableGiveControl] - Whether to NOT direct the agent
+   * to give control back to the user for tasks such as logging in. Defaults to false.
    * @returns { Promise<ReadableStream<RunAgentResponseChunk>> } The agent output streamed
    */
   public run(options: Omit<RunAgentOptions, 'stream'> & { stream: true }):
@@ -265,6 +276,8 @@ export class AgentResource extends BaseResource {
    * @param { string } [options.startUrl] - The URL to start the agent on.
    * Make sure it's a valid URL - refer to https://playwright.dev/docs/api/class-page#page-goto
    * If not specified, the agent will infer this from the prompt.
+   * @param { string } [options.userAgent] - The user agent to set in the browser.
+   * If not specified, Laminar will use the default user agent.
    * @param { boolean } [options.returnScreenshots] - Whether to return screenshots with
    * each step. Defaults to false.
    * @param { boolean } [options.returnAgentState] - Whether to return the agent state.
@@ -273,6 +286,8 @@ export class AgentResource extends BaseResource {
    * @param { boolean } [options.returnStorageState] - Whether to return the storage state.
    * Storage state includes browser cookies, auth, etc.
    * CAUTION: Storage state is a relatively large object. Defaults to false.
+   * @param { boolean } [options.disableGiveControl] - Whether to NOT direct the agent
+   * to give control back to the user for tasks such as logging in. Defaults to false.
    * @returns { Promise<AgentOutput | ReadableStream<RunAgentResponseChunk>> }
    *    The agent output or a stream of response chunks
    */
@@ -290,9 +305,11 @@ export class AgentResource extends BaseResource {
     maxSteps,
     thinkingTokenBudget,
     startUrl,
+    userAgent,
     returnScreenshots,
     returnAgentState,
     returnStorageState,
+    disableGiveControl,
   }: RunAgentOptions): Promise<AgentOutput | ReadableStream<RunAgentResponseChunk>> {
     // Handle parent span context from current context if not provided
     let requestParentSpanContext = parentSpanContext;
@@ -324,9 +341,11 @@ export class AgentResource extends BaseResource {
       maxSteps,
       thinkingTokenBudget,
       startUrl,
+      userAgent,
       returnScreenshots: returnScreenshots ?? false,
       returnAgentState: returnAgentState ?? false,
       returnStorageState: returnStorageState ?? false,
+      disableGiveControl: disableGiveControl ?? false,
     };
 
     // For streaming case, return the ReadableStream directly

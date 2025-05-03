@@ -6,8 +6,7 @@ import type * as aiplatform from "@google-cloud/aiplatform";
 import type * as vertexAI from "@google-cloud/vertexai";
 import type * as RunnableModule from "@langchain/core/runnables";
 import type * as VectorStoreModule from "@langchain/core/vectorstores";
-import { ContextManager, TextMapPropagator } from "@opentelemetry/api";
-import { SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { SpanExporter } from "@opentelemetry/sdk-trace-base";
 import type * as pinecone from "@pinecone-database/pinecone";
 import type * as qdrant from "@qdrant/js-client-rest";
 import type * as chromadb from "chromadb";
@@ -26,32 +25,43 @@ import type * as together from "together-ai";
  */
 export interface InitializeOptions {
   /**
-   * The app name to be used when reporting traces. Optional.
-   * Defaults to the package name.
-   */
-  appName?: string;
-
-  /**
    * The API Key for sending traces data. Optional.
-   * Defaults to the TRACELOOP_API_KEY environment variable.
    */
   apiKey?: string;
 
   /**
-   * The OTLP endpoint for sending traces data. Optional.
-   * Defaults to TRACELOOP_BASE_URL environment variable or https://api.traceloop.com/
+   * The Laminar API endpoint for sending traces data. Optional.
+   * Defaults to https://api.lmnr.ai:8443
    */
   baseUrl?: string;
 
   /**
-   * Sends traces and spans without batching, for local development. Optional.
+   * Whether to disable batching. Optional.
    * Defaults to false.
    */
   disableBatch?: boolean;
 
   /**
+   * The OTLP gRPC port for sending traces data. Optional.
+   * Defaults to 8443.
+   */
+  port?: number;
+
+  /**
+   * The HTTP port for sending traces data. Optional.
+   * Defaults to 443.
+   */
+  httpPort?: number;
+
+  /**
+   * Whether to use HTTP for sending traces data. NOT RECOMMENDED. Optional.
+   * Defaults to false.
+   */
+  forceHttp?: boolean;
+
+  /**
    * Defines default log level for SDK and all instrumentations. Optional.
-   * Defaults to error.
+   * Defaults to warn.
    */
   logLevel?: "debug" | "info" | "warn" | "error";
 
@@ -60,30 +70,6 @@ export interface InitializeOptions {
    * Defaults to true.
    */
   traceContent?: boolean;
-
-  /**
-   * The OpenTelemetry SpanExporter to be used for sending traces data. Optional.
-   * Defaults to the OTLP exporter.
-   */
-  exporter?: SpanExporter;
-
-  /**
-   * The OpenTelemetry SpanProcessor to be used for processing traces data. Optional.
-   * Defaults to the BatchSpanProcessor.
-   */
-  processor?: SpanProcessor;
-
-  /**
-   * The OpenTelemetry Propagator to use. Optional.
-   * Defaults to OpenTelemetry SDK defaults.
-   */
-  propagator?: TextMapPropagator;
-
-  /**
-   * The OpenTelemetry ContextManager to use. Optional.
-   * Defaults to OpenTelemetry SDK defaults.
-   */
-  contextManager?: ContextManager;
 
   /**
    * The modules to instrument. Optional. Suggested to use, if you don't see
@@ -129,25 +115,6 @@ export interface InitializeOptions {
   silenceInitializationMessage?: boolean;
 
   /**
-   * Whether to use an external tracer provider. Optional.
-   * Defaults to false. If true, the SDK will not initialize its own tracer provider.
-   * This is useful for advanced use cases where the user wants to manage the
-   * tracer provider themselves.
-   */
-  useExternalTracerProvider?: boolean;
-
-  /**
-   * Whether to preserve Next.js spans. Optional.
-   * Defaults to false.
-   * Next.js instrumentation is very verbose and can result in
-   * a lot of noise in the traces. By default, Laminar
-   * will ignore the Next.js spans (looking at the attributes like `next.span_name`)
-   * and set the topmost non-Next span as the root span in the trace.
-   * This option allows to preserve the Next.js spans.
-   */
-  preserveNextJsSpans?: boolean;
-
-  /**
    * Whether to reset the configuration. Optional.
    * Defaults to false.
    */
@@ -159,4 +126,16 @@ export interface InitializeOptions {
    * (512 at the time of writing)
    */
   maxExportBatchSize?: number;
+
+  /**
+   * The timeout for sending traces data. Optional.
+   * Defaults to 30 seconds.
+   */
+  traceExportTimeoutMillis?: number;
+
+  /**
+   * The exporter to use. Warning: many other options will be ignored if this is provided. Optional.
+   * Defaults to a new LaminarSpanExporter.
+   */
+  exporter?: SpanExporter;
 }

@@ -18,12 +18,9 @@ npm install @lmnr-ai/lmnr
 And then in the code
 
 ```typescript
-# Only if you are using Next.js
-export NEXT_OTEL_FETCH_DISABLED=1
+import { Laminar } from '@lmnr-ai/lmnr'
 
-import { Laminar as L } from '@lmnr-ai/lmnr'
-
-L.initialize({ projectApiKey: '<PROJECT_API_KEY>' })
+Laminar.initialize({ projectApiKey: '<PROJECT_API_KEY>' })
 ```
 
 This will automatically instrument most of the LLM, Vector DB, and related
@@ -31,7 +28,13 @@ calls with OpenTelemetry-compatible instrumentation.
 
 [Read docs](https://docs.lmnr.ai) to learn more.
 
-Autoinstrumentations are provided by [OpenLLMetry](https://github.com/traceloop/openllmetry-js), open-source package by TraceLoop.
+Auto-instrumentations are provided by [OpenLLMetry](https://github.com/traceloop/openllmetry-js).
+
+### Where to place Laminar.initialize()
+
+Laminar.initialize() must be called
+- once in your application,
+- as early as possible, but after other instrumentation libraries
 
 ## Instrumentation
 
@@ -66,21 +69,33 @@ const poemWriter = async (topic = "turbulence") => {
 await observe({name: 'poemWriter'}, async () => await poemWriter('laminar flow'))
 ```
 
-### Sending events
+### Sending spans to Laminar from a different tracing library
 
-You can send laminar events using `L.event(name, value)`.
+Many tracing libraries accept `spanProcessors` as an initialization parameter.
 
-Read our [docs](https://docs.lmnr.ai) to learn more about events and examples.
+Laminar exposes `LaminarSpanProcessor` that you could use for these purposes.
 
-### Example
+Be careful NOT to call `Laminar.initialize` in such setup, to avoid double tracing.
+
+#### Example with @vercel/otel
+
+For example, in Next.js instrumentation.ts you could do:
 
 ```javascript
-import { Laminar as L } from '@lmnr-ai/lmnr';
-// ...
-const poem = response.choices[0].message.content;
+import { registerOTel } from '@vercel/otel'
 
-// this will register True or False value with Laminar
-L.event('topic alignment', poem.includes(topic))
+export async function register() {
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { Laminar, LaminarSpanProcessor, initializeLaminarInstrumentations } = await import("@lmnr-ai/lmnr");
+    registerOTel({
+      serviceName: "my-service",
+      spanProcessors: [
+        new LaminarSpanProcessor(),
+      ],
+      instrumentations: initializeLaminarInstrumentations(),
+    });
+  }
+}
 ```
 
 ## Evaluations

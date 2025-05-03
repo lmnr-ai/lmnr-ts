@@ -7,23 +7,19 @@ import {
 import { existsSync } from 'fs';
 import { readFile } from "fs/promises";
 import path from "path";
-import pino from 'pino';
-import pinoPretty from 'pino-pretty';
 import type * as PuppeteerLib from "puppeteer";
 import type { Browser, BrowserContext, Page } from 'puppeteer';
 import type * as PuppeteerCoreLib from "puppeteer-core";
 
 import { version as SDK_VERSION } from "../../package.json";
 import { LaminarClient } from '../client';
+import { observe } from '../decorators';
 import { Laminar } from '../laminar';
-import { TRACE_HAS_BROWSER_SESSION } from '../sdk/tracing/attributes';
-import { newUUID, NIL_UUID, StringUUID } from '../utils';
+import { TRACE_HAS_BROWSER_SESSION } from '../opentelemetry-lib/tracing/attributes';
+import { initializeLogger, newUUID, NIL_UUID, StringUUID } from '../utils';
 import { collectAndSendPageEvents, getDirname } from "./utils";
 
-const logger = pino(pinoPretty({
-  colorize: true,
-  minimumLevel: "info",
-}));
+const logger = initializeLogger();
 
 const RRWEB_SCRIPT_PATH = (() => {
   const standardPath = path.join(getDirname(), '..', 'assets', 'rrweb', 'rrweb.min.js');
@@ -56,7 +52,8 @@ const RRWEB_SCRIPT_PATH = (() => {
 /* eslint-disable
   @typescript-eslint/no-this-alias,
   @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return
+  @typescript-eslint/no-unsafe-return,
+  @typescript-eslint/unbound-method
 */
 export class PuppeteerInstrumentation extends InstrumentationBase {
   private _patchedBrowsers: Set<Browser> = new Set();
@@ -212,12 +209,78 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
           'newPage',
           plugin.patchBrowserContextNewPage(),
         );
-        await Promise.all((await context.pages()).map(page => plugin.patchPage(page)));
-        context.on('page', (page) => {
-          plugin.patchPage(page as Page).catch(error => {
-            logger.error("Failed to patch page: " +
+        for (const page of await context.pages()) {
+          try {
+            await page.evaluate(() => (window as any).lmnrIsPageVisible = false);
+          } catch (error) {
+            logger.debug("Failed to set isPageVisible to false: " +
               `${error instanceof Error ? error.message : String(error)}`);
-          });
+          }
+        }
+        await Promise.all((await context.pages()).map(page => plugin.patchPage(page)));
+        context.on('targetcreated', (target) => {
+          target.page().then(page => {
+            if (page) {
+              plugin.patchPage(page).catch(error => {
+                logger.error("Failed to patch page: " +
+                  `${error instanceof Error ? error.message : String(error)}`);
+              });
+            }
+          })
+            .catch(error => {
+              logger.error("Failed to patch page: " +
+                `${error instanceof Error ? error.message : String(error)}`);
+            });
+        });
+        context.on('targetchanged', (target) => {
+          target.page().then(page => {
+            if (page) {
+              context.pages().then(pages => {
+                pages.forEach(otherPage => {
+                  otherPage.evaluate(() => (window as any).lmnrIsPageVisible = false)
+                    .catch(error => {
+                      logger.debug("Failed to set isPageVisible to false: " +
+                        `${error instanceof Error ? error.message : String(error)}`);
+                    });
+                });
+              })
+                .catch(error => {
+                  logger.error("Failed to patch page: " +
+                    `${error instanceof Error ? error.message : String(error)}`);
+                });
+              plugin.patchPage(page).catch(error => {
+                logger.error("Failed to patch page: " +
+                  `${error instanceof Error ? error.message : String(error)}`);
+              });
+            }
+          })
+            .catch(error => {
+              logger.error("Failed to patch page: " +
+                `${error instanceof Error ? error.message : String(error)}`);
+            });
+        });
+        context.on('targetdestroyed', (target) => {
+          target.page().then(page => {
+            if (page) {
+              context.pages().then(pages => {
+                pages.reverse().forEach(otherPage => {
+                  otherPage.evaluate(() => (window as any).lmnrIsPageVisible = true)
+                    .catch(error => {
+                      logger.debug("Failed to set isPageVisible to true: " +
+                        `${error instanceof Error ? error.message : String(error)}`);
+                    });
+                });
+              })
+                .catch(error => {
+                  logger.error("Failed to patch page: " +
+                    `${error instanceof Error ? error.message : String(error)}`);
+                });
+            }
+          })
+            .catch(error => {
+              logger.error("Failed to patch page: " +
+                `${error instanceof Error ? error.message : String(error)}`);
+            });
         });
         plugin._patchedContexts.add(context);
       }
@@ -276,62 +339,45 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
         plugin.patchBrowserContextClose(),
       );
       // Patch pages created by browser, e.g. new tab
-      context.on('page', (page) => {
-        plugin.patchPage(page as Page).catch(error => {
-          logger.error("Failed to patch page: " +
-            `${error instanceof Error ? error.message : String(error)}`);
-        });
+      context.on('targetcreated', (target) => {
+        target.page().then(page => {
+          if (page) {
+            plugin.patchPage(page).catch(error => {
+              logger.error("Failed to patch page: " +
+                `${error instanceof Error ? error.message : String(error)}`);
+            });
+          }
+        })
+          .catch(error => {
+            logger.error("Failed to patch page: " +
+              `${error instanceof Error ? error.message : String(error)}`);
+          });
+      });
+      context.on('targetchanged', (target) => {
+        target.page().then(page => {
+          if (page) {
+            plugin.patchPage(page).catch(error => {
+              logger.error("Failed to patch page: " +
+                `${error instanceof Error ? error.message : String(error)}`);
+            });
+          }
+        })
+          .catch(error => {
+            logger.error("Failed to patch page: " +
+              `${error instanceof Error ? error.message : String(error)}`);
+          });
       });
 
       // Patch pages that are already created
       for (const page of await context.pages()) {
+        try {
+          await page.evaluate(() => (window as any).lmnrIsPageVisible = false);
+        } catch (error) {
+          logger.debug("Failed to set isPageVisible to false: " +
+            `${error instanceof Error ? error.message : String(error)}`);
+        }
         await plugin.patchPage(page);
       }
-
-      plugin._patchedContexts.add(context);
-      return context;
-    };
-  }
-
-  private patchBrowserNewContextSync() {
-    const plugin = this;
-    return (original: Function) => function method(this: Browser, ...args: unknown[]) {
-      const context: BrowserContext = original.bind(this).apply(this, args);
-      if (!plugin._parentSpan) {
-        plugin._parentSpan = Laminar.startSpan({
-          name: 'puppeteer',
-        });
-      }
-      // Patch pages that are created manually from Puppeteer
-      plugin._wrap(
-        context,
-        'newPage',
-        plugin.patchBrowserContextNewPage(),
-      );
-      plugin._wrap(
-        context,
-        'close',
-        plugin.patchBrowserContextClose(),
-      );
-      // Patch pages created by browser, e.g. new tab
-      context.on('page', (page) => {
-        plugin.patchPage(page as Page).catch(error => {
-          logger.error("Failed to patch page: " +
-            `${error instanceof Error ? error.message : String(error)}`);
-        });
-      });
-
-      context.pages().then(pages => {
-        for (const page of pages) {
-          plugin.patchPage(page).catch(error => {
-            logger.error("Failed to patch page: " +
-              `${error instanceof Error ? error.message : String(error)}`);
-          });
-        }
-      }).catch(error => {
-        logger.error("Failed to patch pages: " +
-          `${error instanceof Error ? error.message : String(error)}`);
-      });
 
       plugin._patchedContexts.add(context);
       return context;
@@ -381,17 +427,46 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
 
   public async patchPage(page: Page) {
     return await Laminar.withSpan(this._parentSpan!, async () => {
-      await this._patchPage(page);
+      await observe({ name: 'puppeteer.page' }, async () => {
+        await this._patchPage(page);
+      });
     });
   }
 
   private async _patchPage(page: Page) {
+    try {
+      await page.evaluate(() => (window as any).lmnrIsPageVisible = true);
+    } catch (error) {
+      logger.debug("Failed to set isPageVisible to true: " +
+        `${error instanceof Error ? error.message : String(error)}`);
+    }
     page.on("domcontentloaded", () => {
       this.injectRrweb(page).catch(error => {
         logger.error("Failed to inject rrweb: " +
           `${error instanceof Error ? error.message : String(error)}`);
       });
     });
+
+    const originalBringToFront = page.bringToFront;
+    page.bringToFront = async () => {
+      for (const otherPage of (await page.browserContext().pages())) {
+        try {
+          await otherPage.evaluate(() => (window as any).lmnrIsPageVisible = false);
+        } catch (error) {
+          logger.debug("Failed to set isPageVisible to false: " +
+            `${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      await page.evaluate(() => {
+        try {
+          (window as any).lmnrIsPageVisible = true;
+        } catch (error) {
+          logger.debug("Failed to set isPageVisible to true: " +
+            `${error instanceof Error ? error.message : String(error)}`);
+        }
+      });
+      await originalBringToFront.call(page);
+    };
 
     await this.injectRrweb(page);
     this._patchedPages.add(page);
@@ -488,6 +563,13 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
 
         setInterval(() => {
           compressEventData({ source: 'heartbeat' }).then(data => {
+            if (
+              document.visibilityState === 'hidden'
+              || document.hidden
+              || (window as any).lmnrIsPageVisible === false
+            ) {
+              return;
+            }
             const heartbeatEvent = {
               type: 6, // Custom event type
               data,
@@ -511,8 +593,12 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
 
         (window as any).lmnrRrweb.record({
           async emit(event: any) {
-            // // Ignore events from all tabs except the current one
-            if (document.visibilityState === 'hidden' || document.hidden) {
+            // Ignore events from all tabs except the current one
+            if (
+              document.visibilityState === 'hidden'
+              || document.hidden
+              || (window as any).lmnrIsPageVisible === false
+            ) {
               return;
             }
             const compressedEvent = {
@@ -530,5 +616,6 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
 /* eslint-enable
   @typescript-eslint/no-this-alias,
   @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return
+  @typescript-eslint/no-unsafe-return,
+  @typescript-eslint/unbound-method
 */

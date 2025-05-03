@@ -1,18 +1,13 @@
 import { LLMClient } from "@browserbasehq/stagehand";
 import path from "path";
-import pino from "pino";
-import pinoPretty from "pino-pretty";
 import { Page as PlaywrightPage } from "playwright";
 import { Page as PuppeteerPage } from "puppeteer";
 import { fileURLToPath } from "url";
 
 import { LaminarClient } from "..";
-import { StringUUID } from "../utils";
+import { initializeLogger, StringUUID } from "../utils";
 
-const logger = pino(pinoPretty({
-  colorize: true,
-  minimumLevel: "info",
-}));
+const logger = initializeLogger();
 
 export const getDirname = () => {
   if (typeof __dirname !== 'undefined') {
@@ -66,7 +61,7 @@ export const collectAndSendPageEvents = async (
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("Execution context was destroyed")) {
-      logger.info(`Tried to flush events from a closed page. Continuing...`);
+      logger.debug(`Tried to flush events from a closed page. Continuing...`);
     } else {
       logger.error(`Error sending events: ${message}`);
     }

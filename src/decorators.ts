@@ -1,7 +1,7 @@
 import { context } from "@opentelemetry/api";
 
-import { observeBase } from './sdk/node-server-sdk';
-import { ASSOCIATION_PROPERTIES_KEY } from "./sdk/tracing/tracing";
+import { observeBase } from './opentelemetry-lib';
+import { ASSOCIATION_PROPERTIES_KEY } from "./opentelemetry-lib/tracing/utils";
 import { LaminarSpanContext, TraceType, TracingLevel } from './types';
 
 interface ObserveOptions {

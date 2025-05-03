@@ -7,22 +7,18 @@ import {
 import { existsSync } from 'fs';
 import { readFile } from "fs/promises";
 import path from "path";
-import pino from 'pino';
-import pinoPretty from 'pino-pretty';
 import type * as PlaywrightLib from "playwright";
 import type { Browser, BrowserContext, Page } from 'playwright';
 
 import { version as SDK_VERSION } from "../../package.json";
 import { LaminarClient } from '../client';
+import { observe } from '../decorators';
 import { Laminar } from '../laminar';
-import { TRACE_HAS_BROWSER_SESSION } from '../sdk/tracing/attributes';
-import { newUUID, NIL_UUID, StringUUID } from '../utils';
+import { TRACE_HAS_BROWSER_SESSION } from '../opentelemetry-lib/tracing/attributes';
+import { initializeLogger, newUUID, NIL_UUID, StringUUID } from '../utils';
 import { collectAndSendPageEvents, getDirname } from "./utils";
 
-const logger = pino(pinoPretty({
-  colorize: true,
-  minimumLevel: "info",
-}));
+const logger = initializeLogger();
 
 const RRWEB_SCRIPT_PATH = (() => {
   const standardPath = path.join(getDirname(), '..', 'assets', 'rrweb', 'rrweb.min.js');
@@ -55,7 +51,8 @@ const RRWEB_SCRIPT_PATH = (() => {
 /* eslint-disable
   @typescript-eslint/no-this-alias,
   @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return
+  @typescript-eslint/no-unsafe-return,
+  @typescript-eslint/unbound-method
 */
 export class PlaywrightInstrumentation extends InstrumentationBase {
   private _patchedBrowsers: Set<Browser> = new Set();
@@ -205,6 +202,14 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
       }
 
       for (const context of browser.contexts()) {
+        for (const page of context.pages()) {
+          try {
+            await page.evaluate(() => (window as any).lmnrIsPageVisible = false);
+          } catch (error) {
+            logger.debug("Failed to set isPageVisible to false: " +
+              `${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
         plugin._wrap(
           context,
           'newPage',
@@ -273,6 +278,12 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
       // Patch pages that are already created
       for (const page of context.pages()) {
+        try {
+          await page.evaluate(() => (window as any).lmnrIsPageVisible = false);
+        } catch (error) {
+          logger.debug("Failed to set isPageVisible to false: " +
+            `${error instanceof Error ? error.message : String(error)}`);
+        }
         await plugin.patchPage(page);
       }
 
@@ -306,6 +317,9 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
   public patchBrowserContextNewPage() {
     const plugin = this;
     return (original: Function) => async function method(this: BrowserContext, ...args: unknown[]) {
+      for (const existingPage of this.pages()) {
+        await existingPage.evaluate(() => (window as any).lmnrIsPageVisible = false);
+      }
       const page = await original.bind(this).apply(this, args);
       if (!plugin._parentSpan) {
         plugin._parentSpan = Laminar.startSpan({
@@ -326,11 +340,35 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     return await Laminar.withSpan(this._parentSpan!, async () => {
       // Note: be careful with await here, if the await is removed,
       // this creates a race condition, and playwright fails.
-      await this._patchPage(page);
+      await observe({ name: 'playwright.page' }, async () => {
+        await this._patchPage(page);
+      });
     });
   }
 
   private async _patchPage(page: Page) {
+    try {
+      await page.evaluate(() => (window as any).lmnrIsPageVisible = true);
+    } catch (error) {
+      logger.debug("Failed to set isPageVisible to true: " +
+        `${error instanceof Error ? error.message : String(error)}`);
+    }
+    // @eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalBringToFront = page.bringToFront;
+    // @eslint-disable-next-line @typescript-eslint/unbound-method
+    page.bringToFront = async () => {
+      for (const otherPage of page.context().pages()) {
+        try {
+          await otherPage.evaluate(() => (window as any).lmnrIsPageVisible = false);
+        } catch (error) {
+          logger.debug("Failed to set isPageVisible to false: " +
+            `${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      await originalBringToFront.call(page);
+      await page.evaluate(() => (window as any).lmnrIsPageVisible = true);
+    };
+
     page.addListener("domcontentloaded", (p: Page) => {
       this.injectRrweb(p).catch(error => {
         logger.error("Failed to inject rrweb: " +
@@ -360,6 +398,15 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     page.addListener('close', async () => {
       clearInterval(interval);
       await collectAndSendPageEvents(this._client, page, sessionId, traceId);
+      for (const otherPage of page.context().pages().reverse()) {
+        try {
+          await otherPage.bringToFront();
+          break;
+        } catch (error) {
+          logger.debug("Failed to bring page to front: " +
+            `${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
     });
   }
 
@@ -427,6 +474,13 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
         setInterval(() => {
           compressEventData({ source: 'heartbeat' }).then(data => {
+            if (
+              document.visibilityState === 'hidden'
+              || document.hidden
+              || (window as any).lmnrIsPageVisible === false
+            ) {
+              return;
+            }
             const heartbeatEvent = {
               type: 6, // Custom event type
               data,
@@ -451,7 +505,11 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         (window as any).lmnrRrweb.record({
           async emit(event: any) {
             // Ignore events from all tabs except the current one
-            if (document.visibilityState === 'hidden' || document.hidden) {
+            if (
+              document.visibilityState === 'hidden'
+              || document.hidden
+              || (window as any).lmnrIsPageVisible === false
+            ) {
               return;
             }
             const compressedEvent = {
@@ -469,5 +527,6 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 /* eslint-enable
   @typescript-eslint/no-this-alias,
   @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return
+  @typescript-eslint/no-unsafe-return,
+  @typescript-eslint/unbound-method
 */
