@@ -101,7 +101,7 @@ async function cli() {
         const result = await esbuild.build(buildOptions);
 
         if (!result.outputFiles) {
-          logger.error("Error when building: No output files found" +
+          logger.error("Error when building: No output files found " +
             "it is likely that all eval files are not valid TypeScript or JavaScript files.");
           if (args.fail_on_error) {
             process.exit(1);
