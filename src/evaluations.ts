@@ -1,7 +1,5 @@
 import { trace } from "@opentelemetry/api";
 import cliProgress from "cli-progress";
-import pino from "pino";
-import pinoPretty from "pino-pretty";
 
 import { LaminarClient } from "./client";
 import { EvaluationDataset, LaminarDataset } from "./datasets";
@@ -10,7 +8,14 @@ import { Laminar } from "./laminar";
 import { InitializeOptions } from "./opentelemetry-lib/interfaces";
 import { SPAN_TYPE } from "./opentelemetry-lib/tracing/attributes";
 import { EvaluationDatapoint } from "./types";
-import { newUUID, otelSpanIdToUUID, otelTraceIdToUUID, Semaphore, StringUUID } from "./utils";
+import {
+  initializeLogger,
+  newUUID,
+  otelSpanIdToUUID,
+  otelTraceIdToUUID,
+  Semaphore,
+  StringUUID,
+} from "./utils";
 
 const DEFAULT_CONCURRENCY = 5;
 const MAX_EXPORT_BATCH_SIZE = 64;
@@ -23,10 +28,7 @@ declare global {
   var _set_global_evaluation: boolean;
 }
 
-const logger = pino(pinoPretty({
-  colorize: true,
-  minimumLevel: "info",
-}));
+const logger = initializeLogger();
 
 const getEvaluationUrl = (projectId: string, evaluationId: string, baseUrl?: string): string => {
   let url = baseUrl ?? "https://api.lmnr.ai";
@@ -35,9 +37,12 @@ const getEvaluationUrl = (projectId: string, evaluationId: string, baseUrl?: str
   }
   url = url.replace(/\/$/, '');
 
-  if (url.endsWith("localhost") || url.endsWith("127.0.0.1")) {
-    // As a best effort, we assume that the frontend is running on port 5667
-    url = url + ":5667";
+  if (/localhost|127\.0\.0\.1/.test(url)) {
+    const port = url.match(/:\d{1,5}$/g)?.[0]?.slice(1);
+    if (!port) {
+      // As a best effort, we assume that the frontend is running on port 5667
+      url = url + ":5667";
+    }
   }
   return `${url}/project/${projectId}/evaluations/${evaluationId}`;
 };
@@ -177,11 +182,6 @@ interface EvaluationConstructorProps<D, T, O> {
    */
   evaluators: Record<string, EvaluatorFunction<O, T>>;
   /**
-   * [Beta] Array of instances of {@link HumanEvaluator}.
-   * For now, HumanEvaluator only holds the queue name.
-   */
-  humanEvaluators?: HumanEvaluator[];
-  /**
    * Name of the evaluation. If not provided, a random name will be assigned.
    */
   name?: string;
@@ -205,8 +205,13 @@ class EvaluationReporter {
     cliProgress.Presets.shades_classic,
   );
   private progressCounter: number = 0;
+  private baseUrl: string;
 
-  constructor() { }
+  constructor(
+    baseUrl?: string,
+  ) {
+    this.baseUrl = baseUrl ?? 'https://api.lmnr.ai';
+  }
 
   public start({ length }: { length: number }) {
     this.cliProgress.start(length, 0);
@@ -230,7 +235,8 @@ class EvaluationReporter {
     evaluationId,
   }: { averageScores: Record<string, number>, projectId: string, evaluationId: string }) {
     this.cliProgress.stop();
-    process.stdout.write(`\nCheck results at ${getEvaluationUrl(projectId, evaluationId)}\n`);
+    const url = getEvaluationUrl(projectId, evaluationId, this.baseUrl);
+    process.stdout.write(`\nCheck results at ${url}\n`);
     process.stdout.write('\nAverage scores:\n');
     for (const key in averageScores) {
       process.stdout.write(`${key}: ${JSON.stringify(averageScores[key])}\n`);
@@ -245,7 +251,6 @@ export class Evaluation<D, T, O> {
   private data: Datapoint<D, T>[] | EvaluationDataset<D, T>;
   private executor: (data: D, ...args: any[]) => O | Promise<O>;
   private evaluators: Record<string, EvaluatorFunction<O, T>>;
-  private humanEvaluators?: HumanEvaluator[];
   private groupName?: string;
   private name?: string;
   private concurrencyLimit: number = DEFAULT_CONCURRENCY;
@@ -256,7 +261,7 @@ export class Evaluation<D, T, O> {
   private client: LaminarClient;
 
   constructor({
-    data, executor, evaluators, humanEvaluators, groupName, name, config,
+    data, executor, evaluators, groupName, name, config,
   }: EvaluationConstructorProps<D, T, O>) {
     if (Object.keys(evaluators).length === 0) {
       throw new Error('No evaluators provided');
@@ -273,11 +278,10 @@ export class Evaluation<D, T, O> {
       }
     }
 
-    this.progressReporter = new EvaluationReporter();
+    this.progressReporter = new EvaluationReporter(config?.baseUrl);
     this.data = data;
     this.executor = executor;
     this.evaluators = evaluators;
-    this.humanEvaluators = humanEvaluators;
     this.groupName = groupName;
     this.name = name;
 
@@ -408,10 +412,6 @@ export class Evaluation<D, T, O> {
         id: datapointId,
         data: datapoint.data,
         traceId: otelTraceIdToUUID(trace.getActiveSpan()!.spanContext().traceId),
-        // For now, all human evaluators are added to every datapoint
-        // In the future, we will allow to specify which evaluators are
-        // added to a particular datapoint, e.g. random sampling.
-        humanEvaluators: this.humanEvaluators,
         executorSpanId,
         index,
       } as EvaluationDatapoint<D, T, O>;
@@ -426,6 +426,7 @@ export class Evaluation<D, T, O> {
       const output = await Laminar.withSpan(
         executorSpan,
         async () => await this.executor(datapoint.data),
+        true,
       );
       const target = datapoint.target;
 
@@ -458,10 +459,6 @@ export class Evaluation<D, T, O> {
         target,
         scores,
         traceId: otelTraceIdToUUID(trace.getActiveSpan()!.spanContext().traceId),
-        // For now, all human evaluators are added to every datapoint
-        // In the future, we will allow to specify which evaluators are
-        // added to a particular datapoint, e.g. random sampling.
-        humanEvaluators: this.humanEvaluators,
         executorSpanId,
         index,
       } as EvaluationDatapoint<D, T, O>;
@@ -495,22 +492,19 @@ export class Evaluation<D, T, O> {
  * @param props.evaluators Map from evaluator name to evaluator function. Each
  * evaluator function takes the output of the executor and the target data, and
  * returns.
- * @param props.humanEvaluators [Beta] Array of instances of {@link HumanEvaluator}.
- * For now, HumanEvaluator only holds the queue name.
  * @param props.name Optional name of the evaluation. Used to easily identify
  * the evaluation in the group.
  * @param props.config Optional override configurations for the evaluator.
  */
 export async function evaluate<D, T, O>({
-  data, executor, evaluators, humanEvaluators, groupName, name, config,
+  data, executor, evaluators, groupName, name, config,
 }: EvaluationConstructorProps<D, T, O>): Promise<void> {
   const evaluation = new Evaluation({
     data,
     executor,
     evaluators,
-    humanEvaluators,
     name,
-    groupName: groupName,
+    groupName,
     config,
   });
   if (globalThis._set_global_evaluation) {

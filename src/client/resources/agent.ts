@@ -3,16 +3,11 @@
  */
 
 import { trace } from "@opentelemetry/api";
-import pino from "pino";
-import pinoPretty from "pino-pretty";
 
-import { otelSpanIdToUUID, otelTraceIdToUUID, StringUUID } from "../../utils";
+import { initializeLogger, otelSpanIdToUUID, otelTraceIdToUUID, StringUUID } from "../../utils";
 import { BaseResource } from "./index";
 
-const logger = pino(pinoPretty({
-  colorize: true,
-  minimumLevel: "info",
-}));
+const logger = initializeLogger();
 
 /**
  * Model provider options

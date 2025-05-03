@@ -6,8 +6,7 @@ import type * as aiplatform from "@google-cloud/aiplatform";
 import type * as vertexAI from "@google-cloud/vertexai";
 import type * as RunnableModule from "@langchain/core/runnables";
 import type * as VectorStoreModule from "@langchain/core/vectorstores";
-import { ContextManager, TextMapPropagator } from "@opentelemetry/api";
-import { SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { SpanExporter } from "@opentelemetry/sdk-trace-base";
 import type * as pinecone from "@pinecone-database/pinecone";
 import type * as qdrant from "@qdrant/js-client-rest";
 import type * as chromadb from "chromadb";
@@ -31,8 +30,8 @@ export interface InitializeOptions {
   apiKey?: string;
 
   /**
-   * The OTLP endpoint for sending traces data. Optional.
-   * Defaults to TRACELOOP_BASE_URL environment variable or https://api.traceloop.com/
+   * The Laminar API endpoint for sending traces data. Optional.
+   * Defaults to https://api.lmnr.ai:8443
    */
   baseUrl?: string;
 

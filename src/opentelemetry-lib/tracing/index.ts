@@ -1,27 +1,22 @@
-import { context, trace, TracerProvider } from "@opentelemetry/api";
+import { context, trace, Tracer, TracerProvider } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { AlwaysOnSampler } from "@opentelemetry/sdk-trace-base";
 import {
   NodeTracerProvider,
 } from "@opentelemetry/sdk-trace-node";
-
-import pino from "pino";
-import pinoPretty from "pino-pretty";
+import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions";
 
 import { version as SDK_VERSION } from "../../../package.json";
-import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
+import { initializeLogger } from "../../utils";
 import { _configuration } from "../configuration";
 import { InitializeOptions } from "../interfaces";
-import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions";
-import { LaminarSpanProcessor } from "./processor";
 import { createResource } from "./compat";
 import { initializeLaminarInstrumentations } from "./instrumentations";
+import { LaminarSpanProcessor } from "./processor";
 import { isGlobalContextManagerConfigured } from "./utils";
 
-const logger = pino(pinoPretty({
-  colorize: true,
-  minimumLevel: "info",
-}));
+const logger = initializeLogger();
 
 let spanProcessor: LaminarSpanProcessor;
 let tracerProvider: TracerProvider | undefined;
@@ -52,8 +47,6 @@ export const startTracing = (options: InitializeOptions) => {
     exporter: options.exporter,
     disableBatch: options.disableBatch,
   });
-
-  logger.info(`Created LaminarSpanProcessor exporting to ${options.baseUrl}:${port}`);
 
   const newProvider = new NodeTracerProvider({
     spanProcessors: [spanProcessor],
@@ -96,12 +89,12 @@ export const startTracing = (options: InitializeOptions) => {
     const contextManager = new AsyncLocalStorageContextManager();
     contextManager.enable();
     context.setGlobalContextManager(contextManager);
-    logger.info('Laminar set global OTel Context Manager');
+    logger.debug('Laminar set global OTel Context Manager');
   }
-  logger.info('Global OTel Context Manager exists');
+  logger.debug('Global OTel Context Manager exists');
 
 
-  logger.info(`Laminar registering ${instrumentations.length} instrumentations`);
+  logger.debug(`Laminar registering ${instrumentations.length} instrumentations`);
   // Similarly, we carry our global tracer provider around without globally
   // registering it.
   registerInstrumentations({
@@ -132,13 +125,44 @@ export const shouldSendTraces = () => {
   return true;
 };
 
-export const getTracer = () => {
+/**
+ * Get the tracer provider. Returns Laminar's tracer provider if Laminar is initialized,
+ * otherwise returns the global tracer provider.
+ * @returns The tracer provider.
+ */
+export const getTracerProvider = (): TracerProvider => tracerProvider ?? trace.getTracerProvider();
+
+/**
+ * Get the tracer.
+ * @returns Laminar's tracer if Laminar is initialized,
+ * otherwise returns Laminar's tracer from the global tracer provider
+ *
+ * @example
+ * // instrumentation.ts
+ * import { Laminar } from '@lmnr-ai/lmnr';
+ * Laminar.initialize()
+ *
+ * // File that calls AI SDK.
+ * import { getTracer } from '@lmnr-ai/lmnr';
+ * import { openai } from "@ai-sdk/openai";
+ * import { generateText } from "ai";
+ *
+ * const response = await generateText({
+ *   model: openai("gpt-4.1-nano"),
+ *   prompt: "What is the capital of France?",
+ *   experimental_telemetry: {
+ *     isEnabled: true,
+ *     tracer: getTracer(),
+ *   }
+ * })
+ */
+export const getTracer = (): Tracer => {
   const TRACER_NAME = "lmnr.tracer";
   const TRACER_VERSION = "0.0.1";
-  const provider = tracerProvider ?? trace.getTracerProvider();
+  const provider = getTracerProvider();
   return provider.getTracer(TRACER_NAME, TRACER_VERSION);
-}
+};
 
 export const forceFlush = async () => {
   await spanProcessor.forceFlush();
-}
+};

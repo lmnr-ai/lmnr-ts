@@ -1,8 +1,8 @@
 import {
   Context,
-  ROOT_CONTEXT,
   context,
   createContextKey,
+  ROOT_CONTEXT,
 } from "@opentelemetry/api";
 
 // Function to check if a global context manager is already configured
@@ -24,7 +24,7 @@ export const isGlobalContextManagerConfigured = () => {
   });
 
   return isContextManagerWorking;
-}
+};
 
 export const SPAN_PATH_KEY = createContextKey("span_path");
 export const ASSOCIATION_PROPERTIES_KEY = createContextKey(

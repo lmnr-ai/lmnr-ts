@@ -1,14 +1,21 @@
 import { SpanContext, TraceFlags } from '@opentelemetry/api';
-import pino from 'pino';
+import pino, { Level } from 'pino';
 import pinoPretty from 'pino-pretty';
 import { v4 as uuidv4 } from 'uuid';
 
 import { LaminarSpanContext } from './types';
 
-const logger = pino(pinoPretty({
-  colorize: true,
-  minimumLevel: "info",
-}));
+export function initializeLogger(options?: { colorize?: boolean, level?: Level }) {
+  const colorize = options?.colorize ?? true;
+  const level = options?.level ?? (process.env.LMNR_LOG_LEVEL as Level) ?? 'info';
+
+  return pino(pinoPretty({
+    colorize,
+    minimumLevel: level,
+  }));
+}
+
+const logger = initializeLogger();
 
 export type StringUUID = `${string}-${string}-${string}-${string}-${string}`;
 

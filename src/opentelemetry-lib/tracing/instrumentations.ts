@@ -1,3 +1,4 @@
+import { Instrumentation } from "@opentelemetry/instrumentation";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { AzureOpenAIInstrumentation } from "@traceloop/instrumentation-azure";
 import { BedrockInstrumentation } from "@traceloop/instrumentation-bedrock";
@@ -13,12 +14,36 @@ import {
   AIPlatformInstrumentation,
   VertexAIInstrumentation,
 } from "@traceloop/instrumentation-vertexai";
+
 import { PlaywrightInstrumentation, StagehandInstrumentation } from "../../browser";
 import { PuppeteerInstrumentation } from "../../browser/puppeteer";
-import { Instrumentation } from "@opentelemetry/instrumentation";
 import { LaminarClient } from "../../client";
 import { InitializeOptions } from "../interfaces";
 
+/**
+ * Initialize and return Laminar instrumentations.
+ * Useful to use with libraries that initialize tracing and can register passed
+ * instrumentations.
+ *
+ * @param options
+ * @param {string} options.baseUrl - Base URL of the Laminar API.
+ * @param {string} options.apiKey - Laminar project API key. If not provided, will use
+ * the LMNR_PROJECT_API_KEY environment variable.
+ * @param {number} options.httpPort - Laminar API http port. If not provided, will use
+ * the port from the baseUrl or defaults to 443. Only required for Playwright/Puppeteer
+ * instrumentations for sending browser sessions.
+ * @param {boolean} options.suppressContentTracing - Whether to suppress content tracing.
+ * @param {InitializeOptions["instrumentModules"]} options.instrumentModules - Record of modules
+ * to instrument.
+ * If not provided, all auto-instrumentable modules will be instrumented, which include
+ * LLM calls (OpenAI, Anthropic, etc), Langchain, VectorDB calls (Pinecone, Qdrant, etc).
+ * Pass an empty object {} to disable any kind of automatic instrumentation.
+ * If you only want to auto-instrument specific modules, then pass them in the object.
+ *
+ * @returns {Instrumentation[]} Array of enabled instrumentations. It is your responsibility
+ * to enable them and register them with the OpenTelemetry SDK. For example, you could use
+ * registerInstrumentations from the opentelemetry-api to register them.
+ */
 export const initializeLaminarInstrumentations = (
   options: {
     baseUrl?: string,
@@ -26,7 +51,7 @@ export const initializeLaminarInstrumentations = (
     httpPort?: number,
     suppressContentTracing?: boolean,
     instrumentModules?: InitializeOptions["instrumentModules"],
-  } = {}
+  } = {},
 ) => {
   const url = options.baseUrl ?? process?.env?.LMNR_BASE_URL ?? 'https://api.lmnr.ai';
   const port = options.httpPort ?? (
@@ -40,11 +65,21 @@ export const initializeLaminarInstrumentations = (
   });
 
   return options?.instrumentModules !== undefined
-    ? manuallyInitInstrumentations(client, options.instrumentModules, options.suppressContentTracing)
-    : initInstrumentations(client, options.suppressContentTracing);
-}
+    ? manuallyInitInstrumentations(
+      client,
+      options.instrumentModules,
+      options.suppressContentTracing,
+    )
+    : initInstrumentations(
+      client,
+      options.suppressContentTracing,
+    );
+};
 
-const initInstrumentations = (client: LaminarClient, suppressContentTracing?: boolean): Instrumentation[] => {
+const initInstrumentations = (
+  client: LaminarClient,
+  suppressContentTracing?: boolean,
+): Instrumentation[] => {
   const enrichTokens = false;
   const instrumentations: Instrumentation[] = [];
 

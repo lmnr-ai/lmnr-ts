@@ -1,0 +1,62 @@
+[
+  {
+    "scope": "https://api.openai.com:443",
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body": {
+      "model": "gpt-4.1-nano",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is the capital of France?"
+        }
+      ]
+    },
+    "status": 200,
+    "response": [
+      "1f8b0800000000000003000000ffff8c92416fd4301085eff915239f37ab24644bd95b39f4c205a4aa154555346b4f1283635bf6a42a54fbdf9193ed26852271c961be7993f7c6f39c0108adc41e84ec91e5e04dfef1e6aa0be6eecb6d797771fd747fb07d08f757d5afafb7fda747b1490a77f84e925f545be9066f88b5b333968190294d2ddfd717d587ea5db19bc0e0149924eb3ce7f5b6cc2d5a975745b5cb8b3a2feb93bc775a52147bf89601003c4fdf64d42a7a127b28362f958162c48ec4fedc04208233a92230461d192d8bcd02a5b34c76f27ed31348f49ad1806be13aa095043ac2670c3a6ed7aa40ed183159b7a3312b80d63ac6147df2fb7022c7b343e33a1fdc21fe2115adb63af64d208cce2637919d17133d66000fd326c657e1840f6ef0dcb0fb41d3efca7a1e27960758e0e589b163344bb9aa366f0c6b14316a13578b1412654f6a512e5bc75169b702d92af2df5ede9a3dc7d6b6fb9ff10b90923c936a7c20a5e5ebbc4b5ba0749dff6a3baf78322c2285472da9614d213d83a21647339f8c883f23d3d0b4da76147cd0f3ddb4be215274d916aade89ec98fd060000ffff03000bb4028546030000"
+    ],
+    "rawHeaders": {
+      "access-control-expose-headers": "X-Request-ID",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cf-cache-status": "DYNAMIC",
+      "cf-ray": "93a161193c41d7ce-LHR",
+      "connection": "close",
+      "content-encoding": "gzip",
+      "content-type": "application/json",
+      "date": "Sat, 03 May 2025 17:11:45 GMT",
+      "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
+      "openai-processing-ms": "439",
+      "openai-version": "2020-10-01",
+      "server": "cloudflare",
+      "set-cookie": "_cfuvid=bMyoG7Pk8S1moXi7tYmuSQacMc78iIfwv2vCUN3IJDs-1746292305641-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-ratelimit-limit-requests": "30000",
+      "x-ratelimit-limit-tokens": "150000000",
+      "x-ratelimit-remaining-requests": "29999",
+      "x-ratelimit-remaining-tokens": "149999989",
+      "x-ratelimit-reset-requests": "2ms",
+      "x-ratelimit-reset-tokens": "0s",
+      "x-request-id": "req_133a5fa41df79c0d90ebfa0aa266223e"
+    },
+    "reqheaders": {
+      "accept": "application/json",
+      "accept-encoding": "gzip,deflate",
+      "connection": "close",
+      "content-length": "134",
+      "content-type": "application/json",
+      "host": "api.openai.com",
+      "x-stainless-arch": "arm64",
+      "x-stainless-lang": "js",
+      "x-stainless-os": "MacOS",
+      "x-stainless-package-version": "4.97.0",
+      "x-stainless-retry-count": "0",
+      "x-stainless-runtime": "node",
+      "x-stainless-runtime-version": "v23.3.0",
+      "x-stainless-timeout": "600"
+    },
+    "responseIsBinary": false
+  }
+]

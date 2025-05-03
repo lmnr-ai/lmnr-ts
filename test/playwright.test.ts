@@ -2,12 +2,11 @@ import assert from "node:assert";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 
 import { context, trace } from "@opentelemetry/api";
-import { InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import { chromium } from "@playwright/test";
 
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 import { NIL_UUID, otelTraceIdToUUID } from "../src/utils";
-import { Laminar } from "../src/laminar";
 
 // This test fails to inject rrweb and send events,
 // but for now it only tests tracing, so it's fine.
@@ -67,12 +66,14 @@ void describe("playwright", () => {
     await browser.close();
 
     const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 1);
+    assert.ok(spans.length > 0);
     const traceId = spans[0].spanContext().traceId;
 
     assert.notStrictEqual(
       otelTraceIdToUUID(traceId),
       NIL_UUID,
     );
+
+    assert.ok(spans.every((span) => span.spanContext().traceId === traceId));
   });
 });

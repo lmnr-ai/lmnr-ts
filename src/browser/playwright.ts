@@ -7,22 +7,18 @@ import {
 import { existsSync } from 'fs';
 import { readFile } from "fs/promises";
 import path from "path";
-import pino from 'pino';
-import pinoPretty from 'pino-pretty';
 import type * as PlaywrightLib from "playwright";
 import type { Browser, BrowserContext, Page } from 'playwright';
 
 import { version as SDK_VERSION } from "../../package.json";
 import { LaminarClient } from '../client';
+import { observe } from '../decorators';
 import { Laminar } from '../laminar';
 import { TRACE_HAS_BROWSER_SESSION } from '../opentelemetry-lib/tracing/attributes';
-import { newUUID, NIL_UUID, StringUUID } from '../utils';
+import { initializeLogger, newUUID, NIL_UUID, StringUUID } from '../utils';
 import { collectAndSendPageEvents, getDirname } from "./utils";
 
-const logger = pino(pinoPretty({
-  colorize: true,
-  minimumLevel: "info",
-}));
+const logger = initializeLogger();
 
 const RRWEB_SCRIPT_PATH = (() => {
   const standardPath = path.join(getDirname(), '..', 'assets', 'rrweb', 'rrweb.min.js');
@@ -55,7 +51,8 @@ const RRWEB_SCRIPT_PATH = (() => {
 /* eslint-disable
   @typescript-eslint/no-this-alias,
   @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return
+  @typescript-eslint/no-unsafe-return,
+  @typescript-eslint/unbound-method
 */
 export class PlaywrightInstrumentation extends InstrumentationBase {
   private _patchedBrowsers: Set<Browser> = new Set();
@@ -343,18 +340,22 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     return await Laminar.withSpan(this._parentSpan!, async () => {
       // Note: be careful with await here, if the await is removed,
       // this creates a race condition, and playwright fails.
-      await this._patchPage(page);
+      await observe({ name: 'playwright.page' }, async () => {
+        await this._patchPage(page);
+      });
     });
   }
 
   private async _patchPage(page: Page) {
     try {
-      page.evaluate(() => (window as any).lmnrIsPageVisible = true);
+      await page.evaluate(() => (window as any).lmnrIsPageVisible = true);
     } catch (error) {
       logger.debug("Failed to set isPageVisible to true: " +
         `${error instanceof Error ? error.message : String(error)}`);
     }
+    // @eslint-disable-next-line @typescript-eslint/unbound-method
     const originalBringToFront = page.bringToFront;
+    // @eslint-disable-next-line @typescript-eslint/unbound-method
     page.bringToFront = async () => {
       for (const otherPage of page.context().pages()) {
         try {
@@ -365,7 +366,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         }
       }
       await originalBringToFront.call(page);
-      page.evaluate(() => (window as any).lmnrIsPageVisible = true);
+      await page.evaluate(() => (window as any).lmnrIsPageVisible = true);
     };
 
     page.addListener("domcontentloaded", (p: Page) => {
@@ -526,5 +527,6 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 /* eslint-enable
   @typescript-eslint/no-this-alias,
   @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return
+  @typescript-eslint/no-unsafe-return,
+  @typescript-eslint/unbound-method
 */

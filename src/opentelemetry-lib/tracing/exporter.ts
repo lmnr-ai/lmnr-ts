@@ -2,16 +2,16 @@
 // but OTel v2 has some breaking changes, so we're applying
 // a small backward-compatibility fix here.
 
-import { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base";
 import { Metadata } from "@grpc/grpc-js";
-
+import { ExportResult } from "@opentelemetry/core";
 import {
-  OTLPTraceExporter as ExporterGrpc
+  OTLPTraceExporter as ExporterGrpc,
 } from "@opentelemetry/exporter-trace-otlp-grpc";
 import {
-  OTLPTraceExporter as ExporterHttp
+  OTLPTraceExporter as ExporterHttp,
 } from "@opentelemetry/exporter-trace-otlp-proto";
-import { ExportResult } from "@opentelemetry/core";
+import { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base";
+
 import { makeSpanOtelV2Compatible } from "./compat";
 
 export class LaminarSpanExporter implements SpanExporter {
@@ -40,12 +40,10 @@ export class LaminarSpanExporter implements SpanExporter {
     }
 
     if (options.forceHttp) {
-      console.log('Using HTTP exporter with key', key);
-      console.log('URL', `${urlWithoutSlash}:${port}/v1/traces`);
       this.exporter = new ExporterHttp({
         url: `${urlWithoutSlash}:${port}/v1/traces`,
         headers: {
-          'Authorization': `Bearer ${key}`
+          'Authorization': `Bearer ${key}`,
         },
         timeoutMillis: options.timeoutMillis ?? 30000,
       });
@@ -60,7 +58,10 @@ export class LaminarSpanExporter implements SpanExporter {
     }
   }
 
-  async export(items: ReadableSpan[], resultCallback: (result: ExportResult) => void): Promise<void> {
+  export(
+    items: ReadableSpan[],
+    resultCallback: (result: ExportResult) => void,
+  ) {
     // ==== //
     // OTel v2 has renamed the instrumentationLibrary field to instrumentationScope,
     // but spans may be created by older versions of the SDK that don't have that change.

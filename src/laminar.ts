@@ -1,4 +1,3 @@
-import { Metadata } from '@grpc/grpc-js';
 import {
   Attributes,
   AttributeValue,
@@ -8,13 +7,10 @@ import {
   Span,
   TimeInput,
   trace,
-  TracerProvider,
 } from '@opentelemetry/api';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
-import pino from 'pino';
-import pinoPretty from 'pino-pretty';
 
 import { InitializeOptions, initializeTracing } from './opentelemetry-lib';
+import { forceFlush, getTracer } from './opentelemetry-lib/tracing/';
 import {
   ASSOCIATION_PROPERTIES,
   LaminarAttributes,
@@ -24,20 +20,16 @@ import {
   SPAN_TYPE,
 } from './opentelemetry-lib/tracing/attributes';
 import { ASSOCIATION_PROPERTIES_KEY } from './opentelemetry-lib/tracing/utils';
-import { forceFlush, getTracer } from './opentelemetry-lib/tracing/';
 import { LaminarSpanContext } from './types';
 import {
+  initializeLogger,
   otelSpanIdToUUID,
   otelTraceIdToUUID,
   StringUUID,
   tryToOtelSpanContext,
 } from './utils';
 
-const logger = pino(pinoPretty({
-  colorize: true,
-  minimumLevel: "info",
-}));
-
+const logger = initializeLogger();
 
 interface LaminarInitializeProps {
   projectApiKey?: string;
@@ -53,6 +45,11 @@ interface LaminarInitializeProps {
   forceHttp?: boolean;
 }
 
+type LaminarAttributesProp = Record<
+  typeof LaminarAttributes[keyof typeof LaminarAttributes],
+  AttributeValue
+>;
+
 export class Laminar {
   private static baseHttpUrl: string;
   private static projectApiKey: string;
@@ -61,31 +58,34 @@ export class Laminar {
    * Initialize Laminar context across the application.
    * This method must be called before using any other Laminar methods or decorators.
    *
-   * @param project_api_key - Laminar project api key. You can generate one by going
+   * @param {LaminarInitializeProps} props - Configuration object.
+   * @param {string} props.projectApiKey - Laminar project api key. You can generate one by going
    * to the projects settings page on the Laminar dashboard.
    * If not specified, it will try to read from the LMNR_PROJECT_API_KEY environment variable.
-   * @param env - Default environment passed to `run` requests, unless overridden at request
-   * time. Usually, model provider keys are stored here.
-   * @param baseUrl - Laminar API url. Do not include the port, use
+   * @param {string} props.baseUrl - Laminar API url. Do not include the port, use
    * `httpPort` and `grpcPort` instead.
    * If not specified, defaults to https://api.lmnr.ai.
-   * @param httpPort - Laminar API http port.
+   * @param {number} props.httpPort - Laminar API http port.
    * If not specified, defaults to 443.
-   * @param grpcPort - Laminar API grpc port.
+   * @param {number} props.grpcPort - Laminar API grpc port.
    * If not specified, defaults to 8443.
-   * @param instrumentModules - List of modules to instrument.
+   * @param {InitializeOptions["instrumentModules"]} props.instrumentModules - Record
+   * of modules to instrument.
    * If not specified, all auto-instrumentable modules will be instrumented, which include
    * LLM calls (OpenAI, Anthropic, etc), Langchain, VectorDB calls (Pinecone, Qdrant, etc).
    * Pass an empty object {} to disable any kind of automatic instrumentation.
    * If you only want to auto-instrument specific modules, then pass them in the object.
-   * @param preserveNextJsSpans - Whether to preserve thorough/verbose spans created by Next.js.
-   * By default, Laminar ignores the Next.js spans, but keeps spans nested within them.
-   * @param disableBatch - Whether to disable batching of spans. Useful for debug
+   * @param {boolean} props.disableBatch - Whether to disable batching of spans. Useful for debug
    * environments. If true, spans will be sent immediately using {@link SimpleSpanProcessor}
    * instead of {@link BatchSpanProcessor}.
-   * @param traceExportTimeoutMillis - Timeout for trace export. Defaults to 30_000 (30 seconds),
+   * @param {number} props.traceExportTimeoutMillis - Timeout for trace export.
+   * Defaults to 30_000 (30 seconds),
    * which is over the default OTLP exporter timeout of 10_000 (10 seconds).
-   * 
+   * @param {string} props.logLevel - OTel log level. Defaults to "warn".
+   * @param {number} props.maxExportBatchSize - Maximum number of spans to export in a single batch.
+   * Ignored when `disableBatch` is true.
+   * @param {boolean} props.forceHttp - Whether to force HTTP export. Not recommended.
+   *
    * @example
    * import { Laminar as L } from '@lmnr-ai/lmnr';
    * import { OpenAI } from 'openai';
@@ -164,10 +164,10 @@ export class Laminar {
    * be recorded. Supported types are string, number, and boolean. If the value
    * is `null`, event is considered a boolean tag with the value of `true`.
    *
-   * @param name - The name of the event.
-   * @param value - The value of the event. Must be a primitive type. If not
+   * @param {string} name - The name of the event.
+   * @param {AttributeValue} value - The value of the event. Must be a primitive type. If not
    * specified, boolean true is assumed in the backend.
-   * @param timestamp - The timestamp of the event. If not specified, relies on
+   * @param {TimeInput} timestamp - The timestamp of the event. If not specified, relies on
    * the underlying OpenTelemetry implementation.
    * If specified as an integer, it must be epoch nanoseconds.
    */
@@ -200,9 +200,9 @@ export class Laminar {
    * context to use for the following spans. Returns the result of the
    * function execution, so can be used in an `await` statement.
    *
-   * @param sessionId - The session ID to associate with the context.
-   * @param fn - Function to execute within the session context.
-   * @returns The result of the function execution.
+   * @param {string} sessionId - The session ID to associate with the context.
+   * @param {Function} fn - Function to execute within the session context.
+   * @returns {T} The result of the function execution.
    *
    * @example
    * import { Laminar, observe } from '@lmnr-ai/lmnr';
@@ -286,7 +286,7 @@ export class Laminar {
   /**
    * Set attributes for the current span. Useful for manual
    * instrumentation.
-   * @param attributes - The attributes to set for the current span.
+   * @param {LaminarAttributesProp} attributes - The attributes to set for the current span.
    *
    * @example
    * import { Laminar as L, observe } from '@lmnr-ai/laminar';
@@ -302,7 +302,7 @@ export class Laminar {
    * }, userMessage);
    */
   public static setSpanAttributes(
-    attributes: Record<typeof LaminarAttributes[keyof typeof LaminarAttributes], AttributeValue>,
+    attributes: LaminarAttributesProp,
   ) {
     const currentSpan = trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
@@ -332,12 +332,13 @@ export class Laminar {
    * manual instrumentation. If span type is 'LLM', you should report usage
    * manually. See {@link setSpanAttributes} for more information.
    *
-   * @param name - name of the span
-   * @param input - input to the span. Will be sent as an attribute, so must
+   * @param {Object} options
+   * @param {string} options.name - name of the span
+   * @param {any} options.input - input to the span. Will be sent as an attribute, so must
    * be JSON serializable
-   * @param span_type - type of the span. Defaults to 'DEFAULT'
-   * @param context - raw OpenTelemetry context to bind the span to.
-   * @param traceId - [EXPERIMENTAL] override the trace id for the span. If not
+   * @param {string} options.spanType - type of the span. Defaults to 'DEFAULT'
+   * @param {Context} options.context - raw OpenTelemetry context to bind the span to.
+   * @param {string} options.traceId - [EXPERIMENTAL] override the trace id for the span. If not
    * provided, uses the current trace id.
    * @returns The started span.
    *
@@ -405,9 +406,9 @@ export class Laminar {
    * A utility wrapper around OpenTelemetry's `context.with()`. Useful for
    * passing spans around in manual instrumentation:
    *
-   * @param span - Parent span to bind the execution to.
-   * @param fn - Function to execute within the span context.
-   * @param endOnExit - Whether to end the span after the function has
+   * @param {Span} span - Parent span to bind the execution to.
+   * @param {Function} fn - Function to execute within the span context.
+   * @param {boolean} endOnExit - Whether to end the span after the function has
    * executed. Defaults to `false`. If `false`, you MUST manually call
    * `span.end()` at the end of the execution, so that spans are not lost.
    * @returns The result of the function execution.
@@ -461,10 +462,12 @@ export class Laminar {
   }
 
   public static async flush() {
+    logger.debug("Flushing spans");
     await forceFlush();
   }
 
   public static async shutdown() {
+    logger.debug("Shutting down Laminar");
     await forceFlush();
   }
 

@@ -4,16 +4,12 @@ import { context, propagation, trace } from "@opentelemetry/api";
 import { ArgumentParser } from "argparse";
 import * as esbuild from "esbuild";
 import * as glob from "glob";
-import pino from "pino";
-import pinoPretty from "pino-pretty";
 
 import { version } from "../package.json";
 import { Evaluation } from "./evaluations";
+import { initializeLogger } from "./utils";
 
-const logger = pino(pinoPretty({
-  colorize: true,
-  minimumLevel: "info",
-}));
+const logger = initializeLogger();
 
 declare global {
   // eslint-disable-next-line no-var

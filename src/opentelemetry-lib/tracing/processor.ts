@@ -1,5 +1,4 @@
-import { context, Context } from "@opentelemetry/api";
-
+import { Context,context } from "@opentelemetry/api";
 import {
   BatchSpanProcessor,
   ReadableSpan,
@@ -9,31 +8,32 @@ import {
   SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import {
-  Span as OTelV2Span,
   ReadableSpan as OTelV2ReadableSpan,
+  Span as OTelV2Span,
 } from "@opentelemetry/sdk-trace-base-v2";
+
+import { version as SDK_VERSION } from "../../../package.json";
+import { otelSpanIdToUUID } from "../../utils";
+import { getLangVersion } from "../../version";
+import {
+  ASSOCIATION_PROPERTIES,
+  ASSOCIATION_PROPERTIES_OVERRIDES,
+  SPAN_IDS_PATH,
+  SPAN_INSTRUMENTATION_SOURCE,
+  SPAN_LANGUAGE_VERSION,
+  SPAN_PATH,
+  SPAN_SDK_VERSION,
+} from "./attributes";
+import {
+  getParentSpanId,
+  makeSpanOtelV2Compatible,
+} from "./compat";
+import { LaminarSpanExporter } from "./exporter";
 import {
   ASSOCIATION_PROPERTIES_KEY,
   getSpanPath,
   SPAN_PATH_KEY,
 } from "./utils";
-import {
-  getParentSpanId,
-  makeSpanOtelV2Compatible,
-} from "./compat";
-import {
-  SPAN_IDS_PATH,
-  SPAN_INSTRUMENTATION_SOURCE,
-  SPAN_PATH,
-  SPAN_SDK_VERSION,
-  SPAN_LANGUAGE_VERSION,
-  ASSOCIATION_PROPERTIES,
-  ASSOCIATION_PROPERTIES_OVERRIDES,
-} from "./attributes";
-import { otelSpanIdToUUID } from "../../utils";
-import { getLangVersion } from "../../version";
-import { version as SDK_VERSION } from "../../../package.json";
-import { LaminarSpanExporter } from "./exporter";
 
 interface LaminarSpanProcessorOptions {
   /**

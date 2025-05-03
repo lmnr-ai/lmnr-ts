@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "TypeScript SDK for Laminar AI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -58,6 +58,7 @@
     "eslint-plugin-unused-imports": "^4.1.4",
     "langchain": "^0.3.23",
     "llamaindex": "^0.9.19",
+    "nock": "^14.0.4",
     "openai": "^4.95.1",
     "playwright": "^1.52.0",
     "puppeteer": "^24.6.1",
