@@ -51,7 +51,7 @@ npm run dev
 
 ## Test the call with curl
 
-Navigate to `http://localhost:3000` and interact with theu UI.
+Navigate to `http://localhost:3000` and interact with the UI.
 
 ## See the results on Laminar dashboard
 
