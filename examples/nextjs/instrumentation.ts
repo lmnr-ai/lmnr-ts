@@ -1,11 +1,17 @@
+import { registerOTel } from '@vercel/otel';
+
 export async function register() {
+  // Only use this function if you want to send Next.js traces to DataDog or New Relic.
+  // Otherwise, you can just use the `Laminar.initialize()` directly.
+  registerOTel({
+    serviceName: "therapy-service",
+  });
   if (process.env.NEXT_RUNTIME === "nodejs") {
     // In a real application, do:
     // const { Laminar } = await import("@lmnr-ai/lmnr");
     const { Laminar } = await import("../../dist");
-    Laminar.initialize({
-      // Uncomment the following lint to show full Next.js traces, which may be noisy, but sometimes useful for debugging.
-      // preserveNextJsSpans: true,
-    });
+
+    // Make sure this happens after any other OpenTelemetry initialization.
+    Laminar.initialize();
   }
 }

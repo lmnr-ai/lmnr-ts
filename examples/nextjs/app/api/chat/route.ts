@@ -1,6 +1,9 @@
 import { openai } from "@ai-sdk/openai";
 import { generateText } from "ai";
 import { NextRequest, NextResponse } from "next/server";
+// For a real application, use the following import:
+// import { getTracer } from "@lmnr-ai/lmnr";
+import { getTracer } from "../../../../../dist";
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,6 +24,7 @@ Never give medical advice or diagnose conditions.`
       messages: [systemMessage, ...messages],
       experimental_telemetry: {
         isEnabled: true,
+        tracer: getTracer(),
       }
     });
 

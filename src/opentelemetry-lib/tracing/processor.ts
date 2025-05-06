@@ -1,4 +1,4 @@
-import { Context,context } from "@opentelemetry/api";
+import { Context, context } from "@opentelemetry/api";
 import {
   BatchSpanProcessor,
   ReadableSpan,
@@ -62,7 +62,8 @@ interface LaminarSpanProcessorOptions {
    */
   disableBatch?: boolean;
   /**
-   * Whether to force HTTP and use OpenTelemetry HTTP/protobuf exporter. Not recommended.
+   * Whether to force HTTP and use OpenTelemetry HTTP/protobuf exporter.
+   * Not recommended with Laminar backends.
    * Optional.
    * Defaults to false.
    */
@@ -74,7 +75,7 @@ interface LaminarSpanProcessorOptions {
   traceExportTimeoutMillis?: number;
 
   /**
-   * The exporter to use. Optional.
+   * The exporter to use. Optional. If specified, some of the other options will be ignored.
    * Defaults to a new LaminarSpanExporter.
    */
   exporter?: SpanExporter;
@@ -85,6 +86,20 @@ export class LaminarSpanProcessor implements SpanProcessor {
   private readonly _spanIdToPath: Map<string, string[]> = new Map();
   private readonly _spanIdLists: Map<string, string[]> = new Map();
 
+  /**
+   * @param {object} options - The options for the Laminar span processor.
+   * @param {string} options.baseUrl - The base URL of the Laminar API.
+   * @param {number} options.port - The port of the Laminar API.
+   * @param {string} options.apiKey - Laminar project API key or any other authorization set as bearer token.
+   * @param {boolean} options.disableBatch - Whether to disable batching (uses SimpleSpanProcessor).
+   * @param {number} options.maxExportBatchSize - The maximum number of spans to export at a time
+   * if disableBatch is false.
+   * @param {number} options.traceExportTimeoutMillis - The timeout for sending traces data.
+   * Defaults to 30 seconds.
+   * @param {boolean} options.forceHttp - Whether to force HTTP and use OpenTelemetry
+   * HTTP/protobuf exporter.
+   * Not recommended with Laminar backends.
+   */
   constructor(options: LaminarSpanProcessorOptions = {}) {
     const exporter = options.exporter ?? new LaminarSpanExporter(options);
     this.instance = options.disableBatch
