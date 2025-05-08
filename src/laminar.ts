@@ -462,13 +462,18 @@ export class Laminar {
   }
 
   public static async flush() {
-    logger.debug("Flushing spans");
-    await forceFlush();
+    if (this.isInitialized) {
+      logger.debug("Flushing spans");
+      await forceFlush();
+    }
   }
 
   public static async shutdown() {
-    logger.debug("Shutting down Laminar");
-    await forceFlush();
+    if (this.isInitialized) {
+      logger.debug("Shutting down Laminar");
+      await forceFlush();
+      // other shutdown should go here
+    }
   }
 
   public static getHttpUrl(): string {

@@ -21,12 +21,13 @@ import { collectAndSendPageEvents, getDirname } from "./utils";
 const logger = initializeLogger();
 
 const RRWEB_SCRIPT_PATH = (() => {
-  const standardPath = path.join(getDirname(), '..', 'assets', 'rrweb', 'rrweb.min.js');
+  const fileName = 'rrweb.umd.min.cjs';
+  const standardPath = path.join(getDirname(), '..', 'assets', 'rrweb', fileName);
   // Fallback paths for different environments and tests
   const fallbackPaths = [
-    path.join(getDirname(), '..', '..', 'assets', 'rrweb', 'rrweb.min.js'), // For tests
-    path.join(process.cwd(), 'assets', 'rrweb', 'rrweb.min.js'), // Using cwd
-    path.join(process.cwd(), 'ts-sdk', 'assets', 'rrweb', 'rrweb.min.js'), // Absolute path
+    path.join(getDirname(), '..', '..', 'assets', 'rrweb', fileName), // For tests
+    path.join(process.cwd(), 'assets', 'rrweb', fileName), // Using cwd
+    path.join(process.cwd(), '@lmnr-ai/lmnr', 'assets', 'rrweb', fileName), // Absolute path
   ];
 
   try {
@@ -51,8 +52,7 @@ const RRWEB_SCRIPT_PATH = (() => {
 /* eslint-disable
   @typescript-eslint/no-this-alias,
   @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return,
-  @typescript-eslint/unbound-method
+  @typescript-eslint/no-unsafe-return
 */
 export class PlaywrightInstrumentation extends InstrumentationBase {
   private _patchedBrowsers: Set<Browser> = new Set();
@@ -202,20 +202,12 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
       }
 
       for (const context of browser.contexts()) {
-        for (const page of context.pages()) {
-          try {
-            await page.evaluate(() => (window as any).lmnrIsPageVisible = false);
-          } catch (error) {
-            logger.debug("Failed to set isPageVisible to false: " +
-              `${error instanceof Error ? error.message : String(error)}`);
-          }
-        }
+        await Promise.all(context.pages().map(page => plugin.patchPage(page)));
         plugin._wrap(
           context,
           'newPage',
           plugin.patchBrowserContextNewPage(),
         );
-        await Promise.all(context.pages().map(page => plugin.patchPage(page)));
         context.on('page', (page: Page) => plugin.patchPage(page));
         plugin._patchedContexts.add(context);
       }
@@ -278,12 +270,6 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
       // Patch pages that are already created
       for (const page of context.pages()) {
-        try {
-          await page.evaluate(() => (window as any).lmnrIsPageVisible = false);
-        } catch (error) {
-          logger.debug("Failed to set isPageVisible to false: " +
-            `${error instanceof Error ? error.message : String(error)}`);
-        }
         await plugin.patchPage(page);
       }
 
@@ -317,9 +303,6 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
   public patchBrowserContextNewPage() {
     const plugin = this;
     return (original: Function) => async function method(this: BrowserContext, ...args: unknown[]) {
-      for (const existingPage of this.pages()) {
-        await existingPage.evaluate(() => (window as any).lmnrIsPageVisible = false);
-      }
       const page = await original.bind(this).apply(this, args);
       if (!plugin._parentSpan) {
         plugin._parentSpan = Laminar.startSpan({
@@ -347,26 +330,19 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
   }
 
   private async _patchPage(page: Page) {
-    try {
-      await page.evaluate(() => (window as any).lmnrIsPageVisible = true);
-    } catch (error) {
-      logger.debug("Failed to set isPageVisible to true: " +
-        `${error instanceof Error ? error.message : String(error)}`);
-    }
-    // @eslint-disable-next-line @typescript-eslint/unbound-method
-    const originalBringToFront = page.bringToFront;
-    // @eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalBringToFront = page.bringToFront.bind(page);
     page.bringToFront = async () => {
-      for (const otherPage of page.context().pages()) {
-        try {
-          await otherPage.evaluate(() => (window as any).lmnrIsPageVisible = false);
-        } catch (error) {
-          logger.debug("Failed to set isPageVisible to false: " +
-            `${error instanceof Error ? error.message : String(error)}`);
+      await originalBringToFront();
+      await page.evaluate(() => {
+        if ((window as any).lmnrRrWeb) {
+          try {
+            (window as any).lmnrRrWeb.record.takeFullSnapshot();
+          } catch (error) {
+            console.error("Failed to take full snapshot: " +
+              `${error instanceof Error ? error.message : String(error)}`);
+          }
         }
-      }
-      await originalBringToFront.call(page);
-      await page.evaluate(() => (window as any).lmnrIsPageVisible = true);
+      });
     };
 
     page.addListener("domcontentloaded", (p: Page) => {
@@ -452,10 +428,17 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     // Update the recording setup to include trace ID
     await tryRunScript(async function setupRrwebCollection() {
       await page.evaluate(() => {
-        const BATCH_SIZE = 1000; // Maximum events to store in memory
         const HEARTBEAT_INTERVAL = 1000;  // 1 second heartbeat
 
         (window as any).lmnrRrwebEventsBatch = new Set();
+
+        (window as any).lmnrPageIsFocused = true;
+        window.addEventListener('blur', () => {
+          (window as any).lmnrPageIsFocused = false;
+        });
+        window.addEventListener('focus', () => {
+          (window as any).lmnrPageIsFocused = true;
+        });
 
         const compressEventData = async (data: any) => {
           const jsonString = JSON.stringify(data);
@@ -473,43 +456,19 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         };
 
         setInterval(() => {
-          compressEventData({ source: 'heartbeat' }).then(data => {
-            if (
-              document.visibilityState === 'hidden'
-              || document.hidden
-              || (window as any).lmnrIsPageVisible === false
-            ) {
-              return;
-            }
-            const heartbeatEvent = {
-              type: 6, // Custom event type
-              data,
-              timestamp: Date.now(),
-            };
-
-            (window as any).lmnrRrwebEventsBatch?.add(heartbeatEvent);
-
-            if ((window as any).lmnrRrwebEventsBatch?.length > BATCH_SIZE) {
-              // Drop oldest events to prevent memory issues
-              (window as any).lmnrRrwebEventsBatch = new Set(
-                Array.from((window as any).lmnrRrwebEventsBatch).slice(-BATCH_SIZE),
-              );
-            }
-          })
-            .catch(error => {
-              logger.error("Heartbeat failed: " +
-                `${error instanceof Error ? error.message : String(error)}`);
-            });
+          if (!(window as any).lmnrPageIsFocused) {
+            return;
+          }
+          (window as any).lmnrRrweb.record.addCustomEvent('heartbeat', {
+            title: document.title,
+            url: document.URL,
+          });
         }, HEARTBEAT_INTERVAL);
 
         (window as any).lmnrRrweb.record({
           async emit(event: any) {
             // Ignore events from all tabs except the current one
-            if (
-              document.visibilityState === 'hidden'
-              || document.hidden
-              || (window as any).lmnrIsPageVisible === false
-            ) {
+            if (!(window as any).lmnrPageIsFocused) {
               return;
             }
             const compressedEvent = {
@@ -521,12 +480,10 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         });
       });
     });
-
   };
 }
 /* eslint-enable
   @typescript-eslint/no-this-alias,
   @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return,
-  @typescript-eslint/unbound-method
+  @typescript-eslint/no-unsafe-return
 */

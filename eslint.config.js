@@ -8,7 +8,17 @@ export default tseslint.config(
   eslint.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
   {
-    ignores: ['dist/**', 'node_modules/**', '**/*.min.js', 'assets/**/*.min.js', 'tsup.config.ts', 'eslint.config.js'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      '**/*.min.cjs',
+      '**/*.min.js',
+      'assets/**/*.min.cjs',
+      'assets/**/*.min.js',
+      'tsup.config.ts',
+      'eslint.config.js',
+      'examples/**',
+    ],
   },
   {
     files: ['src/**/*.ts', 'test/**/*.ts'],
