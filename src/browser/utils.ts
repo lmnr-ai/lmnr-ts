@@ -46,7 +46,12 @@ export const collectAndSendPageEvents = async (
 
     /* eslint-disable @typescript-eslint/no-unsafe-return */
     const events = await (page as PlaywrightPage).evaluate(
-      async () => await (window as any).lmnrGetAndClearEvents(),
+      async () => {
+        if (typeof (window as any).lmnrGetAndClearEvents !== 'function') {
+          return [];
+        }
+        return await (window as any).lmnrGetAndClearEvents();
+      },
     );
     /* eslint-enable @typescript-eslint/no-unsafe-return */
     if (events == null || events.length === 0) {

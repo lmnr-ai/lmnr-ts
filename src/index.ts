@@ -5,7 +5,7 @@ export { Datapoint, evaluate, HumanEvaluator } from './evaluations';
 export { Laminar } from './laminar';
 export { LaminarSpanProcessor } from './opentelemetry-lib/';
 export { LaminarAttributes } from './opentelemetry-lib/tracing/attributes';
-export { getTracer } from './opentelemetry-lib/tracing/index';
+export { getTracer, getTracerProvider } from './opentelemetry-lib/tracing/index';
 export { initializeLaminarInstrumentations } from './opentelemetry-lib/tracing/instrumentations';
 export {
   ChatMessage,

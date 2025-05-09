@@ -90,7 +90,8 @@ export class LaminarSpanProcessor implements SpanProcessor {
    * @param {object} options - The options for the Laminar span processor.
    * @param {string} options.baseUrl - The base URL of the Laminar API.
    * @param {number} options.port - The port of the Laminar API.
-   * @param {string} options.apiKey - Laminar project API key or any other authorization set as bearer token.
+   * @param {string} options.apiKey - Laminar project API key or any other
+   * authorization set as bearer token.
    * @param {boolean} options.disableBatch - Whether to disable batching (uses SimpleSpanProcessor).
    * @param {number} options.maxExportBatchSize - The maximum number of spans to export at a time
    * if disableBatch is false.
