@@ -334,9 +334,9 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     page.bringToFront = async () => {
       await originalBringToFront();
       await page.evaluate(() => {
-        if ((window as any).lmnrRrWeb) {
+        if ((window as any).lmnrRrweb) {
           try {
-            (window as any).lmnrRrWeb.record.takeFullSnapshot();
+            (window as any).lmnrRrweb.record.takeFullSnapshot();
           } catch (error) {
             console.error("Failed to take full snapshot: " +
               `${error instanceof Error ? error.message : String(error)}`);
