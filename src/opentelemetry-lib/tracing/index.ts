@@ -20,6 +20,8 @@ const logger = initializeLogger();
 
 let spanProcessor: LaminarSpanProcessor;
 let tracerProvider: TracerProvider | undefined;
+let _baseHttpUrl: string = "https://api.lmnr.ai:443";
+let _apiKey: string | undefined;
 
 /**
  * Initializes the Tracing SDK.
@@ -29,9 +31,12 @@ let tracerProvider: TracerProvider | undefined;
  * for details.
  */
 export const startTracing = (options: InitializeOptions) => {
+  _baseHttpUrl = `${options.baseUrl}:${options.httpPort ?? 443}`;
+  _apiKey = options.apiKey;
+
   const instrumentations = initializeLaminarInstrumentations({
-    baseUrl: `${options.baseUrl}:${options.httpPort ?? 443}`,
-    apiKey: options.apiKey,
+    baseUrl: _baseHttpUrl,
+    apiKey: _apiKey,
     suppressContentTracing: !shouldSendTraces(),
     instrumentModules: options.instrumentModules,
   });
@@ -102,6 +107,20 @@ export const startTracing = (options: InitializeOptions) => {
     tracerProvider: newProvider,
   });
 };
+
+export const patchModules = (modules: InitializeOptions["instrumentModules"]) => {
+  const instrumentations = initializeLaminarInstrumentations({
+    baseUrl: _baseHttpUrl,
+    apiKey: _apiKey,
+    instrumentModules: modules,
+    suppressContentTracing: !shouldSendTraces(),
+  });
+  registerInstrumentations({
+    instrumentations,
+    tracerProvider: tracerProvider,
+  });
+};
+
 
 export const shouldSendTraces = () => {
   if (!_configuration) {
