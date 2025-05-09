@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsup src/index.ts src/cli.ts --format esm,cjs --dts --external puppeteer --external puppeteer-core --external playwright",
+    "build": "tsup",
     "test": "tsx --test test/*.test.ts",
     "lint": "eslint",
     "lint:fix": "eslint --fix"
