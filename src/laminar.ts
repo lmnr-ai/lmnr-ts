@@ -153,21 +153,9 @@ export class Laminar {
    * Patch modules manually. Use this in setups where {@link Laminar.initialize()}
    * and in particular its `instrumentModules` option is not working, e.g. in
    * Next.js place Laminar initialize in `instrumentation.ts`, and then patch
-   * the modules in server components or api routes.
+   * the modules in server components or API routes.
    *
    * @param {InitializeOptions["instrumentModules"]} modules - Record of modules to instrument.
-   *
-   * @example
-   * import { Laminar } from '@lmnr-ai/lmnr';
-   * import { OpenAI } from 'openai';
-   *
-   * Laminar.initialize({
-   *   projectApiKey: "<LMNR_PROJECT_API_KEY>",
-   * });
-   *
-   * Laminar.patch({
-   *   openAI: OpenAI
-   * });
    */
   public static patch(modules: InitializeOptions["instrumentModules"]) {
     if (!this.isInitialized) {
