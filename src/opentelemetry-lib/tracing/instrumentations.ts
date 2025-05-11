@@ -153,6 +153,13 @@ const manuallyInitInstrumentations = (
   const instrumentations: Instrumentation[] = [];
   let playwrightInstrumentation: PlaywrightInstrumentation | undefined;
 
+  if (instrumentModules?.OpenAI && instrumentModules?.openAI) {
+    throw new Error(
+      "`openAI` is deprecated, but both `OpenAI` and `openAI` are provided. " +
+      "Please use `OpenAI` only."
+    );
+  }
+
   if (instrumentModules?.openAI) {
     const openAIInstrumentation = new OpenAIInstrumentation({
       enrichTokens,
@@ -160,6 +167,15 @@ const manuallyInitInstrumentations = (
     });
     instrumentations.push(openAIInstrumentation);
     openAIInstrumentation.manuallyInstrument(instrumentModules.openAI);
+  }
+
+  if (instrumentModules?.OpenAI) {
+    const openAIInstrumentation = new OpenAIInstrumentation({
+      enrichTokens,
+      traceContent: !suppressContentTracing,
+    });
+    instrumentations.push(openAIInstrumentation);
+    openAIInstrumentation.manuallyInstrument(instrumentModules.OpenAI);
   }
 
   if (instrumentModules?.anthropic) {

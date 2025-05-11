@@ -10,7 +10,7 @@ import {
 } from '@opentelemetry/api';
 
 import { InitializeOptions, initializeTracing } from './opentelemetry-lib';
-import { forceFlush, getTracer } from './opentelemetry-lib/tracing/';
+import { forceFlush, getTracer, patchModules } from './opentelemetry-lib/tracing/';
 import {
   ASSOCIATION_PROPERTIES,
   LaminarAttributes,
@@ -87,17 +87,20 @@ export class Laminar {
    * @param {boolean} props.forceHttp - Whether to force HTTP export. Not recommended.
    *
    * @example
-   * import { Laminar as L } from '@lmnr-ai/lmnr';
+   * import { Laminar } from '@lmnr-ai/lmnr';
    * import { OpenAI } from 'openai';
    * import * as ChainsModule from "langchain/chains";
    *
    * // Initialize Laminar while auto-instrumenting Langchain and OpenAI modules.
-   * L.initialize({ projectApiKey: "<LMNR_PROJECT_API_KEY>", instrumentModules: {
-   *  langchain: {
-   *      chainsModule: ChainsModule
-   *  },
-   *  openAI: OpenAI
-   * } });
+   * Laminar.initialize({
+   *   projectApiKey: "<LMNR_PROJECT_API_KEY>",
+   *   instrumentModules: {
+   *     langchain: {
+   *       chainsModule: ChainsModule
+   *     },
+   *     openAI: OpenAI
+   *   }
+   * });
    *
    * @throws {Error} - If project API key is not set
    */
@@ -113,7 +116,6 @@ export class Laminar {
     maxExportBatchSize,
     forceHttp,
   }: LaminarInitializeProps = {}) {
-
     const key = projectApiKey ?? process?.env?.LMNR_PROJECT_API_KEY;
     if (key === undefined) {
       throw new Error(
@@ -128,7 +130,6 @@ export class Laminar {
         ? parseInt(url.match(/:\d{1,5}$/g)![0].slice(1))
         : 443);
     const urlWithoutSlash = url.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
-
     this.baseHttpUrl = `${urlWithoutSlash}:${port}`;
 
     this.isInitialized = true;
@@ -146,6 +147,24 @@ export class Laminar {
       maxExportBatchSize,
       traceExportTimeoutMillis,
     });
+  }
+
+  /**
+   * Patch modules manually. Use this in setups where {@link Laminar.initialize()}
+   * and in particular its `instrumentModules` option is not working, e.g. in
+   * Next.js place Laminar initialize in `instrumentation.ts`, and then patch
+   * the modules in server components or API routes.
+   *
+   * @param {InitializeOptions["instrumentModules"]} modules - Record of modules to instrument.
+   */
+  public static patch(modules: InitializeOptions["instrumentModules"]) {
+    if (!this.isInitialized) {
+      throw new Error("Laminar must be initialized before patching modules");
+    }
+    if (!modules || Object.keys(modules).length === 0) {
+      throw new Error("Pass at least one module to patch");
+    }
+    patchModules(modules);
   }
 
   /**
