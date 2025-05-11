@@ -4,7 +4,9 @@ This is a very simplistic chat UI app that mimics emotional support helpline/the
 
 This does not store any information in the database or any storage, only works for demo purposes.
 
-For LLM calls, the app uses Vercel's AI SDK.
+For LLM calls, the app uses OpenAI and Anthropic SDKs
+
+To view the AI-SDK version of this example, see https://github.com/lmnr-ai/lmnr-ts/tree/main/examples/nextjs-aisdk
 
 ## Installation
 

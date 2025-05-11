@@ -49,13 +49,15 @@ with the latest version of Laminar, e.g.
 "@lmnr-ai/lmnr": "^0.6"
 ```
 
+and then `npm i` again
+
 ## Run the app
 
 ```
 npm run dev
 ```
 
-## Test the call with curl
+## Test the call with the UI
 
 Navigate to `http://localhost:3000` and interact with the UI.
 
