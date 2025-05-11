@@ -79,34 +79,225 @@ export interface InitializeOptions {
   // So we use any for now.
 
   instrumentModules?: {
+    /**
+     * @deprecated Use `OpenAI` instead for consistent casing.
+     */
     openAI?: typeof openai.OpenAI;
+    /**
+     * @example
+     * ```javascript
+     * import { OpenAI } from "openai";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { OpenAI: OpenAI },
+     * });
+     * ```
+     */
+    OpenAI?: typeof openai.OpenAI;
+    /**
+     * @example
+     * ```javascript
+     * import anthropic from "@anthropic-ai/sdk";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { anthropic },
+     * });
+     * ```
+     */
     anthropic?: typeof anthropic;
+    /**
+     * @example
+     * ```javascript
+     * import azureOpenAI from "@azure/openai";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { azureOpenAI },
+     * });
+     * ```
+     */
     azureOpenAI?: typeof azure;
+    /**
+     * @example
+     * ```javascript
+     * import cohere from "cohere-ai";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { cohere },
+     * });
+     * ```
+     */
     cohere?: typeof cohere;
+    /**
+     * @example
+     * ```javascript
+     * import bedrock from "@aws-sdk/client-bedrock-runtime";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { bedrock },
+     * });
+     * ```
+     */
     bedrock?: typeof bedrock;
+    /**
+     * @example
+     * ```javascript
+     * import vertexAI from "@google-cloud/vertexai";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { vertexAI },
+     * });
+     * ```
+     */
     google_vertexai?: typeof vertexAI;
+    /**
+     * @example
+     * ```javascript
+     * import aiplatform from "@google-cloud/aiplatform";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { aiplatform },
+     * });
+     * ```
+     */
     google_aiplatform?: typeof aiplatform;
+    /**
+     * @example
+     * ```javascript
+     * import pinecone from "@pinecone-database/pinecone";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { pinecone },
+     * });
+     * ```
+     */
     pinecone?: typeof pinecone;
+    /**
+     * @example
+     * ```javascript
+     * import ChainsModule from "langchain/chains";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: {
+     *     langchain: {
+     *       chainsModule: ChainsModule,
+     *     },
+     *   },
+     * });
+     * ```
+     */
     langchain?: {
-      chainsModule?: typeof ChainsModule;
       agentsModule?: typeof AgentsModule;
-      toolsModule?: typeof ToolsModule;
+      chainsModule?: typeof ChainsModule;
       runnablesModule?: typeof RunnableModule;
+      toolsModule?: typeof ToolsModule;
       vectorStoreModule?: typeof VectorStoreModule;
     };
+    /**
+     * @example
+     * ```javascript
+     * import llamaindex from "llamaindex";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { llamaindex },
+     * });
+     * ```
+     */
     llamaIndex?: typeof llamaindex;
+    /**
+     * @example
+     * ```javascript
+     * import chromadb from "chromadb";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { chromadb },
+     * });
+     * ```
+     */
     chromadb?: typeof chromadb;
+    /**
+     * @example
+     * ```javascript
+     * import qdrant from "@qdrant/js-client-rest";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { qdrant },
+     * });
+     * ```
+     */
     qdrant?: typeof qdrant;
+    /**
+     * @example
+     * ```javascript
+     * import { chromium } from "playwright";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: {
+     *     playwright: {
+     *       chromium,
+     *     },
+     *   },
+     * });
+     * ```
+     */
     playwright?: {
       chromium?: typeof playwright.chromium,
       firefox?: typeof playwright.firefox,
       webkit?: typeof playwright.webkit,
     },
-    stagehand?: typeof StagehandLib.Stagehand,
+    /**
+     * @example
+     * ```javascript
+     * import puppeteer from "puppeteer";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { puppeteer },
+     * });
+     * ```
+     */
     puppeteer?: typeof puppeteer,
+    /**
+     * @example
+     * ```javascript
+     * import together from "together-ai";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { together },
+     * });
+     * ```
+     */
     together?: typeof together,
+    /**
+     * @example
+     * ```javascript
+     * import Stagehand from "@browserbasehq/stagehand";
+     * import { OpenAI } from "openai";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: {
+     *     stagehand: Stagehand,
+     *     OpenAI: OpenAI,
+     *   },
+     * });
+     * ```
+     */
+    stagehand?: typeof StagehandLib.Stagehand,
   };
-
 
   /**
    * Whether to silence the initialization message. Optional.

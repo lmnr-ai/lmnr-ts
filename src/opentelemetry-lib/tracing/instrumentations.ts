@@ -162,6 +162,15 @@ const manuallyInitInstrumentations = (
     openAIInstrumentation.manuallyInstrument(instrumentModules.openAI);
   }
 
+  if (instrumentModules?.OpenAI) {
+    const openAIInstrumentation = new OpenAIInstrumentation({
+      enrichTokens,
+      traceContent: !suppressContentTracing,
+    });
+    instrumentations.push(openAIInstrumentation);
+    openAIInstrumentation.manuallyInstrument(instrumentModules.OpenAI);
+  }
+
   if (instrumentModules?.anthropic) {
     const anthropicInstrumentation = new AnthropicInstrumentation({
       traceContent: !suppressContentTracing,
