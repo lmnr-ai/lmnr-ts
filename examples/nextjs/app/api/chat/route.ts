@@ -1,14 +1,14 @@
-import { openai } from "@ai-sdk/openai";
-import { generateText } from "ai";
+import { anthropic } from "@/lib/anthropic";
+import { openai } from "@/lib/openai";
+
 import { NextRequest, NextResponse } from "next/server";
-// For a real application, use the following import:
-// import { getTracer } from "@lmnr-ai/lmnr";
-import { getTracer } from "../../../../../dist";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { messages } = body;
+    const { messages, provider } = body;
+
+    const llmProvider = provider ?? process.env.LLM_PROVIDER ?? "openai";
 
     // Create system message with therapeutic instructions
     const systemMessage = {
@@ -18,17 +18,26 @@ Your goal is to provide supportive responses that help the user process their fe
 Never give medical advice or diagnose conditions.`
     };
 
-    // Use the messages parameter directly with the system message as the first element
-    const response = await generateText({
-      model: openai("gpt-4.1-nano"),
-      messages: [systemMessage, ...messages],
-      experimental_telemetry: {
-        isEnabled: true,
-        tracer: getTracer(),
-      }
-    });
+    let response;
 
-    return NextResponse.json({ message: response.text });
+    if (llmProvider === "openai") {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4.1-nano",
+        messages: [systemMessage, ...messages],
+      });
+      response = completion.choices[0].message.content;
+    } else if (llmProvider === "anthropic") {
+      const completion = await anthropic.messages.create({
+        model: "claude-3-5-haiku-latest",
+        system: systemMessage.content,
+        messages: messages,
+        max_tokens: 1000,
+      });
+      response = completion.content[0].type === "text" ? completion.content[0].text : "";
+    } else {
+      throw new Error(`Unsupported provider: ${llmProvider}`);
+    }
+    return NextResponse.json({ message: response });
 
   } catch (error) {
     console.error("Error in chat API:", error);

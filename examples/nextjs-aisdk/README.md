@@ -1,4 +1,4 @@
-# Example Next.js app instrumented with Laminar
+# Example Next.js app using AI SDK instrumented with Laminar
 
 This is a very simplistic chat UI app that mimics emotional support helpline/therapist.
 
@@ -17,7 +17,7 @@ git clone https://github.com/lmnr-ai/lmnr-ts
 ### 2. Open the directory
 
 ```
-cd lmnr-ts/examples/nextjs
+cd lmnr-ts/examples/nextjs-aisdk
 ```
 
 ### 3. Set up the environment variables
@@ -26,7 +26,7 @@ cd lmnr-ts/examples/nextjs
 cp .env.local.example .env.local
 ```
 
-And then fill in the `.env.local` file. Get [Laminar project API key](https://docs.lmnr.ai/tracing/introduction#2-initialize-laminar-in-your-application). Get [OpenAI API key](https://platform.openai.com/api-keys). Get [Anthropic API key](https://console.anthropic.com/settings/keys)
+And then fill in the `.env.local` file. Get [Laminar project API key](https://docs.lmnr.ai/tracing/introduction#2-initialize-laminar-in-your-application). Get [OpenAI API key](https://platform.openai.com/api-keys)
 
 ### 4. Install the dependencies
 
@@ -49,15 +49,13 @@ with the latest version of Laminar, e.g.
 "@lmnr-ai/lmnr": "^0.6"
 ```
 
-and then `npm i` again
-
 ## Run the app
 
 ```
 npm run dev
 ```
 
-## Test the call with the UI
+## Test the call with curl
 
 Navigate to `http://localhost:3000` and interact with the UI.
 
@@ -82,18 +80,19 @@ If you only need the Laminar tracing, you can skip the `registerOTel` initializa
 
 This function is similar to register OTel, but it configures instrumentations and destinations differently. It does the following
 
+- Initialize the LLM and browser instrumentations as you specify in `instrumentModules`,
 - Configure default trace export destination to Laminar cloud,
 - Try to register this in the least intrusive way possible.
 
-### `Laminar.patch()`
+### `getTracer` from `@lmnr-ai/lmnr`
 
-This method will patch the client libraries passed to it. This is needed so that we can trace all LLM calls and their results?
+This function exposes Laminar tracer if one has been created by calling `Laminar.initialize()` or a global OpenTelemetry tracer otherwise.
 
-#### Why do I have to wrap my LLM imports in this?
+#### Why do I have to pass this to every call to AI SDK?
 
-Usually, Laminar does this to LLM libraries at initialization time, using the `instrumentModules` argument or applying best effort to patch the libraries automatically.
+AI SDK manages its own instrumentation internally and can create traces and spans as needed using a global OpenTelemetry tracer.
 
-However, `Laminar.initialize` will try to patch import statements, and, due to the nature of Next.js runtimes, the imports in `instrumentation.ts` are not the same as subsequent imports in API routes or server components. That's why, we need to patch the LLM modules in runtime after initializing Laminar in `instrumentation.ts`
+Laminar could register its tracer globally as the default in OpenTelemetry, but this causes nasty conflicts with other OpenTelemetry providers, such as Sentry or (default setup of) `@vercel/otel`. To avoid this, we made our SDK least intrusive, but you need to pass the Laminar tracer to AI SDK calls.
 
 ### [Advanced] Why do I need to place `Laminar.initialize()` after other tracing initializations?
 

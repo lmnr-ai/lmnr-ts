@@ -1,20 +1,21 @@
 {
-  "name": "lmnr-nextjs-example",
+  "name": "test-lmnr-next",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "lint:fix": "next lint --fix"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.50.3",
+    "@ai-sdk/openai": "^1.3.3",
     "@lmnr-ai/lmnr": "file:../../dist",
     "@opentelemetry/api-logs": "^0.200.0",
-    "@vercel/otel": "^1.12.0",
-    "next": "15.3.2",
-    "openai": "^4.98.0",
+    "@vercel/otel": "^1.11.0",
+    "ai": "^4.2.6",
+    "next": "15.2.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -25,7 +26,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.3.2",
+    "eslint-config-next": "15.2.3",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
