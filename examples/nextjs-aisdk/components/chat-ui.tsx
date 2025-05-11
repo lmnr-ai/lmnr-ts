@@ -16,7 +16,6 @@ export default function ChatUI() {
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [provider, setProvider] = useState<"openai" | "anthropic">("openai");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,8 +44,7 @@ export default function ChatUI() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          messages: [...messages, userMessage],
-          provider
+          messages: [...messages, userMessage]
         }),
       });
 
@@ -71,21 +69,6 @@ export default function ChatUI() {
 
   return (
     <div className="flex flex-col w-full max-w-2xl mx-auto h-[70vh]">
-      <div className="mb-4 flex justify-end">
-        <div className="flex items-center">
-          <label htmlFor="provider" className="mr-2 text-sm text-gray-700 dark:text-gray-300">Provider:</label>
-          <select
-            id="provider"
-            value={provider}
-            onChange={(e) => setProvider(e.target.value as "openai" | "anthropic")}
-            className="border rounded-md py-1 px-2 text-sm bg-white dark:bg-gray-800 
-                      text-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic</option>
-          </select>
-        </div>
-      </div>
       <div className="bg-white dark:bg-gray-800 rounded-t-lg p-4 border border-gray-200 dark:border-gray-700 overflow-y-auto flex-grow">
         <div className="space-y-4">
           {messages.map((message, i) => (
