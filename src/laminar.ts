@@ -155,6 +155,8 @@ export class Laminar {
    * Next.js place Laminar initialize in `instrumentation.ts`, and then patch
    * the modules in server components or API routes.
    *
+   * Make sure to call this after {@link Laminar.initialize()}.
+   *
    * @param {InitializeOptions["instrumentModules"]} modules - Record of modules to instrument.
    */
   public static patch(modules: InitializeOptions["instrumentModules"]) {
