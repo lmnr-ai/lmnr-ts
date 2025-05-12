@@ -113,6 +113,9 @@ importers:
       uuid:
         specifier: ^11.1.0
         version: 11.1.0
+      zod:
+        specifier: ^3.24.4
+        version: 3.24.4
     devDependencies:
       '@anthropic-ai/sdk':
         specifier: ^0.39.0

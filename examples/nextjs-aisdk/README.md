@@ -6,6 +6,8 @@ This does not store any information in the database or any storage, only works f
 
 For LLM calls, the app uses Vercel's AI SDK.
 
+To view the non-AI-SDK version of this example, see https://github.com/lmnr-ai/lmnr-ts/tree/main/examples/nextjs
+
 ## Installation
 
 ### 1. Clone the repository

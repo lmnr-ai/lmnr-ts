@@ -1,17 +1,18 @@
 import type * as StagehandLib from "@browserbasehq/stagehand";
-import { Page as StagehandPage } from "@browserbasehq/stagehand";
+import { ActOptions, LLMClient, Page as StagehandPage } from "@browserbasehq/stagehand";
 import { diag, Span } from "@opentelemetry/api";
 import {
   InstrumentationBase,
   InstrumentationModuleDefinition,
   InstrumentationNodeModuleDefinition,
 } from "@opentelemetry/instrumentation";
+import { z } from "zod";
 
 import { version as SDK_VERSION } from "../../package.json";
 import { observe as laminarObserve } from "../decorators";
 import { Laminar } from "../laminar";
 import { PlaywrightInstrumentation } from "./playwright";
-import { cleanStagehandLLMClient } from "./utils";
+import { cleanStagehandLLMClient, prettyPrintZodSchema } from "./utils";
 
 /* eslint-disable
   @typescript-eslint/no-this-alias,
@@ -196,11 +197,27 @@ export class StagehandInstrumentation extends InstrumentationBase {
   private patchStagehandPage(page: StagehandPage) {
     const actHandler = (page as any).actHandler;
     if (actHandler) {
-      this._wrap(
-        actHandler,
-        'act',
-        this.patchStagehandActHandler(),
-      );
+      if (actHandler.act) {
+        this._wrap(
+          actHandler,
+          'act',
+          this.patchStagehandV1ActHandlerAct(),
+        );
+      }
+      if (actHandler.actFromObserveResult) {
+        this._wrap(
+          actHandler,
+          'actFromObserveResult',
+          this.patchStagehandV2ActHandlerActFromObserveResult(),
+        );
+      }
+      if (actHandler.observeAct) {
+        this._wrap(
+          actHandler,
+          'observeAct',
+          this.patchStagehandV2ActHandlerObserveAct(),
+        );
+      }
     }
 
     const observeHandler = (page as any).observeHandler;
@@ -260,24 +277,66 @@ export class StagehandInstrumentation extends InstrumentationBase {
       };
   }
 
-  private patchStagehandActHandler() {
+  private patchStagehandV1ActHandlerAct() {
     return (original: (...args: any[]) => Promise<any>) =>
       async function act(this: any, ...args: any[]) {
         return await laminarObserve(
           {
             name: 'stagehand.actHandler.act',
             input: {
-              action: args[0].action ?? null,
+              action: args[0].action,
               llmClient: cleanStagehandLLMClient(args[0].llmClient ?? {}),
-              chunksSeen: args[0].chunksSeen ?? null,
-              steps: args[0].steps ?? null,
-              requestId: args[0].requestId ?? null,
-              schema: args[0].schema ?? null,
-              retries: args[0].retries ?? null,
-              variables: args[0].variables ?? null,
-              previousSelectors: args[0].previousSelectors ?? null,
-              skipActionCacheForThisStep: args[0].skipActionCacheForThisStep ?? null,
-              domSettleTimeoutMs: args[0].domSettleTimeoutMs ?? null,
+              chunksSeen: args[0].chunksSeen,
+              steps: args[0].steps,
+              requestId: args[0].requestId,
+              schema: args[0].schema,
+              retries: args[0].retries,
+              variables: args[0].variables,
+              previousSelectors: args[0].previousSelectors,
+              skipActionCacheForThisStep: args[0].skipActionCacheForThisStep,
+              domSettleTimeoutMs: args[0].domSettleTimeoutMs,
+            },
+          },
+          async () => await original.bind(this).apply(this, args),
+        );
+      };
+  }
+
+  private patchStagehandV2ActHandlerActFromObserveResult() {
+    return (original: (...args: any[]) => Promise<any>) =>
+      async function act(this: any, ...args: any[]) {
+        return await laminarObserve(
+          {
+            name: 'stagehand.actHandler.actFromObserveResult',
+            input: {
+              observe: args?.[0] ?? null,
+              domSettleTimeoutMs: args?.[1] ?? null,
+            },
+          },
+          async () => await original.bind(this).apply(this, args),
+        );
+      };
+  }
+
+  private patchStagehandV2ActHandlerObserveAct() {
+    return (original: (...args: any[]) => Promise<any>) =>
+      async function act(this: any, ...args: any[]) {
+        const actOptions = args?.[0] as ActOptions | undefined;
+        const llmClient = args.filter((arg) =>
+          Object.keys(arg).includes('modelName'),
+        )[0] as LLMClient | undefined;
+        const requestId = typeof args?.[3] === 'string' ? args?.[3] : null;
+        return await laminarObserve(
+          {
+            name: 'stagehand.actHandler.observeAct',
+            input: {
+              action: actOptions?.action,
+              modelName: actOptions?.modelName,
+              variables: actOptions?.variables,
+              domSettleTimeoutMs: actOptions?.domSettleTimeoutMs,
+              timeoutMs: actOptions?.timeoutMs,
+              llmClient: cleanStagehandLLMClient(llmClient ?? {}),
+              requestId: requestId,
             },
           },
           async () => await original.bind(this).apply(this, args),
@@ -288,16 +347,23 @@ export class StagehandInstrumentation extends InstrumentationBase {
   private patchStagehandExtractHandlerTextExtract() {
     return (original: (...args: any[]) => Promise<any>) =>
       async function textExtract(this: any, ...args: any[]) {
+        const schema = (args[0].schema as z.AnyZodObject);
+        let prettySchema = schema?.shape;
+        try {
+          prettySchema = prettyPrintZodSchema(schema);
+        } catch (error) {
+          diag.warn('Error pretty printing zod schema', { error });
+        }
         return await laminarObserve(
           {
             name: 'stagehand.extractHandler.textExtract',
             input: {
-              instruction: args[0].instruction ?? null,
+              instruction: args[0].instruction,
               llmClient: cleanStagehandLLMClient(args[0].llmClient ?? {}),
-              requestId: args[0].requestId ?? null,
-              schema: args[0].schema ?? null,
-              content: args[0].content ?? null,
-              domSettleTimeoutMs: args[0].domSettleTimeoutMs ?? null,
+              requestId: args[0].requestId,
+              schema: prettySchema,
+              content: args[0].content,
+              domSettleTimeoutMs: args[0].domSettleTimeoutMs,
             },
           },
           async () => await original.bind(this).apply(this, args),
@@ -308,17 +374,25 @@ export class StagehandInstrumentation extends InstrumentationBase {
   private patchStagehandExtractHandlerDomExtract() {
     return (original: (...args: any[]) => Promise<any>) =>
       async function domExtract(this: any, ...args: any[]) {
+        const schema = (args[0].schema as z.AnyZodObject);
+        let prettySchema = schema?.shape;
+        try {
+          prettySchema = prettyPrintZodSchema(schema);
+        } catch (error) {
+          diag.warn('Error pretty printing zod schema', { error });
+        }
+
         return await laminarObserve(
           {
             name: 'stagehand.extractHandler.domExtract',
             input: {
-              instruction: args[0].instruction ?? null,
+              instruction: args[0].instruction,
               llmClient: cleanStagehandLLMClient(args[0].llmClient ?? {}),
-              requestId: args[0].requestId ?? null,
-              schema: args[0].schema ?? null,
-              content: args[0].content ?? null,
-              chunksSeen: args[0].chunksSeen ?? null,
-              domSettleTimeoutMs: args[0].domSettleTimeoutMs ?? null,
+              requestId: args[0].requestId,
+              schema: prettySchema,
+              content: args[0].content,
+              chunksSeen: args[0].chunksSeen,
+              domSettleTimeoutMs: args[0].domSettleTimeoutMs,
             },
           },
           async () => await original.apply(this, args),
@@ -329,16 +403,17 @@ export class StagehandInstrumentation extends InstrumentationBase {
   private patchStagehandObserveHandler() {
     return (original: (...args: any[]) => Promise<any>) =>
       async function observe(this: any, ...args: any[]) {
+
         return await laminarObserve(
           {
             name: 'stagehand.observeHandler.observe',
             input: {
-              instruction: args[0].instruction ?? null,
+              instruction: args[0].instruction,
               llmClient: cleanStagehandLLMClient(args[0].llmClient ?? {}),
-              requestId: args[0].requestId ?? null,
-              returnAction: args[0].returnAction ?? null,
-              onlyVisible: args[0].onlyVisible ?? null,
-              drawOverlay: args[0].drawOverlay ?? null,
+              requestId: args[0].requestId,
+              returnAction: args[0].returnAction,
+              onlyVisible: args[0].onlyVisible,
+              drawOverlay: args[0].drawOverlay,
             },
           },
           async () => await original.bind(this).apply(this, args),

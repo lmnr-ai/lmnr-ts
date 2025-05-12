@@ -3,6 +3,7 @@ import path from "path";
 import { Page as PlaywrightPage } from "playwright";
 import { Page as PuppeteerPage } from "puppeteer";
 import { fileURLToPath } from "url";
+import { z } from "zod";
 
 import { LaminarClient } from "..";
 import { initializeLogger, StringUUID } from "../utils";
@@ -65,7 +66,8 @@ export const collectAndSendPageEvents = async (
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("Execution context was destroyed")) {
+    if (message.includes("Execution context was destroyed")
+      || message.includes("Target page, context or browser has been closed")) {
       logger.debug(`Tried to flush events from a closed page. Continuing...`);
     } else {
       logger.error(`Error sending events: ${message}`);
@@ -74,7 +76,7 @@ export const collectAndSendPageEvents = async (
 };
 
 // Removes the heavy client prop and the apiKey to avoid security issues
-export const cleanStagehandLLMClient = (llmClient: LLMClient): Omit<LLMClient, "client"> =>
+export const cleanStagehandLLMClient = (llmClient: LLMClient | object): Omit<LLMClient, "client"> =>
   Object.fromEntries(
     Object.entries(llmClient)
       .filter(([key]) => key !== "client")
@@ -89,3 +91,150 @@ export const cleanStagehandLLMClient = (llmClient: LLMClient): Omit<LLMClient, "
           : [key, value],
       ),
   ) as Omit<LLMClient, "client">;
+
+
+export const prettyPrintZodSchema = (schema: z.AnyZodObject, indent = 2): string => {
+  if (!(schema instanceof z.ZodObject)) {
+    throw new Error('Not a Zod object schema');
+  }
+
+  const indentString = ' '.repeat(indent);
+
+  const shape = schema.shape;
+  const entries = Object.entries(shape);
+
+  const reconstructed: string[] = entries.map(([key, value]) => {
+    // Base type detection function
+    const getBaseType = (val: z.ZodTypeAny): string => {
+      if (val instanceof z.ZodString) {
+        return 'z.string()';
+      }
+      if (val instanceof z.ZodNumber) {
+        return 'z.number()';
+      }
+      if (val instanceof z.ZodBoolean) {
+        return 'z.boolean()';
+      }
+      if (val instanceof z.ZodArray) {
+        const elementType = val.element;
+        if (elementType instanceof z.ZodObject) {
+          return `z.array(${prettyPrintZodSchema(elementType)})`;
+        } else {
+          return `z.array(${getBaseType(elementType)})`;
+        }
+      }
+      if (val instanceof z.ZodObject) {
+        return prettyPrintZodSchema(val);
+      }
+      if (val instanceof z.ZodEnum) {
+        // Try to extract enum values
+        const enumValues = (val as any)._def?.values;
+        if (Array.isArray(enumValues)) {
+          return `z.enum([${enumValues.map(v => `'${v}'`).join(', ')}])`;
+        }
+        return 'z.enum([...])';
+      }
+      if (val instanceof z.ZodLiteral) {
+        const literalValue = (val as any)._def?.value;
+        if (typeof literalValue === 'string') {
+          return `z.literal('${literalValue}')`;
+        }
+        return `z.literal(${literalValue})`;
+      }
+      if (val instanceof z.ZodUnion) {
+        const options = (val as any)._def?.options;
+        if (Array.isArray(options)) {
+          return `z.union([${options.map(getBaseType).join(', ')}])`;
+        }
+        return 'z.union([...])';
+      }
+      if (val instanceof z.ZodDate) {
+        return 'z.date()';
+      }
+      if (val instanceof z.ZodRecord) {
+        const keyType = (val as any)._def?.keyType;
+        const valueType = (val as any)._def?.valueType;
+
+        let keyTypeStr = 'z.string()';
+        if (keyType && keyType !== z.string()) {
+          keyTypeStr = getBaseType(keyType);
+        }
+
+        let valueTypeStr = 'z.any()';
+        if (valueType) {
+          valueTypeStr = getBaseType(valueType);
+        }
+
+        return `z.record(${keyTypeStr}, ${valueTypeStr})`;
+      }
+      if (val instanceof z.ZodMap) {
+        const keyType = (val as any)._def?.keyType;
+        const valueType = (val as any)._def?.valueType;
+
+        let keyTypeStr = 'z.any()';
+        if (keyType) {
+          keyTypeStr = getBaseType(keyType);
+        }
+
+        let valueTypeStr = 'z.any()';
+        if (valueType) {
+          valueTypeStr = getBaseType(valueType);
+        }
+
+        return `z.map(${keyTypeStr}, ${valueTypeStr})`;
+      }
+      if (val instanceof z.ZodTuple) {
+        const items = (val as any)._def?.items;
+
+        if (Array.isArray(items)) {
+          const itemsTypeStr = items.map(item => getBaseType(item)).join(', ');
+          return `z.tuple([${itemsTypeStr}])`;
+        }
+        return 'z.tuple([])';
+      }
+      if (val instanceof z.ZodNullable) {
+        return `${getBaseType((val as any)._def.innerType)}.nullable()`;
+      }
+      if (val instanceof z.ZodOptional) {
+        return `${getBaseType((val as any)._def.innerType)}.optional()`;
+      }
+      // Add more type checks as needed
+      return 'z.any()';
+    };
+
+    // Check for modifiers and description
+    const applyModifiers = (val: z.ZodTypeAny, baseType: string): string => {
+      let result = baseType;
+      let currentVal = val;
+
+      // Check for .nullable() modifier
+      if (currentVal instanceof z.ZodNullable) {
+        result = `${getBaseType((currentVal as any)._def.innerType)}.nullable()`;
+        currentVal = (currentVal as any)._def.innerType;
+      }
+
+      // Check for .optional() modifier
+      if (currentVal instanceof z.ZodOptional) {
+        if (!result.endsWith('.nullable()')) {
+          result = `${getBaseType((currentVal as any)._def.innerType)}.optional()`;
+        }
+        currentVal = (currentVal as any)._def.innerType;
+      }
+
+      // Check for description
+      const description = (val as any)?._def?.description;
+      if (typeof description === 'string') {
+        result += `.describe('${description.replace(/'/g, "\\'")}')`;
+      }
+
+      return result;
+    };
+
+    const baseType = getBaseType(value as z.ZodTypeAny);
+    const finalType = applyModifiers(value as z.ZodTypeAny, baseType);
+
+    return `${indentString}${key}: ${finalType},`;
+  });
+
+  return `z.object({\n${reconstructed.join('\n')}\n})`;
+};
