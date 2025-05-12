@@ -61,7 +61,7 @@ export interface InitializeOptions {
 
   /**
    * Defines default log level for SDK and all instrumentations. Optional.
-   * Defaults to warn.
+   * Defaults to error.
    */
   logLevel?: "debug" | "info" | "warn" | "error";
 

@@ -81,7 +81,7 @@ export class Laminar {
    * @param {number} props.traceExportTimeoutMillis - Timeout for trace export.
    * Defaults to 30_000 (30 seconds),
    * which is over the default OTLP exporter timeout of 10_000 (10 seconds).
-   * @param {string} props.logLevel - OTel log level. Defaults to "warn".
+   * @param {string} props.logLevel - OTel log level. Defaults to "error".
    * @param {number} props.maxExportBatchSize - Maximum number of spans to export in a single batch.
    * Ignored when `disableBatch` is true.
    * @param {boolean} props.forceHttp - Whether to force HTTP export. Not recommended.
@@ -142,7 +142,7 @@ export class Laminar {
       httpPort,
       silenceInitializationMessage: true,
       instrumentModules,
-      logLevel: logLevel ?? "warn",
+      logLevel: logLevel ?? "error",
       disableBatch,
       maxExportBatchSize,
       traceExportTimeoutMillis,

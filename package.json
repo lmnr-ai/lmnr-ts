@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "TypeScript SDK for Laminar AI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -104,6 +104,7 @@
     "glob": "^11.0.2",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "zod": "^3.24.4"
   }
 }
