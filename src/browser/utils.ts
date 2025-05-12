@@ -76,7 +76,7 @@ export const collectAndSendPageEvents = async (
 };
 
 // Removes the heavy client prop and the apiKey to avoid security issues
-export const cleanStagehandLLMClient = (llmClient: LLMClient | {}): Omit<LLMClient, "client"> =>
+export const cleanStagehandLLMClient = (llmClient: LLMClient | object): Omit<LLMClient, "client"> =>
   Object.fromEntries(
     Object.entries(llmClient)
       .filter(([key]) => key !== "client")
@@ -93,10 +93,12 @@ export const cleanStagehandLLMClient = (llmClient: LLMClient | {}): Omit<LLMClie
   ) as Omit<LLMClient, "client">;
 
 
-export const prettyPrintZodSchema = (schema: z.AnyZodObject): string => {
+export const prettyPrintZodSchema = (schema: z.AnyZodObject, indent = 2): string => {
   if (!(schema instanceof z.ZodObject)) {
     throw new Error('Not a Zod object schema');
   }
+
+  const indentString = ' '.repeat(indent);
 
   const shape = schema.shape;
   const entries = Object.entries(shape);
@@ -213,10 +215,7 @@ export const prettyPrintZodSchema = (schema: z.AnyZodObject): string => {
 
       // Check for .optional() modifier
       if (currentVal instanceof z.ZodOptional) {
-        // If it's already nullable, we need to apply optional to the nullable version
-        if (result.endsWith('.nullable()')) {
-          result = result.replace('.nullable()', '.nullish()');
-        } else {
+        if (!result.endsWith('.nullable()')) {
           result = `${getBaseType((currentVal as any)._def.innerType)}.optional()`;
         }
         currentVal = (currentVal as any)._def.innerType;
@@ -231,10 +230,10 @@ export const prettyPrintZodSchema = (schema: z.AnyZodObject): string => {
       return result;
     };
 
-    let baseType = getBaseType(value as z.ZodTypeAny);
+    const baseType = getBaseType(value as z.ZodTypeAny);
     const finalType = applyModifiers(value as z.ZodTypeAny, baseType);
 
-    return `  ${key}: ${finalType},`;
+    return `${indentString}${key}: ${finalType},`;
   });
 
   return `z.object({\n${reconstructed.join('\n')}\n})`;

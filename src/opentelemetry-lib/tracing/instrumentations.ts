@@ -156,7 +156,7 @@ const manuallyInitInstrumentations = (
   if (instrumentModules?.OpenAI && instrumentModules?.openAI) {
     throw new Error(
       "`openAI` is deprecated, but both `OpenAI` and `openAI` are provided. " +
-      "Please use `OpenAI` only."
+      "Please use `OpenAI` only.",
     );
   }
 

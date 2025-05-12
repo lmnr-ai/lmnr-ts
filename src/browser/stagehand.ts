@@ -1,5 +1,5 @@
 import type * as StagehandLib from "@browserbasehq/stagehand";
-import { Page as StagehandPage, ActOptions, LLMClient } from "@browserbasehq/stagehand";
+import { ActOptions, LLMClient, Page as StagehandPage } from "@browserbasehq/stagehand";
 import { diag, Span } from "@opentelemetry/api";
 import {
   InstrumentationBase,
@@ -322,7 +322,9 @@ export class StagehandInstrumentation extends InstrumentationBase {
     return (original: (...args: any[]) => Promise<any>) =>
       async function act(this: any, ...args: any[]) {
         const actOptions = args?.[0] as ActOptions | undefined;
-        const llmClient = args.filter((arg) => Object.keys(arg).includes('modelName'))[0] as LLMClient | undefined;
+        const llmClient = args.filter((arg) =>
+          Object.keys(arg).includes('modelName'),
+        )[0] as LLMClient | undefined;
         const requestId = typeof args?.[3] === 'string' ? args?.[3] : null;
         return await laminarObserve(
           {
