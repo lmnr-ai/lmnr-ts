@@ -8,6 +8,7 @@ import * as glob from "glob";
 import { version } from "../package.json";
 import { Evaluation } from "./evaluations";
 import { initializeLogger } from "./utils";
+import { getDirname } from "./utils";
 
 const logger = initializeLogger();
 
@@ -19,6 +20,7 @@ declare global {
 }
 
 export function loadModule({
+  filename,
   moduleText,
 }: {
   filename: string;
@@ -27,9 +29,22 @@ export function loadModule({
   globalThis._evaluation = undefined;
   globalThis._set_global_evaluation = true;
 
-  // it needs "require" to be passed in
-  // eslint-disable-next-line
-  new Function("require", moduleText)(require);
+  const __filename = filename;
+  const __dirname = getDirname();
+
+  // add some arguments for proper cjs/esm interop
+  new Function(
+    "require",
+    "module",
+    "__filename",
+    "__dirname",
+    moduleText,
+  )(
+    require,
+    module,
+    __filename,
+    __dirname,
+  );
 
   // Return the modified _evals global variable
   return globalThis._evaluation!;
@@ -86,16 +101,40 @@ async function cli() {
         logger.info(`Located ${files.length} evaluation files in evals/`);
       }
 
+      // Laminar should be marked external by passing 'node_modules/*' to the
+      // external option. This plugin ensures that @lmnr-ai/lmnr is marked
+      // external when imported from path or url.
+      // Adapted from https://github.com/evanw/esbuild/issues/619#issuecomment-751769812
+      const setLaminarAsExternalPlugin = {
+        name: "set-laminar-as-external",
+        setup(build: esbuild.PluginBuild) {
+          build.onResolve({ filter: /^@lmnr-ai\/lmnr$/ }, (args) => {
+            return {
+              path: args.path,
+              external: true,
+            };
+          });
+        }
+      }
+
       for (const file of files) {
         logger.info(`Loading ${file}...`);
-        // TODO: Add various optimizations, e.g. minify, pure, tree shaking, etc.
         const buildOptions = {
+          bundle: true,
+          platform: "node" as esbuild.Platform,
           entryPoints: [file],
           outfile: `tmp_out_${file}.js`,
           write: false,  // will be loaded in memory as a temp file
-          platform: "node" as esbuild.Platform,
-          bundle: true,
-          external: ["node_modules/*"],
+          external: [
+            "node_modules/*",
+            "playwright",
+            "puppeteer",
+            "puppeteer-core",
+            "playwright-core",
+            "fsevents",
+          ],
+          treeShaking: true,
+          plugins: [setLaminarAsExternalPlugin],
         };
 
         const result = await esbuild.build(buildOptions);
@@ -150,6 +189,6 @@ async function cli() {
 }
 
 cli().catch((err) => {
-  logger.error(err);
-  process.exit(1);
+  logger.error(err instanceof Error ? err.message : err);
+  throw err;
 });

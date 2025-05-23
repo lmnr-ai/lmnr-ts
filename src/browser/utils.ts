@@ -1,26 +1,12 @@
 import { LLMClient } from "@browserbasehq/stagehand";
-import path from "path";
 import { Page as PlaywrightPage } from "playwright";
 import { Page as PuppeteerPage } from "puppeteer";
-import { fileURLToPath } from "url";
 import { z } from "zod";
 
 import { LaminarClient } from "..";
 import { initializeLogger, StringUUID } from "../utils";
 
 const logger = initializeLogger();
-
-export const getDirname = () => {
-  if (typeof __dirname !== 'undefined') {
-    return __dirname;
-  }
-
-  if (typeof import.meta?.url !== 'undefined') {
-    return path.dirname(fileURLToPath(import.meta.url));
-  }
-
-  return process.cwd();
-};
 
 export const collectAndSendPageEvents = async (
   client: LaminarClient,

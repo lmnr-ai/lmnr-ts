@@ -15,8 +15,8 @@ import { LaminarClient } from '../client';
 import { observe } from '../decorators';
 import { Laminar } from '../laminar';
 import { TRACE_HAS_BROWSER_SESSION } from '../opentelemetry-lib/tracing/attributes';
-import { initializeLogger, newUUID, NIL_UUID, StringUUID } from '../utils';
-import { collectAndSendPageEvents, getDirname } from "./utils";
+import { getDirname, initializeLogger, newUUID, NIL_UUID, StringUUID } from '../utils';
+import { collectAndSendPageEvents } from "./utils";
 
 const logger = initializeLogger();
 
