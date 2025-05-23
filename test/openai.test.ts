@@ -17,7 +17,7 @@ void describe("openai instrumentation", () => {
   });
   const exporter = new InMemorySpanExporter();
   const dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
-  const recordingsDir = path.join(__dirname ?? process.cwd(), "recordings");
+  const recordingsDir = path.join(dirname, "recordings");
   const recordingsFile = path.join(recordingsDir, "openai-test.json");
 
   void beforeEach(async () => {
