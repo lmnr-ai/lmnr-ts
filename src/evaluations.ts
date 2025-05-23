@@ -411,6 +411,7 @@ export class Evaluation<D, T, O> {
       const partialDatapoint = {
         id: datapointId,
         data: datapoint.data,
+        target: datapoint.target,
         traceId: otelTraceIdToUUID(trace.getActiveSpan()!.spanContext().traceId),
         executorSpanId,
         index,
@@ -499,7 +500,7 @@ export class Evaluation<D, T, O> {
 export async function evaluate<D, T, O>({
   data, executor, evaluators, groupName, name, config,
 }: EvaluationConstructorProps<D, T, O>): Promise<void> {
-  const evaluation = new Evaluation({
+  const evaluation = new Evaluation<D, T, O>({
     data,
     executor,
     evaluators,

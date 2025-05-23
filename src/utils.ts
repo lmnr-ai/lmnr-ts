@@ -2,6 +2,8 @@ import { SpanContext, TraceFlags } from '@opentelemetry/api';
 import pino, { Level } from 'pino';
 import pinoPretty from 'pino-pretty';
 import { v4 as uuidv4 } from 'uuid';
+import { fileURLToPath } from "url";
+import path from "path";
 
 import { LaminarSpanContext } from './types';
 
@@ -178,3 +180,16 @@ const recordToOtelSpanContext = (record: Record<string, unknown>): SpanContext =
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && !Array.isArray(value) && value !== null;
+
+
+export const getDirname = () => {
+  if (typeof __dirname !== 'undefined') {
+    return __dirname;
+  }
+
+  if (typeof import.meta?.url !== 'undefined') {
+    return path.dirname(fileURLToPath(import.meta.url));
+  }
+
+  return process.cwd();
+};
