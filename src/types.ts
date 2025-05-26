@@ -42,6 +42,7 @@ export type EvaluationDatapoint<D, T, M, O> = {
   id: StringUUID;
   data: D;
   target?: T;
+  metadata?: M;
   executorOutput?: O;
   scores?: Record<string, number>;
   traceId: string;
