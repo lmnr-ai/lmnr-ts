@@ -136,6 +136,10 @@ export type Datapoint<D, T> = {
    * Must be json serializable.
    */
   target?: T;
+  /**
+   * metadata to the evaluator function. Must be json serializable.
+   */
+  metadata?: Record<string, any>;
 }
 
 type EvaluatorFunctionReturn = number | Record<string, number>;
@@ -412,6 +416,7 @@ export class Evaluation<D, T, O> {
         id: datapointId,
         data: datapoint.data,
         target: datapoint.target,
+        metadata: datapoint.metadata,
         traceId: otelTraceIdToUUID(trace.getActiveSpan()!.spanContext().traceId),
         executorSpanId,
         index,
@@ -458,6 +463,7 @@ export class Evaluation<D, T, O> {
         executorOutput: output,
         data: datapoint.data,
         target,
+        metadata: datapoint.metadata,
         scores,
         traceId: otelTraceIdToUUID(trace.getActiveSpan()!.spanContext().traceId),
         executorSpanId,

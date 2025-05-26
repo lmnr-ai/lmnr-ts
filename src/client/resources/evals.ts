@@ -1,4 +1,5 @@
 import { EvaluationDatapoint, GetDatapointsResponse, InitEvaluationResponse } from "../../types";
+import { slicePayload } from "../../utils";
 import { BaseResource } from ".";
 
 export class EvalsResource extends BaseResource {
@@ -48,7 +49,15 @@ export class EvalsResource extends BaseResource {
     const response = await fetch(this.baseHttpUrl + `/v1/evals/${evalId}/datapoints`, {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify({ points: datapoints, groupName: groupName ?? null }),
+      body: JSON.stringify({
+        points: datapoints.map((d) => (
+          {
+            ...d,
+            data: slicePayload(d.data, 100),
+            target: slicePayload(d.target, 100),
+          })),
+        groupName: groupName ?? null,
+      }),
     });
 
     if (!response.ok) {

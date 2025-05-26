@@ -7,8 +7,7 @@ import * as glob from "glob";
 
 import { version } from "../package.json";
 import { Evaluation } from "./evaluations";
-import { initializeLogger } from "./utils";
-import { getDirname } from "./utils";
+import { getDirname, initializeLogger } from "./utils";
 
 const logger = initializeLogger();
 
@@ -33,6 +32,8 @@ export function loadModule({
   const __dirname = getDirname();
 
   // add some arguments for proper cjs/esm interop
+
+  /* eslint-disable @typescript-eslint/no-implied-eval */
   new Function(
     "require",
     "module",
@@ -45,6 +46,7 @@ export function loadModule({
     __filename,
     __dirname,
   );
+  /* eslint-enable @typescript-eslint/no-implied-eval */
 
   // Return the modified _evals global variable
   return globalThis._evaluation!;
@@ -108,14 +110,12 @@ async function cli() {
       const setLaminarAsExternalPlugin = {
         name: "set-laminar-as-external",
         setup(build: esbuild.PluginBuild) {
-          build.onResolve({ filter: /^@lmnr-ai\/lmnr$/ }, (args) => {
-            return {
-              path: args.path,
-              external: true,
-            };
-          });
-        }
-      }
+          build.onResolve({ filter: /^@lmnr-ai\/lmnr$/ }, (args) => ({
+            path: args.path,
+            external: true,
+          }));
+        },
+      };
 
       for (const file of files) {
         logger.info(`Loading ${file}...`);

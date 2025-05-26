@@ -1,9 +1,9 @@
 import { SpanContext, TraceFlags } from '@opentelemetry/api';
+import path from "path";
 import pino, { Level } from 'pino';
 import pinoPretty from 'pino-pretty';
-import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from "url";
-import path from "path";
+import { v4 as uuidv4 } from 'uuid';
 
 import { LaminarSpanContext } from './types';
 
@@ -192,4 +192,17 @@ export const getDirname = () => {
   }
 
   return process.cwd();
+};
+
+export const slicePayload = <T>(value: T, length: number) => {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  const str = JSON.stringify(value);
+  if (str.length <= length) {
+    return value;
+  }
+
+  return (str.slice(0, length) + '...');
 };
