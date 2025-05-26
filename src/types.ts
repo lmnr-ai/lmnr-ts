@@ -38,7 +38,7 @@ export type InitEvaluationResponse = {
   projectId: StringUUID,
 }
 
-export type EvaluationDatapoint<D, T, O> = {
+export type EvaluationDatapoint<D, T, M, O> = {
   id: StringUUID;
   data: D;
   target?: T;
@@ -50,8 +50,8 @@ export type EvaluationDatapoint<D, T, O> = {
   executorSpanId?: string;
 }
 
-export type GetDatapointsResponse<D, T> = {
-  items: Datapoint<D, T>[];
+export type GetDatapointsResponse<D, T, M> = {
+  items: Datapoint<D, T, M>[];
   totalCount: number;
   anyInProject: boolean;
 }

@@ -3,8 +3,8 @@ import { Datapoint } from './evaluations';
 
 const DEFAULT_FETCH_SIZE = 25;
 
-export abstract class EvaluationDataset<D, T> {
-  public async slice(start: number, end: number): Promise<Datapoint<D, T>[]> {
+export abstract class EvaluationDataset<D, T, M> {
+  public async slice(start: number, end: number): Promise<Datapoint<D, T, M>[]> {
     const result = [];
     for (let i = Math.max(start, 0); i < Math.min(end, await this.size()); i++) {
       result.push(await this.get(i));
@@ -12,11 +12,11 @@ export abstract class EvaluationDataset<D, T> {
     return result;
   }
   public abstract size(): Promise<number> | number;
-  public abstract get(index: number): Promise<Datapoint<D, T>> | Datapoint<D, T>;
+  public abstract get(index: number): Promise<Datapoint<D, T, M>> | Datapoint<D, T, M>;
 }
 
-export class LaminarDataset<D, T> extends EvaluationDataset<D, T> {
-  private fetchedItems: Datapoint<D, T>[] = [];
+export class LaminarDataset<D, T, M> extends EvaluationDataset<D, T, M> {
+  private fetchedItems: Datapoint<D, T, M>[] = [];
   private len: number | null = null;
   private offset: number = 0;
   private fetchSize: number;
@@ -37,7 +37,7 @@ export class LaminarDataset<D, T> extends EvaluationDataset<D, T> {
     if (!this.client) {
       throw new Error('Client not set');
     }
-    const resp = await this.client.evals.getDatapoints<D, T>({
+    const resp = await this.client.evals.getDatapoints<D, T, M>({
       datasetName: this.name,
       offset: this.offset,
       limit: this.fetchSize,
@@ -55,7 +55,7 @@ export class LaminarDataset<D, T> extends EvaluationDataset<D, T> {
     }
     return this.len!;
   }
-  public async get(index: number): Promise<Datapoint<D, T>> {
+  public async get(index: number): Promise<Datapoint<D, T, M>> {
     if (index >= this.fetchedItems.length) {
       await this.fetchBatch();
     }

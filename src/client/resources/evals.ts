@@ -32,17 +32,17 @@ export class EvalsResource extends BaseResource {
    *
    * @param {Object} options - Save datapoints options
    * @param {string} options.evalId - ID of the evaluation
-   * @param {EvaluationDatapoint<D, T, O>[]} options.datapoints - Datapoint to add
+   * @param {EvaluationDatapoint<D, T, M, O>[]} options.datapoints - Datapoint to add
    * @param {string} [options.groupName] - Group name of the evaluation
    * @returns {Promise<void>} Response from the datapoint addition
    */
-  public async saveDatapoints<D, T, O>({
+  public async saveDatapoints<D, T, M, O>({
     evalId,
     datapoints,
     groupName,
   }: {
     evalId: string;
-    datapoints: EvaluationDatapoint<D, T, O>[];
+    datapoints: EvaluationDatapoint<D, T, M, O>[];
     groupName?: string;
   }): Promise<void> {
     const response = await fetch(this.baseHttpUrl + `/v1/evals/${evalId}/datapoints`, {
@@ -65,7 +65,7 @@ export class EvalsResource extends BaseResource {
    * @param {number} options.limit - Maximum number of datapoints to return
    * @returns {Promise<GetDatapointsResponse>} Response from the datapoint retrieval
    */
-  public async getDatapoints<D, T>({
+  public async getDatapoints<D, T, M>({
     datasetName,
     offset,
     limit,
@@ -73,7 +73,7 @@ export class EvalsResource extends BaseResource {
     datasetName: string;
     offset: number;
     limit: number;
-  }): Promise<GetDatapointsResponse<D, T>> {
+  }): Promise<GetDatapointsResponse<D, T, M>> {
     const params = new URLSearchParams({
       name: datasetName,
       offset: offset.toString(),
@@ -91,6 +91,6 @@ export class EvalsResource extends BaseResource {
       await this.handleError(response);
     }
 
-    return (await response.json()) as GetDatapointsResponse<D, T>;
+    return (await response.json()) as GetDatapointsResponse<D, T, M>;
   }
 }

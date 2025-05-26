@@ -193,3 +193,16 @@ export const getDirname = () => {
 
   return process.cwd();
 };
+
+export const slicePayload = <T>(value: T, length: number): T => {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  const str = JSON.stringify(value);
+  if (str.length <= length) {
+    return value;
+  }
+
+  return (str.slice(0, length) + '...') as T;
+};
