@@ -22,7 +22,7 @@ const MAX_EXPORT_BATCH_SIZE = 64;
 
 declare global {
   // eslint-disable-next-line no-var
-  var _evaluation: Evaluation<any, any, any, any> | undefined;
+  var _evaluation: Evaluation<any, any, any> | undefined;
   // If true, then we need to set the evaluation globally without running it
   // eslint-disable-next-line no-var
   var _set_global_evaluation: boolean;
@@ -48,7 +48,7 @@ const getEvaluationUrl = (projectId: string, evaluationId: string, baseUrl?: str
 };
 
 const getAverageScores =
-  <D, T, M, O>(results: EvaluationDatapoint<D, T, M, O>[]): Record<string, number> => {
+  <D, T, M, O>(results: EvaluationDatapoint<D, T, O>[]): Record<string, number> => {
     const perScoreValues: Record<string, number[]> = {};
     for (const result of results) {
       for (const key in result.scores) {
@@ -126,7 +126,7 @@ interface EvaluatorConfig {
  * Datapoint is a single data point in the evaluation. `D` is the type of the input data,
  * `T` is the type of the target data.
  */
-export type Datapoint<D, T, M> = {
+export type Datapoint<D, T> = {
   /**
    * input to the executor function. Must be json serializable. Required.
    */
@@ -139,7 +139,7 @@ export type Datapoint<D, T, M> = {
   /**
    * metadata to the evaluator function. Must be json serializable.
    */
-  metadata?: M;
+  metadata?: Record<string, any>;
 }
 
 type EvaluatorFunctionReturn = number | Record<string, number>;
@@ -165,12 +165,12 @@ export class HumanEvaluator {
   }
 }
 
-interface EvaluationConstructorProps<D, T, M, O> {
+interface EvaluationConstructorProps<D, T, O> {
   /**
    * List of data points to evaluate. `data` is the input to the executor function,
    * `target` is the input to the evaluator function.
    */
-  data: (Datapoint<D, T, M>[]) | EvaluationDataset<D, T, M>;
+  data: (Datapoint<D, T>[]) | EvaluationDataset<D, T>;
   /**
    * The executor function. Takes the data point + any additional arguments
    * and returns the output to evaluate.
@@ -249,10 +249,10 @@ class EvaluationReporter {
   }
 }
 
-export class Evaluation<D, T, M, O> {
+export class Evaluation<D, T, O> {
   private isFinished: boolean = false;
   private progressReporter: EvaluationReporter;
-  private data: Datapoint<D, T, M>[] | EvaluationDataset<D, T, M>;
+  private data: Datapoint<D, T>[] | EvaluationDataset<D, T>;
   private executor: (data: D, ...args: any[]) => O | Promise<O>;
   private evaluators: Record<string, EvaluatorFunction<O, T>>;
   private groupName?: string;
@@ -266,7 +266,7 @@ export class Evaluation<D, T, M, O> {
 
   constructor({
     data, executor, evaluators, groupName, name, config,
-  }: EvaluationConstructorProps<D, T, M, O>) {
+  }: EvaluationConstructorProps<D, T, O>) {
     if (Object.keys(evaluators).length === 0) {
       throw new Error('No evaluators provided');
     }
@@ -344,7 +344,7 @@ export class Evaluation<D, T, M, O> {
     }
 
     this.progressReporter.start({ length: await this.getLength() });
-    let resultDatapoints: EvaluationDatapoint<D, T, M, O>[];
+    let resultDatapoints: EvaluationDatapoint<D, T, O>[];
     if (this.data instanceof LaminarDataset) {
       this.data.setClient(this.client);
     }
@@ -372,12 +372,12 @@ export class Evaluation<D, T, M, O> {
 
   public async evaluateInBatches(
     evalId: StringUUID,
-  ): Promise<EvaluationDatapoint<D, T, M, O>[]> {
+  ): Promise<EvaluationDatapoint<D, T, O>[]> {
     const semaphore = new Semaphore(this.concurrencyLimit);
     const tasks: Promise<any>[] = [];
 
-    const evaluateTask = async (datapoint: Datapoint<D, T, M>, index: number):
-      Promise<[number, EvaluationDatapoint<D, T, M, O>]> => {
+    const evaluateTask = async (datapoint: Datapoint<D, T>, index: number):
+      Promise<[number, EvaluationDatapoint<D, T, O>]> => {
       try {
         const result = await this.evaluateDatapoint(evalId, datapoint, index);
         this.progressReporter.update(1);
@@ -400,9 +400,9 @@ export class Evaluation<D, T, M, O> {
 
   private async evaluateDatapoint(
     evalId: StringUUID,
-    datapoint: Datapoint<D, T, M>,
+    datapoint: Datapoint<D, T>,
     index: number,
-  ): Promise<EvaluationDatapoint<D, T, M, O>> {
+  ): Promise<EvaluationDatapoint<D, T, O>> {
     return observe({ name: "evaluation", traceType: "EVALUATION" }, async () => {
       trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATION");
       const executorSpan = Laminar.startSpan({
@@ -414,13 +414,13 @@ export class Evaluation<D, T, M, O> {
       const datapointId = newUUID();
       const partialDatapoint = {
         id: datapointId,
-        data: slicePayload(datapoint.data, 100),
-        target: slicePayload(datapoint.target, 100),
+        data: datapoint.data,
+        target: datapoint.target,
         metadata: datapoint.metadata,
         traceId: otelTraceIdToUUID(trace.getActiveSpan()!.spanContext().traceId),
         executorSpanId,
         index,
-      } as EvaluationDatapoint<D, T, M, O>;
+      } as EvaluationDatapoint<D, T, O>;
 
       // first create the datapoint in the database and await
       await this.client.evals.saveDatapoints({
@@ -461,14 +461,14 @@ export class Evaluation<D, T, M, O> {
       const resultDatapoint = {
         id: datapointId,
         executorOutput: output,
-        data: slicePayload(datapoint.data, 100),
-        target: slicePayload(datapoint.target, 100),
+        data: datapoint.data,
+        target,
         metadata: datapoint.metadata,
         scores,
         traceId: otelTraceIdToUUID(trace.getActiveSpan()!.spanContext().traceId),
         executorSpanId,
         index,
-      } as EvaluationDatapoint<D, T, M, O>;
+      } as EvaluationDatapoint<D, T, O>;
 
       const uploadPromise = this.client.evals.saveDatapoints({
         evalId,
@@ -503,10 +503,10 @@ export class Evaluation<D, T, M, O> {
  * the evaluation in the group.
  * @param props.config Optional override configurations for the evaluator.
  */
-export async function evaluate<D, T, M, O>({
+export async function evaluate<D, T, O>({
   data, executor, evaluators, groupName, name, config,
-}: EvaluationConstructorProps<D, T, M, O>): Promise<void> {
-  const evaluation = new Evaluation<D, T, M, O>({
+}: EvaluationConstructorProps<D, T, O>): Promise<void> {
+  const evaluation = new Evaluation<D, T, O>({
     data,
     executor,
     evaluators,

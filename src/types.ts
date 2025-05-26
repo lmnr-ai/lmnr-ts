@@ -38,11 +38,11 @@ export type InitEvaluationResponse = {
   projectId: StringUUID,
 }
 
-export type EvaluationDatapoint<D, T, M, O> = {
+export type EvaluationDatapoint<D, T, O> = {
   id: StringUUID;
   data: D;
   target?: T;
-  metadata?: M;
+  metadata?: Record<string, any>;
   executorOutput?: O;
   scores?: Record<string, number>;
   traceId: string;
@@ -51,8 +51,8 @@ export type EvaluationDatapoint<D, T, M, O> = {
   executorSpanId?: string;
 }
 
-export type GetDatapointsResponse<D, T, M> = {
-  items: Datapoint<D, T, M>[];
+export type GetDatapointsResponse<D, T> = {
+  items: Datapoint<D, T>[];
   totalCount: number;
   anyInProject: boolean;
 }

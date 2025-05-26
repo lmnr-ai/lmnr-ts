@@ -14,7 +14,7 @@ const logger = initializeLogger();
 
 declare global {
   // eslint-disable-next-line no-var
-  var _evaluation: Evaluation<any, any, any, any> | undefined;
+  var _evaluation: Evaluation<any, any, any> | undefined;
   // eslint-disable-next-line no-var
   var _set_global_evaluation: boolean;
 }
@@ -25,7 +25,7 @@ export function loadModule({
 }: {
   filename: string;
   moduleText: string;
-}): Evaluation<any, any, any, any> {
+}): Evaluation<any, any, any> {
   globalThis._evaluation = undefined;
   globalThis._set_global_evaluation = true;
 
