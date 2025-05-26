@@ -27,6 +27,7 @@ void describe("evaluate", () => {
     const baseUrl = "https://api.lmnr.ai";
     const mockEvalId = "00000000-0000-0000-0000-000000000000";
 
+    let body: Record<string, any> = {};
     nock(baseUrl)
       .post('/v1/evals')
       .reply(200, {
@@ -35,15 +36,21 @@ void describe("evaluate", () => {
       });
 
     nock(baseUrl)
-      .post(`/v1/evals/${mockEvalId}/datapoints`)
+      .post(`/v1/evals/${mockEvalId}/datapoints`, (requestBody) => {
+        body = requestBody
+        return requestBody
+      })
       .times(2)
       .reply(200, {});
 
     await evaluate({
       data: [
         {
-          data: "test",
-          target: "test",
+          data: "a".repeat(150),
+          target: "b".repeat(150),
+          metadata: {
+            "test": "test"
+          }
         },
       ],
       executor: (data) => data,
@@ -57,6 +64,21 @@ void describe("evaluate", () => {
     });
 
     await Laminar.flush();
+
+
+    assert.strictEqual(body?.points?.length, 1);
+
+    const point = body.points[0];
+    assert.strictEqual(point.data.length, 103);
+    assert.strictEqual(point.target.length, 103);
+    assert.strictEqual(point.index, 0);
+    assert.deepStrictEqual(point.metadata, { test: 'test' });
+    assert.deepStrictEqual(point.scores, { test2: 0, test: 0 });
+
+    // Check that generated fields exist but don't check their exact values
+    assert.ok(point.executorSpanId);
+    assert.ok(point.id);
+    assert.ok(point.traceId);
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 4);

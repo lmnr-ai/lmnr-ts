@@ -37,7 +37,7 @@ export class EvalsResource extends BaseResource {
    * @param {string} [options.groupName] - Group name of the evaluation
    * @returns {Promise<void>} Response from the datapoint addition
    */
-  public async saveDatapoints<D, T, M, O>({
+  public async saveDatapoints<D, T, O>({
     evalId,
     datapoints,
     groupName,
@@ -49,7 +49,9 @@ export class EvalsResource extends BaseResource {
     const response = await fetch(this.baseHttpUrl + `/v1/evals/${evalId}/datapoints`, {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify({ points: datapoints.map((d) => ({ ...d, data: slicePayload(d.data, 100), target:slicePayload(d.target, 100) })), groupName: groupName ?? null }),
+      body: JSON.stringify({
+        points: datapoints.map((d) => ({ ...d, data: slicePayload(d.data, 100), target:slicePayload(d.target, 100) })),
+        groupName: groupName ?? null }),
     });
 
     if (!response.ok) {

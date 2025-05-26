@@ -194,7 +194,7 @@ export const getDirname = () => {
   return process.cwd();
 };
 
-export const slicePayload = <T>(value: T, length: number): T | string => {
+export const slicePayload = <T>(value: T, length: number) => {
   if (value === null || value === undefined) {
     return value;
   }

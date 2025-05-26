@@ -13,7 +13,7 @@ import {
   newUUID,
   otelSpanIdToUUID,
   otelTraceIdToUUID,
-  Semaphore, slicePayload,
+  Semaphore,
   StringUUID,
 } from "./utils";
 
