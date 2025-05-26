@@ -7,6 +7,7 @@ import nock from "nock";
 import { evaluate, Laminar } from "../src/index";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 
+type RequestBody = Record<string, any>;
 
 void describe("evaluate", () => {
   const exporter = new InMemorySpanExporter();
@@ -28,7 +29,7 @@ void describe("evaluate", () => {
     const mockEvalId = "00000000-0000-0000-0000-000000000000";
 
     // spy into request body
-    let body: Record<string, any> = {};
+    let body: RequestBody = {};
 
     nock(baseUrl)
       .post('/v1/evals')
@@ -38,9 +39,9 @@ void describe("evaluate", () => {
       });
 
     nock(baseUrl)
-      .post(`/v1/evals/${mockEvalId}/datapoints`, <T>(requestBody: T): T => {
+      .post(`/v1/evals/${mockEvalId}/datapoints`, (requestBody: RequestBody): boolean => {
         body = requestBody;
-        return requestBody;
+        return true;
       })
       .times(2)
       .reply(200, {});

@@ -1,4 +1,4 @@
-import { SpanContext, TraceFlags } from '@opentelemetry/api';
+import { AttributeValue, SpanContext, TraceFlags } from '@opentelemetry/api';
 import path from "path";
 import pino, { Level } from 'pino';
 import pinoPretty from 'pino-pretty';
@@ -205,4 +205,20 @@ export const slicePayload = <T>(value: T, length: number) => {
   }
 
   return (str.slice(0, length) + '...');
+};
+
+export const isOtelAttributeValueType = (value: unknown): value is AttributeValue => {
+  if (typeof value === 'string'
+    || typeof value === 'number'
+    || typeof value === 'boolean') {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    const allStrings = value.every(value => (value == null) || typeof value === 'string');
+    const allNumbers = value.every(value => (value == null) || typeof value === 'number');
+    const allBooleans = value.every(value => (value == null) || typeof value === 'boolean');
+    return allStrings || allNumbers || allBooleans;
+  }
+  return false;
 };

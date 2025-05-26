@@ -1,18 +1,21 @@
-import { context } from "@opentelemetry/api";
+import { AttributeValue, context } from "@opentelemetry/api";
 
 import { observeBase } from './opentelemetry-lib';
 import { ASSOCIATION_PROPERTIES_KEY } from "./opentelemetry-lib/tracing/utils";
 import { LaminarSpanContext, TraceType, TracingLevel } from './types';
+import { isOtelAttributeValueType } from "./utils";
 
 interface ObserveOptions {
   name?: string;
   sessionId?: string;
+  userId?: string;
   traceType?: TraceType;
   spanType?: 'DEFAULT' | 'LLM' | 'TOOL';
   input?: unknown;
   ignoreInput?: boolean;
   ignoreOutput?: boolean;
   parentSpanContext?: string | LaminarSpanContext;
+  metadata?: Record<string, any>;
 }
 
 /**
@@ -21,6 +24,8 @@ interface ObserveOptions {
  *
  * @param name - Name of the span. Function name is used if not specified.
  * @param sessionId - Session ID to associate with the span and the following context.
+ * @param userId - User ID to associate with the span and the following context.
+ * This is different from the id of a Laminar user.
  * @param traceType – Type of the trace. Unless it is within evaluation, it should be 'DEFAULT'.
  * @param spanType - Type of the span. 'DEFAULT' is used if not specified. If the type is 'LLM',
  * you must manually specify some attributes. See `Laminar.setSpanAttributes` for more
@@ -29,6 +34,7 @@ interface ObserveOptions {
  * arguments passed to the function.
  * @param ignoreInput - Whether to ignore the input altogether.
  * @param ignoreOutput - Whether to ignore the output altogether.
+ * @param metadata - Metadata to add to a trace for further filtering. Must be JSON serializable.
  * @returns Returns the result of the wrapped function.
  * @throws Exception - Re-throws the exception if the wrapped function throws an exception.
  *
@@ -44,12 +50,14 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
   {
     name,
     sessionId,
+    userId,
     traceType,
     spanType,
     input,
     ignoreInput,
     ignoreOutput,
     parentSpanContext,
+    metadata,
   }: ObserveOptions, fn: F, ...args: A): Promise<ReturnType<F>> {
   if (fn === undefined || typeof fn !== "function") {
     throw new Error("Invalid `observe` usage. Second argument `fn` must be a function.");
@@ -64,6 +72,23 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
   }
   if (spanType) {
     associationProperties = { ...associationProperties, "span_type": spanType };
+  }
+  if (userId) {
+    associationProperties = { ...associationProperties, "user_id": userId };
+  }
+  if (metadata) {
+    const metadataAttributes = Object.fromEntries(
+      Object.entries(metadata).map(([key, value]) => {
+        if (isOtelAttributeValueType(value)) {
+          return [`metadata.${key}`, value];
+        } else {
+          return [`metadata.${key}`, JSON.stringify(value)];
+        }
+      }),
+    );
+    if (metadataAttributes && Object.keys(metadataAttributes).length > 0) {
+      associationProperties = { ...associationProperties, ...metadataAttributes };
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return

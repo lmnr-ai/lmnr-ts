@@ -36,6 +36,4 @@ export const createResource = (
   // For v2 this would be:
   // const { resourceFromAttributes } = require("@opentelemetry/resources");
   // return resourceFromAttributes(attributes);
-  new Resource(
-    attributes,
-  );
+  new Resource(attributes);

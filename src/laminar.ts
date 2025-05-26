@@ -23,6 +23,7 @@ import { ASSOCIATION_PROPERTIES_KEY } from './opentelemetry-lib/tracing/utils';
 import { LaminarSpanContext } from './types';
 import {
   initializeLogger,
+  isOtelAttributeValueType,
   otelSpanIdToUUID,
   otelTraceIdToUUID,
   StringUUID,
@@ -289,10 +290,16 @@ export class Laminar {
         currentSpan.setAttribute(`${ASSOCIATION_PROPERTIES}.metadata.${key}`, value);
       }
     }
-    let metadataAttributes = {};
-    for (const [key, value] of Object.entries(metadata)) {
-      metadataAttributes = { ...metadataAttributes, [`metadata.${key}`]: value };
-    }
+
+    const metadataAttributes = Object.fromEntries(
+      Object.entries(metadata).map(([key, value]) => {
+        if (isOtelAttributeValueType(value)) {
+          return [`metadata.${key}`, value];
+        } else {
+          return [`metadata.${key}`, JSON.stringify(value)];
+        }
+      }),
+    );
 
     let entityContext = contextApi.active();
     const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY);
