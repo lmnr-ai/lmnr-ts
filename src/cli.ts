@@ -151,7 +151,7 @@ async function cli() {
         const outputFileText = result.outputFiles[0].text;
 
         const evaluations = loadModule({
-          filename: args.file,
+          filename: file,
           moduleText: outputFileText,
         });
 

@@ -525,6 +525,8 @@ export async function evaluate<D, T, O>({
     config,
   });
   if (globalThis._set_global_evaluation) {
+    // TODO: if we load files concurrently, we need to use a mutex to protect
+    // concurrent writes to globalThis._evaluations
     globalThis._evaluations = [...(globalThis._evaluations ?? []), evaluation];
   } else {
     await evaluation.run();
