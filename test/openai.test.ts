@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import zlib from "node:zlib";
 
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
@@ -9,14 +10,15 @@ import nock from "nock";
 import OpenAI from "openai";
 
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
-import { fileURLToPath } from "node:url";
 
 void describe("openai instrumentation", () => {
   const client = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY || "dummy-key",
   });
   const exporter = new InMemorySpanExporter();
-  const dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
+  const dirname = typeof __dirname !== 'undefined'
+    ? __dirname
+    : path.dirname(fileURLToPath(import.meta.url));
   const recordingsDir = path.join(dirname, "recordings");
   const recordingsFile = path.join(recordingsDir, "openai-test.json");
 

@@ -1,9 +1,9 @@
 import { SpanContext, TraceFlags } from '@opentelemetry/api';
+import path from "path";
 import pino, { Level } from 'pino';
 import pinoPretty from 'pino-pretty';
-import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from "url";
-import path from "path";
+import { v4 as uuidv4 } from 'uuid';
 
 import { LaminarSpanContext } from './types';
 

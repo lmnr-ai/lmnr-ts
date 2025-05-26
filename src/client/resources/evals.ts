@@ -1,6 +1,6 @@
 import { EvaluationDatapoint, GetDatapointsResponse, InitEvaluationResponse } from "../../types";
+import { slicePayload } from "../../utils";
 import { BaseResource } from ".";
-import {slicePayload} from "../../utils";
 
 export class EvalsResource extends BaseResource {
   constructor(baseHttpUrl: string, projectApiKey: string) {
@@ -50,8 +50,14 @@ export class EvalsResource extends BaseResource {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify({
-        points: datapoints.map((d) => ({ ...d, data: slicePayload(d.data, 100), target:slicePayload(d.target, 100) })),
-        groupName: groupName ?? null }),
+        points: datapoints.map((d) => (
+          {
+            ...d,
+            data: slicePayload(d.data, 100),
+            target: slicePayload(d.target, 100),
+          })),
+        groupName: groupName ?? null,
+      }),
     });
 
     if (!response.ok) {

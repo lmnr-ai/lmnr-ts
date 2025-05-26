@@ -48,7 +48,7 @@ const getEvaluationUrl = (projectId: string, evaluationId: string, baseUrl?: str
 };
 
 const getAverageScores =
-  <D, T, M, O>(results: EvaluationDatapoint<D, T, O>[]): Record<string, number> => {
+  <D, T, O>(results: EvaluationDatapoint<D, T, O>[]): Record<string, number> => {
     const perScoreValues: Record<string, number[]> = {};
     for (const result of results) {
       for (const key in result.scores) {

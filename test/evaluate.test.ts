@@ -27,7 +27,9 @@ void describe("evaluate", () => {
     const baseUrl = "https://api.lmnr.ai";
     const mockEvalId = "00000000-0000-0000-0000-000000000000";
 
+    // spy into request body
     let body: Record<string, any> = {};
+
     nock(baseUrl)
       .post('/v1/evals')
       .reply(200, {
@@ -36,9 +38,9 @@ void describe("evaluate", () => {
       });
 
     nock(baseUrl)
-      .post(`/v1/evals/${mockEvalId}/datapoints`, (requestBody) => {
-        body = requestBody
-        return requestBody
+      .post(`/v1/evals/${mockEvalId}/datapoints`, <T>(requestBody: T): T => {
+        body = requestBody;
+        return requestBody;
       })
       .times(2)
       .reply(200, {});
@@ -49,8 +51,8 @@ void describe("evaluate", () => {
           data: "a".repeat(150),
           target: "b".repeat(150),
           metadata: {
-            "test": "test"
-          }
+            "test": "test",
+          },
         },
       ],
       executor: (data) => data,
@@ -69,6 +71,7 @@ void describe("evaluate", () => {
     assert.strictEqual(body?.points?.length, 1);
 
     const point = body.points[0];
+    // test that the data and target are sliced to 100 characters + ...
     assert.strictEqual(point.data.length, 103);
     assert.strictEqual(point.target.length, 103);
     assert.strictEqual(point.index, 0);
