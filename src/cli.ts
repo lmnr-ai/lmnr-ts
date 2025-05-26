@@ -13,7 +13,7 @@ const logger = initializeLogger();
 
 declare global {
   // eslint-disable-next-line no-var
-  var _evaluation: Evaluation<any, any, any> | undefined;
+  var _evaluations: Evaluation<any, any, any>[] | undefined;
   // eslint-disable-next-line no-var
   var _set_global_evaluation: boolean;
 }
@@ -24,8 +24,8 @@ export function loadModule({
 }: {
   filename: string;
   moduleText: string;
-}): Evaluation<any, any, any> {
-  globalThis._evaluation = undefined;
+}): Evaluation<any, any, any>[] {
+  globalThis._evaluations = [];
   globalThis._set_global_evaluation = true;
 
   const __filename = filename;
@@ -49,7 +49,7 @@ export function loadModule({
   /* eslint-enable @typescript-eslint/no-implied-eval */
 
   // Return the modified _evals global variable
-  return globalThis._evaluation!;
+  return globalThis._evaluations!;
 }
 
 async function cli() {
@@ -150,29 +150,24 @@ async function cli() {
 
         const outputFileText = result.outputFiles[0].text;
 
-        const evaluation = loadModule({
+        const evaluations = loadModule({
           filename: args.file,
           moduleText: outputFileText,
         });
 
-        if (!evaluation?.run) {
-          logger.error(`Evaluation ${file} does not properly call evaluate()`);
-          if (args.fail_on_error) {
-            process.exit(1);
+        logger.info(`Loaded ${evaluations.length} evaluations from ${file}`);
+
+        for (const evaluation of evaluations) {
+          if (!evaluation?.run) {
+            logger.error(`Evaluation ${file} does not properly call evaluate()`);
+            if (args.fail_on_error) {
+              process.exit(1);
+            }
+            continue;
           }
-          continue;
+
+          await evaluation.run();
         }
-
-        await evaluation.run();
-
-        // FIXME: Now every evaluation file creates a new tracer provider.
-        // Attempt to re-initialize it in the same process breaks it.
-        // For now, we disable all APIs after running each file, but ideally
-        // we should keep a global tracer provider that is initialized once
-        // here in the CLI.
-        context.disable();
-        trace.disable();
-        propagation.disable();
       }
     },
   });

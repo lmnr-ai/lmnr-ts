@@ -22,7 +22,7 @@ const MAX_EXPORT_BATCH_SIZE = 64;
 
 declare global {
   // eslint-disable-next-line no-var
-  var _evaluation: Evaluation<any, any, any> | undefined;
+  var _evaluations: Evaluation<any, any, any>[] | undefined;
   // If true, then we need to set the evaluation globally without running it
   // eslint-disable-next-line no-var
   var _set_global_evaluation: boolean;
@@ -289,6 +289,18 @@ export class Evaluation<D, T, O> {
     this.groupName = groupName;
     this.name = name;
 
+    if (Laminar.initialized()) {
+      this.client = new LaminarClient({
+        baseUrl: Laminar.getHttpUrl(),
+        projectApiKey: Laminar.getProjectApiKey(),
+      });
+      if (config?.projectApiKey && config.projectApiKey !== Laminar.getProjectApiKey()) {
+        logger.warn('Laminar was already initialized with a different project API key. ' +
+          'Ignoring the project API key from the evaluation config.');
+      }
+      return;
+    }
+
     const key = config?.projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
     if (key === undefined) {
       throw new Error(
@@ -323,9 +335,7 @@ export class Evaluation<D, T, O> {
       this.traceExportTimeoutMillis = config.traceExportTimeoutMillis;
       this.traceExportBatchSize = config.traceExportBatchSize ?? MAX_EXPORT_BATCH_SIZE;
     }
-    if (Laminar.initialized()) {
-      return;
-    }
+
     Laminar.initialize({
       projectApiKey: config?.projectApiKey,
       baseUrl: config?.baseUrl,
@@ -515,7 +525,7 @@ export async function evaluate<D, T, O>({
     config,
   });
   if (globalThis._set_global_evaluation) {
-    globalThis._evaluation = evaluation;
+    globalThis._evaluations = [...(globalThis._evaluations ?? []), evaluation];
   } else {
     await evaluation.run();
   }

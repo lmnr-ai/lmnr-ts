@@ -229,6 +229,47 @@ void describe("tracing", () => {
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
   });
 
+  void it("sets the user id in observe", async () => {
+    const fn = (a: number, b: number) => a + b;
+    const result = await observe({ name: "test", userId: "123" }, fn, 1, 2);
+
+    assert.strictEqual(result, 3);
+    const spans = exporter.getFinishedSpans();
+
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
+    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(spans[0].name, "test");
+
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.user_id'], "123");
+    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+  });
+
+  void it("sets the metadata in observe", async () => {
+    const fn = (a: number, b: number) => a + b;
+    const result = await observe({
+      name: "test",
+      metadata: { key: "value", nested: { key2: "value2" } },
+    }, fn, 1, 2);
+
+    assert.strictEqual(result, 3);
+    const spans = exporter.getFinishedSpans();
+
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
+    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(spans[0].name, "test");
+
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.metadata.key'], "value");
+    assert.deepStrictEqual(
+      JSON.parse(spans[0].attributes['lmnr.association.properties.metadata.nested'] as string),
+      { key2: "value2" },
+    );
+    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+  });
+
   void it("observes nested functions", async () => {
     const double = (a: number) => a * 2;
     const fn = async (a: number, b: number) => a + await observe({ name: "double" }, double, b);
