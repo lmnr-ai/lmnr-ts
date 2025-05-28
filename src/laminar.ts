@@ -490,6 +490,14 @@ export class Laminar {
     };
   }
 
+  /**
+   * Get the trace id of the current span. Returns null if there is no active span.
+   * @returns {StringUUID | null} The trace id of the current span.
+   */
+  public static getTraceId(): StringUUID | null {
+    return this.getLaminarSpanContext()?.traceId ?? null;
+  }
+
   public static async flush() {
     if (this.isInitialized) {
       logger.debug("Flushing spans");
