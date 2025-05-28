@@ -56,7 +56,10 @@ export const otelSpanIdToUUID = (spanId: string): string => {
     return newUUID();
   }
 
-  return id.padStart(32, '0').replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+  return id.padStart(32, '0').replace(
+    /^([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$/,
+    '$1-$2-$3-$4-$5'
+  );
 };
 
 export const otelTraceIdToUUID = (traceId: string): string => {
@@ -74,7 +77,10 @@ export const otelTraceIdToUUID = (traceId: string): string => {
     return newUUID();
   }
 
-  return id.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+  return id.replace(
+    /^([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$/,
+    '$1-$2-$3-$4-$5'
+  );
 };
 
 export const uuidToOtelTraceId = (uuid: string): string => uuid.replace(/-/g, '');
