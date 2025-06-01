@@ -341,6 +341,21 @@ void describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
   });
 
+  void it("can process empty metadata or tags", () => {
+    const span = Laminar.startSpan({ name: "test", metadata: {}, tags: [], userId: "", sessionId: "" });
+    const result = Laminar.withSpan(span, () => 3, true);
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.user_id'], undefined);
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.session_id'], undefined);
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.metadata'], undefined);
+    assert.deepStrictEqual(spans[0].attributes['lmnr.association.properties.tags'], []);
+    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+  });
+
   void it("observes nested functions", async () => {
     const double = (a: number) => a * 2;
     const fn = async (a: number, b: number) => a + await observe({ name: "double" }, double, b);
@@ -745,7 +760,6 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    console.log(spans[0].attributes);
     assert.strictEqual(spans[0].attributes['lmnr.association.properties.metadata.k1'], "v1");
     assert.strictEqual(spans[0].attributes['lmnr.association.properties.metadata.k2'], JSON.stringify({ obj: "shall be stringified" }));
     assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
