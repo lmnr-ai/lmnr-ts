@@ -18,17 +18,20 @@ import {
   SPAN_INPUT,
   SPAN_OUTPUT,
   SPAN_TYPE,
+  USER_ID,
 } from './opentelemetry-lib/tracing/attributes';
 import { ASSOCIATION_PROPERTIES_KEY } from './opentelemetry-lib/tracing/utils';
 import { LaminarSpanContext } from './types';
 import {
   initializeLogger,
   isOtelAttributeValueType,
+  metadataToAttributes,
   otelSpanIdToUUID,
   otelTraceIdToUUID,
   StringUUID,
   tryToOtelSpanContext,
 } from './utils';
+import { observe } from './decorators';
 
 const logger = initializeLogger();
 
@@ -38,7 +41,6 @@ interface LaminarInitializeProps {
   httpPort?: number;
   grpcPort?: number;
   instrumentModules?: InitializeOptions["instrumentModules"];
-  preserveNextJsSpans?: boolean;
   disableBatch?: boolean;
   traceExportTimeoutMillis?: number;
   logLevel?: "debug" | "info" | "warn" | "error";
@@ -203,7 +205,7 @@ export class Laminar {
     if (currentSpan === undefined || !isSpanContextValid(currentSpan.spanContext())) {
       logger.warn("`Laminar().event()` called outside of span context." +
         ` Event '${name}' will not be recorded in the trace.` +
-        " Make sure to annotate the function with a decorator",
+        " Make sure to wrap the function with `observe` or `withSpan`",
       );
       return;
     }
@@ -219,6 +221,8 @@ export class Laminar {
   }
 
   /**
+   * @deprecated Use `sessionId` in {@link observe} or `session_id` in
+   * {@link Laminar.setSpanSessionId} instead.
    * Sets the session information for the current span and returns the
    * context to use for the following spans. Returns the result of the
    * function execution, so can be used in an `await` statement.
@@ -260,6 +264,9 @@ export class Laminar {
   }
 
   /**
+   * @deprecated Use {@link Laminar.setTraceMetadata} or the `metadata` option in
+   * {@link observe} instead.
+   *
    * Sets the metadata for the current span and returns the context to use for
    * the following spans. Returns the result of the function execution, so can
    * be used in an `await` statement.
@@ -356,6 +363,35 @@ export class Laminar {
     }
   }
 
+  public static setTraceMetadata(metadata: Record<string, any>) {
+    const currentSpan = trace.getActiveSpan();
+    if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
+      const metadataAttributes = metadataToAttributes(metadata);
+      currentSpan.setAttributes(metadataAttributes)
+    }
+  }
+
+  public static setTraceSessionId(sessionId: string) {
+    const currentSpan = trace.getActiveSpan();
+    if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
+      currentSpan.setAttribute(SESSION_ID, sessionId);
+    }
+  }
+
+  public static setTraceUserId(userId: string) {
+    const currentSpan = trace.getActiveSpan();
+    if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
+      currentSpan.setAttribute(USER_ID, userId);
+    }
+  }
+
+  public static setSpanTags(tags: string[]) {
+    const currentSpan = trace.getActiveSpan();
+    if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
+      currentSpan.setAttribute(`${ASSOCIATION_PROPERTIES}.tags`, tags);
+    }
+  }
+
   /**
    * Start a new span, but don't set it as active. Useful for
    * manual instrumentation. If span type is 'LLM', you should report usage
@@ -367,8 +403,9 @@ export class Laminar {
    * be JSON serializable
    * @param {string} options.spanType - type of the span. Defaults to 'DEFAULT'
    * @param {Context} options.context - raw OpenTelemetry context to bind the span to.
-   * @param {string} options.traceId - [EXPERIMENTAL] override the trace id for the span. If not
-   * provided, uses the current trace id.
+   * @param {string} options.parentSpanContext - parent span context to bind the span to.
+   * @param {string[]} options.labels - [DEPRECATED] labels to associate with the span.
+   * @param {string} options.tags - tags to associate with the span.
    * @returns The started span.
    *
    * @example
@@ -406,6 +443,10 @@ export class Laminar {
     context,
     parentSpanContext,
     labels,
+    tags,
+    userId,
+    sessionId,
+    metadata,
   }: {
     name: string,
     input?: any,
@@ -413,6 +454,10 @@ export class Laminar {
     context?: Context,
     parentSpanContext?: string | LaminarSpanContext,
     labels?: string[],
+    tags?: string[],
+    userId?: string,
+    sessionId?: string,
+    metadata?: Record<string, any>,
   }): Span {
     let entityContext = context ?? contextApi.active();
     if (parentSpanContext) {
@@ -420,9 +465,19 @@ export class Laminar {
       entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
     }
     const labelProperties = labels ? { [`${ASSOCIATION_PROPERTIES}.labels`]: labels } : {};
+    const tagProperties = tags ? { [`${ASSOCIATION_PROPERTIES}.tags`]: tags } : {};
+    const userIdProperties = userId ? { [USER_ID]: userId } : {};
+    const sessionIdProperties = sessionId ? { [SESSION_ID]: sessionId } : {};
+    const metadataProperties = metadata
+      ? metadataToAttributes(metadata)
+      : {};
     const attributes = {
       [SPAN_TYPE]: spanType ?? 'DEFAULT',
       ...labelProperties,
+      ...tagProperties,
+      ...userIdProperties,
+      ...sessionIdProperties,
+      ...metadataProperties,
     };
     const span = getTracer().startSpan(name, { attributes }, entityContext);
     if (input) {

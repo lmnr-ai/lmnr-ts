@@ -3,7 +3,7 @@ import { AttributeValue, context } from "@opentelemetry/api";
 import { observeBase } from './opentelemetry-lib';
 import { ASSOCIATION_PROPERTIES_KEY } from "./opentelemetry-lib/tracing/utils";
 import { LaminarSpanContext, TraceType, TracingLevel } from './types';
-import { isOtelAttributeValueType } from "./utils";
+import { isOtelAttributeValueType, metadataToAttributes } from "./utils";
 
 interface ObserveOptions {
   name?: string;
@@ -16,6 +16,7 @@ interface ObserveOptions {
   ignoreOutput?: boolean;
   parentSpanContext?: string | LaminarSpanContext;
   metadata?: Record<string, any>;
+  tags?: string[];
 }
 
 /**
@@ -35,6 +36,7 @@ interface ObserveOptions {
  * @param ignoreInput - Whether to ignore the input altogether.
  * @param ignoreOutput - Whether to ignore the output altogether.
  * @param metadata - Metadata to add to a trace for further filtering. Must be JSON serializable.
+ * @param tags - Tags to associate with the span.
  * @returns Returns the result of the wrapped function.
  * @throws Exception - Re-throws the exception if the wrapped function throws an exception.
  *
@@ -58,6 +60,7 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     ignoreOutput,
     parentSpanContext,
     metadata,
+    tags,
   }: ObserveOptions, fn: F, ...args: A): Promise<ReturnType<F>> {
   if (fn === undefined || typeof fn !== "function") {
     throw new Error("Invalid `observe` usage. Second argument `fn` must be a function.");
@@ -76,16 +79,11 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
   if (userId) {
     associationProperties = { ...associationProperties, "user_id": userId };
   }
+  if (tags) {
+    associationProperties = { ...associationProperties, "tags": tags };
+  }
   if (metadata) {
-    const metadataAttributes = Object.fromEntries(
-      Object.entries(metadata).map(([key, value]) => {
-        if (isOtelAttributeValueType(value)) {
-          return [`metadata.${key}`, value];
-        } else {
-          return [`metadata.${key}`, JSON.stringify(value)];
-        }
-      }),
-    );
+    const metadataAttributes = metadataToAttributes(metadata);
     if (metadataAttributes && Object.keys(metadataAttributes).length > 0) {
       associationProperties = { ...associationProperties, ...metadataAttributes };
     }

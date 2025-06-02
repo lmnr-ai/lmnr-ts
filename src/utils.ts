@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from 'uuid';
 
 import { LaminarSpanContext } from './types';
+import { ASSOCIATION_PROPERTIES } from './opentelemetry-lib/tracing/attributes';
 
 export function initializeLogger(options?: { colorize?: boolean, level?: Level }) {
   const colorize = options?.colorize ?? true;
@@ -227,4 +228,16 @@ export const isOtelAttributeValueType = (value: unknown): value is AttributeValu
     return allStrings || allNumbers || allBooleans;
   }
   return false;
+};
+
+export const metadataToAttributes = (metadata: Record<string, unknown>): Record<string, AttributeValue> => {
+  return Object.fromEntries(
+    Object.entries(metadata).map(([key, value]) => {
+      if (isOtelAttributeValueType(value)) {
+        return [`${ASSOCIATION_PROPERTIES}.metadata.${key}`, value];
+      } else {
+        return [`${ASSOCIATION_PROPERTIES}.metadata.${key}`, JSON.stringify(value)];
+      }
+    }),
+  );
 };

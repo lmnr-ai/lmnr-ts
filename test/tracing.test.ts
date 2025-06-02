@@ -270,6 +270,92 @@ void describe("tracing", () => {
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
   });
 
+  void it("sets the tags in observe", async () => {
+    const fn = (a: number, b: number) => a + b;
+    const result = await observe({
+      name: "test",
+      tags: ["tag1", "tag2"],
+    }, fn, 1, 2);
+
+    assert.strictEqual(result, 3);
+    const spans = exporter.getFinishedSpans();
+
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
+    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(spans[0].name, "test");
+
+    assert.deepStrictEqual(spans[0].attributes['lmnr.association.properties.tags'], ["tag1", "tag2"]);
+    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+  });
+
+  void it("sets the session id in startSpan", () => {
+    const span = Laminar.startSpan({ name: "test", sessionId: "123" });
+    const result = Laminar.withSpan(span, () => 3, true);
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.session_id'], "123");
+    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+  });
+
+  void it("sets the user id in startSpan", () => {
+    const span = Laminar.startSpan({ name: "test", userId: "123" });
+    const result = Laminar.withSpan(span, () => 3, true);
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.user_id'], "123");
+    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+  });
+
+  void it("sets the metadata in startSpan", () => {
+    const span = Laminar.startSpan({ name: "test", metadata: { key: "value", nested: { key2: "value2" } } });
+    const result = Laminar.withSpan(span, () => 3, true);
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.metadata.key'], "value");
+    assert.deepStrictEqual(
+      JSON.parse(spans[0].attributes['lmnr.association.properties.metadata.nested'] as string),
+      { key2: "value2" },
+    );
+  });
+
+  void it("sets the tags in startSpan", () => {
+    const span = Laminar.startSpan({ name: "test", tags: ["tag1", "tag2"] });
+    const result = Laminar.withSpan(span, () => 3, true);
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.deepStrictEqual(spans[0].attributes['lmnr.association.properties.tags'], ["tag1", "tag2"]);
+    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+  });
+
+  void it("can process empty metadata or tags", () => {
+    const span = Laminar.startSpan({ name: "test", metadata: {}, tags: [], userId: "", sessionId: "" });
+    const result = Laminar.withSpan(span, () => 3, true);
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.user_id'], undefined);
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.session_id'], undefined);
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.metadata'], undefined);
+    assert.deepStrictEqual(spans[0].attributes['lmnr.association.properties.tags'], []);
+    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+  });
+
   void it("observes nested functions", async () => {
     const double = (a: number) => a * 2;
     const fn = async (a: number, b: number) => a + await observe({ name: "double" }, double, b);
@@ -622,5 +708,78 @@ void describe("tracing", () => {
         .startsWith('Error: test error\n    at'),
       true,
     );
+  });
+
+  void it("sets the session id on the current span when setTraceSessionId is used", async () => {
+    const fn = (a: number, b: number) => {
+      Laminar.setTraceSessionId("123");
+      return a + b;
+    };
+    const result = await observe({ name: "test" }, fn, 1, 2);
+
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.session_id'], "123");
+    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
+    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+  });
+
+  void it("sets the user id on the current span when setTraceUserId is used", async () => {
+    const fn = (a: number, b: number) => {
+      Laminar.setTraceUserId("123");
+      return a + b;
+    };
+    const result = await observe({ name: "test" }, fn, 1, 2);
+
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.user_id'], "123");
+    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
+    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+  });
+
+  void it("sets metadata on the current span when setTraceMetadata is used", async () => {
+    const fn = (a: number, b: number) => {
+      Laminar.setTraceMetadata({
+        k1: "v1", k2: {
+          obj: "shall be stringified"
+        }
+      });
+      return a + b;
+    };
+    const result = await observe({ name: "test" }, fn, 1, 2);
+
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.metadata.k1'], "v1");
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.metadata.k2'], JSON.stringify({ obj: "shall be stringified" }));
+    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
+    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+  });
+
+  void it("sets tags on the current span when setSpanTags is used", async () => {
+    const fn = (a: number, b: number) => {
+      Laminar.setSpanTags(["tag1", "tag2"]);
+      return a + b;
+    };
+    const result = await observe({ name: "test" }, fn, 1, 2);
+
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.deepStrictEqual(spans[0].attributes['lmnr.association.properties.tags'], ["tag1", "tag2"]);
+    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
+    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
   });
 });
