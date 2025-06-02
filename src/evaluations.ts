@@ -142,7 +142,7 @@ export type Datapoint<D, T> = {
   metadata?: Record<string, any>;
 }
 
-type EvaluatorFunctionReturn = number | Record<string, number>;
+export type EvaluatorFunctionReturn = number | Record<string, number>;
 
 /**
  * EvaluatorFunction is a function that takes the output of the executor and the
@@ -150,20 +150,8 @@ type EvaluatorFunctionReturn = number | Record<string, number>;
  * of string keys and number values. The latter is useful for evaluating
  * multiple criteria in one go instead of running multiple evaluators.
  */
-type EvaluatorFunction<O, T> = (output: O, target?: T, ...args: any[]) =>
+export type EvaluatorFunction<O, T> = (output: O, target?: T, ...args: any[]) =>
   EvaluatorFunctionReturn | Promise<EvaluatorFunctionReturn>;
-
-/**
- * HumanEvaluator is an object to register a human evaluator. For now, it only
- * holds the queue name.
- */
-export class HumanEvaluator {
-  private queueName: string;
-
-  constructor(queueName: string) {
-    this.queueName = queueName;
-  }
-}
 
 interface EvaluationConstructorProps<D, T, O> {
   /**

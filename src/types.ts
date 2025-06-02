@@ -1,4 +1,4 @@
-import { Datapoint, HumanEvaluator } from "./evaluations";
+import { Datapoint } from "./evaluations";
 import { StringUUID } from "./utils";
 
 export type ChatMessage = {
@@ -7,20 +7,6 @@ export type ChatMessage = {
 }
 
 export type NodeInput = ChatMessage[] | string | boolean | number;
-
-export type PipelineRunRequest = {
-  inputs: Record<string, NodeInput>;
-  pipeline: string;
-  env?: Record<string, string>;
-  metadata?: Record<string, string>;
-  currentSpanId?: StringUUID;
-  currentTraceId?: StringUUID;
-}
-
-export type PipelineRunResponse = {
-  outputs: Record<string, Record<string, NodeInput>>;
-  runId: StringUUID;
-}
 
 export type Event = {
   id: StringUUID;
@@ -47,7 +33,6 @@ export type EvaluationDatapoint<D, T, O> = {
   scores?: Record<string, number>;
   traceId: string;
   index: number;
-  humanEvaluators?: HumanEvaluator[];
   executorSpanId?: string;
 }
 
