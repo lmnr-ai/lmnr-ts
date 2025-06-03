@@ -73,10 +73,11 @@ async function cli() {
     help: "Run an evaluation",
   });
 
-  parserEval.add_argument("file", {
-    help: "A file containing the evaluation to run. If no file is provided, " +
-      "the evaluation will run all `*.eval.ts|js` files in the `evals` directory.",
-    nargs: "?",
+  parserEval.add_argument("files", {
+    help: "A file or files containing the evaluation to run. If no file is provided, " +
+      "the evaluation will run all `*.eval.ts|js` files in the `evals` directory. " +
+      "If multiple files are provided, the evaluation will run each file in order.",
+    nargs: "*",
   });
 
   parserEval.add_argument("--fail-on-error", {
@@ -86,8 +87,8 @@ async function cli() {
 
   parserEval.set_defaults({
     func: async (args: any) => {
-      const files = args.file
-        ? [args.file]
+      const files = args.files
+        ? Array.isArray(args.files) ? args.files : [args.files]
         : glob.sync('evals/**/*.eval.{ts,js}');
 
       files.sort();
@@ -99,8 +100,10 @@ async function cli() {
         process.exit(1);
       }
 
-      if (!args.file) {
+      if (!args.files) {
         logger.info(`Located ${files.length} evaluation files in evals/`);
+      } else {
+        logger.info(`Running ${files.length} evaluation files.`);
       }
 
       // Laminar should be marked external by passing 'node_modules/*' to the
