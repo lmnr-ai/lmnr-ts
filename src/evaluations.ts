@@ -336,7 +336,7 @@ export class Evaluation<D, T, O> {
     });
   }
 
-  public async run(): Promise<void> {
+  public async run(): Promise<Record<string, number>> {
     if (this.isFinished) {
       throw new Error('Evaluation is already finished');
     }
@@ -361,10 +361,11 @@ export class Evaluation<D, T, O> {
       this.isFinished = true;
 
       await Laminar.shutdown();
+      return averageScores;
     } catch (e) {
       this.progressReporter.stopWithError(e as Error);
       this.isFinished = true;
-      return;
+      return {};
     }
   }
 
