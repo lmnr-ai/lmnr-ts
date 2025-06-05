@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { context, propagation, trace } from "@opentelemetry/api";
 import { ArgumentParser } from "argparse";
 import * as esbuild from "esbuild";
 import * as glob from "glob";
@@ -73,10 +72,11 @@ async function cli() {
     help: "Run an evaluation",
   });
 
-  parserEval.add_argument("file", {
-    help: "A file containing the evaluation to run. If no file is provided, " +
-      "the evaluation will run all `*.eval.ts|js` files in the `evals` directory.",
-    nargs: "?",
+  parserEval.add_argument("files", {
+    help: "A file or files containing the evaluation to run. If no file is provided, " +
+      "the evaluation will run all `*.eval.ts|js` files in the `evals` directory. " +
+      "If multiple files are provided, the evaluation will run each file in order.",
+    nargs: "*",
   });
 
   parserEval.add_argument("--fail-on-error", {
@@ -86,9 +86,13 @@ async function cli() {
 
   parserEval.set_defaults({
     func: async (args: any) => {
-      const files = args.file
-        ? [args.file]
-        : glob.sync('evals/**/*.eval.{ts,js}');
+      let files: string[];
+      if (args.files && args.files.length > 0) {
+        files = args.files.flatMap((file: string) => glob.globSync(file));
+      } else {
+        // No files provided, use default pattern
+        files = glob.sync('evals/**/*.eval.{ts,js}');
+      }
 
       files.sort();
 
@@ -99,23 +103,11 @@ async function cli() {
         process.exit(1);
       }
 
-      if (!args.file) {
+      if (!args.files) {
         logger.info(`Located ${files.length} evaluation files in evals/`);
+      } else {
+        logger.info(`Running ${files.length} evaluation files.`);
       }
-
-      // Laminar should be marked external by passing 'node_modules/*' to the
-      // external option. This plugin ensures that @lmnr-ai/lmnr is marked
-      // external when imported from path or url.
-      // Adapted from https://github.com/evanw/esbuild/issues/619#issuecomment-751769812
-      const setLaminarAsExternalPlugin = {
-        name: "set-laminar-as-external",
-        setup(build: esbuild.PluginBuild) {
-          build.onResolve({ filter: /^@lmnr-ai\/lmnr$/ }, (args) => ({
-            path: args.path,
-            external: true,
-          }));
-        },
-      };
 
       for (const file of files) {
         logger.info(`Loading ${file}...`);
@@ -134,7 +126,6 @@ async function cli() {
             "fsevents",
           ],
           treeShaking: true,
-          plugins: [setLaminarAsExternalPlugin],
         };
 
         const result = await esbuild.build(buildOptions);
