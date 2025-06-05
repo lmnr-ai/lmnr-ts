@@ -3,6 +3,7 @@
 import { ArgumentParser } from "argparse";
 import * as esbuild from "esbuild";
 import * as glob from "glob";
+import * as fs from "fs";
 
 import { version } from "../package.json";
 import { Evaluation } from "./evaluations";
@@ -84,11 +85,16 @@ async function cli() {
     action: "store_true",
   });
 
+  parserEval.add_argument("--output-file", {
+    help: "Output file to write the results to. Outputs are written in JSON format.",
+    nargs: "?",
+  });
+
   parserEval.set_defaults({
     func: async (args: any) => {
       let files: string[];
       if (args.files && args.files.length > 0) {
-        files = args.files.flatMap((file: string) => glob.globSync(file));
+        files = args.files.flatMap((file: string) => glob.sync(file));
       } else {
         // No files provided, use default pattern
         files = glob.sync('evals/**/*.eval.{ts,js}');
@@ -103,11 +109,13 @@ async function cli() {
         process.exit(1);
       }
 
-      if (!args.files) {
+      if (args.files.length === 0) {
         logger.info(`Located ${files.length} evaluation files in evals/`);
       } else {
         logger.info(`Running ${files.length} evaluation files.`);
       }
+
+      const scores: { file: string, scores: Record<string, number> }[] = [];
 
       for (const file of files) {
         logger.info(`Loading ${file}...`);
@@ -157,8 +165,13 @@ async function cli() {
             continue;
           }
 
-          await evaluation.run();
+          const evalScores = await evaluation.run();
+          scores.push({ file, scores: evalScores });
         }
+      }
+
+      if (args.output_file) {
+        fs.writeFileSync(args.output_file, JSON.stringify(scores, null, 2));
       }
     },
   });
