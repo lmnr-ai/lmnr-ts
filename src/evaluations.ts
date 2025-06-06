@@ -340,12 +340,12 @@ export class Evaluation<D, T, O> {
     if (this.isFinished) {
       throw new Error('Evaluation is already finished');
     }
-
-    this.progressReporter.start({ length: await this.getLength() });
-    let resultDatapoints: EvaluationDatapoint<D, T, O>[];
     if (this.data instanceof LaminarDataset) {
       this.data.setClient(this.client);
     }
+
+    this.progressReporter.start({ length: await this.getLength() });
+    let resultDatapoints: EvaluationDatapoint<D, T, O>[];
     try {
       const evaluation = await this.client.evals.init(this.name, this.groupName);
       resultDatapoints = await this.evaluateInBatches(evaluation.id);
