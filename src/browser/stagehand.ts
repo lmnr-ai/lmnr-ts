@@ -1,6 +1,6 @@
 import type * as StagehandLib from "@browserbasehq/stagehand";
 import { ActOptions, LLMClient, Page as StagehandPage } from "@browserbasehq/stagehand";
-import { diag, Span } from "@opentelemetry/api";
+import { diag, Span, trace } from "@opentelemetry/api";
 import {
   InstrumentationBase,
   InstrumentationModuleDefinition,
@@ -12,7 +12,13 @@ import { version as SDK_VERSION } from "../../package.json";
 import { observe as laminarObserve } from "../decorators";
 import { Laminar } from "../laminar";
 import { PlaywrightInstrumentation } from "./playwright";
-import { cleanStagehandLLMClient, prettyPrintZodSchema } from "./utils";
+import { cleanStagehandLLMClient, modelToProviderMap, prettyPrintZodSchema } from "./utils";
+import { SPAN_TYPE } from "../opentelemetry-lib/tracing/attributes";
+
+interface GlobalLLMClientOptions {
+  provider: "openai" | "anthropic" | "cerebras" | "groq" | (string & {}) // named `type` in Stagehand
+  model: string
+}
 
 /* eslint-disable
   @typescript-eslint/no-this-alias,
@@ -22,6 +28,7 @@ import { cleanStagehandLLMClient, prettyPrintZodSchema } from "./utils";
 export class StagehandInstrumentation extends InstrumentationBase {
   private playwrightInstrumentation: PlaywrightInstrumentation;
   private _parentSpan: Span | undefined;
+  private globalLLMClientOptions: GlobalLLMClientOptions | undefined;
 
   constructor(playwrightInstrumentation: PlaywrightInstrumentation) {
     super(
@@ -179,7 +186,17 @@ export class StagehandInstrumentation extends InstrumentationBase {
       const result = await original.bind(this).apply(this, args);
 
       await instrumentation.playwrightInstrumentation.patchPage(this.page);
+
       instrumentation.patchStagehandPage(this.stagehandPage);
+      instrumentation.globalLLMClientOptions = {
+        provider: this.llmClient.type,
+        model: this.llmClient.modelName,
+      };
+      instrumentation._wrap(
+        this.llmClient,
+        'createChatCompletion',
+        instrumentation.patchStagehandLLMClientCreateChatCompletion(),
+      );
       return result;
     };
   }
@@ -231,17 +248,21 @@ export class StagehandInstrumentation extends InstrumentationBase {
 
     const extractHandler = (page as any).extractHandler;
     if (extractHandler) {
-      this._wrap(
-        extractHandler,
-        'textExtract',
-        this.patchStagehandExtractHandlerTextExtract(),
-      );
+      if (extractHandler.textExtract) {
+        this._wrap(
+          extractHandler,
+          'textExtract',
+          this.patchStagehandExtractHandlerTextExtract(),
+        );
+      }
 
-      this._wrap(
-        extractHandler,
-        'domExtract',
-        this.patchStagehandExtractHandlerDomExtract(),
-      );
+      if (extractHandler.domExtract) {
+        this._wrap(
+          extractHandler,
+          'domExtract',
+          this.patchStagehandExtractHandlerDomExtract(),
+        );
+      }
     }
 
     this._wrap(
@@ -418,6 +439,100 @@ export class StagehandInstrumentation extends InstrumentationBase {
           },
           async () => await original.bind(this).apply(this, args),
         );
+      };
+  }
+
+  private patchStagehandLLMClientCreateChatCompletion() {
+    const instrumentation = this;
+    return (original: (...args: any[]) => Promise<any>) =>
+      async function createChatCompletion(this: any, ...args: any[]) {
+        const options = args[0] as StagehandLib.CreateChatCompletionOptions;
+        return await laminarObserve({
+          name: "createChatCompletion",
+          // input and output are set as gen_ai.prompt and gen_ai.completion
+          ignoreInput: true,
+          ignoreOutput: true,
+        }, async () => {
+          const span = trace.getActiveSpan()!;
+          const innerOptions = options.options;
+          const recordedProvider = instrumentation.globalLLMClientOptions?.provider;
+          const provider = (recordedProvider === "aisdk" && instrumentation.globalLLMClientOptions?.model)
+            ? (modelToProviderMap[instrumentation.globalLLMClientOptions.model] ?? "aisdk")
+            : recordedProvider;
+          span.setAttributes({
+            [SPAN_TYPE]: "LLM",
+            ...(innerOptions.temperature ? {
+              "gen_ai.request.temperature": innerOptions.temperature,
+            } : {}),
+            ...(innerOptions.top_p ? {
+              "gen_ai.request.top_p": innerOptions.top_p,
+            } : {}),
+            ...(innerOptions.frequency_penalty ? {
+              "gen_ai.request.frequency_penalty": innerOptions.frequency_penalty,
+            } : {}),
+            ...(innerOptions.presence_penalty ? {
+              "gen_ai.request.presence_penalty": innerOptions.presence_penalty,
+            } : {}),
+            ...(innerOptions.maxTokens !== undefined ? {
+              "gen_ai.request.max_tokens": innerOptions.maxTokens,
+            } : {}),
+            ...(instrumentation.globalLLMClientOptions ? {
+              "gen_ai.request.model": instrumentation.globalLLMClientOptions.model,
+              "gen_ai.system": provider,
+            } : {}),
+          });
+          innerOptions.messages?.forEach((message, index) => {
+            span.setAttributes({
+              [`gen_ai.prompt.${index}.role`]: message.role,
+              [`gen_ai.prompt.${index}.content`]: JSON.stringify(message.content),
+            });
+          });
+          innerOptions.tools?.forEach((tool, index) => {
+            span.setAttributes({
+              [`llm.request.functions.${index}.name`]: tool.name,
+              [`llm.request.functions.${index}.description`]: tool.description,
+              [`llm.request.functions.${index}.parameters`]: JSON.stringify(tool.parameters),
+            });
+          });
+
+          const result = await original.bind(this).apply(this, args) as StagehandLib.LLMResponse;
+          span.setAttributes({
+            "gen_ai.response.model": result.model,
+            "gen_ai.usage.input_tokens": result.usage.prompt_tokens,
+            "gen_ai.usage.output_tokens": result.usage.completion_tokens,
+            "llm.usage.total_tokens": result.usage.total_tokens,
+          });
+
+          result.choices?.forEach(choice => {
+            const index = choice.index;
+            span.setAttributes({
+              [`gen_ai.completion.${index}.finish_reason`]: choice.finish_reason,
+              [`gen_ai.completion.${index}.role`]: choice.message.role,
+            });
+            if (choice.message.content) {
+              span.setAttribute(`gen_ai.completion.${index}.content`, JSON.stringify(choice.message.content));
+            }
+            choice.message.tool_calls?.forEach((toolCall, toolCallIndex) => {
+              span.setAttributes({
+                [`gen_ai.completion.${index}.message.tool_calls.${toolCallIndex}.id`]: toolCall.id,
+                [`gen_ai.completion.${index}.message.tool_calls.${toolCallIndex}.name`]: toolCall.function.name,
+                [`gen_ai.completion.${index}.message.tool_calls.${toolCallIndex}.arguments`]: JSON.stringify(toolCall.function.arguments),
+              });
+            });
+          });
+
+          if (!result.choices || result.choices.length === 0) {
+            const data = (result as any).data;
+            if (data) {
+              span.setAttributes({
+                "gen_ai.completion.0.role": "assistant",
+                "gen_ai.completion.0.content": typeof data === "string" ? data : JSON.stringify(data),
+              });
+            }
+          }
+
+          return result;
+        })
       };
   }
 }

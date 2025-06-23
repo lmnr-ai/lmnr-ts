@@ -224,3 +224,41 @@ export const prettyPrintZodSchema = (schema: z.AnyZodObject, indent = 2): string
 
   return `z.object({\n${reconstructed.join('\n')}\n})`;
 };
+
+
+// copied from https://github.com/browserbase/stagehand/blob/main/lib/llm/LLMProvider.ts#L62
+// We should either keep this in sync or replace with a simple heuristic, such as
+// if model name starts with `gpt` or `gemini` or `claude`.
+export const modelToProviderMap: Record<string, string> = {
+  "gpt-4.1": "openai",
+  "gpt-4.1-mini": "openai",
+  "gpt-4.1-nano": "openai",
+  "o4-mini": "openai",
+  //prettier-ignore
+  "o3": "openai",
+  "o3-mini": "openai",
+  //prettier-ignore
+  "o1": "openai",
+  "o1-mini": "openai",
+  "gpt-4o": "openai",
+  "gpt-4o-mini": "openai",
+  "gpt-4o-2024-08-06": "openai",
+  "gpt-4.5-preview": "openai",
+  "o1-preview": "openai",
+  "claude-3-5-sonnet-latest": "anthropic",
+  "claude-3-5-sonnet-20240620": "anthropic",
+  "claude-3-5-sonnet-20241022": "anthropic",
+  "claude-3-7-sonnet-20250219": "anthropic",
+  "claude-3-7-sonnet-latest": "anthropic",
+  "cerebras-llama-3.3-70b": "cerebras",
+  "cerebras-llama-3.1-8b": "cerebras",
+  "groq-llama-3.3-70b-versatile": "groq",
+  "groq-llama-3.3-70b-specdec": "groq",
+  "gemini-1.5-flash": "google",
+  "gemini-1.5-pro": "google",
+  "gemini-1.5-flash-8b": "google",
+  "gemini-2.0-flash-lite": "google",
+  "gemini-2.0-flash": "google",
+  "gemini-2.5-flash-preview-04-17": "google",
+  "gemini-2.5-pro-preview-03-25": "google",
+};
