@@ -30,7 +30,7 @@ export type EvaluationDatapoint<D, T, O> = {
   target?: T;
   metadata?: Record<string, any>;
   executorOutput?: O;
-  scores?: Record<string, number>;
+  scores?: Record<string, number | null>;
   traceId: string;
   index: number;
   executorSpanId?: string;
@@ -65,6 +65,7 @@ export type SpanType = 'DEFAULT'
   | 'PIPELINE'
   | 'EXECUTOR'
   | 'EVALUATOR'
+  | 'HUMAN_EVALUATOR'
   | 'EVALUATION'
   | 'TOOL'
 
