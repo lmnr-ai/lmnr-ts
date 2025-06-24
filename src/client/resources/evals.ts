@@ -1,5 +1,5 @@
 import { EvaluationDatapoint, GetDatapointsResponse, InitEvaluationResponse } from "../../types";
-import { slicePayload } from "../../utils";
+import { newUUID, slicePayload, StringUUID } from "../../utils";
 import { BaseResource } from ".";
 
 export class EvalsResource extends BaseResource {
@@ -26,6 +26,100 @@ export class EvalsResource extends BaseResource {
     }
 
     return response.json() as Promise<InitEvaluationResponse>;
+  }
+
+  /**
+   * Create a new evaluation and return its ID.
+   *
+   * @param {string} [name] - Optional name of the evaluation
+   * @param {string} [groupName] - An identifier to group evaluations
+   * @returns {Promise<StringUUID>} The evaluation ID
+   */
+  public async createEvaluation(name?: string, groupName?: string): Promise<StringUUID> {
+    const evaluation = await this.init(name, groupName);
+    return evaluation.id;
+  }
+
+  /**
+   * Create a datapoint for an evaluation.
+   *
+   * @param {Object} options - Create datapoint options
+   * @param {string} options.evalId - The evaluation ID
+   * @param {D} options.data - The input data for the executor
+   * @param {T} [options.target] - The target/expected output for evaluators
+   * @param {Record<string, any>} [options.metadata] - Optional metadata
+   * @param {number} [options.index] - Optional index of the datapoint
+   * @param {string} [options.traceId] - Optional trace ID
+   * @returns {Promise<StringUUID>} The datapoint ID
+   */
+  public async createDatapoint<D, T>({
+    evalId,
+    data,
+    target,
+    metadata,
+    index,
+    traceId,
+  }: {
+    evalId: string;
+    data: D;
+    target?: T;
+    metadata?: Record<string, any>;
+    index?: number;
+    traceId?: string;
+  }): Promise<StringUUID> {
+    const datapointId = newUUID();
+
+    const partialDatapoint: EvaluationDatapoint<D, T, any> = {
+      id: datapointId,
+      data,
+      target,
+      index: index ?? 0,
+      traceId: traceId ?? newUUID(),
+      executorSpanId: newUUID(),
+      metadata,
+    };
+
+    await this.saveDatapoints({
+      evalId,
+      datapoints: [partialDatapoint],
+    });
+
+    return datapointId;
+  }
+
+  /**
+   * Update a datapoint with evaluation results.
+   *
+   * @param {Object} options - Update datapoint options
+   * @param {string} options.evalId - The evaluation ID
+   * @param {string} options.datapointId - The datapoint ID
+   * @param {Record<string, number>} options.scores - The scores
+   * @param {O} [options.executorOutput] - The executor output
+   * @returns {Promise<void>}
+   */
+  public async updateDatapoint<O>({
+    evalId,
+    datapointId,
+    scores,
+    executorOutput,
+  }: {
+    evalId: string;
+    datapointId: string;
+    scores: Record<string, number>;
+    executorOutput?: O;
+  }): Promise<void> {
+    const response = await fetch(this.baseHttpUrl + `/v1/evals/${evalId}/datapoints/${datapointId}`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({
+        executorOutput,
+        scores,
+      }),
+    });
+
+    if (!response.ok) {
+      await this.handleError(response);
+    }
   }
 
   /**
