@@ -52,7 +52,7 @@ const getAverageScores =
     const perScoreValues: Record<string, number[]> = {};
     for (const result of results) {
       for (const key in result.scores) {
-        if (perScoreValues[key] && result.scores[key]) {
+        if (perScoreValues[key] && result.scores[key] !== null) {
           perScoreValues[key].push(result.scores[key]);
         } else {
           perScoreValues[key] = result.scores[key] ? [result.scores[key]] : [];
