@@ -48,26 +48,27 @@ const getEvaluationUrl = (projectId: string, evaluationId: string, baseUrl?: str
 };
 
 const getAverageScores =
-  <D, T, O>(results: EvaluationDatapoint<D, T, O>[]): Record<string, number> => {
-    const perScoreValues: Record<string, number[]> = {};
-    for (const result of results) {
-      for (const key in result.scores) {
-        if (perScoreValues[key] && result.scores[key] !== null) {
-          perScoreValues[key].push(result.scores[key]);
-        } else {
-          perScoreValues[key] = result.scores[key] ? [result.scores[key]] : [];
+    <D, T, O>(results: EvaluationDatapoint<D, T, O>[]): Record<string, number> => {
+      const perScoreValues: Record<string, number[]> = {};
+      for (const result of results) {
+        for (const key in result.scores) {
+          const score = result.scores[key]
+          if (perScoreValues[key] && score !== null) {
+            perScoreValues[key].push(score);
+          } else {
+            perScoreValues[key] = score !== null ? [score] : [];
+          }
         }
       }
-    }
 
-    const averageScores: Record<string, number> = {};
-    for (const key in perScoreValues) {
-      averageScores[key] = perScoreValues[key].reduce((a, b) => a + b, 0)
-        / perScoreValues[key].length;
-    }
+      const averageScores: Record<string, number> = {};
+      for (const key in perScoreValues) {
+        averageScores[key] = perScoreValues[key].reduce((a, b) => a + b, 0)
+            / perScoreValues[key].length;
+      }
 
-    return averageScores;
-  };
+      return averageScores;
+    };
 
 /**
  * Configuration for the Evaluator
