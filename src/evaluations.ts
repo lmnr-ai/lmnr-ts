@@ -7,7 +7,7 @@ import { observe } from "./decorators";
 import { Laminar } from "./laminar";
 import { InitializeOptions } from "./opentelemetry-lib/interfaces";
 import { SPAN_TYPE } from "./opentelemetry-lib/tracing/attributes";
-import { EvaluationDatapoint } from "./types";
+import {EvaluationDatapoint} from "./types";
 import {
   initializeLogger,
   newUUID,
@@ -48,26 +48,27 @@ const getEvaluationUrl = (projectId: string, evaluationId: string, baseUrl?: str
 };
 
 const getAverageScores =
-  <D, T, O>(results: EvaluationDatapoint<D, T, O>[]): Record<string, number> => {
-    const perScoreValues: Record<string, number[]> = {};
-    for (const result of results) {
-      for (const key in result.scores) {
-        if (perScoreValues[key]) {
-          perScoreValues[key].push(result.scores[key]);
-        } else {
-          perScoreValues[key] = [result.scores[key]];
+    <D, T, O>(results: EvaluationDatapoint<D, T, O>[]): Record<string, number> => {
+      const perScoreValues: Record<string, number[]> = {};
+      for (const result of results) {
+        for (const key in result.scores) {
+          const score = result.scores[key]
+          if (perScoreValues[key] && score !== null) {
+            perScoreValues[key].push(score);
+          } else {
+            perScoreValues[key] = score !== null ? [score] : [];
+          }
         }
       }
-    }
 
-    const averageScores: Record<string, number> = {};
-    for (const key in perScoreValues) {
-      averageScores[key] = perScoreValues[key].reduce((a, b) => a + b, 0)
-        / perScoreValues[key].length;
-    }
+      const averageScores: Record<string, number> = {};
+      for (const key in perScoreValues) {
+        averageScores[key] = perScoreValues[key].reduce((a, b) => a + b, 0)
+            / perScoreValues[key].length;
+      }
 
-    return averageScores;
-  };
+      return averageScores;
+    };
 
 /**
  * Configuration for the Evaluator
@@ -142,6 +143,11 @@ export type Datapoint<D, T> = {
   metadata?: Record<string, any>;
 }
 
+/**
+ * HumanEvaluator is a class to register a human evaluator.
+ */
+export class HumanEvaluator {}
+
 export type EvaluatorFunctionReturn = number | Record<string, number>;
 
 /**
@@ -172,7 +178,7 @@ interface EvaluationConstructorProps<D, T, O> {
    * function names must contain only letters, digits, hyphens, underscores,
    * or spaces.
    */
-  evaluators: Record<string, EvaluatorFunction<O, T>>;
+  evaluators: Record<string, EvaluatorFunction<O, T> | HumanEvaluator>;
   /**
    * Name of the evaluation. If not provided, a random name will be assigned.
    */
@@ -242,7 +248,7 @@ export class Evaluation<D, T, O> {
   private progressReporter: EvaluationReporter;
   private data: Datapoint<D, T>[] | EvaluationDataset<D, T>;
   private executor: (data: D, ...args: any[]) => O | Promise<O>;
-  private evaluators: Record<string, EvaluatorFunction<O, T>>;
+  private evaluators: Record<string, EvaluatorFunction<O, T> | HumanEvaluator>;
   private groupName?: string;
   private name?: string;
   private concurrencyLimit: number = DEFAULT_CONCURRENCY;
@@ -403,6 +409,7 @@ export class Evaluation<D, T, O> {
     index: number,
   ): Promise<EvaluationDatapoint<D, T, O>> {
     return observe({ name: "evaluation", traceType: "EVALUATION" }, async () => {
+
       trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATION");
       const executorSpan = Laminar.startSpan({
         name: "executor",
@@ -435,24 +442,34 @@ export class Evaluation<D, T, O> {
       );
       const target = datapoint.target;
 
-      let scores: Record<string, number> = {};
+      let scores: Record<string, number | null> = {};
       for (const [evaluatorName, evaluator] of Object.entries(this.evaluators)) {
         const value = await observe(
           { name: evaluatorName },
           async (output: O, target?: T) => {
-            trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATOR");
-            return await evaluator(output, target);
+            if (evaluator instanceof HumanEvaluator) {
+              trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "HUMAN_EVALUATOR");
+              return null;
+            } else {
+              trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATOR");
+              return await evaluator(output, target);
+            }
           },
           output,
           target,
         );
+
+        if (evaluator instanceof HumanEvaluator) {
+          scores[evaluatorName] = null;
+          continue;
+        }
 
         if (typeof value === 'number') {
           if (isNaN(value)) {
             throw new Error(`Evaluator ${evaluatorName} returned NaN`);
           }
           scores[evaluatorName] = value;
-        } else {
+        } else if (value !== null) {
           scores = { ...scores, ...value };
         }
       }

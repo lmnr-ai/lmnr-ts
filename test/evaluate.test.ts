@@ -1,10 +1,10 @@
 import assert from "node:assert";
-import { afterEach, beforeEach, describe, it } from "node:test";
+import { after, afterEach, beforeEach, describe, it } from "node:test";
 
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import nock from "nock";
 
-import { evaluate, Laminar } from "../src/index";
+import { evaluate, Laminar, HumanEvaluator } from "../src/index";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 
 type RequestBody = Record<string, any>;
@@ -20,7 +20,11 @@ void describe("evaluate", () => {
     initializeTracing({ exporter, disableBatch: true });
   });
 
-  void afterEach(async () => {
+  void afterEach(() => {
+    exporter.reset();
+  });
+
+  void after(async () => {
     await exporter.shutdown();
   });
 
@@ -96,5 +100,90 @@ void describe("evaluate", () => {
     assert.strictEqual(evaluationSpan?.name, "evaluation");
     assert.strictEqual(executorSpan?.name, "executor");
     assert.deepStrictEqual(evaluatorSpans.map((span) => span.name).sort(), ["test", "test2"]);
+  });
+
+  void it("evaluation with human evaluators exports human evaluator spans", async () => {
+    const baseUrl = "https://api.lmnr.ai";
+    const mockEvalId = "00000000-0000-0000-0000-000000000000";
+
+    let body: RequestBody = {};
+
+    nock(baseUrl)
+      .post('/v1/evals')
+      .reply(200, {
+        id: mockEvalId,
+        projectId: "mock-project-id",
+      });
+
+    nock(baseUrl)
+      .post(`/v1/evals/${mockEvalId}/datapoints`, (requestBody: RequestBody): boolean => {
+        body = requestBody;
+        return true;
+      })
+      .times(2)
+      .reply(200, {});
+
+    await evaluate({
+      data: [
+        {
+          data: "test input",
+          target: "test target",
+          metadata: {
+            "test": "test",
+          },
+        },
+      ],
+      executor: (data) => `output for ${data}`,
+      evaluators: {
+        "automatic": (output, target) => output.includes(target || "") ? 1 : 0,
+        "human_quality": new HumanEvaluator(),
+        "human_relevance": new HumanEvaluator(),
+      },
+      config: {
+        projectApiKey: "test",
+      },
+    });
+
+    await Laminar.flush();
+
+    assert.strictEqual(body?.points?.length, 1);
+
+    const point = body.points[0];
+    assert.strictEqual(point.index, 0);
+    assert.deepStrictEqual(point.metadata, { test: 'test' });
+
+    assert.strictEqual(point.scores.automatic, 0);
+    assert.strictEqual(point.scores.human_quality, null);
+    assert.strictEqual(point.scores.human_relevance, null);
+
+    assert.ok(point.executorSpanId);
+    assert.ok(point.id);
+    assert.ok(point.traceId);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 5); // evaluation + executor + 1 automatic evaluator + 2 human evaluators
+
+    const evaluationSpan = spans.find(
+      (span) => span.attributes['lmnr.span.type'] === "EVALUATION",
+    );
+    assert.strictEqual(evaluationSpan?.name, "evaluation");
+
+    const executorSpan = spans.find((span) => span.attributes['lmnr.span.type'] === "EXECUTOR");
+    assert.strictEqual(executorSpan?.name, "executor");
+
+    const automaticEvaluatorSpans = spans.filter(
+      (span) => span.attributes['lmnr.span.type'] === "EVALUATOR",
+    );
+    assert.strictEqual(automaticEvaluatorSpans.length, 1);
+    assert.strictEqual(automaticEvaluatorSpans[0].name, "automatic");
+
+    const humanEvaluatorSpans = spans.filter(
+      (span) => span.attributes['lmnr.span.type'] === "HUMAN_EVALUATOR",
+    );
+    assert.strictEqual(humanEvaluatorSpans.length, 2);
+    assert.deepStrictEqual(
+      humanEvaluatorSpans.map((span) => span.name).sort(),
+      ["human_quality", "human_relevance"]
+    );
   });
 });

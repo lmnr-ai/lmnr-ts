@@ -6,6 +6,7 @@ export {
   evaluate,
   EvaluatorFunction,
   EvaluatorFunctionReturn,
+  HumanEvaluator,
 } from './evaluations';
 export { Laminar } from './laminar';
 export { LaminarSpanProcessor } from './opentelemetry-lib/';
@@ -14,8 +15,8 @@ export { getTracer, getTracerProvider } from './opentelemetry-lib/tracing/index'
 export { initializeLaminarInstrumentations } from './opentelemetry-lib/tracing/instrumentations';
 export {
   ChatMessage,
-  Event,
   EvaluationDatapoint,
+  Event,
   LaminarSpanContext,
   NodeInput,
   TracingLevel,
