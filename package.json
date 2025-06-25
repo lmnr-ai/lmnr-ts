@@ -37,7 +37,7 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "@aws-sdk/client-bedrock-runtime": "^3.835.0",
     "@azure/openai": "^2.0.0",
-    "@browserbasehq/stagehand": "^1.14.0",
+    "@browserbasehq/stagehand": "^2.3.1",
     "@eslint/eslintrc": "^3.3.1",
     "@eslint/js": "^9.29.0",
     "@google-cloud/aiplatform": "^4.2.0",
