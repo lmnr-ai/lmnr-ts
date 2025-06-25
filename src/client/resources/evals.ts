@@ -12,6 +12,7 @@ export class EvalsResource extends BaseResource {
    *
    * @param {string} name - Name of the evaluation
    * @param {string} groupName - Group name of the evaluation
+   * @param {Record<string, any>} metadata - Optional metadata
    * @returns {Promise<InitEvaluationResponse>} Response from the evaluation initialization
    */
   public async init(name?: string, groupName?: string, metadata?: Record<string, any>): Promise<InitEvaluationResponse> {
@@ -33,6 +34,7 @@ export class EvalsResource extends BaseResource {
    *
    * @param {string} [name] - Optional name of the evaluation
    * @param {string} [groupName] - An identifier to group evaluations
+   * @param {Record<string, any>} [metadata] - Optional metadata
    * @returns {Promise<StringUUID>} The evaluation ID
    */
   public async createEvaluation(name?: string, groupName?: string, metadata?: Record<string, any>): Promise<StringUUID> {
