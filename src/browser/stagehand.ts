@@ -20,6 +20,10 @@ interface GlobalLLMClientOptions {
   model: string
 }
 
+type AgentClient = {
+  execute: (instructionOrOptions: string | StagehandLib.AgentExecuteOptions) => Promise<StagehandLib.AgentResult>;
+}
+
 /* eslint-disable
   @typescript-eslint/no-this-alias,
   @typescript-eslint/no-unsafe-function-type,
@@ -29,6 +33,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
   private playwrightInstrumentation: PlaywrightInstrumentation;
   private _parentSpan: Span | undefined;
   private globalLLMClientOptions: GlobalLLMClientOptions | undefined;
+  private globalAgentOptions: StagehandLib.AgentConfig | undefined;
 
   constructor(playwrightInstrumentation: PlaywrightInstrumentation) {
     super(
@@ -187,6 +192,12 @@ export class StagehandInstrumentation extends InstrumentationBase {
 
       await instrumentation.playwrightInstrumentation.patchPage(this.page);
 
+      instrumentation._wrap(
+        this,
+        'agent',
+        instrumentation.patchStagehandAgentInitializer(),
+      );
+
       instrumentation.patchStagehandPage(this.stagehandPage);
       instrumentation.globalLLMClientOptions = {
         provider: this.llmClient.type,
@@ -288,9 +299,27 @@ export class StagehandInstrumentation extends InstrumentationBase {
     const instrumentation = this;
     return (original: (...args: any[]) => Promise<any>) =>
       async function method(this: any, ...args: any[]) {
+        const input = args.length === 1 && typeof args[0] === 'string'
+          ? { instruction: args[0] }
+          : [...args];
+        if (methodName === "extract" && Array.isArray(input) && input.length > 0 && (input[0] as any)?.schema) {
+          // We need to clone the input object to avoid mutating the original object
+          // because the original object is passed to the LLM client
+          const { schema, ...rest } = input[0] as any;
+          let prettySchema = schema?.shape;
+          try {
+            prettySchema = prettyPrintZodSchema(schema);
+          } catch (error) {
+            diag.warn('Error pretty printing zod schema', { error });
+          }
+          input[0] = { ...rest, schema: prettySchema };
+        }
         return await Laminar.withSpan(instrumentation._parentSpan!, async () =>
           await laminarObserve(
-            { name: `stagehand.${methodName}`, input: args },
+            {
+              name: `stagehand.${methodName}`,
+              input,
+            },
             async (thisArg, ...rest) => await original.apply(thisArg, ...rest),
             this, args,
           ),
@@ -533,6 +562,107 @@ export class StagehandInstrumentation extends InstrumentationBase {
 
           return result;
         })
+      };
+  }
+
+  private patchStagehandAgentInitializer() {
+    const instrumentation = this;
+    return (original: (...args: any[]) => any) =>
+      function agent(this: any, ...args: any[]) {
+        if (args.length > 0 && typeof args[0] === 'object') {
+          instrumentation.globalAgentOptions = args[0];
+        }
+        const agent = original.bind(this).apply(this, args);
+        instrumentation.patchStagehandAgent(agent);
+        return agent;
+      };
+  }
+
+  private patchStagehandAgent(agent: AgentClient) {
+    this._wrap(
+      agent,
+      'execute',
+      this.patchStagehandAgentExecute(),
+    );
+  }
+
+  private patchStagehandAgentExecute() {
+    const instrumentation = this;
+    return (original: (this: any, ...args: any[]) => Promise<any>) =>
+      async function execute(this: any, ...args: any[]) {
+        const input = args.length === 1 && typeof args[0] === 'string'
+          ? { instruction: args[0] }
+          : [...args];
+
+        return await Laminar.withSpan(instrumentation._parentSpan!, async () =>
+          await laminarObserve(
+            {
+              name: 'stagehand.agent.execute',
+              input,
+            },
+            async () => await laminarObserve(
+              {
+                name: 'execute',
+                // input and output are set as gen_ai.prompt and gen_ai.completion
+                ignoreInput: true,
+                ignoreOutput: true,
+                spanType: "LLM",
+              },
+              async () => {
+                const span = trace.getActiveSpan()!;
+                const provider = instrumentation.globalAgentOptions?.provider ?? instrumentation.globalLLMClientOptions?.provider;
+                const model = instrumentation.globalAgentOptions?.model ?? instrumentation.globalLLMClientOptions?.model;
+                span.setAttributes({
+                  ...(provider ? { "gen_ai.system": provider } : {}),
+                  ...(model ? { "gen_ai.request.model": model } : {}),
+                });
+
+                let promptIndex = 0;
+                if (instrumentation.globalAgentOptions?.instructions) {
+                  span.setAttributes({
+                    "gen_ai.prompt.0.content": instrumentation.globalAgentOptions.instructions,
+                    "gen_ai.prompt.0.role": "system",
+                  });
+                  promptIndex++;
+                }
+
+                const instruction = typeof input === 'string' ? input : (input as any).instruction;
+                if (instruction) {
+                  span.setAttributes({
+                    [`gen_ai.prompt.${promptIndex}.content`]: instruction,
+                    [`gen_ai.prompt.${promptIndex}.role`]: "user",
+                  });
+                }
+
+                const result: StagehandLib.AgentResult = await original.bind(this).apply(this, args);
+
+                if (result.completed && result.success && result.message) {
+                  const content = [{ type: "text", text: result.message }];
+                  if (result.actions && result.actions.length > 0) {
+                    content.push({
+                      type: "text",
+                      text: JSON.stringify({ actions: result.actions }),
+                    });
+                  }
+                  span.setAttributes({
+                    "gen_ai.completion.0.content": JSON.stringify(content),
+                    "gen_ai.completion.0.role": "assistant",
+                  });
+                } else if (result.completed && !result.success) {
+                  span.recordException(new Error(result.message));
+                }
+                if (result.usage) {
+                  span.setAttributes({
+                    "gen_ai.usage.input_tokens": result.usage.input_tokens,
+                    "gen_ai.usage.output_tokens": result.usage.output_tokens,
+                    "llm.usage.total_tokens": result.usage.input_tokens + result.usage.output_tokens,
+                  });
+                }
+                return result;
+              },
+            ),
+          ),
+        );
       };
   }
 }
