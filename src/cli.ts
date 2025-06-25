@@ -11,6 +11,36 @@ import { getDirname, initializeLogger } from "./utils";
 
 const logger = initializeLogger();
 
+// esbuild plugin to skip dynamic imports
+const createSkipDynamicImportsPlugin = (skipModules: string[]): esbuild.Plugin => {
+  return {
+    name: 'skip-dynamic-imports',
+    setup(build) {
+      if (!skipModules || skipModules.length === 0) return;
+
+      build.onResolve({ filter: /.*/ }, (args) => {
+        // Only handle dynamic imports
+        if (args.kind === 'dynamic-import' && skipModules.includes(args.path)) {
+          logger.warn(`Skipping dynamic import: ${args.path}`);
+          // Return a virtual module that exports an empty object
+          return {
+            path: args.path,
+            namespace: 'lmnr-skip-dynamic-import',
+          };
+        }
+      });
+
+      // Provide empty module content for skipped dynamic imports
+      build.onLoad({ filter: /.*/, namespace: 'lmnr-skip-dynamic-import' }, (args) => {
+        return {
+          contents: 'export default {};',
+          loader: 'js',
+        };
+      });
+    },
+  };
+}
+
 declare global {
   // eslint-disable-next-line no-var
   var _evaluations: Evaluation<any, any, any>[] | undefined;
@@ -90,6 +120,19 @@ async function cli() {
     nargs: "?",
   });
 
+  parserEval.add_argument("--external-packages", {
+    help: "[ADVANCED] List of packages to pass as external to esbuild. This will not link " +
+      "the packages directly into the eval file, but will instead require them at runtime. " +
+      "Read more: https://esbuild.github.io/api/#external",
+    nargs: "*",
+  });
+
+  parserEval.add_argument("--dynamic-imports-to-skip", {
+    help: "[ADVANCED] List of module names to skip when encountered as dynamic imports. " +
+      "These dynamic imports will resolve to an empty module to prevent build failures.",
+    nargs: "*",
+  });
+
   parserEval.set_defaults({
     func: async (args: any) => {
       let files: string[];
@@ -132,6 +175,10 @@ async function cli() {
             "puppeteer-core",
             "playwright-core",
             "fsevents",
+            ...(args.external_packages ? args.external_packages : []),
+          ],
+          plugins: [
+            createSkipDynamicImportsPlugin(args.dynamic_imports_to_skip || []),
           ],
           treeShaking: true,
         };
