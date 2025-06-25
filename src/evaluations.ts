@@ -189,6 +189,10 @@ interface EvaluationConstructorProps<D, T, O> {
    */
   groupName?: string;
   /**
+   * Optional metadata to evaluation
+   */
+  metadata?: Record<string, any>;
+  /**
    * Optional override configurations for the evaluator.
    */
   config?: EvaluatorConfig;
@@ -251,6 +255,7 @@ export class Evaluation<D, T, O> {
   private evaluators: Record<string, EvaluatorFunction<O, T> | HumanEvaluator>;
   private groupName?: string;
   private name?: string;
+  private metadata?: Record<string, any>;
   private concurrencyLimit: number = DEFAULT_CONCURRENCY;
   private traceDisableBatch: boolean = false;
   private traceExportTimeoutMillis?: number;
@@ -259,7 +264,7 @@ export class Evaluation<D, T, O> {
   private client: LaminarClient;
 
   constructor({
-    data, executor, evaluators, groupName, name, config,
+    data, executor, evaluators, groupName, name, metadata, config
   }: EvaluationConstructorProps<D, T, O>) {
     if (Object.keys(evaluators).length === 0) {
       throw new Error('No evaluators provided');
@@ -281,6 +286,7 @@ export class Evaluation<D, T, O> {
     this.executor = executor;
     this.evaluators = evaluators;
     this.groupName = groupName;
+    this.metadata = metadata;
     this.name = name;
 
     if (Laminar.initialized()) {
@@ -353,7 +359,7 @@ export class Evaluation<D, T, O> {
     this.progressReporter.start({ length: await this.getLength() });
     let resultDatapoints: EvaluationDatapoint<D, T, O>[];
     try {
-      const evaluation = await this.client.evals.init(this.name, this.groupName);
+      const evaluation = await this.client.evals.init(this.name, this.groupName, this.metadata);
       resultDatapoints = await this.evaluateInBatches(evaluation.id);
       const averageScores = getAverageScores(resultDatapoints);
       if (this.uploadPromises.length > 0) {
@@ -517,10 +523,11 @@ export class Evaluation<D, T, O> {
  * returns.
  * @param props.name Optional name of the evaluation. Used to easily identify
  * the evaluation in the group.
+ * @param props.metadata Optional metadata to evaluation
  * @param props.config Optional override configurations for the evaluator.
  */
 export async function evaluate<D, T, O>({
-  data, executor, evaluators, groupName, name, config,
+  data, executor, evaluators, groupName, name, metadata, config,
 }: EvaluationConstructorProps<D, T, O>): Promise<void> {
   const evaluation = new Evaluation<D, T, O>({
     data,
@@ -528,6 +535,7 @@ export async function evaluate<D, T, O>({
     evaluators,
     name,
     groupName,
+    metadata,
     config,
   });
   if (globalThis._set_global_evaluation) {

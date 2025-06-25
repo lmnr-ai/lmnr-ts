@@ -14,11 +14,11 @@ export class EvalsResource extends BaseResource {
    * @param {string} groupName - Group name of the evaluation
    * @returns {Promise<InitEvaluationResponse>} Response from the evaluation initialization
    */
-  public async init(name?: string, groupName?: string): Promise<InitEvaluationResponse> {
+  public async init(name?: string, groupName?: string, metadata?: Record<string, any>): Promise<InitEvaluationResponse> {
     const response = await fetch(this.baseHttpUrl + "/v1/evals", {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify({ name: name ?? null, groupName: groupName ?? null }),
+      body: JSON.stringify({ name: name ?? null, groupName: groupName ?? null, metadata: metadata ?? null }),
     });
 
     if (!response.ok) {
@@ -35,8 +35,8 @@ export class EvalsResource extends BaseResource {
    * @param {string} [groupName] - An identifier to group evaluations
    * @returns {Promise<StringUUID>} The evaluation ID
    */
-  public async createEvaluation(name?: string, groupName?: string): Promise<StringUUID> {
-    const evaluation = await this.init(name, groupName);
+  public async createEvaluation(name?: string, groupName?: string, metadata?: Record<string, any>): Promise<StringUUID> {
+    const evaluation = await this.init(name, groupName, metadata);
     return evaluation.id;
   }
 
