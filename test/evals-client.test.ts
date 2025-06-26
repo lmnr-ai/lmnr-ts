@@ -70,7 +70,7 @@ void describe("EvalsResource Client Methods", () => {
           projectId: "project-123",
         });
 
-      const result = await client.evals.create({});
+      const result = await client.evals.create();
 
       assert.strictEqual(result, mockEvalId);
       scope.done();
