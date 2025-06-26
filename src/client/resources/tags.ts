@@ -34,7 +34,7 @@ export class TagsResource extends BaseResource {
    *     await foo();
    *   },
    * );
-   * 
+   *
    * // or make sure the trace is ended by this point.
    * await Laminar.flush();
    * if (traceId) {
@@ -43,17 +43,19 @@ export class TagsResource extends BaseResource {
    * ```
    */
   public async tag(
-    trace_id: string | StringUUID,
+    trace_id: string,
     tags: string[] | string,
   ): Promise<any> {
     const traceTags = Array.isArray(tags) ? tags : [tags];
-    const formattedTraceId = isStringUUID(trace_id) ? trace_id : otelTraceIdToUUID(trace_id) as StringUUID;
+    const formattedTraceId = isStringUUID(trace_id)
+      ? trace_id
+      : otelTraceIdToUUID(trace_id) as StringUUID;
 
     const url = this.baseHttpUrl + "/v1/tag";
     const payload = {
       "traceId": formattedTraceId,
       "names": traceTags,
-    }
+    };
     const response = await fetch(
       url,
       {
@@ -61,7 +63,7 @@ export class TagsResource extends BaseResource {
         headers: this.headers(),
         body: JSON.stringify(payload),
       },
-    )
+    );
     if (!response.ok) {
       await this.handleError(response);
     }

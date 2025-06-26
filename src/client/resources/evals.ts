@@ -15,11 +15,19 @@ export class EvalsResource extends BaseResource {
    * @param {Record<string, any>} metadata - Optional metadata
    * @returns {Promise<InitEvaluationResponse>} Response from the evaluation initialization
    */
-  public async init(name?: string, groupName?: string, metadata?: Record<string, any>): Promise<InitEvaluationResponse> {
+  public async init(
+    name?: string,
+    groupName?: string,
+    metadata?: Record<string, any>,
+  ): Promise<InitEvaluationResponse> {
     const response = await fetch(this.baseHttpUrl + "/v1/evals", {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify({ name: name ?? null, groupName: groupName ?? null, metadata: metadata ?? null }),
+      body: JSON.stringify({
+        name: name ?? null,
+        groupName: groupName ?? null,
+        metadata: metadata ?? null,
+      }),
     });
 
     if (!response.ok) {
@@ -38,8 +46,9 @@ export class EvalsResource extends BaseResource {
    * @returns {Promise<StringUUID>} The evaluation ID
    */
 
-  public async create(args?: {name?: string, groupName?: string, metadata?: Record<string, any>
-}): Promise<StringUUID> {
+  public async create(args?: {
+    name?: string, groupName?: string, metadata?: Record<string, any>
+  }): Promise<StringUUID> {
     const evaluation = await this.init(args?.name, args?.groupName, args?.metadata);
     return evaluation.id;
   }
@@ -48,7 +57,11 @@ export class EvalsResource extends BaseResource {
    * Create a new evaluation and return its ID.
    * @deprecated use `create` instead.
    */
-  public async createEvaluation(name?: string, groupName?: string, metadata?: Record<string, any>): Promise<StringUUID> {
+  public async createEvaluation(
+    name?: string,
+    groupName?: string,
+    metadata?: Record<string, any>,
+  ): Promise<StringUUID> {
     const evaluation = await this.init(name, groupName, metadata);
     return evaluation.id;
   }
@@ -121,14 +134,17 @@ export class EvalsResource extends BaseResource {
     scores: Record<string, number>;
     executorOutput?: O;
   }): Promise<void> {
-    const response = await fetch(this.baseHttpUrl + `/v1/evals/${evalId}/datapoints/${datapointId}`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({
-        executorOutput,
-        scores,
-      }),
-    });
+    const response = await fetch(
+      this.baseHttpUrl + `/v1/evals/${evalId}/datapoints/${datapointId}`,
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({
+          executorOutput,
+          scores,
+        }),
+      },
+    );
 
     if (!response.ok) {
       await this.handleError(response);

@@ -1,9 +1,9 @@
-import { AttributeValue, context } from "@opentelemetry/api";
+import { context } from "@opentelemetry/api";
 
 import { observeBase } from './opentelemetry-lib';
 import { ASSOCIATION_PROPERTIES_KEY } from "./opentelemetry-lib/tracing/utils";
 import { LaminarSpanContext, TraceType, TracingLevel } from './types';
-import { isOtelAttributeValueType, metadataToAttributes } from "./utils";
+import { metadataToAttributes } from "./utils";
 
 interface ObserveOptions {
   name?: string;

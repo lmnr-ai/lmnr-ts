@@ -1,5 +1,5 @@
 import eslint from "@eslint/js";
-import stylisticJs from '@stylistic/eslint-plugin-js';
+import stylistic from '@stylistic/eslint-plugin';
 import simpleImportSort from "eslint-plugin-simple-import-sort";
 import unusedImports from "eslint-plugin-unused-imports";
 import tseslint from 'typescript-eslint';
@@ -33,7 +33,7 @@ export default tseslint.config(
     plugins: {
       "unused-imports": unusedImports,
       "simple-import-sort": simpleImportSort,
-      "@stylistic/js": stylisticJs,
+      "@stylistic": stylistic,
     },
 
     languageOptions: {
@@ -51,23 +51,23 @@ export default tseslint.config(
       "arrow-body-style": ["warn", "as-needed"],
       "no-duplicate-imports": ["error"],
 
-      "@stylistic/js/indent": ["error", 2, {
+      "@stylistic/indent": ["error", 2, {
         SwitchCase: 1,
       }],
 
-      "@stylistic/js/eol-last": ["error", "always"],
+      "@stylistic/eol-last": ["error", "always"],
 
-      "@stylistic/js/max-len": ["error", {
+      "@stylistic/max-len": ["error", {
         code: 100,
         ignoreUrls: true,
         ignoreStrings: false,
         ignoreTemplateLiterals: false,
       }],
 
-      "@stylistic/js/semi": ["error", "always"],
-      "@stylistic/js/no-trailing-spaces": ["error"],
+      "@stylistic/semi": ["error", "always"],
+      "@stylistic/no-trailing-spaces": ["error"],
 
-      "@stylistic/js/comma-dangle": ["error", "always-multiline"],
+      "@stylistic/comma-dangle": ["error", "always-multiline"],
 
       "unused-imports/no-unused-imports": ["error"],
       "simple-import-sort/imports": "error",

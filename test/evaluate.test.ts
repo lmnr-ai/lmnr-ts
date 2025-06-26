@@ -4,7 +4,7 @@ import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import nock from "nock";
 
-import { evaluate, Laminar, HumanEvaluator } from "../src/index";
+import { evaluate, HumanEvaluator, Laminar } from "../src/index";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 
 type RequestBody = Record<string, any>;
@@ -161,7 +161,8 @@ void describe("evaluate", () => {
     assert.ok(point.traceId);
 
     const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 5); // evaluation + executor + 1 automatic evaluator + 2 human evaluators
+    // evaluation + executor + 1 automatic evaluator + 2 human evaluators
+    assert.strictEqual(spans.length, 5);
 
     const evaluationSpan = spans.find(
       (span) => span.attributes['lmnr.span.type'] === "EVALUATION",
@@ -183,7 +184,7 @@ void describe("evaluate", () => {
     assert.strictEqual(humanEvaluatorSpans.length, 2);
     assert.deepStrictEqual(
       humanEvaluatorSpans.map((span) => span.name).sort(),
-      ["human_quality", "human_relevance"]
+      ["human_quality", "human_relevance"],
     );
   });
 });

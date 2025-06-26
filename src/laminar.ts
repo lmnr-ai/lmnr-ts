@@ -31,7 +31,6 @@ import {
   StringUUID,
   tryToOtelSpanContext,
 } from './utils';
-import { observe } from './decorators';
 
 const logger = initializeLogger();
 
@@ -367,7 +366,7 @@ export class Laminar {
     const currentSpan = trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
       const metadataAttributes = metadataToAttributes(metadata);
-      currentSpan.setAttributes(metadataAttributes)
+      currentSpan.setAttributes(metadataAttributes);
     }
   }
 

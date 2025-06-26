@@ -4,7 +4,7 @@ import { StringUUID } from "./utils";
 export type ChatMessage = {
   role: 'user' | 'assistant' | 'system';
   content: string;
-}
+};
 
 export type NodeInput = ChatMessage[] | string | boolean | number;
 
@@ -14,7 +14,7 @@ export type Event = {
   timestamp: Date;
   spanId: StringUUID;
   value: number | string | null; // number
-}
+};
 
 export type InitEvaluationResponse = {
   id: StringUUID,
@@ -22,7 +22,7 @@ export type InitEvaluationResponse = {
   groupId: string,
   name: string,
   projectId: StringUUID,
-}
+};
 
 export type EvaluationDatapoint<D, T, O> = {
   id: StringUUID;
@@ -34,24 +34,24 @@ export type EvaluationDatapoint<D, T, O> = {
   traceId: string;
   index: number;
   executorSpanId?: string;
-}
+};
 
 export type GetDatapointsResponse<D, T> = {
   items: Datapoint<D, T>[];
   totalCount: number;
   anyInProject: boolean;
-}
+};
 
 export type SemanticSearchResult = {
   datasetId: StringUUID;
   data: Record<string, any>;
   content: string;
   score: number;
-}
+};
 
 export type SemanticSearchResponse = {
   results: SemanticSearchResult[];
-}
+};
 
 /**
  * Span types to categorize spans.
@@ -67,7 +67,7 @@ export type SpanType = 'DEFAULT'
   | 'EVALUATOR'
   | 'HUMAN_EVALUATOR'
   | 'EVALUATION'
-  | 'TOOL'
+  | 'TOOL';
 
 
 /**
@@ -75,7 +75,7 @@ export type SpanType = 'DEFAULT'
  * They are used as association properties passed to all spans in a trace.
  *
  */
-export type TraceType = 'DEFAULT' | 'EVALUATION'
+export type TraceType = 'DEFAULT' | 'EVALUATION';
 
 
 /**
@@ -102,4 +102,4 @@ export type LaminarSpanContext = {
   spanId: StringUUID;
   traceId: StringUUID;
   isRemote: boolean;
-}
+};

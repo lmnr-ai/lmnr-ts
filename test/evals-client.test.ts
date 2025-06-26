@@ -29,7 +29,7 @@ void describe("EvalsResource Client Methods", () => {
       const mockEvalId: StringUUID = "12345678-1234-1234-1234-123456789abc";
       const evalName = "Test Evaluation";
       const groupName = "Test Group";
-      const metadata = { metadata: "test metadata" }
+      const metadata = { metadata: "test metadata" };
 
       const scope = nock(baseUrl)
         .post('/v1/evals', {
@@ -86,7 +86,7 @@ void describe("EvalsResource Client Methods", () => {
         (error: Error) => {
           assert.ok(error.message.includes("400"));
           return true;
-        }
+        },
       );
 
       scope.done();
@@ -186,7 +186,7 @@ void describe("EvalsResource Client Methods", () => {
         (error: Error) => {
           assert.ok(error.message.includes("500"));
           return true;
-        }
+        },
       );
 
       scope.done();
@@ -264,7 +264,7 @@ void describe("EvalsResource Client Methods", () => {
         (error: Error) => {
           assert.ok(error.message.includes("404"));
           return true;
-        }
+        },
       );
 
       scope.done();
@@ -296,6 +296,7 @@ void describe("EvalsResource Client Methods", () => {
         .reply(200, {});
 
       const updateDatapointScope = nock(baseUrl)
+        // eslint-disable-next-line @stylistic/max-len
         .post(new RegExp(`/v1/evals/${mockEvalId}/datapoints/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`))
         .reply(200, {});
 
@@ -321,4 +322,4 @@ void describe("EvalsResource Client Methods", () => {
       updateDatapointScope.done();
     });
   });
-}); 
+});

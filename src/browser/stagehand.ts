@@ -11,18 +11,26 @@ import { z } from "zod";
 import { version as SDK_VERSION } from "../../package.json";
 import { observe as laminarObserve } from "../decorators";
 import { Laminar } from "../laminar";
-import { PlaywrightInstrumentation } from "./playwright";
-import { cleanStagehandLLMClient, modelToProviderMap, nameArgsOrCopy, prettyPrintZodSchema } from "./utils";
 import { SPAN_TYPE } from "../opentelemetry-lib/tracing/attributes";
+import { PlaywrightInstrumentation } from "./playwright";
+import {
+  cleanStagehandLLMClient,
+  modelToProviderMap,
+  nameArgsOrCopy,
+  prettyPrintZodSchema,
+} from "./utils";
 
 interface GlobalLLMClientOptions {
-  provider: "openai" | "anthropic" | "cerebras" | "groq" | (string & {}) // named `type` in Stagehand
+  // named `type` in Stagehand
+  provider: "openai" | "anthropic" | "cerebras" | "groq" | (string & {})
   model: string
 }
 
 type AgentClient = {
-  execute: (instructionOrOptions: string | StagehandLib.AgentExecuteOptions) => Promise<StagehandLib.AgentResult>;
-}
+  execute: (
+    instructionOrOptions: string | StagehandLib.AgentExecuteOptions,
+  ) => Promise<StagehandLib.AgentResult>;
+};
 
 /* eslint-disable
   @typescript-eslint/no-this-alias,
@@ -300,10 +308,13 @@ export class StagehandInstrumentation extends InstrumentationBase {
     return (original: (...args: any[]) => Promise<any>) =>
       async function method(this: any, ...args: any[]) {
         const input = nameArgsOrCopy(args);
-        if (methodName === "extract" && Array.isArray(input) && input.length > 0 && (input[0] as any)?.schema) {
+        if (methodName === "extract"
+          && Array.isArray(input)
+          && input.length > 0 && (input[0])?.schema
+        ) {
           // We need to clone the input object to avoid mutating the original object
           // because the original object is passed to the LLM client
-          const { schema, ...rest } = input[0] as any;
+          const { schema, ...rest } = input[0];
           let prettySchema = schema?.shape;
           try {
             prettySchema = prettyPrintZodSchema(schema);
@@ -483,7 +494,10 @@ export class StagehandInstrumentation extends InstrumentationBase {
           const span = trace.getActiveSpan()!;
           const innerOptions = options.options;
           const recordedProvider = instrumentation.globalLLMClientOptions?.provider;
-          const provider = (recordedProvider === "aisdk" && instrumentation.globalLLMClientOptions?.model)
+          const provider = (
+            recordedProvider === "aisdk"
+            && instrumentation.globalLLMClientOptions?.model
+          )
             ? (modelToProviderMap[instrumentation.globalLLMClientOptions.model] ?? "aisdk")
             : recordedProvider;
           span.setAttributes({
@@ -537,13 +551,18 @@ export class StagehandInstrumentation extends InstrumentationBase {
               [`gen_ai.completion.${index}.role`]: choice.message.role,
             });
             if (choice.message.content) {
-              span.setAttribute(`gen_ai.completion.${index}.content`, JSON.stringify(choice.message.content));
+              span.setAttribute(
+                `gen_ai.completion.${index}.content`,
+                JSON.stringify(choice.message.content),
+              );
             }
             choice.message.tool_calls?.forEach((toolCall, toolCallIndex) => {
               span.setAttributes({
                 [`gen_ai.completion.${index}.message.tool_calls.${toolCallIndex}.id`]: toolCall.id,
-                [`gen_ai.completion.${index}.message.tool_calls.${toolCallIndex}.name`]: toolCall.function.name,
-                [`gen_ai.completion.${index}.message.tool_calls.${toolCallIndex}.arguments`]: JSON.stringify(toolCall.function.arguments),
+                [`gen_ai.completion.${index}.message.tool_calls.${toolCallIndex}.name`]:
+                  toolCall.function.name,
+                [`gen_ai.completion.${index}.message.tool_calls.${toolCallIndex}.arguments`]:
+                  JSON.stringify(toolCall.function.arguments),
               });
             });
           });
@@ -553,13 +572,15 @@ export class StagehandInstrumentation extends InstrumentationBase {
             if (data) {
               span.setAttributes({
                 "gen_ai.completion.0.role": "assistant",
-                "gen_ai.completion.0.content": typeof data === "string" ? data : JSON.stringify(data),
+                "gen_ai.completion.0.content": typeof data === "string"
+                  ? data
+                  : JSON.stringify(data),
               });
             }
           }
 
           return result;
-        })
+        });
       };
   }
 
@@ -606,8 +627,10 @@ export class StagehandInstrumentation extends InstrumentationBase {
               },
               async () => {
                 const span = trace.getActiveSpan()!;
-                const provider = instrumentation.globalAgentOptions?.provider ?? instrumentation.globalLLMClientOptions?.provider;
-                const model = instrumentation.globalAgentOptions?.model ?? instrumentation.globalLLMClientOptions?.model;
+                const provider = instrumentation.globalAgentOptions?.provider
+                  ?? instrumentation.globalLLMClientOptions?.provider;
+                const model = instrumentation.globalAgentOptions?.model
+                  ?? instrumentation.globalLLMClientOptions?.model;
                 span.setAttributes({
                   ...(provider ? { "gen_ai.system": provider } : {}),
                   ...(model ? { "gen_ai.request.model": model } : {}),
@@ -630,7 +653,9 @@ export class StagehandInstrumentation extends InstrumentationBase {
                   });
                 }
 
-                const result: StagehandLib.AgentResult = await original.bind(this).apply(this, args);
+                const result: StagehandLib.AgentResult = await original
+                  .bind(this)
+                  .apply(this, args);
 
                 if (result.completed && result.success && result.message) {
                   const content = [{ type: "text", text: result.message }];
@@ -651,7 +676,8 @@ export class StagehandInstrumentation extends InstrumentationBase {
                   span.setAttributes({
                     "gen_ai.usage.input_tokens": result.usage.input_tokens,
                     "gen_ai.usage.output_tokens": result.usage.output_tokens,
-                    "llm.usage.total_tokens": result.usage.input_tokens + result.usage.output_tokens,
+                    "llm.usage.total_tokens":
+                      result.usage.input_tokens + result.usage.output_tokens,
                   });
                 }
                 return result;
