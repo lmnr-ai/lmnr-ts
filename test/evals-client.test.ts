@@ -29,21 +29,24 @@ void describe("EvalsResource Client Methods", () => {
       const mockEvalId: StringUUID = "12345678-1234-1234-1234-123456789abc";
       const evalName = "Test Evaluation";
       const groupName = "Test Group";
+      const metadata = { metadata: "test metadata" }
 
       const scope = nock(baseUrl)
         .post('/v1/evals', {
           name: evalName,
           groupName: groupName,
+          metadata,
         })
         .reply(200, {
           id: mockEvalId,
           createdAt: new Date().toISOString(),
           groupId: "group-123",
           name: evalName,
+          metadata,
           projectId: "project-123",
         });
 
-      const result = await client.evals.createEvaluation(evalName, groupName);
+      const result = await client.evals.create({ name: evalName, groupName, metadata });
 
       assert.strictEqual(result, mockEvalId);
       scope.done();
@@ -56,16 +59,18 @@ void describe("EvalsResource Client Methods", () => {
         .post('/v1/evals', {
           name: null,
           groupName: null,
+          metadata: null,
         })
         .reply(200, {
           id: mockEvalId,
           createdAt: new Date().toISOString(),
           groupId: "group-123",
           name: null,
+          metadata: null,
           projectId: "project-123",
         });
 
-      const result = await client.evals.createEvaluation();
+      const result = await client.evals.create();
 
       assert.strictEqual(result, mockEvalId);
       scope.done();
@@ -77,7 +82,7 @@ void describe("EvalsResource Client Methods", () => {
         .reply(400, "Bad Request");
 
       await assert.rejects(
-        () => client.evals.createEvaluation("Test"),
+        () => client.evals.create({ name: "Test" }),
         (error: Error) => {
           assert.ok(error.message.includes("400"));
           return true;
@@ -275,12 +280,14 @@ void describe("EvalsResource Client Methods", () => {
         .post('/v1/evals', {
           name: evalName,
           groupName: null,
+          metadata: null,
         })
         .reply(200, {
           id: mockEvalId,
           createdAt: new Date().toISOString(),
           groupId: "group-123",
           name: evalName,
+          metadata: null,
           projectId: "project-123",
         });
 
@@ -289,10 +296,10 @@ void describe("EvalsResource Client Methods", () => {
         .reply(200, {});
 
       const updateDatapointScope = nock(baseUrl)
-          .post(new RegExp(`/v1/evals/${mockEvalId}/datapoints/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`))
-          .reply(200, {});
+        .post(new RegExp(`/v1/evals/${mockEvalId}/datapoints/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`))
+        .reply(200, {});
 
-      const evalId = await client.evals.createEvaluation(evalName);
+      const evalId = await client.evals.create({ name: evalName });
 
       assert.strictEqual(evalId, mockEvalId);
 

@@ -12,13 +12,14 @@ export class EvalsResource extends BaseResource {
    *
    * @param {string} name - Name of the evaluation
    * @param {string} groupName - Group name of the evaluation
+   * @param {Record<string, any>} metadata - Optional metadata
    * @returns {Promise<InitEvaluationResponse>} Response from the evaluation initialization
    */
-  public async init(name?: string, groupName?: string): Promise<InitEvaluationResponse> {
+  public async init(name?: string, groupName?: string, metadata?: Record<string, any>): Promise<InitEvaluationResponse> {
     const response = await fetch(this.baseHttpUrl + "/v1/evals", {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify({ name: name ?? null, groupName: groupName ?? null }),
+      body: JSON.stringify({ name: name ?? null, groupName: groupName ?? null, metadata: metadata ?? null }),
     });
 
     if (!response.ok) {
@@ -33,10 +34,22 @@ export class EvalsResource extends BaseResource {
    *
    * @param {string} [name] - Optional name of the evaluation
    * @param {string} [groupName] - An identifier to group evaluations
+   * @param {Record<string, any>} [metadata] - Optional metadata
    * @returns {Promise<StringUUID>} The evaluation ID
    */
-  public async createEvaluation(name?: string, groupName?: string): Promise<StringUUID> {
-    const evaluation = await this.init(name, groupName);
+
+  public async create(args?: {name?: string, groupName?: string, metadata?: Record<string, any>
+}): Promise<StringUUID> {
+    const evaluation = await this.init(args?.name, args?.groupName, args?.metadata);
+    return evaluation.id;
+  }
+
+  /**
+   * Create a new evaluation and return its ID.
+   * @deprecated use `create` instead.
+   */
+  public async createEvaluation(name?: string, groupName?: string, metadata?: Record<string, any>): Promise<StringUUID> {
+    const evaluation = await this.init(name, groupName, metadata);
     return evaluation.id;
   }
 
