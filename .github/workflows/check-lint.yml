@@ -10,8 +10,6 @@ jobs:
   check-lint:
     runs-on: ubuntu-latest
     steps:
-      # I could not get this to work in gh actions,
-      # commenting out for now
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
       - run: npm install -g eslint
