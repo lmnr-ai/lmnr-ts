@@ -12,7 +12,7 @@ const logger = initializeLogger();
  * If the first argument is a string, return an object with the name of the method and the argument as the value.
  * Otherwise, return the shallow copy of the arguments.
  *
- * This is useful for Stagehand, where the first argument is often a string, but is names
+ * This is useful for Stagehand, where the first argument is often a string, but is named
  * 'instruction', so we add a name to it on the spans.
  *
  * @param args - Args of a function.
