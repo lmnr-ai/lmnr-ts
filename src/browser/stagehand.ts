@@ -12,7 +12,7 @@ import { version as SDK_VERSION } from "../../package.json";
 import { observe as laminarObserve } from "../decorators";
 import { Laminar } from "../laminar";
 import { PlaywrightInstrumentation } from "./playwright";
-import { cleanStagehandLLMClient, modelToProviderMap, prettyPrintZodSchema } from "./utils";
+import { cleanStagehandLLMClient, modelToProviderMap, nameArgsOrCopy, prettyPrintZodSchema } from "./utils";
 import { SPAN_TYPE } from "../opentelemetry-lib/tracing/attributes";
 
 interface GlobalLLMClientOptions {
@@ -299,9 +299,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
     const instrumentation = this;
     return (original: (...args: any[]) => Promise<any>) =>
       async function method(this: any, ...args: any[]) {
-        const input = args.length === 1 && typeof args[0] === 'string'
-          ? { instruction: args[0] }
-          : [...args];
+        const input = nameArgsOrCopy(args);
         if (methodName === "extract" && Array.isArray(input) && input.length > 0 && (input[0] as any)?.schema) {
           // We need to clone the input object to avoid mutating the original object
           // because the original object is passed to the LLM client
@@ -590,9 +588,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
     const instrumentation = this;
     return (original: (this: any, ...args: any[]) => Promise<any>) =>
       async function execute(this: any, ...args: any[]) {
-        const input = args.length === 1 && typeof args[0] === 'string'
-          ? { instruction: args[0] }
-          : [...args];
+        const input = nameArgsOrCopy(args);
 
         return await Laminar.withSpan(instrumentation._parentSpan!, async () =>
           await laminarObserve(

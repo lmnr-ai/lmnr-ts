@@ -8,6 +8,14 @@ import { initializeLogger, StringUUID } from "../utils";
 
 const logger = initializeLogger();
 
+export const nameArgsOrCopy = (args: any[], name: string = "instruction") => {
+  if (args.length === 1 && typeof args[0] === 'string') {
+    return { [name]: args[0] };
+  }
+  return [...args];
+};
+
+
 export const collectAndSendPageEvents = async (
   client: LaminarClient,
   page: PlaywrightPage | PuppeteerPage,
