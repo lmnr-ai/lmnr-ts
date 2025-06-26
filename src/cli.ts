@@ -129,7 +129,8 @@ async function cli() {
 
   parserEval.add_argument("--dynamic-imports-to-skip", {
     help: "[ADVANCED] List of module names to skip when encountered as dynamic imports. " +
-      "These dynamic imports will resolve to an empty module to prevent build failures.",
+      "These dynamic imports will resolve to an empty module to prevent build failures. " +
+      "This is meant to skip the imports that are not used in the evaluation itself.",
     nargs: "*",
   });
 
