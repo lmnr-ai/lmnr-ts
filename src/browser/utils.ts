@@ -9,7 +9,8 @@ import { initializeLogger, StringUUID } from "../utils";
 const logger = initializeLogger();
 
 /**
- * If the first argument is a string, return an object with the name of the method and the argument as the value.
+ * If the first argument is a string, return an object with the name of the method
+ * and the argument as the value.
  * Otherwise, return the shallow copy of the arguments.
  *
  * This is useful for Stagehand, where the first argument is often a string, but is named
@@ -17,12 +18,14 @@ const logger = initializeLogger();
  *
  * @param args - Args of a function.
  * @param name - The name to add on the first argument if it is a string.
- * @returns The arguments as an object with the name of the method and the argument as the value, or the arguments as is.
+ * @returns The arguments as an object with the name of the method and the argument
+ * as the value, or the arguments as is.
  */
 export const nameArgsOrCopy = (args: any[], name: string = "instruction") => {
   if (args.length === 1 && typeof args[0] === 'string') {
     return { [name]: args[0] };
   }
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return [...args];
 };
 

@@ -285,8 +285,14 @@ void describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
     assert.strictEqual(spans[0].name, "test");
 
-    assert.deepStrictEqual(spans[0].attributes['lmnr.association.properties.tags'], ["tag1", "tag2"]);
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.deepStrictEqual(
+      spans[0].attributes['lmnr.association.properties.tags'],
+      ["tag1", "tag2"],
+    );
+    assert.strictEqual(
+      spans[0].attributes['lmnr.span.instrumentation_source'],
+      "javascript",
+    );
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
   });
 
@@ -315,7 +321,10 @@ void describe("tracing", () => {
   });
 
   void it("sets the metadata in startSpan", () => {
-    const span = Laminar.startSpan({ name: "test", metadata: { key: "value", nested: { key2: "value2" } } });
+    const span = Laminar.startSpan({
+      name: "test",
+      metadata: { key: "value", nested: { key2: "value2" } },
+    });
     const result = Laminar.withSpan(span, () => 3, true);
     assert.strictEqual(result, 3);
 
@@ -337,12 +346,20 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.deepStrictEqual(spans[0].attributes['lmnr.association.properties.tags'], ["tag1", "tag2"]);
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.deepStrictEqual(
+      spans[0].attributes['lmnr.association.properties.tags'],
+      ["tag1", "tag2"],
+    );
+    assert.strictEqual(
+      spans[0].attributes['lmnr.span.instrumentation_source'],
+      "javascript",
+    );
   });
 
   void it("can process empty metadata or tags", () => {
-    const span = Laminar.startSpan({ name: "test", metadata: {}, tags: [], userId: "", sessionId: "" });
+    const span = Laminar.startSpan({
+      name: "test", metadata: {}, tags: [], userId: "", sessionId: "",
+    });
     const result = Laminar.withSpan(span, () => 3, true);
     assert.strictEqual(result, 3);
 
@@ -748,8 +765,8 @@ void describe("tracing", () => {
     const fn = (a: number, b: number) => {
       Laminar.setTraceMetadata({
         k1: "v1", k2: {
-          obj: "shall be stringified"
-        }
+          obj: "shall be stringified",
+        },
       });
       return a + b;
     };
@@ -761,7 +778,10 @@ void describe("tracing", () => {
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
     assert.strictEqual(spans[0].attributes['lmnr.association.properties.metadata.k1'], "v1");
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.metadata.k2'], JSON.stringify({ obj: "shall be stringified" }));
+    assert.strictEqual(
+      spans[0].attributes['lmnr.association.properties.metadata.k2'],
+      JSON.stringify({ obj: "shall be stringified" }),
+    );
     assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
   });
@@ -778,7 +798,9 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.deepStrictEqual(spans[0].attributes['lmnr.association.properties.tags'], ["tag1", "tag2"]);
+    assert.deepStrictEqual(
+      spans[0].attributes['lmnr.association.properties.tags'], ["tag1", "tag2"],
+    );
     assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
   });

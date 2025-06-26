@@ -2,8 +2,8 @@
 
 import { ArgumentParser } from "argparse";
 import * as esbuild from "esbuild";
-import * as glob from "glob";
 import * as fs from "fs";
+import * as glob from "glob";
 
 import { version } from "../package.json";
 import { Evaluation } from "./evaluations";
@@ -12,34 +12,31 @@ import { getDirname, initializeLogger } from "./utils";
 const logger = initializeLogger();
 
 // esbuild plugin to skip dynamic imports
-const createSkipDynamicImportsPlugin = (skipModules: string[]): esbuild.Plugin => {
-  return {
-    name: 'skip-dynamic-imports',
-    setup(build) {
-      if (!skipModules || skipModules.length === 0) return;
+const createSkipDynamicImportsPlugin = (skipModules: string[]): esbuild.Plugin => ({
+  name: 'skip-dynamic-imports',
+  setup(build) {
+    if (!skipModules || skipModules.length === 0) return;
 
-      build.onResolve({ filter: /.*/ }, (args) => {
-        // Only handle dynamic imports
-        if (args.kind === 'dynamic-import' && skipModules.includes(args.path)) {
-          logger.warn(`Skipping dynamic import: ${args.path}`);
-          // Return a virtual module that exports an empty object
-          return {
-            path: args.path,
-            namespace: 'lmnr-skip-dynamic-import',
-          };
-        }
-      });
-
-      // Provide empty module content for skipped dynamic imports
-      build.onLoad({ filter: /.*/, namespace: 'lmnr-skip-dynamic-import' }, (args) => {
+    build.onResolve({ filter: /.*/ }, (args) => {
+      // Only handle dynamic imports
+      if (args.kind === 'dynamic-import' && skipModules.includes(args.path)) {
+        logger.warn(`Skipping dynamic import: ${args.path}`);
+        // Return a virtual module that exports an empty object
         return {
-          contents: 'export default {};',
-          loader: 'js',
+          path: args.path,
+          namespace: 'lmnr-skip-dynamic-import',
         };
-      });
-    },
-  };
-}
+      }
+    });
+
+    // Provide empty module content for skipped dynamic imports
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    build.onLoad({ filter: /.*/, namespace: 'lmnr-skip-dynamic-import' }, (args) => ({
+      contents: 'export default {};',
+      loader: 'js',
+    }));
+  },
+});
 
 declare global {
   // eslint-disable-next-line no-var
@@ -79,7 +76,7 @@ export function loadModule({
   /* eslint-enable @typescript-eslint/no-implied-eval */
 
   // Return the modified _evals global variable
-  return globalThis._evaluations!;
+  return globalThis._evaluations;
 }
 
 async function cli() {

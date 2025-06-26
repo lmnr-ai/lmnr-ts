@@ -46,7 +46,7 @@
     "@pinecone-database/pinecone": "^5.1.2",
     "@playwright/test": "^1.53.1",
     "@qdrant/js-client-rest": "^1.14.1",
-    "@stylistic/eslint-plugin-js": "^4.4.1",
+    "@stylistic/eslint-plugin": "^5.0.0",
     "@types/argparse": "^2.0.17",
     "@types/cli-progress": "^3.11.6",
     "@types/node": "^24.0.3",

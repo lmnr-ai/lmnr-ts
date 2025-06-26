@@ -5,8 +5,8 @@ import pinoPretty from 'pino-pretty';
 import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from 'uuid';
 
-import { LaminarSpanContext } from './types';
 import { ASSOCIATION_PROPERTIES } from './opentelemetry-lib/tracing/attributes';
+import { LaminarSpanContext } from './types';
 
 export function initializeLogger(options?: { colorize?: boolean, level?: Level }) {
   const colorize = options?.colorize ?? true;
@@ -59,7 +59,7 @@ export const otelSpanIdToUUID = (spanId: string): string => {
 
   return id.padStart(32, '0').replace(
     /^([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$/,
-    '$1-$2-$3-$4-$5'
+    '$1-$2-$3-$4-$5',
   );
 };
 
@@ -80,7 +80,7 @@ export const otelTraceIdToUUID = (traceId: string): string => {
 
   return id.replace(
     /^([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$/,
-    '$1-$2-$3-$4-$5'
+    '$1-$2-$3-$4-$5',
   );
 };
 
@@ -230,14 +230,14 @@ export const isOtelAttributeValueType = (value: unknown): value is AttributeValu
   return false;
 };
 
-export const metadataToAttributes = (metadata: Record<string, unknown>): Record<string, AttributeValue> => {
-  return Object.fromEntries(
-    Object.entries(metadata).map(([key, value]) => {
-      if (isOtelAttributeValueType(value)) {
-        return [`${ASSOCIATION_PROPERTIES}.metadata.${key}`, value];
-      } else {
-        return [`${ASSOCIATION_PROPERTIES}.metadata.${key}`, JSON.stringify(value)];
-      }
-    }),
-  );
-};
+export const metadataToAttributes = (
+  metadata: Record<string, unknown>,
+): Record<string, AttributeValue> => Object.fromEntries(
+  Object.entries(metadata).map(([key, value]) => {
+    if (isOtelAttributeValueType(value)) {
+      return [`${ASSOCIATION_PROPERTIES}.metadata.${key}`, value];
+    } else {
+      return [`${ASSOCIATION_PROPERTIES}.metadata.${key}`, JSON.stringify(value)];
+    }
+  }),
+);

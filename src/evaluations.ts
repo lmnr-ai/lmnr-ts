@@ -52,7 +52,7 @@ const getAverageScores =
       const perScoreValues: Record<string, number[]> = {};
       for (const result of results) {
         for (const key in result.scores) {
-          const score = result.scores[key]
+          const score = result.scores[key];
           if (perScoreValues[key] && score !== null) {
             perScoreValues[key].push(score);
           } else {
@@ -141,7 +141,7 @@ export type Datapoint<D, T> = {
    * metadata to the evaluator function. Must be json serializable.
    */
   metadata?: Record<string, any>;
-}
+};
 
 /**
  * HumanEvaluator is a class to register a human evaluator.
@@ -264,7 +264,7 @@ export class Evaluation<D, T, O> {
   private client: LaminarClient;
 
   constructor({
-    data, executor, evaluators, groupName, name, metadata, config
+    data, executor, evaluators, groupName, name, metadata, config,
   }: EvaluationConstructorProps<D, T, O>) {
     if (Object.keys(evaluators).length === 0) {
       throw new Error('No evaluators provided');
@@ -388,7 +388,7 @@ export class Evaluation<D, T, O> {
     const tasks: Promise<any>[] = [];
 
     const evaluateTask = async (datapoint: Datapoint<D, T>, index: number):
-      Promise<[number, EvaluationDatapoint<D, T, O>]> => {
+    Promise<[number, EvaluationDatapoint<D, T, O>]> => {
       try {
         const result = await this.evaluateDatapoint(evalId, datapoint, index);
         this.progressReporter.update(1);
