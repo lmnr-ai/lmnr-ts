@@ -29,21 +29,24 @@ void describe("EvalsResource Client Methods", () => {
       const mockEvalId: StringUUID = "12345678-1234-1234-1234-123456789abc";
       const evalName = "Test Evaluation";
       const groupName = "Test Group";
+      const metadata = { metadata: "test metadata"}
 
       const scope = nock(baseUrl)
         .post('/v1/evals', {
           name: evalName,
           groupName: groupName,
+          metadata,
         })
         .reply(200, {
           id: mockEvalId,
           createdAt: new Date().toISOString(),
           groupId: "group-123",
           name: evalName,
+          metadata,
           projectId: "project-123",
         });
 
-      const result = await client.evals.createEvaluation(evalName, groupName);
+      const result = await client.evals.createEvaluation(evalName, groupName, metadata);
 
       assert.strictEqual(result, mockEvalId);
       scope.done();
@@ -56,12 +59,14 @@ void describe("EvalsResource Client Methods", () => {
         .post('/v1/evals', {
           name: null,
           groupName: null,
+          metadata: null,
         })
         .reply(200, {
           id: mockEvalId,
           createdAt: new Date().toISOString(),
           groupId: "group-123",
           name: null,
+          metadata: null,
           projectId: "project-123",
         });
 
@@ -275,12 +280,14 @@ void describe("EvalsResource Client Methods", () => {
         .post('/v1/evals', {
           name: evalName,
           groupName: null,
+          metadata: null,
         })
         .reply(200, {
           id: mockEvalId,
           createdAt: new Date().toISOString(),
           groupId: "group-123",
           name: evalName,
+          metadata: null,
           projectId: "project-123",
         });
 
