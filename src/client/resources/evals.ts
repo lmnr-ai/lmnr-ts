@@ -37,6 +37,17 @@ export class EvalsResource extends BaseResource {
    * @param {Record<string, any>} [metadata] - Optional metadata
    * @returns {Promise<StringUUID>} The evaluation ID
    */
+
+  public async create({name , groupName, metadata}: {name?: string, groupName?: string, metadata?: Record<string, any>
+}): Promise<StringUUID> {
+    const evaluation = await this.init(name, groupName, metadata);
+    return evaluation.id;
+  }
+
+  /**
+   * Create a new evaluation and return its ID.
+   * @deprecated use `create` instead.
+   */
   public async createEvaluation(name?: string, groupName?: string, metadata?: Record<string, any>): Promise<StringUUID> {
     const evaluation = await this.init(name, groupName, metadata);
     return evaluation.id;
