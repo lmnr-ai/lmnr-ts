@@ -804,4 +804,19 @@ void describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
   });
+
+  void it("does not override span type in nested observe", async () => {
+    const fn = (a: number, b: number) => a + b;
+
+    await observe(
+        { name: "open.ai.chat", spanType: 'LLM' }, async () => {
+          return await observe({ name: 'default' }, fn, 1, 2)
+        }, 1, 2);
+
+    const spans = exporter.getFinishedSpans();
+
+    assert.strictEqual(spans.length, 2);
+    assert.strictEqual(spans[0].attributes['lmnr.span.type'], undefined);
+    assert.strictEqual(spans[1].attributes['lmnr.span.type'], "LLM");
+  });
 });
