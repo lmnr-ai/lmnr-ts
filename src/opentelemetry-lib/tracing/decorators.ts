@@ -48,14 +48,14 @@ export function observeBase<
   // TODO: Remove this once we've removed older deprecated methods, such as
   // withMetadata, withSession.
   if (associationProperties) {
-      // Remove span type from association properties after the span is created
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      // TODO: Remove this once we've removed older deprecated methods, such as
-      // withMetadata, withSession.
-      entityContext = entityContext.setValue(
-          ASSOCIATION_PROPERTIES_KEY,
-          { ...(currentAssociationProperties ?? {}), ...rest },
-      );
+  // Remove span type from association properties after the span is created
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // TODO: Remove this once we've removed older deprecated methods, such as
+  // withMetadata, withSession.
+     entityContext = entityContext.setValue(
+       ASSOCIATION_PROPERTIES_KEY,
+       { ...(currentAssociationProperties ?? {}), ...rest },
+     );
   }
   // ================================
 
@@ -75,7 +75,7 @@ export function observeBase<
       entityContext,
       async (span: Span) => {
         if (spanType) {
-         span.setAttribute(SPAN_TYPE, spanType);
+          span.setAttribute(SPAN_TYPE, spanType);
         }
 
         if (shouldSendTraces() && !ignoreInput) {
