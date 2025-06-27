@@ -4,7 +4,7 @@ import { suppressTracing } from "@opentelemetry/core";
 import { LaminarSpanContext } from "../../types";
 import { initializeLogger, isOtelAttributeValueType, tryToOtelSpanContext } from "../../utils";
 import { getTracer, shouldSendTraces } from ".";
-import { SPAN_INPUT, SPAN_OUTPUT } from "./attributes";
+import {SPAN_INPUT, SPAN_OUTPUT, SPAN_TYPE} from "./attributes";
 import {
   ASSOCIATION_PROPERTIES_KEY,
 } from "./utils";
@@ -44,12 +44,17 @@ export function observeBase<
 
   const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY);
 
+  const { "span_type": spanType, ...rest } = associationProperties ?? {};
   // TODO: Remove this once we've removed older deprecated methods, such as
   // withMetadata, withSession.
   if (associationProperties) {
+  // Remove span type from association properties after the span is created
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // TODO: Remove this once we've removed older deprecated methods, such as
+  // withMetadata, withSession.
     entityContext = entityContext.setValue(
       ASSOCIATION_PROPERTIES_KEY,
-      { ...(currentAssociationProperties ?? {}), ...associationProperties },
+      { ...(currentAssociationProperties ?? {}), ...rest },
     );
   }
   // ================================
@@ -69,6 +74,10 @@ export function observeBase<
       {},
       entityContext,
       async (span: Span) => {
+        if (spanType) {
+          span.setAttribute(SPAN_TYPE, spanType);
+        }
+
         if (shouldSendTraces() && !ignoreInput) {
           try {
             const spanInput = inputParameters ?? args;
@@ -101,17 +110,8 @@ export function observeBase<
           }
         }
 
-        // Remove span type from association properties after the span is created
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { "span_type": spanType, ...rest } = associationProperties ?? {};
-        // TODO: Remove this once we've removed older deprecated methods, such as
-        // withMetadata, withSession.
-        entityContext = entityContext.setValue(
-          ASSOCIATION_PROPERTIES_KEY,
-          { ...(currentAssociationProperties ?? {}), ...rest },
-        );
         // ================================
-        Object.entries(rest).forEach(([key, value]) => {
+        Object.entries(associationProperties || {}).forEach(([key, value]) => {
           if (isOtelAttributeValueType(value)) {
             span.setAttribute(key, value);
           } else {

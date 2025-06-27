@@ -804,4 +804,23 @@ void describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
   });
+
+  void it("does not override span type in nested observe", async () => {
+    const fn = (a: number, b: number) => a + b;
+
+    await observe(
+      { name: "evaluator", spanType: 'EVALUATOR' }, async () => {
+        return await observe({ name: 'default' }, fn, 1, 2);
+      }, 1, 2);
+
+    const spans = exporter.getFinishedSpans();
+
+    assert.strictEqual(spans.length, 2);
+
+    assert.strictEqual(spans.some((s) => s.name === 'evaluator'), true)
+    assert.strictEqual(spans.some((s)=> s.name === 'default'), true)
+
+    assert.strictEqual(spans.find((s)=> s.name === 'evaluator')?.attributes['lmnr.span.type'], 'EVALUATOR');
+    assert.strictEqual(spans.find((s)=> s.name === 'default')?.attributes['lmnr.span.type'], undefined);
+  });
 });
