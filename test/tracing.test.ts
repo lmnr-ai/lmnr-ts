@@ -809,9 +809,9 @@ void describe("tracing", () => {
     const fn = (a: number, b: number) => a + b;
 
     await observe(
-        { name: "open.ai.chat", spanType: 'LLM' }, async () => {
-          return await observe({ name: 'default' }, fn, 1, 2)
-        }, 1, 2);
+      { name: "open.ai.chat", spanType: 'LLM' }, async () => {
+        return await observe({ name: 'default' }, fn, 1, 2)
+      }, 1, 2);
 
     const spans = exporter.getFinishedSpans();
 
