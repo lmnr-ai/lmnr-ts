@@ -10,7 +10,7 @@ interface ObserveOptions {
   sessionId?: string;
   userId?: string;
   traceType?: TraceType;
-  spanType?: 'DEFAULT' | 'LLM' | 'TOOL';
+  spanType?: 'DEFAULT' | 'LLM' | 'TOOL' | 'EVALUATOR' | 'EVALUATION' | 'EXECUTOR';
   input?: unknown;
   ignoreInput?: boolean;
   ignoreOutput?: boolean;
