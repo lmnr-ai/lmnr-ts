@@ -468,14 +468,6 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
 
         (window as any).lmnrRrwebEventsBatch = new Set();
 
-        (window as any).lmnrPageIsFocused = true;
-        window.addEventListener('blur', () => {
-          (window as any).lmnrPageIsFocused = false;
-        });
-        window.addEventListener('focus', () => {
-          (window as any).lmnrPageIsFocused = true;
-        });
-
         const compressEventData = async (data: any) => {
           const jsonString = JSON.stringify(data);
           const blob = new Blob([jsonString], { type: 'application/json' });
@@ -492,9 +484,6 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
         };
 
         setInterval(() => {
-          if (!(window as any).lmnrPageIsFocused) {
-            return;
-          }
           (window as any).lmnrRrweb.record.addCustomEvent('heartbeat', {
             title: document.title,
             url: document.URL,
@@ -504,15 +493,15 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
         (window as any).lmnrRrweb.record({
           async emit(event: any) {
             // Ignore events from all tabs except the current one
-            if (!(window as any).lmnrPageIsFocused) {
-              return;
-            }
             const compressedEvent = {
               ...event,
               data: await compressEventData(event.data),
             };
             (window as any).lmnrRrwebEventsBatch.add(compressedEvent);
           },
+          recordCanvas: true,
+          collectFonts: true,
+          recordCrossOriginIframes: true,
         });
       });
     });
