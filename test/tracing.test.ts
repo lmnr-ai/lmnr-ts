@@ -809,18 +809,26 @@ void describe("tracing", () => {
     const fn = (a: number, b: number) => a + b;
 
     await observe(
-      { name: "evaluator", spanType: 'EVALUATOR' }, async () => {
-        return await observe({ name: 'default' }, fn, 1, 2);
-      }, 1, 2);
+      { name: "evaluator", spanType: 'EVALUATOR' },
+      async () => await observe({ name: 'default' }, fn, 1, 2),
+      1,
+      2,
+    );
 
     const spans = exporter.getFinishedSpans();
 
     assert.strictEqual(spans.length, 2);
 
-    assert.strictEqual(spans.some((s) => s.name === 'evaluator'), true)
-    assert.strictEqual(spans.some((s)=> s.name === 'default'), true)
+    assert.strictEqual(spans.some((s) => s.name === 'evaluator'), true);
+    assert.strictEqual(spans.some((s) => s.name === 'default'), true);
 
-    assert.strictEqual(spans.find((s)=> s.name === 'evaluator')?.attributes['lmnr.span.type'], 'EVALUATOR');
-    assert.strictEqual(spans.find((s)=> s.name === 'default')?.attributes['lmnr.span.type'], undefined);
+    assert.strictEqual(
+      spans.find((s) => s.name === 'evaluator')?.attributes['lmnr.span.type'],
+      'EVALUATOR',
+    );
+    assert.strictEqual(
+      spans.find((s) => s.name === 'default')?.attributes['lmnr.span.type'],
+      undefined,
+    );
   });
 });

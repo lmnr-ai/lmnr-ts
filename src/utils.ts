@@ -1,5 +1,5 @@
 import { AttributeValue, SpanContext, TraceFlags } from '@opentelemetry/api';
-import path from "path";
+import * as path from "path";
 import pino, { Level } from 'pino';
 import { PinoPretty } from 'pino-pretty';
 import { fileURLToPath } from "url";
