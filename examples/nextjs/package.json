@@ -9,24 +9,24 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.50.3",
+    "@anthropic-ai/sdk": "^0.55.1",
     "@lmnr-ai/lmnr": "file:../../dist",
     "@opentelemetry/api-logs": "^0.200.0",
-    "@vercel/otel": "^1.12.0",
+    "@vercel/otel": "^1.13.0",
     "next": "15.3.2",
-    "openai": "^4.98.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "openai": "^5.8.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3",
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
+    "@eslint/eslintrc": "^3.3.1",
+    "@tailwindcss/postcss": "^4.1.11",
+    "@types/node": "^24.0.8",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "eslint": "^9.30.0",
     "eslint-config-next": "15.3.2",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "tailwindcss": "^4.1.11",
+    "typescript": "^5.8.3"
   }
 }
