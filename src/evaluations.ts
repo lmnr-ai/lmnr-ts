@@ -1,5 +1,5 @@
 import { trace } from "@opentelemetry/api";
-import cliProgress from "cli-progress";
+import * as cliProgress from "cli-progress";
 
 import { LaminarClient } from "./client";
 import { EvaluationDataset, LaminarDataset } from "./datasets";
@@ -7,7 +7,7 @@ import { observe } from "./decorators";
 import { Laminar } from "./laminar";
 import { InitializeOptions } from "./opentelemetry-lib/interfaces";
 import { SPAN_TYPE } from "./opentelemetry-lib/tracing/attributes";
-import {EvaluationDatapoint} from "./types";
+import { EvaluationDatapoint } from "./types";
 import {
   initializeLogger,
   newUUID,
@@ -48,27 +48,27 @@ const getEvaluationUrl = (projectId: string, evaluationId: string, baseUrl?: str
 };
 
 const getAverageScores =
-    <D, T, O>(results: EvaluationDatapoint<D, T, O>[]): Record<string, number> => {
-      const perScoreValues: Record<string, number[]> = {};
-      for (const result of results) {
-        for (const key in result.scores) {
-          const score = result.scores[key];
-          if (perScoreValues[key] && score !== null) {
-            perScoreValues[key].push(score);
-          } else {
-            perScoreValues[key] = score !== null ? [score] : [];
-          }
+  <D, T, O>(results: EvaluationDatapoint<D, T, O>[]): Record<string, number> => {
+    const perScoreValues: Record<string, number[]> = {};
+    for (const result of results) {
+      for (const key in result.scores) {
+        const score = result.scores[key];
+        if (perScoreValues[key] && score !== null) {
+          perScoreValues[key].push(score);
+        } else {
+          perScoreValues[key] = score !== null ? [score] : [];
         }
       }
+    }
 
-      const averageScores: Record<string, number> = {};
-      for (const key in perScoreValues) {
-        averageScores[key] = perScoreValues[key].reduce((a, b) => a + b, 0)
-            / perScoreValues[key].length;
-      }
+    const averageScores: Record<string, number> = {};
+    for (const key in perScoreValues) {
+      averageScores[key] = perScoreValues[key].reduce((a, b) => a + b, 0)
+        / perScoreValues[key].length;
+    }
 
-      return averageScores;
-    };
+    return averageScores;
+  };
 
 /**
  * Configuration for the Evaluator
@@ -146,7 +146,7 @@ export type Datapoint<D, T> = {
 /**
  * HumanEvaluator is a class to register a human evaluator.
  */
-export class HumanEvaluator {}
+export class HumanEvaluator { }
 
 export type EvaluatorFunctionReturn = number | Record<string, number>;
 
@@ -387,8 +387,10 @@ export class Evaluation<D, T, O> {
     const semaphore = new Semaphore(this.concurrencyLimit);
     const tasks: Promise<any>[] = [];
 
-    const evaluateTask = async (datapoint: Datapoint<D, T>, index: number):
-    Promise<[number, EvaluationDatapoint<D, T, O>]> => {
+    const evaluateTask = async (
+      datapoint: Datapoint<D, T>,
+      index: number,
+    ): Promise<[number, EvaluationDatapoint<D, T, O>]> => {
       try {
         const result = await this.evaluateDatapoint(evalId, datapoint, index);
         this.progressReporter.update(1);
