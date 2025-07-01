@@ -1,7 +1,7 @@
 import { AttributeValue, SpanContext, TraceFlags } from '@opentelemetry/api';
-import path from "path";
+import * as path from "path";
 import pino, { Level } from 'pino';
-import pinoPretty from 'pino-pretty';
+import { PinoPretty } from 'pino-pretty';
 import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from 'uuid';
 
@@ -14,7 +14,7 @@ export function initializeLogger(options?: { colorize?: boolean, level?: Level }
     ?? (process.env.LMNR_LOG_LEVEL?.toLowerCase()?.trim() as Level)
     ?? 'info';
 
-  return pino(pinoPretty({
+  return pino(PinoPretty({
     colorize,
     minimumLevel: level,
   }));

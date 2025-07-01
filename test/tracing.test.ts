@@ -810,8 +810,9 @@ void describe("tracing", () => {
 
     await observe(
       { name: "evaluator", spanType: 'EVALUATOR' },
-      async (arg1, arg2) => await observe({ name: 'default' }, fn, arg1, arg2),
-      1, 2,
+      async () => await observe({ name: 'default' }, fn, 1, 2),
+      1,
+      2,
     );
 
     const spans = exporter.getFinishedSpans();
