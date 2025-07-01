@@ -15,7 +15,7 @@
     "@opentelemetry/api-logs": "^0.200.0",
     "@vercel/otel": "^1.13.0",
     "ai": "^4.3.16",
-    "next": "15.2.4",
+    "next": "^15.3.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
@@ -26,7 +26,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "eslint": "^9.30.0",
-    "eslint-config-next": "15.2.3",
+    "eslint-config-next": "^15.3.4",
     "tailwindcss": "^4.1.11",
     "typescript": "^5.8.3"
   }
