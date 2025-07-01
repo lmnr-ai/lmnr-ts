@@ -4,7 +4,7 @@ import { suppressTracing } from "@opentelemetry/core";
 import { LaminarSpanContext } from "../../types";
 import { initializeLogger, isOtelAttributeValueType, tryToOtelSpanContext } from "../../utils";
 import { getTracer, shouldSendTraces } from ".";
-import {SPAN_INPUT, SPAN_OUTPUT, SPAN_TYPE} from "./attributes";
+import { SPAN_INPUT, SPAN_OUTPUT, SPAN_TYPE } from "./attributes";
 import {
   ASSOCIATION_PROPERTIES_KEY,
 } from "./utils";
@@ -44,12 +44,9 @@ export function observeBase<
 
   const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY);
 
+  // span type must not be passed down to the context, so remove it
   const { "span_type": spanType, ...rest } = associationProperties ?? {};
-  // TODO: Remove this once we've removed older deprecated methods, such as
-  // withMetadata, withSession.
   if (associationProperties) {
-  // Remove span type from association properties after the span is created
-
     // TODO: Remove this once we've removed older deprecated methods, such as
     // withMetadata, withSession.
     entityContext = entityContext.setValue(

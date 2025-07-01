@@ -818,17 +818,13 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
 
     assert.strictEqual(spans.length, 2);
+    const evaluatorSpan = spans.find((s) => s.name === 'evaluator');
+    const defaultSpan = spans.find((s) => s.name === 'default');
 
-    assert.strictEqual(spans.some((s) => s.name === 'evaluator'), true);
-    assert.strictEqual(spans.some((s) => s.name === 'default'), true);
+    assert.ok(evaluatorSpan, "evaluator span should be present");
+    assert.ok(defaultSpan, "default span should be present");
 
-    assert.strictEqual(
-      spans.find((s) => s.name === 'evaluator')?.attributes['lmnr.span.type'],
-      'EVALUATOR',
-    );
-    assert.strictEqual(
-      spans.find((s) => s.name === 'default')?.attributes['lmnr.span.type'],
-      undefined,
-    );
+    assert.strictEqual(evaluatorSpan?.attributes['lmnr.span.type'], 'EVALUATOR');
+    assert.strictEqual(defaultSpan?.attributes['lmnr.span.type'], undefined);
   });
 });
