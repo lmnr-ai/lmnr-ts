@@ -6,7 +6,7 @@ import { EvaluationDataset, LaminarDataset } from "./datasets";
 import { observe } from "./decorators";
 import { Laminar } from "./laminar";
 import { InitializeOptions } from "./opentelemetry-lib/interfaces";
-import {HUMAN_EVALUATOR_OPTIONS, SPAN_TYPE} from "./opentelemetry-lib/tracing/attributes";
+import { HUMAN_EVALUATOR_OPTIONS, SPAN_TYPE } from "./opentelemetry-lib/tracing/attributes";
 import { EvaluationDatapoint } from "./types";
 import {
   initializeLogger,
@@ -149,7 +149,7 @@ export type Datapoint<D, T> = {
 export class HumanEvaluator {
   public options?: { value: number; label: string }[]
 
-  constructor(options: { value: number; label: string }[]) {
+  constructor(options?: { value: number; label: string }[]) {
     this.options = options;
   }
 }
