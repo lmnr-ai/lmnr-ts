@@ -11,7 +11,7 @@ export const SPAN_LANGUAGE_VERSION = "lmnr.span.language_version";
 export const OVERRIDE_PARENT_SPAN = "lmnr.internal.override_parent_span";
 export const TRACE_HAS_BROWSER_SESSION = "lmnr.internal.has_browser_session";
 export const EXTRACTED_FROM_NEXT_JS = "lmnr.span.extracted_from.next_js";
-
+export const HUMAN_EVALUATOR_OPTIONS = 'lmnr.span.human_evaluator_options';
 export const ASSOCIATION_PROPERTIES = "lmnr.association.properties";
 export const SESSION_ID = "lmnr.association.properties.session_id";
 export const USER_ID = "lmnr.association.properties.user_id";

@@ -6,7 +6,7 @@ import { EvaluationDataset, LaminarDataset } from "./datasets";
 import { observe } from "./decorators";
 import { Laminar } from "./laminar";
 import { InitializeOptions } from "./opentelemetry-lib/interfaces";
-import { SPAN_TYPE } from "./opentelemetry-lib/tracing/attributes";
+import { HUMAN_EVALUATOR_OPTIONS, SPAN_TYPE } from "./opentelemetry-lib/tracing/attributes";
 import { EvaluationDatapoint } from "./types";
 import {
   initializeLogger,
@@ -146,7 +146,13 @@ export type Datapoint<D, T> = {
 /**
  * HumanEvaluator is a class to register a human evaluator.
  */
-export class HumanEvaluator { }
+export class HumanEvaluator {
+  public options?: { value: number; label: string }[];
+
+  constructor(options?: { value: number; label: string }[]) {
+    this.options = options;
+  }
+}
 
 export type EvaluatorFunctionReturn = number | Record<string, number>;
 
@@ -456,10 +462,22 @@ export class Evaluation<D, T, O> {
           { name: evaluatorName },
           async (output: O, target?: T) => {
             if (evaluator instanceof HumanEvaluator) {
-              trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "HUMAN_EVALUATOR");
+              const activeSpan = trace.getActiveSpan();
+              if (activeSpan) {
+                activeSpan.setAttribute(SPAN_TYPE, "HUMAN_EVALUATOR");
+                if (evaluator.options) {
+                  activeSpan.setAttribute(
+                    HUMAN_EVALUATOR_OPTIONS,
+                    JSON.stringify(evaluator.options),
+                  );
+                }
+              }
               return null;
             } else {
-              trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATOR");
+              const activeSpan = trace.getActiveSpan();
+              if (activeSpan) {
+                activeSpan.setAttribute(SPAN_TYPE, "EVALUATOR");
+              }
               return await evaluator(output, target);
             }
           },
@@ -472,7 +490,7 @@ export class Evaluation<D, T, O> {
           continue;
         }
 
-        if (typeof value === 'number') {
+        if (typeof value === "number") {
           if (isNaN(value)) {
             throw new Error(`Evaluator ${evaluatorName} returned NaN`);
           }
