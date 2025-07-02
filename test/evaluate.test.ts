@@ -182,11 +182,13 @@ void describe("evaluate", () => {
       (span) => span.attributes['lmnr.span.type'] === "HUMAN_EVALUATOR",
     );
 
-    const humanEvaluatorSpanWithOptions = humanEvaluatorSpans.find((s) => s.name === "human_relevance");
+    const humanEvaluatorSpanWithOptions = humanEvaluatorSpans.find(
+      (s) => s.name === "human_relevance"
+    );
 
-    const options = humanEvaluatorSpanWithOptions?.attributes?.['lmnr.span.human_evaluator_options']
+    const options = humanEvaluatorSpanWithOptions?.attributes?.['lmnr.span.human_evaluator_options'];
     assert.strictEqual(!!options, true);
-    assert.deepStrictEqual(JSON.parse(String(options)), [{ value: 1, label: 'label' }])
+    assert.deepStrictEqual(JSON.parse(String(options)), [{ value: 1, label: 'label' }]);
     assert.strictEqual(humanEvaluatorSpans.length, 2);
     assert.deepStrictEqual(
       humanEvaluatorSpans.map((span) => span.name).sort(),
