@@ -468,7 +468,7 @@ export class Evaluation<D, T, O> {
                 if (evaluator.options) {
                   activeSpan.setAttribute(
                     HUMAN_EVALUATOR_OPTIONS,
-                    JSON.stringify(evaluator.options)
+                    JSON.stringify(evaluator.options),
                   );
                 }
               }
