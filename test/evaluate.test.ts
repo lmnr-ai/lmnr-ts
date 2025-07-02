@@ -137,7 +137,7 @@ void describe("evaluate", () => {
       evaluators: {
         "automatic": (output, target) => output.includes(target || "") ? 1 : 0,
         "human_quality": new HumanEvaluator(),
-        "human_relevance": new HumanEvaluator(),
+        "human_relevance": new HumanEvaluator([{ value: 1, label: 'label' }]),
       },
       config: {
         projectApiKey: "test",
@@ -181,6 +181,12 @@ void describe("evaluate", () => {
     const humanEvaluatorSpans = spans.filter(
       (span) => span.attributes['lmnr.span.type'] === "HUMAN_EVALUATOR",
     );
+
+    const humanEvaluatorSpanWithOptions = humanEvaluatorSpans.find((s) => s.name === "human_relevance");
+
+    const options = humanEvaluatorSpanWithOptions?.attributes?.['lmnr.span.human_evaluator_options']
+    assert.strictEqual(!!options, true);
+    assert.deepStrictEqual(JSON.parse(String(options)), [{ value: 1, label: 'label' }])
     assert.strictEqual(humanEvaluatorSpans.length, 2);
     assert.deepStrictEqual(
       humanEvaluatorSpans.map((span) => span.name).sort(),
