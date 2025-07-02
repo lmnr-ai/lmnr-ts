@@ -147,7 +147,7 @@ export type Datapoint<D, T> = {
  * HumanEvaluator is a class to register a human evaluator.
  */
 export class HumanEvaluator {
-  public options?: { value: number; label: string }[]
+  public options?: { value: number; label: string }[];
 
   constructor(options?: { value: number; label: string }[]) {
     this.options = options;
@@ -466,7 +466,10 @@ export class Evaluation<D, T, O> {
               if (activeSpan) {
                 activeSpan.setAttribute(SPAN_TYPE, "HUMAN_EVALUATOR");
                 if (evaluator.options) {
-                  activeSpan.setAttribute(HUMAN_EVALUATOR_OPTIONS, JSON.stringify(evaluator.options));
+                  activeSpan.setAttribute(
+                    HUMAN_EVALUATOR_OPTIONS,
+                    JSON.stringify(evaluator.options)
+                  );
                 }
               }
               return null;
