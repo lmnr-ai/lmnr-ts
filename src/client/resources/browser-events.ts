@@ -30,7 +30,7 @@ export class BrowserEventsResource extends BaseResource {
     const compressedResponse = new Response(compressedStream);
     const compressedData = await compressedResponse.arrayBuffer();
 
-    const response = await fetch(this.baseHttpUrl + "/v1/events", {
+    const response = await fetch(this.baseHttpUrl + "/v1/browser-sessions/events", {
       method: "POST",
       headers: {
         ...this.headers(),
