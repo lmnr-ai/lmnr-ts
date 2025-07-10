@@ -94,7 +94,7 @@ export class EvaluatorsResource extends BaseResource {
       throw new Error("Either 'traceId' or 'spanId' must be provided.");
     }
 
-    const response = await fetch(this.baseHttpUrl + "/v1/evaluator-scores", {
+    const response = await fetch(this.baseHttpUrl + "/v1/evaluators/score", {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify(payload),

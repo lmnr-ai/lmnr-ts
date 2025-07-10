@@ -35,7 +35,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         let capturedBody: RequestBody = {};
 
         const scope = nock(baseUrl)
-          .post("/v1/evaluator-scores", (body: RequestBody) => {
+          .post("/v1/evaluators/score", (body: RequestBody) => {
             capturedBody = body;
             return true;
           })
@@ -69,7 +69,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         let capturedBody: RequestBody = {};
 
         const scope = nock(baseUrl)
-          .post("/v1/evaluator-scores", (body: RequestBody) => {
+          .post("/v1/evaluators/score", (body: RequestBody) => {
             capturedBody = body;
             return true;
           })
@@ -101,7 +101,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         let capturedBody: RequestBody = {};
 
         const scope = nock(baseUrl)
-          .post("/v1/evaluator-scores", (body: RequestBody) => {
+          .post("/v1/evaluators/score", (body: RequestBody) => {
             capturedBody = body;
             return true;
           })
@@ -135,7 +135,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         let capturedBody: RequestBody = {};
 
         const scope = nock(baseUrl)
-          .post("/v1/evaluator-scores", (body: RequestBody) => {
+          .post("/v1/evaluators/score", (body: RequestBody) => {
             capturedBody = body;
             return true;
           })
@@ -169,7 +169,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         let capturedBody: RequestBody = {};
 
         const scope = nock(baseUrl)
-          .post("/v1/evaluator-scores", (body: RequestBody) => {
+          .post("/v1/evaluators/score", (body: RequestBody) => {
             capturedBody = body;
             return true;
           })
@@ -201,7 +201,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         let capturedBody: RequestBody = {};
 
         const scope = nock(baseUrl)
-          .post("/v1/evaluator-scores", (body: RequestBody) => {
+          .post("/v1/evaluators/score", (body: RequestBody) => {
             capturedBody = body;
             return true;
           })
