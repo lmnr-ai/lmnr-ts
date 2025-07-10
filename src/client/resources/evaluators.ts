@@ -3,7 +3,7 @@ import { BaseResource } from ".";
 
 enum EvaluatorScoreSourceType {
   Evaluator = "Evaluator",
-  SDK = "SDK"
+  Code = "Code"
 }
 
 interface CreateEvaluatorScoreBase {
@@ -75,7 +75,7 @@ export class EvaluatorsResource extends BaseResource {
         name,
         metadata,
         score,
-        source: EvaluatorScoreSourceType.SDK,
+        source: EvaluatorScoreSourceType.Code,
         traceId: formattedTraceId,
       };
     } else if ('spanId' in options && options.spanId) {
@@ -87,14 +87,14 @@ export class EvaluatorsResource extends BaseResource {
         name,
         metadata,
         score,
-        source: EvaluatorScoreSourceType.SDK,
+        source: EvaluatorScoreSourceType.Code,
         spanId: formattedSpanId,
       };
     } else {
       throw new Error("Either 'traceId' or 'spanId' must be provided.");
     }
 
-    const response = await fetch(this.baseHttpUrl + "/v1/evaluators/score", {
+    const response = await fetch(this.baseHttpUrl + "/v1/evaluator-scores", {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify(payload),

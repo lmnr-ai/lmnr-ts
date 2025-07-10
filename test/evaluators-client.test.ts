@@ -35,7 +35,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         let capturedBody: RequestBody = {};
 
         const scope = nock(baseUrl)
-          .post("/v1/evaluators/score", (body: RequestBody) => {
+          .post("/v1/evaluator-scores", (body: RequestBody) => {
             capturedBody = body;
             return true;
           })
@@ -53,7 +53,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         assert.strictEqual(capturedBody.traceId, testTraceId);
         assert.strictEqual(capturedBody.score, testScore);
         assert.deepStrictEqual(capturedBody.metadata, testMetadata);
-        assert.strictEqual(capturedBody.source, "SDK");
+        assert.strictEqual(capturedBody.source, "Code");
         assert.strictEqual(capturedBody.spanId, undefined);
 
         scope.done();
@@ -68,7 +68,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         let capturedBody: RequestBody = {};
 
         const scope = nock(baseUrl)
-          .post("/v1/evaluators/score", (body: RequestBody) => {
+          .post("/v1/evaluator-scores", (body: RequestBody) => {
             capturedBody = body;
             return true;
           })
@@ -85,7 +85,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         assert.strictEqual(capturedBody.traceId, expectedUuidTraceId);
         assert.strictEqual(capturedBody.score, testScore);
         assert.strictEqual(capturedBody.metadata, undefined);
-        assert.strictEqual(capturedBody.source, "SDK");
+        assert.strictEqual(capturedBody.source, "Code");
         assert.strictEqual(capturedBody.spanId, undefined);
 
         scope.done();
@@ -100,7 +100,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         let capturedBody: RequestBody = {};
 
         const scope = nock(baseUrl)
-          .post("/v1/evaluators/score", (body: RequestBody) => {
+          .post("/v1/evaluator-scores", (body: RequestBody) => {
             capturedBody = body;
             return true;
           })
@@ -116,7 +116,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         assert.strictEqual(capturedBody.name, testName);
         assert.strictEqual(capturedBody.traceId, expectedUuidTraceId);
         assert.strictEqual(capturedBody.score, testScore);
-        assert.strictEqual(capturedBody.source, "SDK");
+        assert.strictEqual(capturedBody.source, "Code");
 
         scope.done();
       });
@@ -132,7 +132,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         let capturedBody: RequestBody = {};
 
         const scope = nock(baseUrl)
-          .post("/v1/evaluators/score", (body: RequestBody) => {
+          .post("/v1/evaluator-scores", (body: RequestBody) => {
             capturedBody = body;
             return true;
           })
@@ -150,7 +150,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         assert.strictEqual(capturedBody.spanId, testSpanId);
         assert.strictEqual(capturedBody.score, testScore);
         assert.deepStrictEqual(capturedBody.metadata, testMetadata);
-        assert.strictEqual(capturedBody.source, "SDK");
+        assert.strictEqual(capturedBody.source, "Code");
         assert.strictEqual(capturedBody.traceId, undefined);
 
         scope.done();
@@ -165,7 +165,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         let capturedBody: RequestBody = {};
 
         const scope = nock(baseUrl)
-          .post("/v1/evaluators/score", (body: RequestBody) => {
+          .post("/v1/evaluator-scores", (body: RequestBody) => {
             capturedBody = body;
             return true;
           })
@@ -182,7 +182,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         assert.strictEqual(capturedBody.spanId, expectedUuidSpanId);
         assert.strictEqual(capturedBody.score, testScore);
         assert.strictEqual(capturedBody.metadata, undefined);
-        assert.strictEqual(capturedBody.source, "SDK");
+        assert.strictEqual(capturedBody.source, "Code");
         assert.strictEqual(capturedBody.traceId, undefined);
 
         scope.done();
@@ -197,7 +197,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         let capturedBody: RequestBody = {};
 
         const scope = nock(baseUrl)
-          .post("/v1/evaluators/score", (body: RequestBody) => {
+          .post("/v1/evaluator-scores", (body: RequestBody) => {
             capturedBody = body;
             return true;
           })
@@ -213,7 +213,7 @@ void describe("EvaluatorsResource Client Methods", () => {
         assert.strictEqual(capturedBody.name, testName);
         assert.strictEqual(capturedBody.spanId, expectedUuidSpanId);
         assert.strictEqual(capturedBody.score, testScore);
-        assert.strictEqual(capturedBody.source, "SDK");
+        assert.strictEqual(capturedBody.source, "Code");
 
         scope.done();
       });
