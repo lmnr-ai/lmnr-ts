@@ -1,9 +1,9 @@
-import { isStringUUID, otelTraceIdToUUID, otelSpanIdToUUID, StringUUID } from "../../utils";
+import { isStringUUID, otelSpanIdToUUID, otelTraceIdToUUID, StringUUID } from "../../utils";
 import { BaseResource } from ".";
 
 enum EvaluatorScoreSourceType {
   Evaluator = "Evaluator",
-  Code = "Code"
+  Code = "Code",
 }
 
 interface CreateEvaluatorScoreBase {
@@ -43,7 +43,7 @@ export class EvaluatorsResource extends BaseResource {
    * @param {Record<string, any>} [options.metadata] - Additional metadata
    * @param {number} options.score - The score value (float)
    * @returns {Promise<void>}
-   * 
+   *
    * @example
    * // Score by trace ID (will attach to root span)
    * await evaluators.score({
@@ -52,11 +52,11 @@ export class EvaluatorsResource extends BaseResource {
    *   score: 0.95,
    *   metadata: { model: "gpt-4" }
    * });
-   * 
+   *
    * @example
    * // Score by span ID
    * await evaluators.score({
-   *   name: "relevance", 
+   *   name: "relevance",
    *   spanId: "span-id-here",
    *   score: 0.87
    * });
@@ -104,4 +104,4 @@ export class EvaluatorsResource extends BaseResource {
       await this.handleError(response);
     }
   }
-} 
+}

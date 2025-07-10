@@ -49,12 +49,13 @@ void describe("EvaluatorsResource Client Methods", () => {
         });
 
         // Verify the request body
-        assert.strictEqual(capturedBody.name, testName);
-        assert.strictEqual(capturedBody.traceId, testTraceId);
-        assert.strictEqual(capturedBody.score, testScore);
-        assert.deepStrictEqual(capturedBody.metadata, testMetadata);
-        assert.strictEqual(capturedBody.source, "Code");
-        assert.strictEqual(capturedBody.spanId, undefined);
+        assert.deepStrictEqual(capturedBody, {
+          name: testName,
+          traceId: testTraceId,
+          score: testScore,
+          metadata: testMetadata,
+          source: "Code",
+        });
 
         scope.done();
       });
@@ -81,12 +82,12 @@ void describe("EvaluatorsResource Client Methods", () => {
         });
 
         // Verify the request body
-        assert.strictEqual(capturedBody.name, testName);
-        assert.strictEqual(capturedBody.traceId, expectedUuidTraceId);
-        assert.strictEqual(capturedBody.score, testScore);
-        assert.strictEqual(capturedBody.metadata, undefined);
-        assert.strictEqual(capturedBody.source, "Code");
-        assert.strictEqual(capturedBody.spanId, undefined);
+        assert.deepStrictEqual(capturedBody, {
+          name: testName,
+          traceId: expectedUuidTraceId,
+          score: testScore,
+          source: "Code",
+        });
 
         scope.done();
       });
@@ -113,10 +114,12 @@ void describe("EvaluatorsResource Client Methods", () => {
         });
 
         // Verify the request body
-        assert.strictEqual(capturedBody.name, testName);
-        assert.strictEqual(capturedBody.traceId, expectedUuidTraceId);
-        assert.strictEqual(capturedBody.score, testScore);
-        assert.strictEqual(capturedBody.source, "Code");
+        assert.deepStrictEqual(capturedBody, {
+          name: testName,
+          traceId: expectedUuidTraceId,
+          score: testScore,
+          source: "Code",
+        });
 
         scope.done();
       });
@@ -146,12 +149,13 @@ void describe("EvaluatorsResource Client Methods", () => {
         });
 
         // Verify the request body
-        assert.strictEqual(capturedBody.name, testName);
-        assert.strictEqual(capturedBody.spanId, testSpanId);
-        assert.strictEqual(capturedBody.score, testScore);
-        assert.deepStrictEqual(capturedBody.metadata, testMetadata);
-        assert.strictEqual(capturedBody.source, "Code");
-        assert.strictEqual(capturedBody.traceId, undefined);
+        assert.deepStrictEqual(capturedBody, {
+          name: testName,
+          spanId: testSpanId,
+          score: testScore,
+          metadata: testMetadata,
+          source: "Code",
+        });
 
         scope.done();
       });
@@ -178,12 +182,12 @@ void describe("EvaluatorsResource Client Methods", () => {
         });
 
         // Verify the request body
-        assert.strictEqual(capturedBody.name, testName);
-        assert.strictEqual(capturedBody.spanId, expectedUuidSpanId);
-        assert.strictEqual(capturedBody.score, testScore);
-        assert.strictEqual(capturedBody.metadata, undefined);
-        assert.strictEqual(capturedBody.source, "Code");
-        assert.strictEqual(capturedBody.traceId, undefined);
+        assert.deepStrictEqual(capturedBody, {
+          name: testName,
+          spanId: expectedUuidSpanId,
+          score: testScore,
+          source: "Code",
+        });
 
         scope.done();
       });
@@ -210,10 +214,12 @@ void describe("EvaluatorsResource Client Methods", () => {
         });
 
         // Verify the request body
-        assert.strictEqual(capturedBody.name, testName);
-        assert.strictEqual(capturedBody.spanId, expectedUuidSpanId);
-        assert.strictEqual(capturedBody.score, testScore);
-        assert.strictEqual(capturedBody.source, "Code");
+        assert.deepStrictEqual(capturedBody, {
+          name: testName,
+          spanId: expectedUuidSpanId,
+          score: testScore,
+          source: "Code",
+        });
 
         scope.done();
       });
