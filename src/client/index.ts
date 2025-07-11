@@ -1,6 +1,7 @@
 import { AgentResource } from "./resources/agent";
 import { BrowserEventsResource } from "./resources/browser-events";
 import { EvalsResource } from "./resources/evals";
+import { EvaluatorsResource } from "./resources/evaluators";
 import { TagsResource } from "./resources/tags";
 
 export class LaminarClient {
@@ -9,6 +10,7 @@ export class LaminarClient {
   private _agent: AgentResource;
   private _browserEvents: BrowserEventsResource;
   private _evals: EvalsResource;
+  private _evaluators: EvaluatorsResource;
   private _tags: TagsResource;
 
   constructor({
@@ -29,6 +31,7 @@ export class LaminarClient {
     this._agent = new AgentResource(this.baseUrl, this.projectApiKey);
     this._browserEvents = new BrowserEventsResource(this.baseUrl, this.projectApiKey);
     this._evals = new EvalsResource(this.baseUrl, this.projectApiKey);
+    this._evaluators = new EvaluatorsResource(this.baseUrl, this.projectApiKey);
     this._tags = new TagsResource(this.baseUrl, this.projectApiKey);
   }
 
@@ -42,6 +45,10 @@ export class LaminarClient {
 
   public get evals() {
     return this._evals;
+  }
+
+  public get evaluators() {
+    return this._evaluators;
   }
 
   public get tags() {
