@@ -37,6 +37,7 @@ const logger = initializeLogger();
 interface LaminarInitializeProps {
   projectApiKey?: string;
   baseUrl?: string;
+  baseHttpUrl?: string;
   httpPort?: number;
   grpcPort?: number;
   instrumentModules?: InitializeOptions["instrumentModules"];
@@ -67,6 +68,8 @@ export class Laminar {
    * @param {string} props.baseUrl - Laminar API url. Do not include the port, use
    * `httpPort` and `grpcPort` instead.
    * If not specified, defaults to https://api.lmnr.ai.
+   * @param {string} props.baseHttpUrl - Laminar API http url. If not specified, defaults to
+   * baseUrl. Only use this if you want to proxy HTTP requests through a different host.
    * @param {number} props.httpPort - Laminar API http port.
    * If not specified, defaults to 443.
    * @param {number} props.grpcPort - Laminar API grpc port.
@@ -109,6 +112,7 @@ export class Laminar {
   public static initialize({
     projectApiKey,
     baseUrl,
+    baseHttpUrl,
     httpPort,
     grpcPort,
     instrumentModules,
@@ -127,17 +131,20 @@ export class Laminar {
     }
     this.projectApiKey = key;
     const url = baseUrl ?? process?.env?.LMNR_BASE_URL ?? 'https://api.lmnr.ai';
+    const httpUrl = baseHttpUrl ?? url;
     const port = httpPort ?? (
-      url.match(/:\d{1,5}$/g)
-        ? parseInt(url.match(/:\d{1,5}$/g)![0].slice(1))
+      httpUrl.match(/:\d{1,5}$/g)
+        ? parseInt(httpUrl.match(/:\d{1,5}$/g)![0].slice(1))
         : 443);
     const urlWithoutSlash = url.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
-    this.baseHttpUrl = `${urlWithoutSlash}:${port}`;
+    const httpUrlWithoutSlash = httpUrl.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
+    this.baseHttpUrl = `${httpUrlWithoutSlash}:${port}`;
 
     this.isInitialized = true;
 
     initializeTracing({
       baseUrl: urlWithoutSlash,
+      baseHttpUrl: httpUrlWithoutSlash,
       apiKey: this.projectApiKey,
       port: grpcPort,
       forceHttp,

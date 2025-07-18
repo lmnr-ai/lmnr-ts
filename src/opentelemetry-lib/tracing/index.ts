@@ -31,7 +31,7 @@ let _apiKey: string | undefined;
  * for details.
  */
 export const startTracing = (options: InitializeOptions) => {
-  _baseHttpUrl = `${options.baseUrl}:${options.httpPort ?? 443}`;
+  _baseHttpUrl = `${options.baseHttpUrl ?? options.baseUrl}:${options.httpPort ?? 443}`;
   _apiKey = options.apiKey;
 
   const instrumentations = initializeLaminarInstrumentations({

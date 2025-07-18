@@ -21,10 +21,10 @@ const DEFAULT_CONCURRENCY = 5;
 const MAX_EXPORT_BATCH_SIZE = 64;
 
 declare global {
-
+  // eslint-disable-next-line no-var
   var _evaluations: Evaluation<any, any, any>[] | undefined;
   // If true, then we need to set the evaluation globally without running it
-
+  // eslint-disable-next-line no-var
   var _set_global_evaluation: boolean;
 }
 
@@ -89,6 +89,11 @@ interface EvaluatorConfig {
    * Do NOT include the port in the URL, use `httpPort` and `grpcPort` instead.
    */
   baseUrl?: string;
+  /**
+   * The base HTTP URL of the Laminar API. If not provided, the default is
+   * `baseUrl`. Only use this if you want to proxy HTTP requests through a different host.
+   */
+  baseHttpUrl?: string;
   /**
    * The HTTP port of the Laminar API. If not provided, the default is 443.
    */
@@ -316,9 +321,10 @@ export class Evaluation<D, T, O> {
     }
 
     const url = config?.baseUrl ?? process?.env?.LMNR_BASE_URL ?? 'https://api.lmnr.ai';
+    const httpUrl = config?.baseHttpUrl ?? url;
     const httpPort = config?.httpPort ?? (
-      url.match(/:\d{1,5}$/g)
-        ? parseInt(url.match(/:\d{1,5}$/g)![0].slice(1))
+      httpUrl.match(/:\d{1,5}$/g)
+        ? parseInt(httpUrl.match(/:\d{1,5}$/g)![0].slice(1))
         : 443);
     const urlWithoutSlash = url.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
     const baseHttpUrl = `${urlWithoutSlash}:${httpPort}`;
@@ -345,6 +351,7 @@ export class Evaluation<D, T, O> {
     Laminar.initialize({
       projectApiKey: config?.projectApiKey,
       baseUrl: config?.baseUrl,
+      baseHttpUrl: config?.baseHttpUrl,
       httpPort: config?.httpPort,
       grpcPort: config?.grpcPort,
       instrumentModules: config?.instrumentModules,

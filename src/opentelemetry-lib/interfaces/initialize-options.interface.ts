@@ -36,6 +36,13 @@ export interface InitializeOptions {
   baseUrl?: string;
 
   /**
+   * The Laminar API HTTP endpoint for sending traces data. Optional.
+   * Defaults to baseUrl. Only use this if you want to proxy HTTP requests
+   * through a different host.
+   */
+  baseHttpUrl?: string;
+
+  /**
    * Whether to disable batching. Optional.
    * Defaults to false.
    */
