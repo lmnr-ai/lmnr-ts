@@ -326,7 +326,7 @@ export class Evaluation<D, T, O> {
       httpUrl.match(/:\d{1,5}$/g)
         ? parseInt(httpUrl.match(/:\d{1,5}$/g)![0].slice(1))
         : 443);
-    const urlWithoutSlash = url.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
+    const urlWithoutSlash = httpUrl.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
     const baseHttpUrl = `${urlWithoutSlash}:${httpPort}`;
 
     this.client = new LaminarClient({
@@ -350,9 +350,9 @@ export class Evaluation<D, T, O> {
 
     Laminar.initialize({
       projectApiKey: config?.projectApiKey,
-      baseUrl: config?.baseUrl,
-      baseHttpUrl: config?.baseHttpUrl,
-      httpPort: config?.httpPort,
+      baseUrl: url,
+      baseHttpUrl,
+      httpPort,
       grpcPort: config?.grpcPort,
       instrumentModules: config?.instrumentModules,
       disableBatch: this.traceDisableBatch,
