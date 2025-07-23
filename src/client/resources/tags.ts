@@ -1,7 +1,7 @@
 /** Resource for tagging traces. */
 
 
-import { isStringUUID, otelTraceIdToUUID, StringUUID } from "../../utils";
+import { isStringUUID, otelTraceIdToUUID } from "../../utils";
 import { BaseResource } from "./index";
 
 export class TagsResource extends BaseResource {
@@ -49,7 +49,7 @@ export class TagsResource extends BaseResource {
     const traceTags = Array.isArray(tags) ? tags : [tags];
     const formattedTraceId = isStringUUID(trace_id)
       ? trace_id
-      : otelTraceIdToUUID(trace_id) as StringUUID;
+      : otelTraceIdToUUID(trace_id);
 
     const url = this.baseHttpUrl + "/v1/tag";
     const payload = {

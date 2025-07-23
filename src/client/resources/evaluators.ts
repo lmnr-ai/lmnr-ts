@@ -69,7 +69,7 @@ export class EvaluatorsResource extends BaseResource {
     if ('traceId' in options && options.traceId) {
       const formattedTraceId = isStringUUID(options.traceId)
         ? options.traceId
-        : otelTraceIdToUUID(options.traceId) as StringUUID;
+        : otelTraceIdToUUID(options.traceId);
 
       payload = {
         name,

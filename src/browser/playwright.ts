@@ -4,9 +4,6 @@ import {
   InstrumentationModuleDefinition,
   InstrumentationNodeModuleDefinition,
 } from "@opentelemetry/instrumentation";
-import { existsSync } from 'fs';
-import { readFile } from "fs/promises";
-import path from "path";
 import type * as PlaywrightLib from "playwright";
 import type { Browser, BrowserContext, Page } from 'playwright';
 
@@ -15,49 +12,18 @@ import { LaminarClient } from '../client';
 import { observe } from '../decorators';
 import { Laminar } from '../laminar';
 import { TRACE_HAS_BROWSER_SESSION } from '../opentelemetry-lib/tracing/attributes';
-import { getDirname, initializeLogger, newUUID, NIL_UUID, StringUUID } from '../utils';
-import { collectAndSendPageEvents } from "./utils";
+import { initializeLogger, newUUID, NIL_UUID, otelTraceIdToUUID, StringUUID } from '../utils';
+import { injectSessionRecorder, sendPageEvents, takeFullSnapshot } from "./utils";
 
 const logger = initializeLogger();
-
-const RRWEB_SCRIPT_PATH = (() => {
-  const fileName = 'rrweb.umd.min.cjs';
-  const standardPath = path.join(getDirname(), '..', 'assets', 'rrweb', fileName);
-  // Fallback paths for different environments and tests
-  const fallbackPaths = [
-    path.join(getDirname(), '..', '..', 'assets', 'rrweb', fileName), // For tests
-    path.join(process.cwd(), 'assets', 'rrweb', fileName), // Using cwd
-    path.join(process.cwd(), '@lmnr-ai/lmnr', 'assets', 'rrweb', fileName), // Absolute path
-  ];
-
-  try {
-    if (existsSync(standardPath)) {
-      return standardPath;
-    }
-
-    for (const fallbackPath of fallbackPaths) {
-      if (existsSync(fallbackPath)) {
-        return fallbackPath;
-      }
-    }
-
-    // If no path exists, return the standard path and let it fail with a clear error
-    return standardPath;
-  } catch {
-    // In case fs.existsSync fails, return the standard path
-    return standardPath;
-  }
-})();
+const LMNR_SEND_EVENTS_FUNCTION_NAME = 'lmnrSendEvents';
 
 /* eslint-disable
   @typescript-eslint/no-this-alias,
-  @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return
+  @typescript-eslint/no-unsafe-function-type
 */
 export class PlaywrightInstrumentation extends InstrumentationBase {
   private _patchedBrowsers: Set<Browser> = new Set();
-  private _patchedContexts: Set<BrowserContext> = new Set();
-  private _patchedPages: Set<Page> = new Set();
   private _parentSpan: Span | undefined;
   private _client: LaminarClient;
 
@@ -181,13 +147,6 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
     for (const browser of this._patchedBrowsers) {
       this._unwrap(browser, 'newContext');
-      this._unwrap(browser, 'newPage');
-    }
-    for (const context of this._patchedContexts) {
-      this._unwrap(context, 'newPage');
-    }
-    for (const page of this._patchedPages) {
-      this._unwrap(page, 'close');
     }
   }
 
@@ -195,21 +154,13 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     const plugin = this;
     return (original: Function) => async function method(this: Browser, ...args: any[]) {
       const browser: Browser = await original.call(this, ...args);
-      if (!plugin._parentSpan) {
-        plugin._parentSpan = Laminar.startSpan({
-          name: 'playwright',
-        });
-      }
+      const sessionId = newUUID();
 
       for (const context of browser.contexts()) {
-        await Promise.all(context.pages().map(page => plugin.patchPage(page)));
-        plugin._wrap(
-          context,
-          'newPage',
-          plugin.patchBrowserContextNewPage(),
-        );
-        context.on('page', (page: Page) => plugin.patchPage(page));
-        plugin._patchedContexts.add(context);
+        context.on('page', (page: Page) => plugin.patchPage(page, sessionId));
+        for (const page of context.pages()) {
+          await plugin.patchPage(page, sessionId);
+        }
       }
 
       plugin._wrap(
@@ -218,30 +169,8 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         plugin.patchBrowserNewContext(),
       );
 
-      plugin._wrap(
-        browser,
-        'newPage',
-        plugin.patchBrowserNewPage(),
-      );
-
-      plugin._wrap(
-        browser,
-        'close',
-        plugin.patchBrowserClose(),
-      );
-
       plugin._patchedBrowsers.add(browser);
       return browser;
-    };
-  }
-
-  private patchBrowserClose() {
-    const plugin = this;
-    return (original: Function) => async function method(this: Browser, ...args: unknown[]) {
-      await original.call(this, ...args);
-      if (plugin._parentSpan?.isRecording()) {
-        plugin._parentSpan?.end();
-      }
     };
   }
 
@@ -249,229 +178,101 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     const plugin = this;
     return (original: Function) => async function method(this: Browser, ...args: unknown[]) {
       const context: BrowserContext = await original.bind(this).apply(this, args);
-      if (!plugin._parentSpan) {
-        plugin._parentSpan = Laminar.startSpan({
-          name: 'playwright',
-        });
-      }
-      // Patch pages that are created manually from Playwright
-      plugin._wrap(
-        context,
-        'newPage',
-        plugin.patchBrowserContextNewPage(),
-      );
-      plugin._wrap(
-        context,
-        'close',
-        plugin.patchBrowserContextClose(),
-      );
+      const sessionId = newUUID();
       // Patch pages created by browser, e.g. new tab
-      context.on('page', async (page) => plugin.patchPage(page));
+      context.on('page', async (page) => plugin.patchPage(page, sessionId));
 
       // Patch pages that are already created
       for (const page of context.pages()) {
-        await plugin.patchPage(page);
+        await plugin.patchPage(page, sessionId);
       }
 
-      plugin._patchedContexts.add(context);
       return context;
     };
   }
 
-  private patchBrowserContextClose() {
-    const plugin = this;
-    return (original: Function) => async function method(this: BrowserContext, ...args: unknown[]) {
-      await original.bind(this).apply(this, args);
-      if (plugin._parentSpan?.isRecording()) {
-        plugin._parentSpan.end();
-      }
-    };
-  }
-
-  private patchBrowserNewPage() {
-    return (original: Function) => async function method(this: Browser, ...args: unknown[]) {
-      const page = await original.bind(this).apply(this, args);
-      if (!page) {
-        return null;
-      }
-      // TODO: investigate why this creates a separate empty span and no events
-      // await plugin.patchPage(page);
-      return page;
-    };
-  }
-
-  public patchBrowserContextNewPage() {
-    const plugin = this;
-    return (original: Function) => async function method(this: BrowserContext, ...args: unknown[]) {
-      const page = await original.bind(this).apply(this, args);
-      if (!plugin._parentSpan) {
-        plugin._parentSpan = Laminar.startSpan({
-          name: 'playwright',
-        });
-      }
-      if (!page) {
-        return null;
-      }
-
-      await plugin.patchPage(page);
-
-      return page;
-    };
-  }
-
-  public async patchPage(page: Page) {
-    return await Laminar.withSpan(this._parentSpan!, async () => {
+  public async patchPage(page: Page, sessionId: StringUUID) {
+    const wrapped = async () => {
       // Note: be careful with await here, if the await is removed,
       // this creates a race condition, and playwright fails.
       await observe({ name: 'playwright.page' }, async () => {
-        await this._patchPage(page);
+        await this._patchPage(page, sessionId);
       });
-    });
+    };
+
+    if (this._parentSpan) {
+      return await Laminar.withSpan(
+        this._parentSpan,
+        wrapped,
+      );
+    }
+
+    return await wrapped();
   }
 
-  private async _patchPage(page: Page) {
+  private async _patchPage(page: Page, sessionId: StringUUID) {
     const originalBringToFront = page.bringToFront.bind(page);
     page.bringToFront = async () => {
       await originalBringToFront();
-      await page.evaluate(() => {
-        if ((window as any).lmnrRrweb) {
-          try {
-            (window as any).lmnrRrweb.record.takeFullSnapshot();
-          } catch (error) {
-            console.error("Failed to take full snapshot: " +
-              `${error instanceof Error ? error.message : String(error)}`);
-          }
-        }
-      });
+      await takeFullSnapshot(page);
     };
-
-    page.addListener("domcontentloaded", (p: Page) => {
-      this.injectRrweb(p).catch(error => {
-        logger.error("Failed to inject rrweb: " +
-          `${error instanceof Error ? error.message : String(error)}`);
-      });
-    });
-
-    await this.injectRrweb(page);
-    this._patchedPages.add(page);
 
     trace.getActiveSpan()?.setAttribute(TRACE_HAS_BROWSER_SESSION, true);
+    const otelTraceId = trace.getActiveSpan()?.spanContext().traceId;
+    const traceId = otelTraceId ? otelTraceIdToUUID(otelTraceId) : NIL_UUID;
 
-    const traceId = trace.getActiveSpan()?.spanContext().traceId as StringUUID ?? NIL_UUID;
-    const sessionId = newUUID();
-    const interval = setInterval(() => {
-      if (page.isClosed()) {
-        clearInterval(interval);
+    try {
+      if (await page.evaluate(
+        () => typeof (window as any)[LMNR_SEND_EVENTS_FUNCTION_NAME] !== 'undefined',
+      )) {
         return;
       }
-      collectAndSendPageEvents(this._client, page, sessionId, traceId)
-        .catch(error => {
-          logger.error("Event collection stopped: " +
-            `${error instanceof Error ? error.message : String(error)}`);
-        });
-    }, 2000);
-
-    page.addListener('close', async () => {
-      clearInterval(interval);
-      await collectAndSendPageEvents(this._client, page, sessionId, traceId);
-      for (const otherPage of page.context().pages().reverse()) {
-        try {
-          await otherPage.bringToFront();
-          break;
-        } catch (error) {
-          logger.debug("Failed to bring page to front: " +
-            `${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-    });
-  }
-
-  private async injectRrweb(page: Page) {
-    // Wait for the page to be in a ready state first
-    await page.waitForLoadState('domcontentloaded');
-    const tryRunScript = async (
-      script: (...args: any[]) => Promise<any>,
-      maxAttempts: number = 5,
-    ) => {
-      for (let i = 0; i < maxAttempts; i++) {
-        try {
-          return await script();
-        } catch (error) {
-          logger.error("Operation " + script.name + " failed: " +
-            `${error instanceof Error ? error.message : String(error)}`);
-        }
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
+    } catch {
+      logger.debug("Session recorder already injected");
     };
 
-    const isRrwebPresent = await page.evaluate(() =>
-      typeof (window as any).lmnrRrweb !== 'undefined',
-    );
+    page.on('load', async () => {
+      try {
+        await injectSessionRecorder(page);
+      } catch (error) {
+        logger.error("Error in onLoad handler: " +
+          `${error instanceof Error ? error.message : String(error)}`);
+      }
+    });
 
-    // Load rrweb and set up recording
-    if (!isRrwebPresent) {
-      const script = await readFile(RRWEB_SCRIPT_PATH, 'utf8');
-      await tryRunScript(async function injectRrweb() {
-        await page.evaluate(script);
-        const res = await page.waitForFunction(
-          () => 'lmnrRrweb' in window || (window as any).lmnrRrweb,
-          {
-            timeout: 5000,
-          },
-        );
-        if (!res) {
-          throw new Error('Failed to inject rrweb');
+    page.on('close', async () => {
+      try {
+        // Send any remaining events before closing
+        await sendPageEvents(this._client, page, sessionId, traceId);
+      } catch (error) {
+        logger.error("Error in onClose handler: " +
+          `${error instanceof Error ? error.message : String(error)}`);
+      }
+    });
+
+    await injectSessionRecorder(page);
+    try {
+      await page.exposeFunction(LMNR_SEND_EVENTS_FUNCTION_NAME, async (events: any[]) => {
+        try {
+          if (events != null && events.length > 0) {
+            await this._client.browserEvents.send({
+              sessionId,
+              traceId,
+              events,
+            });
+          }
+        } catch (error) {
+          logger.debug("Could not send events: " +
+            `${error instanceof Error ? error.message : String(error)}`);
         }
       });
+    } catch (error) {
+      logger.debug("Could not expose function " + LMNR_SEND_EVENTS_FUNCTION_NAME + ": " +
+        `${error instanceof Error ? error.message : String(error)}`);
     }
-
-    // Update the recording setup to include trace ID
-    await tryRunScript(async function setupRrwebCollection() {
-      await page.evaluate(() => {
-        const HEARTBEAT_INTERVAL = 1000;  // 1 second heartbeat
-
-        (window as any).lmnrRrwebEventsBatch = new Set();
-
-        const compressEventData = async (data: any) => {
-          const jsonString = JSON.stringify(data);
-          const blob = new Blob([jsonString], { type: 'application/json' });
-          const compressedStream = blob.stream().pipeThrough(new CompressionStream('gzip'));
-          const compressedResponse = new Response(compressedStream);
-          const compressedData = await compressedResponse.arrayBuffer();
-          return Array.from(new Uint8Array(compressedData));
-        };
-
-        (window as any).lmnrGetAndClearEvents = () => {
-          const events = (window as any).lmnrRrwebEventsBatch;
-          (window as any).lmnrRrwebEventsBatch = new Set();
-          return Array.from(events);
-        };
-
-        setInterval(() => {
-          (window as any).lmnrRrweb.record.addCustomEvent('heartbeat', {
-            title: document.title,
-            url: document.URL,
-          });
-        }, HEARTBEAT_INTERVAL);
-
-        (window as any).lmnrRrweb.record({
-          async emit(event: any) {
-            const compressedEvent = {
-              ...event,
-              data: await compressEventData(event.data),
-            };
-            (window as any).lmnrRrwebEventsBatch.add(compressedEvent);
-          },
-          recordCanvas: true,
-          collectFonts: true,
-          recordCrossOriginIframes: true,
-        });
-      });
-    });
-  };
+  }
 }
 /* eslint-enable
   @typescript-eslint/no-this-alias,
-  @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return
+  @typescript-eslint/no-unsafe-function-type
 */
