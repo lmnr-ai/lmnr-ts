@@ -13,10 +13,9 @@ import { observe } from '../decorators';
 import { Laminar } from '../laminar';
 import { TRACE_HAS_BROWSER_SESSION } from '../opentelemetry-lib/tracing/attributes';
 import { initializeLogger, newUUID, NIL_UUID, otelTraceIdToUUID, StringUUID } from '../utils';
-import { injectSessionRecorder, sendPageEvents, takeFullSnapshot } from "./utils";
+import { injectSessionRecorder, LMNR_SEND_EVENTS_FUNCTION_NAME, sendPageEvents, takeFullSnapshot } from "./utils";
 
 const logger = initializeLogger();
-const LMNR_SEND_EVENTS_FUNCTION_NAME = 'lmnrSendEvents';
 
 /* eslint-disable
   @typescript-eslint/no-this-alias,
@@ -221,17 +220,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     const otelTraceId = trace.getActiveSpan()?.spanContext().traceId;
     const traceId = otelTraceId ? otelTraceIdToUUID(otelTraceId) : NIL_UUID;
 
-    try {
-      if (await page.evaluate(
-        () => typeof (window as any)[LMNR_SEND_EVENTS_FUNCTION_NAME] !== 'undefined',
-      )) {
-        return;
-      }
-    } catch {
-      logger.debug("Session recorder already injected");
-    };
-
-    page.on('load', async () => {
+    page.on('domcontentloaded', async () => {
       try {
         await injectSessionRecorder(page);
       } catch (error) {

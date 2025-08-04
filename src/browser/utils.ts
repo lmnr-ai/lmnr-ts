@@ -9,15 +9,17 @@ import { z } from "zod";
 import { LaminarClient } from "..";
 import { getDirname, initializeLogger, StringUUID } from "../utils";
 
+export const LMNR_SEND_EVENTS_FUNCTION_NAME = 'lmnrSendEvents';
+
 const logger = initializeLogger();
-const RRWEB_SCRIPT_PATH = (() => {
-  const fileName = 'rrweb.umd.min.cjs';
-  const standardPath = path.join(getDirname(), '..', 'assets', 'rrweb', fileName);
+const RECORDER_SCRIPT_PATH = (() => {
+  const fileName = 'record.umd.min.cjs';
+  const standardPath = path.join(getDirname(), '..', 'assets', 'recorder', fileName);
   // Fallback paths for different environments and tests
   const fallbackPaths = [
-    path.join(getDirname(), '..', '..', 'assets', 'rrweb', fileName), // For tests
-    path.join(process.cwd(), 'assets', 'rrweb', fileName), // Using cwd
-    path.join(process.cwd(), '@lmnr-ai/lmnr', 'assets', 'rrweb', fileName), // Absolute path
+    path.join(getDirname(), '..', '..', 'assets', 'recorder', fileName), // For tests
+    path.join(process.cwd(), 'assets', 'recorder', fileName), // Using cwd
+    path.join(process.cwd(), '@lmnr-ai/lmnr', 'assets', 'recorder', fileName), // Absolute path
   ];
 
   try {
@@ -107,7 +109,7 @@ export const takeFullSnapshot = async (
       (window as any).lmnrRrweb.record.takeFullSnapshot();
       return true;
     } catch (error) {
-      console.error("Error taking full snapshot: " +
+      logger.error("Error taking full snapshot: " +
         `${error instanceof Error ? error.message : String(error)}`);
       return false;
     }
@@ -148,8 +150,8 @@ export const injectSessionRecorder = async (page: PlaywrightPage | PuppeteerPage
 
   // Load rrweb and set up recording
   if (!isRrwebPresent) {
-    const script = await readFile(RRWEB_SCRIPT_PATH, 'utf8');
-    const result = await tryRunScript(async function injectRrweb() {
+    const script = await readFile(RECORDER_SCRIPT_PATH, 'utf8');
+    const result = await tryRunScript(async function injectSessionRecorder() {
       await castedPage.evaluate(script);
       return true;
     });
@@ -157,386 +159,12 @@ export const injectSessionRecorder = async (page: PlaywrightPage | PuppeteerPage
       logger.error("Failed to load session recorder");
       return;
     }
-  }
-
-  try {
-    await castedPage.evaluate(() => {
-      const BATCH_TIMEOUT = 2000; // Flush events batch after 2 seconds
-      const MAX_WORKER_PROMISES = 50; // Max concurrent worker promises
-      const HEARTBEAT_INTERVAL = 1000; // 1 second
-
-      (window as any).lmnrRrwebEventsBatch = [];
-
-      // Create a Web Worker for heavy JSON processing with chunked processing
-      const createCompressionWorker = (): Worker => {
-        const workerCode = `
-          self.onmessage = async (e) => {
-            const { jsonString, buffer, id, useBuffer } = e.data;
-            try {
-              let dataBytes;
-              if (useBuffer && buffer) {
-                // Use transferred ArrayBuffer (no copying needed!)
-                dataBytes = new Uint8Array(buffer);
-              } else {
-                  // Convert JSON string to bytes
-                  const textEncoder = new TextEncoder();
-                  dataBytes = textEncoder.encode(jsonString);
-              }
-
-              const compressionStream = new CompressionStream('gzip');
-              const writer = compressionStream.writable.getWriter();
-              const reader = compressionStream.readable.getReader();
-
-              // TODO: investigate why the events are not sent if we await the 
-              // write and close
-              writer.write(dataBytes);
-              writer.close();
-
-              const chunks = [];
-              let totalLength = 0;
-
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                chunks.push(value);
-                totalLength += value.length;
-              }
-
-              const compressedData = new Uint8Array(totalLength);
-              let offset = 0;
-              for (const chunk of chunks) {
-                  compressedData.set(chunk, offset);
-                  offset += chunk.length;
-              }
-
-              self.postMessage({ id, success: true, data: compressedData });
-            } catch (error) {
-              self.postMessage({ id, success: false, error: error.message });
-            }
-          };
-        `;
-
-        const blob = new Blob([workerCode], { type: 'application/javascript' });
-        return new Worker(URL.createObjectURL(blob));
-      };
-
-      let compressionWorker: Worker | null = null;
-      const workerPromises = new Map();
-      let workerId = 0;
-
-      // Cleanup function for worker
-      const cleanupWorker = () => {
-        if (compressionWorker) {
-          compressionWorker.terminate();
-          compressionWorker = null;
-        }
-        workerPromises.clear();
-        workerId = 0;
-      };
-
-      // Clean up stale promises to prevent memory leaks
-      const cleanupStalePromises = () => {
-        if (workerPromises.size > MAX_WORKER_PROMISES) {
-          const toDelete = [];
-          for (const [id, promise] of workerPromises) {
-            if (toDelete.length >= workerPromises.size - MAX_WORKER_PROMISES) {
-              break;
-            }
-            toDelete.push(id);
-            promise.reject(new Error('Promise cleaned up due to memory pressure'));
-          }
-          toDelete.forEach(id => workerPromises.delete(id));
-        }
-      };
-
-      // Non-blocking JSON.stringify using chunked processing
-      const stringifyNonBlocking = (
-        obj: unknown,
-        chunkSize = 10000,
-      ): Promise<string> => new Promise((resolve, reject) => {
-        try {
-          // For very large objects, we need to be more careful
-          // Use requestIdleCallback if available, otherwise setTimeout
-          const scheduleWork = window.requestIdleCallback ||
-            ((cb) => setTimeout(cb, 0));
-
-          let result = '';
-          let keys: string[] = [];
-          let keyIndex = 0;
-
-          // Pre-process to get all keys if it's an object
-          if (typeof obj === 'object' && obj !== null && !Array.isArray(obj)) {
-            keys = Object.keys(obj);
-          }
-
-          const processChunk = () => {
-            try {
-              if (Array.isArray(obj) || typeof obj !== 'object' || obj === null) {
-                // For arrays and primitives, just stringify directly
-                result = JSON.stringify(obj);
-                resolve(result);
-                return;
-              }
-
-              // For objects, process in chunks
-              const endIndex = Math.min(keyIndex + chunkSize, keys.length);
-
-              if (keyIndex === 0) {
-                result = '{';
-              }
-
-              for (let i = keyIndex; i < endIndex; i++) {
-                const key = keys[i];
-                const value = (obj as Record<string, unknown>)[key];
-
-                if (i > 0) result += ',';
-                result += JSON.stringify(key) + ':' + JSON.stringify(value);
-              }
-
-              keyIndex = endIndex;
-
-              if (keyIndex >= keys.length) {
-                result += '}';
-                resolve(result);
-              } else {
-                // Schedule next chunk
-                scheduleWork(processChunk);
-              }
-            } catch (error) {
-              reject(error as Error);
-            }
-          };
-
-          processChunk();
-        } catch (error) {
-          reject(error as Error);
-        }
-      });
-
-      // Fast compression for small objects (main thread)
-      const compressSmallObject = async (data: unknown) => {
-        const jsonString = JSON.stringify(data);
-        const textEncoder = new TextEncoder();
-        const bytes = textEncoder.encode(jsonString);
-
-        const compressionStream = new CompressionStream('gzip');
-        const writer = compressionStream.writable.getWriter();
-        const reader = compressionStream.readable.getReader();
-
-        // TODO: investigate why the events are not sent if we await the write and close
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        writer.write(bytes);
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        writer.close();
-
-        const chunks = [];
-        let totalLength = 0;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          totalLength += value.length;
-        }
-
-        const compressedData = new Uint8Array(totalLength);
-        let offset = 0;
-        for (const chunk of chunks) {
-          compressedData.set(chunk, offset);
-          offset += chunk.length;
-        }
-
-        return compressedData;
-      };
-
-      // Alternative: Use transferable objects for maximum efficiency
-      const compressLargeObjectTransferable = async (data: unknown): Promise<Uint8Array> => {
-        try {
-          // Clean up stale promises first
-          cleanupStalePromises();
-
-          // Stringify on main thread but non-blocking
-          const jsonString = await stringifyNonBlocking(data);
-
-          // Convert to ArrayBuffer (transferable)
-          const encoder = new TextEncoder();
-          const uint8Array = encoder.encode(jsonString);
-          const buffer = uint8Array.buffer; // Use the original buffer for transfer
-
-          return new Promise((resolve, reject) => {
-            if (!compressionWorker) {
-              compressionWorker = createCompressionWorker();
-              compressionWorker.onmessage = (e) => {
-                const { id, success, data: result, error } = e.data;
-                const promise = workerPromises.get(id);
-                if (promise) {
-                  workerPromises.delete(id);
-                  if (success) {
-                    promise.resolve(result);
-                  } else {
-                    promise.reject(new Error(error));
-                  }
-                }
-              };
-
-              compressionWorker.onerror = (error) => {
-                console.error('Compression worker error:', error);
-                cleanupWorker();
-              };
-            }
-
-            const id = ++workerId;
-            workerPromises.set(id, { resolve, reject });
-
-            // Set timeout to prevent hanging promises
-            setTimeout(() => {
-              if (workerPromises.has(id)) {
-                workerPromises.delete(id);
-                reject(new Error('Compression timeout'));
-              }
-            }, 10000);
-
-            // Transfer the ArrayBuffer (no copying!)
-            compressionWorker.postMessage({
-              buffer,
-              id,
-              useBuffer: true,
-            }, [buffer]);
-          });
-        } catch (error) {
-          console.warn('Failed to process large object with transferable:', error);
-          return compressSmallObject(data);
-        }
-      };
-
-      // Worker-based compression for large objects
-      const compressLargeObject = async (data: unknown): Promise<Uint8Array> => {
-        try {
-          // Use transferable objects for better performance
-          return await compressLargeObjectTransferable(data);
-        } catch (error) {
-          console.warn('Transferable failed, falling back to string method:', error);
-          // Fallback to string method
-          const jsonString = await stringifyNonBlocking(data);
-
-          return new Promise((resolve, reject) => {
-            if (!compressionWorker) {
-              compressionWorker = createCompressionWorker();
-              compressionWorker.onmessage = (e) => {
-                const { id, success, data: result, error } = e.data;
-                const promise = workerPromises.get(id);
-                if (promise) {
-                  workerPromises.delete(id);
-                  if (success) {
-                    promise.resolve(result);
-                  } else {
-                    promise.reject(new Error(error));
-                  }
-                }
-              };
-
-              compressionWorker.onerror = (error) => {
-                console.error('Compression worker error:', error);
-                cleanupWorker();
-              };
-            }
-
-            const id = ++workerId;
-            workerPromises.set(id, { resolve, reject });
-
-            // Set timeout to prevent hanging promises
-            setTimeout(() => {
-              if (workerPromises.has(id)) {
-                workerPromises.delete(id);
-                reject(new Error('Compression timeout'));
-              }
-            }, 10000);
-
-            compressionWorker.postMessage({ jsonString, id });
-          });
-        }
-      };
-
-
-      setInterval(cleanupWorker, 5000);
-
-      const isLargeEvent = (type: number) => {
-        const LARGE_EVENT_TYPES: number[] = [
-          2, // FullSnapshot
-          3, // IncrementalSnapshot
-        ];
-
-        if (LARGE_EVENT_TYPES.includes(type)) {
-          return true;
-        }
-
-        return false;
-      };
-
-      const sendBatchIfReady = async () => {
-        if (
-          (window as any).lmnrRrwebEventsBatch.length > 0
-          && typeof (window as any).lmnrSendEvents === 'function'
-        ) {
-          const events = (window as any).lmnrRrwebEventsBatch;
-          (window as any).lmnrRrwebEventsBatch = [];
-
-          try {
-            await (window as any).lmnrSendEvents(events);
-          } catch (error) {
-            console.error('Failed to send events:', error);
-          }
-        }
-      };
-
-      const bufferToBase64 = async (buffer: Uint8Array) => {
-        const base64url = await new Promise<string>(resolve => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.readAsDataURL(new Blob([buffer]));
-        });
-
-        return base64url.slice(base64url.indexOf(',') + 1);
-      };
-
-      // it's fine to retrigger the interval even if the original function is async
-      // and still running.
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises
-      setInterval(sendBatchIfReady, BATCH_TIMEOUT);
-
-      setInterval(() => {
-        (window as any).lmnrRrweb.record.addCustomEvent('heartbeat', {
-          title: document.title,
-          url: document.URL,
-        });
-      }, HEARTBEAT_INTERVAL);
-
-      (window as any).lmnrRrweb.record({
-        async emit(event: any) {
-          try {
-            const isLarge = isLargeEvent(event.type);
-            const compressedResult = isLarge ?
-              await compressLargeObject(event.data) :
-              await compressSmallObject(event.data);
-
-            const base64Data = await bufferToBase64(compressedResult);
-            const eventToSend = {
-              ...event,
-              data: base64Data,
-            };
-            (window as any).lmnrRrwebEventsBatch.push(eventToSend);
-          } catch (error) {
-            console.warn('Failed to push event to batch', error);
-          }
-        },
-        recordCanvas: true,
-        collectFonts: true,
-        recordCrossOriginIframes: true,
-      });
-    });
-  } catch (error) {
-    logger.debug("Failed to inject session recorder: " +
-      `${error instanceof Error ? error.message : String(error)}`);
+    try {
+      await castedPage.evaluate(injectScript);
+    } catch (error) {
+      logger.debug("Failed to inject session recorder: " +
+        `${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 };
 
@@ -742,4 +370,382 @@ export const modelToProviderMap: Record<string, string> = {
   "gemini-2.0-flash": "google",
   "gemini-2.5-flash-preview-04-17": "google",
   "gemini-2.5-pro-preview-03-25": "google",
+};
+
+const injectScript = () => {
+  const BATCH_TIMEOUT = 2000; // Flush events batch after 2 seconds
+  const MAX_WORKER_PROMISES = 50; // Max concurrent worker promises
+  const HEARTBEAT_INTERVAL = 1000; // 1 second
+
+  (window as any).lmnrRrwebEventsBatch = [];
+
+  // Create a Web Worker for heavy JSON processing with chunked processing
+  const createCompressionWorker = (): Worker => {
+    const workerCode = `
+        self.onmessage = async (e) => {
+          const { jsonString, buffer, id, useBuffer } = e.data;
+          try {
+            let dataBytes;
+            if (useBuffer && buffer) {
+              // Use transferred ArrayBuffer (no copying needed!)
+              dataBytes = new Uint8Array(buffer);
+            } else {
+                // Convert JSON string to bytes
+                const textEncoder = new TextEncoder();
+                dataBytes = textEncoder.encode(jsonString);
+            }
+
+            const compressionStream = new CompressionStream('gzip');
+            const writer = compressionStream.writable.getWriter();
+            const reader = compressionStream.readable.getReader();
+
+            // TODO: investigate why the events are not sent if we await the 
+            // write and close
+            writer.write(dataBytes);
+            writer.close();
+
+            const chunks = [];
+            let totalLength = 0;
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+              totalLength += value.length;
+            }
+
+            const compressedData = new Uint8Array(totalLength);
+            let offset = 0;
+            for (const chunk of chunks) {
+                compressedData.set(chunk, offset);
+                offset += chunk.length;
+            }
+
+            self.postMessage({ id, success: true, data: compressedData });
+          } catch (error) {
+            self.postMessage({ id, success: false, error: error.message });
+          }
+        };
+      `;
+
+    const blob = new Blob([workerCode], { type: 'application/javascript' });
+    return new Worker(URL.createObjectURL(blob));
+  };
+
+  let compressionWorker: Worker | null = null;
+  const workerPromises = new Map();
+  let workerId = 0;
+
+  // Cleanup function for worker
+  const cleanupWorker = () => {
+    if (compressionWorker) {
+      compressionWorker.terminate();
+      compressionWorker = null;
+    }
+    workerPromises.clear();
+    workerId = 0;
+  };
+
+  // Clean up stale promises to prevent memory leaks
+  const cleanupStalePromises = () => {
+    if (workerPromises.size > MAX_WORKER_PROMISES) {
+      const toDelete = [];
+      for (const [id, promise] of workerPromises) {
+        if (toDelete.length >= workerPromises.size - MAX_WORKER_PROMISES) {
+          break;
+        }
+        toDelete.push(id);
+        promise.reject(new Error('Promise cleaned up due to memory pressure'));
+      }
+      toDelete.forEach(id => workerPromises.delete(id));
+    }
+  };
+
+  // Non-blocking JSON.stringify using chunked processing
+  const stringifyNonBlocking = (
+    obj: unknown,
+    chunkSize = 10000,
+  ): Promise<string> => new Promise((resolve, reject) => {
+    try {
+      // For very large objects, we need to be more careful
+      // Use requestIdleCallback if available, otherwise setTimeout
+      const scheduleWork = window.requestIdleCallback ||
+        ((cb) => setTimeout(cb, 0));
+
+      let result = '';
+      let keys: string[] = [];
+      let keyIndex = 0;
+
+      // Pre-process to get all keys if it's an object
+      if (typeof obj === 'object' && obj !== null && !Array.isArray(obj)) {
+        keys = Object.keys(obj);
+      }
+
+      const processChunk = () => {
+        try {
+          if (Array.isArray(obj) || typeof obj !== 'object' || obj === null) {
+            // For arrays and primitives, just stringify directly
+            result = JSON.stringify(obj);
+            resolve(result);
+            return;
+          }
+
+          // For objects, process in chunks
+          const endIndex = Math.min(keyIndex + chunkSize, keys.length);
+
+          if (keyIndex === 0) {
+            result = '{';
+          }
+
+          for (let i = keyIndex; i < endIndex; i++) {
+            const key = keys[i];
+            const value = (obj as Record<string, unknown>)[key];
+
+            if (i > 0) result += ',';
+            result += JSON.stringify(key) + ':' + JSON.stringify(value);
+          }
+
+          keyIndex = endIndex;
+
+          if (keyIndex >= keys.length) {
+            result += '}';
+            resolve(result);
+          } else {
+            // Schedule next chunk
+            scheduleWork(processChunk);
+          }
+        } catch (error) {
+          reject(error as Error);
+        }
+      };
+
+      processChunk();
+    } catch (error) {
+      reject(error as Error);
+    }
+  });
+
+  // Fast compression for small objects (main thread)
+  const compressSmallObject = async (data: unknown) => {
+    const jsonString = JSON.stringify(data);
+    const textEncoder = new TextEncoder();
+    const bytes = textEncoder.encode(jsonString);
+
+    const compressionStream = new CompressionStream('gzip');
+    const writer = compressionStream.writable.getWriter();
+    const reader = compressionStream.readable.getReader();
+
+    // TODO: investigate why the events are not sent if we await the write and close
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    writer.write(bytes);
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    writer.close();
+
+    const chunks = [];
+    let totalLength = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      totalLength += value.length;
+    }
+
+    const compressedData = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      compressedData.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    return compressedData;
+  };
+
+  // Alternative: Use transferable objects for maximum efficiency
+  const compressLargeObjectTransferable = async (data: unknown): Promise<Uint8Array> => {
+    try {
+      // Clean up stale promises first
+      cleanupStalePromises();
+
+      // Stringify on main thread but non-blocking
+      const jsonString = await stringifyNonBlocking(data);
+
+      // Convert to ArrayBuffer (transferable)
+      const encoder = new TextEncoder();
+      const uint8Array = encoder.encode(jsonString);
+      const buffer = uint8Array.buffer; // Use the original buffer for transfer
+
+      return new Promise((resolve, reject) => {
+        if (!compressionWorker) {
+          compressionWorker = createCompressionWorker();
+          compressionWorker.onmessage = (e) => {
+            const { id, success, data: result, error } = e.data;
+            const promise = workerPromises.get(id);
+            if (promise) {
+              workerPromises.delete(id);
+              if (success) {
+                promise.resolve(result);
+              } else {
+                promise.reject(new Error(error));
+              }
+            }
+          };
+
+          compressionWorker.onerror = (error) => {
+            console.error('Compression worker error:', error);
+            cleanupWorker();
+          };
+        }
+
+        const id = ++workerId;
+        workerPromises.set(id, { resolve, reject });
+
+        // Set timeout to prevent hanging promises
+        setTimeout(() => {
+          if (workerPromises.has(id)) {
+            workerPromises.delete(id);
+            reject(new Error('Compression timeout'));
+          }
+        }, 10000);
+
+        // Transfer the ArrayBuffer (no copying!)
+        compressionWorker.postMessage({
+          buffer,
+          id,
+          useBuffer: true,
+        }, [buffer]);
+      });
+    } catch (error) {
+      console.warn('Failed to process large object with transferable:', error);
+      return compressSmallObject(data);
+    }
+  };
+
+  // Worker-based compression for large objects
+  const compressLargeObject = async (data: unknown): Promise<Uint8Array> => {
+    try {
+      // Use transferable objects for better performance
+      return await compressLargeObjectTransferable(data);
+    } catch (error) {
+      console.warn('Transferable failed, falling back to string method:', error);
+      // Fallback to string method
+      const jsonString = await stringifyNonBlocking(data);
+
+      return new Promise((resolve, reject) => {
+        if (!compressionWorker) {
+          compressionWorker = createCompressionWorker();
+          compressionWorker.onmessage = (e) => {
+            const { id, success, data: result, error } = e.data;
+            const promise = workerPromises.get(id);
+            if (promise) {
+              workerPromises.delete(id);
+              if (success) {
+                promise.resolve(result);
+              } else {
+                promise.reject(new Error(error));
+              }
+            }
+          };
+
+          compressionWorker.onerror = (error) => {
+            console.error('Compression worker error:', error);
+            cleanupWorker();
+          };
+        }
+
+        const id = ++workerId;
+        workerPromises.set(id, { resolve, reject });
+
+        // Set timeout to prevent hanging promises
+        setTimeout(() => {
+          if (workerPromises.has(id)) {
+            workerPromises.delete(id);
+            reject(new Error('Compression timeout'));
+          }
+        }, 10000);
+
+        compressionWorker.postMessage({ jsonString, id });
+      });
+    }
+  };
+
+
+  setInterval(cleanupWorker, 5000);
+
+  const isLargeEvent = (type: number) => {
+    const LARGE_EVENT_TYPES: number[] = [
+      2, // FullSnapshot
+      3, // IncrementalSnapshot
+    ];
+
+    if (LARGE_EVENT_TYPES.includes(type)) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const sendBatchIfReady = async () => {
+    // for some reason, the access with const like window[LMNR_SEND_EVENTS_FUNCTION_NAME]
+    // doesn't work, so we explicitly access the property.
+    if (
+      (window as any).lmnrRrwebEventsBatch.length > 0
+      && typeof (window as any).lmnrSendEvents === 'function'
+    ) {
+      const events = (window as any).lmnrRrwebEventsBatch;
+      (window as any).lmnrRrwebEventsBatch = [];
+
+      try {
+        console.log("calling exposed function");
+        await (window as any).lmnrSendEvents(events);
+      } catch (error) {
+        console.error('Failed to send events:', error);
+      }
+    }
+  };
+
+  const bufferToBase64 = async (buffer: Uint8Array) => {
+    const base64url = await new Promise<string>(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(new Blob([buffer]));
+    });
+
+    return base64url.slice(base64url.indexOf(',') + 1);
+  };
+
+  // it's fine to retrigger the interval even if the original function is async
+  // and still running.
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
+  setInterval(sendBatchIfReady, BATCH_TIMEOUT);
+
+  setInterval(() => {
+    (window as any).lmnrRrweb.record.addCustomEvent('heartbeat', {
+      title: document.title,
+      url: document.URL,
+    });
+  }, HEARTBEAT_INTERVAL);
+
+  (window as any).lmnrRrweb.record({
+    async emit(event: any) {
+      try {
+        const isLarge = isLargeEvent(event.type);
+        const compressedResult = isLarge ?
+          await compressLargeObject(event.data) :
+          await compressSmallObject(event.data);
+
+        const base64Data = await bufferToBase64(compressedResult);
+        const eventToSend = {
+          ...event,
+          data: base64Data,
+        };
+        (window as any).lmnrRrwebEventsBatch.push(eventToSend);
+      } catch (error) {
+        console.warn('Failed to push event to batch', error);
+      }
+    },
+    recordCanvas: true,
+    collectFonts: true,
+    recordCrossOriginIframes: true,
+  });
 };
