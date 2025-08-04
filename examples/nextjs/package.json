@@ -13,7 +13,7 @@
     "@lmnr-ai/lmnr": "file:../../dist",
     "@opentelemetry/api-logs": "^0.200.0",
     "@vercel/otel": "^1.13.0",
-    "next": "^15.3.4",
+    "next": "^15.4.5",
     "openai": "^5.8.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
@@ -24,8 +24,8 @@
     "@types/node": "^24.0.10",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
-    "eslint": "^9.30.1",
-    "eslint-config-next": "15.3.2",
+    "eslint": "^9.32.0",
+    "eslint-config-next": "^15.4.5",
     "tailwindcss": "^4.1.11",
     "typescript": "^5.8.3"
   }
