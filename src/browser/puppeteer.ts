@@ -13,7 +13,12 @@ import { LaminarClient } from '../client';
 import { observe } from '../decorators';
 import { TRACE_HAS_BROWSER_SESSION } from '../opentelemetry-lib/tracing/attributes';
 import { initializeLogger, newUUID, NIL_UUID, otelTraceIdToUUID, StringUUID } from '../utils';
-import { injectSessionRecorder, LMNR_SEND_EVENTS_FUNCTION_NAME, sendPageEvents, takeFullSnapshot } from "./utils";
+import {
+  injectSessionRecorder,
+  LMNR_SEND_EVENTS_FUNCTION_NAME,
+  sendPageEvents,
+  takeFullSnapshot,
+} from "./utils";
 
 const logger = initializeLogger();
 
