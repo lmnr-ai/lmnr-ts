@@ -191,19 +191,20 @@ export class Laminar {
   }
 
   /**
-   * Associates an event with the current span. If event with such name never
-   * existed, Laminar will create a new event and infer its type from the value.
-   * If the event already exists, Laminar will append the value to the event
-   * if and only if the value is of a matching type. Otherwise, the event won't
-   * be recorded. Supported types are string, number, and boolean. If the value
-   * is `null`, event is considered a boolean tag with the value of `true`.
+   * Associates an event with the current span. If the event is created outside
+   * of a span context, a new span is created and the event is associated with it.
    *
-   * @param {string} name - The name of the event.
-   * @param {AttributeValue} value - The value of the event. Must be a primitive type. If not
-   * specified, boolean true is assumed in the backend.
-   * @param {TimeInput} timestamp - The timestamp of the event. If not specified, relies on
+   * @param {object} options
+   * @param {string} options.name - The name of the event.
+   * @param {Record<string, AttributeValue>} options.attributes - The attributes of the event.
+   * Values must be of a supported type.
+   * @param {TimeInput} options.timestamp - The timestamp of the event. If not specified, relies on
    * the underlying OpenTelemetry implementation.
    * If specified as an integer, it must be epoch nanoseconds.
+   * @param {string} options.sessionId - The session ID to associate with the event.
+   * If not specified, the session ID of the current trace is used.
+   * @param {string} options.userId - The user ID to associate with the event. If not specified,
+   * the user ID of the current trace is used.
    */
   public static event({
     name,

@@ -39,9 +39,7 @@ const createSkipDynamicImportsPlugin = (skipModules: string[]): esbuild.Plugin =
 });
 
 declare global {
-  // eslint-disable-next-line no-var
   var _evaluations: Evaluation<any, any, any>[] | undefined;
-  // eslint-disable-next-line no-var
   var _set_global_evaluation: boolean;
 }
 

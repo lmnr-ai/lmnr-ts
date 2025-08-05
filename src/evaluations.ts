@@ -21,10 +21,8 @@ const DEFAULT_CONCURRENCY = 5;
 const MAX_EXPORT_BATCH_SIZE = 64;
 
 declare global {
-  // eslint-disable-next-line no-var
   var _evaluations: Evaluation<any, any, any>[] | undefined;
   // If true, then we need to set the evaluation globally without running it
-  // eslint-disable-next-line no-var
   var _set_global_evaluation: boolean;
 }
 
