@@ -317,7 +317,7 @@ export class AgentResource extends BaseResource {
     if (!requestParentSpanContext) {
       const currentSpan = trace.getActiveSpan();
       if (currentSpan && currentSpan.isRecording()) {
-        const traceId = otelTraceIdToUUID(currentSpan.spanContext().traceId) as StringUUID;
+        const traceId = otelTraceIdToUUID(currentSpan.spanContext().traceId);
         const spanId = otelSpanIdToUUID(currentSpan.spanContext().spanId) as StringUUID;
         requestParentSpanContext = JSON.stringify({
           trace_id: traceId,

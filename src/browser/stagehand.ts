@@ -12,6 +12,7 @@ import { version as SDK_VERSION } from "../../package.json";
 import { observe as laminarObserve } from "../decorators";
 import { Laminar } from "../laminar";
 import { SPAN_TYPE } from "../opentelemetry-lib/tracing/attributes";
+import { newUUID, StringUUID } from "../utils";
 import { PlaywrightInstrumentation } from "./playwright";
 import {
   cleanStagehandLLMClient,
@@ -42,6 +43,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
   private _parentSpan: Span | undefined;
   private globalLLMClientOptions: GlobalLLMClientOptions | undefined;
   private globalAgentOptions: StagehandLib.AgentConfig | undefined;
+  private _sessionId: StringUUID | undefined;
 
   constructor(playwrightInstrumentation: PlaywrightInstrumentation) {
     super(
@@ -189,6 +191,9 @@ export class StagehandInstrumentation extends InstrumentationBase {
     const instrumentation = this;
 
     return (original: Function) => async function method(this: any, ...args: any[]) {
+      const sessionId = newUUID();
+      instrumentation._sessionId = sessionId;
+
       // Make sure the parent span is set before calling the original init method
       // so that playwright instrumentation does not set its default parent span
       instrumentation._parentSpan = Laminar.startSpan({
@@ -198,7 +203,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
 
       const result = await original.bind(this).apply(this, args);
 
-      await instrumentation.playwrightInstrumentation.patchPage(this.page);
+      await instrumentation.playwrightInstrumentation.patchPage(this.page, sessionId);
 
       instrumentation._wrap(
         this,

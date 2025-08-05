@@ -545,7 +545,7 @@ export class Laminar {
       return null;
     }
     return {
-      traceId: otelTraceIdToUUID(currentSpan.spanContext().traceId) as StringUUID,
+      traceId: otelTraceIdToUUID(currentSpan.spanContext().traceId),
       spanId: otelSpanIdToUUID(currentSpan.spanContext().spanId) as StringUUID,
       isRemote: currentSpan.spanContext().isRemote ?? false,
     };

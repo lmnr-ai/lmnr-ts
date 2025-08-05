@@ -63,7 +63,7 @@ export const otelSpanIdToUUID = (spanId: string): string => {
   );
 };
 
-export const otelTraceIdToUUID = (traceId: string): string => {
+export const otelTraceIdToUUID = (traceId: string): StringUUID => {
   let id = traceId.toLowerCase();
   if (id.startsWith('0x')) {
     id = id.slice(2);
@@ -81,7 +81,7 @@ export const otelTraceIdToUUID = (traceId: string): string => {
   return id.replace(
     /^([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$/,
     '$1-$2-$3-$4-$5',
-  );
+  ) as StringUUID;
 };
 
 export const uuidToOtelTraceId = (uuid: string): string => uuid.replace(/-/g, '');
