@@ -5,7 +5,6 @@ import { LaminarSpanContext } from "../../types";
 import { initializeLogger, isOtelAttributeValueType, tryToOtelSpanContext } from "../../utils";
 import { getTracer, shouldSendTraces } from ".";
 import { SPAN_INPUT, SPAN_OUTPUT, SPAN_TYPE } from "./attributes";
-import { setLaminarEventContext } from "./event-context";
 import {
   ASSOCIATION_PROPERTIES_KEY,
 } from "./utils";
@@ -66,15 +65,6 @@ export function observeBase<
     entityContext = suppressTracing(entityContext);
   }
 
-
-  const eventContext: Record<string, string> = {};
-  if (associationProperties?.["session_id"] !== undefined) {
-    eventContext.sessionId = associationProperties["session_id"];
-  }
-  if (associationProperties?.["user_id"] !== undefined) {
-    eventContext.userId = associationProperties["user_id"];
-  }
-
   return context.with(entityContext, () =>
     getTracer().startActiveSpan(
       name,
@@ -84,7 +74,6 @@ export function observeBase<
         if (spanType) {
           span.setAttribute(SPAN_TYPE, spanType);
         }
-        setLaminarEventContext(eventContext);
 
         if (shouldSendTraces() && !ignoreInput) {
           try {

@@ -19,10 +19,6 @@ import {
   SPAN_TYPE,
   USER_ID,
 } from './opentelemetry-lib/tracing/attributes';
-import {
-  getEventAttributesFromCurrentContext,
-  setLaminarEventContext,
-} from './opentelemetry-lib/tracing/event-context';
 import { ASSOCIATION_PROPERTIES_KEY } from './opentelemetry-lib/tracing/utils';
 import { LaminarSpanContext } from './types';
 import {
@@ -223,17 +219,10 @@ export class Laminar {
       return;
     }
 
-    const extraAttributes = getEventAttributesFromCurrentContext();
-    if (sessionId !== undefined) {
-      extraAttributes["lmnr.event.session_id"] = sessionId;
-    }
-    if (userId !== undefined) {
-      extraAttributes["lmnr.event.user_id"] = userId;
-    }
-
     const allAttributes = {
       ...(attributes ?? {}),
-      ...extraAttributes,
+      ...(sessionId ? { "lmnr.event.session_id": sessionId } : {}),
+      ...(userId ? { "lmnr.event.user_id": userId } : {}),
     } as Record<string, AttributeValue>;
 
     const currentSpan = trace.getActiveSpan();
@@ -401,7 +390,6 @@ export class Laminar {
   public static setTraceSessionId(sessionId: string) {
     const currentSpan = trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
-      setLaminarEventContext({ sessionId });
       currentSpan.setAttribute(SESSION_ID, sessionId);
     }
   }
@@ -409,7 +397,6 @@ export class Laminar {
   public static setTraceUserId(userId: string) {
     const currentSpan = trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
-      setLaminarEventContext({ userId });
       currentSpan.setAttribute(USER_ID, userId);
     }
   }
