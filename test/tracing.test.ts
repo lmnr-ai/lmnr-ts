@@ -24,6 +24,12 @@ void describe("tracing", () => {
     // Laminar.initialize() is tested in the other suite.
     _resetConfiguration();
     initializeTracing({ exporter, disableBatch: true });
+    // This is a hack to make Laminar.initialized() return true for testing
+    // purposes.
+    Object.defineProperty(Laminar, "isInitialized", {
+      value: true,
+      writable: true,
+    });
   });
 
 
@@ -826,5 +832,157 @@ void describe("tracing", () => {
 
     assert.strictEqual(evaluatorSpan?.attributes['lmnr.span.type'], 'EVALUATOR');
     assert.strictEqual(defaultSpan?.attributes['lmnr.span.type'], undefined);
+  });
+
+  void it("sends basic events with custom attributes", async () => {
+    const fn = (a: number, b: number) => {
+      Laminar.event({
+        name: "test-event",
+        attributes: {
+          a: "1",
+          b: "2",
+        },
+      });
+      return a + b;
+    };
+    const result = await observe({ name: "test" }, fn, 1, 2);
+
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
+    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+
+    const events = spans[0].events;
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].name, "test-event");
+    assert.strictEqual(events[0].attributes?.['a'], "1");
+    assert.strictEqual(events[0].attributes?.['b'], "2");
+  });
+
+  void it("creates a span when Laminar.event is called outside of a span context", () => {
+    const fn = (a: number, b: number) => {
+      Laminar.event({
+        name: "test-event",
+        attributes: {
+          a: "1",
+          b: "2",
+        },
+      });
+      return a + b;
+    };
+    const result = fn(1, 2);
+
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test-event");
+    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+
+    const events = spans[0].events;
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].name, "test-event");
+    assert.strictEqual(events[0].attributes?.['a'], "1");
+    assert.strictEqual(events[0].attributes?.['b'], "2");
+  });
+
+  void it("sends events with session and user id attributes", () => {
+    const fn = (a: number, b: number) => {
+      Laminar.event({
+        name: "test-event",
+        attributes: {
+          a: "1",
+          b: "2",
+        },
+        sessionId: "123",
+        userId: "456",
+      });
+      return a + b;
+    };
+    const result = fn(1, 2);
+
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test-event");
+
+    const events = spans[0].events;
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].name, "test-event");
+    assert.strictEqual(events[0].attributes?.['a'], "1");
+    assert.strictEqual(events[0].attributes?.['b'], "2");
+    assert.strictEqual(events[0].attributes?.['lmnr.event.session_id'], "123");
+    assert.strictEqual(events[0].attributes?.['lmnr.event.user_id'], "456");
+  });
+
+  void it("sends events with session and user id attributes from observe", async () => {
+    const fn = (a: number, b: number) => {
+      Laminar.event({ name: "test-event" });
+      return a + b;
+    };
+    const result = await observe({ name: "test", sessionId: "123", userId: "456" }, fn, 1, 2);
+
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.session_id'], "123");
+
+    const events = spans[0].events;
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].name, "test-event");
+    assert.strictEqual(events[0].attributes?.['lmnr.event.session_id'], "123");
+    assert.strictEqual(events[0].attributes?.['lmnr.event.user_id'], "456");
+  });
+
+  void it("sends events with session and user id attributes set manually", async () => {
+    const fn = (a: number, b: number) => {
+      Laminar.setTraceSessionId("123");
+      Laminar.setTraceUserId("456");
+      Laminar.event({ name: "test-event" });
+      return a + b;
+    };
+    const result = await observe({ name: "test" }, fn, 1, 2);
+
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+
+    const events = spans[0].events;
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].name, "test-event");
+    assert.strictEqual(events[0].attributes?.['lmnr.event.session_id'], "123");
+    assert.strictEqual(events[0].attributes?.['lmnr.event.user_id'], "456");
+  });
+
+  void it("sends events where event params override context session and user id", async () => {
+    const fn = (a: number, b: number) => {
+      Laminar.setTraceSessionId("123");
+      Laminar.setTraceUserId("456");
+      Laminar.event({ name: "test-event", sessionId: "789", userId: "101" });
+      return a + b;
+    };
+    const result = await observe({ name: "test" }, fn, 1, 2);
+
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.strictEqual(spans[0].attributes['lmnr.association.properties.session_id'], "123");
+
+    const events = spans[0].events;
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].name, "test-event");
+    assert.strictEqual(events[0].attributes?.['lmnr.event.session_id'], "789");
+    assert.strictEqual(events[0].attributes?.['lmnr.event.user_id'], "101");
   });
 });
