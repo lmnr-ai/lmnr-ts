@@ -39,6 +39,7 @@ export const startTracing = (options: InitializeOptions) => {
     apiKey: _apiKey,
     suppressContentTracing: !shouldSendTraces(),
     instrumentModules: options.instrumentModules,
+    sessionRecordingOptions: options.sessionRecordingOptions,
   });
 
   const port = options.forceHttp ? options.httpPort : options.port;
@@ -114,6 +115,7 @@ export const patchModules = (modules: InitializeOptions["instrumentModules"]) =>
     apiKey: _apiKey,
     instrumentModules: modules,
     suppressContentTracing: !shouldSendTraces(),
+    sessionRecordingOptions: _configuration?.sessionRecordingOptions,
   });
   registerInstrumentations({
     instrumentations,

@@ -20,7 +20,7 @@ import {
   USER_ID,
 } from './opentelemetry-lib/tracing/attributes';
 import { ASSOCIATION_PROPERTIES_KEY } from './opentelemetry-lib/tracing/utils';
-import { LaminarSpanContext } from './types';
+import { LaminarSpanContext, SessionRecordingOptions } from './types';
 import {
   initializeLogger,
   isOtelAttributeValueType,
@@ -45,6 +45,7 @@ interface LaminarInitializeProps {
   logLevel?: "debug" | "info" | "warn" | "error";
   maxExportBatchSize?: number;
   forceHttp?: boolean;
+  sessionRecordingOptions?: SessionRecordingOptions;
 }
 
 type LaminarAttributesProp = Record<
@@ -89,6 +90,10 @@ export class Laminar {
    * @param {number} props.maxExportBatchSize - Maximum number of spans to export in a single batch.
    * Ignored when `disableBatch` is true.
    * @param {boolean} props.forceHttp - Whether to force HTTP export. Not recommended.
+   * @param {SessionRecordingOptions} props.sessionRecordingOptions - Options for browser
+   * session recording.
+   * Currently supports 'maskInputOptions' to control whether input fields are masked during
+   * recording. Defaults to undefined (uses default masking behavior).
    *
    * @example
    * import { Laminar } from '@lmnr-ai/lmnr';
@@ -120,6 +125,7 @@ export class Laminar {
     logLevel,
     maxExportBatchSize,
     forceHttp,
+    sessionRecordingOptions,
   }: LaminarInitializeProps = {}) {
     const key = projectApiKey ?? process?.env?.LMNR_PROJECT_API_KEY;
     if (key === undefined) {
@@ -154,6 +160,7 @@ export class Laminar {
       disableBatch,
       maxExportBatchSize,
       traceExportTimeoutMillis,
+      sessionRecordingOptions,
     });
   }
 
