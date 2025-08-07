@@ -18,6 +18,7 @@ import {
 import { PlaywrightInstrumentation, StagehandInstrumentation } from "../../browser";
 import { PuppeteerInstrumentation } from "../../browser/puppeteer";
 import { LaminarClient } from "../../client";
+import { SessionRecordingOptions } from "../../types";
 import { InitializeOptions } from "../interfaces";
 
 /**
@@ -51,6 +52,7 @@ export const initializeLaminarInstrumentations = (
     httpPort?: number,
     suppressContentTracing?: boolean,
     instrumentModules?: InitializeOptions["instrumentModules"],
+    sessionRecordingOptions?: SessionRecordingOptions,
   } = {},
 ) => {
   const url = options.baseUrl ?? process?.env?.LMNR_BASE_URL ?? 'https://api.lmnr.ai';
@@ -69,16 +71,19 @@ export const initializeLaminarInstrumentations = (
       client,
       options.instrumentModules,
       options.suppressContentTracing,
+      options.sessionRecordingOptions,
     )
     : initInstrumentations(
       client,
       options.suppressContentTracing,
+      options.sessionRecordingOptions,
     );
 };
 
 const initInstrumentations = (
   client: LaminarClient,
   suppressContentTracing?: boolean,
+  sessionRecordingOptions?: SessionRecordingOptions,
 ): Instrumentation[] => {
   const enrichTokens = false;
   const instrumentations: Instrumentation[] = [];
@@ -134,12 +139,12 @@ const initInstrumentations = (
     traceContent: !suppressContentTracing,
   }));
 
-  const playwrightInstrumentation = new PlaywrightInstrumentation(client);
+  const playwrightInstrumentation = new PlaywrightInstrumentation(client, sessionRecordingOptions);
   instrumentations.push(playwrightInstrumentation);
 
   instrumentations.push(new StagehandInstrumentation(playwrightInstrumentation));
 
-  instrumentations.push(new PuppeteerInstrumentation(client));
+  instrumentations.push(new PuppeteerInstrumentation(client, sessionRecordingOptions));
 
   return instrumentations;
 };
@@ -148,6 +153,7 @@ const manuallyInitInstrumentations = (
   client: LaminarClient,
   instrumentModules: InitializeOptions["instrumentModules"],
   suppressContentTracing?: boolean,
+  sessionRecordingOptions?: SessionRecordingOptions,
 ): Instrumentation[] => {
   const enrichTokens = false;
   const instrumentations: Instrumentation[] = [];
@@ -277,20 +283,20 @@ const manuallyInitInstrumentations = (
   }
 
   if (instrumentModules?.playwright) {
-    playwrightInstrumentation = new PlaywrightInstrumentation(client);
+    playwrightInstrumentation = new PlaywrightInstrumentation(client, sessionRecordingOptions);
     instrumentations.push(playwrightInstrumentation);
     playwrightInstrumentation.manuallyInstrument(instrumentModules.playwright);
   }
 
   if (instrumentModules?.puppeteer) {
-    const puppeteerInstrumentation = new PuppeteerInstrumentation(client);
+    const puppeteerInstrumentation = new PuppeteerInstrumentation(client, sessionRecordingOptions);
     instrumentations.push(puppeteerInstrumentation);
     puppeteerInstrumentation.manuallyInstrument(instrumentModules.puppeteer);
   }
 
   if (instrumentModules?.stagehand) {
     if (!playwrightInstrumentation) {
-      playwrightInstrumentation = new PlaywrightInstrumentation(client);
+      playwrightInstrumentation = new PlaywrightInstrumentation(client, sessionRecordingOptions);
       instrumentations.push(playwrightInstrumentation);
     }
     const stagehandInstrumentation = new StagehandInstrumentation(playwrightInstrumentation);

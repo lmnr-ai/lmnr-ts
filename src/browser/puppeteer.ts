@@ -12,6 +12,7 @@ import { version as SDK_VERSION } from "../../package.json";
 import { LaminarClient } from '../client';
 import { observe } from '../decorators';
 import { TRACE_HAS_BROWSER_SESSION } from '../opentelemetry-lib/tracing/attributes';
+import { SessionRecordingOptions } from '../types';
 import { initializeLogger, newUUID, NIL_UUID, otelTraceIdToUUID, StringUUID } from '../utils';
 import {
   injectSessionRecorder,
@@ -30,8 +31,9 @@ const logger = initializeLogger();
 export class PuppeteerInstrumentation extends InstrumentationBase {
   private _patchedBrowsers: Set<Browser> = new Set();
   private _client: LaminarClient;
+  private _sessionRecordingOptions?: SessionRecordingOptions;
 
-  constructor(client: LaminarClient) {
+  constructor(client: LaminarClient, sessionRecordingOptions?: SessionRecordingOptions) {
     super(
       "@lmnr/puppeteer-instrumentation",
       SDK_VERSION,
@@ -40,6 +42,7 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
       },
     );
     this._client = client;
+    this._sessionRecordingOptions = sessionRecordingOptions;
   }
 
   protected init(): InstrumentationModuleDefinition[] {
@@ -258,7 +261,7 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
     const traceId = otelTraceId ? otelTraceIdToUUID(otelTraceId) : NIL_UUID;
 
     page.on('domcontentloaded', () => {
-      injectSessionRecorder(page).catch(error => {
+      injectSessionRecorder(page, this._sessionRecordingOptions).catch(error => {
         logger.error("Error in onLoad handler: " +
           `${error instanceof Error ? error.message : String(error)}`);
       });
@@ -271,7 +274,7 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
       });
     });
 
-    await injectSessionRecorder(page);
+    await injectSessionRecorder(page, this._sessionRecordingOptions);
 
     try {
       await page.exposeFunction(LMNR_SEND_EVENTS_FUNCTION_NAME, async (events: any[]) => {

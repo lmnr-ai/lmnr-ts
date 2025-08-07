@@ -7,6 +7,7 @@ import { Page as PuppeteerPage } from "puppeteer";
 import { z } from "zod";
 
 import { LaminarClient } from "..";
+import { SessionRecordingOptions } from "../types";
 import { getDirname, initializeLogger, StringUUID } from "../utils";
 
 export const LMNR_SEND_EVENTS_FUNCTION_NAME = 'lmnrSendEvents';
@@ -117,7 +118,10 @@ export const takeFullSnapshot = async (
   return false;
 });
 
-export const injectSessionRecorder = async (page: PlaywrightPage | PuppeteerPage) => {
+export const injectSessionRecorder = async (
+  page: PlaywrightPage | PuppeteerPage,
+  sessionRecordingOptions?: SessionRecordingOptions,
+) => {
   const tryRunScript = async <R>(
     script: (...args: any[]) => Promise<R>,
     maxAttempts: number = 5,
@@ -160,7 +164,7 @@ export const injectSessionRecorder = async (page: PlaywrightPage | PuppeteerPage
       return;
     }
     try {
-      await castedPage.evaluate(injectScript);
+      await castedPage.evaluate(injectScript, sessionRecordingOptions);
     } catch (error) {
       logger.debug("Failed to inject session recorder: " +
         `${error instanceof Error ? error.message : String(error)}`);
@@ -372,7 +376,7 @@ export const modelToProviderMap: Record<string, string> = {
   "gemini-2.5-pro-preview-03-25": "google",
 };
 
-const injectScript = () => {
+const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
   const BATCH_TIMEOUT = 2000; // Flush events batch after 2 seconds
   const MAX_WORKER_PROMISES = 50; // Max concurrent worker promises
   const HEARTBEAT_INTERVAL = 1000; // 1 second
@@ -696,10 +700,9 @@ const injectScript = () => {
       (window as any).lmnrRrwebEventsBatch = [];
 
       try {
-        console.log("calling exposed function");
         await (window as any).lmnrSendEvents(events);
       } catch (error) {
-        console.error('Failed to send events:', error);
+        logger.error('Failed to send events:', error);
       }
     }
   };
@@ -747,5 +750,6 @@ const injectScript = () => {
     recordCanvas: true,
     collectFonts: true,
     recordCrossOriginIframes: true,
+    maskInputOptions: sessionRecordingOptions?.maskInputOptions,
   });
 };
