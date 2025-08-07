@@ -9,7 +9,6 @@ import {
   LaminarAttributes,
   observe,
   TracingLevel,
-  withLabels,
   withTracingLevel,
 } from "../src/index";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";

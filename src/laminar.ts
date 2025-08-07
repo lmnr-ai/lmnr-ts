@@ -477,7 +477,9 @@ export class Laminar {
       const spanContext = tryToOtelSpanContext(parentSpanContext);
       entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
     }
-    const tagProperties = tags ? { [`${ASSOCIATION_PROPERTIES}.tags`]: Array.from(new Set(tags)) } : {};
+    const tagProperties = tags
+      ? { [`${ASSOCIATION_PROPERTIES}.tags`]: Array.from(new Set(tags)) }
+      : {};
     const userIdProperties = userId ? { [USER_ID]: userId } : {};
     const sessionIdProperties = sessionId ? { [SESSION_ID]: sessionId } : {};
     const metadataProperties = metadata
