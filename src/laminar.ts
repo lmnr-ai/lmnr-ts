@@ -13,9 +13,13 @@ import { forceFlush, getTracer, patchModules } from './opentelemetry-lib/tracing
 import {
   ASSOCIATION_PROPERTIES,
   LaminarAttributes,
+  PARENT_SPAN_IDS_PATH,
+  PARENT_SPAN_PATH,
   SESSION_ID,
+  SPAN_IDS_PATH,
   SPAN_INPUT,
   SPAN_OUTPUT,
+  SPAN_PATH,
   SPAN_TYPE,
   USER_ID,
 } from './opentelemetry-lib/tracing/attributes';
@@ -506,7 +510,27 @@ export class Laminar {
     activated?: boolean,
   }): Span {
     let entityContext = context ?? LaminarContextManager.getContext();
+
+    // Extract parent path information before converting to OpenTelemetry span context
+    let parentPath: string[] | undefined;
+    let parentIdsPath: string[] | undefined;
+
+
     if (parentSpanContext) {
+      if (typeof parentSpanContext !== 'string' && 'path' in parentSpanContext) {
+        parentPath = parentSpanContext.spanPath;
+        parentIdsPath = parentSpanContext.spanIdsPath;
+      }
+      if (typeof parentSpanContext === 'string') {
+        try {
+          const parsed = JSON.parse(parentSpanContext);
+          parentPath = parsed.spanPath;
+          parentIdsPath = parsed.spanIdsPath;
+        } catch (e) {
+          logger.warn("Failed to parse parent span context", e);
+        }
+      }
+
       const spanContext = tryToOtelSpanContext(parentSpanContext);
       entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
       LaminarContextManager.pushContext(entityContext);
@@ -525,6 +549,8 @@ export class Laminar {
       ...userIdProperties,
       ...sessionIdProperties,
       ...metadataProperties,
+      ...(parentPath ? { [PARENT_SPAN_PATH]: parentPath } : {}),
+      ...(parentIdsPath ? { [PARENT_SPAN_IDS_PATH]: parentIdsPath } : {}),
     };
     const span = getTracer().startSpan(name, { attributes }, entityContext);
     if (span instanceof LaminarSpan) {
@@ -597,10 +623,17 @@ export class Laminar {
     if (currentSpan === undefined || !isSpanContextValid(currentSpan.spanContext())) {
       return null;
     }
+
+    // Get path information from span attributes
+    const path = (currentSpan as any).attributes?.[SPAN_PATH] as string[] | undefined;
+    const idsPath = (currentSpan as any).attributes?.[SPAN_IDS_PATH] as StringUUID[] | undefined;
+
     return {
       traceId: otelTraceIdToUUID(currentSpan.spanContext().traceId),
       spanId: otelSpanIdToUUID(currentSpan.spanContext().spanId) as StringUUID,
       isRemote: currentSpan.spanContext().isRemote ?? false,
+      spanPath: path,
+      spanIdsPath: idsPath,
     };
   }
 

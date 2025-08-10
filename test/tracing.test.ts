@@ -12,7 +12,9 @@ import {
   withTracingLevel,
 } from "../src/index";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import { clearSpanProcessor } from "../src/opentelemetry-lib/tracing";
 import { getParentSpanId } from "../src/opentelemetry-lib/tracing/compat";
+import { otelSpanIdToUUID } from "../src/utils";
 
 void describe("tracing", () => {
   const exporter = new InMemorySpanExporter();
@@ -500,6 +502,106 @@ void describe("tracing", () => {
 
     assert.strictEqual(testSpan?.spanContext().traceId, innerSpan?.spanContext().traceId);
     assert.strictEqual(getParentSpanId(innerSpan), testSpan?.spanContext().spanId);
+  });
+
+  void it("preserves span path when using serialized span context", async () => {
+    function innerFunction(serializedContext: string) {
+      return observe({ name: "inner", parentSpanContext: serializedContext }, () => "inner result");
+    }
+
+    const result = await observe({ name: "outer" }, async () => {
+      const result = await observe({ name: "test" }, async () => {
+        const currentSpan = trace.getActiveSpan();
+        if (!currentSpan) throw new Error("No active span");
+
+        const serializedContext = Laminar.serializeLaminarSpanContext(currentSpan);
+        if (!serializedContext) throw new Error("Failed to serialize span context");
+
+        clearSpanProcessor();
+
+        return await innerFunction(serializedContext);
+      });
+      return result;
+    });
+
+    assert.strictEqual(result, "inner result");
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 3);
+
+    const outerSpan = spans.find(span => span.name === "outer");
+    const testSpan = spans.find(span => span.name === "test");
+    const innerSpan = spans.find(span => span.name === "inner");
+
+    // Verify the basic paths work for spans in the same process
+    assert.deepEqual(outerSpan?.attributes['lmnr.span.path'], ["outer"]);
+    assert.deepEqual(testSpan?.attributes['lmnr.span.path'], ["outer", "test"]);
+
+    assert.deepEqual(innerSpan?.attributes['lmnr.span.path'], ["outer", "test", "inner"]);
+
+    const outerSpanId = outerSpan?.spanContext().spanId;
+    const testSpanId = testSpan?.spanContext().spanId;
+    const innerSpanId = innerSpan?.spanContext().spanId;
+
+    const expectedIdsPath = [
+      otelSpanIdToUUID(outerSpanId),
+      otelSpanIdToUUID(testSpanId),
+      otelSpanIdToUUID(innerSpanId),
+    ];
+
+    assert.deepEqual(innerSpan?.attributes['lmnr.span.ids_path'], expectedIdsPath);
+  });
+
+  void it("preserves span path in serialized span context with Laminar.startSpan", async () => {
+    const innerFunction = (serializedContext: string) => {
+      const span = Laminar.startSpan({ name: "inner", parentSpanContext: serializedContext });
+      span.end();
+      return "inner result";
+    };
+
+    const result = await observe({ name: "outer" }, async () => {
+      const result = await observe({ name: "test" }, () => {
+        const currentSpan = trace.getActiveSpan();
+        if (!currentSpan) throw new Error("No active span");
+
+        const serializedContext = Laminar.serializeLaminarSpanContext(currentSpan);
+        if (!serializedContext) throw new Error("Failed to serialize span context");
+
+        clearSpanProcessor();
+
+        return innerFunction(serializedContext);
+      });
+      return result;
+    });
+
+    assert.strictEqual(result, "inner result");
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 3);
+
+    const outerSpan = spans.find(span => span.name === "outer");
+    const testSpan = spans.find(span => span.name === "test");
+    const innerSpan = spans.find(span => span.name === "inner");
+
+    // Verify the basic paths work for spans in the same process
+    assert.deepEqual(outerSpan?.attributes['lmnr.span.path'], ["outer"]);
+    assert.deepEqual(testSpan?.attributes['lmnr.span.path'], ["outer", "test"]);
+
+    // This is the key assertion: The inner span should know about the full path
+    // even though it was created using Laminar.startSpan with a serialized context
+    assert.deepEqual(innerSpan?.attributes['lmnr.span.path'], ["outer", "test", "inner"]);
+
+    const outerSpanId = outerSpan?.spanContext().spanId;
+    const testSpanId = testSpan?.spanContext().spanId;
+    const innerSpanId = innerSpan?.spanContext().spanId;
+
+    const expectedIdsPath = [
+      otelSpanIdToUUID(outerSpanId),
+      otelSpanIdToUUID(testSpanId),
+      otelSpanIdToUUID(innerSpanId),
+    ];
+
+    assert.deepEqual(innerSpan?.attributes['lmnr.span.ids_path'], expectedIdsPath);
   });
 
   void it("sets the tracing level attribute when withTracingLevel is used", async () => {

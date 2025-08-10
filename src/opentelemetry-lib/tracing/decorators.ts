@@ -4,7 +4,13 @@ import { suppressTracing } from "@opentelemetry/core";
 import { LaminarSpanContext } from "../../types";
 import { initializeLogger, isOtelAttributeValueType, tryToOtelSpanContext } from "../../utils";
 import { getTracer, shouldSendTraces } from ".";
-import { SPAN_INPUT, SPAN_OUTPUT, SPAN_TYPE } from "./attributes";
+import {
+  PARENT_SPAN_IDS_PATH,
+  PARENT_SPAN_PATH,
+  SPAN_INPUT,
+  SPAN_OUTPUT,
+  SPAN_TYPE,
+} from "./attributes";
 import { LaminarContextManager } from "./context";
 import {
   ASSOCIATION_PROPERTIES_KEY,
@@ -57,7 +63,24 @@ export function observeBase<
   }
   // ================================
 
+  let parentPath: string[] | undefined;
+  let parentIdsPath: string[] | undefined;
+
   if (parentSpanContext) {
+    if (typeof parentSpanContext !== 'string') {
+      parentPath = parentSpanContext.spanPath;
+      parentIdsPath = parentSpanContext.spanIdsPath;
+    }
+    if (typeof parentSpanContext === 'string') {
+      try {
+        const parsed = JSON.parse(parentSpanContext);
+        parentPath = parsed.spanPath;
+        parentIdsPath = parsed.spanIdsPath;
+      } catch (e) {
+        logger.warn("Failed to parse parent span context", e);
+      }
+    }
+
     const spanContext = tryToOtelSpanContext(parentSpanContext);
     entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
   }
@@ -69,13 +92,15 @@ export function observeBase<
   return context.with(entityContext, () =>
     getTracer().startActiveSpan(
       name,
-      {},
+      {
+        attributes: {
+          ...(parentPath ? { [PARENT_SPAN_PATH]: parentPath } : {}),
+          ...(parentIdsPath ? { [PARENT_SPAN_IDS_PATH]: parentIdsPath } : {}),
+          ...(spanType ? { [SPAN_TYPE]: spanType } : {}),
+        },
+      },
       entityContext,
       async (span: Span) => {
-        if (spanType) {
-          span.setAttribute(SPAN_TYPE, spanType);
-        }
-
         if (shouldSendTraces() && !ignoreInput) {
           try {
             const spanInput = inputParameters ?? args;
