@@ -185,3 +185,7 @@ export const getTracer = (): Tracer => {
 export const forceFlush = async () => {
   await spanProcessor.forceFlush();
 };
+
+export const clearSpanProcessor = () => {
+  spanProcessor.clear();
+};
