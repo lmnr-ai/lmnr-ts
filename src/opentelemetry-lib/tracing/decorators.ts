@@ -77,7 +77,9 @@ export function observeBase<
         parentPath = parsed.spanPath;
         parentIdsPath = parsed.spanIdsPath;
       } catch (e) {
-        logger.warn("Failed to parse parent span context", e);
+        logger.warn("Failed to parse parent span context: " +
+          (e instanceof Error ? e.message : String(e)),
+        );
       }
     }
 
