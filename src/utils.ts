@@ -172,10 +172,11 @@ export const tryToOtelSpanContext = (
 };
 
 const recordToOtelSpanContext = (record: Record<string, unknown>): SpanContext => {
-  if (typeof record.spanId === 'string' && typeof record.traceId === 'string') {
+  if ((typeof record.spanId === 'string' && typeof record.traceId === 'string') ||
+    (typeof record.span_id === 'string' && typeof record.trace_id === 'string')) {
     return {
-      spanId: uuidToOtelSpanId(record?.spanId ?? record?.['span_id']),
-      traceId: uuidToOtelTraceId(record?.traceId ?? record?.['trace_id']),
+      spanId: uuidToOtelSpanId(record?.spanId as string ?? record?.['span_id'] as string),
+      traceId: uuidToOtelTraceId(record?.traceId as string ?? record?.['trace_id'] as string),
       isRemote: record?.isRemote ?? record?.['is_remote'] ?? false,
       traceFlags: record?.traceFlags ?? TraceFlags.SAMPLED,
     } as SpanContext;

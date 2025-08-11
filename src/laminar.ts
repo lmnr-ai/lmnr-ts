@@ -486,15 +486,15 @@ export class Laminar {
     let parentIdsPath: string[] | undefined;
 
     if (parentSpanContext) {
-      if (typeof parentSpanContext !== 'string' && 'path' in parentSpanContext) {
+      if (typeof parentSpanContext !== 'string') {
         parentPath = parentSpanContext.spanPath;
         parentIdsPath = parentSpanContext.spanIdsPath;
       }
       if (typeof parentSpanContext === 'string') {
         try {
           const parsed = JSON.parse(parentSpanContext);
-          parentPath = parsed.spanPath;
-          parentIdsPath = parsed.spanIdsPath;
+          parentPath = parsed.spanPath ?? parsed.span_path;
+          parentIdsPath = parsed.spanIdsPath ?? parsed.span_ids_path;
         } catch (e) {
           logger.warn("Failed to parse parent span context: " +
             (e instanceof Error ? e.message : String(e)),
