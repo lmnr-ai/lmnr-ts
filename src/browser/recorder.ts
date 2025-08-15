@@ -1,4 +1,8 @@
-// generated using generate-recorder-from-minjs.sh
+// If you want to update the content, make the following changes to minified source
+// 0. Make sure your editor is not formatting the file on save.
+// 1. Replace every \ with \\ (important: this must come first)
+// 2. Replace every ` with a \`
+// 3. Replace every ${ with a \${
 export const RECORDER = `(function (g, f) {
     if ("object" == typeof exports && "object" == typeof module) {
       module.exports = f();
