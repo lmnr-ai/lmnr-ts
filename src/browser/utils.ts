@@ -1,45 +1,15 @@
 import { LLMClient } from "@browserbasehq/stagehand";
-import { existsSync } from 'fs';
-import { readFile } from "fs/promises";
-import path from "path";
 import { Page as PlaywrightPage } from "playwright";
 import { Page as PuppeteerPage } from "puppeteer";
 import { z } from "zod";
 
 import { LaminarClient } from "..";
-import { getDirname, initializeLogger, StringUUID } from "../utils";
+import { initializeLogger, StringUUID } from "../utils";
+import { RECORDER } from "./recorder";
 
 export const LMNR_SEND_EVENTS_FUNCTION_NAME = 'lmnrSendEvents';
 
 const logger = initializeLogger();
-const RECORDER_SCRIPT_PATH = (() => {
-  const fileName = 'record.umd.min.cjs';
-  const standardPath = path.join(getDirname(), '..', 'assets', 'recorder', fileName);
-  // Fallback paths for different environments and tests
-  const fallbackPaths = [
-    path.join(getDirname(), '..', '..', 'assets', 'recorder', fileName), // For tests
-    path.join(process.cwd(), 'assets', 'recorder', fileName), // Using cwd
-    path.join(process.cwd(), '@lmnr-ai/lmnr', 'assets', 'recorder', fileName), // Absolute path
-  ];
-
-  try {
-    if (existsSync(standardPath)) {
-      return standardPath;
-    }
-
-    for (const fallbackPath of fallbackPaths) {
-      if (existsSync(fallbackPath)) {
-        return fallbackPath;
-      }
-    }
-
-    // If no path exists, return the standard path and let it fail with a clear error
-    return standardPath;
-  } catch {
-    // In case fs.existsSync fails, return the standard path
-    return standardPath;
-  }
-})();
 
 /**
  * If the first argument is a string, return an object with the name of the method
@@ -150,9 +120,8 @@ export const injectSessionRecorder = async (page: PlaywrightPage | PuppeteerPage
 
   // Load rrweb and set up recording
   if (!isRrwebPresent) {
-    const script = await readFile(RECORDER_SCRIPT_PATH, 'utf8');
     const result = await tryRunScript(async function injectSessionRecorder() {
-      await castedPage.evaluate(script);
+      await castedPage.evaluate(RECORDER);
       return true;
     });
     if (!result) {

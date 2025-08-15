@@ -11,8 +11,7 @@
     "lint:fix": "eslint --fix"
   },
   "files": [
-    "dist",
-    "assets"
+    "dist"
   ],
   "bin": {
     "lmnr": "./dist/cli.js"
