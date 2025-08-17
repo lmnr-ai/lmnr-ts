@@ -18,6 +18,8 @@ export default tseslint.config(
       'tsup.config.ts',
       'eslint.config.js',
       'examples/**',
+      "src/browser/recorder.ts",
+      '**/*.sh',
     ],
   },
   {
