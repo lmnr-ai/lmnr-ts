@@ -80,7 +80,8 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     associationProperties = { ...associationProperties, "user_id": userId };
   }
   if (tags) {
-    associationProperties = { ...associationProperties, "tags": tags };
+    // Remove duplicates from tags
+    associationProperties = { ...associationProperties, "tags": Array.from(new Set(tags)) };
   }
   if (metadata) {
     const metadataAttributes = metadataToAttributes(metadata);
@@ -101,6 +102,7 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
 }
 
 /**
+ * @deprecated Use `tags` in `observe` or in `Laminar.startSpan`, or `Laminar.setSpanTags` instead.
  * Sets the labels for any spans inside the function. This is useful for adding
  * labels to the spans created in the auto-instrumentations. Returns the result
  * of the wrapped function, so you can use it in an `await` statement if needed.
