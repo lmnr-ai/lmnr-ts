@@ -97,11 +97,15 @@ export enum TracingLevel {
  * spanId - The ID of the span.
  * traceId - The ID of the trace.
  * isRemote - Whether the span is remote.
+ * spanPath - The span path (span names) leading to this span.
+ * spanIdsPath - The span IDs path leading to this span.
  */
 export type LaminarSpanContext = {
   spanId: StringUUID;
   traceId: StringUUID;
   isRemote: boolean;
+  spanPath?: string[];
+  spanIdsPath?: StringUUID[];
 };
 
 /**

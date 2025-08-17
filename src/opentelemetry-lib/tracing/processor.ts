@@ -13,11 +13,13 @@ import {
 } from "@opentelemetry/sdk-trace-base-v2";
 
 import { version as SDK_VERSION } from "../../../package.json";
-import { otelSpanIdToUUID } from "../../utils";
+import { otelSpanIdToUUID, StringUUID } from "../../utils";
 import { getLangVersion } from "../../version";
 import {
   ASSOCIATION_PROPERTIES,
   ASSOCIATION_PROPERTIES_OVERRIDES,
+  PARENT_SPAN_IDS_PATH,
+  PARENT_SPAN_PATH,
   SPAN_IDS_PATH,
   SPAN_INSTRUMENTATION_SOURCE,
   SPAN_LANGUAGE_VERSION,
@@ -120,16 +122,26 @@ export class LaminarSpanProcessor implements SpanProcessor {
   }
 
   onStart(span: Span | OTelV2Span, parentContext: Context): void {
+    // Check for parent path attributes first (from serialized span context)
+    const parentPathFromAttribute = span.attributes?.[PARENT_SPAN_PATH] as string[] | undefined;
+    const parentIdsPathFromAttribute =
+      span.attributes?.[PARENT_SPAN_IDS_PATH] as StringUUID[] | undefined;
+
     const contextSpanPath = getSpanPath(parentContext ?? context.active());
     const parentSpanId = getParentSpanId(span);
-    const parentSpanPath = contextSpanPath
+
+    // Use parent path from attributes if available, otherwise fall back to cached paths
+    const parentSpanPath = parentPathFromAttribute
+      ?? contextSpanPath
       ?? (parentSpanId !== undefined
         ? this._spanIdToPath.get(parentSpanId)
         : undefined);
+
     const spanId = span.spanContext().spanId;
-    const parentSpanIdsPath = parentSpanId
-      ? this._spanIdLists.get(parentSpanId)
-      : [];
+    const parentSpanIdsPath = parentIdsPathFromAttribute
+      ?? (parentSpanId
+        ? this._spanIdLists.get(parentSpanId)
+        : []);
     const spanPath = parentSpanPath ? [...parentSpanPath, span.name] : [span.name];
 
     const spanIdUuid = otelSpanIdToUUID(spanId);
@@ -173,5 +185,10 @@ export class LaminarSpanProcessor implements SpanProcessor {
     // By default, we call the original onEnd.
     makeSpanOtelV2Compatible(span);
     this.instance.onEnd(span as Span);
+  }
+
+  clear() {
+    this._spanIdToPath.clear();
+    this._spanIdLists.clear();
   }
 }
