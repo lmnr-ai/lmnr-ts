@@ -20,6 +20,8 @@ import type * as playwright from "playwright";
 import type * as puppeteer from "puppeteer";
 import type * as together from "together-ai";
 
+import type { SessionRecordingOptions } from "../../types";
+
 /**
  * Options for initializing the Traceloop SDK.
  */
@@ -336,4 +338,11 @@ export interface InitializeOptions {
    * Defaults to a new LaminarSpanExporter.
    */
   exporter?: SpanExporter;
+
+  /**
+   * Options for browser session recording. Currently supports 'maskInputOptions'
+   * to control whether input fields are masked during recording.
+   * Defaults to undefined (uses default masking behavior).
+   */
+  sessionRecordingOptions?: SessionRecordingOptions;
 }

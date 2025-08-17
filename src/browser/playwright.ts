@@ -12,6 +12,7 @@ import { LaminarClient } from '../client';
 import { observe } from '../decorators';
 import { Laminar } from '../laminar';
 import { TRACE_HAS_BROWSER_SESSION } from '../opentelemetry-lib/tracing/attributes';
+import { SessionRecordingOptions } from '../types';
 import { initializeLogger, newUUID, NIL_UUID, otelTraceIdToUUID, StringUUID } from '../utils';
 import {
   injectSessionRecorder,
@@ -30,8 +31,9 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
   private _patchedBrowsers: Set<Browser> = new Set();
   private _parentSpan: Span | undefined;
   private _client: LaminarClient;
+  private _sessionRecordingOptions?: SessionRecordingOptions;
 
-  constructor(client: LaminarClient) {
+  constructor(client: LaminarClient, sessionRecordingOptions?: SessionRecordingOptions) {
     super(
       "@lmnr/playwright-instrumentation",
       SDK_VERSION,
@@ -41,6 +43,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
     );
     this._parentSpan = undefined;
     this._client = client;
+    this._sessionRecordingOptions = sessionRecordingOptions;
   }
 
   // It's the caller's responsibility to ensure the span is ended
@@ -227,7 +230,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
     page.on('domcontentloaded', async () => {
       try {
-        await injectSessionRecorder(page);
+        await injectSessionRecorder(page, this._sessionRecordingOptions);
       } catch (error) {
         logger.error("Error in onLoad handler: " +
           `${error instanceof Error ? error.message : String(error)}`);
@@ -244,7 +247,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
       }
     });
 
-    await injectSessionRecorder(page);
+    await injectSessionRecorder(page, this._sessionRecordingOptions);
     try {
       await page.exposeFunction(LMNR_SEND_EVENTS_FUNCTION_NAME, async (events: any[]) => {
         try {

@@ -20,7 +20,7 @@ import {
   USER_ID,
 } from './opentelemetry-lib/tracing/attributes';
 import { ASSOCIATION_PROPERTIES_KEY } from './opentelemetry-lib/tracing/utils';
-import { LaminarSpanContext } from './types';
+import { LaminarSpanContext, SessionRecordingOptions } from './types';
 import {
   initializeLogger,
   isOtelAttributeValueType,
@@ -45,6 +45,7 @@ interface LaminarInitializeProps {
   logLevel?: "debug" | "info" | "warn" | "error";
   maxExportBatchSize?: number;
   forceHttp?: boolean;
+  sessionRecordingOptions?: SessionRecordingOptions;
 }
 
 type LaminarAttributesProp = Record<
@@ -89,6 +90,10 @@ export class Laminar {
    * @param {number} props.maxExportBatchSize - Maximum number of spans to export in a single batch.
    * Ignored when `disableBatch` is true.
    * @param {boolean} props.forceHttp - Whether to force HTTP export. Not recommended.
+   * @param {SessionRecordingOptions} props.sessionRecordingOptions - Options for browser
+   * session recording.
+   * Currently supports 'maskInputOptions' to control whether input fields are masked during
+   * recording. Defaults to undefined (uses default masking behavior).
    *
    * @example
    * import { Laminar } from '@lmnr-ai/lmnr';
@@ -120,6 +125,7 @@ export class Laminar {
     logLevel,
     maxExportBatchSize,
     forceHttp,
+    sessionRecordingOptions,
   }: LaminarInitializeProps = {}) {
     const key = projectApiKey ?? process?.env?.LMNR_PROJECT_API_KEY;
     if (key === undefined) {
@@ -154,6 +160,7 @@ export class Laminar {
       disableBatch,
       maxExportBatchSize,
       traceExportTimeoutMillis,
+      sessionRecordingOptions,
     });
   }
 
@@ -404,7 +411,7 @@ export class Laminar {
   public static setSpanTags(tags: string[]) {
     const currentSpan = trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
-      currentSpan.setAttribute(`${ASSOCIATION_PROPERTIES}.tags`, tags);
+      currentSpan.setAttribute(`${ASSOCIATION_PROPERTIES}.tags`, Array.from(new Set(tags)));
     }
   }
 
@@ -420,7 +427,6 @@ export class Laminar {
    * @param {string} options.spanType - type of the span. Defaults to 'DEFAULT'
    * @param {Context} options.context - raw OpenTelemetry context to bind the span to.
    * @param {string} options.parentSpanContext - parent span context to bind the span to.
-   * @param {string[]} options.labels - [DEPRECATED] labels to associate with the span.
    * @param {string} options.tags - tags to associate with the span.
    * @returns The started span.
    *
@@ -458,7 +464,6 @@ export class Laminar {
     spanType,
     context,
     parentSpanContext,
-    labels,
     tags,
     userId,
     sessionId,
@@ -469,7 +474,6 @@ export class Laminar {
     spanType?: 'LLM' | 'DEFAULT' | 'TOOL',
     context?: Context,
     parentSpanContext?: string | LaminarSpanContext,
-    labels?: string[],
     tags?: string[],
     userId?: string,
     sessionId?: string,
@@ -480,8 +484,9 @@ export class Laminar {
       const spanContext = tryToOtelSpanContext(parentSpanContext);
       entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
     }
-    const labelProperties = labels ? { [`${ASSOCIATION_PROPERTIES}.labels`]: labels } : {};
-    const tagProperties = tags ? { [`${ASSOCIATION_PROPERTIES}.tags`]: tags } : {};
+    const tagProperties = tags
+      ? { [`${ASSOCIATION_PROPERTIES}.tags`]: Array.from(new Set(tags)) }
+      : {};
     const userIdProperties = userId ? { [USER_ID]: userId } : {};
     const sessionIdProperties = sessionId ? { [SESSION_ID]: sessionId } : {};
     const metadataProperties = metadata
@@ -489,7 +494,6 @@ export class Laminar {
       : {};
     const attributes = {
       [SPAN_TYPE]: spanType ?? 'DEFAULT',
-      ...labelProperties,
       ...tagProperties,
       ...userIdProperties,
       ...sessionIdProperties,
