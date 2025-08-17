@@ -18,7 +18,9 @@ export {
   EvaluationDatapoint,
   Event,
   LaminarSpanContext,
+  MaskInputOptions,
   NodeInput,
+  SessionRecordingOptions,
   TracingLevel,
 } from './types';
 export { Span } from '@opentelemetry/api';
