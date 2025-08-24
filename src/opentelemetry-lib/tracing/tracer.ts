@@ -10,10 +10,9 @@ export class LaminarTracer implements Tracer {
     this._tracer = tracer;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public startSpan(name: string, options: SpanOptions, context: Context): Span {
+  public startSpan(name: string, options?: SpanOptions, context?: Context): Span {
     return new LaminarSpan(
-      this._tracer.startSpan(name, options, LaminarContextManager.getContext()),
+      this._tracer.startSpan(name, options, context || LaminarContextManager.getContext()),
     );
   }
 
@@ -36,7 +35,6 @@ export class LaminarTracer implements Tracer {
     contextOrFn?: Context | F,
     fn?: F,
   ): ReturnType<F> {
-    // Use the provided context if available, otherwise get the current context
     let contextToUse: Context;
     if (typeof contextOrFn !== "function" && contextOrFn !== undefined) {
       contextToUse = contextOrFn;
