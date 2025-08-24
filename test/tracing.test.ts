@@ -153,6 +153,7 @@ void describe("tracing", () => {
   void it("sets span type to LLM when spanType is LLM in startSpan", () => {
     const span = Laminar.startSpan({ name: "test", spanType: "LLM" });
     const result = Laminar.withSpan(span, () => 3, true);
+    span.end();
 
     assert.strictEqual(result, 3);
 
@@ -179,18 +180,34 @@ void describe("tracing", () => {
       1, 2,
     );
 
+    const result2 = await observe(
+      {
+        name: "test2",
+      },
+      fn,
+      1, 2,
+    );
+
     assert.strictEqual(result, 3);
+    assert.strictEqual(result2, 3);
     const spans = exporter.getFinishedSpans();
 
-    assert.strictEqual(spans.length, 1);
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
-    assert.strictEqual(spans[0].name, "test");
+    assert.strictEqual(spans.length, 2);
+    const testSpan = spans.find(span => span.name === "test");
+    const test2Span = spans.find(span => span.name === "test2");
 
-    assert.strictEqual(spans[0].spanContext().traceId, "0123456789abcdef0123456789abcdef");
-    assert.strictEqual(getParentSpanId(spans[0]), "0123456789abcdef");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+    assert.strictEqual(testSpan?.attributes['lmnr.span.input'], JSON.stringify([1, 2]));
+    assert.strictEqual(testSpan?.attributes['lmnr.span.output'], "3");
+    assert.strictEqual(testSpan?.name, "test");
+
+    assert.strictEqual(testSpan?.spanContext().traceId, "0123456789abcdef0123456789abcdef");
+    assert.strictEqual(getParentSpanId(testSpan), "0123456789abcdef");
+    assert.strictEqual(testSpan?.attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.deepEqual(testSpan?.attributes['lmnr.span.path'], ["test"]);
+
+    assert.notStrictEqual(testSpan?.spanContext().traceId, test2Span?.spanContext().traceId);
+    assert.notStrictEqual(getParentSpanId(test2Span!), getParentSpanId(testSpan));
+    assert.strictEqual(getParentSpanId(test2Span!), undefined);
   });
 
   void it("sets the parent span context in startSpan", () => {
@@ -480,6 +497,9 @@ void describe("tracing", () => {
     const innerSpan = spans.find(span => span.name === "inner");
     assert.deepEqual(testSpan?.attributes['lmnr.span.path'], ["test"]);
     assert.deepEqual(innerSpan?.attributes['lmnr.span.path'], ["test", "inner"]);
+
+    assert.strictEqual(testSpan?.spanContext().traceId, innerSpan?.spanContext().traceId);
+    assert.strictEqual(getParentSpanId(innerSpan), testSpan?.spanContext().spanId);
   });
 
   void it("sets the tracing level attribute when withTracingLevel is used", async () => {
@@ -513,82 +533,6 @@ void describe("tracing", () => {
 
     assert.strictEqual(spanWithOff?.attributes['lmnr.internal.tracing_level'], "off");
     assert.strictEqual(spanWithOff?.attributes['lmnr.span.instrumentation_source'], "javascript");
-  });
-
-  void it("sets the session id attribute when withSession is used", async () => {
-    const fn = (a: number, b: number) => a + b;
-    const result = await Laminar.withSession(
-      "123",
-      async () => await observe({ name: "test" }, fn, 1, 2),
-    );
-
-    assert.strictEqual(result, 3);
-    const spans = exporter.getFinishedSpans();
-
-    assert.strictEqual(spans.length, 1);
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
-    assert.strictEqual(spans[0].name, "test");
-
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.session_id'], "123");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-  });
-
-  void it("sets the session id on the current span when withSession is used", async () => {
-    const fn = (a: number, b: number) =>
-      Laminar.withSession("123", () => a + b);
-    const result = await observe({ name: "test" }, fn, 1, 2);
-
-    assert.strictEqual(result, 3);
-
-    const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 1);
-    assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.session_id'], "123");
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-  });
-
-  void it("sets the metadata on the current span when withMetadata is used", async () => {
-    const fn = (a: number, b: number) =>
-      Laminar.withMetadata(
-        { my_metadata_key: "my_metadata_value" },
-        () => a + b,
-      );
-    const result = await observe({ name: "test" }, fn, 1, 2);
-
-    assert.strictEqual(result, 3);
-
-    const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 1);
-    assert.strictEqual(
-      spans[0].attributes['lmnr.association.properties.metadata.my_metadata_key'],
-      "my_metadata_value",
-    );
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-  });
-
-  void it("sets the metadata when withMetadata is used", async () => {
-    const fn = (a: number, b: number) => a + b;
-    const result = await Laminar.withMetadata(
-      { my_metadata_key: "my_metadata_value" },
-      async () => await observe({ name: "test" }, fn, 1, 2),
-    );
-
-    assert.strictEqual(result, 3);
-
-    const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 1);
-    assert.strictEqual(
-      spans[0].attributes['lmnr.association.properties.metadata.my_metadata_key'],
-      "my_metadata_value",
-    );
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
   });
 
   void it("sets the attributes with setSpanAttributes", async () => {
@@ -882,5 +826,49 @@ void describe("tracing", () => {
     assert.strictEqual(events[0].attributes?.['b'], "2");
     assert.strictEqual(events[0].attributes?.['lmnr.event.session_id'], "123");
     assert.strictEqual(events[0].attributes?.['lmnr.event.user_id'], "456");
+  });
+
+  void it("nests spans in startSpan", () => {
+    const testSpanManual = Laminar.startSpan({ name: "test" });
+    const innerSpanManual = Laminar.startSpan({ name: "inner" });
+    innerSpanManual.end();
+    testSpanManual.end();
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 2);
+    const testSpan = spans.find(span => span.name === "test")!;
+    const innerSpan = spans.find(span => span.name === "inner")!;
+    assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
+    assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
+  });
+
+  void it("is backwards compatible with Laminar.withSpan", async () => {
+    const testSpanManual = Laminar.startSpan({ name: "test" });
+    await Laminar.withSpan(testSpanManual, async () => {
+      await observe({ name: "other" }, () => {
+        return;
+      });
+    });
+    await Laminar.withSpan(testSpanManual, async () => {
+      await observe({ name: "middle" }, async () => {
+        await observe({ name: "inner" }, () => {
+          return;
+        });
+      });
+    });
+    testSpanManual.end();
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 4);
+    const testSpan = spans.find(span => span.name === "test")!;
+    const otherSpan = spans.find(span => span.name === "other")!;
+    const middleSpan = spans.find(span => span.name === "middle")!;
+    const innerSpan = spans.find(span => span.name === "inner")!;
+    assert.strictEqual(testSpan.spanContext().traceId, otherSpan.spanContext().traceId);
+    assert.strictEqual(testSpan.spanContext().traceId, middleSpan.spanContext().traceId);
+    assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
+    assert.strictEqual(getParentSpanId(otherSpan), testSpan.spanContext().spanId);
+    assert.strictEqual(getParentSpanId(middleSpan), testSpan.spanContext().spanId);
+    assert.strictEqual(getParentSpanId(innerSpan), middleSpan.spanContext().spanId);
   });
 });

@@ -1,6 +1,7 @@
 import { context } from "@opentelemetry/api";
 
 import { observeBase } from './opentelemetry-lib';
+import { LaminarContextManager } from "./opentelemetry-lib/tracing/context";
 import { ASSOCIATION_PROPERTIES_KEY } from "./opentelemetry-lib/tracing/utils";
 import { LaminarSpanContext, TraceType, TracingLevel } from './types';
 import { metadataToAttributes } from "./utils";
@@ -165,7 +166,7 @@ export function withTracingLevel<A extends unknown[], F extends (...args: A) => 
   fn: F,
   ...args: A
 ): ReturnType<F> {
-  let entityContext = context.active();
+  let entityContext = LaminarContextManager.getContext();
   const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
 
   entityContext = entityContext.setValue(
@@ -173,7 +174,10 @@ export function withTracingLevel<A extends unknown[], F extends (...args: A) => 
     { ...currentAssociationProperties, "tracing_level": tracingLevel },
   );
 
-  const result = context.with(entityContext, () => fn(...args));
+  const result = LaminarContextManager.runWithIsolatedContext(
+    [entityContext],
+    () => fn(...args),
+  );
 
   const newAssociationProperties = (
     entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {}
