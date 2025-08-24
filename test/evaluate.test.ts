@@ -203,7 +203,7 @@ void describe("evaluate", () => {
     assert.strictEqual(executorSpans.length, 2);
     assert.strictEqual(evaluatorSpans.length, 4);
     assert.deepStrictEqual(
-      Array.from(new Set(evaluatorSpans.map((span) => span.name))).sort(), ["test", "test2"]
+      Array.from(new Set(evaluatorSpans.map((span) => span.name))).sort(), ["test", "test2"],
     );
   });
 
