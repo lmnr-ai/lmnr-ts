@@ -1,6 +1,7 @@
 import { context } from "@opentelemetry/api";
 
 import { observeBase } from './opentelemetry-lib';
+import { LaminarContextManager } from "./opentelemetry-lib/tracing/context";
 import { ASSOCIATION_PROPERTIES_KEY } from "./opentelemetry-lib/tracing/utils";
 import { LaminarSpanContext, TraceType, TracingLevel } from './types';
 import { metadataToAttributes } from "./utils";
@@ -66,29 +67,14 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     throw new Error("Invalid `observe` usage. Second argument `fn` must be a function.");
   }
 
-  let associationProperties = {};
-  if (sessionId) {
-    associationProperties = { ...associationProperties, "session_id": sessionId };
-  }
-  if (traceType) {
-    associationProperties = { ...associationProperties, "trace_type": traceType };
-  }
-  if (spanType) {
-    associationProperties = { ...associationProperties, "span_type": spanType };
-  }
-  if (userId) {
-    associationProperties = { ...associationProperties, "user_id": userId };
-  }
-  if (tags) {
-    // Remove duplicates from tags
-    associationProperties = { ...associationProperties, "tags": Array.from(new Set(tags)) };
-  }
-  if (metadata) {
-    const metadataAttributes = metadataToAttributes(metadata);
-    if (metadataAttributes && Object.keys(metadataAttributes).length > 0) {
-      associationProperties = { ...associationProperties, ...metadataAttributes };
-    }
-  }
+  const associationProperties = buildAssociationProperties({
+    sessionId,
+    traceType,
+    spanType,
+    userId,
+    tags,
+    metadata,
+  });
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return await observeBase<A, F>({
@@ -180,7 +166,7 @@ export function withTracingLevel<A extends unknown[], F extends (...args: A) => 
   fn: F,
   ...args: A
 ): ReturnType<F> {
-  let entityContext = context.active();
+  let entityContext = LaminarContextManager.getContext();
   const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
 
   entityContext = entityContext.setValue(
@@ -188,7 +174,10 @@ export function withTracingLevel<A extends unknown[], F extends (...args: A) => 
     { ...currentAssociationProperties, "tracing_level": tracingLevel },
   );
 
-  const result = context.with(entityContext, () => fn(...args));
+  const result = LaminarContextManager.runWithIsolatedContext(
+    [entityContext],
+    () => fn(...args),
+  );
 
   const newAssociationProperties = (
     entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {}
@@ -201,4 +190,108 @@ export function withTracingLevel<A extends unknown[], F extends (...args: A) => 
   );
 
   return result;
+}
+
+function buildAssociationProperties(options: Partial<ObserveOptions>): Record<string, any> {
+  let associationProperties = {};
+
+  if (options.sessionId) {
+    associationProperties = { ...associationProperties, "session_id": options.sessionId };
+  }
+  if (options.traceType) {
+    associationProperties = { ...associationProperties, "trace_type": options.traceType };
+  }
+  if (options.spanType) {
+    associationProperties = { ...associationProperties, "span_type": options.spanType };
+  }
+  if (options.userId) {
+    associationProperties = { ...associationProperties, "user_id": options.userId };
+  }
+  if (options.tags) {
+    // Remove duplicates from tags
+    associationProperties = { ...associationProperties, "tags": Array.from(new Set(options.tags)) };
+  }
+  if (options.metadata) {
+    const metadataAttributes = metadataToAttributes(options.metadata);
+    if (metadataAttributes && Object.keys(metadataAttributes).length > 0) {
+      associationProperties = { ...associationProperties, ...metadataAttributes };
+    }
+  }
+
+  return associationProperties;
+}
+
+/**
+ * Decorator that wraps a method to automatically observe it with Laminar tracing.
+ * This decorator can be used on class methods to automatically create spans.
+ *
+ * @param config - Configuration for the observe decorator, can be static or a function
+ * @returns A method decorator
+ *
+ * @example
+ * ```typescript
+ * import { observeDecorator } from '@lmnr-ai/lmnr';
+ *
+ * class MyService {
+ *   @observeDecorator({ name: 'processData', spanType: 'DEFAULT' })
+ *   async processData(input: string) {
+ *     // Your code here
+ *     return `processed: ${input}`;
+ *   }
+ *
+ *   @observeDecorator((thisArg, ...args) => ({
+ *     name: `dynamicMethod_${args[0]}`,
+ *     sessionId: thisArg.sessionId
+ *   }))
+ *   async dynamicMethod(id: string) {
+ *     // Your code here
+ *   }
+ * }
+ * ```
+ */
+export function observeDecorator(
+  config:
+    | Partial<ObserveOptions>
+    | ((thisArg: unknown, ...funcArgs: unknown[]) => Partial<ObserveOptions>),
+) {
+  return function (
+    _target: unknown,
+    propertyKey: string,
+    descriptor: PropertyDescriptor,
+  ) {
+    if (!descriptor || typeof descriptor.value !== 'function') {
+      throw new
+      Error(
+        `observeDecorator can only be applied to methods. Applied to: ${String(propertyKey)}`,
+      );
+    }
+
+    const originalMethod = descriptor.value;
+
+    descriptor.value = function (...args: unknown[]) {
+      let actualConfig: Partial<ObserveOptions>;
+
+      if (typeof config === "function") {
+        actualConfig = config(this, ...args);
+      } else {
+        actualConfig = config;
+      }
+
+      const observeName = actualConfig.name ?? originalMethod.name;
+
+      return observeBase(
+        {
+          name: observeName,
+          associationProperties: buildAssociationProperties(actualConfig),
+          input: actualConfig.input,
+          ignoreInput: actualConfig.ignoreInput,
+          ignoreOutput: actualConfig.ignoreOutput,
+          parentSpanContext: actualConfig.parentSpanContext,
+        },
+        originalMethod,
+        this,
+        ...args,
+      );
+    };
+  };
 }

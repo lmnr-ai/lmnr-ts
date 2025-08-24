@@ -102,6 +102,111 @@ void describe("evaluate", () => {
     assert.deepStrictEqual(evaluatorSpans.map((span) => span.name).sort(), ["test", "test2"]);
   });
 
+  void it("parallel evaluation exports an evaluation, executor, and evaluator spans", async () => {
+    const baseUrl = "https://api.lmnr.ai";
+    const mockEvalId = "00000000-0000-0000-0000-000000000000";
+
+    // spy into request body
+    let body: RequestBody = {};
+
+    nock(baseUrl)
+      .post('/v1/evals')
+      .times(1)
+      .reply(200, {
+        id: mockEvalId,
+        projectId: "mock-project-id",
+      });
+
+    nock(baseUrl)
+      .post(`/v1/evals/${mockEvalId}/datapoints`, (requestBody: RequestBody): boolean => {
+        body = requestBody;
+        return true;
+      })
+      .times(2)
+      .reply(200, {});
+
+    nock(baseUrl)
+      .post('/v1/evals')
+      .times(1)
+      .reply(200, {
+        id: mockEvalId,
+        projectId: "mock-project-id",
+      });
+
+    nock(baseUrl)
+      .post(`/v1/evals/${mockEvalId}/datapoints`, (requestBody: RequestBody): boolean => {
+        body = requestBody;
+        return true;
+      })
+      .times(2)
+      .reply(200, {});
+
+    await evaluate({
+      data: [
+        {
+          data: "a".repeat(150),
+          target: "b".repeat(150),
+          metadata: {
+            "test": "test",
+          },
+        },
+        {
+          data: "x".repeat(150),
+          target: "y".repeat(150),
+          metadata: {
+            "test": "test",
+          },
+        },
+      ],
+      executor: (data) => data,
+      evaluators: {
+        "test": (output, target) => output === target ? 1 : 0,
+        "test2": (output, target) => output === target ? 1 : 0,
+      },
+      config: {
+        projectApiKey: "test",
+      },
+    });
+
+    await Laminar.flush();
+
+
+    assert.strictEqual(body?.points?.length, 1);
+
+    const point = body.points[0];
+    // test that the data and target are sliced to 100 characters + ...
+    assert.strictEqual(point.data.length, 103);
+    assert.strictEqual(point.target.length, 103);
+    assert.strictEqual(point.index, 1);
+    assert.deepStrictEqual(point.metadata, { test: 'test' });
+    assert.deepStrictEqual(point.scores, { test2: 0, test: 0 });
+
+    // Check that generated fields exist but don't check their exact values
+    assert.ok(point.executorSpanId);
+    assert.ok(point.id);
+    assert.ok(point.traceId);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 8);
+    const traceIds = Array.from(new Set(spans.map((span) => span.spanContext().traceId)));
+    assert.strictEqual(traceIds.length, 2);
+
+
+    const evaluationSpans = spans.filter(
+      (span) => span.attributes['lmnr.span.type'] === "EVALUATION",
+    );
+    const executorSpans = spans.filter((span) => span.attributes['lmnr.span.type'] === "EXECUTOR");
+    const evaluatorSpans = spans.filter(
+      (span) => span.attributes['lmnr.span.type'] === "EVALUATOR",
+    );
+    assert.strictEqual(evaluationSpans.length, 2);
+    assert.strictEqual(executorSpans.length, 2);
+    assert.strictEqual(evaluatorSpans.length, 4);
+    assert.deepStrictEqual(
+      Array.from(new Set(evaluatorSpans.map((span) => span.name))).sort(), ["test", "test2"],
+    );
+  });
+
   void it("evaluation with human evaluators exports human evaluator spans", async () => {
     const baseUrl = "https://api.lmnr.ai";
     const mockEvalId = "00000000-0000-0000-0000-000000000000";
@@ -187,7 +292,7 @@ void describe("evaluate", () => {
     );
 
     const options =
-        humanEvaluatorSpanWithOptions?.attributes?.['lmnr.span.human_evaluator_options'];
+      humanEvaluatorSpanWithOptions?.attributes?.['lmnr.span.human_evaluator_options'];
 
     assert.strictEqual(!!options, true);
     assert.deepStrictEqual(JSON.parse(String(options)), [{ value: 1, label: 'label' }]);
