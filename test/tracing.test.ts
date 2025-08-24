@@ -842,6 +842,21 @@ void describe("tracing", () => {
     assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
   });
 
+  void it("nests observed span in startSpan", async () => {
+    const testSpanManual = Laminar.startSpan({ name: "test" });
+    await observe({ name: "inner" }, () => {
+      return;
+    });
+    testSpanManual.end();
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 2);
+    const testSpan = spans.find(span => span.name === "test")!;
+    const innerSpan = spans.find(span => span.name === "inner")!;
+    assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
+    assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
+  });
+
   void it("is backwards compatible with Laminar.withSpan", async () => {
     const testSpanManual = Laminar.startSpan({ name: "test" });
     await Laminar.withSpan(testSpanManual, async () => {
