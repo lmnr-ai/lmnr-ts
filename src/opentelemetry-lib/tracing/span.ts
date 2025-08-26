@@ -9,7 +9,7 @@ import {
   SpanStatus,
   TimeInput,
 } from "@opentelemetry/api";
-import { Span as SdkSpan } from "@opentelemetry/sdk-trace-base";
+import { ReadableSpan, Span as SdkSpan } from "@opentelemetry/sdk-trace-base";
 
 import { getParentSpanId, makeSpanOtelV2Compatible } from "./compat";
 import { LaminarContextManager } from "./context";
@@ -64,7 +64,12 @@ export class LaminarSpan implements Span {
   }
 
   public end(endTime?: TimeInput): void {
-    LaminarContextManager.popContext();
+    const attributes = (this._span as unknown as ReadableSpan).attributes;
+    const { "lmnr.internal.active": active, ...rest } = attributes;
+    if (active === true) {
+      this._span.setAttributes(rest);
+      LaminarContextManager.popContext();
+    }
     return this._span.end(endTime);
   }
 

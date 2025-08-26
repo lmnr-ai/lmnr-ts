@@ -379,6 +379,78 @@ export class Laminar {
     sessionId?: string,
     metadata?: Record<string, any>,
   }): Span {
+    return this._startSpan({
+      name,
+      input,
+      spanType,
+      context,
+      parentSpanContext,
+      tags,
+      userId,
+      sessionId,
+      metadata,
+      active: false,
+    });
+  }
+
+  public static startActiveSpan({
+    name,
+    input,
+    spanType,
+    context,
+    parentSpanContext,
+    tags,
+    userId,
+    sessionId,
+    metadata,
+  }: {
+    name: string,
+    input?: any,
+    spanType?: 'LLM' | 'DEFAULT' | 'TOOL',
+    context?: Context,
+    parentSpanContext?: string | LaminarSpanContext,
+    tags?: string[],
+    userId?: string,
+    sessionId?: string,
+    metadata?: Record<string, any>,
+  }): Span {
+    return this._startSpan({
+      name,
+      input,
+      spanType,
+      context,
+      parentSpanContext,
+      tags,
+      userId,
+      sessionId,
+      metadata,
+      active: true,
+    });
+  }
+
+  private static _startSpan({
+    name,
+    input,
+    spanType,
+    context,
+    parentSpanContext,
+    tags,
+    userId,
+    sessionId,
+    metadata,
+    active,
+  }: {
+    name: string,
+    input?: any,
+    spanType?: 'LLM' | 'DEFAULT' | 'TOOL',
+    context?: Context,
+    parentSpanContext?: string | LaminarSpanContext,
+    tags?: string[],
+    userId?: string,
+    sessionId?: string,
+    metadata?: Record<string, any>,
+    active?: boolean,
+  }): Span {
     let entityContext = context ?? LaminarContextManager.getContext();
     if (parentSpanContext) {
       const spanContext = tryToOtelSpanContext(parentSpanContext);
@@ -404,8 +476,11 @@ export class Laminar {
     if (input) {
       span.setAttribute(SPAN_INPUT, JSON.stringify(input));
     }
-    entityContext = trace.setSpan(entityContext, span);
-    LaminarContextManager.pushContext(entityContext);
+    if (active) {
+      span.setAttribute("lmnr.internal.active", true);
+      entityContext = trace.setSpan(entityContext, span);
+      LaminarContextManager.pushContext(entityContext);
+    }
     return span;
   }
 

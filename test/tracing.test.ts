@@ -828,9 +828,44 @@ void describe("tracing", () => {
     assert.strictEqual(events[0].attributes?.['lmnr.event.user_id'], "456");
   });
 
-  void it("nests spans in startSpan", () => {
+  void it("doesn't nest spans in startSpan", () => {
     const testSpanManual = Laminar.startSpan({ name: "test" });
-    const innerSpanManual = Laminar.startSpan({ name: "inner" });
+    const secondSpanManual = Laminar.startSpan({ name: "second" });
+    secondSpanManual.end();
+    testSpanManual.end();
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 2);
+    const testSpan = spans.find(span => span.name === "test")!;
+    const secondSpan = spans.find(span => span.name === "second")!;
+    assert.notStrictEqual(testSpan.spanContext().traceId, secondSpan.spanContext().traceId);
+    assert.strictEqual(getParentSpanId(testSpan), undefined);
+    assert.strictEqual(getParentSpanId(secondSpan), undefined);
+    assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
+    assert.deepStrictEqual(secondSpan.attributes["lmnr.span.path"], ["second"]);
+  });
+
+  void it("doesn't nest spans in startSpan with observe", async () => {
+    const testSpanManual = Laminar.startSpan({ name: "test" });
+    await observe({ name: "second" }, () => {
+      return;
+    });
+    testSpanManual.end();
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 2);
+    const testSpan = spans.find(span => span.name === "test")!;
+    const secondSpan = spans.find(span => span.name === "second")!;
+    assert.notStrictEqual(testSpan.spanContext().traceId, secondSpan.spanContext().traceId);
+    assert.strictEqual(getParentSpanId(testSpan), undefined);
+    assert.strictEqual(getParentSpanId(secondSpan), undefined);
+    assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
+    assert.deepStrictEqual(secondSpan.attributes["lmnr.span.path"], ["second"]);
+  });
+
+  void it("nests spans in startActiveSpan", () => {
+    const testSpanManual = Laminar.startActiveSpan({ name: "test" });
+    const innerSpanManual = Laminar.startActiveSpan({ name: "inner" });
     innerSpanManual.end();
     testSpanManual.end();
 
@@ -840,10 +875,62 @@ void describe("tracing", () => {
     const innerSpan = spans.find(span => span.name === "inner")!;
     assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
     assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
+    assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
+    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "inner"]);
   });
 
-  void it("nests observed span in startSpan", async () => {
-    const testSpanManual = Laminar.startSpan({ name: "test" });
+  void it("nests multiple sequential spans in startActiveSpan", () => {
+    const testSpanManual = Laminar.startActiveSpan({ name: "test" });
+    const innerSpanManual = Laminar.startActiveSpan({ name: "inner" });
+    innerSpanManual.end();
+    const innerSpanManual2 = Laminar.startActiveSpan({ name: "inner2" });
+    innerSpanManual2.end();
+    testSpanManual.end();
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 3);
+    const testSpan = spans.find(span => span.name === "test")!;
+    const innerSpan = spans.find(span => span.name === "inner")!;
+    const innerSpan2 = spans.find(span => span.name === "inner2")!;
+    assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
+    assert.strictEqual(testSpan.spanContext().traceId, innerSpan2.spanContext().traceId);
+    assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
+    assert.strictEqual(getParentSpanId(innerSpan2), testSpan.spanContext().spanId);
+    assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
+    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "inner"]);
+    assert.deepStrictEqual(innerSpan2.attributes["lmnr.span.path"], ["test", "inner2"]);
+  });
+
+  void it("nests deeply nested spans in startActiveSpan", () => {
+    const testSpanManual = Laminar.startActiveSpan({ name: "test" });
+    const innerSpanManual = Laminar.startActiveSpan({ name: "inner" });
+    const innerSpanManual2 = Laminar.startActiveSpan({ name: "inner2" });
+    const innerSpanManual3 = Laminar.startActiveSpan({ name: "inner3" });
+    innerSpanManual3.end();
+    innerSpanManual2.end();
+    innerSpanManual.end();
+    testSpanManual.end();
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 4);
+    const testSpan = spans.find(span => span.name === "test")!;
+    const innerSpan = spans.find(span => span.name === "inner")!;
+    const innerSpan2 = spans.find(span => span.name === "inner2")!;
+    const innerSpan3 = spans.find(span => span.name === "inner3")!;
+    assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
+    assert.strictEqual(testSpan.spanContext().traceId, innerSpan2.spanContext().traceId);
+    assert.strictEqual(testSpan.spanContext().traceId, innerSpan3.spanContext().traceId);
+    assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
+    assert.strictEqual(getParentSpanId(innerSpan2), innerSpan.spanContext().spanId);
+    assert.strictEqual(getParentSpanId(innerSpan3), innerSpan2.spanContext().spanId);
+    assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
+    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "inner"]);
+    assert.deepStrictEqual(innerSpan2.attributes["lmnr.span.path"], ["test", "inner", "inner2"]);
+    assert.deepStrictEqual(innerSpan3.attributes["lmnr.span.path"], ["test", "inner", "inner2", "inner3"]);
+  });
+
+  void it("nests observed span in startActiveSpan", async () => {
+    const testSpanManual = Laminar.startActiveSpan({ name: "test" });
     await observe({ name: "inner" }, () => {
       return;
     });
@@ -855,9 +942,35 @@ void describe("tracing", () => {
     const innerSpan = spans.find(span => span.name === "inner")!;
     assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
     assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
+    assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
+    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "inner"]);
   });
 
-  void it("is backwards compatible with Laminar.withSpan", async () => {
+  void it("nests multiple sequential spans in startActiveSpan with observe", async () => {
+    const testSpanManual = Laminar.startActiveSpan({ name: "test" });
+    await observe({ name: "inner" }, () => {
+      return;
+    });
+    await observe({ name: "inner2" }, () => {
+      return;
+    });
+    testSpanManual.end();
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 3);
+    const testSpan = spans.find(span => span.name === "test")!;
+    const innerSpan = spans.find(span => span.name === "inner")!;
+    const innerSpan2 = spans.find(span => span.name === "inner2")!;
+    assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
+    assert.strictEqual(testSpan.spanContext().traceId, innerSpan2.spanContext().traceId);
+    assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
+    assert.strictEqual(getParentSpanId(innerSpan2), testSpan.spanContext().spanId);
+    assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
+    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "inner"]);
+    assert.deepStrictEqual(innerSpan2.attributes["lmnr.span.path"], ["test", "inner2"]);
+  });
+
+  void it("is compatible with Laminar.withSpan", async () => {
     const testSpanManual = Laminar.startSpan({ name: "test" });
     await Laminar.withSpan(testSpanManual, async () => {
       await observe({ name: "other" }, () => {
@@ -885,5 +998,9 @@ void describe("tracing", () => {
     assert.strictEqual(getParentSpanId(otherSpan), testSpan.spanContext().spanId);
     assert.strictEqual(getParentSpanId(middleSpan), testSpan.spanContext().spanId);
     assert.strictEqual(getParentSpanId(innerSpan), middleSpan.spanContext().spanId);
+    assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
+    assert.deepStrictEqual(otherSpan.attributes["lmnr.span.path"], ["test", "other"]);
+    assert.deepStrictEqual(middleSpan.attributes["lmnr.span.path"], ["test", "middle"]);
+    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "middle", "inner"]);
   });
 });

@@ -430,7 +430,7 @@ export class Evaluation<D, T, O> {
     return observe({ name: "evaluation", traceType: "EVALUATION" }, async () => {
 
       trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATION");
-      const executorSpan = Laminar.startSpan({
+      const executorSpan = Laminar.startActiveSpan({
         name: "executor",
         input: datapoint.data,
       });
