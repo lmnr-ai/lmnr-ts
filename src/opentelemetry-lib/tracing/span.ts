@@ -64,6 +64,11 @@ export class LaminarSpan implements Span {
   }
 
   public end(endTime?: TimeInput): void {
+    if (!this._span.isRecording()) {
+      // This will log a warning and do nothing.
+      return this._span.end(endTime);
+    }
+
     const attributes = (this._span as unknown as ReadableSpan).attributes;
     const { "lmnr.internal.active": active, ...rest } = attributes;
     if (active === true) {

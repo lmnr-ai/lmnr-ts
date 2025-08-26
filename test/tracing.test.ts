@@ -846,6 +846,39 @@ void describe("tracing", () => {
     );
   });
 
+  void it("does not break when ending a span twice", () => {
+    const testSpanManual = Laminar.startActiveSpan({ name: "test" });
+    const innerSpanManual = Laminar.startActiveSpan({ name: "inner" });
+    const innerSpanManual2 = Laminar.startActiveSpan({ name: "inner2" });
+    const innerSpanManual3 = Laminar.startActiveSpan({ name: "inner3" });
+    innerSpanManual3.end();
+    innerSpanManual3.end();
+    innerSpanManual2.end();
+    innerSpanManual.end();
+    testSpanManual.end();
+
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 4);
+    const testSpan = spans.find(span => span.name === "test")!;
+    const innerSpan = spans.find(span => span.name === "inner")!;
+    const innerSpan2 = spans.find(span => span.name === "inner2")!;
+    const innerSpan3 = spans.find(span => span.name === "inner3")!;
+    assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
+    assert.strictEqual(testSpan.spanContext().traceId, innerSpan2.spanContext().traceId);
+    assert.strictEqual(testSpan.spanContext().traceId, innerSpan3.spanContext().traceId);
+    assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
+    assert.strictEqual(getParentSpanId(innerSpan2), innerSpan.spanContext().spanId);
+    assert.strictEqual(getParentSpanId(innerSpan3), innerSpan2.spanContext().spanId);
+    assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
+    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "inner"]);
+    assert.deepStrictEqual(innerSpan2.attributes["lmnr.span.path"], ["test", "inner", "inner2"]);
+    assert.deepStrictEqual(
+      innerSpan3.attributes["lmnr.span.path"],
+      ["test", "inner", "inner2", "inner3"],
+    );
+  });
+
   void it("nests deeply nested possibly inactive spans in startActiveSpan", () => {
     const testSpanManual = Laminar.startActiveSpan({ name: "test" });
     const innerSpanManual = Laminar.startActiveSpan({ name: "inner" });
