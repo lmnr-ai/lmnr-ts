@@ -20,6 +20,7 @@ import {
   USER_ID,
 } from './opentelemetry-lib/tracing/attributes';
 import { LaminarContextManager } from './opentelemetry-lib/tracing/context';
+import { LaminarSpan } from './opentelemetry-lib/tracing/span';
 import { LaminarSpanContext, SessionRecordingOptions } from './types';
 import {
   initializeLogger,
@@ -473,11 +474,14 @@ export class Laminar {
       ...metadataProperties,
     };
     const span = getTracer().startSpan(name, { attributes }, entityContext);
+    if (span instanceof LaminarSpan) {
+      span.active = active ?? false;
+    }
+
     if (input) {
       span.setAttribute(SPAN_INPUT, JSON.stringify(input));
     }
     if (active) {
-      span.setAttribute("lmnr.internal.active", true);
       entityContext = trace.setSpan(entityContext, span);
       LaminarContextManager.pushContext(entityContext);
     }

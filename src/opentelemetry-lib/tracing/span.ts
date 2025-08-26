@@ -3,22 +3,63 @@ import {
   Attributes,
   AttributeValue,
   Exception,
+  HrTime,
   Link,
   Span,
   SpanContext,
+  SpanKind,
   SpanStatus,
   TimeInput,
 } from "@opentelemetry/api";
-import { ReadableSpan, Span as SdkSpan } from "@opentelemetry/sdk-trace-base";
+import { InstrumentationLibrary, InstrumentationScope } from "@opentelemetry/core";
+import { IResource } from "@opentelemetry/resources";
+import { ReadableSpan, Span as SdkSpan, TimedEvent } from "@opentelemetry/sdk-trace-base";
 
 import { getParentSpanId, makeSpanOtelV2Compatible } from "./compat";
 import { LaminarContextManager } from "./context";
 
-export class LaminarSpan implements Span {
+export class LaminarSpan implements Span, ReadableSpan {
   private _span: Span;
-  constructor(span: Span) {
+  private _active: boolean;
+
+  constructor(span: Span, active?: boolean) {
+    this._active = active ?? false;
+
     this._span = span;
+    this.name = (this._span as unknown as SdkSpan).name;
+    this.kind = (this._span as unknown as SdkSpan).kind;
+    this.startTime = (this._span as unknown as SdkSpan).startTime;
+    this.endTime = (this._span as unknown as SdkSpan).endTime;
+    this.status = (this._span as unknown as SdkSpan).status;
+    this.attributes = (this._span as unknown as SdkSpan).attributes;
+    this.links = (this._span as unknown as SdkSpan).links;
+    this.events = (this._span as unknown as SdkSpan).events;
+    this.duration = (this._span as unknown as SdkSpan).duration;
+    this.ended = (this._span as unknown as SdkSpan).ended;
+    this.resource = (this._span as unknown as SdkSpan).resource;
+    this.instrumentationLibrary = (this._span as unknown as SdkSpan).instrumentationLibrary;
+    this.droppedAttributesCount = (this._span as unknown as SdkSpan).droppedAttributesCount;
+    this.droppedEventsCount = (this._span as unknown as SdkSpan).droppedEventsCount;
+    this.droppedLinksCount = (this._span as unknown as SdkSpan).droppedLinksCount;
+    this.makeOtelV2Compatible();
   }
+
+  name: string;
+  kind: SpanKind;
+  parentSpanId?: string | undefined;
+  startTime: HrTime;
+  endTime: HrTime;
+  status: SpanStatus;
+  attributes: Attributes;
+  links: Link[];
+  events: TimedEvent[];
+  duration: HrTime;
+  ended: boolean;
+  resource: IResource;
+  instrumentationLibrary: InstrumentationLibrary;
+  droppedAttributesCount: number;
+  droppedEventsCount: number;
+  droppedLinksCount: number;
 
   public spanContext(): SpanContext {
     return this._span.spanContext();
@@ -69,15 +110,15 @@ export class LaminarSpan implements Span {
       return this._span.end(endTime);
     }
 
-    const attributes = (this._span as unknown as ReadableSpan).attributes;
-    const { "lmnr.internal.active": active, ...rest } = attributes;
-    if (active === true) {
-      this._span.setAttributes(rest);
+    if (this._active) {
       LaminarContextManager.popContext();
     }
     return this._span.end(endTime);
   }
 
+  public set active(active: boolean) {
+    this._active = active;
+  }
 
   public isRecording(): boolean {
     return this._span.isRecording();
@@ -87,12 +128,30 @@ export class LaminarSpan implements Span {
     return this._span.recordException(exception, time);
   }
 
+
+
   // ================================
   // OTel V2 compatibility
   // ================================
 
   public makeOtelV2Compatible(): void {
     makeSpanOtelV2Compatible(this._span as unknown as SdkSpan);
+  }
+
+  public get instrumentationScope(): InstrumentationScope {
+    return (this._span as unknown as SdkSpan).instrumentationLibrary;
+  }
+
+  public get parentSpanContext(): SpanContext | undefined {
+    if (!this.parentSpanId) {
+      return undefined;
+    }
+    return {
+      spanId: this.parentSpanId,
+      traceId: this.spanContext().traceId,
+      // TODO: somehow get the traceFlags from the parent span
+      traceFlags: this.spanContext().traceFlags,
+    };
   }
 
   public getParentSpanId(): string | undefined {
