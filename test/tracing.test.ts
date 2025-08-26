@@ -926,7 +926,10 @@ void describe("tracing", () => {
     assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
     assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "inner"]);
     assert.deepStrictEqual(innerSpan2.attributes["lmnr.span.path"], ["test", "inner", "inner2"]);
-    assert.deepStrictEqual(innerSpan3.attributes["lmnr.span.path"], ["test", "inner", "inner2", "inner3"]);
+    assert.deepStrictEqual(
+      innerSpan3.attributes["lmnr.span.path"],
+      ["test", "inner", "inner2", "inner3"],
+    );
   });
 
   void it("nests observed span in startActiveSpan", async () => {
