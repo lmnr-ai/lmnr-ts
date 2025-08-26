@@ -231,7 +231,7 @@ export class Laminar {
       ...(userId ? { "lmnr.event.user_id": userId } : {}),
     } as Record<string, AttributeValue>;
 
-    const currentSpan = trace.getActiveSpan();
+    const currentSpan = trace.getSpan(LaminarContextManager.getContext());
     if (currentSpan === undefined || !isSpanContextValid(currentSpan.spanContext())) {
       const newSpan = Laminar.startSpan({ name });
       newSpan?.addEvent(name, allAttributes, timestamp);
@@ -263,7 +263,7 @@ export class Laminar {
   public static setSpanAttributes(
     attributes: LaminarAttributesProp,
   ) {
-    const currentSpan = trace.getActiveSpan();
+    const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
       for (const [key, value] of Object.entries(attributes)) {
         currentSpan.setAttribute(key, value);

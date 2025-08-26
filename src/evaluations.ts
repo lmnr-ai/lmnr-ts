@@ -7,6 +7,7 @@ import { observe } from "./decorators";
 import { Laminar } from "./laminar";
 import { InitializeOptions } from "./opentelemetry-lib/interfaces";
 import { HUMAN_EVALUATOR_OPTIONS, SPAN_TYPE } from "./opentelemetry-lib/tracing/attributes";
+import { LaminarContextManager } from "./opentelemetry-lib/tracing/context";
 import { EvaluationDatapoint } from "./types";
 import {
   initializeLogger,
@@ -429,7 +430,7 @@ export class Evaluation<D, T, O> {
   ): Promise<EvaluationDatapoint<D, T, O>> {
     return observe({ name: "evaluation", traceType: "EVALUATION" }, async () => {
 
-      trace.getActiveSpan()!.setAttribute(SPAN_TYPE, "EVALUATION");
+      trace.getSpan(LaminarContextManager.getContext())!.setAttribute(SPAN_TYPE, "EVALUATION");
       const executorSpan = Laminar.startActiveSpan({
         name: "executor",
         input: datapoint.data,
@@ -442,7 +443,9 @@ export class Evaluation<D, T, O> {
         data: datapoint.data,
         target: datapoint.target,
         metadata: datapoint.metadata,
-        traceId: otelTraceIdToUUID(trace.getActiveSpan()!.spanContext().traceId),
+        traceId: otelTraceIdToUUID(
+          trace.getSpan(LaminarContextManager.getContext())!.spanContext().traceId,
+        ),
         executorSpanId,
         index,
       } as EvaluationDatapoint<D, T, O>;
@@ -467,7 +470,7 @@ export class Evaluation<D, T, O> {
           { name: evaluatorName },
           async (output: O, target?: T) => {
             if (evaluator instanceof HumanEvaluator) {
-              const activeSpan = trace.getActiveSpan();
+              const activeSpan = trace.getSpan(LaminarContextManager.getContext());
               if (activeSpan) {
                 activeSpan.setAttribute(SPAN_TYPE, "HUMAN_EVALUATOR");
                 if (evaluator.options) {
@@ -479,7 +482,7 @@ export class Evaluation<D, T, O> {
               }
               return null;
             } else {
-              const activeSpan = trace.getActiveSpan();
+              const activeSpan = trace.getSpan(LaminarContextManager.getContext());
               if (activeSpan) {
                 activeSpan.setAttribute(SPAN_TYPE, "EVALUATOR");
               }
@@ -512,7 +515,9 @@ export class Evaluation<D, T, O> {
         target,
         metadata: datapoint.metadata,
         scores,
-        traceId: otelTraceIdToUUID(trace.getActiveSpan()!.spanContext().traceId),
+        traceId: otelTraceIdToUUID(
+          trace.getSpan(LaminarContextManager.getContext())!.spanContext().traceId,
+        ),
         executorSpanId,
         index,
       } as EvaluationDatapoint<D, T, O>;
