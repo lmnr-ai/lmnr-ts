@@ -280,14 +280,14 @@ export class Laminar {
     if (output == null) {
       return;
     }
-    const currentSpan = trace.getActiveSpan();
+    const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
       currentSpan.setAttribute(SPAN_OUTPUT, JSON.stringify(output));
     }
   }
 
   public static setTraceMetadata(metadata: Record<string, any>) {
-    const currentSpan = trace.getActiveSpan();
+    const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
       const metadataAttributes = metadataToAttributes(metadata);
       currentSpan.setAttributes(metadataAttributes);
@@ -295,21 +295,21 @@ export class Laminar {
   }
 
   public static setTraceSessionId(sessionId: string) {
-    const currentSpan = trace.getActiveSpan();
+    const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
       currentSpan.setAttribute(SESSION_ID, sessionId);
     }
   }
 
   public static setTraceUserId(userId: string) {
-    const currentSpan = trace.getActiveSpan();
+    const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
       currentSpan.setAttribute(USER_ID, userId);
     }
   }
 
   public static setSpanTags(tags: string[]) {
-    const currentSpan = trace.getActiveSpan();
+    const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
       currentSpan.setAttribute(`${ASSOCIATION_PROPERTIES}.tags`, Array.from(new Set(tags)));
     }
@@ -535,7 +535,8 @@ export class Laminar {
   };
 
   public static getLaminarSpanContext(span?: Span): LaminarSpanContext | null {
-    const currentSpan = span ?? trace.getActiveSpan();
+    const currentSpan = span ?? trace.getSpan(LaminarContextManager.getContext())
+      ?? trace.getActiveSpan();
     if (currentSpan === undefined || !isSpanContextValid(currentSpan.spanContext())) {
       return null;
     }
