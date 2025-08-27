@@ -150,9 +150,6 @@ export class LaminarSpan implements Span, ReadableSpan {
     return LaminarSpan._activeSpans.has(spanId);
   }
 
-
-
-
   // ================================
   // OTel V2 compatibility
   // ================================
