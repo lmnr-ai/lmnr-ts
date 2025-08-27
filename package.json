@@ -71,6 +71,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@ai-sdk/openai": "^2.0.22",
     "@anthropic-ai/sdk": "^0.57.0",
     "@aws-sdk/client-bedrock-runtime": "^3.859.0",
     "@azure/openai": "^2.0.0",
@@ -89,6 +90,7 @@
     "@types/node": "^24.2.0",
     "@types/semver": "^7.7.0",
     "@types/uuid": "^10.0.0",
+    "ai": "^5.0.26",
     "chromadb": "^3.0.10",
     "cohere-ai": "^7.18.0",
     "eslint": "^9.32.0",

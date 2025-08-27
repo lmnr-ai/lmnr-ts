@@ -761,9 +761,7 @@ void describe("tracing", () => {
 
   void it("doesn't nest spans in startSpan with observe", async () => {
     const testSpanManual = Laminar.startSpan({ name: "test" });
-    await observe({ name: "second" }, () => {
-      return;
-    });
+    await observe({ name: "second" }, () => { });
     testSpanManual.end();
 
     const spans = exporter.getFinishedSpans();
@@ -957,9 +955,7 @@ void describe("tracing", () => {
 
   void it("nests observed span in startActiveSpan", async () => {
     const testSpanManual = Laminar.startActiveSpan({ name: "test" });
-    await observe({ name: "inner" }, () => {
-      return;
-    });
+    await observe({ name: "inner" }, () => { });
     testSpanManual.end();
 
     const spans = exporter.getFinishedSpans();
@@ -974,12 +970,8 @@ void describe("tracing", () => {
 
   void it("nests multiple sequential spans in startActiveSpan with observe", async () => {
     const testSpanManual = Laminar.startActiveSpan({ name: "test" });
-    await observe({ name: "inner" }, () => {
-      return;
-    });
-    await observe({ name: "inner2" }, () => {
-      return;
-    });
+    await observe({ name: "inner" }, () => { });
+    await observe({ name: "inner2" }, () => { });
     testSpanManual.end();
 
     const spans = exporter.getFinishedSpans();
@@ -1005,9 +997,7 @@ void describe("tracing", () => {
     });
     await Laminar.withSpan(testSpanManual, async () => {
       await observe({ name: "middle" }, async () => {
-        await observe({ name: "inner" }, () => {
-          return;
-        });
+        await observe({ name: "inner" }, () => { });
       });
     });
     testSpanManual.end();

@@ -1,5 +1,6 @@
 import { Context, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 import { AsyncLocalStorage } from "async_hooks";
+
 import { LaminarSpan } from "./span";
 
 export class LaminarContextManager {
@@ -9,8 +10,10 @@ export class LaminarContextManager {
     const contexts = this._asyncLocalStorage.getStore() || [];
 
     // Walk through contexts from most recent to oldest
-    // We're doing it this way because we want to return the most recent context that has an active span
-    // This is primarily for the cases when span is started in one async context and ended in another
+    // We're doing it this way because we want to return the most recent context
+    // that has an active span
+    // This is primarily for the cases when span is started in one async context
+    // and ended in another
     for (let i = contexts.length - 1; i >= 0; i--) {
       const context = contexts[i];
       const span = trace.getSpan(context);
@@ -28,7 +31,7 @@ export class LaminarContextManager {
           return context;
         }
         // Span has been ended, continue to parent context
-      } catch (error) {
+      } catch {
         // If we can't check the span, assume it's valid
         return context;
       }
@@ -59,7 +62,7 @@ export class LaminarContextManager {
         // Check if the span in this context has been ended
         try {
           return LaminarSpan.isSpanActive(span.spanContext().spanId);
-        } catch (error) {
+        } catch {
           // If we can't check the span, assume it's valid
           return true;
         }

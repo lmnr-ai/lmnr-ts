@@ -1,0 +1,59 @@
+[
+  {
+    "scope": "https://api.openai.com:443",
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body": {
+      "model": "gpt-4.1-nano",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is the capital of France?"
+        }
+      ]
+    },
+    "status": 200,
+    "response": [
+      "1b4503401c07ceb93c1687a82b087d86a89c4fa899fa899e2de935ed99abbb7a7e0829c0d4615198ba79711461e0b1fc5aedf3e501ae657917495856a22dea8df8a2829fee3e34740070c8dfecb448d8893e23d2692337e3ae7ef7d9fe5248ebe9f6743077e1e606879a90f2b5ea8f80098832cf005165452492a6282fd2225ceefda261258eb09999e56c60cd58416229156c241200e3d727f0016af80a101818314a023eb2430782ca30c7dfc168627278f6644871c7cba36eedebf09176fe396682fc7d0bd57231a4637377303d5e4a72bfa872ab66d60d981a7d9125c19f25d0ee8a3bdbd678618ba34c8b067d3f149912695bd5095a68a32ec8cbb410479430e20cfa87b655aafa78e39074ed1df9f6360aebbb5f3763a563839f0c33ff6fa3680031185fb64ddc212405177962966c8f84823a36a15b0110af20340e27064bb441c10f12bd7b05da924d645997890b2d"
+    ],
+    "rawHeaders": {
+      "access-control-expose-headers": "X-Request-ID",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cf-cache-status": "DYNAMIC",
+      "cf-ray": "975d348bf95feed7-LHR",
+      "connection": "keep-alive",
+      "content-encoding": "br",
+      "content-type": "application/json",
+      "date": "Wed, 27 Aug 2025 17:14:26 GMT",
+      "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
+      "openai-processing-ms": "230",
+      "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
+      "openai-version": "2020-10-01",
+      "server": "cloudflare",
+      "set-cookie": "_cfuvid=7EcBiSGM6AfRx.vCaU0EtIWyhr3KNinNMhA18_HEX6k-1756314866948-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "235",
+      "x-ratelimit-limit-requests": "30000",
+      "x-ratelimit-limit-tokens": "150000000",
+      "x-ratelimit-remaining-requests": "29999",
+      "x-ratelimit-remaining-tokens": "149999990",
+      "x-ratelimit-reset-requests": "2ms",
+      "x-ratelimit-reset-tokens": "0s",
+      "x-request-id": "req_79c1cf6266fd464381fcd6cf7551a215"
+    },
+    "reqheaders": {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "x-stainless-arch": "arm64",
+      "x-stainless-lang": "js",
+      "x-stainless-os": "MacOS",
+      "x-stainless-package-version": "5.11.0",
+      "x-stainless-retry-count": "0",
+      "x-stainless-runtime": "node",
+      "x-stainless-runtime-version": "v23.3.0"
+    },
+    "responseIsBinary": false
+  }
+]

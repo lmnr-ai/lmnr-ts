@@ -3,13 +3,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import zlib from "node:zlib";
 
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import nock from "nock";
 import OpenAI from "openai";
 
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import { decompressRecordingResponse } from "./utils";
 
 void describe("openai instrumentation", () => {
   const client = new OpenAI({
@@ -20,9 +20,14 @@ void describe("openai instrumentation", () => {
     ? __dirname
     : path.dirname(fileURLToPath(import.meta.url));
   const recordingsDir = path.join(dirname, "recordings");
-  const recordingsFile = path.join(recordingsDir, "openai-test.json");
 
-  void beforeEach(async () => {
+  // Function to get test-specific recording file
+  const getRecordingFile = (testName: string) => {
+    const sanitizedName = testName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+    return path.join(recordingsDir, `openai-${sanitizedName}.json`);
+  };
+
+  void beforeEach(async (t) => {
     _resetConfiguration();
     initializeTracing({
       exporter,
@@ -32,13 +37,15 @@ void describe("openai instrumentation", () => {
       },
     });
 
+    const recordingsFile = getRecordingFile(t.name);
+
     if (process.env.LMNR_TEST_RECORD_VCR) {
       // Record mode - enable real HTTP requests and recording
       nock.cleanAll();
       nock.restore();
       nock.recorder.rec({
         dont_print: true,
-        enable_reqheaders_recording: true,
+        enable_reqheaders_recording: false,
         output_objects: true,
       });
     } else if (fs.existsSync(recordingsFile)) {
@@ -46,31 +53,20 @@ void describe("openai instrumentation", () => {
       nock.cleanAll();
       const recordings = JSON.parse(await fs.promises.readFile(recordingsFile, "utf8"));
       recordings.forEach((recording: nock.Definition) => {
-        // TODO: extract this parsing from gzip encoded OpenAI responses to a separate function
-        const isGzipped = (recording as any)?.rawHeaders
-          && (recording as any)?.rawHeaders?.['content-encoding'] === 'gzip';
-        const response = isGzipped ?
-          // If response is an array with a hex string, extract it first
-          (Array.isArray(recording.response)
-            ? JSON.parse(zlib.gunzipSync(Buffer.from(recording.response[0], 'hex')).toString())
-            : JSON.parse(
-              zlib.gunzipSync(
-                Buffer.from((recording.response ?? '') as string, 'hex'),
-              ).toString(),
-            )
-          )
-          : recording.response;
+        const response = decompressRecordingResponse(recording);
 
         nock(recording.scope)
           .intercept(recording.path, recording.method ?? 'POST', recording.body)
           .reply(recording.status, response, recording.headers);
       });
     } else {
-      throw new Error("LMNR_TEST_RECORD_VCR variable is false and no recordings file exists");
+      throw new Error(
+        `LMNR_TEST_RECORD_VCR variable is false and no recordings file exists: ${recordingsFile}`,
+      );
     }
   });
 
-  void afterEach(() => {
+  void afterEach((t) => {
     exporter.reset();
 
     if (process.env.LMNR_TEST_RECORD_VCR) {
@@ -79,6 +75,7 @@ void describe("openai instrumentation", () => {
       if (!fs.existsSync(recordingsDir)) {
         fs.mkdirSync(recordingsDir, { recursive: true });
       }
+      const recordingsFile = getRecordingFile(t.name);
       fs.writeFileSync(recordingsFile, JSON.stringify(recordings, null, 2));
       nock.restore(); // Clean up nock
     }

@@ -327,8 +327,12 @@ export class Laminar {
    * be JSON serializable
    * @param {string} options.spanType - type of the span. Defaults to 'DEFAULT'
    * @param {Context} options.context - raw OpenTelemetry context to bind the span to.
-   * @param {string} options.parentSpanContext - parent span context to bind the span to.
-   * @param {string} options.tags - tags to associate with the span.
+   * @param {string | LaminarSpanContext} options.parentSpanContext - parent span context
+   * to bind the span to.
+   * @param {string[]} options.tags - tags to associate with the span.
+   * @param {string} options.userId - user ID to associate with the span.
+   * @param {string} options.sessionId - session ID to associate with the span.
+   * @param {Record<string, any>} options.metadata - metadata to associate with the span.
    * @returns The started span.
    *
    * @example
@@ -356,8 +360,7 @@ export class Laminar {
    * // | outer
    * // |  | foo
    * // |  |  | ...
-   * // |  | bar
-   * // |  |  | openai.chat
+   * // |  | openai.chat
    */
   public static startSpan({
     name,
@@ -394,6 +397,56 @@ export class Laminar {
     });
   }
 
+  /**
+ * Start a new span, and set it as active. It is the caller's responsibility
+ * to end the span. It is important to end the span, to avoid context mixing up.
+ * We suggest ending the span in a finally block.
+ * This is useful for manual instrumentation.
+ * If span type is 'LLM', you should report usage manually.
+ * See {@link setSpanAttributes} for more information.
+ *
+ * @param {Object} options
+ * @param {string} options.name - name of the span
+ * @param {any} options.input - input to the span. Will be sent as an attribute, so must
+ * be JSON serializable
+ * @param {string} options.spanType - type of the span. Defaults to 'DEFAULT'
+ * @param {Context} options.context - raw OpenTelemetry context to bind the span to.
+ * @param {string | LaminarSpanContext} options.parentSpanContext - parent span context
+ * to bind the span to.
+ * @param {string[]} options.tags - tags to associate with the span.
+ * @param {string} options.userId - user ID to associate with the span.
+ * @param {string} options.sessionId - session ID to associate with the span.
+ * @param {Record<string, any>} options.metadata - metadata to associate with the span.
+ * @returns The started span.
+ *
+ * @example
+ * import { Laminar, observe } from '@lmnr-ai/lmnr';
+ * const foo = async () => {
+ *   await observe({ name: 'foo' }, async () => {
+ *     // Your code here
+ *   })
+ * };
+ * const bar = async (span: Span) => {
+ *   await observe({ name: 'bar' }, async () => {
+ *     await openai_client.chat.completions.create();
+ *   })
+ * };
+ *
+ * try {
+ *   const parentSpan = Laminar.startActiveSpan({name: "outer"});
+ *   foo();
+ *   await bar();
+ * } finally {
+ *   parentSpan.end();
+ * }
+ *
+ * // Results in:
+ * // | outer
+ * // |  | foo
+ * // |  |  | ...
+ * // |  | bar
+ * // |  |  | openai.chat
+ */
   public static startActiveSpan({
     name,
     input,

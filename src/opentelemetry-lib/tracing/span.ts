@@ -18,15 +18,18 @@ import { ReadableSpan, Span as SdkSpan, TimedEvent } from "@opentelemetry/sdk-tr
 import { getParentSpanId, makeSpanOtelV2Compatible } from "./compat";
 import { LaminarContextManager } from "./context";
 
-// We decided to implement raw otel Span interface and have _span: SdkSpan because SdkSpan discorages use of its constructor directly
+// We decided to implement raw otel Span interface and have _span: SdkSpan because SdkSpan
+// discourages use of its constructor directly
 // We are using constructor directly because we're implementing Tracer interface
 export class LaminarSpan implements Span, ReadableSpan {
   private _span: Span;
   private _activated: boolean;
 
   // Static registry for cross-async span management
-  // We're keeping track of spans have started (and running) here for the cases when span is started in one async context and ended in another
-  // In LaminarContextManager we're using this registry to ignore the context of spans that were already ended in another async context
+  // We're keeping track of spans have started (and running) here for the cases when span
+  // is started in one async context and ended in another
+  // In LaminarContextManager we're using this registry to ignore the context of spans that
+  // were already ended in another async context
   private static _activeSpans = new Set<string>();
 
   constructor(span: Span, activated?: boolean) {
@@ -142,7 +145,7 @@ export class LaminarSpan implements Span, ReadableSpan {
 
   /**
  * Get an active span by its ID.
- * 
+ *
  * @param spanId - The span ID to retrieve
  * @returns the LaminarSpan if found and active, undefined otherwise
  */
