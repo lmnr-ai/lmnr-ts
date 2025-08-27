@@ -21,6 +21,8 @@ import { LaminarContextManager } from "./context";
 export class LaminarSpan implements Span, ReadableSpan {
   private _span: Span;
   private _active: boolean;
+  // Static registry for cross-async span management
+  private static _activeSpans = new Set<string>();
 
   constructor(span: Span, active?: boolean) {
     this._active = active ?? false;
@@ -42,6 +44,8 @@ export class LaminarSpan implements Span, ReadableSpan {
     this.droppedEventsCount = (this._span as unknown as SdkSpan).droppedEventsCount;
     this.droppedLinksCount = (this._span as unknown as SdkSpan).droppedLinksCount;
     this.makeOtelV2Compatible();
+
+    LaminarSpan._activeSpans.add(this.spanContext().spanId);
   }
 
   name: string;
@@ -110,6 +114,9 @@ export class LaminarSpan implements Span, ReadableSpan {
       return this._span.end(endTime);
     }
 
+    // Remove from global registry on end
+    LaminarSpan._activeSpans.delete(this.spanContext().spanId);
+
     if (this._active) {
       LaminarContextManager.popContext();
     }
@@ -127,6 +134,17 @@ export class LaminarSpan implements Span, ReadableSpan {
   public recordException(exception: Exception, time?: TimeInput): void {
     return this._span.recordException(exception, time);
   }
+
+  /**
+ * Get an active span by its ID.
+ * 
+ * @param spanId - The span ID to retrieve
+ * @returns the LaminarSpan if found and active, undefined otherwise
+ */
+  public static isSpanActive(spanId: string): boolean {
+    return LaminarSpan._activeSpans.has(spanId);
+  }
+
 
 
 

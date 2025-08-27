@@ -1,13 +1,39 @@
-import { Context, ROOT_CONTEXT } from "@opentelemetry/api";
+import { Context, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 import { AsyncLocalStorage } from "async_hooks";
-
+import { LaminarSpan } from "./span";
 
 export class LaminarContextManager {
   private static _asyncLocalStorage = new AsyncLocalStorage<Context[]>();
 
   public static getContext(): Context {
     const contexts = this._asyncLocalStorage.getStore() || [];
-    return contexts[contexts.length - 1] || ROOT_CONTEXT;
+
+    // Walk through contexts from most recent to oldest
+    for (let i = contexts.length - 1; i >= 0; i--) {
+      const context = contexts[i];
+      const span = trace.getSpan(context);
+
+      if (!span) {
+        // No span in this context, it's valid
+        return context;
+      }
+
+      // Check if the span in this context has been ended
+      try {
+        const isActive = LaminarSpan.isSpanActive(span.spanContext().spanId);
+        if (isActive) {
+          // Span is still active, use this context
+          return context;
+        }
+        // Span has been ended, continue to parent context
+      } catch (error) {
+        // If we can't check the span, assume it's valid
+        return context;
+      }
+    }
+
+    // No valid context found, return ROOT_CONTEXT
+    return ROOT_CONTEXT;
   }
 
   public static pushContext(context: Context) {
