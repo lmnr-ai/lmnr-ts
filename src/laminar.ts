@@ -390,7 +390,7 @@ export class Laminar {
       userId,
       sessionId,
       metadata,
-      active: false,
+      activated: false,
     });
   }
 
@@ -425,7 +425,7 @@ export class Laminar {
       userId,
       sessionId,
       metadata,
-      active: true,
+      activated: true,
     });
   }
 
@@ -439,7 +439,7 @@ export class Laminar {
     userId,
     sessionId,
     metadata,
-    active,
+    activated,
   }: {
     name: string,
     input?: any,
@@ -450,7 +450,7 @@ export class Laminar {
     userId?: string,
     sessionId?: string,
     metadata?: Record<string, any>,
-    active?: boolean,
+    activated?: boolean,
   }): Span {
     let entityContext = context ?? LaminarContextManager.getContext();
     if (parentSpanContext) {
@@ -475,13 +475,13 @@ export class Laminar {
     };
     const span = getTracer().startSpan(name, { attributes }, entityContext);
     if (span instanceof LaminarSpan) {
-      span.active = active ?? false;
+      span.activated = activated ?? false;
     }
 
     if (input) {
       span.setAttribute(SPAN_INPUT, JSON.stringify(input));
     }
-    if (active) {
+    if (activated) {
       entityContext = trace.setSpan(entityContext, span);
       LaminarContextManager.pushContext(entityContext);
     }
