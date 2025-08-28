@@ -166,11 +166,12 @@ export class LaminarSpan implements Span, ReadableSpan {
   }
 
   public get parentSpanContext(): SpanContext | undefined {
-    if (!this.parentSpanId) {
+    const parentSpanId = (this._span as unknown as SdkSpan).parentSpanId;
+    if (!parentSpanId) {
       return undefined;
     }
     return {
-      spanId: this.parentSpanId,
+      spanId: parentSpanId,
       traceId: this.spanContext().traceId,
       // TODO: somehow get the traceFlags from the parent span
       traceFlags: this.spanContext().traceFlags,
