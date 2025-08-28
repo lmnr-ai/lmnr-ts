@@ -161,8 +161,8 @@ export class HumanEvaluator {
 export type EvaluatorFunctionReturn = number | Record<string, number>;
 
 /**
- * EvaluatorFunction is a function that takes the output of the executor and the
- * target data, and returns a score. The score can be a single number or a record
+ * EvaluatorFunction is a function that takes the output of the executor, the
+ * target, and the data, and returns a score. The score can be a single number or a record
  * of string keys and number values. The latter is useful for evaluating
  * multiple criteria in one go instead of running multiple evaluators.
  */
@@ -182,7 +182,7 @@ interface EvaluationConstructorProps<D, T, O> {
   executor: (data: D, ...args: any[]) => O | Promise<O>;
   /**
    * Evaluator functions and names. Each evaluator function takes the output of
-   * the executor _and_ the target data, and returns a score. The score can be a
+   * the executor, the target, and the data, and returns a score. The score can be a
    * single number or a dict of string keys and number values. If the score is a
    * single number, it will be named after the evaluator function. Evaluator
    * function names must contain only letters, digits, hyphens, underscores,
