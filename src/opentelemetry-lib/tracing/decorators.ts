@@ -5,6 +5,7 @@ import { LaminarSpanContext } from "../../types";
 import { initializeLogger, isOtelAttributeValueType, tryToOtelSpanContext } from "../../utils";
 import { getTracer, shouldSendTraces } from ".";
 import { SPAN_INPUT, SPAN_OUTPUT, SPAN_TYPE } from "./attributes";
+import { LaminarContextManager } from "./context";
 import {
   ASSOCIATION_PROPERTIES_KEY,
 } from "./utils";
@@ -40,7 +41,7 @@ export function observeBase<
   thisArg?: ThisParameterType<F>,
   ...args: A
 ) {
-  let entityContext = context.active();
+  let entityContext = LaminarContextManager.getContext();
 
   const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY);
 

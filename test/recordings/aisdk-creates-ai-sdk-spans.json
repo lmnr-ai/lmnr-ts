@@ -1,0 +1,55 @@
+[
+  {
+    "scope": "https://api.openai.com:443",
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "model": "gpt-4.1-nano",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "What is the capital of France?"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 200,
+    "response": [
+      "1b6e05009c0776ac1e4cc5e87687666a1091bdbecbd64a7df98481a7fc32f07778b1d46151680590aebe662d378370188d30eab3c91fa557559aba509a431685c3781c4e631c0fd9549f0923ea153f3274cc207894e7206d4315a9f26a74b2e85c6489c5588cd5cc24b48ad56c4ad5aa6a6b92e51c462a132157528609c32405f807344a0b94569b8e25a076c6de3cb1048c80eb01823e2550e441f2e8ad7184d45118ca3e6adbbe861f792f4461b47d49f112a240537358f73b08da78cd72c1f9166e7dae33733393334a5b80b8d34f6fc08e192357afcf36f6095db8fcb7a912a388685ce13960073a14a33413f709705f6302413c6dc452a269d262170a921b18c90a4adade6e8610bff4e5b3478f5b107b20b8dacf7f6f3dfe3cc058ed223f6548b57af48b78268bb3103210cf7b3b7de53729c61e37fda214987774cc7e9d1e8f7e1d2f4aed173a973f9cd37b72bc3560b37045c646ac500a0ac019874e812bc7757ac2848e5d49bc34bd6051286558a2202845ecbc7540155cd8181616e938ff719ef62c705dcb89d41b9ff288fd797ccd2270edd8c80e5b72dd83f17bef5707a0e5e8f75e7d90fb630c7031e46c3ddeb7143c44cf2d4a4c13c5508446c2ea9c7c8272829944b75585fbce72e34ba6eed6543fb7b0fd499b00d86b873a6c8dbd9c47ae9c76f8b06b7985724b9217ef"
+    ],
+    "rawHeaders": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cf-cache-status": "DYNAMIC",
+      "cf-ray": "975d348bce7d63f1-LHR",
+      "connection": "keep-alive",
+      "content-encoding": "br",
+      "content-type": "application/json",
+      "date": "Wed, 27 Aug 2025 17:14:27 GMT",
+      "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
+      "openai-processing-ms": "683",
+      "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
+      "openai-version": "2020-10-01",
+      "server": "cloudflare",
+      "set-cookie": "_cfuvid=D9mf1IoXpuLxPhPEs6rlxcaxnP0T0hbIKcv8muSnQRQ-1756314867728-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "685",
+      "x-ratelimit-limit-requests": "30000",
+      "x-ratelimit-limit-tokens": "150000000",
+      "x-ratelimit-remaining-requests": "29999",
+      "x-ratelimit-remaining-tokens": "149999967",
+      "x-ratelimit-reset-requests": "2ms",
+      "x-ratelimit-reset-tokens": "0s",
+      "x-request-id": "req_900ed88471293a557dbce9a08f2aaf33"
+    },
+    "reqheaders": {
+      "content-type": "application/json"
+    },
+    "responseIsBinary": false
+  }
+]

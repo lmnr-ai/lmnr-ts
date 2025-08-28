@@ -14,6 +14,7 @@ import { InitializeOptions } from "../interfaces";
 import { createResource } from "./compat";
 import { initializeLaminarInstrumentations } from "./instrumentations";
 import { LaminarSpanProcessor } from "./processor";
+import { LaminarTracer } from "./tracer";
 import { isGlobalContextManagerConfigured } from "./utils";
 
 const logger = initializeLogger();
@@ -181,7 +182,7 @@ export const getTracer = (): Tracer => {
   const TRACER_NAME = "lmnr.tracer";
   const TRACER_VERSION = "0.0.1";
   const provider = getTracerProvider();
-  return provider.getTracer(TRACER_NAME, TRACER_VERSION);
+  return new LaminarTracer(provider.getTracer(TRACER_NAME, TRACER_VERSION));
 };
 
 export const forceFlush = async () => {

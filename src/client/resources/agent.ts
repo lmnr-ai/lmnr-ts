@@ -4,6 +4,7 @@
 
 import { trace } from "@opentelemetry/api";
 
+import { LaminarContextManager } from "../../opentelemetry-lib/tracing/context";
 import { initializeLogger, otelSpanIdToUUID, otelTraceIdToUUID, StringUUID } from "../../utils";
 import { BaseResource } from "./index";
 
@@ -315,7 +316,8 @@ export class AgentResource extends BaseResource {
     let requestParentSpanContext = parentSpanContext;
 
     if (!requestParentSpanContext) {
-      const currentSpan = trace.getActiveSpan();
+      const currentSpan = trace.getSpan(LaminarContextManager.getContext())
+        ?? trace.getActiveSpan();
       if (currentSpan && currentSpan.isRecording()) {
         const traceId = otelTraceIdToUUID(currentSpan.spanContext().traceId);
         const spanId = otelSpanIdToUUID(currentSpan.spanContext().spanId) as StringUUID;

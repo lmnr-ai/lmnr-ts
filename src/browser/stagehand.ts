@@ -12,6 +12,7 @@ import { version as SDK_VERSION } from "../../package.json";
 import { observe as laminarObserve } from "../decorators";
 import { Laminar } from "../laminar";
 import { SPAN_TYPE } from "../opentelemetry-lib/tracing/attributes";
+import { LaminarContextManager } from "../opentelemetry-lib/tracing/context";
 import { newUUID, StringUUID } from "../utils";
 import { PlaywrightInstrumentation } from "./playwright";
 import {
@@ -496,7 +497,9 @@ export class StagehandInstrumentation extends InstrumentationBase {
           ignoreInput: true,
           ignoreOutput: true,
         }, async () => {
-          const span = trace.getActiveSpan()!;
+          const currentSpan = trace.getSpan(LaminarContextManager.getContext())
+            ?? trace.getActiveSpan();
+          const span = currentSpan!;
           const innerOptions = options.options;
           const recordedProvider = instrumentation.globalLLMClientOptions?.provider;
           const provider = (
@@ -631,19 +634,21 @@ export class StagehandInstrumentation extends InstrumentationBase {
                 spanType: "LLM",
               },
               async () => {
-                const span = trace.getActiveSpan()!;
+                const span = trace.getSpan(LaminarContextManager.getContext())
+                  ?? trace.getActiveSpan();
+
                 const provider = instrumentation.globalAgentOptions?.provider
                   ?? instrumentation.globalLLMClientOptions?.provider;
                 const model = instrumentation.globalAgentOptions?.model
                   ?? instrumentation.globalLLMClientOptions?.model;
-                span.setAttributes({
+                span?.setAttributes({
                   ...(provider ? { "gen_ai.system": provider } : {}),
                   ...(model ? { "gen_ai.request.model": model } : {}),
                 });
 
                 let promptIndex = 0;
                 if (instrumentation.globalAgentOptions?.instructions) {
-                  span.setAttributes({
+                  span?.setAttributes({
                     "gen_ai.prompt.0.content": instrumentation.globalAgentOptions.instructions,
                     "gen_ai.prompt.0.role": "system",
                   });
@@ -652,7 +657,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
 
                 const instruction = typeof input === 'string' ? input : (input as any).instruction;
                 if (instruction) {
-                  span.setAttributes({
+                  span?.setAttributes({
                     [`gen_ai.prompt.${promptIndex}.content`]: instruction,
                     [`gen_ai.prompt.${promptIndex}.role`]: "user",
                   });
@@ -670,15 +675,15 @@ export class StagehandInstrumentation extends InstrumentationBase {
                       text: JSON.stringify({ actions: result.actions }),
                     });
                   }
-                  span.setAttributes({
+                  span?.setAttributes({
                     "gen_ai.completion.0.content": JSON.stringify(content),
                     "gen_ai.completion.0.role": "assistant",
                   });
                 } else if (result.completed && !result.success) {
-                  span.recordException(new Error(result.message));
+                  span?.recordException(new Error(result.message));
                 }
                 if (result.usage) {
-                  span.setAttributes({
+                  span?.setAttributes({
                     "gen_ai.usage.input_tokens": result.usage.input_tokens,
                     "gen_ai.usage.output_tokens": result.usage.output_tokens,
                     "llm.usage.total_tokens":

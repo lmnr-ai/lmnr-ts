@@ -21,7 +21,7 @@ export class LaminarClient {
     baseUrl?: string,
     projectApiKey?: string,
     port?: number,
-  }) {
+  } = {}) {
     this.projectApiKey = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY!;
     const httpPort = port ?? (
       baseUrl?.match(/:\d{1,5}$/g)

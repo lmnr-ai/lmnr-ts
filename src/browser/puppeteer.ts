@@ -12,6 +12,7 @@ import { version as SDK_VERSION } from "../../package.json";
 import { LaminarClient } from '../client';
 import { observe } from '../decorators';
 import { TRACE_HAS_BROWSER_SESSION } from '../opentelemetry-lib/tracing/attributes';
+import { LaminarContextManager } from '../opentelemetry-lib/tracing/context';
 import { SessionRecordingOptions } from '../types';
 import { initializeLogger, newUUID, NIL_UUID, otelTraceIdToUUID, StringUUID } from '../utils';
 import {
@@ -256,8 +257,9 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
       await takeFullSnapshot(page);
     };
 
-    trace.getActiveSpan()?.setAttribute(TRACE_HAS_BROWSER_SESSION, true);
-    const otelTraceId = trace.getActiveSpan()?.spanContext().traceId;
+    const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
+    currentSpan?.setAttribute(TRACE_HAS_BROWSER_SESSION, true);
+    const otelTraceId = currentSpan?.spanContext().traceId;
     const traceId = otelTraceId ? otelTraceIdToUUID(otelTraceId) : NIL_UUID;
 
     page.on('domcontentloaded', () => {
