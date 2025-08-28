@@ -166,7 +166,7 @@ export type EvaluatorFunctionReturn = number | Record<string, number>;
  * of string keys and number values. The latter is useful for evaluating
  * multiple criteria in one go instead of running multiple evaluators.
  */
-export type EvaluatorFunction<O, T> = (output: O, target?: T, ...args: any[]) =>
+export type EvaluatorFunction<O, T, D = any> = (output: O, target?: T, data?: D, ...args: any[]) =>
   EvaluatorFunctionReturn | Promise<EvaluatorFunctionReturn>;
 
 interface EvaluationConstructorProps<D, T, O> {
@@ -188,7 +188,7 @@ interface EvaluationConstructorProps<D, T, O> {
    * function names must contain only letters, digits, hyphens, underscores,
    * or spaces.
    */
-  evaluators: Record<string, EvaluatorFunction<O, T> | HumanEvaluator>;
+  evaluators: Record<string, EvaluatorFunction<O, T, D> | HumanEvaluator>;
   /**
    * Name of the evaluation. If not provided, a random name will be assigned.
    */
@@ -262,7 +262,7 @@ export class Evaluation<D, T, O> {
   private progressReporter: EvaluationReporter;
   private data: Datapoint<D, T>[] | EvaluationDataset<D, T>;
   private executor: (data: D, ...args: any[]) => O | Promise<O>;
-  private evaluators: Record<string, EvaluatorFunction<O, T> | HumanEvaluator>;
+  private evaluators: Record<string, EvaluatorFunction<O, T, D> | HumanEvaluator>;
   private groupName?: string;
   private name?: string;
   private metadata?: Record<string, any>;
@@ -468,7 +468,7 @@ export class Evaluation<D, T, O> {
       for (const [evaluatorName, evaluator] of Object.entries(this.evaluators)) {
         const value = await observe(
           { name: evaluatorName },
-          async (output: O, target?: T) => {
+          async (output: O, target?: T, data?: D) => {
             if (evaluator instanceof HumanEvaluator) {
               const activeSpan = trace.getSpan(LaminarContextManager.getContext());
               if (activeSpan) {
@@ -486,11 +486,12 @@ export class Evaluation<D, T, O> {
               if (activeSpan) {
                 activeSpan.setAttribute(SPAN_TYPE, "EVALUATOR");
               }
-              return await evaluator(output, target);
+              return await evaluator(output, target, data);
             }
           },
           output,
-          target,
+          datapoint.target,
+          datapoint.data,
         );
 
         if (evaluator instanceof HumanEvaluator) {
