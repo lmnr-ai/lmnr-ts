@@ -161,7 +161,7 @@ void describe("evaluate", () => {
       executor: (data) => data,
       evaluators: {
         "test": (output, target) => output === target ? 1 : 0,
-        "test2": (output, target) => output === target ? 1 : 0,
+        "test2": (output, target, data) => output === data ? 1 : 0,
       },
       config: {
         projectApiKey: "test",
@@ -179,7 +179,7 @@ void describe("evaluate", () => {
     assert.strictEqual(point.target.length, 103);
     assert.strictEqual(point.index, 1);
     assert.deepStrictEqual(point.metadata, { test: 'test' });
-    assert.deepStrictEqual(point.scores, { test2: 0, test: 0 });
+    assert.deepStrictEqual(point.scores, { test2: 1, test: 0 });
 
     // Check that generated fields exist but don't check their exact values
     assert.ok(point.executorSpanId);
@@ -205,6 +205,20 @@ void describe("evaluate", () => {
     assert.deepStrictEqual(
       Array.from(new Set(evaluatorSpans.map((span) => span.name))).sort(), ["test", "test2"],
     );
+    const testSpan = evaluatorSpans.find((span) => span.name === "test")!;
+    const test2Span = evaluatorSpans.find((span) => span.name === "test2")!;
+    assert.strictEqual(testSpan.attributes['lmnr.span.output'], '0');
+    assert.strictEqual(test2Span.attributes['lmnr.span.output'], '1');
+    assert.deepStrictEqual(JSON.parse(String(testSpan.attributes['lmnr.span.input'])), [
+      "a".repeat(150),
+      "b".repeat(150),
+      "a".repeat(150),
+    ]);
+    assert.deepStrictEqual(JSON.parse(String(test2Span.attributes['lmnr.span.input'])), [
+      "a".repeat(150),
+      "b".repeat(150),
+      "a".repeat(150),
+    ]);
   });
 
   void it("evaluation with human evaluators exports human evaluator spans", async () => {
