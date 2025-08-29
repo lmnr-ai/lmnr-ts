@@ -16,7 +16,7 @@ import { getTracer } from "../src/opentelemetry-lib/tracing";
 import { getParentSpanId } from "../src/opentelemetry-lib/tracing/compat";
 import { decompressRecordingResponse } from "./utils";
 
-void describe("openai instrumentation", () => {
+void describe("aisdk instrumentation", () => {
   const model = openai("gpt-4.1-nano");
   const exporter = new InMemorySpanExporter();
   const dirname = typeof __dirname !== 'undefined'
@@ -107,6 +107,24 @@ void describe("openai instrumentation", () => {
     assert.strictEqual(getParentSpanId(innerSpan), outerSpan.spanContext().spanId);
 
     assert.strictEqual((innerSpan.attributes['lmnr.span.path']! as string[]).length, 2);
+    assert.strictEqual(
+      outerSpan.attributes['ai.prompt'],
+      '{"prompt":"What is the capital of France?"}',
+    );
+    assert.strictEqual(
+      outerSpan.attributes['ai.response.text'],
+      "The capital of France is Paris.",
+    );
+    assert.deepStrictEqual(JSON.parse(innerSpan.attributes['ai.prompt.messages']! as string), [{
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "What is the capital of France?",
+        },
+      ],
+    }]);
+    assert.strictEqual(innerSpan.attributes['ai.response.text'], "The capital of France is Paris.");
   });
 
   void it("creates AI SDK spans inside observe", async () => {
@@ -129,6 +147,24 @@ void describe("openai instrumentation", () => {
     assert.strictEqual(getParentSpanId(outerAiSDKSpan), observeSpan.spanContext().spanId);
     assert.strictEqual(observeSpan.spanContext().traceId, outerAiSDKSpan.spanContext().traceId);
     assert.strictEqual((innerSpan.attributes['lmnr.span.path']! as string[]).length, 3);
+    assert.strictEqual(
+      outerAiSDKSpan.attributes['ai.prompt'],
+      '{"prompt":"What is the capital of France?"}',
+    );
+    assert.strictEqual(
+      outerAiSDKSpan.attributes['ai.response.text'],
+      "The capital of France is Paris.",
+    );
+    assert.deepStrictEqual(JSON.parse(innerSpan.attributes['ai.prompt.messages']! as string), [{
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "What is the capital of France?",
+        },
+      ],
+    }]);
+    assert.strictEqual(innerSpan.attributes['ai.response.text'], "The capital of France is Paris.");
   });
 
   void it("creates AI SDK spans inside withSpan", async () => {
@@ -153,6 +189,27 @@ void describe("openai instrumentation", () => {
     assert.strictEqual(getParentSpanId(outerAiSDKSpan), testSpan.spanContext().spanId);
     assert.strictEqual(testSpan.spanContext().traceId, outerAiSDKSpan.spanContext().traceId);
     assert.strictEqual((innerSpan.attributes['lmnr.span.path']! as string[]).length, 3);
+    assert.strictEqual(
+      outerAiSDKSpan.attributes['ai.prompt'],
+      '{"prompt":"What is the capital of France?"}',
+    );
+    assert.strictEqual(
+      outerAiSDKSpan.attributes['ai.response.text'],
+      "The capital of France is Paris.",
+    );
+    assert.deepStrictEqual(JSON.parse(innerSpan.attributes['ai.prompt.messages']! as string), [{
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "What is the capital of France?",
+        },
+      ],
+    }]);
+    assert.strictEqual(
+      innerSpan.attributes['ai.response.text'],
+      "The capital of France is Paris.",
+    );
   });
 
   void it("creates AI SDK spans inside startActiveSpan", async () => {
@@ -199,5 +256,23 @@ void describe("openai instrumentation", () => {
     assert.strictEqual(getParentSpanId(outerAiSDKSpan), undefined);
     assert.notStrictEqual(testSpan.spanContext().traceId, outerAiSDKSpan.spanContext().traceId);
     assert.strictEqual((innerSpan.attributes['lmnr.span.path']! as string[]).length, 2);
+    assert.strictEqual(
+      outerAiSDKSpan.attributes['ai.prompt'],
+      '{"prompt":"What is the capital of France?"}',
+    );
+    assert.strictEqual(
+      outerAiSDKSpan.attributes['ai.response.text'],
+      "The capital of France is Paris.",
+    );
+    assert.deepStrictEqual(JSON.parse(innerSpan.attributes['ai.prompt.messages']! as string), [{
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "What is the capital of France?",
+        },
+      ],
+    }]);
+    assert.strictEqual(innerSpan.attributes['ai.response.text'], "The capital of France is Paris.");
   });
 });

@@ -58,7 +58,12 @@ export class LaminarTracer implements Tracer {
       return this._tracer.startActiveSpan(name, {}, contextToUse, wrapped(optionsOrFn));
     }
     if (typeof contextOrFn === "function") {
-      return this._tracer.startActiveSpan(name, {}, contextToUse, wrapped(contextOrFn));
+      return this._tracer.startActiveSpan(
+        name,
+        optionsOrFn as SpanOptions,
+        contextToUse,
+        wrapped(contextOrFn),
+      );
     }
 
     // Use the provided context or the current Laminar context
