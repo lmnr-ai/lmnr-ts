@@ -30,7 +30,7 @@ const logger = initializeLogger();
 */
 export class PlaywrightInstrumentation extends InstrumentationBase {
   private _patchedBrowsers: Set<Browser> = new Set();
-  private _parentSpan: Span | undefined;
+  private _parentSpans: Map<StringUUID, Span> = new Map();
   private _client: LaminarClient;
   private _sessionRecordingOptions?: SessionRecordingOptions;
 
@@ -42,14 +42,25 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         enabled: true,
       },
     );
-    this._parentSpan = undefined;
     this._client = client;
     this._sessionRecordingOptions = sessionRecordingOptions;
   }
 
   // It's the caller's responsibility to ensure the span is ended
-  public setParentSpan(span: Span) {
-    this._parentSpan = span;
+  public setParentSpanForSession(sessionId: StringUUID, span: Span) {
+    this._parentSpans.set(sessionId, span);
+  }
+
+  public removeAndEndParentSpanForSession(sessionId: StringUUID) {
+    const span = this._parentSpans.get(sessionId);
+    if (span && span.isRecording()) {
+      span.end();
+    }
+    this._parentSpans.delete(sessionId);
+  }
+
+  public getParentSpanForSession(sessionId: StringUUID): Span | undefined {
+    return this._parentSpans.get(sessionId);
   }
 
   protected init(): InstrumentationModuleDefinition {
@@ -208,9 +219,10 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
       });
     };
 
-    if (this._parentSpan) {
+    const parentSpan = this.getParentSpanForSession(sessionId);
+    if (parentSpan) {
       return await Laminar.withSpan(
-        this._parentSpan,
+        parentSpan,
         wrapped,
       );
     }
