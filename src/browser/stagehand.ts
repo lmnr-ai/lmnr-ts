@@ -41,8 +41,14 @@ type AgentClient = {
 */
 export class StagehandInstrumentation extends InstrumentationBase {
   private playwrightInstrumentation: PlaywrightInstrumentation;
-  private globalLLMClientOptions: GlobalLLMClientOptions | undefined;
-  private globalAgentOptions: StagehandLib.AgentConfig | undefined;
+  private globalLLMClientOptions: WeakMap<
+    StagehandLib.Stagehand,
+    GlobalLLMClientOptions | undefined,
+  > = new WeakMap();
+  private globalAgentOptions: WeakMap<
+    StagehandLib.Stagehand,
+    StagehandLib.AgentConfig | undefined,
+  > = new WeakMap();
   private stagehandInstanceToSessionId: WeakMap<StagehandLib.Stagehand, StringUUID> = new WeakMap();
 
   constructor(playwrightInstrumentation: PlaywrightInstrumentation) {
@@ -211,10 +217,10 @@ export class StagehandInstrumentation extends InstrumentationBase {
       );
 
       instrumentation.patchStagehandPage(this.stagehandPage, sessionId);
-      instrumentation.globalLLMClientOptions = {
+      instrumentation.globalLLMClientOptions.set(this, {
         provider: this.llmClient.type,
         model: this.llmClient.modelName,
-      };
+      });
       instrumentation._wrap(
         this.llmClient,
         'createChatCompletion',
@@ -505,12 +511,15 @@ export class StagehandInstrumentation extends InstrumentationBase {
             ?? trace.getActiveSpan();
           const span = currentSpan!;
           const innerOptions = options.options;
-          const recordedProvider = instrumentation.globalLLMClientOptions?.provider;
+          const recordedProvider = instrumentation.globalLLMClientOptions.get(this)?.provider;
           const provider = (
             recordedProvider === "aisdk"
-            && instrumentation.globalLLMClientOptions?.model
+            && instrumentation.globalLLMClientOptions.get(this)?.model
           )
-            ? (modelToProviderMap[instrumentation.globalLLMClientOptions.model] ?? "aisdk")
+            ? (
+              modelToProviderMap[instrumentation.globalLLMClientOptions.get(this)!.model]
+              ?? "aisdk"
+            )
             : recordedProvider;
           span.setAttributes({
             [SPAN_TYPE]: "LLM",
@@ -529,8 +538,8 @@ export class StagehandInstrumentation extends InstrumentationBase {
             ...(innerOptions.maxTokens !== undefined ? {
               "gen_ai.request.max_tokens": innerOptions.maxTokens,
             } : {}),
-            ...(instrumentation.globalLLMClientOptions ? {
-              "gen_ai.request.model": instrumentation.globalLLMClientOptions.model,
+            ...(instrumentation.globalLLMClientOptions.get(this) ? {
+              "gen_ai.request.model": instrumentation.globalLLMClientOptions.get(this)?.model,
               "gen_ai.system": provider,
             } : {}),
           });
@@ -601,7 +610,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
     return (original: (...args: any[]) => any) =>
       function agent(this: any, ...args: any[]) {
         if (args.length > 0 && typeof args[0] === 'object') {
-          instrumentation.globalAgentOptions = args[0];
+          instrumentation.globalAgentOptions.set(this, args[0]);
         }
         const agent = original.bind(this).apply(this, args);
         instrumentation.patchStagehandAgent(agent, sessionId);
@@ -642,19 +651,20 @@ export class StagehandInstrumentation extends InstrumentationBase {
                 const span = trace.getSpan(LaminarContextManager.getContext())
                   ?? trace.getActiveSpan();
 
-                const provider = instrumentation.globalAgentOptions?.provider
-                  ?? instrumentation.globalLLMClientOptions?.provider;
-                const model = instrumentation.globalAgentOptions?.model
-                  ?? instrumentation.globalLLMClientOptions?.model;
+                const provider = instrumentation.globalAgentOptions.get(this)?.provider
+                  ?? instrumentation.globalLLMClientOptions.get(this)?.provider;
+                const model = instrumentation.globalAgentOptions.get(this)?.model
+                  ?? instrumentation.globalLLMClientOptions.get(this)?.model;
                 span?.setAttributes({
                   ...(provider ? { "gen_ai.system": provider } : {}),
                   ...(model ? { "gen_ai.request.model": model } : {}),
                 });
 
                 let promptIndex = 0;
-                if (instrumentation.globalAgentOptions?.instructions) {
+                if (instrumentation.globalAgentOptions.get(this)?.instructions) {
                   span?.setAttributes({
-                    "gen_ai.prompt.0.content": instrumentation.globalAgentOptions.instructions,
+                    "gen_ai.prompt.0.content":
+                      instrumentation.globalAgentOptions.get(this)?.instructions,
                     "gen_ai.prompt.0.role": "system",
                   });
                   promptIndex++;
