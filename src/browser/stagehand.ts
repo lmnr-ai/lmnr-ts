@@ -42,12 +42,12 @@ type AgentClient = {
 export class StagehandInstrumentation extends InstrumentationBase {
   private playwrightInstrumentation: PlaywrightInstrumentation;
   private globalLLMClientOptions: WeakMap<
-    StagehandLib.Stagehand,
-    GlobalLLMClientOptions | undefined,
+    LLMClient,
+    GlobalLLMClientOptions | undefined
   > = new WeakMap();
   private globalAgentOptions: WeakMap<
     StagehandLib.Stagehand,
-    StagehandLib.AgentConfig | undefined,
+    StagehandLib.AgentConfig | undefined
   > = new WeakMap();
   private stagehandInstanceToSessionId: WeakMap<StagehandLib.Stagehand, StringUUID> = new WeakMap();
 
@@ -196,7 +196,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
   private patchStagehandInit() {
     const instrumentation = this;
 
-    return (original: Function) => async function method(this: any, ...args: any[]) {
+    return (original: any) => async function method(this: any) {
       const sessionId = newUUID();
 
       // Make sure the parent span is set before calling the original init method
@@ -206,7 +206,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
       });
       instrumentation.playwrightInstrumentation.setParentSpanForSession(sessionId, parentSpan);
 
-      const result = await original.bind(this).apply(this, args);
+      const result = await original.bind(this).apply(this);
 
       await instrumentation.playwrightInstrumentation.patchPage(this.page, sessionId);
 
@@ -216,16 +216,19 @@ export class StagehandInstrumentation extends InstrumentationBase {
         instrumentation.patchStagehandAgentInitializer(sessionId),
       );
 
-      instrumentation.patchStagehandPage(this.stagehandPage, sessionId);
-      instrumentation.globalLLMClientOptions.set(this, {
-        provider: this.llmClient.type,
-        model: this.llmClient.modelName,
-      });
-      instrumentation._wrap(
-        this.llmClient,
-        'createChatCompletion',
-        instrumentation.patchStagehandLLMClientCreateChatCompletion(),
-      );
+      instrumentation.patchStagehandPage((this).stagehandPage, sessionId);
+      if (this.llmClient) {
+        instrumentation.globalLLMClientOptions.set(this.llmClient, {
+          provider: this.llmClient.type,
+          model: this.llmClient.modelName,
+        });
+        instrumentation._wrap(
+          this.llmClient,
+          'createChatCompletion',
+          instrumentation.patchStagehandLLMClientCreateChatCompletion(),
+        );
+      }
+
       instrumentation.stagehandInstanceToSessionId.set(this, sessionId);
       return result;
     };
