@@ -1,6 +1,6 @@
 import type * as StagehandLib from "@browserbasehq/stagehand";
 import { ActOptions, LLMClient, Page as StagehandPage } from "@browserbasehq/stagehand";
-import { diag, Span, trace } from "@opentelemetry/api";
+import { diag, trace } from "@opentelemetry/api";
 import {
   InstrumentationBase,
   InstrumentationModuleDefinition,
@@ -41,10 +41,15 @@ type AgentClient = {
 */
 export class StagehandInstrumentation extends InstrumentationBase {
   private playwrightInstrumentation: PlaywrightInstrumentation;
-  private _parentSpan: Span | undefined;
-  private globalLLMClientOptions: GlobalLLMClientOptions | undefined;
-  private globalAgentOptions: StagehandLib.AgentConfig | undefined;
-  private _sessionId: StringUUID | undefined;
+  private globalLLMClientOptions: WeakMap<
+    LLMClient,
+    GlobalLLMClientOptions | undefined
+  > = new WeakMap();
+  private globalAgentOptions: WeakMap<
+    StagehandLib.Stagehand,
+    StagehandLib.AgentConfig | undefined
+  > = new WeakMap();
+  private stagehandInstanceToSessionId: WeakMap<StagehandLib.Stagehand, StringUUID> = new WeakMap();
 
   constructor(playwrightInstrumentation: PlaywrightInstrumentation) {
     super(
@@ -191,37 +196,40 @@ export class StagehandInstrumentation extends InstrumentationBase {
   private patchStagehandInit() {
     const instrumentation = this;
 
-    return (original: Function) => async function method(this: any, ...args: any[]) {
+    return (original: any) => async function method(this: any) {
       const sessionId = newUUID();
-      instrumentation._sessionId = sessionId;
 
       // Make sure the parent span is set before calling the original init method
       // so that playwright instrumentation does not set its default parent span
-      instrumentation._parentSpan = Laminar.startSpan({
+      const parentSpan = Laminar.startSpan({
         name: 'Stagehand',
       });
-      instrumentation.playwrightInstrumentation.setParentSpan(instrumentation._parentSpan);
+      instrumentation.playwrightInstrumentation.setParentSpanForSession(sessionId, parentSpan);
 
-      const result = await original.bind(this).apply(this, args);
+      const result = await original.bind(this).apply(this);
 
       await instrumentation.playwrightInstrumentation.patchPage(this.page, sessionId);
 
       instrumentation._wrap(
         this,
         'agent',
-        instrumentation.patchStagehandAgentInitializer(),
+        instrumentation.patchStagehandAgentInitializer(sessionId),
       );
 
-      instrumentation.patchStagehandPage(this.stagehandPage);
-      instrumentation.globalLLMClientOptions = {
-        provider: this.llmClient.type,
-        model: this.llmClient.modelName,
-      };
-      instrumentation._wrap(
-        this.llmClient,
-        'createChatCompletion',
-        instrumentation.patchStagehandLLMClientCreateChatCompletion(),
-      );
+      instrumentation.patchStagehandPage((this).stagehandPage, sessionId);
+      if (this.llmClient) {
+        instrumentation.globalLLMClientOptions.set(this.llmClient, {
+          provider: this.llmClient.type,
+          model: this.llmClient.modelName,
+        });
+        instrumentation._wrap(
+          this.llmClient,
+          'createChatCompletion',
+          instrumentation.patchStagehandLLMClientCreateChatCompletion(),
+        );
+      }
+
+      instrumentation.stagehandInstanceToSessionId.set(this, sessionId);
       return result;
     };
   }
@@ -229,14 +237,18 @@ export class StagehandInstrumentation extends InstrumentationBase {
   private patchStagehandClose() {
     const instrumentation = this;
     return (original: Function) => async function method(this: any, ...args: any[]) {
-      if (instrumentation._parentSpan && instrumentation._parentSpan.isRecording()) {
-        instrumentation._parentSpan.end();
+      // Clean up the session from the registry
+      const sessionId = instrumentation.stagehandInstanceToSessionId.get(this);
+      if (sessionId) {
+        instrumentation.playwrightInstrumentation.removeAndEndParentSpanForSession(sessionId);
+        instrumentation.stagehandInstanceToSessionId.delete(this);
       }
+
       await original.bind(this).apply(this, args);
     };
   }
 
-  private patchStagehandPage(page: StagehandPage) {
+  private patchStagehandPage(page: StagehandPage, sessionId: StringUUID) {
     const actHandler = (page as any).actHandler;
     if (actHandler) {
       if (actHandler.act) {
@@ -293,23 +305,23 @@ export class StagehandInstrumentation extends InstrumentationBase {
     this._wrap(
       page,
       'act',
-      this.patchStagehandGlobalMethod('act'),
+      this.patchStagehandGlobalMethod('act', sessionId),
     );
 
     this._wrap(
       page,
       'extract',
-      this.patchStagehandGlobalMethod('extract'),
+      this.patchStagehandGlobalMethod('extract', sessionId),
     );
 
     this._wrap(
       page,
       'observe',
-      this.patchStagehandGlobalMethod('observe'),
+      this.patchStagehandGlobalMethod('observe', sessionId),
     );
   }
 
-  private patchStagehandGlobalMethod(methodName: string) {
+  private patchStagehandGlobalMethod(methodName: string, sessionId: StringUUID) {
     const instrumentation = this;
     return (original: (...args: any[]) => Promise<any>) =>
       async function method(this: any, ...args: any[]) {
@@ -329,8 +341,9 @@ export class StagehandInstrumentation extends InstrumentationBase {
           }
           input[0] = { ...rest, schema: prettySchema };
         }
-        return await Laminar.withSpan(instrumentation._parentSpan!, async () =>
-          await laminarObserve(
+        return await Laminar.withSpan(
+          instrumentation.playwrightInstrumentation.getParentSpanForSession(sessionId)!,
+          async () => await laminarObserve(
             {
               name: `stagehand.${methodName}`,
               input,
@@ -501,12 +514,15 @@ export class StagehandInstrumentation extends InstrumentationBase {
             ?? trace.getActiveSpan();
           const span = currentSpan!;
           const innerOptions = options.options;
-          const recordedProvider = instrumentation.globalLLMClientOptions?.provider;
+          const recordedProvider = instrumentation.globalLLMClientOptions.get(this)?.provider;
           const provider = (
             recordedProvider === "aisdk"
-            && instrumentation.globalLLMClientOptions?.model
+            && instrumentation.globalLLMClientOptions.get(this)?.model
           )
-            ? (modelToProviderMap[instrumentation.globalLLMClientOptions.model] ?? "aisdk")
+            ? (
+              modelToProviderMap[instrumentation.globalLLMClientOptions.get(this)!.model]
+              ?? "aisdk"
+            )
             : recordedProvider;
           span.setAttributes({
             [SPAN_TYPE]: "LLM",
@@ -525,8 +541,8 @@ export class StagehandInstrumentation extends InstrumentationBase {
             ...(innerOptions.maxTokens !== undefined ? {
               "gen_ai.request.max_tokens": innerOptions.maxTokens,
             } : {}),
-            ...(instrumentation.globalLLMClientOptions ? {
-              "gen_ai.request.model": instrumentation.globalLLMClientOptions.model,
+            ...(instrumentation.globalLLMClientOptions.get(this) ? {
+              "gen_ai.request.model": instrumentation.globalLLMClientOptions.get(this)?.model,
               "gen_ai.system": provider,
             } : {}),
           });
@@ -592,35 +608,36 @@ export class StagehandInstrumentation extends InstrumentationBase {
       };
   }
 
-  private patchStagehandAgentInitializer() {
+  private patchStagehandAgentInitializer(sessionId: StringUUID) {
     const instrumentation = this;
     return (original: (...args: any[]) => any) =>
       function agent(this: any, ...args: any[]) {
         if (args.length > 0 && typeof args[0] === 'object') {
-          instrumentation.globalAgentOptions = args[0];
+          instrumentation.globalAgentOptions.set(this, args[0]);
         }
         const agent = original.bind(this).apply(this, args);
-        instrumentation.patchStagehandAgent(agent);
+        instrumentation.patchStagehandAgent(agent, sessionId);
         return agent;
       };
   }
 
-  private patchStagehandAgent(agent: AgentClient) {
+  private patchStagehandAgent(agent: AgentClient, sessionId: StringUUID) {
     this._wrap(
       agent,
       'execute',
-      this.patchStagehandAgentExecute(),
+      this.patchStagehandAgentExecute(sessionId),
     );
   }
 
-  private patchStagehandAgentExecute() {
+  private patchStagehandAgentExecute(sessionId: StringUUID) {
     const instrumentation = this;
     return (original: (this: any, ...args: any[]) => Promise<any>) =>
       async function execute(this: any, ...args: any[]) {
         const input = nameArgsOrCopy(args);
 
-        return await Laminar.withSpan(instrumentation._parentSpan!, async () =>
-          await laminarObserve(
+        return await Laminar.withSpan(
+          instrumentation.playwrightInstrumentation.getParentSpanForSession(sessionId)!,
+          async () => await laminarObserve(
             {
               name: 'stagehand.agent.execute',
               input,
@@ -637,19 +654,20 @@ export class StagehandInstrumentation extends InstrumentationBase {
                 const span = trace.getSpan(LaminarContextManager.getContext())
                   ?? trace.getActiveSpan();
 
-                const provider = instrumentation.globalAgentOptions?.provider
-                  ?? instrumentation.globalLLMClientOptions?.provider;
-                const model = instrumentation.globalAgentOptions?.model
-                  ?? instrumentation.globalLLMClientOptions?.model;
+                const provider = instrumentation.globalAgentOptions.get(this)?.provider
+                  ?? instrumentation.globalLLMClientOptions.get(this)?.provider;
+                const model = instrumentation.globalAgentOptions.get(this)?.model
+                  ?? instrumentation.globalLLMClientOptions.get(this)?.model;
                 span?.setAttributes({
                   ...(provider ? { "gen_ai.system": provider } : {}),
                   ...(model ? { "gen_ai.request.model": model } : {}),
                 });
 
                 let promptIndex = 0;
-                if (instrumentation.globalAgentOptions?.instructions) {
+                if (instrumentation.globalAgentOptions.get(this)?.instructions) {
                   span?.setAttributes({
-                    "gen_ai.prompt.0.content": instrumentation.globalAgentOptions.instructions,
+                    "gen_ai.prompt.0.content":
+                      instrumentation.globalAgentOptions.get(this)?.instructions,
                     "gen_ai.prompt.0.role": "system",
                   });
                   promptIndex++;
