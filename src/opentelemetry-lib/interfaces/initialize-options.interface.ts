@@ -9,6 +9,7 @@ import type * as VectorStoreModule from "@langchain/core/vectorstores";
 import { SpanExporter } from "@opentelemetry/sdk-trace-base";
 import type * as pinecone from "@pinecone-database/pinecone";
 import type * as qdrant from "@qdrant/js-client-rest";
+import type * as ComputerLib from "@trycua/computer";
 import type * as chromadb from "chromadb";
 import type * as cohere from "cohere-ai";
 import type * as AgentsModule from "langchain/agents";
@@ -306,6 +307,19 @@ export interface InitializeOptions {
      * ```
      */
     stagehand?: typeof StagehandLib.Stagehand,
+
+    /**
+     * @example
+     * ```javascript
+     * import Computer from "@trycua/computer";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { computer: Computer },
+     * });
+     * ```
+     */
+    computer?: typeof ComputerLib.Computer,
   };
 
   /**

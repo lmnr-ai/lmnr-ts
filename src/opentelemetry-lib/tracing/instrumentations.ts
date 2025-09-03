@@ -20,6 +20,7 @@ import { PuppeteerInstrumentation } from "../../browser/puppeteer";
 import { LaminarClient } from "../../client";
 import { SessionRecordingOptions } from "../../types";
 import { InitializeOptions } from "../interfaces";
+import { CuaComputerInstrumentation } from "../instrumentation/cua-computer";
 
 /**
  * Initialize and return Laminar instrumentations.
@@ -145,6 +146,7 @@ const initInstrumentations = (
   instrumentations.push(new StagehandInstrumentation(playwrightInstrumentation));
 
   instrumentations.push(new PuppeteerInstrumentation(client, sessionRecordingOptions));
+  instrumentations.push(new CuaComputerInstrumentation());
 
   return instrumentations;
 };
@@ -234,6 +236,12 @@ const manuallyInitInstrumentations = (
     });
     instrumentations.push(bedrockInstrumentation);
     bedrockInstrumentation.manuallyInstrument(instrumentModules.bedrock);
+  }
+
+  if (instrumentModules?.computer) {
+    const computerInstrumentation = new CuaComputerInstrumentation();
+    instrumentations.push(computerInstrumentation);
+    computerInstrumentation.manuallyInstrument(instrumentModules.computer);
   }
 
   if (instrumentModules?.pinecone) {
