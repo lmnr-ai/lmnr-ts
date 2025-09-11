@@ -431,7 +431,7 @@ export class Evaluation<D, T, O> {
     return observe({ name: "evaluation", traceType: "EVALUATION" }, async () => {
 
       trace.getSpan(LaminarContextManager.getContext())!.setAttribute(SPAN_TYPE, "EVALUATION");
-      const executorSpan = Laminar.startActiveSpan({
+      const executorSpan = Laminar.startSpan({
         name: "executor",
         input: datapoint.data,
       });
@@ -459,7 +459,11 @@ export class Evaluation<D, T, O> {
 
       const output = await Laminar.withSpan(
         executorSpan,
-        async () => await this.executor(datapoint.data),
+        async () => {
+          const result = await this.executor(datapoint.data);
+          Laminar.setSpanOutput(result);
+          return result;
+        },
         true,
       );
       const target = datapoint.target;
