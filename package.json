@@ -85,6 +85,7 @@
     "@playwright/test": "^1.54.2",
     "@qdrant/js-client-rest": "^1.15.0",
     "@stylistic/eslint-plugin": "^5.2.2",
+    "@trycua/computer": "^0.1.3",
     "@types/argparse": "^2.0.17",
     "@types/cli-progress": "^3.11.6",
     "@types/node": "^24.2.0",
