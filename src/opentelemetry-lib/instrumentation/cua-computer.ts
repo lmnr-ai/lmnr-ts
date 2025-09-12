@@ -31,7 +31,7 @@ const PATCH_COMPUTER_INTERFACE_METHODS: Record<string, ComputerInterfaceMethodDe
     params: [],
   },
   sendCommand: {
-    params: [{ name: 'command', optional: false }, { name: 'params', optional: false }]
+    params: [{ name: 'command', optional: false }, { name: 'params', optional: false }],
   },
   isConnected: {
     params: [],
@@ -49,26 +49,26 @@ const PATCH_COMPUTER_INTERFACE_METHODS: Record<string, ComputerInterfaceMethodDe
       { name: 'x', optional: true },
       { name: 'y', optional: true },
       { name: 'button', optional: true },
-    ]
+    ],
   },
   mouseUp: {
     params: [
       { name: 'x', optional: true },
       { name: 'y', optional: true },
       { name: 'button', optional: true },
-    ]
+    ],
   },
   leftClick: {
-    params: [{ name: 'x', optional: true }, { name: 'y', optional: true }]
+    params: [{ name: 'x', optional: true }, { name: 'y', optional: true }],
   },
   rightClick: {
-    params: [{ name: 'x', optional: true }, { name: 'y', optional: true }]
+    params: [{ name: 'x', optional: true }, { name: 'y', optional: true }],
   },
   doubleClick: {
-    params: [{ name: 'x', optional: true }, { name: 'y', optional: true }]
+    params: [{ name: 'x', optional: true }, { name: 'y', optional: true }],
   },
   moveCursor: {
-    params: [{ name: 'x', optional: false }, { name: 'y', optional: false }]
+    params: [{ name: 'x', optional: false }, { name: 'y', optional: false }],
   },
   dragTo: {
     params: [
@@ -76,38 +76,38 @@ const PATCH_COMPUTER_INTERFACE_METHODS: Record<string, ComputerInterfaceMethodDe
       { name: 'y', optional: false },
       { name: 'button', optional: true },
       { name: 'duration', optional: true },
-    ]
+    ],
   },
   drag: {
     params: [
       { name: 'params', optional: false },
       { name: 'button', optional: true },
       { name: 'duration', optional: true },
-    ]
+    ],
   },
   keyDown: {
-    params: [{ name: 'key', optional: false }]
+    params: [{ name: 'key', optional: false }],
   },
   keyUp: {
-    params: [{ name: 'key', optional: false }]
+    params: [{ name: 'key', optional: false }],
   },
   typeText: {
-    params: [{ name: 'text', optional: false }]
+    params: [{ name: 'text', optional: false }],
   },
   pressKey: {
-    params: [{ name: 'key', optional: false }]
+    params: [{ name: 'key', optional: false }],
   },
   hotkey: {
-    params: [{ name: 'keys', optional: false }]
+    params: [{ name: 'keys', optional: false }],
   },
   scroll: {
-    params: [{ name: 'x', optional: false }, { name: 'y', optional: false }]
+    params: [{ name: 'x', optional: false }, { name: 'y', optional: false }],
   },
   scrollDown: {
-    params: [{ name: 'clicks', optional: true }]
+    params: [{ name: 'clicks', optional: true }],
   },
   scrollUp: {
-    params: [{ name: 'clicks', optional: true }]
+    params: [{ name: 'clicks', optional: true }],
   },
   screenshot: {
     params: [],
@@ -298,51 +298,64 @@ export class CuaComputerInstrumentation extends InstrumentationBase {
         this._wrap(
           iface,
           methodName,
-          this.patchComputerInterfaceMethod(methodName, PATCH_COMPUTER_INTERFACE_METHODS[methodName]),
+          this.patchComputerInterfaceMethod(
+            methodName,
+            PATCH_COMPUTER_INTERFACE_METHODS[methodName]),
         );
       }
     }
   }
 
-  private patchComputerInterfaceMethod(methodName: string, definition: ComputerInterfaceMethodDefinition) {
+  private patchComputerInterfaceMethod(
+    methodName: string,
+    definition: ComputerInterfaceMethodDefinition,
+  ) {
     const instrumentation = this;
     return (original: Function) => async function method(this: any, ...args: any[]) {
-      let input: Record<string, any> = {};
+      const input: Record<string, any> = {};
       let i = 0;
       for (const arg of args) {
         try {
           input[definition.params[i].name] = arg;
         } catch (error) {
-          logger.debug(`Failed to add argument ${definition.params[i].name} to input: ${error}`);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.debug(
+            `Failed to add argument ${definition.params[i].name} to input: ${errorMessage}`,
+          );
         }
         i++;
       }
-      const currentSpan = trace.getSpan(LaminarContextManager.getContext())
+      const currentSpan = trace.getSpan(LaminarContextManager.getContext());
       let parentSpan: Span | undefined;
 
-      if (currentSpan && (currentSpan as LaminarSpan).attributes["lmnr.cua.span.type"] === "interface") {
+      if (currentSpan
+        && (currentSpan as LaminarSpan).attributes["lmnr.cua.span.type"] === "interface"
+      ) {
         parentSpan = currentSpan;
       } else {
         parentSpan = instrumentation.parentSpans.get(this);
       }
-      const wrapper = parentSpan ? async (f: () => Promise<any>) => Laminar.withSpan(parentSpan, f) : async (f: () => Promise<any>) => await f();
+      const wrapper = parentSpan
+        ? async (f: () => Promise<any>) => Laminar.withSpan(parentSpan, f)
+        : async (f: () => Promise<any>) => await f();
       return wrapper(async () => await observe({
         name: `interface.${methodName}`,
         spanType: "TOOL",
         input,
         ignoreOutput: definition.ignoreOutput,
       }, async () => {
-        // This is a hack to make sure nested spans nest in each other, not directly under the parent span
+        // This is a hack to make sure nested spans nest in each other,
+        // not directly under the parent span
         // TODO: think about a better way to do this
         Laminar.setSpanAttributes({
           "lmnr.cua.span.type": "interface",
-        })
+        });
         const result = definition.sync
           ? original.bind(this).apply(this, args)
           : await original.bind(this).apply(this, args);
         return result;
       }));
-    }
+    };
   }
 
   private patchComputerStop() {

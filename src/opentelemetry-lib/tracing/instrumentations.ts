@@ -19,8 +19,8 @@ import { PlaywrightInstrumentation, StagehandInstrumentation } from "../../brows
 import { PuppeteerInstrumentation } from "../../browser/puppeteer";
 import { LaminarClient } from "../../client";
 import { SessionRecordingOptions } from "../../types";
-import { InitializeOptions } from "../interfaces";
 import { CuaComputerInstrumentation } from "../instrumentation/cua-computer";
+import { InitializeOptions } from "../interfaces";
 
 /**
  * Initialize and return Laminar instrumentations.
