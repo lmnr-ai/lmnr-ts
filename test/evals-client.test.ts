@@ -290,8 +290,7 @@ void describe("EvalsResource Client Methods", () => {
         },
       ];
 
-      let requestCount = 0;
-      let capturedBodies: RequestBody[] = [];
+      const capturedBodies: RequestBody[] = [];
 
       // Mock multiple 413 responses followed by success
       const scope = nock(baseUrl)
@@ -340,6 +339,9 @@ void describe("EvalsResource Client Methods", () => {
         assert.strictEqual(point.traceId, "trace-1");
         assert.strictEqual(point.executorSpanId, "span-1");
         assert.deepStrictEqual(point.metadata, { test: "data" });
+        assert.strict(point.data.length <= expectedLength);
+        assert.strict(point.target.length <= expectedLength);
+        assert.strict(point.executorOutput.length <= expectedLength);
       }
 
       scope.done();
@@ -386,7 +388,8 @@ void describe("EvalsResource Client Methods", () => {
       // Override the private method to test with custom maxRetries
       const evalsResource = client.evals as any;
       const originalRetrySaveDatapoints = evalsResource.retrySaveDatapoints;
-      evalsResource.retrySaveDatapoints = async function (options: any) {
+      evalsResource.retrySaveDatapoints = function (options: any) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         return originalRetrySaveDatapoints.call(this, { ...options, maxRetries: 3 });
       };
 
@@ -398,7 +401,7 @@ void describe("EvalsResource Client Methods", () => {
         (error: Error) => {
           assert.ok(error.message.includes("413"));
           return true;
-        }
+        },
       );
 
       // Verify exactly 4 requests were made (1 initial + 3 retries)
@@ -486,7 +489,7 @@ void describe("EvalsResource Client Methods", () => {
         (error: Error) => {
           assert.ok(error.message.includes("500"));
           return true;
-        }
+        },
       );
 
       assert.strictEqual(requestCount, 2);
@@ -551,7 +554,7 @@ void describe("EvalsResource Client Methods", () => {
         },
       ];
 
-      let capturedBodies: RequestBody[] = [];
+      const capturedBodies: RequestBody[] = [];
 
       // Mock 413 responses and capture retry payloads
       const scope = nock(baseUrl)

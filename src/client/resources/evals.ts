@@ -1,7 +1,6 @@
 import { EvaluationDatapoint, GetDatapointsResponse, InitEvaluationResponse } from "../../types";
-import { newUUID, slicePayload, StringUUID } from "../../utils";
+import { initializeLogger, newUUID, slicePayload, StringUUID } from "../../utils";
 import { BaseResource } from ".";
-import { initializeLogger } from "../../utils";
 
 const logger = initializeLogger();
 const INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH = 16_000_000; // 16MB
@@ -182,7 +181,10 @@ export class EvalsResource extends BaseResource {
             ...d,
             data: slicePayload(d.data, INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH),
             target: slicePayload(d.target, INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH),
-            executorOutput: slicePayload(d.executorOutput, INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH),
+            executorOutput: slicePayload(
+              d.executorOutput,
+              INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH,
+            ),
           })),
         groupName: groupName ?? null,
       }),
