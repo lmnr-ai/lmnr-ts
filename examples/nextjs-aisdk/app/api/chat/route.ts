@@ -18,7 +18,7 @@ Never give medical advice or diagnose conditions.`
 
     // Use the messages parameter directly with the system message as the first element
     const response = await generateText({
-      model: openai("gpt-4.1-nano"),
+      model: openai("gpt-5-nano"),
       messages: [systemMessage, ...messages],
       experimental_telemetry: {
         isEnabled: true,
