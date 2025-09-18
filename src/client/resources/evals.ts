@@ -1,6 +1,9 @@
 import { EvaluationDatapoint, GetDatapointsResponse, InitEvaluationResponse } from "../../types";
-import { newUUID, slicePayload, StringUUID } from "../../utils";
+import { initializeLogger, newUUID, slicePayload, StringUUID } from "../../utils";
 import { BaseResource } from ".";
+
+const logger = initializeLogger();
+const INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH = 16_000_000; // 16MB
 
 export class EvalsResource extends BaseResource {
   constructor(baseHttpUrl: string, projectApiKey: string) {
@@ -176,12 +179,24 @@ export class EvalsResource extends BaseResource {
         points: datapoints.map((d) => (
           {
             ...d,
-            data: slicePayload(d.data, 100),
-            target: slicePayload(d.target, 100),
+            data: slicePayload(d.data, INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH),
+            target: slicePayload(d.target, INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH),
+            executorOutput: slicePayload(
+              d.executorOutput,
+              INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH,
+            ),
           })),
         groupName: groupName ?? null,
       }),
     });
+
+    if (response.status === 413) {
+      return await this.retrySaveDatapoints({
+        evalId,
+        datapoints,
+        groupName,
+      });
+    }
 
     if (!response.ok) {
       await this.handleError(response);
@@ -224,5 +239,47 @@ export class EvalsResource extends BaseResource {
     }
 
     return (await response.json()) as GetDatapointsResponse<D, T>;
+  }
+
+  private async retrySaveDatapoints<D, T, O>({
+    evalId,
+    datapoints,
+    groupName,
+    maxRetries = 25,
+    initialLength = INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH,
+  }: {
+    evalId: string;
+    datapoints: EvaluationDatapoint<D, T, O>[];
+    groupName?: string;
+    maxRetries?: number;
+    initialLength?: number;
+  }): Promise<void> {
+    let length = initialLength;
+    let lastResponse: Response | null = null;
+    for (let i = 0; i < maxRetries; i++) {
+      logger.debug(`Retrying save datapoints... ${i + 1} of ${maxRetries}, length: ${length}`);
+      const response = await fetch(this.baseHttpUrl + `/v1/evals/${evalId}/datapoints`, {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({
+          points: datapoints.map((d) => (
+            {
+              ...d,
+              data: slicePayload(d.data, length),
+              target: slicePayload(d.target, length),
+              executorOutput: slicePayload(d.executorOutput, length),
+            })),
+          groupName: groupName ?? null,
+        }),
+      });
+      lastResponse = response;
+      length = Math.floor(length / 2);
+      if (response.status !== 413) {
+        break;
+      }
+    }
+    if (lastResponse && !lastResponse.ok) {
+      await this.handleError(lastResponse);
+    }
   }
 }

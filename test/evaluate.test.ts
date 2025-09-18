@@ -76,9 +76,8 @@ void describe("evaluate", () => {
     assert.strictEqual(body?.points?.length, 1);
 
     const point = body.points[0];
-    // test that the data and target are sliced to 100 characters + ...
-    assert.strictEqual(point.data.length, 103);
-    assert.strictEqual(point.target.length, 103);
+    assert.strictEqual(point.data.length, 150);
+    assert.strictEqual(point.target.length, 150);
     assert.strictEqual(point.index, 0);
     assert.deepStrictEqual(point.metadata, { test: 'test' });
     assert.deepStrictEqual(point.scores, { test2: 0, test: 0 });
@@ -178,9 +177,8 @@ void describe("evaluate", () => {
     assert.strictEqual(body?.points?.length, 1);
 
     const point = body.points[0];
-    // test that the data and target are sliced to 100 characters + ...
-    assert.strictEqual(point.data.length, 103);
-    assert.strictEqual(point.target.length, 103);
+    assert.strictEqual(point.data.length, 150);
+    assert.strictEqual(point.target.length, 150);
     assert.strictEqual(point.index, 1);
     assert.deepStrictEqual(point.metadata, { test: 'test' });
     assert.deepStrictEqual(point.scores, { test2: 1, test: 0 });
