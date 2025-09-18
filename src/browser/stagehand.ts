@@ -570,7 +570,8 @@ export class StagehandInstrumentation extends InstrumentationBase {
               [`llm.request.functions.${index}.parameters`]: JSON.stringify(tool.parameters),
             });
           });
-          // Once Stagehand supports zod 4.x, we can use z.toJsonSchema instead of the external library
+          // Once Stagehand supports zod 4.x, we can use z.toJsonSchema instead of
+          // the external library
           if (innerOptions.response_model?.schema) {
             const schema = zodToJsonSchema(innerOptions.response_model.schema as any);
             if (schema) {
