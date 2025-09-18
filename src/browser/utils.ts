@@ -1,7 +1,7 @@
 import { LLMClient } from "@browserbasehq/stagehand";
 import { Page as PlaywrightPage } from "playwright";
 import { Page as PuppeteerPage } from "puppeteer";
-import { z } from "zod";
+import { z } from "zod/v3";
 
 import { LaminarClient } from "..";
 import { SessionRecordingOptions } from "../types";
@@ -160,6 +160,7 @@ export const cleanStagehandLLMClient = (llmClient: LLMClient | object): Omit<LLM
   ) as Omit<LLMClient, "client">;
 
 
+// Stagehand uses zod 3.x, so we need to use the v3 version of zod
 export const prettyPrintZodSchema = (schema: z.AnyZodObject, indent = 2): string => {
   if (!(schema instanceof z.ZodObject)) {
     throw new Error('Not a Zod object schema');
@@ -680,7 +681,7 @@ const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
     const base64url = await new Promise<string>(resolve => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
-      reader.readAsDataURL(new Blob([buffer]));
+      reader.readAsDataURL(new Blob([buffer.slice()]));
     });
 
     return base64url.slice(base64url.indexOf(',') + 1);
