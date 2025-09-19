@@ -18,7 +18,7 @@ import { newUUID, StringUUID } from "../utils";
 import { PlaywrightInstrumentation } from "./playwright";
 import {
   cleanStagehandLLMClient,
-  modelToProviderMap,
+  modelToProvider,
   nameArgsOrCopy,
   prettyPrintZodSchema,
 } from "./utils";
@@ -531,7 +531,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
             && instrumentation.globalLLMClientOptions.get(this)?.model
           )
             ? (
-              modelToProviderMap[instrumentation.globalLLMClientOptions.get(this)!.model]
+              modelToProvider(instrumentation.globalLLMClientOptions.get(this)!.model)
               ?? "aisdk"
             )
             : recordedProvider;
