@@ -1,7 +1,7 @@
 import { LLMClient } from "@browserbasehq/stagehand";
 import { Page as PlaywrightPage } from "playwright";
 import { Page as PuppeteerPage } from "puppeteer";
-import { z } from "zod";
+import { z } from "zod/v3";
 
 import { LaminarClient } from "..";
 import { SessionRecordingOptions } from "../types";
@@ -160,6 +160,7 @@ export const cleanStagehandLLMClient = (llmClient: LLMClient | object): Omit<LLM
   ) as Omit<LLMClient, "client">;
 
 
+// Stagehand uses zod 3.x, so we need to use the v3 version of zod
 export const prettyPrintZodSchema = (schema: z.AnyZodObject, indent = 2): string => {
   if (!(schema instanceof z.ZodObject)) {
     throw new Error('Not a Zod object schema');
@@ -308,9 +309,7 @@ export const prettyPrintZodSchema = (schema: z.AnyZodObject, indent = 2): string
 
 
 // copied from https://github.com/browserbase/stagehand/blob/main/lib/llm/LLMProvider.ts#L62
-// We should either keep this in sync or replace with a simple heuristic, such as
-// if model name starts with `gpt` or `gemini` or `claude`.
-export const modelToProviderMap: Record<string, string> = {
+const modelToProviderMap: Record<string, string> = {
   "gpt-4.1": "openai",
   "gpt-4.1-mini": "openai",
   "gpt-4.1-nano": "openai",
@@ -343,6 +342,26 @@ export const modelToProviderMap: Record<string, string> = {
   "gemini-2.0-flash": "google",
   "gemini-2.5-flash-preview-04-17": "google",
   "gemini-2.5-pro-preview-03-25": "google",
+};
+
+export const modelToProvider = (model: string): string | undefined => {
+  const clean = model.toLowerCase().trim();
+  if (clean.startsWith("gpt-") || clean.match(/^o\d-/)) {
+    return "openai";
+  }
+  if (clean.startsWith("claude-")) {
+    return "anthropic";
+  }
+  if (clean.startsWith("gemini-")) {
+    return "google";
+  }
+  if (clean.startsWith("cerebras-")) {
+    return "cerebras";
+  }
+  if (clean.startsWith("groq-")) {
+    return "groq";
+  }
+  return modelToProviderMap[clean];
 };
 
 const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
@@ -680,7 +699,7 @@ const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
     const base64url = await new Promise<string>(resolve => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
-      reader.readAsDataURL(new Blob([buffer]));
+      reader.readAsDataURL(new Blob([buffer.slice()]));
     });
 
     return base64url.slice(base64url.indexOf(',') + 1);

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { z } from 'zod';
+import { z } from 'zod/v3';
 
-import { prettyPrintZodSchema } from '../src/browser/utils';
+import { modelToProvider, prettyPrintZodSchema } from '../src/browser/utils';
 
 void describe('prettyPrintZodSchema', () => {
   void it('formats a simple object schema', () => {
@@ -208,5 +208,17 @@ void describe('prettyPrintZodSchema', () => {
     assert.ok(result.includes(
       'status: z.union([z.literal(\'active\'), z.literal(\'inactive\'), z.literal(\'pending\')])',
     ));
+  });
+});
+
+void describe('modelToProvider', () => {
+  void it('returns the correct provider for a model', () => {
+    assert.equal(modelToProvider('gpt-4'), 'openai');
+    assert.equal(modelToProvider('o1-mini'), 'openai');
+    assert.equal(modelToProvider('claude-3.5-sonnet'), 'anthropic');
+    assert.equal(modelToProvider('gemini-1.5-pro'), 'google');
+    assert.equal(modelToProvider('cerebras-2.5-sonnet'), 'cerebras');
+    assert.equal(modelToProvider('groq-3.5-sonnet'), 'groq');
+    assert.equal(modelToProvider('command-r7b'), undefined);
   });
 });

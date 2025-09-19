@@ -1,5 +1,6 @@
 import { trace } from "@opentelemetry/api";
 import * as cliProgress from "cli-progress";
+import { config } from 'dotenv';
 
 import { LaminarClient } from "./client";
 import { EvaluationDataset, LaminarDataset } from "./datasets";
@@ -17,6 +18,10 @@ import {
   Semaphore,
   StringUUID,
 } from "./utils";
+
+config({
+  quiet: true,
+});
 
 const DEFAULT_CONCURRENCY = 5;
 const MAX_EXPORT_BATCH_SIZE = 64;

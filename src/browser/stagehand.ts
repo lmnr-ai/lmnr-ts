@@ -6,7 +6,8 @@ import {
   InstrumentationModuleDefinition,
   InstrumentationNodeModuleDefinition,
 } from "@opentelemetry/instrumentation";
-import { z } from "zod";
+import { z } from "zod/v3";
+import { zodToJsonSchema } from "zod-to-json-schema";
 
 import { version as SDK_VERSION } from "../../package.json";
 import { observe as laminarObserve } from "../decorators";
@@ -17,7 +18,7 @@ import { newUUID, StringUUID } from "../utils";
 import { PlaywrightInstrumentation } from "./playwright";
 import {
   cleanStagehandLLMClient,
-  modelToProviderMap,
+  modelToProvider,
   nameArgsOrCopy,
   prettyPrintZodSchema,
 } from "./utils";
@@ -207,7 +208,9 @@ export class StagehandInstrumentation extends InstrumentationBase {
       instrumentation.playwrightInstrumentation.setParentSpanForSession(sessionId, parentSpan);
 
       const result = await original.bind(this).apply(this);
-
+      for (const page of this.context.pages()) {
+        await instrumentation.playwrightInstrumentation.patchPage(page, sessionId);
+      }
       await instrumentation.playwrightInstrumentation.patchPage(this.page, sessionId);
 
       instrumentation._wrap(
@@ -216,7 +219,14 @@ export class StagehandInstrumentation extends InstrumentationBase {
         instrumentation.patchStagehandAgentInitializer(sessionId),
       );
 
-      instrumentation.patchStagehandPage((this).stagehandPage, sessionId);
+      // when new playwright page opens, we need to add playwright instrumentation
+      // to it and instrument the stagehand page stored on the stagehand instance
+      this.context.on('page', async (page: any) => {
+        await instrumentation.playwrightInstrumentation.patchPage(page, sessionId);
+        instrumentation.patchStagehandPage(this.stagehandPage, sessionId);
+      });
+
+      instrumentation.patchStagehandPage(this.stagehandPage, sessionId);
       if (this.llmClient) {
         instrumentation.globalLLMClientOptions.set(this.llmClient, {
           provider: this.llmClient.type,
@@ -422,6 +432,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
       };
   }
 
+  // Stagehand uses zod 3.x, so we need to use the v3 version of zod
   private patchStagehandExtractHandlerTextExtract() {
     return (original: (...args: any[]) => Promise<any>) =>
       async function textExtract(this: any, ...args: any[]) {
@@ -520,7 +531,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
             && instrumentation.globalLLMClientOptions.get(this)?.model
           )
             ? (
-              modelToProviderMap[instrumentation.globalLLMClientOptions.get(this)!.model]
+              modelToProvider(instrumentation.globalLLMClientOptions.get(this)!.model)
               ?? "aisdk"
             )
             : recordedProvider;
@@ -559,6 +570,16 @@ export class StagehandInstrumentation extends InstrumentationBase {
               [`llm.request.functions.${index}.parameters`]: JSON.stringify(tool.parameters),
             });
           });
+          // Once Stagehand supports zod 4.x, we can use z.toJsonSchema instead of
+          // the external library
+          if (innerOptions.response_model?.schema) {
+            const schema = zodToJsonSchema(innerOptions.response_model.schema as any);
+            if (schema) {
+              span.setAttributes({
+                [`gen_ai.request.structured_output_schema`]: JSON.stringify(schema),
+              });
+            }
+          }
 
           const result = await original.bind(this).apply(this, args) as StagehandLib.LLMResponse;
           span.setAttributes({

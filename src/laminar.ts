@@ -7,6 +7,7 @@ import {
   TimeInput,
   trace,
 } from '@opentelemetry/api';
+import { config } from 'dotenv';
 
 import { InitializeOptions, initializeTracing } from './opentelemetry-lib';
 import { forceFlush, getTracer, patchModules } from './opentelemetry-lib/tracing/';
@@ -34,6 +35,10 @@ import {
   StringUUID,
   tryToOtelSpanContext,
 } from './utils';
+
+config({
+  quiet: true,
+});
 
 const logger = initializeLogger();
 
