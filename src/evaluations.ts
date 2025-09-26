@@ -305,7 +305,7 @@ export class Evaluation<D, T, O> {
     this.name = name;
 
     if (config) {
-      if (config.concurrencyLimit && config.concurrencyLimit < 1) {
+      if (config.concurrencyLimit !== undefined && config.concurrencyLimit < 1) {
         logger.warn(
           `concurrencyLimit must be greater than 0. Setting to default of ${DEFAULT_CONCURRENCY}`,
         );
