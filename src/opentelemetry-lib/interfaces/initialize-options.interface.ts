@@ -1,7 +1,6 @@
 import type * as anthropic from "@anthropic-ai/sdk";
 import type * as bedrock from "@aws-sdk/client-bedrock-runtime";
 import type * as azure from "@azure/openai";
-import type * as StagehandLib from "@browserbasehq/stagehand";
 import type * as aiplatform from "@google-cloud/aiplatform";
 import type * as vertexAI from "@google-cloud/vertexai";
 import type * as RunnableModule from "@langchain/core/runnables";
@@ -305,7 +304,7 @@ export interface InitializeOptions {
      * });
      * ```
      */
-    stagehand?: typeof StagehandLib.Stagehand,
+    stagehand?: any,
   };
 
   /**

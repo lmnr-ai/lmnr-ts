@@ -304,6 +304,20 @@ export class Evaluation<D, T, O> {
     this.metadata = metadata;
     this.name = name;
 
+    if (config) {
+      if (config.concurrencyLimit !== undefined && config.concurrencyLimit < 1) {
+        logger.warn(
+          `concurrencyLimit must be greater than 0. Setting to default of ${DEFAULT_CONCURRENCY}`,
+        );
+        this.concurrencyLimit = DEFAULT_CONCURRENCY;
+      } else {
+        this.concurrencyLimit = config.concurrencyLimit ?? DEFAULT_CONCURRENCY;
+      }
+      this.traceDisableBatch = config.traceDisableBatch ?? false;
+      this.traceExportTimeoutMillis = config.traceExportTimeoutMillis;
+      this.traceExportBatchSize = config.traceExportBatchSize ?? MAX_EXPORT_BATCH_SIZE;
+    }
+
     if (Laminar.initialized()) {
       this.client = new LaminarClient({
         baseUrl: Laminar.getHttpUrl(),
@@ -337,20 +351,6 @@ export class Evaluation<D, T, O> {
       baseUrl: baseHttpUrl,
       projectApiKey: key,
     });
-
-    if (config) {
-      if (config.concurrencyLimit && config.concurrencyLimit < 1) {
-        logger.warn(
-          `concurrencyLimit must be greater than 0. Setting to default of ${DEFAULT_CONCURRENCY}`,
-        );
-        this.concurrencyLimit = DEFAULT_CONCURRENCY;
-      } else {
-        this.concurrencyLimit = config.concurrencyLimit ?? DEFAULT_CONCURRENCY;
-      }
-      this.traceDisableBatch = config.traceDisableBatch ?? false;
-      this.traceExportTimeoutMillis = config.traceExportTimeoutMillis;
-      this.traceExportBatchSize = config.traceExportBatchSize ?? MAX_EXPORT_BATCH_SIZE;
-    }
 
     Laminar.initialize({
       projectApiKey: config?.projectApiKey,

@@ -1,5 +1,3 @@
-import type * as StagehandLib from "@browserbasehq/stagehand";
-import { ActOptions, LLMClient, Page as StagehandPage } from "@browserbasehq/stagehand";
 import { diag, trace } from "@opentelemetry/api";
 import {
   InstrumentationBase,
@@ -23,6 +21,102 @@ import {
   prettyPrintZodSchema,
 } from "./utils";
 
+// Stagehand interfaces:
+type AvailableModel = string;
+
+interface ActOptions {
+  action: string;
+  modelName?: AvailableModel;
+  modelClientOptions?: any; // ClientOptions
+  variables?: Record<string, string>;
+  domSettleTimeoutMs?: number;
+  timeoutMs?: number;
+  iframes?: boolean;
+  frameId?: string;
+}
+type LLMResponse = {
+  id: string;
+  object: string;
+  created: number;
+  model: string;
+  choices: {
+    index: number;
+    message: {
+      role: string;
+      content: string | null;
+      tool_calls: {
+        id: string;
+        type: string;
+        function: {
+          name: string;
+          arguments: string;
+        };
+      }[];
+    };
+    finish_reason: string;
+  }[];
+  usage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+};
+
+interface ChatCompletionInnerOptions {
+  messages: any[]; // ChatMessage[]
+  temperature?: number;
+  top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  image?: {
+    buffer: Buffer;
+    description?: string;
+  };
+  response_model?: {
+    name: string;
+    schema: any; // ZodType
+  };
+  tools?: any[]; // LLMTool[]
+  tool_choice?: "auto" | "none" | "required";
+  maxTokens?: number;
+  requestId?: string;
+};
+
+interface CreateChatCompletionOptions {
+  options: ChatCompletionInnerOptions;
+  logger: (message: any) => void;
+  retries?: number;
+}
+
+declare abstract class LLMClient {
+  type: "openai" | "anthropic" | "cerebras" | "groq" | (string & {});
+  modelName: AvailableModel | (string & {});
+  hasVision: boolean;
+  clientOptions: any; // ClientOptions
+  userProvidedInstructions?: string;
+  constructor(modelName: AvailableModel, userProvidedInstructions?: string);
+  abstract createChatCompletion<T = LLMResponse & {
+    usage?: LLMResponse["usage"];
+  }>(options: CreateChatCompletionOptions): Promise<T>;
+  generateText: (args: any) => Promise<any>;
+  streamText: (args: any) => any;
+  streamObject: (args: any) => any;
+  generateImage: (args: any) => Promise<any>;
+  embed: (args: any) => Promise<any>;
+  embedMany: (args: any) => Promise<any>;
+  transcribe: (args: any) => Promise<any>;
+  generateSpeech: (args: any) => Promise<any>;
+};
+
+interface StagehandPage {
+  act: (args: any) => Promise<any>;
+  extract: (args: any) => Promise<any>;
+  observe: (args: any) => Promise<any>;
+  on: (args: any) => any;
+}
+// ================================
+
+
 interface GlobalLLMClientOptions {
   // named `type` in Stagehand
   provider: "openai" | "anthropic" | "cerebras" | "groq" | (string & {})
@@ -31,8 +125,8 @@ interface GlobalLLMClientOptions {
 
 type AgentClient = {
   execute: (
-    instructionOrOptions: string | StagehandLib.AgentExecuteOptions,
-  ) => Promise<StagehandLib.AgentResult>;
+    instructionOrOptions: string | object,
+  ) => Promise<object>;
 };
 
 /* eslint-disable
@@ -47,10 +141,10 @@ export class StagehandInstrumentation extends InstrumentationBase {
     GlobalLLMClientOptions | undefined
   > = new WeakMap();
   private globalAgentOptions: WeakMap<
-    StagehandLib.Stagehand,
-    StagehandLib.AgentConfig | undefined
+    object,
+    Record<string, any> | undefined
   > = new WeakMap();
-  private stagehandInstanceToSessionId: WeakMap<StagehandLib.Stagehand, StringUUID> = new WeakMap();
+  private stagehandInstanceToSessionId: WeakMap<object, StringUUID> = new WeakMap();
 
   constructor(playwrightInstrumentation: PlaywrightInstrumentation) {
     super(
@@ -74,7 +168,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
     return module;
   }
 
-  private patch(moduleExports: typeof StagehandLib, moduleVersion?: string) {
+  private patch(moduleExports: any, moduleVersion?: string) {
     diag.debug(`patching stagehand ${moduleVersion}`);
     // Check if Stagehand is non-configurable
     const descriptor = Object.getOwnPropertyDescriptor(moduleExports, 'Stagehand');
@@ -104,7 +198,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
     }
   }
 
-  public manuallyInstrument(Stagehand: typeof StagehandLib.Stagehand) {
+  public manuallyInstrument(Stagehand: any) {
     diag.debug('manually instrumenting stagehand');
 
     // Since we can't replace the Stagehand constructor directly due to non-configurable property,
@@ -125,7 +219,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
     }
   }
 
-  private unpatch(moduleExports: typeof StagehandLib, moduleVersion?: string) {
+  private unpatch(moduleExports: any, moduleVersion?: string) {
     diag.debug(`unpatching stagehand ${moduleVersion}`);
     this._unwrap(moduleExports, 'Stagehand');
 
@@ -136,16 +230,16 @@ export class StagehandInstrumentation extends InstrumentationBase {
         this._unwrap(moduleExports.Stagehand.prototype.page, 'act');
         this._unwrap(moduleExports.Stagehand.prototype.page, 'extract');
         this._unwrap(moduleExports.Stagehand.prototype.page, 'observe');
-        const observeHandler = (moduleExports.Stagehand.prototype.page as any).observeHandler;
+        const observeHandler = (moduleExports.Stagehand.prototype.page).observeHandler;
         if (observeHandler) {
           this._unwrap(observeHandler, 'observe');
         }
-        const extractHandler = (moduleExports.Stagehand.prototype.page as any).extractHandler;
+        const extractHandler = (moduleExports.Stagehand.prototype.page).extractHandler;
         if (extractHandler) {
           this._unwrap(extractHandler, 'textExtract');
           this._unwrap(extractHandler, 'domExtract');
         }
-        const actHandler = (moduleExports.Stagehand.prototype.page as any).actHandler;
+        const actHandler = (moduleExports.Stagehand.prototype.page).actHandler;
         if (actHandler) {
           this._unwrap(actHandler, 'act');
         }
@@ -158,12 +252,12 @@ export class StagehandInstrumentation extends InstrumentationBase {
   private patchStagehandConstructor() {
     const instrumentation = this;
 
-    return (Original: typeof StagehandLib.Stagehand) => {
+    return (Original: any) => {
       // Create a constructor function that maintains the same signature
       const Stagehand = function (this: InstanceType<typeof Original>, ...args: any[]) {
         // Only apply if this is a new instance
         if (!(this instanceof Stagehand)) {
-          return new (Stagehand as any)(...args);
+          return new (Stagehand)(...args);
         }
 
         const instance = new Original(args.length > 0 ? args[0] : undefined);
@@ -514,7 +608,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
     const instrumentation = this;
     return (original: (...args: any[]) => Promise<any>) =>
       async function createChatCompletion(this: any, ...args: any[]) {
-        const options = args[0] as StagehandLib.CreateChatCompletionOptions;
+        const options = args[0] as CreateChatCompletionOptions;
         return await laminarObserve({
           name: "createChatCompletion",
           // input and output are set as gen_ai.prompt and gen_ai.completion
@@ -573,7 +667,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
           // Once Stagehand supports zod 4.x, we can use z.toJsonSchema instead of
           // the external library
           if (innerOptions.response_model?.schema) {
-            const schema = zodToJsonSchema(innerOptions.response_model.schema as any);
+            const schema = zodToJsonSchema(innerOptions.response_model.schema);
             if (schema) {
               span.setAttributes({
                 [`gen_ai.request.structured_output_schema`]: JSON.stringify(schema),
@@ -581,7 +675,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
             }
           }
 
-          const result = await original.bind(this).apply(this, args) as StagehandLib.LLMResponse;
+          const result = await original.bind(this).apply(this, args) as LLMResponse;
           span.setAttributes({
             "gen_ai.response.model": result.model,
             "gen_ai.usage.input_tokens": result.usage.prompt_tokens,
@@ -702,7 +796,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
                   });
                 }
 
-                const result: StagehandLib.AgentResult = await original
+                const result = await original
                   .bind(this)
                   .apply(this, args);
 
