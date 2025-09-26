@@ -73,8 +73,7 @@
     "zod-to-json-schema": "^3.24.6"
   },
   "overrides": {
-    "dotenv": "$dotenv",
-    "zod": "$zod"
+    "dotenv": "$dotenv"
   },
   "pnpm": {
     "peerDependencyRules": {
