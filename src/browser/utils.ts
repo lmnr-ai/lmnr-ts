@@ -1,4 +1,3 @@
-import { LLMClient } from "@browserbasehq/stagehand";
 import { Page as PlaywrightPage } from "playwright";
 import { Page as PuppeteerPage } from "puppeteer";
 import { z } from "zod/v3";
@@ -143,7 +142,7 @@ export const injectSessionRecorder = async (
 
 
 // Removes the heavy client prop and the apiKey to avoid security issues
-export const cleanStagehandLLMClient = (llmClient: LLMClient | object): Omit<LLMClient, "client"> =>
+export const cleanStagehandLLMClient = (llmClient: object): object =>
   Object.fromEntries(
     Object.entries(llmClient)
       .filter(([key]) => key !== "client")
@@ -157,7 +156,7 @@ export const cleanStagehandLLMClient = (llmClient: LLMClient | object): Omit<LLM
           ]
           : [key, value],
       ),
-  ) as Omit<LLMClient, "client">;
+  );
 
 
 // Stagehand uses zod 3.x, so we need to use the v3 version of zod

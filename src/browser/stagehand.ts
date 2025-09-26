@@ -1,5 +1,4 @@
 import type * as StagehandLib from "@browserbasehq/stagehand";
-import { ActOptions, LLMClient, Page as StagehandPage } from "@browserbasehq/stagehand";
 import { diag, trace } from "@opentelemetry/api";
 import {
   InstrumentationBase,
@@ -22,6 +21,103 @@ import {
   nameArgsOrCopy,
   prettyPrintZodSchema,
 } from "./utils";
+
+// Stagehand interfaces:
+declare const AvailableModelSchema: z.ZodEnum<["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "o4-mini", "o3", "o3-mini", "o1", "o1-mini", "gpt-4o", "gpt-4o-mini", "gpt-4o-2024-08-06", "gpt-4.5-preview", "o1-preview", "claude-3-5-sonnet-latest", "claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20240620", "claude-3-7-sonnet-latest", "claude-3-7-sonnet-20250219", "cerebras-llama-3.3-70b", "cerebras-llama-3.1-8b", "groq-llama-3.3-70b-versatile", "groq-llama-3.3-70b-specdec", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.5-flash-8b", "gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-2.5-flash-preview-04-17", "gemini-2.5-pro-preview-03-25"]>;
+type AvailableModel = z.infer<typeof AvailableModelSchema> | string;
+
+interface ActOptions {
+  action: string;
+  modelName?: AvailableModel;
+  modelClientOptions?: any; // ClientOptions
+  variables?: Record<string, string>;
+  domSettleTimeoutMs?: number;
+  timeoutMs?: number;
+  iframes?: boolean;
+  frameId?: string;
+}
+type LLMResponse = {
+  id: string;
+  object: string;
+  created: number;
+  model: string;
+  choices: {
+    index: number;
+    message: {
+      role: string;
+      content: string | null;
+      tool_calls: {
+        id: string;
+        type: string;
+        function: {
+          name: string;
+          arguments: string;
+        };
+      }[];
+    };
+    finish_reason: string;
+  }[];
+  usage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+};
+
+interface ChatCompletionInnerOptions {
+  messages: any[]; // ChatMessage[]
+  temperature?: number;
+  top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  image?: {
+    buffer: Buffer;
+    description?: string;
+  };
+  response_model?: {
+    name: string;
+    schema: any; // ZodType
+  };
+  tools?: any[]; // LLMTool[]
+  tool_choice?: "auto" | "none" | "required";
+  maxTokens?: number;
+  requestId?: string;
+};
+
+interface CreateChatCompletionOptions {
+  options: ChatCompletionInnerOptions;
+  logger: (message: any) => void;
+  retries?: number;
+}
+
+declare abstract class LLMClient {
+  type: "openai" | "anthropic" | "cerebras" | "groq" | (string & {});
+  modelName: AvailableModel | (string & {});
+  hasVision: boolean;
+  clientOptions: any; // ClientOptions
+  userProvidedInstructions?: string;
+  constructor(modelName: AvailableModel, userProvidedInstructions?: string);
+  abstract createChatCompletion<T = LLMResponse & {
+    usage?: LLMResponse["usage"];
+  }>(options: CreateChatCompletionOptions): Promise<T>;
+  generateText: (args: any) => Promise<any>;
+  streamText: (args: any) => any;
+  streamObject: (args: any) => any;
+  generateImage: (args: any) => Promise<any>;
+  embed: (args: any) => Promise<any>;
+  embedMany: (args: any) => Promise<any>;
+  transcribe: (args: any) => Promise<any>;
+  generateSpeech: (args: any) => Promise<any>;
+};
+
+interface StagehandPage {
+  act: (args: any) => Promise<any>;
+  extract: (args: any) => Promise<any>;
+  observe: (args: any) => Promise<any>;
+  on: (args: any) => any;
+}
+// ================================
+
 
 interface GlobalLLMClientOptions {
   // named `type` in Stagehand
