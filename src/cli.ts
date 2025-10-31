@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { ArgumentParser } from "argparse";
+import { Command } from "commander";
 import * as esbuild from "esbuild";
 import * as fs from "fs";
 import * as glob from "glob";
@@ -78,85 +78,74 @@ export function loadModule({
 }
 
 async function cli() {
-  const [, , ...args] = process.argv;
+  const program = new Command();
 
-  // Use argparse, which is the port of the python library
-  const parser = new ArgumentParser({
-    prog: "lmnr",
-    description: "CLI for Laminar. Use `lmnr <subcommand> --help` for more information.",
-  });
+  program
+    .name("lmnr")
+    .description("CLI for Laminar. Use `lmnr <subcommand> --help` for more information.")
+    .version(version, "-v, --version", "display version number");
 
-  parser.add_argument("-v", "--version", { action: "version", version });
-
-  const subparsers = parser.add_subparsers({
-    title: "subcommands",
-    dest: "subcommand",
-  });
-
-  const parserEval = subparsers.add_parser("eval", {
-    description: "Run an evaluation",
-    help: "Run an evaluation",
-  });
-
-  parserEval.add_argument("files", {
-    help: "A file or files containing the evaluation to run. If no file is provided, " +
+  program
+    .command("eval")
+    .description("Run an evaluation")
+    .argument(
+      "[files...]",
+      "A file or files containing the evaluation to run. If no file is provided, " +
       "the evaluation will run all `*.eval.ts|js` files in the `evals` directory. " +
       "If multiple files are provided, the evaluation will run each file in order.",
-    nargs: "*",
-  });
-
-  parserEval.add_argument("--fail-on-error", {
-    help: "Fail on error. If specified, will fail if encounters a file that cannot be run",
-    action: "store_true",
-  });
-
-  parserEval.add_argument("--output-file", {
-    help: "Output file to write the results to. Outputs are written in JSON format.",
-    nargs: "?",
-  });
-
-  parserEval.add_argument("--external-packages", {
-    help: "[ADVANCED] List of packages to pass as external to esbuild. This will not link " +
+    )
+    .option(
+      "--fail-on-error",
+      "Fail on error. If specified, will fail if encounters a file that cannot be run",
+    )
+    .option(
+      "--output-file <file>",
+      "Output file to write the results to. Outputs are written in JSON format.",
+    )
+    .option(
+      "--external-packages <packages...>",
+      "[ADVANCED] List of packages to pass as external to esbuild. This will not link " +
       "the packages directly into the eval file, but will instead require them at runtime. " +
       "Read more: https://esbuild.github.io/api/#external",
-    nargs: "*",
-  });
-
-  parserEval.add_argument("--dynamic-imports-to-skip", {
-    help: "[ADVANCED] List of module names to skip when encountered as dynamic imports. " +
+    )
+    .option(
+      "--dynamic-imports-to-skip <modules...>",
+      "[ADVANCED] List of module names to skip when encountered as dynamic imports. " +
       "These dynamic imports will resolve to an empty module to prevent build failures. " +
       "This is meant to skip the imports that are not used in the evaluation itself.",
-    nargs: "*",
-  });
-
-  parserEval.set_defaults({
-    func: async (args: any) => {
-      let files: string[];
-      if (args.files && args.files.length > 0) {
-        files = args.files.flatMap((file: string) => glob.sync(file));
+    )
+    .action(async (files: string[], options: {
+      failOnError?: boolean;
+      outputFile?: string;
+      externalPackages?: string[];
+      dynamicImportsToSkip?: string[];
+    }) => {
+      let evalFiles: string[];
+      if (files && files.length > 0) {
+        evalFiles = files.flatMap((file: string) => glob.sync(file));
       } else {
         // No files provided, use default pattern
-        files = glob.sync('evals/**/*.eval.{ts,js}');
+        evalFiles = glob.sync('evals/**/*.eval.{ts,js}');
       }
 
-      files.sort();
+      evalFiles.sort();
 
-      if (files.length === 0) {
+      if (evalFiles.length === 0) {
         logger.error("No evaluation files found. Please provide a file or " +
-          "ensure there are eval files that are named like `*.eval.{ts,js}` in" +
+          "ensure there are eval files that are named like `*.eval.{ts,js}` in " +
           "the `evals` directory or its subdirectories.");
         process.exit(1);
       }
 
-      if (args.files.length === 0) {
-        logger.info(`Located ${files.length} evaluation files in evals/`);
+      if (files.length === 0) {
+        logger.info(`Located ${evalFiles.length} evaluation files in evals/`);
       } else {
-        logger.info(`Running ${files.length} evaluation files.`);
+        logger.info(`Running ${evalFiles.length} evaluation files.`);
       }
 
       const scores: { file: string, scores: Record<string, number> }[] = [];
 
-      for (const file of files) {
+      for (const file of evalFiles) {
         logger.info(`Loading ${file}...`);
         const buildOptions = {
           bundle: true,
@@ -171,10 +160,10 @@ async function cli() {
             "puppeteer-core",
             "playwright-core",
             "fsevents",
-            ...(args.external_packages ? args.external_packages : []),
+            ...(options.externalPackages ? options.externalPackages : []),
           ],
           plugins: [
-            createSkipDynamicImportsPlugin(args.dynamic_imports_to_skip || []),
+            createSkipDynamicImportsPlugin(options.dynamicImportsToSkip || []),
           ],
           treeShaking: true,
         };
@@ -184,7 +173,7 @@ async function cli() {
         if (!result.outputFiles) {
           logger.error("Error when building: No output files found " +
             "it is likely that all eval files are not valid TypeScript or JavaScript files.");
-          if (args.fail_on_error) {
+          if (options.failOnError) {
             process.exit(1);
           }
           continue;
@@ -202,7 +191,7 @@ async function cli() {
         for (const evaluation of evaluations) {
           if (!evaluation?.run) {
             logger.error(`Evaluation ${file} does not properly call evaluate()`);
-            if (args.fail_on_error) {
+            if (options.failOnError) {
               process.exit(1);
             }
             continue;
@@ -213,22 +202,20 @@ async function cli() {
         }
       }
 
-      if (args.output_file) {
-        fs.writeFileSync(args.output_file, JSON.stringify(scores, null, 2));
+      if (options.outputFile) {
+        fs.writeFileSync(options.outputFile, JSON.stringify(scores, null, 2));
       }
-    },
-  });
+    });
 
-  parser.set_defaults({
-    func: () => {
-      parser.print_help();
-      process.exit(0);
-    },
-  });
+  // If no command provided, show help
+  if (!process.argv.slice(2).length) {
+    program.help(); // This exits the process
+    return;
+  }
 
-  const parsed = parser.parse_args(args);
-  await parsed.func(parsed);
+  await program.parseAsync();
 }
+
 
 cli().catch((err) => {
   logger.error(err instanceof Error ? err.message : err);

@@ -92,12 +92,12 @@ importers:
       '@traceloop/instrumentation-vertexai':
         specifier: ^0.12.0
         version: 0.12.0(@opentelemetry/api@1.9.0)
-      argparse:
-        specifier: ^2.0.1
-        version: 2.0.1
       cli-progress:
         specifier: ^3.12.0
         version: 3.12.0
+      commander:
+        specifier: ^14.0.2
+        version: 14.0.2
       dotenv:
         specifier: ^17.2.2
         version: 17.2.2
@@ -162,9 +162,6 @@ importers:
       '@stylistic/eslint-plugin':
         specifier: ^5.2.2
         version: 5.2.2(eslint@9.32.0)
-      '@types/argparse':
-        specifier: ^2.0.17
-        version: 2.0.17
       '@types/cli-progress':
         specifier: ^3.11.6
         version: 3.11.6
@@ -1511,9 +1508,6 @@ packages:
     resolution: {integrity: sha512-p9/orFV2uYtqOQOKvi3zA9j+xG7qlra3RfyDcD81k5sO+Znm9kYJrJ7608zelqdEdzr/sUeXme1gPV2oYOZJhA==}
     engines: {node: '>=14'}
 
-  '@types/argparse@2.0.17':
-    resolution: {integrity: sha512-fueJssTf+4dW4HODshEGkIZbkLKHzgu1FvCI4cTc/MKum/534Euo3SrN+ilq8xgyHnOjtmg33/hee8iXLRg1XA==}
-
   '@types/caseless@0.12.5':
     resolution: {integrity: sha512-hWtVTC2q7hc7xZ/RLbxapMvDMgUnDvKvMOpKal4DrMyfGBUfB1oKaZlIRr6mJL+If3bAP6sV/QneGzF6tJjZDg==}
 
@@ -1889,6 +1883,10 @@ packages:
   combined-stream@1.0.8:
     resolution: {integrity: sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==}
     engines: {node: '>= 0.8'}
+
+  commander@14.0.2:
+    resolution: {integrity: sha512-TywoWNNRbhoD0BXs1P3ZEScW8W5iKrnbithIl0YH+uCmBd0QpPOA8yc82DS3BIE5Ma6FnBVUsJ7wVUDz4dvOWQ==}
+    engines: {node: '>=20'}
 
   commander@4.1.1:
     resolution: {integrity: sha512-NOKm8xhkzAjzFx8B2v5OAHT+u5pRQc2UCa2Vq9jYL/31o2wi9mxBA7LIFs3sV5VSC49z6pEhfbMULvShKj26WA==}
@@ -5565,8 +5563,6 @@ snapshots:
       - '@opentelemetry/api'
       - supports-color
 
-  '@types/argparse@2.0.17': {}
-
   '@types/caseless@0.12.5': {}
 
   '@types/cli-progress@3.11.6':
@@ -5975,6 +5971,8 @@ snapshots:
   combined-stream@1.0.8:
     dependencies:
       delayed-stream: 1.0.0
+
+  commander@14.0.2: {}
 
   commander@4.1.1: {}
 
