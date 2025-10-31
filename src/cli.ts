@@ -77,7 +77,7 @@ export function loadModule({
   return globalThis._evaluations;
 }
 
-function cli() {
+async function cli() {
   const program = new Command();
 
   program
@@ -213,13 +213,11 @@ function cli() {
     return;
   }
 
-  program.parse();
+  await program.parseAsync();
 }
 
 
-try {
-  cli();
-} catch (err) {
+cli().catch((err) => {
   logger.error(err instanceof Error ? err.message : err);
   throw err;
-}
+});
