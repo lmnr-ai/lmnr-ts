@@ -132,7 +132,7 @@ async function cli() {
 
       if (evalFiles.length === 0) {
         logger.error("No evaluation files found. Please provide a file or " +
-          "ensure there are eval files that are named like `*.eval.{ts,js}` in" +
+          "ensure there are eval files that are named like `*.eval.{ts,js}` in " +
           "the `evals` directory or its subdirectories.");
         process.exit(1);
       }
