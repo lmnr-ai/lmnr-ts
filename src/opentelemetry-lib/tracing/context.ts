@@ -1,10 +1,16 @@
 import { Context, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 import { AsyncLocalStorage } from "async_hooks";
 
-import { LaminarSpan } from "./span";
-
 export class LaminarContextManager {
   private static _asyncLocalStorage = new AsyncLocalStorage<Context[]>();
+  // Static registry for cross-async span management
+  // We're keeping track of spans have started (and running) here for the cases when span
+  // is started in one async context and ended in another
+  // We use this registry to ignore the context of spans that were already ended in
+  // another async context.
+  // LaminarSpan adds and removes itself to and from this registry in start()
+  // and end() methods respectively.
+  private static _activeSpans: Set<string> = new Set();
 
   public static getContext(): Context {
     const contexts = this._asyncLocalStorage.getStore() || [];
@@ -25,7 +31,7 @@ export class LaminarContextManager {
 
       // Check if the span in this context has been ended
       try {
-        const isActive = LaminarSpan.isSpanActive(span.spanContext().spanId);
+        const isActive = this._activeSpans.has(span.spanContext().spanId);
         if (isActive) {
           // Span is still active, use this context
           return context;
@@ -61,7 +67,7 @@ export class LaminarContextManager {
 
         // Check if the span in this context has been ended
         try {
-          return LaminarSpan.isSpanActive(span.spanContext().spanId);
+          return this._activeSpans.has(span.spanContext().spanId);
         } catch {
           // If we can't check the span, assume it's valid
           return true;
@@ -87,5 +93,12 @@ export class LaminarContextManager {
   public static runWithIsolatedContext<T>(initialStack: Context[], fn: () => T): T {
     return this._asyncLocalStorage.run(initialStack, fn);
   }
-}
 
+  public static addActiveSpan(spanId: string): void {
+    this._activeSpans.add(spanId);
+  }
+
+  public static removeActiveSpan(spanId: string): void {
+    this._activeSpans.delete(spanId);
+  }
+}
