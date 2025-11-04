@@ -19,23 +19,16 @@ import { getParentSpanId, makeSpanOtelV2Compatible } from "./compat";
 import { LaminarContextManager } from "./context";
 
 // We decided to implement raw otel Span interface and have _span: SdkSpan because SdkSpan
-// discourages use of its constructor directly
-// We are using constructor directly because we're implementing Tracer interface
+// discourages use of its constructor directly in favour of Tracer.startSpan()
+// We are using constructor directly because we're implementing Tracer interface as well.
 export class LaminarSpan implements Span, ReadableSpan {
-  private _span: Span;
+  private _span: SdkSpan;
   private _activated: boolean;
-
-  // Static registry for cross-async span management
-  // We're keeping track of spans have started (and running) here for the cases when span
-  // is started in one async context and ended in another
-  // In LaminarContextManager we're using this registry to ignore the context of spans that
-  // were already ended in another async context
-  private static _activeSpans = new Set<string>();
 
   constructor(span: Span, activated?: boolean) {
     this._activated = activated ?? false;
 
-    this._span = span;
+    this._span = span as SdkSpan;
     this.name = (this._span as unknown as SdkSpan).name;
     this.kind = (this._span as unknown as SdkSpan).kind;
     this.startTime = (this._span as unknown as SdkSpan).startTime;
@@ -52,8 +45,7 @@ export class LaminarSpan implements Span, ReadableSpan {
     this.droppedEventsCount = (this._span as unknown as SdkSpan).droppedEventsCount;
     this.droppedLinksCount = (this._span as unknown as SdkSpan).droppedLinksCount;
     this.makeOtelV2Compatible();
-
-    LaminarSpan._activeSpans.add(this.spanContext().spanId);
+    LaminarContextManager.addActiveSpan(this.spanContext().spanId);
   }
 
   name: string;
@@ -123,7 +115,7 @@ export class LaminarSpan implements Span, ReadableSpan {
     }
 
     // Remove from global registry on end
-    LaminarSpan._activeSpans.delete(this.spanContext().spanId);
+    LaminarContextManager.removeActiveSpan(this.spanContext().spanId);
 
     if (this._activated) {
       LaminarContextManager.popContext();
@@ -143,30 +135,20 @@ export class LaminarSpan implements Span, ReadableSpan {
     return this._span.recordException(exception, time);
   }
 
-  /**
- * Get an active span by its ID.
- *
- * @param spanId - The span ID to retrieve
- * @returns the LaminarSpan if found and active, undefined otherwise
- */
-  public static isSpanActive(spanId: string): boolean {
-    return LaminarSpan._activeSpans.has(spanId);
-  }
-
   // ================================
   // OTel V2 compatibility
   // ================================
 
   public makeOtelV2Compatible(): void {
-    makeSpanOtelV2Compatible(this._span as unknown as SdkSpan);
+    makeSpanOtelV2Compatible(this._span);
   }
 
   public get instrumentationScope(): InstrumentationScope {
-    return (this._span as unknown as SdkSpan).instrumentationLibrary;
+    return this._span.instrumentationLibrary;
   }
 
   public get parentSpanContext(): SpanContext | undefined {
-    const parentSpanId = (this._span as unknown as SdkSpan).parentSpanId;
+    const parentSpanId = this._span.parentSpanId;
     if (!parentSpanId) {
       return undefined;
     }

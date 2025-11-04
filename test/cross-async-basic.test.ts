@@ -88,5 +88,3 @@ void describe('Cross-Async Span Management - Basic Tests', () => {
       assert.notStrictEqual(spanAResult!.spanContext().traceId, spanBResult!.spanContext().traceId);
     });
 });
-
-
