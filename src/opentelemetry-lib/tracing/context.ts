@@ -1,8 +1,6 @@
 import { Context, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 import { AsyncLocalStorage } from "async_hooks";
 
-import { LaminarSpan } from "./span";
-
 export class LaminarContextManager {
   private static _asyncLocalStorage = new AsyncLocalStorage<Context[]>();
   // Static registry for cross-async span management
