@@ -143,7 +143,12 @@ async function cli() {
         logger.info(`Running ${evalFiles.length} evaluation files.`);
       }
 
-      const scores: { file: string, scores: Record<string, number>, url: string, evaluationId: string }[] = [];
+      const scores: {
+        file: string,
+        scores: Record<string, number>,
+        url: string,
+        evaluationId: string,
+      }[] = [];
 
       for (const file of evalFiles) {
         logger.info(`Loading ${file}...`);
