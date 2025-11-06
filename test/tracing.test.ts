@@ -254,7 +254,7 @@ void describe("tracing", () => {
   });
 
   void it("sets the user id in observe", () => {
-    const fn = async (a: number, b: number) => a + b;
+    const fn = (a: number, b: number) => a + b;
     const result = observe({ name: "test", userId: "123" }, fn, 1, 2);
 
     assert.strictEqual(result, 3);

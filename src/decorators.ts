@@ -152,7 +152,7 @@ export function withTracingLevel<A extends unknown[], F extends (...args: A) => 
 }
 
 const buildAssociationProperties = (options: Partial<ObserveOptions>):
-  Record<string, AttributeValue> => {
+Record<string, AttributeValue> => {
   const associationProperties: Record<string, AttributeValue> = {};
   const parentSpanContext = options.parentSpanContext;
   const globalMetadata = LaminarContextManager.getGlobalMetadata();

@@ -754,7 +754,7 @@ export class Laminar {
    *
    * See {@link startSpan} docs for a usage example
    */
-  public static withSpan<T>(span: Span, fn: () => T, endOnExit?: boolean): T | Promise<T> {
+  public static withSpan<T>(span: Span, fn: () => T, endOnExit?: boolean): T {
     const ctx = LaminarContextManager.getContext();
     const laminarSpan = new LaminarSpan(span);
     const ctxWithAssociationProperties = LaminarContextManager.setAssociationProperties(

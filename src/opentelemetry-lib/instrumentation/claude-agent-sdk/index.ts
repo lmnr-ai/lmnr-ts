@@ -56,7 +56,7 @@ export function instrumentClaudeAgentQuery(
         // Publish span context
         const proxyBaseUrl = getProxyBaseUrl();
         if (proxyBaseUrl) {
-          await Laminar.withSpan(span, () => {
+          Laminar.withSpan(span, () => {
             setTraceToProxy();
           });
         } else {
@@ -72,7 +72,7 @@ export function instrumentClaudeAgentQuery(
           yield message;
         }
       } catch (error) {
-        await Laminar.withSpan(span, () => {
+        Laminar.withSpan(span, () => {
           span.recordException(error as Error);
         });
         throw error;
