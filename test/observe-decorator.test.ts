@@ -39,7 +39,8 @@ void describe("observeExperimentalDecorator", () => {
       }
     }, {
       name: "Error",
-      message: "observeExperimentalDecorator can only be applied to methods. Applied to: testProperty",
+      message: "observeExperimentalDecorator can only be applied to methods. " +
+        "Applied to: testProperty",
     });
   });
 
