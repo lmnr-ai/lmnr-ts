@@ -213,6 +213,14 @@ interface EvaluationConstructorProps<D, T, O> {
   config?: EvaluatorConfig;
 }
 
+interface EvaluationRunResult {
+  averageScores: Record<string, number>;
+  projectId: string;
+  evaluationId: string;
+  url: string;
+  errorMessage?: string;
+}
+
 /**
  * Reports the whole progress to the console.
  */
@@ -222,7 +230,7 @@ class EvaluationReporter {
     cliProgress.Presets.shades_classic,
   );
   private progressCounter: number = 0;
-  private baseUrl: string;
+  public baseUrl: string;
 
   constructor(
     baseUrl?: string,
@@ -253,12 +261,12 @@ class EvaluationReporter {
   }: { averageScores: Record<string, number>, projectId: string, evaluationId: string }) {
     this.cliProgress.stop();
     const url = getEvaluationUrl(projectId, evaluationId, this.baseUrl);
-    process.stdout.write(`\nCheck results at ${url}\n`);
+    process.stdout.write('\n');
     process.stdout.write('\nAverage scores:\n');
     for (const key in averageScores) {
-      process.stdout.write(`${key}: ${JSON.stringify(averageScores[key])}\n`);
+      process.stdout.write(`${key}: ${averageScores[key]}\n`);
     }
-    process.stdout.write('\n');
+    process.stdout.write(`\nCheck results at ${url}\n`);
   }
 }
 
@@ -365,7 +373,7 @@ export class Evaluation<D, T, O> {
     });
   }
 
-  public async run(): Promise<Record<string, number>> {
+  public async run(): Promise<EvaluationRunResult> {
     if (this.isFinished) {
       throw new Error('Evaluation is already finished');
     }
@@ -373,10 +381,17 @@ export class Evaluation<D, T, O> {
       this.data.setClient(this.client);
     }
 
-    this.progressReporter.start({ length: await this.getLength() });
     let resultDatapoints: EvaluationDatapoint<D, T, O>[];
     try {
       const evaluation = await this.client.evals.init(this.name, this.groupName, this.metadata);
+      const url = getEvaluationUrl(
+        evaluation.projectId,
+        evaluation.id,
+        this.progressReporter.baseUrl,
+      );
+      process.stdout.write(`\nCheck results at ${url}\n`);
+      this.progressReporter.start({ length: await this.getLength() });
+
       resultDatapoints = await this.evaluateInBatches(evaluation.id);
       const averageScores = getAverageScores(resultDatapoints);
       if (this.uploadPromises.length > 0) {
@@ -390,11 +405,22 @@ export class Evaluation<D, T, O> {
       this.isFinished = true;
 
       await Laminar.shutdown();
-      return averageScores;
+      return {
+        averageScores,
+        projectId: evaluation.projectId,
+        evaluationId: evaluation.id,
+        url,
+      };
     } catch (e) {
       this.progressReporter.stopWithError(e as Error);
       this.isFinished = true;
-      return {};
+      return {
+        averageScores: {},
+        projectId: '',
+        evaluationId: '',
+        url: '',
+        errorMessage: (e instanceof Error) ? e.message : String(e),
+      };
     }
   }
 
@@ -568,7 +594,7 @@ export class Evaluation<D, T, O> {
  */
 export async function evaluate<D, T, O>({
   data, executor, evaluators, groupName, name, metadata, config,
-}: EvaluationConstructorProps<D, T, O>): Promise<void> {
+}: EvaluationConstructorProps<D, T, O>): Promise<EvaluationRunResult | undefined> {
   const evaluation = new Evaluation<D, T, O>({
     data,
     executor,
@@ -583,6 +609,6 @@ export async function evaluate<D, T, O>({
     // concurrent writes to globalThis._evaluations
     globalThis._evaluations = [...(globalThis._evaluations ?? []), evaluation];
   } else {
-    await evaluation.run();
+    return await evaluation.run();
   }
 }

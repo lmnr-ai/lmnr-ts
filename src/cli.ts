@@ -143,7 +143,12 @@ async function cli() {
         logger.info(`Running ${evalFiles.length} evaluation files.`);
       }
 
-      const scores: { file: string, scores: Record<string, number> }[] = [];
+      const scores: {
+        file: string,
+        scores: Record<string, number>,
+        url: string,
+        evaluationId: string,
+      }[] = [];
 
       for (const file of evalFiles) {
         logger.info(`Loading ${file}...`);
@@ -197,8 +202,13 @@ async function cli() {
             continue;
           }
 
-          const evalScores = await evaluation.run();
-          scores.push({ file, scores: evalScores });
+          const evalResult = await evaluation.run();
+          scores.push({
+            file,
+            scores: evalResult?.averageScores ?? {},
+            url: evalResult?.url ?? '',
+            evaluationId: evalResult?.evaluationId ?? '',
+          });
         }
       }
 
