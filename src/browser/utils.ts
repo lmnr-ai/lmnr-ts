@@ -33,6 +33,14 @@ export const nameArgsOrCopy = (args: any[], name: string = "instruction") => {
 };
 
 
+export interface EventChunk {
+  batchId: string;
+  chunkIndex: number;
+  totalChunks: number;
+  data: string;
+  isFinal: boolean;
+}
+
 export const sendPageEvents = async (
   client: LaminarClient,
   page: PlaywrightPage | PuppeteerPage,
@@ -364,11 +372,16 @@ export const modelToProvider = (model: string): string | undefined => {
 };
 
 const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
-  const BATCH_TIMEOUT = 2000; // Flush events batch after 2 seconds
+  const BATCH_TIMEOUT = 2000; // Send events after 2 seconds
   const MAX_WORKER_PROMISES = 50; // Max concurrent worker promises
-  const HEARTBEAT_INTERVAL = 1000; // 1 second
+  const HEARTBEAT_INTERVAL = 2000;
+  const CHUNK_SIZE = 256 * 1024; // 256KB chunks
+  const CHUNK_SEND_DELAY = 100; // 100ms delay between chunks
 
   (window as any).lmnrRrwebEventsBatch = [];
+  (window as any).lmnrChunkQueue = [];
+  (window as any).lmnrChunkSequence = 0;
+  (window as any).lmnrCurrentBatchId = null;
 
   // Create a Web Worker for heavy JSON processing with chunked processing
   const createCompressionWorker = (): Worker => {
@@ -426,6 +439,26 @@ const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
   let compressionWorker: Worker | null = null;
   const workerPromises = new Map();
   let workerId = 0;
+  // null = unknown, true = supported, false = blocked by CSP
+  let workerSupported: boolean | null = null;
+
+  // Test if workers are supported (not blocked by CSP)
+  const testWorkerSupport = () => {
+    if (workerSupported !== null) {
+      return workerSupported;
+    }
+
+    try {
+      const testWorker = createCompressionWorker();
+      testWorker.terminate();
+      workerSupported = true;
+      return true;
+    } catch (error) {
+      console.warn('Web Workers blocked by CSP, will use main thread compression:', error);
+      workerSupported = false;
+      return false;
+    }
+  };
 
   // Cleanup function for worker
   const cleanupWorker = () => {
@@ -555,6 +588,10 @@ const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
   // Alternative: Use transferable objects for maximum efficiency
   const compressLargeObjectTransferable = async (data: unknown): Promise<Uint8Array> => {
     try {
+      if (!testWorkerSupport()) {
+        return compressSmallObject(data);
+      }
+
       // Clean up stale promises first
       cleanupStalePromises();
 
@@ -585,6 +622,7 @@ const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
           compressionWorker.onerror = (error) => {
             console.error('Compression worker error:', error);
             cleanupWorker();
+            compressSmallObject(data).then(resolve, reject);
           };
         }
 
@@ -619,44 +657,51 @@ const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
       return await compressLargeObjectTransferable(data);
     } catch (error) {
       console.warn('Transferable failed, falling back to string method:', error);
-      // Fallback to string method
-      const jsonString = await stringifyNonBlocking(data);
+      try {
+        // Fallback to string method
+        const jsonString = await stringifyNonBlocking(data);
 
-      return new Promise((resolve, reject) => {
-        if (!compressionWorker) {
-          compressionWorker = createCompressionWorker();
-          compressionWorker.onmessage = (e) => {
-            const { id, success, data: result, error } = e.data;
-            const promise = workerPromises.get(id);
-            if (promise) {
-              workerPromises.delete(id);
-              if (success) {
-                promise.resolve(result);
-              } else {
-                promise.reject(new Error(error));
+        return new Promise((resolve, reject) => {
+          if (!compressionWorker) {
+            compressionWorker = createCompressionWorker();
+            compressionWorker.onmessage = (e) => {
+              const { id, success, data: result, error } = e.data;
+              const promise = workerPromises.get(id);
+              if (promise) {
+                workerPromises.delete(id);
+                if (success) {
+                  promise.resolve(result);
+                } else {
+                  promise.reject(new Error(error));
+                }
               }
-            }
-          };
+            };
 
-          compressionWorker.onerror = (error) => {
-            console.error('Compression worker error:', error);
-            cleanupWorker();
-          };
-        }
-
-        const id = ++workerId;
-        workerPromises.set(id, { resolve, reject });
-
-        // Set timeout to prevent hanging promises
-        setTimeout(() => {
-          if (workerPromises.has(id)) {
-            workerPromises.delete(id);
-            reject(new Error('Compression timeout'));
+            compressionWorker.onerror = (error) => {
+              console.error('Compression worker error:', error);
+              cleanupWorker();
+            };
           }
-        }, 10000);
 
-        compressionWorker.postMessage({ jsonString, id });
-      });
+          const id = ++workerId;
+          workerPromises.set(id, { resolve, reject });
+
+          // Set timeout to prevent hanging promises
+          setTimeout(() => {
+            if (workerPromises.has(id)) {
+              workerPromises.delete(id);
+              reject(new Error('Compression timeout'));
+            }
+          }, 10000);
+
+          compressionWorker.postMessage({ jsonString, id });
+        });
+      } catch (workerError) {
+        logger.warn("Worker creation failed, falling back to main thread compression: " +
+          `${workerError instanceof Error ? workerError.message : String(workerError)}`);
+        // Final fallback: compress on main thread (may block UI but will work)
+        return await compressSmallObject(data);
+      }
     }
   };
 
@@ -666,7 +711,6 @@ const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
   const isLargeEvent = (type: number) => {
     const LARGE_EVENT_TYPES: number[] = [
       2, // FullSnapshot
-      3, // IncrementalSnapshot
     ];
 
     if (LARGE_EVENT_TYPES.includes(type)) {
@@ -676,20 +720,85 @@ const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
     return false;
   };
 
+  // Create chunks from a string with metadata
+  const createChunks = (str: string, batchId: string) => {
+    const chunks = [];
+    const totalChunks = Math.ceil(str.length / CHUNK_SIZE);
+
+    for (let i = 0; i < str.length; i += CHUNK_SIZE) {
+      const chunk = str.slice(i, i + CHUNK_SIZE);
+      chunks.push({
+        batchId: batchId,
+        chunkIndex: chunks.length,
+        totalChunks: totalChunks,
+        data: chunk,
+        isFinal: chunks.length === totalChunks - 1,
+      });
+    }
+
+    return chunks;
+  };
+
+  // Send chunks with flow control
+  const sendChunks = async (chunks: any[]) => {
+    if (typeof (window as any).lmnrSendEvents !== 'function') {
+      return;
+    }
+
+    (window as any).lmnrChunkQueue.push(...chunks);
+
+    // Process queue
+    while ((window as any).lmnrChunkQueue.length > 0) {
+      const chunk = (window as any).lmnrChunkQueue.shift();
+      try {
+        await (window as any).lmnrSendEvents(chunk);
+        // Small delay between chunks to avoid overwhelming CDP
+        await new Promise(resolve => setTimeout(resolve, CHUNK_SEND_DELAY));
+      } catch (error) {
+        console.error('Failed to send chunk:', error);
+        // On error, clear failed chunk batch from queue
+        (window as any).lmnrChunkQueue = (window as any).lmnrChunkQueue.filter(
+          (c: any) => c.batchId !== chunk.batchId,
+        );
+        break;
+      }
+    }
+  };
+
   const sendBatchIfReady = async () => {
-    // for some reason, the access with const like window[LMNR_SEND_EVENTS_FUNCTION_NAME]
-    // doesn't work, so we explicitly access the property.
-    if (
-      (window as any).lmnrRrwebEventsBatch.length > 0
-      && typeof (window as any).lmnrSendEvents === 'function'
-    ) {
+    if ((window as any).lmnrRrwebEventsBatch.length > 0
+      && typeof (window as any).lmnrSendEvents === 'function') {
       const events = (window as any).lmnrRrwebEventsBatch;
       (window as any).lmnrRrwebEventsBatch = [];
 
       try {
-        await (window as any).lmnrSendEvents(events);
+        // Generate unique batch ID
+        const batchId = `${Date.now()}_${(window as any).lmnrChunkSequence++}`;
+        (window as any).lmnrCurrentBatchId = batchId;
+
+        // Stringify the entire batch
+        const batchString = JSON.stringify(events);
+
+        // Check size and chunk if necessary
+        if (batchString.length <= CHUNK_SIZE) {
+          // Small enough to send as single chunk
+          const chunk = {
+            batchId: batchId,
+            chunkIndex: 0,
+            totalChunks: 1,
+            data: batchString,
+            isFinal: true,
+          };
+          await (window as any).lmnrSendEvents(chunk);
+        } else {
+          // Need to chunk
+          const chunks = createChunks(batchString, batchId);
+          await sendChunks(chunks);
+        }
       } catch (error) {
-        logger.error('Failed to send events:', error);
+        console.error('Failed to send events:', error);
+        // Clear batch to prevent memory buildup
+        (window as any).lmnrRrwebEventsBatch = [];
       }
     }
   };
@@ -704,39 +813,142 @@ const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
     return base64url.slice(base64url.indexOf(',') + 1);
   };
 
-  // it's fine to retrigger the interval even if the original function is async
-  // and still running.
-  // eslint-disable-next-line @typescript-eslint/no-misused-promises
-  setInterval(sendBatchIfReady, BATCH_TIMEOUT);
+  if (!(window as any).lmnrStartedRecordingEvents) {
+    // It's fine to retrigger the interval even if the original function
+    // is async and still running.
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+    setInterval(sendBatchIfReady, BATCH_TIMEOUT);
 
-  setInterval(() => {
-    (window as any).lmnrRrweb.record.addCustomEvent('heartbeat', {
-      title: document.title,
-      url: document.URL,
+    (window as any).lmnrRrweb.record({
+      async emit(event: any) {
+        try {
+          const isLarge = isLargeEvent(event.type);
+          const compressedResult = isLarge ?
+            await compressLargeObject(event.data) :
+            await compressSmallObject(event.data);
+
+          const base64Data = await bufferToBase64(compressedResult);
+          const eventToSend = {
+            ...event,
+            data: base64Data,
+          };
+          (window as any).lmnrRrwebEventsBatch.push(eventToSend);
+        } catch (error) {
+          console.warn('Failed to push event to batch', error);
+        }
+      },
+      recordCanvas: true,
+      collectFonts: true,
+      recordCrossOriginIframes: true,
+      maskInputOptions: {
+        password: true,
+        textarea: sessionRecordingOptions?.maskInputOptions?.textarea || false,
+        text: sessionRecordingOptions?.maskInputOptions?.text || false,
+        number: sessionRecordingOptions?.maskInputOptions?.number || false,
+        select: sessionRecordingOptions?.maskInputOptions?.select || false,
+        email: sessionRecordingOptions?.maskInputOptions?.email || false,
+        tel: sessionRecordingOptions?.maskInputOptions?.tel || false,
+      },
     });
-  }, HEARTBEAT_INTERVAL);
 
-  (window as any).lmnrRrweb.record({
-    async emit(event: any) {
-      try {
-        const isLarge = isLargeEvent(event.type);
-        const compressedResult = isLarge ?
-          await compressLargeObject(event.data) :
-          await compressSmallObject(event.data);
+    function heartbeat() {
+      // Add heartbeat events
+      setInterval(
+        () => {
+          (window as any).lmnrRrweb.record.addCustomEvent('heartbeat', {
+            title: document.title,
+            url: document.URL,
+          });
+        },
+        HEARTBEAT_INTERVAL,
+      );
+    }
 
-        const base64Data = await bufferToBase64(compressedResult);
-        const eventToSend = {
-          ...event,
-          data: base64Data,
-        };
-        (window as any).lmnrRrwebEventsBatch.push(eventToSend);
-      } catch (error) {
-        console.warn('Failed to push event to batch', error);
-      }
-    },
-    recordCanvas: true,
-    collectFonts: true,
-    recordCrossOriginIframes: true,
-    maskInputOptions: sessionRecordingOptions?.maskInputOptions,
-  });
+    heartbeat();
+    (window as any).lmnrStartedRecordingEvents = true;
+  }
 };
+
+// Buffer for storing incomplete chunk batches
+export interface ChunkBuffer {
+  chunks: Map<number, string>;
+  total: number;
+  timestamp: number;
+}
+
+const OLD_BUFFER_TIMEOUT = 60000; // 60 seconds in milliseconds
+
+export async function sendEvents(
+  chunk: EventChunk,
+  client: LaminarClient,
+  chunkBuffers: Map<string, ChunkBuffer>,
+  sessionId: StringUUID,
+  traceId: StringUUID,
+): Promise<void> {
+  try {
+    // Handle chunked data
+    const { batchId, chunkIndex, totalChunks, data } = chunk;
+
+    // Validate required fields
+    if (!sessionId || !traceId) {
+      logger.debug("Missing sessionId or traceId in chunk");
+      return;
+    }
+
+    // Initialize buffer for this batch if needed
+    if (!chunkBuffers.has(batchId)) {
+      chunkBuffers.set(batchId, {
+        chunks: new Map(),
+        total: totalChunks,
+        timestamp: Date.now(),
+      });
+    }
+
+    const buffer = chunkBuffers.get(batchId)!;
+
+    // Store chunk
+    buffer.chunks.set(chunkIndex, data);
+
+    // Check if we have all chunks
+    if (buffer.chunks.size === totalChunks) {
+      // Reassemble the full message
+      let fullData = "";
+      for (let i = 0; i < totalChunks; i++) {
+        fullData += buffer.chunks.get(i);
+      }
+
+      // Parse the JSON
+      const events = JSON.parse(fullData) as Record<string, any>[];
+
+      // Send to server
+      if (events && events.length > 0) {
+        // Fire and forget - don't await to avoid blocking
+        await client.browserEvents.send({ sessionId, traceId, events }).catch((error) => {
+          logger.debug("Failed to send events: " +
+            `${error instanceof Error ? error.message : String(error)}`);
+        });
+      }
+
+      // Clean up buffer
+      chunkBuffers.delete(batchId);
+    }
+
+    // Clean up old incomplete buffers
+    const currentTime = Date.now();
+    const toDelete: string[] = [];
+
+    for (const [bid, buffer] of chunkBuffers.entries()) {
+      if (currentTime - buffer.timestamp > OLD_BUFFER_TIMEOUT) {
+        toDelete.push(bid);
+      }
+    }
+
+    for (const bid of toDelete) {
+      logger.debug(`Cleaning up incomplete chunk buffer: ${bid}`);
+      chunkBuffers.delete(bid);
+    }
+  } catch (error) {
+    logger.debug("Could not send events: " +
+      `${error instanceof Error ? error.message : String(error)}`);
+  }
+}

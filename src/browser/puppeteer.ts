@@ -16,8 +16,11 @@ import { LaminarContextManager } from '../opentelemetry-lib/tracing/context';
 import { SessionRecordingOptions } from '../types';
 import { initializeLogger, newUUID, NIL_UUID, otelTraceIdToUUID, StringUUID } from '../utils';
 import {
+  ChunkBuffer,
+  EventChunk,
   injectSessionRecorder,
   LMNR_SEND_EVENTS_FUNCTION_NAME,
+  sendEvents,
   sendPageEvents,
   takeFullSnapshot,
 } from "./utils";
@@ -278,20 +281,11 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
 
     await injectSessionRecorder(page, this._sessionRecordingOptions);
 
+    const chunkBuffers = new Map<string, ChunkBuffer>();
+
     try {
-      await page.exposeFunction(LMNR_SEND_EVENTS_FUNCTION_NAME, async (events: any[]) => {
-        try {
-          if (events != null && events.length > 0) {
-            await this._client.browserEvents.send({
-              sessionId,
-              traceId,
-              events,
-            });
-          }
-        } catch (error) {
-          logger.debug("Could not send events: " +
-            `${error instanceof Error ? error.message : String(error)}`);
-        }
+      await page.exposeFunction(LMNR_SEND_EVENTS_FUNCTION_NAME, async (chunk: EventChunk) => {
+        await sendEvents(chunk, this._client, chunkBuffers, sessionId, traceId);
       });
     } catch (error) {
       logger.debug("Could not expose function " + LMNR_SEND_EVENTS_FUNCTION_NAME + ": " +
