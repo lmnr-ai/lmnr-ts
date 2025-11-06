@@ -19,6 +19,7 @@ import { PlaywrightInstrumentation, StagehandInstrumentation } from "../../brows
 import { PuppeteerInstrumentation } from "../../browser/puppeteer";
 import { LaminarClient } from "../../client";
 import { SessionRecordingOptions } from "../../types";
+import { KernelInstrumentation } from "../instrumentation/kernel";
 import { InitializeOptions } from "../interfaces";
 
 /**
@@ -145,6 +146,8 @@ const initInstrumentations = (
   instrumentations.push(new StagehandInstrumentation(playwrightInstrumentation));
 
   instrumentations.push(new PuppeteerInstrumentation(client, sessionRecordingOptions));
+
+  instrumentations.push(new KernelInstrumentation());
 
   return instrumentations;
 };
@@ -302,6 +305,12 @@ const manuallyInitInstrumentations = (
     const stagehandInstrumentation = new StagehandInstrumentation(playwrightInstrumentation);
     instrumentations.push(stagehandInstrumentation);
     stagehandInstrumentation.manuallyInstrument(instrumentModules.stagehand);
+  }
+
+  if (instrumentModules?.kernel) {
+    const kernelInstrumentation = new KernelInstrumentation();
+    instrumentations.push(kernelInstrumentation);
+    kernelInstrumentation.manuallyInstrument(instrumentModules.kernel);
   }
 
   return instrumentations;

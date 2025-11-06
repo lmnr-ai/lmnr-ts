@@ -292,6 +292,18 @@ export interface InitializeOptions {
     /**
      * @example
      * ```javascript
+     * import kernel from "@onkernel/sdk";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { kernel },
+     * });
+     * ```
+     */
+    kernel?: any,
+    /**
+     * @example
+     * ```javascript
      * import Stagehand from "@browserbasehq/stagehand";
      * import { OpenAI } from "openai";
      * import Laminar from "@lmnr-ai/lmnr";
