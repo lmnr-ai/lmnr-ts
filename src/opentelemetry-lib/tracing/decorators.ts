@@ -178,7 +178,6 @@ export function observeBase<
         }
 
         if (res instanceof Promise) {
-
           return res.then((resolvedRes) => {
             try {
               if (shouldSendTraces() && !ignoreOutput) {

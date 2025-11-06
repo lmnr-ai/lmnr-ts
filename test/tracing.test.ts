@@ -44,9 +44,9 @@ void describe("tracing", () => {
     context.disable();
   });
 
-  void it("observes a wrapped function", async () => {
+  void it("observes a wrapped function", () => {
     const fn = (a: number, b: number) => a + b;
-    const result = await observe({ name: "test" }, fn, 1, 2);
+    const result = observe({ name: "test" }, fn, 1, 2);
     assert.strictEqual(result, 3);
 
     const spans = exporter.getFinishedSpans();
@@ -123,9 +123,9 @@ void describe("tracing", () => {
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
   });
 
-  void it("sets span name to function name if not provided to observe", async () => {
+  void it("sets span name to function name if not provided to observe", () => {
     const fn = (a: number, b: number) => a + b;
-    const result = await observe({}, fn, 1, 2);
+    const result = observe({}, fn, 1, 2);
     assert.strictEqual(result, 3);
 
     const spans = exporter.getFinishedSpans();
@@ -137,9 +137,9 @@ void describe("tracing", () => {
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["fn"]);
   });
 
-  void it("sets span type to LLM when spanType is LLM in observe", async () => {
+  void it("sets span type to LLM when spanType is LLM in observe", () => {
     const fn = (a: number, b: number) => a + b;
-    const result = await observe({ name: "test", spanType: "LLM" }, fn, 1, 2);
+    const result = observe({ name: "test", spanType: "LLM" }, fn, 1, 2);
     assert.strictEqual(result, 3);
 
     const spans = exporter.getFinishedSpans();
@@ -167,9 +167,9 @@ void describe("tracing", () => {
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
   });
 
-  void it("sets the parent span context in observe", async () => {
+  void it("sets the parent span context in observe", () => {
     const fn = (a: number, b: number) => a + b;
-    const result = await observe(
+    const result = observe(
       {
         name: "test",
         parentSpanContext: {
@@ -182,7 +182,7 @@ void describe("tracing", () => {
       1, 2,
     );
 
-    const result2 = await observe(
+    const result2 = observe(
       {
         name: "test2",
       },
@@ -236,9 +236,9 @@ void describe("tracing", () => {
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
   });
 
-  void it("sets the session id in observe", async () => {
+  void it("sets the session id in observe", () => {
     const fn = (a: number, b: number) => a + b;
-    const result = await observe({ name: "test", sessionId: "123" }, fn, 1, 2);
+    const result = observe({ name: "test", sessionId: "123" }, fn, 1, 2);
 
     assert.strictEqual(result, 3);
     const spans = exporter.getFinishedSpans();
@@ -253,9 +253,9 @@ void describe("tracing", () => {
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
   });
 
-  void it("sets the user id in observe", async () => {
-    const fn = (a: number, b: number) => a + b;
-    const result = await observe({ name: "test", userId: "123" }, fn, 1, 2);
+  void it("sets the user id in observe", () => {
+    const fn = async (a: number, b: number) => a + b;
+    const result = observe({ name: "test", userId: "123" }, fn, 1, 2);
 
     assert.strictEqual(result, 3);
     const spans = exporter.getFinishedSpans();
@@ -270,9 +270,9 @@ void describe("tracing", () => {
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
   });
 
-  void it("sets the metadata in observe", async () => {
+  void it("sets the metadata in observe", () => {
     const fn = (a: number, b: number) => a + b;
-    const result = await observe({
+    const result = observe({
       name: "test",
       metadata: { key: "value", nested: { key2: "value2" } },
     }, fn, 1, 2);
@@ -294,9 +294,9 @@ void describe("tracing", () => {
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
   });
 
-  void it("sets the tags in observe", async () => {
+  void it("sets the tags in observe", () => {
     const fn = (a: number, b: number) => a + b;
-    const result = await observe({
+    const result = observe({
       name: "test",
       tags: ["tag1", "tag2"],
     }, fn, 1, 2);
@@ -320,9 +320,9 @@ void describe("tracing", () => {
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
   });
 
-  void it("removes duplicate tags in observe", async () => {
+  void it("removes duplicate tags in observe", () => {
     const fn = (a: number, b: number) => a + b;
-    const result = await observe({
+    const result = observe({
       name: "test",
       tags: ["tag1", "tag2", "tag1"],
     }, fn, 1, 2);
@@ -437,10 +437,10 @@ void describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
   });
 
-  void it("observes nested functions", async () => {
+  void it("observes nested functions", () => {
     const double = (a: number) => a * 2;
-    const fn = async (a: number, b: number) => a + await observe({ name: "double" }, double, b);
-    const result = await observe({ name: "test" }, fn, 1, 2);
+    const fn = (a: number, b: number) => a + observe({ name: "double" }, double, b);
+    const result = observe({ name: "test" }, fn, 1, 2);
 
     assert.strictEqual(result, 5);
 
@@ -463,14 +463,14 @@ void describe("tracing", () => {
     assert.strictEqual(doubleSpan?.attributes['lmnr.span.instrumentation_source'], "javascript");
   });
 
-  void it("sets the span path on manual spans within observe", async () => {
+  void it("sets the span path on manual spans within observe", () => {
     const double = (a: number, span: Span) =>
       Laminar.withSpan(span, () => a * 2, true);
     const fn = (a: number, b: number) => {
       const span = Laminar.startSpan({ name: "inner" });
-      return a + (double(b, span) as number);
+      return a + double(b, span);
     };
-    const result = await observe({ name: "test" }, fn, 1, 2);
+    const result = observe({ name: "test" }, fn, 1, 2);
 
     assert.strictEqual(result, 5);
 
@@ -482,14 +482,14 @@ void describe("tracing", () => {
     assert.deepEqual(innerSpan?.attributes['lmnr.span.path'], ["test", "inner"]);
   });
 
-  void it("sets the span path on observed spans within manual spans", async () => {
-    const double = async (a: number) =>
-      await observe({ name: "inner" }, (n) => n * 2, a);
-    const fn = async (a: number, b: number) => {
+  void it("sets the span path on observed spans within manual spans", () => {
+    const double = (a: number) =>
+      observe({ name: "inner" }, (n) => n * 2, a);
+    const fn = (a: number, b: number) => {
       const span = Laminar.startSpan({ name: "test" });
-      return a + (await Laminar.withSpan(span, () => double(b), true));
+      return a + Laminar.withSpan(span, () => double(b), true);
     };
-    const result = await fn(1, 2);
+    const result = fn(1, 2);
 
     assert.strictEqual(result, 5);
 
@@ -504,13 +504,13 @@ void describe("tracing", () => {
     assert.strictEqual(getParentSpanId(innerSpan), testSpan?.spanContext().spanId);
   });
 
-  void it("preserves span path when using serialized span context", async () => {
+  void it("preserves span path when using serialized span context", () => {
     function innerFunction(serializedContext: string) {
       return observe({ name: "inner", parentSpanContext: serializedContext }, () => "inner result");
     }
 
-    const result = await observe({ name: "outer" }, async () => {
-      const result = await observe({ name: "test" }, async () => {
+    const result = observe({ name: "outer" }, () => {
+      const result = observe({ name: "test" }, () => {
         const currentSpan = trace.getActiveSpan();
         if (!currentSpan) throw new Error("No active span");
 
@@ -519,7 +519,7 @@ void describe("tracing", () => {
 
         clearSpanProcessor();
 
-        return await innerFunction(serializedContext);
+        return innerFunction(serializedContext);
       });
       return result;
     });
@@ -552,15 +552,15 @@ void describe("tracing", () => {
     assert.deepEqual(innerSpan?.attributes['lmnr.span.ids_path'], expectedIdsPath);
   });
 
-  void it("preserves span path in serialized span context with Laminar.startSpan", async () => {
+  void it("preserves span path in serialized span context with Laminar.startSpan", () => {
     const innerFunction = (serializedContext: string) => {
       const span = Laminar.startSpan({ name: "inner", parentSpanContext: serializedContext });
       span.end();
       return "inner result";
     };
 
-    const result = await observe({ name: "outer" }, async () => {
-      const result = await observe({ name: "test" }, () => {
+    const result = observe({ name: "outer" }, () => {
+      const result = observe({ name: "test" }, () => {
         const currentSpan = trace.getActiveSpan();
         if (!currentSpan) throw new Error("No active span");
 
@@ -604,17 +604,17 @@ void describe("tracing", () => {
     assert.deepEqual(innerSpan?.attributes['lmnr.span.ids_path'], expectedIdsPath);
   });
 
-  void it("sets the tracing level attribute when withTracingLevel is used", async () => {
+  void it("sets the tracing level attribute when withTracingLevel is used", () => {
     const fn = (a: number, b: number) => a + b;
-    const result = await withTracingLevel(
+    const result = withTracingLevel(
       TracingLevel.META_ONLY,
-      async (a, b) => await observe({ name: "span_with_meta_only" }, fn, a, b),
+      (a, b) => observe({ name: "span_with_meta_only" }, fn, a, b),
       1, 2,
     );
 
-    const result2 = await withTracingLevel(
+    const result2 = withTracingLevel(
       TracingLevel.OFF,
-      async (a, b) => await observe({ name: "span_with_off" }, fn, a, b),
+      (a, b) => observe({ name: "span_with_off" }, fn, a, b),
       1, 2,
     );
 
@@ -637,7 +637,7 @@ void describe("tracing", () => {
     assert.strictEqual(spanWithOff?.attributes['lmnr.span.instrumentation_source'], "javascript");
   });
 
-  void it("sets the attributes with setSpanAttributes", async () => {
+  void it("sets the attributes with setSpanAttributes", () => {
     const fn = (a: number, b: number) => {
       Laminar.setSpanAttributes({
         [LaminarAttributes.PROVIDER]: "openai",
@@ -649,7 +649,7 @@ void describe("tracing", () => {
 
       return a + b;
     };
-    const result = await observe({ name: "test" }, fn, 1, 2);
+    const result = observe({ name: "test" }, fn, 1, 2);
 
     assert.strictEqual(result, 3);
 
@@ -667,12 +667,12 @@ void describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
   });
 
-  void it("processes exceptions in observe", async () => {
+  void it("processes exceptions in observe", () => {
     const fn = () => {
       throw new Error("test err");
     };
-    await assert.rejects(
-      async () => await observe({ name: "test" }, fn),
+    assert.throws(
+      () => observe({ name: "test" }, fn),
     );
 
     const spans = exporter.getFinishedSpans();
@@ -695,13 +695,47 @@ void describe("tracing", () => {
     );
   });
 
-  void it("processes exceptions in withSpan", async () => {
+  void it("processes exceptions in async observe", async () => {
+    const fn = async () => {
+      // add an await statement so eslint doesn't complain
+      await new Promise(resolve => setTimeout(resolve, 5));
+      throw new Error("test err");
+    };
+    await assert.rejects(
+      () => observe({ name: "test" }, fn),
+      (error: Error) => {
+        assert.strictEqual(error.message, "test err");
+        return true;
+      },
+    );
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+
+    const events = spans[0].events;
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].name, "exception");
+    assert.strictEqual(events[0].attributes?.['exception.type'], "Error");
+    assert.strictEqual(events[0].attributes?.['exception.message'], "test err");
+    assert.strictEqual(
+      events[0]
+        .attributes
+        ?.['exception.stacktrace']
+        ?.toString()
+        .startsWith('Error: test err\n    at'),
+      true,
+    );
+  });
+
+  void it("processes exceptions in withSpan", () => {
     const span = Laminar.startSpan({ name: "test" });
     const fn = () => {
       throw new Error("test error");
     };
-    await assert.rejects(
-      async () => await Laminar.withSpan(span, fn, true),
+    assert.throws(
+      () => Laminar.withSpan(span, fn, true),
     );
 
     const spans = exporter.getFinishedSpans();
@@ -723,12 +757,46 @@ void describe("tracing", () => {
     );
   });
 
-  void it("sets the session id on the current span when setTraceSessionId is used", async () => {
+  void it("processes exceptions in async withSpan", async () => {
+    const span = Laminar.startSpan({ name: "test" });
+    const fn = async () => {
+      // add an await statement so eslint doesn't complain
+      await new Promise(resolve => setTimeout(resolve, 5));
+      throw new Error("test error");
+    };
+    await assert.rejects(
+      () => Laminar.withSpan(span, fn, true),
+      (error: Error) => {
+        assert.strictEqual(error.message, "test error");
+        return true;
+      },
+    );
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+
+    const events = spans[0].events;
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].name, "exception");
+    assert.strictEqual(events[0].attributes?.['exception.type'], "Error");
+    assert.strictEqual(events[0].attributes?.['exception.message'], "test error");
+    assert.strictEqual(
+      events[0]
+        .attributes
+        ?.['exception.stacktrace']
+        ?.toString()
+        .startsWith('Error: test error\n    at'),
+      true,
+    );
+  });
+
+  void it("sets the session id on the current span when setTraceSessionId is used", () => {
     const fn = (a: number, b: number) => {
       Laminar.setTraceSessionId("123");
       return a + b;
     };
-    const result = await observe({ name: "test" }, fn, 1, 2);
+    const result = observe({ name: "test" }, fn, 1, 2);
 
     assert.strictEqual(result, 3);
 
@@ -740,12 +808,12 @@ void describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
   });
 
-  void it("sets the user id on the current span when setTraceUserId is used", async () => {
+  void it("sets the user id on the current span when setTraceUserId is used", () => {
     const fn = (a: number, b: number) => {
       Laminar.setTraceUserId("123");
       return a + b;
     };
-    const result = await observe({ name: "test" }, fn, 1, 2);
+    const result = observe({ name: "test" }, fn, 1, 2);
 
     assert.strictEqual(result, 3);
 
@@ -757,7 +825,7 @@ void describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
   });
 
-  void it("sets metadata on the current span when setTraceMetadata is used", async () => {
+  void it("sets metadata on the current span when setTraceMetadata is used", () => {
     const fn = (a: number, b: number) => {
       Laminar.setTraceMetadata({
         k1: "v1", k2: {
@@ -766,7 +834,7 @@ void describe("tracing", () => {
       });
       return a + b;
     };
-    const result = await observe({ name: "test" }, fn, 1, 2);
+    const result = observe({ name: "test" }, fn, 1, 2);
 
     assert.strictEqual(result, 3);
 
@@ -782,12 +850,12 @@ void describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
   });
 
-  void it("sets tags on the current span when setSpanTags is used", async () => {
+  void it("sets tags on the current span when setSpanTags is used", () => {
     const fn = (a: number, b: number) => {
       Laminar.setSpanTags(["tag1", "tag2"]);
       return a + b;
     };
-    const result = await observe({ name: "test" }, fn, 1, 2);
+    const result = observe({ name: "test" }, fn, 1, 2);
 
     assert.strictEqual(result, 3);
 
@@ -801,12 +869,12 @@ void describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
   });
 
-  void it("deduplicates tags on the current span when setSpanTags is used", async () => {
+  void it("deduplicates tags on the current span when setSpanTags is used", () => {
     const fn = (a: number, b: number) => {
       Laminar.setSpanTags(["tag1", "tag2", "tag1"]);
       return a + b;
     };
-    const result = await observe({ name: "test" }, fn, 1, 2);
+    const result = observe({ name: "test" }, fn, 1, 2);
 
     assert.strictEqual(result, 3);
 
@@ -821,12 +889,12 @@ void describe("tracing", () => {
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
   });
 
-  void it("does not override span type in nested observe", async () => {
+  void it("does not override span type in nested observe", () => {
     const fn = (a: number, b: number) => a + b;
 
-    await observe(
+    observe(
       { name: "evaluator", spanType: 'EVALUATOR' },
-      async () => await observe({ name: 'default' }, fn, 1, 2),
+      () => observe({ name: 'default' }, fn, 1, 2),
       1,
       2,
     );
@@ -861,9 +929,9 @@ void describe("tracing", () => {
     assert.deepStrictEqual(secondSpan.attributes["lmnr.span.path"], ["second"]);
   });
 
-  void it("doesn't nest spans in startSpan with observe", async () => {
+  void it("doesn't nest spans in startSpan with observe", () => {
     const testSpanManual = Laminar.startSpan({ name: "test" });
-    await observe({ name: "second" }, () => { });
+    observe({ name: "second" }, () => { });
     testSpanManual.end();
 
     const spans = exporter.getFinishedSpans();
@@ -1055,9 +1123,9 @@ void describe("tracing", () => {
     assert.deepStrictEqual(newTraceSpan.attributes['lmnr.span.path'], ["new-trace"]);
   });
 
-  void it("nests observed span in startActiveSpan", async () => {
+  void it("nests observed span in startActiveSpan", () => {
     const testSpanManual = Laminar.startActiveSpan({ name: "test" });
-    await observe({ name: "inner" }, () => { });
+    observe({ name: "inner" }, () => { });
     testSpanManual.end();
 
     const spans = exporter.getFinishedSpans();
@@ -1070,10 +1138,10 @@ void describe("tracing", () => {
     assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "inner"]);
   });
 
-  void it("nests multiple sequential spans in startActiveSpan with observe", async () => {
+  void it("nests multiple sequential spans in startActiveSpan with observe", () => {
     const testSpanManual = Laminar.startActiveSpan({ name: "test" });
-    await observe({ name: "inner" }, () => { });
-    await observe({ name: "inner2" }, () => { });
+    observe({ name: "inner" }, () => { });
+    observe({ name: "inner2" }, () => { });
     testSpanManual.end();
 
     const spans = exporter.getFinishedSpans();
@@ -1090,16 +1158,14 @@ void describe("tracing", () => {
     assert.deepStrictEqual(innerSpan2.attributes["lmnr.span.path"], ["test", "inner2"]);
   });
 
-  void it("is compatible with Laminar.withSpan", async () => {
+  void it("is compatible with Laminar.withSpan", () => {
     const testSpanManual = Laminar.startSpan({ name: "test" });
-    await Laminar.withSpan(testSpanManual, async () => {
-      await observe({ name: "other" }, () => {
-        return;
-      });
+    Laminar.withSpan(testSpanManual, () => {
+      observe({ name: "other" }, () => { });
     });
-    await Laminar.withSpan(testSpanManual, async () => {
-      await observe({ name: "middle" }, async () => {
-        await observe({ name: "inner" }, () => { });
+    Laminar.withSpan(testSpanManual, () => {
+      observe({ name: "middle" }, () => {
+        observe({ name: "inner" }, () => { });
       });
     });
     testSpanManual.end();

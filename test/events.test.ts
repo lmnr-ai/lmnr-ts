@@ -38,7 +38,7 @@ void describe("events", () => {
     context.disable();
   });
 
-  void it("sends basic events with custom attributes", async () => {
+  void it("sends basic events with custom attributes", () => {
     const fn = (a: number, b: number) => {
       Laminar.event({
         name: "test-event",
@@ -49,7 +49,7 @@ void describe("events", () => {
       });
       return a + b;
     };
-    const result = await observe({ name: "test" }, fn, 1, 2);
+    const result = observe({ name: "test" }, fn, 1, 2);
 
     assert.strictEqual(result, 3);
 
@@ -125,7 +125,7 @@ void describe("events", () => {
   });
 
   void it("doesn't create a span when Laminar.event is called inside of a span context",
-    async () => {
+    () => {
       const fn = (a: number, b: number) => {
         Laminar.event({
           name: "test-event-observe",
@@ -136,7 +136,7 @@ void describe("events", () => {
         });
         return a + b;
       };
-      const result = await observe({ name: "observe" }, fn, 1, 2);
+      const result = observe({ name: "observe" }, fn, 1, 2);
       const span = Laminar.startActiveSpan({ name: "startActiveSpan" });
       Laminar.event({
         name: "test-event-startActiveSpan",
