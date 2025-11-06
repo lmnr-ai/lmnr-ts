@@ -145,10 +145,37 @@ void describe("observeExperimentalDecorator", () => {
     assert.deepStrictEqual(attrs["lmnr.association.properties.tags"], ["math", "sum"]);
   });
 
-  void it("handles exceptions in decorated methods", async () => {
+  void it("handles exceptions in decorated methods", () => {
     class TestService {
       @observeExperimentalDecorator({ name: "errorMethod" })
       public errorMethod(): never {
+        throw new Error("Test error");
+      }
+    }
+
+    const service = new TestService();
+
+    assert.throws(
+      () => service.errorMethod(),
+      (error: Error) => {
+        assert.strictEqual(error.message, "Test error");
+        return true;
+      },
+    );
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "errorMethod");
+    assert.strictEqual(spans[0].events.length, 1);
+    assert.strictEqual(spans[0].events[0].name, "exception");
+  });
+
+  void it("handles exceptions in decorated async methods", async () => {
+    class TestService {
+      @observeExperimentalDecorator({ name: "errorMethod" })
+      public async errorMethod(): Promise<never> {
+        // add an await statement so eslint doesn't complain
+        await new Promise(resolve => setTimeout(resolve, 5));
         throw new Error("Test error");
       }
     }

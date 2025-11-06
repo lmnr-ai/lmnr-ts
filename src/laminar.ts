@@ -768,11 +768,14 @@ export class Laminar {
         try {
           const result = fn();
           if (result instanceof Promise) {
-            return result.finally(() => {
+            return result.catch((err) => {
+              span.recordException(err as Error);
+              throw err;
+            }).finally(() => {
               if (endOnExit !== undefined && endOnExit) {
                 span.end();
               }
-            });
+            }) as T;
           }
           if (endOnExit !== undefined && endOnExit) {
             span.end();

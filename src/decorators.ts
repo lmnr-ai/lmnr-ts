@@ -374,11 +374,10 @@ export function observeExperimentalDecorator(
     descriptor: PropertyDescriptor,
   ) {
     if (!descriptor || typeof descriptor.value !== 'function') {
-      throw new
-        Error(
-          "observeExperimentalDecorator can only be applied to methods. " +
-          `Applied to: ${String(propertyKey)}`,
-        );
+      throw new Error(
+        "observeExperimentalDecorator can only be applied to methods. " +
+        `Applied to: ${String(propertyKey)}`,
+      );
     }
 
     const originalMethod = descriptor.value;
