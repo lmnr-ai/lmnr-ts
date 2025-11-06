@@ -152,7 +152,7 @@ export function withTracingLevel<A extends unknown[], F extends (...args: A) => 
 }
 
 const buildAssociationProperties = (options: Partial<ObserveOptions>):
-Record<string, AttributeValue> => {
+  Record<string, AttributeValue> => {
   const associationProperties: Record<string, AttributeValue> = {};
   const parentSpanContext = options.parentSpanContext;
   const globalMetadata = LaminarContextManager.getGlobalMetadata();
@@ -234,6 +234,12 @@ Record<string, AttributeValue> => {
 
 /**
  * Decorator that wraps a method to automatically observe it with Laminar tracing.
+ * This decorator uses the TypeScript 5.0+ standard decorator syntax.
+ *
+ * **Important**: Use this decorator only if your `tsconfig.json` does NOT have
+ * `experimentalDecorators: true`. If you're using experimental decorators, use
+ * {@link observeExperimentalDecorator} instead.
+ *
  * This decorator can be used on class methods to automatically create spans.
  *
  * @param config - Configuration for the observe decorator, can be static or a function
@@ -241,6 +247,13 @@ Record<string, AttributeValue> => {
  *
  * @example
  * ```typescript
+ * // In your tsconfig.json, ensure experimentalDecorators is NOT enabled:
+ * // {
+ * //   "compilerOptions": {
+ * //     "experimentalDecorators": false  // or omit this line
+ * //   }
+ * // }
+ *
  * import { observeDecorator } from '@lmnr-ai/lmnr';
  *
  * class MyService {
@@ -260,7 +273,96 @@ Record<string, AttributeValue> => {
  * }
  * ```
  */
-export function observeDecorator(
+export function observeDecorator<This, Args extends unknown[], Return>(
+  config:
+    | Partial<ObserveOptions>
+    | ((thisArg: This, ...funcArgs: Args) => Partial<ObserveOptions>),
+) {
+  return function (
+    originalMethod: (this: This, ...args: Args) => Return,
+    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Return>,
+  ) {
+    if (context.kind !== 'method') {
+      throw new Error(
+        `observeDecorator can only be applied to methods. Applied to: ${String(context.name)}`,
+      );
+    }
+
+    const methodName = String(context.name);
+
+    return function (this: This, ...args: Args): Return {
+      let actualConfig: Partial<ObserveOptions>;
+
+      if (typeof config === "function") {
+        actualConfig = config(this, ...args);
+      } else {
+        actualConfig = config;
+      }
+
+      const observeName = actualConfig.name ?? methodName;
+
+      return observeBase(
+        {
+          name: observeName,
+          associationProperties: buildAssociationProperties(actualConfig),
+          input: actualConfig.input,
+          ignoreInput: actualConfig.ignoreInput,
+          ignoreOutput: actualConfig.ignoreOutput,
+          parentSpanContext: actualConfig.parentSpanContext,
+        },
+        originalMethod,
+        this,
+        ...args,
+      );
+    };
+  };
+}
+
+/**
+ * Decorator that wraps a method to automatically observe it with Laminar tracing.
+ * This decorator uses the legacy experimental decorator syntax (requires `--experimentalDecorators` flag).
+ *
+ * **Important**: Use this decorator only if your `tsconfig.json` has
+ * `experimentalDecorators: true` in the `compilerOptions` section
+ * (or if you compile with the `--experimentalDecorators` flag).
+ * For TypeScript 5.0+ projects without experimental decorators, use
+ * {@link observeDecorator} instead.
+ *
+ * This decorator can be used on class methods to automatically create spans.
+ *
+ * Use this only if you need the legacy experimental decorator syntax.
+ * @param config - Configuration for the observe decorator, can be static or a function
+ * @returns A method decorator
+ *
+ * @example
+ * ```typescript
+ * // In your tsconfig.json, ensure experimentalDecorators is enabled:
+ * // {
+ * //   "compilerOptions": {
+ * //     "experimentalDecorators": true
+ * //   }
+ * // }
+ *
+ * import { observeExperimentalDecorator } from '@lmnr-ai/lmnr';
+ *
+ * class MyService {
+ *   @observeExperimentalDecorator({ name: 'processData', spanType: 'DEFAULT' })
+ *   async processData(input: string) {
+ *     // Your code here
+ *     return `processed: ${input}`;
+ *   }
+ *
+ *   @observeExperimentalDecorator((thisArg, ...args) => ({
+ *     name: `dynamicMethod_${args[0]}`,
+ *     sessionId: thisArg.sessionId
+ *   }))
+ *   async dynamicMethod(id: string) {
+ *     // Your code here
+ *   }
+ * }
+ * ```
+ */
+export function observeExperimentalDecorator(
   config:
     | Partial<ObserveOptions>
     | ((thisArg: unknown, ...funcArgs: unknown[]) => Partial<ObserveOptions>),
@@ -271,9 +373,11 @@ export function observeDecorator(
     descriptor: PropertyDescriptor,
   ) {
     if (!descriptor || typeof descriptor.value !== 'function') {
-      throw new Error(
-        `observeDecorator can only be applied to methods. Applied to: ${String(propertyKey)}`,
-      );
+      throw new
+        Error(
+          "observeExperimentalDecorator can only be applied to methods. " +
+          `Applied to: ${String(propertyKey)}`,
+        );
     }
 
     const originalMethod = descriptor.value;

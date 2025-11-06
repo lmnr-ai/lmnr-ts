@@ -1,6 +1,11 @@
 export { LaminarClient } from './client';
 export { EvaluationDataset as Dataset, LaminarDataset } from './datasets';
-export { observe, observeDecorator, withTracingLevel } from './decorators';
+export {
+  observe,
+  observeDecorator,
+  observeExperimentalDecorator,
+  withTracingLevel,
+} from './decorators';
 export {
   type Datapoint,
   evaluate,
