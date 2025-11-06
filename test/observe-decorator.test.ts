@@ -4,10 +4,10 @@ import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { context, trace } from "@opentelemetry/api";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
-import { Laminar, observeDecorator } from "../src";
+import { Laminar, observeExperimentalDecorator } from "../src";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 
-void describe("observeDecorator", () => {
+void describe("observeExperimentalDecorator", () => {
   const exporter = new InMemorySpanExporter();
 
   void beforeEach(() => {
@@ -34,18 +34,18 @@ void describe("observeDecorator", () => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       class TestClass {
         // @ts-expect-error - Testing runtime error for invalid decorator usage
-        @observeDecorator({ name: "testProperty" })
+        @observeExperimentalDecorator({ name: "testProperty" })
         public testProperty: string = "test value";
       }
     }, {
       name: "Error",
-      message: "observeDecorator can only be applied to methods. Applied to: testProperty",
+      message: "observeExperimentalDecorator can only be applied to methods. Applied to: testProperty",
     });
   });
 
   void it("decorates async methods with basic configuration", async () => {
     class TestService {
-      @observeDecorator({ name: "asyncMethod", spanType: "LLM" })
+      @observeExperimentalDecorator({ name: "asyncMethod", spanType: "LLM" })
       public async asyncMethod(input: number): Promise<number> {
         await new Promise(resolve => setTimeout(resolve, 10));
         return input * 2;
@@ -67,7 +67,7 @@ void describe("observeDecorator", () => {
 
   void it("uses method name as default span name", async () => {
     class TestService {
-      @observeDecorator({})
+      @observeExperimentalDecorator({})
       public async methodWithoutName(): Promise<string> {
         return Promise.resolve("result");
       }
@@ -85,7 +85,7 @@ void describe("observeDecorator", () => {
 
   void it("sets metadata, tags, and session info", async () => {
     class TestService {
-      @observeDecorator({
+      @observeExperimentalDecorator({
         name: "metadataMethod",
         metadata: { version: "1.0", model: "gpt-4" },
         tags: ["test", "metadata"],
@@ -114,7 +114,7 @@ void describe("observeDecorator", () => {
 
   void it("supports dynamic configuration function", async () => {
     class TestService {
-      @observeDecorator((_thisArg, operation, ...values) => ({
+      @observeExperimentalDecorator((_thisArg, operation, ...values) => ({
         name: `math_${operation as string}`,
         spanType: "TOOL" as const,
         metadata: {
@@ -146,7 +146,7 @@ void describe("observeDecorator", () => {
 
   void it("handles exceptions in decorated methods", async () => {
     class TestService {
-      @observeDecorator({ name: "errorMethod" })
+      @observeExperimentalDecorator({ name: "errorMethod" })
       public errorMethod(): never {
         throw new Error("Test error");
       }
@@ -171,7 +171,7 @@ void describe("observeDecorator", () => {
 
   void it("ignores input and output when configured", async () => {
     class TestService {
-      @observeDecorator({
+      @observeExperimentalDecorator({
         name: "ignoreMethod",
         ignoreInput: true,
         ignoreOutput: true,
