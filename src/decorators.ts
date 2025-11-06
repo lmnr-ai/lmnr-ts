@@ -62,7 +62,7 @@ interface ObserveOptions {
  *    // Your code here
  * });
  */
-export async function observe<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
+export function observe<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
   {
     name,
     sessionId,
@@ -75,7 +75,7 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     parentSpanContext,
     metadata,
     tags,
-  }: ObserveOptions, fn: F, ...args: A): Promise<ReturnType<F>> {
+  }: ObserveOptions, fn: F, ...args: A): ReturnType<F> {
   if (fn === undefined || typeof fn !== "function") {
     throw new Error("Invalid `observe` usage. Second argument `fn` must be a function.");
   }
@@ -90,8 +90,8 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     parentSpanContext,
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-  return await observeBase<A, F>({
+
+  return observeBase<A, F>({
     name: name ?? fn.name,
     associationProperties,
     input,
@@ -320,7 +320,8 @@ export function observeDecorator<This, Args extends unknown[], Return>(
 
 /**
  * Decorator that wraps a method to automatically observe it with Laminar tracing.
- * This decorator uses the legacy experimental decorator syntax (requires `--experimentalDecorators` flag).
+ * This decorator uses the legacy experimental decorator syntax
+ * (requires `--experimentalDecorators` flag).
  *
  * **Important**: Use this decorator only if your `tsconfig.json` has
  * `experimentalDecorators: true` in the `compilerOptions` section
@@ -393,6 +394,7 @@ export function observeExperimentalDecorator(
 
       const observeName = actualConfig.name ?? originalMethod.name;
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return observeBase(
         {
           name: observeName,
