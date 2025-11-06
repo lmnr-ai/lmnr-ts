@@ -197,8 +197,8 @@ async function cli() {
             continue;
           }
 
-          const evalScores = await evaluation.run();
-          scores.push({ file, scores: evalScores });
+          const evalResult = await evaluation.run();
+          scores.push({ file, scores: evalResult?.averageScores ?? {} });
         }
       }
 
