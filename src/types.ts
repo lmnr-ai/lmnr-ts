@@ -24,6 +24,22 @@ export type InitEvaluationResponse = {
   projectId: StringUUID,
 };
 
+export type Dataset = {
+  id: StringUUID;
+  name: string;
+  createdAt: string;
+};
+
+export type PushDatapointsResponse = {
+  datasetId: StringUUID;
+};
+
+export type EvaluationDatapointDatasetLink = {
+  datasetId: StringUUID;
+  datapointId: StringUUID;
+  createdAt: string;
+};
+
 export type EvaluationDatapoint<D, T, O> = {
   id: StringUUID;
   data: D;
@@ -34,6 +50,7 @@ export type EvaluationDatapoint<D, T, O> = {
   traceId: string;
   index: number;
   executorSpanId?: string;
+  datasetLink?: EvaluationDatapointDatasetLink;
 };
 
 export type GetDatapointsResponse<D, T> = {

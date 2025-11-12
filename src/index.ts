@@ -15,11 +15,14 @@ export { getTracer, getTracerProvider } from './opentelemetry-lib/tracing/index'
 export { initializeLaminarInstrumentations } from './opentelemetry-lib/tracing/instrumentations';
 export {
   ChatMessage,
+  Dataset as DatasetType,
   EvaluationDatapoint,
+  EvaluationDatapointDatasetLink,
   Event,
   LaminarSpanContext,
   MaskInputOptions,
   NodeInput,
+  PushDatapointsResponse,
   SessionRecordingOptions,
   TracingLevel,
 } from './types';

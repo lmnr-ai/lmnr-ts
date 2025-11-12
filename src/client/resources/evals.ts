@@ -206,6 +206,7 @@ export class EvalsResource extends BaseResource {
   /**
    * Get evaluation datapoints.
    *
+   * @deprecated Use `client.datasets.pull()` instead.
    * @param {Object} options - Get datapoints options
    * @param {string} options.datasetName - Name of the dataset
    * @param {number} options.offset - Offset at which to start the query
@@ -221,6 +222,10 @@ export class EvalsResource extends BaseResource {
     offset: number;
     limit: number;
   }): Promise<GetDatapointsResponse<D, T>> {
+    logger.warn(
+      'evals.getDatapoints() is deprecated. Use client.datasets.pull() instead.',
+    );
+
     const params = new URLSearchParams({
       name: datasetName,
       offset: offset.toString(),

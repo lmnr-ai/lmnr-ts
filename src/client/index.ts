@@ -1,5 +1,8 @@
+import { config } from "dotenv";
+
 import { AgentResource } from "./resources/agent";
 import { BrowserEventsResource } from "./resources/browser-events";
+import { DatasetsResource } from "./resources/datasets";
 import { EvalsResource } from "./resources/evals";
 import { EvaluatorsResource } from "./resources/evaluators";
 import { TagsResource } from "./resources/tags";
@@ -9,6 +12,7 @@ export class LaminarClient {
   private projectApiKey: string;
   private _agent: AgentResource;
   private _browserEvents: BrowserEventsResource;
+  private _datasets: DatasetsResource;
   private _evals: EvalsResource;
   private _evaluators: EvaluatorsResource;
   private _tags: TagsResource;
@@ -22,6 +26,9 @@ export class LaminarClient {
     projectApiKey?: string,
     port?: number,
   } = {}) {
+    config({
+      quiet: true,
+    });
     this.projectApiKey = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY!;
     const httpPort = port ?? (
       baseUrl?.match(/:\d{1,5}$/g)
@@ -30,6 +37,7 @@ export class LaminarClient {
     this.baseUrl = `${baseUrl?.replace(/\/$/, '').replace(/:\d{1,5}$/g, '') ?? 'https://api.lmnr.ai'}:${httpPort}`;
     this._agent = new AgentResource(this.baseUrl, this.projectApiKey);
     this._browserEvents = new BrowserEventsResource(this.baseUrl, this.projectApiKey);
+    this._datasets = new DatasetsResource(this.baseUrl, this.projectApiKey);
     this._evals = new EvalsResource(this.baseUrl, this.projectApiKey);
     this._evaluators = new EvaluatorsResource(this.baseUrl, this.projectApiKey);
     this._tags = new TagsResource(this.baseUrl, this.projectApiKey);
@@ -41,6 +49,10 @@ export class LaminarClient {
 
   public get browserEvents() {
     return this._browserEvents;
+  }
+
+  public get datasets() {
+    return this._datasets;
   }
 
   public get evals() {
