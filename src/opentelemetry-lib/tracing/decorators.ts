@@ -29,9 +29,33 @@ export type DecoratorConfig = {
   parentSpanContext?: string | LaminarSpanContext;
 };
 
+// Overload for when thisArg is provided (method call)
+export function observeBase<
+  A extends unknown[],
+  This,
+  F extends (this: This, ...args: A) => ReturnType<F>,
+>(
+  config: DecoratorConfig,
+  fn: F,
+  thisArg: This,
+  ...args: A
+): ReturnType<F>;
+
+// Overload for when thisArg is not provided (standalone function)
 export function observeBase<
   A extends unknown[],
   F extends (...args: A) => ReturnType<F>,
+>(
+  config: DecoratorConfig,
+  fn: F,
+  thisArg: undefined,
+  ...args: A
+): ReturnType<F>;
+
+// Implementation signature (more permissive to handle both cases)
+export function observeBase<
+  A extends unknown[],
+  F extends (this: ThisParameterType<F>, ...args: A) => ReturnType<F>,
 >(
   {
     name,
@@ -46,7 +70,7 @@ export function observeBase<
   fn: F,
   thisArg?: ThisParameterType<F>,
   ...args: A
-) {
+): ReturnType<F> {
   let entityContext = LaminarContextManager.getContext();
 
   const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY);
@@ -102,7 +126,7 @@ export function observeBase<
         },
       },
       entityContext,
-      async (span: Span) => {
+      (span: Span) => {
         if (shouldSendTraces() && !ignoreInput) {
           try {
             const spanInput = inputParameters ?? args;
@@ -144,9 +168,9 @@ export function observeBase<
           }
         });
 
-        let res: unknown;
+        let res: ReturnType<F>;
         try {
-          res = fn.apply(thisArg, args);
+          res = fn.apply(thisArg as ThisParameterType<F>, args);
         } catch (error) {
           span.recordException(error as Error);
           span.end();
@@ -154,7 +178,6 @@ export function observeBase<
         }
 
         if (res instanceof Promise) {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
           return res.then((resolvedRes) => {
             try {
               if (shouldSendTraces() && !ignoreOutput) {
@@ -177,7 +200,7 @@ export function observeBase<
               span.recordException(error as Error);
               span.end();
               throw error;
-            });
+            }) as ReturnType<F>;
         }
         try {
           if (shouldSendTraces() && !ignoreOutput) {
