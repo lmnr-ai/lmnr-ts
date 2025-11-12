@@ -38,7 +38,10 @@ const pullAllData = async <D = any, T = any>(
 
     result.push(...data.items);
 
-    if (stopAt !== undefined && currentOffset + batchSize >= stopAt) {
+    // Stop if we received no items or fewer items than requested (end of data)
+    if (data.items.length === 0 || data.items.length < batchSize) {
+      hasMore = false;
+    } else if (stopAt !== undefined && currentOffset + batchSize >= stopAt) {
       hasMore = false;
     } else if (data.totalCount !== undefined && currentOffset + batchSize >= data.totalCount) {
       hasMore = false;
