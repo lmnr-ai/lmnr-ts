@@ -14,7 +14,7 @@
     "@lmnr-ai/lmnr": "file:../../dist",
     "@opentelemetry/api-logs": "^0.200.0",
     "@vercel/otel": "^1.13.0",
-    "ai": "^5.0.44",
+    "ai": "^5.0.92",
     "next": "^15.5.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
