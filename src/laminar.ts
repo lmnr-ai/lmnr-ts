@@ -682,6 +682,7 @@ export class Laminar {
     if (this.isInitialized) {
       logger.debug("Shutting down Laminar");
       await forceFlush();
+      this.isInitialized = false;
       // other shutdown should go here
     }
   }

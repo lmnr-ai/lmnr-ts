@@ -18,9 +18,10 @@ void describe("initialize", () => {
     delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
     delete process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS;
   });
-  void afterEach(() => {
+  void afterEach(async () => {
     process.env = originalEnv;
     _resetConfiguration();
+    await Laminar.shutdown();
   });
 
   void it("initializes", () => {
@@ -33,5 +34,6 @@ void describe("initialize", () => {
 
   void it("throws an error if projectApiKey is not provided", () => {
     process.env = originalEnv;
+    assert.throws(() => Laminar.initialize({}), Error);
   });
 });
