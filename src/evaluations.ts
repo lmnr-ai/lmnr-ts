@@ -150,6 +150,14 @@ export type Datapoint<D, T> = {
    * metadata to the evaluator function. Must be json serializable.
    */
   metadata?: Record<string, any>;
+  /**
+   * Optional ID of the datapoint (from dataset)
+   */
+  id?: StringUUID;
+  /**
+   * Optional creation timestamp (from dataset)
+   */
+  createdAt?: string;
 };
 
 /**
@@ -379,6 +387,25 @@ export class Evaluation<D, T, O> {
     }
     if (this.data instanceof LaminarDataset) {
       this.data.setClient(this.client);
+      // Fetch dataset ID if not already set
+      if (!this.data.id) {
+        try {
+          const datasets = await this.client.datasets.getDatasetByName(
+            (this.data as any).name,
+          );
+          if (datasets.length > 0) {
+            this.data.id = datasets[0].id;
+          } else {
+            logger.warn(`Dataset ${(this.data as any).name} not found`);
+          }
+        } catch (error) {
+          // Backward compatibility with old Laminar API (self-hosted)
+          logger.warn(
+            `Error getting dataset ${(this.data).name}: `
+            + `${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
     }
 
     let resultDatapoints: EvaluationDatapoint<D, T, O>[];
@@ -481,6 +508,18 @@ export class Evaluation<D, T, O> {
         index,
       } as EvaluationDatapoint<D, T, O>;
 
+      // Add dataset link if data is from LaminarDataset
+      if (
+        this.data instanceof LaminarDataset
+        && this.data.id && datapoint.id && datapoint.createdAt
+      ) {
+        partialDatapoint.datasetLink = {
+          datasetId: this.data.id,
+          datapointId: datapoint.id,
+          createdAt: datapoint.createdAt,
+        };
+      }
+
       // first create the datapoint in the database and await
       await this.client.evals.saveDatapoints({
         evalId,
@@ -557,6 +596,17 @@ export class Evaluation<D, T, O> {
         executorSpanId,
         index,
       } as EvaluationDatapoint<D, T, O>;
+
+      // Add dataset link if data is from LaminarDataset
+      if (this.data instanceof LaminarDataset
+        && this.data.id && datapoint.id && datapoint.createdAt
+      ) {
+        resultDatapoint.datasetLink = {
+          datasetId: this.data.id,
+          datapointId: datapoint.id,
+          createdAt: datapoint.createdAt,
+        };
+      }
 
       const uploadPromise = this.client.evals.saveDatapoints({
         evalId,
