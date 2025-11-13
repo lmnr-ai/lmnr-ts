@@ -86,9 +86,9 @@ void describe('OTEL environment variable utilities', () => {
       assert.strictEqual(hasOtelConfig(), true);
     });
 
-    void it('should return true when OTEL_HEADERS is set', () => {
+    void it('should return false when only OTEL_HEADERS is set', () => {
       process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS = 'Authorization=Bearer%20token';
-      assert.strictEqual(hasOtelConfig(), true);
+      assert.strictEqual(hasOtelConfig(), false);
     });
 
     void it('should return false when no OTEL config is set', () => {
@@ -106,9 +106,14 @@ void describe('OTEL environment variable utilities', () => {
       assert.doesNotThrow(() => validateTracingConfig());
     });
 
-    void it('should not throw when OTEL_HEADERS is set', () => {
+    void it('should throw when only OTEL_HEADERS is set', () => {
       process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS = 'Authorization=Bearer%20token';
-      assert.doesNotThrow(() => validateTracingConfig());
+      assert.throws(
+        () => validateTracingConfig(),
+        (error: Error) => error.message.includes(
+          'Please initialize the Laminar object with your project API key',
+        ),
+      );
     });
 
     void it('should throw when neither API key nor OTEL config is available', () => {
