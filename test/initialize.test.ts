@@ -2,7 +2,6 @@ import assert from "node:assert";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
 import { Laminar } from "../src/index";
-import { _resetConfiguration } from "../src/opentelemetry-lib/configuration";
 
 void describe("initialize", () => {
   const originalEnv = process.env;
@@ -20,7 +19,6 @@ void describe("initialize", () => {
   });
   void afterEach(async () => {
     process.env = originalEnv;
-    _resetConfiguration();
     await Laminar.shutdown();
   });
 

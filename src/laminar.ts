@@ -10,6 +10,7 @@ import {
 import { config } from 'dotenv';
 
 import { InitializeOptions, initializeTracing } from './opentelemetry-lib';
+import { _resetConfiguration } from './opentelemetry-lib/configuration';
 import { forceFlush, getTracer, patchModules } from './opentelemetry-lib/tracing/';
 import {
   ASSOCIATION_PROPERTIES,
@@ -682,8 +683,14 @@ export class Laminar {
     if (this.isInitialized) {
       logger.debug("Shutting down Laminar");
       await forceFlush();
+      // Unlike Python where asynchronous nature of `BatchSpanProcessor.forceFlush()`
+      // forces us to actually use `SpanProcessor.shutdown()` and make any
+      // further interactions with OTEL API impossible, here we call
+      // SpanProcessor.forceFlush() (and safely await it). Thus, users can
+      // call `shutdown()` and then `initialize()` again. This is why we
+      // reset the keys and configuration here.
       this.isInitialized = false;
-      // other shutdown should go here
+      _resetConfiguration();
     }
   }
 
