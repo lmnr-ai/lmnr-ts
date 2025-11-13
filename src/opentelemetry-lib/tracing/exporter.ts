@@ -47,7 +47,7 @@ export class LaminarSpanExporter implements SpanExporter {
 
     // Check for OTEL endpoint configuration
     const otelEndpoint = getOtelEnvVar('ENDPOINT');
-    if (otelEndpoint && !options.baseUrl) {
+    if (otelEndpoint && !url) {
       url = otelEndpoint;
 
       // Determine protocol from OTEL env vars
@@ -56,7 +56,7 @@ export class LaminarSpanExporter implements SpanExporter {
       forceHttp = otelProtocol === 'http/protobuf'
         || otelProtocol === 'http/json'
         || otelExporter === 'otlp_http';
-    } else if (otelEndpoint && options.baseUrl) {
+    } else if (otelEndpoint && url) {
       logger.warn(
         'OTEL_ENDPOINT is set, but Laminar base URL is also set. Ignoring OTEL_ENDPOINT.',
       );

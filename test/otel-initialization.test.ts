@@ -231,5 +231,17 @@ void describe('LaminarSpanExporter OTEL configuration', () => {
       'x-custom': 'value',
     });
   });
+
+  void it('should warn when both LMNR_BASE_URL and OTEL_ENDPOINT are set', async () => {
+    process.env.LMNR_BASE_URL = 'https://laminar.example.com';
+    process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = 'http://collector:4318';
+    process.env.LMNR_PROJECT_API_KEY = 'test-key';
+
+    const { LaminarSpanExporter } = await import('../src/opentelemetry-lib/tracing/exporter');
+
+    assert.doesNotThrow(() => {
+      new LaminarSpanExporter();
+    });
+  });
 });
 

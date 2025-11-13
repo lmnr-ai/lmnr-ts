@@ -31,7 +31,6 @@ void describe("initialize", () => {
   });
 
   void it("throws an error if projectApiKey is not provided", () => {
-    process.env = originalEnv;
     assert.throws(() => Laminar.initialize({}), Error);
   });
 });
