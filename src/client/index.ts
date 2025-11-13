@@ -34,7 +34,9 @@ export class LaminarClient {
       baseUrl?.match(/:\d{1,5}$/g)
         ? parseInt(baseUrl.match(/:\d{1,5}$/g)![0].slice(1))
         : 443);
-    this.baseUrl = `${baseUrl?.replace(/\/$/, '').replace(/:\d{1,5}$/g, '') ?? 'https://api.lmnr.ai'}:${httpPort}`;
+    const baseUrlNoPort = (baseUrl ?? process.env.LMNR_BASE_URL)
+      ?.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
+    this.baseUrl = `${baseUrlNoPort ?? 'https://api.lmnr.ai'}:${httpPort}`;
     this._agent = new AgentResource(this.baseUrl, this.projectApiKey);
     this._browserEvents = new BrowserEventsResource(this.baseUrl, this.projectApiKey);
     this._datasets = new DatasetsResource(this.baseUrl, this.projectApiKey);
