@@ -242,3 +242,79 @@ export const metadataToAttributes = (
     }
   }),
 );
+
+/**
+ * Get OTEL environment variable with priority order.
+ * Checks in order:
+ * 1. OTEL_EXPORTER_OTLP_TRACES_{varName}
+ * 2. OTEL_EXPORTER_OTLP_{varName}
+ * 3. OTEL_{varName}
+ *
+ * @param varName - The variable name (e.g., 'ENDPOINT', 'HEADERS', 'PROTOCOL')
+ * @returns The environment variable value or undefined if not found
+ */
+export const getOtelEnvVar = (varName: string): string | undefined => {
+  const candidates = [
+    `OTEL_EXPORTER_OTLP_TRACES_${varName}`,
+    `OTEL_EXPORTER_OTLP_${varName}`,
+    `OTEL_${varName}`,
+  ];
+
+  for (const candidate of candidates) {
+    const value = process?.env?.[candidate];
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+};
+
+/**
+ * Check if OTEL configuration is available.
+ * @returns true if OTEL endpoint is configured
+ */
+export const hasOtelConfig = (): boolean => !!getOtelEnvVar('ENDPOINT');
+
+/**
+ * Parse OTEL headers string into a record object.
+ * Format: key1=value1,key2=value2
+ * Values are URL-decoded.
+ *
+ * @param headersStr - Headers string in OTEL format
+ * @returns Parsed headers object
+ */
+export const parseOtelHeaders = (headersStr: string | undefined): Record<string, string> => {
+  if (!headersStr) {
+    return {};
+  }
+
+  const headers: Record<string, string> = {};
+  for (const pair of headersStr.split(',')) {
+    const equalIndex = pair.indexOf('=');
+    if (equalIndex !== -1) {
+      // Manually split instead of .split('=', 2) because
+      // the latter only returns the first 2 elements of the array after the split
+      const key = pair.substring(0, equalIndex).trim();
+      const value = pair.substring(equalIndex + 1).trim();
+      headers[key] = decodeURIComponent(value);
+    }
+  }
+  return headers;
+};
+
+/**
+ * Validate that either Laminar API key or OTEL configuration is present.
+ * Throws an error if neither is configured.
+ *
+ * @param apiKey - The Laminar API key (if provided)
+ * @throws Error if neither API key nor OTEL configuration is present
+ */
+export const validateTracingConfig = (apiKey?: string): void => {
+  if (!apiKey && !hasOtelConfig()) {
+    throw new Error(
+      'Please initialize the Laminar object with your project API key ' +
+      'or set the LMNR_PROJECT_API_KEY environment variable, ' +
+      'or configure OTEL environment variables (OTEL_EXPORTER_OTLP_TRACES_ENDPOINT, etc.)',
+    );
+  }
+};

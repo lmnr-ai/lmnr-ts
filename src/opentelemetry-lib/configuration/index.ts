@@ -19,12 +19,14 @@ export const initializeTracing = (options: InitializeOptions) => {
     return;
   }
 
-  if (!options.baseUrl) {
-    options.baseUrl =
-      process.env.LMNR_BASE_URL || "https://api.lmnr.ai:8443";
+  // Only set defaults if not already provided and if we have an API key
+  // (when using OTEL env vars, we don't need a baseUrl or API key)
+  const apiKey = options.apiKey ?? process.env.LMNR_PROJECT_API_KEY;
+  if (!options.baseUrl && apiKey) {
+    options.baseUrl = process.env.LMNR_BASE_URL || "https://api.lmnr.ai:8443";
   }
   if (!options.apiKey) {
-    options.apiKey = process.env.LMNR_PROJECT_API_KEY;
+    options.apiKey = apiKey;
   }
 
   _configuration = Object.freeze(options);

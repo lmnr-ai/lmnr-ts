@@ -10,6 +10,7 @@ import {
 import { config } from 'dotenv';
 
 import { InitializeOptions, initializeTracing } from './opentelemetry-lib';
+import { _resetConfiguration } from './opentelemetry-lib/configuration';
 import { forceFlush, getTracer, patchModules } from './opentelemetry-lib/tracing/';
 import {
   ASSOCIATION_PROPERTIES,
@@ -34,6 +35,7 @@ import {
   otelTraceIdToUUID,
   StringUUID,
   tryToOtelSpanContext,
+  validateTracingConfig,
 } from './utils';
 
 config({
@@ -136,30 +138,48 @@ export class Laminar {
     forceHttp,
     sessionRecordingOptions,
   }: LaminarInitializeProps = {}) {
-    const key = projectApiKey ?? process?.env?.LMNR_PROJECT_API_KEY;
-    if (key === undefined) {
-      throw new Error(
-        'Please initialize the Laminar object with your project API key ' +
-        'or set the LMNR_PROJECT_API_KEY environment variable',
-      );
+    if (this.isInitialized) {
+      logger.warn("Laminar has already been initialized. Skipping initialization.");
+      return;
     }
-    this.projectApiKey = key;
-    const url = baseUrl ?? process?.env?.LMNR_BASE_URL ?? 'https://api.lmnr.ai';
+    const key = projectApiKey ?? process?.env?.LMNR_PROJECT_API_KEY;
+
+    // Validate that either API key or OTEL configuration is present
+    validateTracingConfig(key);
+
+    this.projectApiKey = key ?? '';
+    let url = baseUrl ?? process?.env?.LMNR_BASE_URL;
+
+    // Only set default URL if we have an API key (traditional Laminar setup)
+    if (key && !url) {
+      url = 'https://api.lmnr.ai';
+    }
+
     const httpUrl = baseHttpUrl ?? url;
-    const port = httpPort ?? (
-      httpUrl.match(/:\d{1,5}$/g)
-        ? parseInt(httpUrl.match(/:\d{1,5}$/g)![0].slice(1))
-        : 443);
-    const urlWithoutSlash = url.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
-    const httpUrlWithoutSlash = httpUrl.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
-    this.baseHttpUrl = `${httpUrlWithoutSlash}:${port}`;
+    let port: number | undefined = httpPort;
+
+    if (httpUrl) {
+      if (!port) {
+        const m = httpUrl.match(/:\d{1,5}$/g);
+        port = m
+          ? parseInt(m[0].slice(1))
+          : 443;
+      }
+      const httpUrlWithoutSlash = httpUrl.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
+      this.baseHttpUrl = `${httpUrlWithoutSlash}:${port}`;
+    } else {
+      this.baseHttpUrl = '';
+    }
 
     this.isInitialized = true;
+
+    const urlWithoutSlash = url?.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
+    const httpUrlWithoutSlash = httpUrl?.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
 
     initializeTracing({
       baseUrl: urlWithoutSlash,
       baseHttpUrl: httpUrlWithoutSlash,
-      apiKey: this.projectApiKey,
+      apiKey: key,
       port: grpcPort,
       forceHttp,
       httpPort,
@@ -663,7 +683,14 @@ export class Laminar {
     if (this.isInitialized) {
       logger.debug("Shutting down Laminar");
       await forceFlush();
-      // other shutdown should go here
+      // Unlike Python where asynchronous nature of `BatchSpanProcessor.forceFlush()`
+      // forces us to actually use `SpanProcessor.shutdown()` and make any
+      // further interactions with OTEL API impossible, here we call
+      // SpanProcessor.forceFlush() (and safely await it). Thus, users can
+      // call `shutdown()` and then `initialize()` again. This is why we
+      // reset the keys and configuration here.
+      this.isInitialized = false;
+      _resetConfiguration();
     }
   }
 
