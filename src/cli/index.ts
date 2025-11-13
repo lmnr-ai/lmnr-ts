@@ -62,14 +62,10 @@ async function cli() {
       await runEvaluation(files, options);
     });
 
-  // Datasets command
+  // Datasets command with global options
   const datasetsCmd = program
     .command("datasets")
     .description("Manage datasets")
-    .alias("ds");
-
-  // Helper to add common options
-  const addCommonOptions = (cmd: Command) => cmd
     .option(
       "--project-api-key <key>",
       "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
@@ -80,88 +76,84 @@ async function cli() {
     )
     .option(
       "--port <port>",
-      "Port for the Laminar API. Defaults to 443 or LMNR_PORT env variable",
+      "Port for the Laminar API. Defaults to 443",
       (val) => parseInt(val, 10),
     );
 
   // Datasets list command
-  addCommonOptions(
-    datasetsCmd
-      .command("list")
-      .description("List all datasets")
-      .action(async (options) => {
-        await handleDatasetsList(options);
-      }),
-  );
+  datasetsCmd
+    .command("list")
+    .description("List all datasets")
+    .action(async (options, cmd) => {
+      const parentOpts = cmd.parent?.opts() || {};
+      await handleDatasetsList({ ...parentOpts, ...options });
+    });
 
   // Datasets push command
-  addCommonOptions(
-    datasetsCmd
-      .command("push")
-      .description("Push datapoints to an existing dataset")
-      .argument("<paths...>", "Paths to files or directories containing data to push")
-      .option("-n, --name <name>", "Name of the dataset (either name or id must be provided)")
-      .option("--id <id>", "ID of the dataset (either name or id must be provided)")
-      .option("-r, --recursive", "Recursively read files in directories", false)
-      .option(
-        "--batch-size <size>",
-        "Batch size for pushing data",
-        (val) => parseInt(val, 10),
-        100,
-      )
-      .action(async (paths: string[], options) => {
-        await handleDatasetsPush(paths, options);
-      }),
-  );
+  datasetsCmd
+    .command("push")
+    .description("Push datapoints to an existing dataset")
+    .argument("<paths...>", "Paths to files or directories containing data to push")
+    .option("-n, --name <name>", "Name of the dataset (either name or id must be provided)")
+    .option("--id <id>", "ID of the dataset (either name or id must be provided)")
+    .option("-r, --recursive", "Recursively read files in directories", false)
+    .option(
+      "--batch-size <size>",
+      "Batch size for pushing data",
+      (val) => parseInt(val, 10),
+      100,
+    )
+    .action(async (paths: string[], options, cmd) => {
+      const parentOpts = cmd.parent?.opts() || {};
+      await handleDatasetsPush(paths, { ...parentOpts, ...options });
+    });
 
   // Datasets pull command
-  addCommonOptions(
-    datasetsCmd
-      .command("pull")
-      .description("Pull data from a dataset")
-      .argument("[output-path]", "Path to save the data. If not provided, prints to console")
-      .option("-n, --name <name>", "Name of the dataset (either name or id must be provided)")
-      .option("--id <id>", "ID of the dataset (either name or id must be provided)")
-      .option(
-        "--output-format <format>",
-        "Output format (json, csv, jsonl). Inferred from file extension if not provided",
-      )
-      .option(
-        "--batch-size <size>",
-        "Batch size for pulling data",
-        (val) => parseInt(val, 10),
-        100,
-      )
-      .option("--limit <limit>", "Limit number of datapoints to pull", (val) => parseInt(val, 10))
-      .option("--offset <offset>", "Offset for pagination", (val) => parseInt(val, 10), 0)
-      .action(async (outputPath: string | undefined, options) => {
-        await handleDatasetsPull(outputPath, options);
-      }),
-  );
+  datasetsCmd
+    .command("pull")
+    .description("Pull data from a dataset")
+    .argument("[output-path]", "Path to save the data. If not provided, prints to console")
+    .option("-n, --name <name>", "Name of the dataset (either name or id must be provided)")
+    .option("--id <id>", "ID of the dataset (either name or id must be provided)")
+    .option(
+      "--output-format <format>",
+      "Output format (json, csv, jsonl). Inferred from file extension if not provided",
+    )
+    .option(
+      "--batch-size <size>",
+      "Batch size for pulling data",
+      (val) => parseInt(val, 10),
+      100,
+    )
+    .option("--limit <limit>", "Limit number of datapoints to pull", (val) => parseInt(val, 10))
+    .option("--offset <offset>", "Offset for pagination", (val) => parseInt(val, 10), 0)
+    .action(async (outputPath: string | undefined, options, cmd) => {
+      const parentOpts = cmd.parent?.opts() || {};
+      await handleDatasetsPull(outputPath, { ...parentOpts, ...options });
+    });
 
   // Datasets create command
-  addCommonOptions(
-    datasetsCmd
-      .command("create")
-      .description("Create a dataset from input files")
-      .argument("<name>", "Name of the dataset to create")
-      .argument("<paths...>", "Paths to files or directories containing data to push")
-      .requiredOption("-o, --output-file <file>", "Path to save the pulled data")
-      .option(
-        "--output-format <format>",
-        "Output format (json, csv, jsonl). Inferred from file extension if not provided",
-      )
-      .option("-r, --recursive", "Recursively read files in directories", false)
-      .option(
-        "--batch-size <size>",
-        "Batch size for pushing/pulling data",
-        (val) => parseInt(val, 10),
-        100,
-      )
-      .action(async (name: string, paths: string[], options) => {
-        await handleDatasetsCreate(name, paths, options);
-      }),
-  );
+  datasetsCmd
+    .command("create")
+    .description("Create a dataset from input files")
+    .argument("<name>", "Name of the dataset to create")
+    .argument("<paths...>", "Paths to files or directories containing data to push")
+    .requiredOption("-o, --output-file <file>", "Path to save the pulled data")
+    .option(
+      "--output-format <format>",
+      "Output format (json, csv, jsonl). Inferred from file extension if not provided",
+    )
+    .option("-r, --recursive", "Recursively read files in directories", false)
+    .option(
+      "--batch-size <size>",
+      "Batch size for pushing/pulling data",
+      (val) => parseInt(val, 10),
+      100,
+    )
+    .action(async (name: string, paths: string[], options, cmd) => {
+      const parentOpts = cmd.parent?.opts() || {};
+      await handleDatasetsCreate(name, paths, { ...parentOpts, ...options });
+    });
 
   // If no command provided, show help
   if (!process.argv.slice(2).length) {
