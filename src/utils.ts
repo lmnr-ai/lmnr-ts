@@ -271,10 +271,9 @@ export const getOtelEnvVar = (varName: string): string | undefined => {
 
 /**
  * Check if OTEL configuration is available.
- * @returns true if OTEL endpoint or headers are configured
+ * @returns true if OTEL endpoint is configured
  */
-export const hasOtelConfig = (): boolean =>
-  !!(getOtelEnvVar('ENDPOINT') || getOtelEnvVar('HEADERS'));
+export const hasOtelConfig = (): boolean => !!getOtelEnvVar('ENDPOINT');
 
 /**
  * Parse OTEL headers string into a record object.
