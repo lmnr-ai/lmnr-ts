@@ -149,7 +149,10 @@ const initInstrumentations = (
 
   // Browser instrumentations require a client (API key)
   if (client) {
-    const playwrightInstrumentation = new PlaywrightInstrumentation(client, sessionRecordingOptions);
+    const playwrightInstrumentation = new PlaywrightInstrumentation(
+      client,
+      sessionRecordingOptions,
+    );
     instrumentations.push(playwrightInstrumentation);
 
     instrumentations.push(new StagehandInstrumentation(playwrightInstrumentation));

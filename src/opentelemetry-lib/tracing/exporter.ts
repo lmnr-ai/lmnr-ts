@@ -58,7 +58,7 @@ export class LaminarSpanExporter implements SpanExporter {
         || otelExporter === 'otlp_http';
     } else if (otelEndpoint && options.baseUrl) {
       logger.warn(
-        'OTEL_ENDPOINT is set, but Laminar base URL is also set. Ignoring OTEL_ENDPOINT.'
+        'OTEL_ENDPOINT is set, but Laminar base URL is also set. Ignoring OTEL_ENDPOINT.',
       );
     }
 
@@ -74,7 +74,7 @@ export class LaminarSpanExporter implements SpanExporter {
           'Laminar base URL is not set and OTEL_ENDPOINT is not set. Please either\n' +
           '- set the LMNR_BASE_URL environment variable\n' +
           '- set the OTEL_ENDPOINT environment variable\n' +
-          '- pass the baseUrl parameter to Laminar.initialize'
+          '- pass the baseUrl parameter to Laminar.initialize',
         );
       }
     }

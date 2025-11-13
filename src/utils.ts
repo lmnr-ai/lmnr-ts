@@ -273,9 +273,8 @@ export const getOtelEnvVar = (varName: string): string | undefined => {
  * Check if OTEL configuration is available.
  * @returns true if OTEL endpoint or headers are configured
  */
-export const hasOtelConfig = (): boolean => {
-  return !!(getOtelEnvVar('ENDPOINT') || getOtelEnvVar('HEADERS'));
-};
+export const hasOtelConfig = (): boolean =>
+  !!(getOtelEnvVar('ENDPOINT') || getOtelEnvVar('HEADERS'));
 
 /**
  * Parse OTEL headers string into a record object.
@@ -307,7 +306,7 @@ export const parseOtelHeaders = (headersStr: string | undefined): Record<string,
 /**
  * Validate that either Laminar API key or OTEL configuration is present.
  * Throws an error if neither is configured.
- * 
+ *
  * @param apiKey - The Laminar API key (if provided)
  * @throws Error if neither API key nor OTEL configuration is present
  */

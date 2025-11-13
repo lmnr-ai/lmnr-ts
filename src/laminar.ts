@@ -154,13 +154,14 @@ export class Laminar {
       url = 'https://api.lmnr.ai';
     }
 
-    let httpUrl = baseHttpUrl ?? url;
+    const httpUrl = baseHttpUrl ?? url;
     let port: number | undefined = httpPort;
 
     if (httpUrl) {
       if (!port) {
-        port = httpUrl.match(/:\d{1,5}$/g)
-          ? parseInt(httpUrl.match(/:\d{1,5}$/g)![0].slice(1))
+        const m = httpUrl.match(/:\d{1,5}$/g);
+        port = m
+          ? parseInt(m[0].slice(1))
           : 443;
       }
       const httpUrlWithoutSlash = httpUrl.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
