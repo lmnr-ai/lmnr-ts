@@ -56,16 +56,23 @@ export const initializeLaminarInstrumentations = (
     sessionRecordingOptions?: SessionRecordingOptions,
   } = {},
 ) => {
-  const url = options.baseUrl ?? process?.env?.LMNR_BASE_URL ?? 'https://api.lmnr.ai';
-  const port = options.httpPort ?? (
-    url.match(/:\d{1,5}$/g)
-      ? parseInt(url.match(/:\d{1,5}$/g)![0].slice(1))
-      : 443);
-  const urlWithoutSlash = url.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
-  const client = new LaminarClient({
-    baseUrl: `${urlWithoutSlash}:${port}`,
-    projectApiKey: options.apiKey ?? process.env.LMNR_PROJECT_API_KEY!,
-  });
+  const apiKey = options.apiKey ?? process.env.LMNR_PROJECT_API_KEY;
+
+  // Only create client if we have an API key. That is, only send browser
+  // session events to Laminar backend, but not other OTEL backends.
+  let client: LaminarClient | undefined;
+  if (apiKey) {
+    const url = options.baseUrl ?? process?.env?.LMNR_BASE_URL ?? 'https://api.lmnr.ai';
+    const port = options.httpPort ?? (
+      url.match(/:\d{1,5}$/g)
+        ? parseInt(url.match(/:\d{1,5}$/g)![0].slice(1))
+        : 443);
+    const urlWithoutSlash = url.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
+    client = new LaminarClient({
+      baseUrl: `${urlWithoutSlash}:${port}`,
+      projectApiKey: apiKey,
+    });
+  }
 
   return options?.instrumentModules !== undefined
     ? manuallyInitInstrumentations(
@@ -82,7 +89,7 @@ export const initializeLaminarInstrumentations = (
 };
 
 const initInstrumentations = (
-  client: LaminarClient,
+  client: LaminarClient | undefined,
   suppressContentTracing?: boolean,
   sessionRecordingOptions?: SessionRecordingOptions,
 ): Instrumentation[] => {
@@ -140,12 +147,15 @@ const initInstrumentations = (
     traceContent: !suppressContentTracing,
   }));
 
-  const playwrightInstrumentation = new PlaywrightInstrumentation(client, sessionRecordingOptions);
-  instrumentations.push(playwrightInstrumentation);
+  // Browser instrumentations require a client (API key)
+  if (client) {
+    const playwrightInstrumentation = new PlaywrightInstrumentation(client, sessionRecordingOptions);
+    instrumentations.push(playwrightInstrumentation);
 
-  instrumentations.push(new StagehandInstrumentation(playwrightInstrumentation));
+    instrumentations.push(new StagehandInstrumentation(playwrightInstrumentation));
 
-  instrumentations.push(new PuppeteerInstrumentation(client, sessionRecordingOptions));
+    instrumentations.push(new PuppeteerInstrumentation(client, sessionRecordingOptions));
+  }
 
   instrumentations.push(new KernelInstrumentation());
 
@@ -153,7 +163,7 @@ const initInstrumentations = (
 };
 
 const manuallyInitInstrumentations = (
-  client: LaminarClient,
+  client: LaminarClient | undefined,
   instrumentModules: InitializeOptions["instrumentModules"],
   suppressContentTracing?: boolean,
   sessionRecordingOptions?: SessionRecordingOptions,
@@ -285,19 +295,19 @@ const manuallyInitInstrumentations = (
     togetherInstrumentation.manuallyInstrument(instrumentModules.together as any);
   }
 
-  if (instrumentModules?.playwright) {
+  if (instrumentModules?.playwright && client) {
     playwrightInstrumentation = new PlaywrightInstrumentation(client, sessionRecordingOptions);
     instrumentations.push(playwrightInstrumentation);
     playwrightInstrumentation.manuallyInstrument(instrumentModules.playwright);
   }
 
-  if (instrumentModules?.puppeteer) {
+  if (instrumentModules?.puppeteer && client) {
     const puppeteerInstrumentation = new PuppeteerInstrumentation(client, sessionRecordingOptions);
     instrumentations.push(puppeteerInstrumentation);
     puppeteerInstrumentation.manuallyInstrument(instrumentModules.puppeteer);
   }
 
-  if (instrumentModules?.stagehand) {
+  if (instrumentModules?.stagehand && client) {
     if (!playwrightInstrumentation) {
       playwrightInstrumentation = new PlaywrightInstrumentation(client, sessionRecordingOptions);
       instrumentations.push(playwrightInstrumentation);
