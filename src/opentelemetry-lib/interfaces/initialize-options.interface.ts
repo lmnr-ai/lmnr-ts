@@ -1,7 +1,6 @@
 import type * as anthropic from "@anthropic-ai/sdk";
 import type * as bedrock from "@aws-sdk/client-bedrock-runtime";
 import type * as azure from "@azure/openai";
-import type * as aiplatform from "@google-cloud/aiplatform";
 import type * as vertexAI from "@google-cloud/vertexai";
 import type * as RunnableModule from "@langchain/core/runnables";
 import type * as VectorStoreModule from "@langchain/core/vectorstores";
@@ -174,7 +173,7 @@ export interface InitializeOptions {
      * });
      * ```
      */
-    google_aiplatform?: typeof aiplatform;
+    google_aiplatform?: any;
     /**
      * @example
      * ```javascript
