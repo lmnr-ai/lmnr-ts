@@ -150,7 +150,9 @@ export class KernelInstrumentation extends InstrumentationBase {
     return (original: (...args: any[]) => KernelSDK.APIPromise<unknown>) =>
       async function (this: any, ...args: any[]) {
         // First parameter of spawn and exec is the session ID, for others its PID (string)
-        const input = ['spawn', 'exec'].includes(method) ? plugin.formatInput(args) : plugin.formatProcessInput(args);
+        const input = ['spawn', 'exec'].includes(method)
+          ? plugin.formatInput(args)
+          : plugin.formatProcessInput(args);
         const span = Laminar.startSpan({
           name: `Process.${method}`,
           spanType: 'TOOL',
@@ -228,7 +230,7 @@ export class KernelInstrumentation extends InstrumentationBase {
 
   private formatInput(args: unknown[]): [{ sessionId: string }, ...unknown[]] | unknown[] {
     if (args.length === 0) {
-      return []
+      return [];
     }
     if (typeof args[0] === "string") {
       return [{ sessionId: args[0] }, ...args.slice(1)];
@@ -236,9 +238,10 @@ export class KernelInstrumentation extends InstrumentationBase {
     return args;
   }
 
-  private formatProcessInput(args: unknown[]): [{ sessionId: string, processID: string }, ...unknown[]] | unknown[] {
+  private formatProcessInput(args: unknown[]):
+    [{ sessionId: string, processID: string }, ...unknown[]] | unknown[] {
     if (args.length === 0) {
-      return []
+      return [];
     }
     if (typeof args[0] === "string") {
       if (args.length === 1) {
