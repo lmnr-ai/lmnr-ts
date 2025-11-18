@@ -228,18 +228,18 @@ export class KernelInstrumentation extends InstrumentationBase {
     };
   }
 
-  private formatInput(args: unknown[]): [{ sessionId: string }, ...unknown[]] | unknown[] {
+  private formatInput(args: unknown[]): [{ session_id: string }, ...unknown[]] | unknown[] {
     if (args.length === 0) {
       return [];
     }
     if (typeof args[0] === "string") {
-      return [{ sessionId: args[0] }, ...args.slice(1)];
+      return [{ session_id: args[0] }, ...args.slice(1)];
     }
     return args;
   }
 
   private formatProcessInput(args: unknown[]):
-    [{ sessionId: string, processID: string }, ...unknown[]] | unknown[] {
+    [{ session_id: string, processID: string }, ...unknown[]] | unknown[] {
     if (args.length === 0) {
       return [];
     }
@@ -249,7 +249,7 @@ export class KernelInstrumentation extends InstrumentationBase {
       }
       const requestParams = args[1] as { id?: string };
       if (requestParams.id) {
-        return [{ processID: args[0], sessionId: requestParams.id }, ...args.slice(1)];
+        return [{ processID: args[0], session_id: requestParams.id }, ...args.slice(1)];
       }
       return [{ processID: args[0] }, ...args.slice(1)];
     }
