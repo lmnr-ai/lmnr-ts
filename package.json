@@ -81,7 +81,6 @@
     "@azure/openai": "^2.0.0",
     "@eslint/eslintrc": "^3.3.1",
     "@eslint/js": "^9.32.0",
-    "@google-cloud/aiplatform": "^5.1.0",
     "@google-cloud/vertexai": "^1.10.0",
     "@langchain/core": "^0.3.66",
     "@onkernel/sdk": "^0.18.0",
@@ -107,7 +106,7 @@
     "puppeteer": "^24.28.0",
     "puppeteer-core": "^24.28.0",
     "together-ai": "^0.21.0",
-    "tsup": "^8.5.0",
+    "tsup": "^8.5.1",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0"
