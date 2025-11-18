@@ -105,6 +105,7 @@ export class KernelInstrumentation extends InstrumentationBase {
   }
 
   private patchMethod(className: string, method: string, spanType: 'DEFAULT' | 'TOOL'): any {
+    const plugin = this;
     return (original: (...args: any[]) => KernelSDK.APIPromise<unknown>) =>
       async function (this: any, ...args: any[]) {
         // Use observe() to automatically handle span lifecycle, input/output capture, and errors
@@ -112,6 +113,7 @@ export class KernelInstrumentation extends InstrumentationBase {
           {
             name: `${className}.${method}`,
             spanType,
+            input: plugin.formatInput(args),
           },
           async (innerArgs: any[]) =>
             await (original.bind(this).apply(this, innerArgs)),
@@ -121,13 +123,14 @@ export class KernelInstrumentation extends InstrumentationBase {
   }
 
   private patchTakeScreenshot(): any {
+    const plugin = this;
     return (original: (...args: any[]) => KernelSDK.APIPromise<unknown>) =>
       async function (this: any, ...args: any[]) {
         // Use observe() to automatically handle span lifecycle, input/output capture, and errors
         const span = Laminar.startSpan({
           name: `Computer.captureScreenshot`,
           spanType: 'TOOL',
-          input: args,
+          input: plugin.formatInput(args),
         });
         try {
           const res = await original.bind(this).apply(this, args) as KernelSDK.APIPromise<unknown>;
@@ -143,12 +146,15 @@ export class KernelInstrumentation extends InstrumentationBase {
   }
 
   private patchProcessMethod(method: string): any {
+    const plugin = this;
     return (original: (...args: any[]) => KernelSDK.APIPromise<unknown>) =>
       async function (this: any, ...args: any[]) {
+        // First parameter of spawn and exec is the session ID, for others its PID (string)
+        const input = ['spawn', 'exec'].includes(method) ? plugin.formatInput(args) : plugin.formatProcessInput(args);
         const span = Laminar.startSpan({
           name: `Process.${method}`,
           spanType: 'TOOL',
-          input: args,
+          input,
         });
         try {
           const result = await (original.bind(this).apply(this, args) as KernelSDK.APIPromise<{
@@ -218,6 +224,33 @@ export class KernelInstrumentation extends InstrumentationBase {
       // Register the wrapped handler with the original action method
       return original.call(this, name, wrappedHandler);
     };
+  }
+
+  private formatInput(args: unknown[]): [{ sessionId: string }, ...unknown[]] | unknown[] {
+    if (args.length === 0) {
+      return []
+    }
+    if (typeof args[0] === "string") {
+      return [{ sessionId: args[0] }, ...args.slice(1)];
+    }
+    return args;
+  }
+
+  private formatProcessInput(args: unknown[]): [{ sessionId: string, processID: string }, ...unknown[]] | unknown[] {
+    if (args.length === 0) {
+      return []
+    }
+    if (typeof args[0] === "string") {
+      if (args.length === 1) {
+        return [{ processID: args[0] }];
+      }
+      const requestParams = args[1] as { id?: string };
+      if (requestParams.id) {
+        return [{ processID: args[0], sessionId: requestParams.id }, ...args.slice(1)];
+      }
+      return [{ processID: args[0] }, ...args.slice(1)];
+    }
+    return args;
   }
 
   private patch(moduleExports: typeof KernelSDK): any {
