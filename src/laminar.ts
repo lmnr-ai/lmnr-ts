@@ -3,7 +3,7 @@ import {
   Context,
   context as contextApi,
   isSpanContextValid,
-  Span,
+  type Span,
   TimeInput,
   trace,
 } from '@opentelemetry/api';

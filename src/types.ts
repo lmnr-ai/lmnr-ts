@@ -1,12 +1,5 @@
-import { Datapoint } from "./evaluations";
+import { type Datapoint } from "./evaluations";
 import { StringUUID } from "./utils";
-
-export type ChatMessage = {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-};
-
-export type NodeInput = ChatMessage[] | string | boolean | number;
 
 export type Event = {
   id: StringUUID;
