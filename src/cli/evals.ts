@@ -1,6 +1,6 @@
 import * as esbuild from "esbuild";
 import * as fs from "fs";
-import * as glob from "glob";
+import { globSync } from "tinyglobby";
 
 import { Evaluation } from "../evaluations";
 import { getDirname, initializeLogger } from "../utils";
@@ -81,10 +81,10 @@ export async function runEvaluation(
 ): Promise<void> {
   let evalFiles: string[];
   if (files && files.length > 0) {
-    evalFiles = files.flatMap((file: string) => glob.sync(file));
+    evalFiles = files.flatMap((file: string) => globSync(file));
   } else {
     // No files provided, use default pattern
-    evalFiles = glob.sync('evals/**/*.eval.{ts,js}');
+    evalFiles = globSync('evals/**/*.eval.{ts,js}');
   }
 
   evalFiles.sort();
@@ -124,6 +124,7 @@ export async function runEvaluation(
         "puppeteer-core",
         "playwright-core",
         "fsevents",
+        "esbuild",
         ...(options.externalPackages ? options.externalPackages : []),
       ],
       plugins: [
