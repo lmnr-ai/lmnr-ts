@@ -6,5 +6,5 @@ export default defineConfig({
   dts: true, // Generate declaration file (.d.ts)
   sourcemap: true,
   clean: true,
-  external: ["puppeteer", "puppeteer-core", "playwright"],
+  external: ["puppeteer", "puppeteer-core", "playwright", "esbuild"],
 });
