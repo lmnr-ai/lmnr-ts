@@ -217,6 +217,8 @@ export class Laminar {
 
       // Convert to OpenTelemetry span context
       const otelSpanContext = tryToOtelSpanContext(laminarContext);
+      // If we've parsed the context from the environment variable, it's remote
+      otelSpanContext.isRemote = true;
 
       // Set parent path info in the span processor
       const processor = getSpanProcessor();
@@ -741,9 +743,10 @@ export class Laminar {
       // further interactions with OTEL API impossible, here we call
       // SpanProcessor.forceFlush() (and safely await it). Thus, users can
       // call `shutdown()` and then `initialize()` again. This is why we
-      // reset the keys and configuration here.
+      // reset the keys, contexts, and configuration here.
       this.isInitialized = false;
       _resetConfiguration();
+      LaminarContextManager.clearContexts();
     }
   }
 

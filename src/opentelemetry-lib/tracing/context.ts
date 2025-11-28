@@ -29,8 +29,8 @@ export class LaminarContextManager {
         return context;
       }
 
-      if (!span.isRecording()) {
-        // Either span is ended or it is a NonRecordingSpan
+      if (span.spanContext().isRemote) {
+        // Span is remote, it's valid
         return context;
       }
 

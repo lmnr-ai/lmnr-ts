@@ -183,9 +183,6 @@ importers:
       ai:
         specifier: ^5.0.26
         version: 5.0.86(zod@4.1.12)
-      body-parser:
-        specifier: ^2.2.1
-        version: 2.2.1
       chromadb:
         specifier: ^3.0.10
         version: 3.1.0
@@ -5828,6 +5825,7 @@ snapshots:
       type-is: 2.0.1
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   bowser@2.12.1: {}
 
@@ -5864,7 +5862,8 @@ snapshots:
       esbuild: 0.27.0
       load-tsconfig: 0.2.5
 
-  bytes@3.1.2: {}
+  bytes@3.1.2:
+    optional: true
 
   cac@6.7.14: {}
 
@@ -5984,7 +5983,8 @@ snapshots:
       safe-buffer: 5.2.1
     optional: true
 
-  content-type@1.0.5: {}
+  content-type@1.0.5:
+    optional: true
 
   convict@6.2.4:
     dependencies:
@@ -6044,7 +6044,8 @@ snapshots:
 
   delayed-stream@1.0.0: {}
 
-  depd@2.0.0: {}
+  depd@2.0.0:
+    optional: true
 
   devtools-protocol@0.0.1521046: {}
 
@@ -6080,7 +6081,8 @@ snapshots:
     dependencies:
       safe-buffer: 5.2.1
 
-  ee-first@1.1.1: {}
+  ee-first@1.1.1:
+    optional: true
 
   emoji-regex@8.0.0: {}
 
@@ -6586,6 +6588,7 @@ snapshots:
       setprototypeof: 1.2.0
       statuses: 2.0.1
       toidentifier: 1.0.1
+    optional: true
 
   http-proxy-agent@7.0.2:
     dependencies:
@@ -6604,6 +6607,7 @@ snapshots:
   iconv-lite@0.7.0:
     dependencies:
       safer-buffer: 2.1.2
+    optional: true
 
   ieee754@1.2.1: {}
 
@@ -6820,7 +6824,8 @@ snapshots:
 
   math-intrinsics@1.1.0: {}
 
-  media-typer@1.1.0: {}
+  media-typer@1.1.0:
+    optional: true
 
   merge-descriptors@2.0.0:
     optional: true
@@ -6834,7 +6839,8 @@ snapshots:
 
   mime-db@1.52.0: {}
 
-  mime-db@1.54.0: {}
+  mime-db@1.54.0:
+    optional: true
 
   mime-types@2.1.35:
     dependencies:
@@ -6843,6 +6849,7 @@ snapshots:
   mime-types@3.0.1:
     dependencies:
       mime-db: 1.54.0
+    optional: true
 
   minimatch@10.1.1:
     dependencies:
@@ -6915,6 +6922,7 @@ snapshots:
   on-finished@2.4.1:
     dependencies:
       ee-first: 1.1.1
+    optional: true
 
   once@1.4.0:
     dependencies:
@@ -7230,6 +7238,7 @@ snapshots:
       http-errors: 2.0.0
       iconv-lite: 0.7.0
       unpipe: 1.0.0
+    optional: true
 
   readable-stream@2.3.8:
     dependencies:
@@ -7328,7 +7337,8 @@ snapshots:
 
   safe-stable-stringify@2.5.0: {}
 
-  safer-buffer@2.1.2: {}
+  safer-buffer@2.1.2:
+    optional: true
 
   secure-json-parse@4.1.0: {}
 
@@ -7365,7 +7375,8 @@ snapshots:
       - supports-color
     optional: true
 
-  setprototypeof@1.2.0: {}
+  setprototypeof@1.2.0:
+    optional: true
 
   shebang-command@2.0.0:
     dependencies:
@@ -7439,7 +7450,8 @@ snapshots:
 
   split2@4.2.0: {}
 
-  statuses@2.0.1: {}
+  statuses@2.0.1:
+    optional: true
 
   statuses@2.0.2:
     optional: true
@@ -7577,7 +7589,8 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  toidentifier@1.0.1: {}
+  toidentifier@1.0.1:
+    optional: true
 
   tr46@0.0.3: {}
 
@@ -7639,6 +7652,7 @@ snapshots:
       content-type: 1.0.5
       media-typer: 1.1.0
       mime-types: 3.0.1
+    optional: true
 
   typed-query-selector@2.12.0: {}
 
@@ -7661,7 +7675,8 @@ snapshots:
 
   undici@6.22.0: {}
 
-  unpipe@1.0.0: {}
+  unpipe@1.0.0:
+    optional: true
 
   uri-js@4.4.1:
     dependencies:
