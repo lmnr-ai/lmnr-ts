@@ -87,6 +87,10 @@ export class LaminarContextManager {
     this._asyncLocalStorage.enterWith([]);
   }
 
+  public static clearActiveSpans() {
+    this._activeSpans.clear();
+  }
+
   public static getContextStack(): Context[] {
     return this._asyncLocalStorage.getStore() || [];
   }

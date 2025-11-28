@@ -747,6 +747,7 @@ export class Laminar {
       this.isInitialized = false;
       _resetConfiguration();
       LaminarContextManager.clearContexts();
+      LaminarContextManager.clearActiveSpans();
     }
   }
 
