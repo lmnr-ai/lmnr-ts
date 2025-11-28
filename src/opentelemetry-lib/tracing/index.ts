@@ -185,6 +185,13 @@ export const getTracer = (): Tracer => {
   return new LaminarTracer(provider.getTracer(TRACER_NAME, TRACER_VERSION));
 };
 
+/**
+ * Get the span processor.
+ * Used internally for setting parent path information when initializing from environment.
+ * @returns The span processor, or undefined if not initialized.
+ */
+export const getSpanProcessor = (): LaminarSpanProcessor | undefined => spanProcessor;
+
 export const forceFlush = async () => {
   await spanProcessor.forceFlush();
 };

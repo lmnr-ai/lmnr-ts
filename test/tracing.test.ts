@@ -1121,4 +1121,43 @@ void describe("tracing", () => {
     assert.deepStrictEqual(middleSpan.attributes["lmnr.span.path"], ["test", "middle"]);
     assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "middle", "inner"]);
   });
+
+  void it("reads the parent span context from env", () => {
+    const originalEnv = process.env;
+    process.env.LMNR_SPAN_CONTEXT = JSON.stringify({
+      traceId: "01234567-89ab-cdef-0123-456789abcdef",
+      spanId: "00000000-0000-0000-0123-456789abcdef",
+      isRemote: false,
+      spanPath: ["parent"],
+      spanIdsPath: ["00000000-0000-0000-0123-456789abcdef"],
+    });
+
+    Object.defineProperty(Laminar, "isInitialized", {
+      value: false,
+      writable: true,
+    });
+    Laminar.initialize({
+      projectApiKey: "test",
+    });
+
+    const span = Laminar.startSpan({ name: "test" });
+    span.end();
+
+    const spans = exporter.getFinishedSpans();
+    const spanId = otelSpanIdToUUID(spans[0].spanContext().spanId);
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.deepStrictEqual(spans[0].attributes['lmnr.span.path'], ["parent", "test"]);
+    assert.deepStrictEqual(
+      spans[0].attributes['lmnr.span.ids_path'],
+      ["00000000-0000-0000-0123-456789abcdef", spanId],
+    );
+    assert.strictEqual(
+      otelSpanIdToUUID(getParentSpanId(spans[0]) as string),
+      "00000000-0000-0000-0123-456789abcdef",
+    );
+    assert.strictEqual(spans[0].spanContext().traceId, "0123456789abcdef0123456789abcdef");
+
+    process.env = originalEnv;
+  });
 });

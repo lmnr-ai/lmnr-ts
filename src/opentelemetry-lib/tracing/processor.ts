@@ -187,6 +187,23 @@ export class LaminarSpanProcessor implements SpanProcessor {
     this.instance.onEnd(span as Span);
   }
 
+  /**
+   * Set parent path information for a given span ID.
+   * Used when initializing context from environment variables.
+   *
+   * @param parentSpanId - The span ID to set path information for
+   * @param spanPath - The span path (array of span names)
+   * @param spanIdsPath - The span IDs path (array of span ID UUIDs)
+   */
+  setParentPathInfo(
+    parentSpanId: string,
+    spanPath: string[],
+    spanIdsPath: StringUUID[],
+  ): void {
+    this._spanIdToPath.set(parentSpanId, spanPath);
+    this._spanIdLists.set(parentSpanId, spanIdsPath);
+  }
+
   clear() {
     this._spanIdToPath.clear();
     this._spanIdLists.clear();

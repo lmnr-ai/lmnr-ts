@@ -29,6 +29,11 @@ export class LaminarContextManager {
         return context;
       }
 
+      if (!span.isRecording()) {
+        // Either span is ended or it is a NonRecordingSpan
+        return context;
+      }
+
       // Check if the span in this context has been ended
       try {
         const isActive = this._activeSpans.has(span.spanContext().spanId);

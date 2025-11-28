@@ -9,9 +9,14 @@ import {
 } from '@opentelemetry/api';
 import { config } from 'dotenv';
 
-import { InitializeOptions, initializeTracing } from './opentelemetry-lib';
+import { InitializeOptions, initializeTracing, LaminarSpanProcessor } from './opentelemetry-lib';
 import { _resetConfiguration } from './opentelemetry-lib/configuration';
-import { forceFlush, getTracer, patchModules } from './opentelemetry-lib/tracing/';
+import {
+  forceFlush,
+  getSpanProcessor,
+  getTracer,
+  patchModules,
+} from './opentelemetry-lib/tracing';
 import {
   ASSOCIATION_PROPERTIES,
   LaminarAttributes,
@@ -29,6 +34,7 @@ import { LaminarContextManager } from './opentelemetry-lib/tracing/context';
 import { LaminarSpan } from './opentelemetry-lib/tracing/span';
 import { LaminarSpanContext, SessionRecordingOptions } from './types';
 import {
+  deserializeLaminarSpanContext,
   initializeLogger,
   metadataToAttributes,
   otelSpanIdToUUID,
@@ -191,6 +197,55 @@ export class Laminar {
       traceExportTimeoutMillis,
       sessionRecordingOptions,
     });
+
+    this._initializeContextFromEnv();
+  }
+
+  /**
+   * Initialize Laminar context from the LMNR_SPAN_CONTEXT environment variable.
+   * This allows continuing traces across process boundaries.
+   * @private
+   */
+  private static _initializeContextFromEnv(): void {
+    const envContext = process?.env?.LMNR_SPAN_CONTEXT;
+    if (!envContext) {
+      return;
+    }
+
+    try {
+      const laminarContext = deserializeLaminarSpanContext(envContext);
+
+      // Convert to OpenTelemetry span context
+      const otelSpanContext = tryToOtelSpanContext(laminarContext);
+
+      // Set parent path info in the span processor
+      const processor = getSpanProcessor();
+      if (processor
+        && processor instanceof LaminarSpanProcessor
+        && laminarContext.spanPath
+        && laminarContext.spanIdsPath
+      ) {
+        processor.setParentPathInfo(
+          otelSpanContext.spanId,
+          laminarContext.spanPath,
+          laminarContext.spanIdsPath,
+        );
+      }
+
+      // Create a non-recording span and push the context
+      const baseContext = trace.setSpan(
+        LaminarContextManager.getContext(),
+        trace.wrapSpanContext(otelSpanContext),
+      );
+      LaminarContextManager.pushContext(baseContext);
+
+      logger.debug("Initialized Laminar parent context from LMNR_SPAN_CONTEXT.");
+    } catch (e) {
+      logger.warn(
+        "LMNR_SPAN_CONTEXT is set but could not be used: " +
+        (e instanceof Error ? e.message : String(e)),
+      );
+    }
   }
 
   /**
@@ -542,25 +597,22 @@ export class Laminar {
 
 
     if (parentSpanContext) {
-      if (typeof parentSpanContext !== 'string') {
-        parentPath = parentSpanContext.spanPath;
-        parentIdsPath = parentSpanContext.spanIdsPath;
-      }
-      if (typeof parentSpanContext === 'string') {
-        try {
-          const parsed = JSON.parse(parentSpanContext);
-          parentPath = parsed.spanPath ?? parsed.span_path;
-          parentIdsPath = parsed.spanIdsPath ?? parsed.span_ids_path;
-        } catch (e) {
-          logger.warn("Failed to parse parent span context: " +
-            (e instanceof Error ? e.message : String(e)),
-          );
-        }
-      }
+      try {
+        const laminarContext = typeof parentSpanContext === 'string'
+          ? deserializeLaminarSpanContext(parentSpanContext)
+          : parentSpanContext;
 
-      const spanContext = tryToOtelSpanContext(parentSpanContext);
-      entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
-      LaminarContextManager.pushContext(entityContext);
+        parentPath = laminarContext.spanPath;
+        parentIdsPath = laminarContext.spanIdsPath;
+
+        const spanContext = tryToOtelSpanContext(laminarContext);
+        entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
+        LaminarContextManager.pushContext(entityContext);
+      } catch (e) {
+        logger.warn("Failed to parse parent span context: " +
+          (e instanceof Error ? e.message : String(e)),
+        );
+      }
     }
     const tagProperties = tags
       ? { [`${ASSOCIATION_PROPERTIES}.tags`]: Array.from(new Set(tags)) }
@@ -579,6 +631,7 @@ export class Laminar {
       ...(parentPath ? { [PARENT_SPAN_PATH]: parentPath } : {}),
       ...(parentIdsPath ? { [PARENT_SPAN_IDS_PATH]: parentIdsPath } : {}),
     };
+
     const span = getTracer().startSpan(name, { attributes }, entityContext);
     if (span instanceof LaminarSpan) {
       span.activated = activated ?? false;

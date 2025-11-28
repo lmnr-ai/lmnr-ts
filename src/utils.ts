@@ -189,6 +189,57 @@ const recordToOtelSpanContext = (record: Record<string, unknown>): SpanContext =
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && !Array.isArray(value) && value !== null;
 
+/**
+ * Deserialize a LaminarSpanContext from a string or record.
+ * Handles both camelCase and snake_case keys for cross-language compatibility.
+ *
+ * @param data - The data to deserialize (string or record)
+ * @returns The deserialized LaminarSpanContext
+ * @throws Error if the data is invalid
+ */
+export const deserializeLaminarSpanContext = (
+  data: Record<string, unknown> | string,
+): LaminarSpanContext => {
+  if (typeof data === 'string') {
+    try {
+      const record = JSON.parse(data) as Record<string, unknown>;
+      return deserializeLaminarSpanContext(record);
+    } catch (e) {
+      throw new Error(
+        `Failed to parse LaminarSpanContext: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  if (!isRecord(data)) {
+    throw new Error('Invalid LaminarSpanContext: must be a string or object');
+  }
+
+  // Handle both camelCase and snake_case for all fields
+  const traceId = data.traceId ?? data.trace_id;
+  const spanId = data.spanId ?? data.span_id;
+  const isRemote = data.isRemote ?? data.is_remote ?? false;
+  const spanPath = data.spanPath ?? data.span_path;
+  const spanIdsPath = data.spanIdsPath ?? data.span_ids_path;
+
+  if (typeof traceId !== 'string' || typeof spanId !== 'string') {
+    throw new Error('Invalid LaminarSpanContext: traceId and spanId must be strings');
+  }
+
+  // Validate UUID format
+  if (!isStringUUID(traceId) || !isStringUUID(spanId)) {
+    throw new Error('Invalid LaminarSpanContext: traceId and spanId must be valid UUIDs');
+  }
+
+  return {
+    traceId: traceId,
+    spanId: spanId,
+    isRemote: Boolean(isRemote),
+    spanPath: Array.isArray(spanPath) ? spanPath as string[] : undefined,
+    spanIdsPath: Array.isArray(spanIdsPath) ? spanIdsPath as StringUUID[] : undefined,
+  };
+};
+
 
 export const getDirname = () => {
   if (typeof __dirname !== 'undefined') {
