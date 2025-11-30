@@ -29,8 +29,8 @@ export class LaminarContextManager {
         return context;
       }
 
-      if (span.spanContext().isRemote) {
-        // Span is remote, it's valid
+      if (!span.isRecording() && span.spanContext().isRemote) {
+        // Span is remote and not recording, it's valid
         return context;
       }
 
