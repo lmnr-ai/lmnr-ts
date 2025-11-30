@@ -30,6 +30,7 @@ import {
   SPAN_TYPE,
   USER_ID,
 } from './opentelemetry-lib/tracing/attributes';
+import { instrumentClaudeAgentQuery, releaseProxy as releaseClaudeProxy } from './opentelemetry-lib/instrumentation/claude-agent-sdk';
 import { LaminarContextManager } from './opentelemetry-lib/tracing/context';
 import { LaminarSpan } from './opentelemetry-lib/tracing/span';
 import { LaminarSpanContext, SessionRecordingOptions } from './types';
@@ -748,6 +749,9 @@ export class Laminar {
       _resetConfiguration();
       LaminarContextManager.clearContexts();
       LaminarContextManager.clearActiveSpans();
+
+      // Release the claude-code proxy if it was started
+      releaseClaudeProxy();
     }
   }
 
@@ -757,5 +761,29 @@ export class Laminar {
 
   public static getProjectApiKey(): string {
     return this.projectApiKey;
+  }
+
+  /**
+   * Instrument the claude-agent-sdk query function.
+   * Use this when you need to import the query function before calling Laminar.initialize().
+   * 
+   * @param originalQuery - The original query function from @anthropic-ai/claude-agent-sdk
+   * @returns The instrumented query function
+   * 
+   * @example
+   * ```typescript
+   * import { query as originalQuery } from "@anthropic-ai/claude-agent-sdk";
+   * import { Laminar } from "@lmnr-ai/lmnr";
+   * 
+   * Laminar.initialize({ projectApiKey: "..." });
+   * 
+   * const query = Laminar.instrumentClaudeAgentQuery(originalQuery);
+   * 
+   * // Now use the instrumented query function
+   * const result = query({ prompt: "Hello!" });
+   * ```
+   */
+  public static wrapClaudeAgentQuery<T extends Function>(originalQuery: T): T {
+    return instrumentClaudeAgentQuery(originalQuery as any) as unknown as T;
   }
 }
