@@ -95,9 +95,9 @@ declare abstract class LLMClient {
   clientOptions: any; // ClientOptions
   userProvidedInstructions?: string;
   constructor(modelName: AvailableModel, userProvidedInstructions?: string);
-  abstract createChatCompletion<T = LLMResponse & {
-    usage?: LLMResponse["usage"];
-  }>(options: CreateChatCompletionOptions): Promise<T>;
+  abstract createChatCompletion<T = LLMResponse>(
+    options: CreateChatCompletionOptions
+  ): Promise<T>;
   generateText: (args: any) => Promise<any>;
   streamText: (args: any) => any;
   streamObject: (args: any) => any;

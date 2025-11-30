@@ -29,6 +29,11 @@ export class LaminarContextManager {
         return context;
       }
 
+      if (!span.isRecording() && span.spanContext().isRemote) {
+        // Span is remote and not recording, it's valid
+        return context;
+      }
+
       // Check if the span in this context has been ended
       try {
         const isActive = this._activeSpans.has(span.spanContext().spanId);
@@ -80,6 +85,10 @@ export class LaminarContextManager {
 
   public static clearContexts() {
     this._asyncLocalStorage.enterWith([]);
+  }
+
+  public static clearActiveSpans() {
+    this._activeSpans.clear();
   }
 
   public static getContextStack(): Context[] {

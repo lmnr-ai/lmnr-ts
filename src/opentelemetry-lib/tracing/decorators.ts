@@ -2,7 +2,12 @@ import { context, Span, trace } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
 
 import { LaminarSpanContext } from "../../types";
-import { initializeLogger, isOtelAttributeValueType, tryToOtelSpanContext } from "../../utils";
+import {
+  deserializeLaminarSpanContext,
+  initializeLogger,
+  isOtelAttributeValueType,
+  tryToOtelSpanContext,
+} from "../../utils";
 import { getTracer, shouldSendTraces } from ".";
 import {
   PARENT_SPAN_IDS_PATH,
@@ -67,24 +72,21 @@ export function observeBase<
   let parentIdsPath: string[] | undefined;
 
   if (parentSpanContext) {
-    if (typeof parentSpanContext !== 'string') {
-      parentPath = parentSpanContext.spanPath;
-      parentIdsPath = parentSpanContext.spanIdsPath;
-    }
-    if (typeof parentSpanContext === 'string') {
-      try {
-        const parsed = JSON.parse(parentSpanContext);
-        parentPath = parsed.spanPath ?? parsed.span_path;
-        parentIdsPath = parsed.spanIdsPath ?? parsed.span_ids_path;
-      } catch (e) {
-        logger.warn("Failed to parse parent span context: " +
-          (e instanceof Error ? e.message : String(e)),
-        );
-      }
-    }
+    try {
+      const laminarContext = typeof parentSpanContext === 'string'
+        ? deserializeLaminarSpanContext(parentSpanContext)
+        : parentSpanContext;
 
-    const spanContext = tryToOtelSpanContext(parentSpanContext);
-    entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
+      parentPath = laminarContext.spanPath;
+      parentIdsPath = laminarContext.spanIdsPath;
+
+      const spanContext = tryToOtelSpanContext(laminarContext);
+      entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
+    } catch (e) {
+      logger.warn("Failed to parse parent span context: " +
+        (e instanceof Error ? e.message : String(e)),
+      );
+    }
   }
 
   if (shouldSuppressTracing) {
