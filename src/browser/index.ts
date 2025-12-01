@@ -1,2 +1,2 @@
 export { PlaywrightInstrumentation } from "./playwright";
-export { StagehandInstrumentation } from "./stagehand";
+export { StagehandV2Instrumentation as StagehandInstrumentation } from "./stagehand/v2";

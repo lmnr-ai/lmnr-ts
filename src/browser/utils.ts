@@ -167,9 +167,11 @@ export const cleanStagehandLLMClient = (llmClient: object): object =>
   );
 
 
-// Stagehand uses zod 3.x, so we need to use the v3 version of zod
-export const prettyPrintZodSchema = (schema: z.AnyZodObject, indent = 2): string => {
-  if (!(schema instanceof z.ZodObject)) {
+// Stagehand uses zod 3.x or 4.x, so we need to support both versions via duck-typing
+export const prettyPrintZodSchema = (schema: any, indent = 2): string => {
+  // Use duck-typing instead of instanceof to support both Zod v3 and v4
+  const def = schema?._def;
+  if (!def || def.typeName !== 'ZodObject') {
     throw new Error('Not a Zod object schema');
   }
 
@@ -179,59 +181,63 @@ export const prettyPrintZodSchema = (schema: z.AnyZodObject, indent = 2): string
   const entries = Object.entries(shape);
 
   const reconstructed: string[] = entries.map(([key, value]) => {
-    // Base type detection function
-    const getBaseType = (val: z.ZodTypeAny): string => {
-      if (val instanceof z.ZodString) {
+    // Base type detection function using duck-typing
+    const getBaseType = (val: any): string => {
+      const valDef = val?._def;
+      if (!valDef) return 'z.unknown()';
+
+      const typeName = valDef.typeName;
+
+      if (typeName === 'ZodString') {
         return 'z.string()';
       }
-      if (val instanceof z.ZodNumber) {
+      if (typeName === 'ZodNumber') {
         return 'z.number()';
       }
-      if (val instanceof z.ZodBoolean) {
+      if (typeName === 'ZodBoolean') {
         return 'z.boolean()';
       }
-      if (val instanceof z.ZodArray) {
-        const elementType = val.element;
-        if (elementType instanceof z.ZodObject) {
+      if (typeName === 'ZodArray') {
+        const elementType = valDef.type;
+        if (elementType?._def?.typeName === 'ZodObject') {
           return `z.array(${prettyPrintZodSchema(elementType)})`;
         } else {
           return `z.array(${getBaseType(elementType)})`;
         }
       }
-      if (val instanceof z.ZodObject) {
+      if (typeName === 'ZodObject') {
         return prettyPrintZodSchema(val);
       }
-      if (val instanceof z.ZodEnum) {
-        // Try to extract enum values
-        const enumValues = (val as any)._def?.values;
+      if (typeName === 'ZodEnum') {
+        const enumValues = valDef.values;
         if (Array.isArray(enumValues)) {
           return `z.enum([${enumValues.map(v => `'${v}'`).join(', ')}])`;
         }
         return 'z.enum([...])';
       }
-      if (val instanceof z.ZodLiteral) {
-        const literalValue = (val as any)._def?.value;
+      if (typeName === 'ZodLiteral') {
+        const literalValue = valDef.value;
         if (typeof literalValue === 'string') {
           return `z.literal('${literalValue}')`;
         }
         return `z.literal(${literalValue})`;
       }
-      if (val instanceof z.ZodUnion) {
-        const options = (val as any)._def?.options;
+      if (typeName === 'ZodUnion') {
+        const options = valDef.options;
         if (Array.isArray(options)) {
           return `z.union([${options.map(getBaseType).join(', ')}])`;
         }
         return 'z.union([...])';
       }
-      if (val instanceof z.ZodDate) {
+      if (typeName === 'ZodDate') {
         return 'z.date()';
       }
-      if (val instanceof z.ZodRecord) {
-        const keyType = (val as any)._def?.keyType;
-        const valueType = (val as any)._def?.valueType;
+      if (typeName === 'ZodRecord') {
+        const keyType = valDef.keyType;
+        const valueType = valDef.valueType;
 
         let keyTypeStr = 'z.string()';
-        if (keyType && keyType !== z.string()) {
+        if (keyType && keyType._def?.typeName !== 'ZodString') {
           keyTypeStr = getBaseType(keyType);
         }
 
@@ -242,9 +248,9 @@ export const prettyPrintZodSchema = (schema: z.AnyZodObject, indent = 2): string
 
         return `z.record(${keyTypeStr}, ${valueTypeStr})`;
       }
-      if (val instanceof z.ZodMap) {
-        const keyType = (val as any)._def?.keyType;
-        const valueType = (val as any)._def?.valueType;
+      if (typeName === 'ZodMap') {
+        const keyType = valDef.keyType;
+        const valueType = valDef.valueType;
 
         let keyTypeStr = 'z.any()';
         if (keyType) {
@@ -258,8 +264,8 @@ export const prettyPrintZodSchema = (schema: z.AnyZodObject, indent = 2): string
 
         return `z.map(${keyTypeStr}, ${valueTypeStr})`;
       }
-      if (val instanceof z.ZodTuple) {
-        const items = (val as any)._def?.items;
+      if (typeName === 'ZodTuple') {
+        const items = valDef.items;
 
         if (Array.isArray(items)) {
           const itemsTypeStr = items.map(item => getBaseType(item)).join(', ');
@@ -267,37 +273,37 @@ export const prettyPrintZodSchema = (schema: z.AnyZodObject, indent = 2): string
         }
         return 'z.tuple([])';
       }
-      if (val instanceof z.ZodNullable) {
-        return `${getBaseType((val as any)._def.innerType)}.nullable()`;
+      if (typeName === 'ZodNullable') {
+        return `${getBaseType(valDef.innerType)}.nullable()`;
       }
-      if (val instanceof z.ZodOptional) {
-        return `${getBaseType((val as any)._def.innerType)}.optional()`;
+      if (typeName === 'ZodOptional') {
+        return `${getBaseType(valDef.innerType)}.optional()`;
       }
       // Add more type checks as needed
       return 'z.any()';
     };
 
     // Check for modifiers and description
-    const applyModifiers = (val: z.ZodTypeAny, baseType: string): string => {
+    const applyModifiers = (val: any, baseType: string): string => {
       let result = baseType;
       let currentVal = val;
 
-      // Check for .nullable() modifier
-      if (currentVal instanceof z.ZodNullable) {
-        result = `${getBaseType((currentVal as any)._def.innerType)}.nullable()`;
-        currentVal = (currentVal as any)._def.innerType;
+      // Check for .nullable() modifier using duck-typing
+      if (currentVal?._def?.typeName === 'ZodNullable') {
+        result = `${getBaseType(currentVal._def.innerType)}.nullable()`;
+        currentVal = currentVal._def.innerType;
       }
 
-      // Check for .optional() modifier
-      if (currentVal instanceof z.ZodOptional) {
+      // Check for .optional() modifier using duck-typing
+      if (currentVal?._def?.typeName === 'ZodOptional') {
         if (!result.endsWith('.nullable()')) {
-          result = `${getBaseType((currentVal as any)._def.innerType)}.optional()`;
+          result = `${getBaseType(currentVal._def.innerType)}.optional()`;
         }
-        currentVal = (currentVal as any)._def.innerType;
+        currentVal = currentVal._def.innerType;
       }
 
       // Check for description
-      const description = (val as any)?._def?.description;
+      const description = val?._def?.description;
       if (typeof description === 'string') {
         result += `.describe('${description.replace(/'/g, "\\'")}')`;
       }
@@ -305,8 +311,8 @@ export const prettyPrintZodSchema = (schema: z.AnyZodObject, indent = 2): string
       return result;
     };
 
-    const baseType = getBaseType(value as z.ZodTypeAny);
-    const finalType = applyModifiers(value as z.ZodTypeAny, baseType);
+    const baseType = getBaseType(value);
+    const finalType = applyModifiers(value, baseType);
 
     return `${indentString}${key}: ${finalType},`;
   });
@@ -371,7 +377,14 @@ export const modelToProvider = (model: string): string | undefined => {
   return modelToProviderMap[clean];
 };
 
-const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
+/**
+ * The session recording inject script function.
+ * This function runs in the browser context and sets up rrweb recording.
+ * Exported so it can be converted to a string for CDP Runtime.evaluate.
+ * @param sessionRecordingOptions - Optional recording options
+ * @param stringifyCallbackArgs - If true, stringify arguments when calling lmnrSendEvents (for raw CDP bindings)
+ */
+export const injectScript = (sessionRecordingOptions?: SessionRecordingOptions, stringifyCallbackArgs?: boolean) => {
   const BATCH_TIMEOUT = 2000; // Send events after 2 seconds
   const MAX_WORKER_PROMISES = 50; // Max concurrent worker promises
   const HEARTBEAT_INTERVAL = 2000;
@@ -645,7 +658,7 @@ const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
         }, [buffer]);
       });
     } catch (error) {
-      console.warn('Failed to process large object with transferable:', error);
+      // Silently fall back to main thread compression
       return compressSmallObject(data);
     }
   };
@@ -751,7 +764,9 @@ const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
     while ((window as any).lmnrChunkQueue.length > 0) {
       const chunk = (window as any).lmnrChunkQueue.shift();
       try {
-        await (window as any).lmnrSendEvents(chunk);
+        // CDP bindings require stringified arguments, Playwright/Puppeteer auto-serialize
+        const arg = stringifyCallbackArgs ? JSON.stringify(chunk) : chunk;
+        await (window as any).lmnrSendEvents(arg);
         // Small delay between chunks to avoid overwhelming CDP
         await new Promise(resolve => setTimeout(resolve, CHUNK_SEND_DELAY));
       } catch (error) {
@@ -789,7 +804,11 @@ const injectScript = (sessionRecordingOptions?: SessionRecordingOptions) => {
             data: batchString,
             isFinal: true,
           };
-          await (window as any).lmnrSendEvents(chunk);
+          // CDP bindings require stringified arguments, Playwright/Puppeteer auto-serialize
+          const arg = stringifyCallbackArgs ? JSON.stringify(chunk) : chunk;
+          console.log('Calling lmnrSendEvents with arg:', stringifyCallbackArgs ? 'stringified' : 'object', 'chunk size:', batchString.length);
+          await (window as any).lmnrSendEvents(arg);
+          console.log('lmnrSendEvents call completed');
         } else {
           // Need to chunk
           const chunks = createChunks(batchString, batchId);
