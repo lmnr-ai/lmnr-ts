@@ -15,8 +15,10 @@ import {
   VertexAIInstrumentation,
 } from "@traceloop/instrumentation-vertexai";
 
-import { PlaywrightInstrumentation, StagehandInstrumentation } from "../../browser";
+import { PlaywrightInstrumentation } from "../../browser";
 import { PuppeteerInstrumentation } from "../../browser/puppeteer";
+import { StagehandV2Instrumentation } from "../../browser/stagehand/v2";
+import { StagehandInstrumentation as StagehandV3Instrumentation } from "../../browser/stagehand/v3";
 import { LaminarClient } from "../../client";
 import { SessionRecordingOptions } from "../../types";
 import { KernelInstrumentation } from "../instrumentation/kernel";
@@ -88,6 +90,39 @@ export const initializeLaminarInstrumentations = (
     );
 };
 
+/**
+ * Get the appropriate Stagehand instrumentation based on the installed version.
+ * Returns v3 instrumentation for stagehand >= 3.0.0, otherwise v2.
+ */
+const getStagehandInstrumentation = (
+  playwrightInstrumentation: PlaywrightInstrumentation,
+  client: LaminarClient,
+  sessionRecordingOptions?: SessionRecordingOptions,
+): StagehandV2Instrumentation | StagehandV3Instrumentation => {
+  try {
+    // Try to require the stagehand package to get its version
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const stagehandPkg = require("@browserbasehq/stagehand/package.json");
+    const version = stagehandPkg.version;
+    const majorVersion = parseInt(version.split('.')[0], 10);
+
+    if (majorVersion >= 3) {
+      const stagehandInstrumentation = new StagehandV3Instrumentation(sessionRecordingOptions);
+      stagehandInstrumentation.setClient(client);
+      return stagehandInstrumentation;
+    }
+    else {
+      return new StagehandV2Instrumentation(playwrightInstrumentation);
+    }
+  } catch {
+    // If we can't find the package, default to v3
+  }
+
+  const stagehandInstrumentation = new StagehandV3Instrumentation(sessionRecordingOptions);
+  stagehandInstrumentation.setClient(client);
+  return stagehandInstrumentation;
+};
+
 const initInstrumentations = (
   client: LaminarClient | undefined,
   suppressContentTracing?: boolean,
@@ -155,7 +190,11 @@ const initInstrumentations = (
     );
     instrumentations.push(playwrightInstrumentation);
 
-    instrumentations.push(new StagehandInstrumentation(playwrightInstrumentation));
+    instrumentations.push(getStagehandInstrumentation(
+      playwrightInstrumentation,
+      client,
+      sessionRecordingOptions,
+    ));
 
     instrumentations.push(new PuppeteerInstrumentation(client, sessionRecordingOptions));
   }
@@ -315,7 +354,11 @@ const manuallyInitInstrumentations = (
       playwrightInstrumentation = new PlaywrightInstrumentation(client, sessionRecordingOptions);
       instrumentations.push(playwrightInstrumentation);
     }
-    const stagehandInstrumentation = new StagehandInstrumentation(playwrightInstrumentation);
+    const stagehandInstrumentation = getStagehandInstrumentation(
+      playwrightInstrumentation,
+      client,
+      sessionRecordingOptions,
+    );
     instrumentations.push(stagehandInstrumentation);
     stagehandInstrumentation.manuallyInstrument(instrumentModules.stagehand);
   }

@@ -5,21 +5,19 @@ import {
   InstrumentationNodeModuleDefinition,
 } from "@opentelemetry/instrumentation";
 import { z } from "zod/v3";
-import { zodToJsonSchema } from "zod-to-json-schema";
 
-import { version as SDK_VERSION } from "../../package.json";
-import { observe as laminarObserve } from "../decorators";
-import { Laminar } from "../laminar";
-import { SPAN_TYPE } from "../opentelemetry-lib/tracing/attributes";
-import { LaminarContextManager } from "../opentelemetry-lib/tracing/context";
-import { newUUID, StringUUID } from "../utils";
-import { PlaywrightInstrumentation } from "./playwright";
+import { version as SDK_VERSION } from "../../../package.json";
+import { observe as laminarObserve } from "../../decorators";
+import { Laminar } from "../../laminar";
+import { LaminarContextManager } from "../../opentelemetry-lib/tracing/context";
+import { newUUID, StringUUID } from "../../utils";
+import { PlaywrightInstrumentation } from "../playwright";
 import {
   cleanStagehandLLMClient,
-  modelToProvider,
   nameArgsOrCopy,
   prettyPrintZodSchema,
-} from "./utils";
+} from "../utils";
+import { createLLMClientCreateChatCompletionWrapper } from "./shared-llm-wrapper";
 
 // Stagehand interfaces:
 type AvailableModel = string;
@@ -134,7 +132,7 @@ type AgentClient = {
   @typescript-eslint/no-unsafe-function-type,
   @typescript-eslint/no-unsafe-return
 */
-export class StagehandInstrumentation extends InstrumentationBase {
+export class StagehandV2Instrumentation extends InstrumentationBase {
   private playwrightInstrumentation: PlaywrightInstrumentation;
   private globalLLMClientOptions: WeakMap<
     LLMClient,
@@ -160,7 +158,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
   protected init(): InstrumentationModuleDefinition {
     const module = new InstrumentationNodeModuleDefinition(
       "@browserbasehq/stagehand",
-      ['>=1.0.0'],
+      ['>=1.0.0 <3.0.0'],
       this.patch.bind(this),
       this.unpatch.bind(this),
     );
@@ -605,122 +603,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
   }
 
   private patchStagehandLLMClientCreateChatCompletion() {
-    const instrumentation = this;
-    return (original: (...args: any[]) => Promise<any>) =>
-      async function createChatCompletion(this: any, ...args: any[]) {
-        const options = args[0] as CreateChatCompletionOptions;
-        return await laminarObserve({
-          name: "createChatCompletion",
-          // input and output are set as gen_ai.prompt and gen_ai.completion
-          ignoreInput: true,
-          ignoreOutput: true,
-        }, async () => {
-          const currentSpan = trace.getSpan(LaminarContextManager.getContext())
-            ?? trace.getActiveSpan();
-          const span = currentSpan!;
-          const innerOptions = options.options;
-          const recordedProvider = instrumentation.globalLLMClientOptions.get(this)?.provider;
-          const provider = (
-            recordedProvider === "aisdk"
-            && instrumentation.globalLLMClientOptions.get(this)?.model
-          )
-            ? (
-              modelToProvider(instrumentation.globalLLMClientOptions.get(this)!.model)
-              ?? "aisdk"
-            )
-            : recordedProvider;
-          span.setAttributes({
-            [SPAN_TYPE]: "LLM",
-            ...(innerOptions.temperature ? {
-              "gen_ai.request.temperature": innerOptions.temperature,
-            } : {}),
-            ...(innerOptions.top_p ? {
-              "gen_ai.request.top_p": innerOptions.top_p,
-            } : {}),
-            ...(innerOptions.frequency_penalty ? {
-              "gen_ai.request.frequency_penalty": innerOptions.frequency_penalty,
-            } : {}),
-            ...(innerOptions.presence_penalty ? {
-              "gen_ai.request.presence_penalty": innerOptions.presence_penalty,
-            } : {}),
-            ...(innerOptions.maxTokens !== undefined ? {
-              "gen_ai.request.max_tokens": innerOptions.maxTokens,
-            } : {}),
-            ...(instrumentation.globalLLMClientOptions.get(this) ? {
-              "gen_ai.request.model": instrumentation.globalLLMClientOptions.get(this)?.model,
-              "gen_ai.system": provider,
-            } : {}),
-          });
-          innerOptions.messages?.forEach((message, index) => {
-            span.setAttributes({
-              [`gen_ai.prompt.${index}.role`]: message.role,
-              [`gen_ai.prompt.${index}.content`]: JSON.stringify(message.content),
-            });
-          });
-          innerOptions.tools?.forEach((tool, index) => {
-            span.setAttributes({
-              [`llm.request.functions.${index}.name`]: tool.name,
-              [`llm.request.functions.${index}.description`]: tool.description,
-              [`llm.request.functions.${index}.parameters`]: JSON.stringify(tool.parameters),
-            });
-          });
-          // Once Stagehand supports zod 4.x, we can use z.toJsonSchema instead of
-          // the external library
-          if (innerOptions.response_model?.schema) {
-            const schema = zodToJsonSchema(innerOptions.response_model.schema);
-            if (schema) {
-              span.setAttributes({
-                [`gen_ai.request.structured_output_schema`]: JSON.stringify(schema),
-              });
-            }
-          }
-
-          const result = await original.bind(this).apply(this, args) as LLMResponse;
-          span.setAttributes({
-            "gen_ai.response.model": result.model,
-            "gen_ai.usage.input_tokens": result.usage.prompt_tokens,
-            "gen_ai.usage.output_tokens": result.usage.completion_tokens,
-            "llm.usage.total_tokens": result.usage.total_tokens,
-          });
-
-          result.choices?.forEach(choice => {
-            const index = choice.index;
-            span.setAttributes({
-              [`gen_ai.completion.${index}.finish_reason`]: choice.finish_reason,
-              [`gen_ai.completion.${index}.role`]: choice.message.role,
-            });
-            if (choice.message.content) {
-              span.setAttribute(
-                `gen_ai.completion.${index}.content`,
-                JSON.stringify(choice.message.content),
-              );
-            }
-            choice.message.tool_calls?.forEach((toolCall, toolCallIndex) => {
-              span.setAttributes({
-                [`gen_ai.completion.${index}.message.tool_calls.${toolCallIndex}.id`]: toolCall.id,
-                [`gen_ai.completion.${index}.message.tool_calls.${toolCallIndex}.name`]:
-                  toolCall.function.name,
-                [`gen_ai.completion.${index}.message.tool_calls.${toolCallIndex}.arguments`]:
-                  JSON.stringify(toolCall.function.arguments),
-              });
-            });
-          });
-
-          if (!result.choices || result.choices.length === 0) {
-            const data = (result as any).data;
-            if (data) {
-              span.setAttributes({
-                "gen_ai.completion.0.role": "assistant",
-                "gen_ai.completion.0.content": typeof data === "string"
-                  ? data
-                  : JSON.stringify(data),
-              });
-            }
-          }
-
-          return result;
-        });
-      };
+    return createLLMClientCreateChatCompletionWrapper(this.globalLLMClientOptions);
   }
 
   private patchStagehandAgentInitializer(sessionId: StringUUID) {

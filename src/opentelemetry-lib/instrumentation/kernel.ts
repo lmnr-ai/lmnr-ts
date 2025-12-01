@@ -40,8 +40,7 @@ const WRAPPED_PROCESS_METHODS: (keyof KernelSDK.Kernel.Browsers.Process)[] = [
 
 /* eslint-disable
   @typescript-eslint/no-this-alias,
-  @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-redundant-type-constituents
+  @typescript-eslint/no-unsafe-function-type
 */
 export class KernelInstrumentation extends InstrumentationBase {
   constructor() {
@@ -229,7 +228,7 @@ export class KernelInstrumentation extends InstrumentationBase {
     };
   }
 
-  private formatInput(args: unknown[]): [{ session_id: string }, ...unknown[]] | unknown[] {
+  private formatInput(args: unknown[]): unknown[] {
     if (args.length === 0) {
       return [];
     }
@@ -239,8 +238,7 @@ export class KernelInstrumentation extends InstrumentationBase {
     return args;
   }
 
-  private formatProcessInput(args: unknown[]):
-    [{ session_id: string, processID: string }, ...unknown[]] | unknown[] {
+  private formatProcessInput(args: unknown[]): unknown[] {
     if (args.length === 0) {
       return [];
     }
@@ -283,6 +281,5 @@ export class KernelInstrumentation extends InstrumentationBase {
 }
 /* eslint-enable
   @typescript-eslint/no-this-alias,
-  @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-redundant-type-constituents
+  @typescript-eslint/no-unsafe-function-type
 */
