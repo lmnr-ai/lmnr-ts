@@ -806,7 +806,6 @@ export const injectScript = (sessionRecordingOptions?: SessionRecordingOptions, 
           };
           // CDP bindings require stringified arguments, Playwright/Puppeteer auto-serialize
           const arg = stringifyCallbackArgs ? JSON.stringify(chunk) : chunk;
-          console.log('Calling lmnrSendEvents with arg:', stringifyCallbackArgs ? 'stringified' : 'object', 'chunk size:', batchString.length);
           await (window as any).lmnrSendEvents(arg);
           console.log('lmnrSendEvents call completed');
         } else {
