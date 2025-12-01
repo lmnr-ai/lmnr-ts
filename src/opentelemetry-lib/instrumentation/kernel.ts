@@ -40,8 +40,7 @@ const WRAPPED_PROCESS_METHODS: (keyof KernelSDK.Kernel.Browsers.Process)[] = [
 
 /* eslint-disable
   @typescript-eslint/no-this-alias,
-  @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-redundant-type-constituents
+  @typescript-eslint/no-unsafe-function-type
 */
 export class KernelInstrumentation extends InstrumentationBase {
   constructor() {
@@ -283,6 +282,5 @@ export class KernelInstrumentation extends InstrumentationBase {
 }
 /* eslint-enable
   @typescript-eslint/no-this-alias,
-  @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-redundant-type-constituents
+  @typescript-eslint/no-unsafe-function-type
 */

@@ -16,9 +16,9 @@ import {
 } from "@traceloop/instrumentation-vertexai";
 
 import { PlaywrightInstrumentation } from "../../browser";
+import { PuppeteerInstrumentation } from "../../browser/puppeteer";
 import { StagehandV2Instrumentation } from "../../browser/stagehand/v2";
 import { StagehandInstrumentation as StagehandV3Instrumentation } from "../../browser/stagehand/v3";
-import { PuppeteerInstrumentation } from "../../browser/puppeteer";
 import { LaminarClient } from "../../client";
 import { SessionRecordingOptions } from "../../types";
 import { KernelInstrumentation } from "../instrumentation/kernel";
@@ -101,6 +101,7 @@ const getStagehandInstrumentation = (
 ): StagehandV2Instrumentation | StagehandV3Instrumentation => {
   try {
     // Try to require the stagehand package to get its version
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const stagehandPkg = require("@browserbasehq/stagehand/package.json");
     const version = stagehandPkg.version;
     const majorVersion = parseInt(version.split('.')[0], 10);
@@ -113,7 +114,7 @@ const getStagehandInstrumentation = (
     else {
       return new StagehandV2Instrumentation(playwrightInstrumentation);
     }
-  } catch (error) {
+  } catch {
     // If we can't find the package, default to v3
   }
 
@@ -189,7 +190,11 @@ const initInstrumentations = (
     );
     instrumentations.push(playwrightInstrumentation);
 
-    instrumentations.push(getStagehandInstrumentation(playwrightInstrumentation, client, sessionRecordingOptions));
+    instrumentations.push(getStagehandInstrumentation(
+      playwrightInstrumentation,
+      client,
+      sessionRecordingOptions,
+    ));
 
     instrumentations.push(new PuppeteerInstrumentation(client, sessionRecordingOptions));
   }
@@ -352,7 +357,7 @@ const manuallyInitInstrumentations = (
     const stagehandInstrumentation = getStagehandInstrumentation(
       playwrightInstrumentation,
       client,
-      sessionRecordingOptions
+      sessionRecordingOptions,
     );
     instrumentations.push(stagehandInstrumentation);
     stagehandInstrumentation.manuallyInstrument(instrumentModules.stagehand);

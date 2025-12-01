@@ -1,15 +1,15 @@
 import { SessionRecordingOptions } from "../../../types";
-import { EventChunk, sendEvents } from "../../utils";
 import { StringUUID } from "../../../utils";
+import { EventChunk, sendEvents } from "../../utils";
+import { injectRecorderViaCDP, shouldSkipUrl } from "./cdp-helpers";
 import { logger } from "./constants";
 import {
   RuntimeBindingCalledEvent,
+  StagehandV3Context,
   TargetCreatedEvent,
   TargetInfoChangedEvent,
-  StagehandV3Context,
   V3RecorderState,
 } from "./types";
-import { injectRecorderViaCDP, shouldSkipUrl } from "./cdp-helpers";
 
 /**
  * Handle Runtime.bindingCalled events
@@ -25,11 +25,18 @@ export function createBindingHandler(
       // This is a fallback - normally the context should be mapped
       if (state.contextIdToSession.size > 0) {
         // Use the first available session info as fallback
-        const [, fallbackInfo] = state.contextIdToSession.entries().next().value as [number, { sessionId: StringUUID; traceId: StringUUID }];
+        const [, fallbackInfo] = state.contextIdToSession.entries().next().value as
+          [number, { sessionId: StringUUID; traceId: StringUUID }];
         if (fallbackInfo) {
           try {
             const chunk = JSON.parse(event.payload) as EventChunk;
-            void sendEvents(chunk, state.client, state.chunkBuffers, fallbackInfo.sessionId, fallbackInfo.traceId);
+            void sendEvents(
+              chunk,
+              state.client,
+              state.chunkBuffers,
+              fallbackInfo.sessionId,
+              fallbackInfo.traceId,
+            );
           } catch (error) {
             logger.debug("Failed to parse binding payload: " +
               `${error instanceof Error ? error.message : String(error)}`);
@@ -41,7 +48,13 @@ export function createBindingHandler(
 
     try {
       const chunk = JSON.parse(event.payload) as EventChunk;
-      void sendEvents(chunk, state.client, state.chunkBuffers, sessionInfo.sessionId, sessionInfo.traceId);
+      void sendEvents(
+        chunk,
+        state.client,
+        state.chunkBuffers,
+        sessionInfo.sessionId,
+        sessionInfo.traceId,
+      );
     } catch (error) {
       logger.debug("Failed to handle binding event: " +
         `${error instanceof Error ? error.message : String(error)}`);
@@ -56,7 +69,7 @@ export function createTargetCreatedHandler(
   context: StagehandV3Context,
   state: V3RecorderState,
   sessionRecordingOptions?: SessionRecordingOptions,
-): (event: TargetCreatedEvent) => void {
+): (event: TargetCreatedEvent) => Promise<void> {
   return async (event: TargetCreatedEvent) => {
     try {
       if (event.targetInfo.type !== "page") return;
@@ -69,7 +82,13 @@ export function createTargetCreatedHandler(
         try {
           const pageId = page.mainFrameId();
           if (!state.instrumentedPageIds.has(pageId)) {
-            await injectRecorderViaCDP(page, state, context.conn, sessionRecordingOptions, state.bindingHandler ?? undefined);
+            await injectRecorderViaCDP(
+              page,
+              state,
+              context.conn,
+              sessionRecordingOptions,
+              state.bindingHandler ?? undefined,
+            );
           }
         } catch (error) {
           // Page might have been closed or CDP session lost, continue with next page
@@ -91,7 +110,7 @@ export function createTargetInfoChangedHandler(
   context: StagehandV3Context,
   state: V3RecorderState,
   sessionRecordingOptions?: SessionRecordingOptions,
-): (event: TargetInfoChangedEvent) => void {
+): (event: TargetInfoChangedEvent) => Promise<void> {
   return async (event: TargetInfoChangedEvent) => {
     // Only handle page targets
     if (event.targetInfo.type !== "page") return;
@@ -109,7 +128,9 @@ export function createTargetInfoChangedHandler(
         // Try to match by target ID
         const targetId = page.targetId();
         if (targetId === event.targetInfo.targetId) {
-          await injectRecorderViaCDP(page, state, context.conn, sessionRecordingOptions, state.bindingHandler ?? undefined);
+          await injectRecorderViaCDP(
+            page, state, context.conn, sessionRecordingOptions, state.bindingHandler ?? undefined,
+          );
           break;
         }
       }

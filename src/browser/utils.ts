@@ -1,6 +1,5 @@
 import { Page as PlaywrightPage } from "playwright";
 import { Page as PuppeteerPage } from "puppeteer";
-import { z } from "zod/v3";
 
 import { LaminarClient } from "..";
 import { SessionRecordingOptions } from "../types";
@@ -382,9 +381,13 @@ export const modelToProvider = (model: string): string | undefined => {
  * This function runs in the browser context and sets up rrweb recording.
  * Exported so it can be converted to a string for CDP Runtime.evaluate.
  * @param sessionRecordingOptions - Optional recording options
- * @param stringifyCallbackArgs - If true, stringify arguments when calling lmnrSendEvents (for raw CDP bindings)
+ * @param stringifyCallbackArgs - If true, stringify arguments when calling
+ * lmnrSendEvents (for raw CDP bindings)
  */
-export const injectScript = (sessionRecordingOptions?: SessionRecordingOptions, stringifyCallbackArgs?: boolean) => {
+export const injectScript = (
+  sessionRecordingOptions?: SessionRecordingOptions,
+  stringifyCallbackArgs?: boolean,
+) => {
   const BATCH_TIMEOUT = 2000; // Send events after 2 seconds
   const MAX_WORKER_PROMISES = 50; // Max concurrent worker promises
   const HEARTBEAT_INTERVAL = 2000;
@@ -657,7 +660,7 @@ export const injectScript = (sessionRecordingOptions?: SessionRecordingOptions, 
           useBuffer: true,
         }, [buffer]);
       });
-    } catch (error) {
+    } catch {
       // Silently fall back to main thread compression
       return compressSmallObject(data);
     }
@@ -807,7 +810,6 @@ export const injectScript = (sessionRecordingOptions?: SessionRecordingOptions, 
           // CDP bindings require stringified arguments, Playwright/Puppeteer auto-serialize
           const arg = stringifyCallbackArgs ? JSON.stringify(chunk) : chunk;
           await (window as any).lmnrSendEvents(arg);
-          console.log('lmnrSendEvents call completed');
         } else {
           // Need to chunk
           const chunks = createChunks(batchString, batchId);

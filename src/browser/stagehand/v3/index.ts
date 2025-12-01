@@ -1,8 +1,8 @@
 export { StagehandInstrumentation } from "./instrumentation";
 export type {
-  StagehandV3Page,
-  StagehandV3Context,
-  StagehandCdpConnection,
-  V3RecorderState,
   AgentClient,
+  StagehandCdpConnection,
+  StagehandV3Context,
+  StagehandV3Page,
+  V3RecorderState,
 } from "./types";

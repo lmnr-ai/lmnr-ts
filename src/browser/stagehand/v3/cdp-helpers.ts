@@ -1,17 +1,17 @@
 import { SessionRecordingOptions } from "../../../types";
-import { injectScript } from "../../utils";
 import { RECORDER } from "../../recorder";
+import { injectScript } from "../../utils";
 import {
   CDP_OPERATION_TIMEOUT_MS,
+  logger,
   SKIP_URL_PATTERNS,
-  logger
 } from "./constants";
 import {
-  StagehandV3Page,
-  StagehandCdpConnection,
   FrameTree,
-  RuntimeEvaluateResult,
   RuntimeBindingCalledEvent,
+  RuntimeEvaluateResult,
+  StagehandCdpConnection,
+  StagehandV3Page,
   V3RecorderState,
 } from "./types";
 
@@ -34,7 +34,7 @@ export async function getOrCreateIsolatedWorld(
     const frameTreeResult = await Promise.race([
       page.sendCDP<{ frameTree: FrameTree }>("Page.getFrameTree"),
       new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout getting frame tree")), CDP_OPERATION_TIMEOUT_MS)
+        setTimeout(() => reject(new Error("Timeout getting frame tree")), CDP_OPERATION_TIMEOUT_MS),
       ),
     ]);
 
@@ -49,7 +49,9 @@ export async function getOrCreateIsolatedWorld(
         worldName: "laminar-recorder",
       }),
       new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout creating isolated world")), CDP_OPERATION_TIMEOUT_MS)
+        setTimeout(() => reject(
+          new Error("Timeout creating isolated world")), CDP_OPERATION_TIMEOUT_MS,
+        ),
       ),
     ]);
 
@@ -81,7 +83,7 @@ export async function isRecorderPresent(
         returnByValue: true,
       }),
       new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout checking recorder")), CDP_OPERATION_TIMEOUT_MS)
+        setTimeout(() => reject(new Error("Timeout checking recorder")), CDP_OPERATION_TIMEOUT_MS),
       ),
     ]);
 
@@ -190,7 +192,9 @@ export async function injectRecorderViaCDP(
         if (!state.pageSessionHandlers.has(pageTargetId)) {
           // Access the connection's sessions map to find the session for this page
           const connInternal = conn as unknown as {
-            getSession(sessionId: string): { on<P>(event: string, handler: (params: P) => void): void } | undefined;
+            getSession(sessionId: string): {
+              on<P>(event: string, handler: (params: P) => void): void
+            } | undefined;
             sessions: Map<string, unknown>;
           };
 
@@ -202,9 +206,14 @@ export async function injectRecorderViaCDP(
             for (const [sessionId, session] of connInternal.sessions.entries()) {
               try {
                 // Set up the handler on each session (the correct one will receive the events)
-                const sessionTyped = session as { on<P>(event: string, handler: (params: P) => void): void };
+                const sessionTyped = session as {
+                  on<P>(event: string, handler: (params: P) => void): void
+                };
                 if (sessionTyped.on) {
-                  sessionTyped.on<RuntimeBindingCalledEvent>("Runtime.bindingCalled", bindingHandler);
+                  sessionTyped.on<RuntimeBindingCalledEvent>(
+                    "Runtime.bindingCalled",
+                    bindingHandler,
+                  );
                   logger.debug(`Set up binding handler on session ${sessionId}`);
                 }
               } catch (error) {
@@ -227,7 +236,9 @@ export async function injectRecorderViaCDP(
       sessionId: state.sessionId,
       traceId: state.traceId,
     });
-    logger.debug(`Registered context mapping: contextId=${contextId}, sessionId=${state.sessionId}`);
+    logger.debug(
+      `Registered context mapping: contextId=${contextId}, sessionId=${state.sessionId}`,
+    );
 
     // Mark page as instrumented
     state.instrumentedPageIds.add(frameId);

@@ -6,33 +6,37 @@ import {
 } from "@opentelemetry/instrumentation";
 
 import { version as SDK_VERSION } from "../../../../package.json";
+import { LaminarClient } from "../../../client";
 import { observe as laminarObserve } from "../../../decorators";
 import { Laminar } from "../../../laminar";
-import { LaminarContextManager } from "../../../opentelemetry-lib/tracing/context";
 import { TRACE_HAS_BROWSER_SESSION } from "../../../opentelemetry-lib/tracing/attributes";
-import { newUUID, otelTraceIdToUUID, StringUUID, NIL_UUID } from "../../../utils";
-import { LaminarClient } from "../../../client";
+import { LaminarContextManager } from "../../../opentelemetry-lib/tracing/context";
 import { SessionRecordingOptions } from "../../../types";
+import { newUUID, NIL_UUID, otelTraceIdToUUID, StringUUID } from "../../../utils";
 import { nameArgsOrCopy, prettyPrintZodSchema } from "../../utils";
-import { createLLMClientCreateChatCompletionWrapper, GlobalLLMClientOptions } from "../shared-llm-wrapper";
-import { logger } from "./constants";
 import {
-  V3RecorderState,
-  StagehandV3Context,
-  TargetCreatedEvent,
-  TargetInfoChangedEvent,
-} from "./types";
+  createLLMClientCreateChatCompletionWrapper,
+  GlobalLLMClientOptions,
+} from "../shared-llm-wrapper";
 import { injectRecorderViaCDP } from "./cdp-helpers";
+import { logger } from "./constants";
 import {
   createBindingHandler,
   createTargetCreatedHandler,
   createTargetInfoChangedHandler,
 } from "./event-handlers";
+import {
+  StagehandV3Context,
+  TargetCreatedEvent,
+  TargetInfoChangedEvent,
+  V3RecorderState,
+} from "./types";
 
 /* eslint-disable
   @typescript-eslint/no-this-alias,
   @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return
+  @typescript-eslint/no-unsafe-return,
+  @typescript-eslint/no-misused-promises
 */
 export class StagehandInstrumentation extends InstrumentationBase {
   private stagehandInstanceToSessionId: WeakMap<object, StringUUID> = new WeakMap();
@@ -227,7 +231,8 @@ export class StagehandInstrumentation extends InstrumentationBase {
       instrumentation.stagehandInstanceToSessionId.set(this, sessionId);
 
       // Get trace ID from current span context
-      const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan() ?? parentSpan;
+      const currentSpan = trace.getSpan(LaminarContextManager.getContext())
+        ?? trace.getActiveSpan();
       currentSpan?.setAttribute(TRACE_HAS_BROWSER_SESSION, true);
       const otelTraceId = currentSpan?.spanContext().traceId;
       const traceId = otelTraceId ? otelTraceIdToUUID(otelTraceId) : NIL_UUID;
@@ -346,17 +351,26 @@ export class StagehandInstrumentation extends InstrumentationBase {
     // Store recorder state
     this.stagehandInstanceToRecorderState.set(stagehandInstance, recorderState);
 
-    // Set up binding event handler (will be registered on individual page sessions during injection)
+    // Set up binding event handler
+    // (will be registered on individual page sessions during injection)
     const bindingHandler = createBindingHandler(recorderState);
     recorderState.bindingHandler = bindingHandler;
 
     // Set up target created handler for new pages
-    const targetCreatedHandler = createTargetCreatedHandler(context, recorderState, this._sessionRecordingOptions);
+    const targetCreatedHandler = createTargetCreatedHandler(
+      context,
+      recorderState,
+      this._sessionRecordingOptions,
+    );
     recorderState.targetCreatedHandler = targetCreatedHandler;
     context.conn.on<TargetCreatedEvent>("Target.targetCreated", targetCreatedHandler);
 
     // Set up target info changed handler for re-injection after navigation
-    const targetInfoChangedHandler = createTargetInfoChangedHandler(context, recorderState, this._sessionRecordingOptions);
+    const targetInfoChangedHandler = createTargetInfoChangedHandler(
+      context,
+      recorderState,
+      this._sessionRecordingOptions,
+    );
     recorderState.targetInfoChangedHandler = targetInfoChangedHandler;
     context.conn.on<TargetInfoChangedEvent>("Target.targetInfoChanged", targetInfoChangedHandler);
 
@@ -366,7 +380,13 @@ export class StagehandInstrumentation extends InstrumentationBase {
       let injectedCount = 0;
       for (const page of pages) {
         try {
-          const result = await injectRecorderViaCDP(page, recorderState, context.conn, this._sessionRecordingOptions, bindingHandler);
+          const result = await injectRecorderViaCDP(
+            page,
+            recorderState,
+            context.conn,
+            this._sessionRecordingOptions,
+            bindingHandler,
+          );
           if (result !== null) {
             injectedCount++;
           }
@@ -376,7 +396,9 @@ export class StagehandInstrumentation extends InstrumentationBase {
             `${error instanceof Error ? error.message : String(error)}`);
         }
       }
-      logger.debug(`Injected session recorder into ${injectedCount} of ${pages.length} existing page(s)`);
+      logger.debug(
+        `Injected session recorder into ${injectedCount} of ${pages.length} existing page(s)`,
+      );
     } catch (error) {
       logger.debug("Error accessing pages for recorder injection: " +
         `${error instanceof Error ? error.message : String(error)}`);
@@ -455,11 +477,11 @@ export class StagehandInstrumentation extends InstrumentationBase {
   }
 
   private patchStagehandGlobalMethod(methodName: string, sessionId: StringUUID, parentSpan: any) {
-    const instrumentation = this;
     return (original: (...args: any[]) => Promise<any>) =>
       async function method(this: any, ...args: any[]) {
         const input = nameArgsOrCopy(args);
-        const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
+        const currentSpan = trace.getSpan(LaminarContextManager.getContext())
+          ?? trace.getActiveSpan();
 
         // Handle extract schema pretty-printing
         if (methodName === "extract"
@@ -504,7 +526,8 @@ export class StagehandInstrumentation extends InstrumentationBase {
               input,
             },
             async (thisArg, ...rest) => {
-              const span = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
+              const span = trace.getSpan(LaminarContextManager.getContext())
+                ?? trace.getActiveSpan();
               span?.setAttribute(TRACE_HAS_BROWSER_SESSION, true);
               return await original.apply(thisArg, ...rest);
             },
@@ -657,7 +680,9 @@ export class StagehandInstrumentation extends InstrumentationBase {
     );
 
     // Wrap additional agent methods
-    this.wrapAgentMethod(agent, 'captureScreenshot', parentSpan, { spanType: "TOOL", ignoreOutput: true });
+    this.wrapAgentMethod(
+      agent, 'captureScreenshot', parentSpan, { spanType: "TOOL", ignoreOutput: true },
+    );
     this.wrapAgentMethod(agent, 'setViewport', parentSpan);
     this.wrapAgentMethod(agent, 'setCurrentUrl', parentSpan);
   }
@@ -756,7 +781,10 @@ export class StagehandInstrumentation extends InstrumentationBase {
     agent: any,
     methodName: string,
     parentSpan: Span,
-    options?: { spanType?: "TOOL" | "LLM" | "DEFAULT" | "EVALUATOR" | "EVALUATION" | "EXECUTOR"; ignoreOutput?: boolean },
+    options?: {
+      spanType?: "TOOL" | "LLM" | "DEFAULT" | "EVALUATOR" | "EVALUATION" | "EXECUTOR";
+      ignoreOutput?: boolean;
+    },
   ) {
     if (typeof agent[methodName] !== 'function') return;
 
@@ -765,7 +793,8 @@ export class StagehandInstrumentation extends InstrumentationBase {
       methodName,
       (original: (...args: any[]) => Promise<any>) =>
         async function method(this: any, ...args: any[]) {
-          const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
+          const currentSpan = trace.getSpan(LaminarContextManager.getContext())
+            ?? trace.getActiveSpan();
           return await Laminar.withSpan(
             currentSpan ?? parentSpan,
             async () => await laminarObserve(
@@ -805,7 +834,8 @@ export class StagehandInstrumentation extends InstrumentationBase {
         methodName,
         (original: (...args: any[]) => Promise<any>) =>
           async function method(this: any, ...args: any[]) {
-            const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
+            const currentSpan = trace.getSpan(LaminarContextManager.getContext())
+              ?? trace.getActiveSpan();
             return await Laminar.withSpan(
               currentSpan ?? parentSpan,
               async () => await laminarObserve(
@@ -824,5 +854,6 @@ export class StagehandInstrumentation extends InstrumentationBase {
 /* eslint-enable
   @typescript-eslint/no-this-alias,
   @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return
+  @typescript-eslint/no-unsafe-return,
+  @typescript-eslint/no-misused-promises
 */
