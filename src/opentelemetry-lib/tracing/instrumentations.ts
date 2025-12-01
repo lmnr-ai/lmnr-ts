@@ -21,6 +21,7 @@ import { StagehandV2Instrumentation } from "../../browser/stagehand/v2";
 import { StagehandInstrumentation as StagehandV3Instrumentation } from "../../browser/stagehand/v3";
 import { LaminarClient } from "../../client";
 import { SessionRecordingOptions } from "../../types";
+import { ClaudeAgentSDKInstrumentation } from "../instrumentation/claude-agent-sdk";
 import { KernelInstrumentation } from "../instrumentation/kernel";
 import { InitializeOptions } from "../interfaces";
 
@@ -201,6 +202,8 @@ const initInstrumentations = (
 
   instrumentations.push(new KernelInstrumentation());
 
+  instrumentations.push(new ClaudeAgentSDKInstrumentation());
+
   return instrumentations;
 };
 
@@ -367,6 +370,12 @@ const manuallyInitInstrumentations = (
     const kernelInstrumentation = new KernelInstrumentation();
     instrumentations.push(kernelInstrumentation);
     kernelInstrumentation.manuallyInstrument(instrumentModules.kernel);
+  }
+
+  if (instrumentModules?.claudeAgentSDK) {
+    const claudeAgentInstrumentation = new ClaudeAgentSDKInstrumentation();
+    instrumentations.push(claudeAgentInstrumentation);
+    claudeAgentInstrumentation.manuallyInstrument(instrumentModules.claudeAgentSDK);
   }
 
   return instrumentations;
