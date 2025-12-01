@@ -19,6 +19,7 @@ let ccProxyBaseUrl: string | null = null;
 let ccProxyTargetUrl: string | null = null;
 let ccProxyShutdownRegistered = false;
 let ccProxyRefCount = 0;
+let ccProxyStartupPromise: Promise<string | null> | null = null;
 
 /**
  * Find an available port starting from the given port
@@ -109,6 +110,7 @@ function stopCcProxy() {
   ccProxyBaseUrl = null;
   ccProxyTargetUrl = null;
   ccProxyRefCount = 0;
+  ccProxyStartupPromise = null;
 }
 
 /**
@@ -134,50 +136,66 @@ export function getProxyBaseUrl(): string | null {
  * Start the claude-code proxy server with reference counting
  */
 export async function startProxy(): Promise<string | null> {
-  // If proxy is already running, increment ref count and return
+  // If there's an ongoing startup, wait for it to complete
+  if (ccProxyStartupPromise !== null) {
+    logger.debug("Waiting for ongoing proxy startup to complete");
+    await ccProxyStartupPromise;
+  }
+
+  // After waiting (or if there was no ongoing startup), check if proxy is running
   if (ccProxyBaseUrl !== null) {
     ccProxyRefCount++;
     logger.debug(`Reusing existing proxy, ref count: ${ccProxyRefCount}`);
     return ccProxyBaseUrl;
   }
 
-  const port = await findAvailablePort(DEFAULT_CC_PROXY_PORT, CC_PROXY_PORT_ATTEMPTS);
-  if (port === null) {
-    logger.warn("Unable to allocate port for cc-proxy.");
-    return null;
-  }
+  // Start the proxy - create promise to prevent concurrent startups
+  ccProxyStartupPromise = (async () => {
+    try {
+      const port = await findAvailablePort(DEFAULT_CC_PROXY_PORT, CC_PROXY_PORT_ATTEMPTS);
+      if (port === null) {
+        logger.warn("Unable to allocate port for cc-proxy.");
+        return null;
+      }
 
-  const targetUrl =
-    ccProxyTargetUrl ||
-    process.env.ANTHROPIC_ORIGINAL_BASE_URL ||
-    process.env.ANTHROPIC_BASE_URL ||
-    DEFAULT_ANTHROPIC_BASE_URL;
+      const targetUrl =
+        ccProxyTargetUrl ||
+        process.env.ANTHROPIC_ORIGINAL_BASE_URL ||
+        process.env.ANTHROPIC_BASE_URL ||
+        DEFAULT_ANTHROPIC_BASE_URL;
 
-  ccProxyTargetUrl = targetUrl;
-  process.env.ANTHROPIC_ORIGINAL_BASE_URL = targetUrl;
+      ccProxyTargetUrl = targetUrl;
+      process.env.ANTHROPIC_ORIGINAL_BASE_URL = targetUrl;
 
-  try {
-    runServer(targetUrl, port);
-  } catch (exc) {
-    logger.warn(`Unable to start cc-proxy: ${exc instanceof Error ? exc.message : String(exc)}`);
-    return null;
-  }
+      try {
+        runServer(targetUrl, port);
+      } catch (e) {
+        logger.warn(`Unable to start cc-proxy: ${e instanceof Error ? e.message : String(e)}`);
+        return null;
+      }
 
-  const isReady = await waitForPort(port);
-  if (!isReady) {
-    logger.warn(`cc-proxy failed to start on port ${port}`);
-    stopServer();
-    return null;
-  }
+      const isReady = await waitForPort(port);
+      if (!isReady) {
+        logger.warn(`cc-proxy failed to start on port ${port}`);
+        stopServer();
+        return null;
+      }
 
-  const proxyBaseUrl = `http://127.0.0.1:${port}`;
-  ccProxyBaseUrl = proxyBaseUrl;
-  ccProxyRefCount = 1;
-  process.env.ANTHROPIC_BASE_URL = proxyBaseUrl;
-  registerProxyShutdown();
+      const proxyBaseUrl = `http://127.0.0.1:${port}`;
+      ccProxyBaseUrl = proxyBaseUrl;
+      ccProxyRefCount = 1;
+      process.env.ANTHROPIC_BASE_URL = proxyBaseUrl;
+      registerProxyShutdown();
 
-  logger.info(`Started claude proxy server on: ${proxyBaseUrl}`);
-  return proxyBaseUrl;
+      logger.info(`Started claude proxy server on: ${proxyBaseUrl}`);
+      return proxyBaseUrl;
+    } finally {
+      // Clear the startup promise when done (success or failure)
+      ccProxyStartupPromise = null;
+    }
+  })();
+
+  return ccProxyStartupPromise;
 }
 
 /**
