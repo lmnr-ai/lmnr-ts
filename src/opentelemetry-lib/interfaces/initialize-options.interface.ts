@@ -1,5 +1,5 @@
-import type * as anthropic from "@anthropic-ai/sdk";
 import type * as claudeAgentSDK from "@anthropic-ai/claude-agent-sdk";
+import type * as anthropic from "@anthropic-ai/sdk";
 import type * as bedrock from "@aws-sdk/client-bedrock-runtime";
 import type * as azure from "@azure/openai";
 import type * as vertexAI from "@google-cloud/vertexai";
@@ -302,13 +302,15 @@ export interface InitializeOptions {
      */
     kernel?: any,
     /**
-     * Note: When you import query before Laminar.initialize(), use Laminar.instrumentClaudeAgentQuery()
+     * Note: When you import query before Laminar.initialize(),
+     * OR if you have "type": "module" in your package.json,
+     * use Laminar.instrumentClaudeAgentQuery()
      * to get the instrumented version, as your import reference won't be automatically wrapped.
-     * 
+     *
      * @example
      * ```javascript
 
-     * 
+     *
      * Laminar.initialize({
      *   instrumentModules: {
      *     claudeAgentSDK: {

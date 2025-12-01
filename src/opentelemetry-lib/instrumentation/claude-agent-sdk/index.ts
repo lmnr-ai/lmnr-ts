@@ -11,48 +11,53 @@ import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
 import { SPAN_INPUT, SPAN_OUTPUT } from "../../tracing/attributes";
 import {
+  forceReleaseProxy,
   getProxyBaseUrl,
   releaseProxy,
   setTraceToProxy,
   startProxy,
 } from "./proxy";
 
-// Re-export releaseProxy for cleanup in Laminar.shutdown()
-export { releaseProxy };
+// Re-export forceReleaseProxy for cleanup in Laminar.shutdown()
+export { forceReleaseProxy };
 
 const logger = initializeLogger();
 
 /**
  * Create an instrumented version of the claude-agent-sdk query function.
  * This can be used when importing the query function before Laminar initialization.
- * 
+ *
  * @param originalQuery - The original query function from claude-agent-sdk
  * @returns The instrumented query function
  */
 export function instrumentClaudeAgentQuery(
-  originalQuery: typeof ClaudeAgentSDK.query
+  originalQuery: typeof ClaudeAgentSDK.query,
 ): typeof ClaudeAgentSDK.query {
-  return (params: { prompt: string | AsyncIterable<ClaudeAgentSDK.SDKUserMessage>, options?: ClaudeAgentSDK.Options }) => {
+  return (params: {
+    prompt: string | AsyncIterable<ClaudeAgentSDK.SDKUserMessage>,
+    options?: ClaudeAgentSDK.Options,
+  }) => {
     const span = Laminar.startSpan({
       name: 'query',
       spanType: 'DEFAULT',
     });
 
-    span.setAttribute(SPAN_INPUT, JSON.stringify({ prompt: typeof params.prompt === 'string' ? params.prompt : '<stream>' }));
+    span.setAttribute(
+      SPAN_INPUT,
+      JSON.stringify({ prompt: typeof params.prompt === 'string' ? params.prompt : '<stream>' }),
+    );
 
     const generator = async function* () {
-      let originalBaseUrl: string | undefined;
       const collected: ClaudeAgentSDK.SDKMessage[] = [];
 
       try {
-        // Start proxy
-        originalBaseUrl = process.env.ANTHROPIC_BASE_URL;
+        // Start proxy (uses reference counting for concurrent requests)
         await startProxy();
 
         // Publish span context
         const proxyBaseUrl = getProxyBaseUrl();
         if (proxyBaseUrl) {
-          Laminar.withSpan(span, () => {
+          await Laminar.withSpan(span, () => {
             setTraceToProxy();
           });
         } else {
@@ -68,18 +73,12 @@ export function instrumentClaudeAgentQuery(
           yield message;
         }
       } catch (error) {
-        if (originalBaseUrl !== undefined) {
-          if (originalBaseUrl) {
-            process.env.ANTHROPIC_BASE_URL = originalBaseUrl;
-          } else {
-            delete process.env.ANTHROPIC_BASE_URL;
-          }
-        }
-        Laminar.withSpan(span, () => {
+        await Laminar.withSpan(span, () => {
           span.recordException(error as Error);
         });
         throw error;
       } finally {
+        // Release proxy (decrements ref count, only stops when count reaches 0)
         releaseProxy();
         span.setAttribute(SPAN_OUTPUT, JSON.stringify(collected));
         span.end();
@@ -91,9 +90,7 @@ export function instrumentClaudeAgentQuery(
 }
 
 /* eslint-disable
-  @typescript-eslint/no-this-alias,
-  @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-redundant-type-constituents
+  @typescript-eslint/no-unsafe-function-type
 */
 export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
   constructor() {
@@ -126,12 +123,15 @@ export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
         this.patchQuery(),
       );
     } else {
-      logger.debug('query function not found in claudeAgentSDK module, skipping instrumentation');
+      logger.debug(
+        'query function not found in claudeAgentSDK module, skipping instrumentation',
+      );
     }
   }
 
   private patchQuery(): any {
-    return (original: Function) => instrumentClaudeAgentQuery(original as typeof ClaudeAgentSDK.query);
+    return (original: Function) =>
+      instrumentClaudeAgentQuery(original as typeof ClaudeAgentSDK.query);
   }
 
   private patch(moduleExports: typeof ClaudeAgentSDK): any {
@@ -157,8 +157,6 @@ export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
   }
 }
 /* eslint-enable
-  @typescript-eslint/no-this-alias,
-  @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-redundant-type-constituents
+  @typescript-eslint/no-unsafe-function-type
 */
 

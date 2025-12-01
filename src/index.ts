@@ -10,8 +10,8 @@ export {
 } from './evaluations';
 export { Laminar } from './laminar';
 export { LaminarSpanProcessor } from './opentelemetry-lib/';
-export { LaminarAttributes } from './opentelemetry-lib/tracing/attributes';
 export { instrumentClaudeAgentQuery } from './opentelemetry-lib/instrumentation/claude-agent-sdk';
+export { LaminarAttributes } from './opentelemetry-lib/tracing/attributes';
 export { getTracer, getTracerProvider } from './opentelemetry-lib/tracing/index';
 export { initializeLaminarInstrumentations } from './opentelemetry-lib/tracing/instrumentations';
 export {
