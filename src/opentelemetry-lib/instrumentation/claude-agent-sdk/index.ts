@@ -84,6 +84,7 @@ export function instrumentClaudeAgentQuery(
       }
     };
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return generator() as any; // ClaudeAgentSDK.Query
   };
 }
@@ -131,6 +132,7 @@ export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
 
   private patchQuery(): any {
     return (original: Function) =>
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       instrumentClaudeAgentQuery(original as any); // typeof ClaudeAgentSDK.query
   }
 

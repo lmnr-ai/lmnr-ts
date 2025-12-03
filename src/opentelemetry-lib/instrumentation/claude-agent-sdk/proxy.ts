@@ -97,6 +97,7 @@ function waitForPort(port: number, timeoutMs: number = 5000): Promise<boolean> {
  */
 function stopCcProxy() {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { stopServer } = require("@lmnr-ai/claude-code-proxy");
     stopServer();
   } catch (e) {
@@ -169,6 +170,7 @@ export async function startProxy(): Promise<string | null> {
       process.env.ANTHROPIC_ORIGINAL_BASE_URL = targetUrl;
 
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { runServer } = require("@lmnr-ai/claude-code-proxy");
         runServer(targetUrl, port);
       } catch (e) {
@@ -179,6 +181,7 @@ export async function startProxy(): Promise<string | null> {
       const isReady = await waitForPort(port);
       if (!isReady) {
         logger.warn(`cc-proxy failed to start on port ${port}`);
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { stopServer } = require("@lmnr-ai/claude-code-proxy");
         stopServer();
         return null;
@@ -292,6 +295,7 @@ export function setTraceToProxy(): void {
     return;
   }
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { setCurrentTrace } = require("@lmnr-ai/claude-code-proxy");
 
     setCurrentTrace({
