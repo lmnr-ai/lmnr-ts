@@ -1,4 +1,3 @@
-import type * as claudeAgentSDK from "@anthropic-ai/claude-agent-sdk";
 import type * as anthropic from "@anthropic-ai/sdk";
 import type * as bedrock from "@aws-sdk/client-bedrock-runtime";
 import type * as azure from "@azure/openai";
@@ -321,7 +320,7 @@ export interface InitializeOptions {
      * ```
      */
     claudeAgentSDK?: {
-      query?: typeof claudeAgentSDK.query,
+      query?: any, // typeof claudeAgentSDK.query
     },
     /**
      * @example

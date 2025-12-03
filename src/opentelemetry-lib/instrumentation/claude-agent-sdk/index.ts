@@ -1,4 +1,3 @@
-import type * as ClaudeAgentSDK from "@anthropic-ai/claude-agent-sdk";
 import { diag } from "@opentelemetry/api";
 import {
   InstrumentationBase,
@@ -31,11 +30,11 @@ const logger = initializeLogger();
  * @returns The instrumented query function
  */
 export function instrumentClaudeAgentQuery(
-  originalQuery: typeof ClaudeAgentSDK.query,
-): typeof ClaudeAgentSDK.query {
+  originalQuery: any, // typeof ClaudeAgentSDK.query
+): any { // typeof ClaudeAgentSDK.Query
   return (params: {
-    prompt: string | AsyncIterable<ClaudeAgentSDK.SDKUserMessage>,
-    options?: ClaudeAgentSDK.Options,
+    prompt: string | AsyncIterable<any>, // AsyncIterable<ClaudeAgentSDK.SDKUserMessage>
+    options?: any, // ClaudeAgentSDK.Options
   }) => {
     const span = Laminar.startSpan({
       name: 'query',
@@ -48,7 +47,7 @@ export function instrumentClaudeAgentQuery(
     );
 
     const generator = async function* () {
-      const collected: ClaudeAgentSDK.SDKMessage[] = [];
+      const collected: any[] = []; // ClaudeAgentSDK.SDKMessage[]
 
       try {
         // Start proxy (uses reference counting for concurrent requests)
@@ -85,7 +84,8 @@ export function instrumentClaudeAgentQuery(
       }
     };
 
-    return generator() as ClaudeAgentSDK.Query;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return generator() as any; // ClaudeAgentSDK.Query
   };
 }
 
@@ -114,7 +114,8 @@ export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
     return module;
   }
 
-  public manuallyInstrument(claudeAgentModule: { query?: typeof ClaudeAgentSDK.query }) {
+  // { query?: typeof ClaudeAgentSDK.query }
+  public manuallyInstrument(claudeAgentModule: { query?: any }) {
     // Only instrument the query function if provided
     if (claudeAgentModule.query && typeof claudeAgentModule.query === 'function') {
       this._wrap(
@@ -131,10 +132,11 @@ export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
 
   private patchQuery(): any {
     return (original: Function) =>
-      instrumentClaudeAgentQuery(original as typeof ClaudeAgentSDK.query);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      instrumentClaudeAgentQuery(original as any); // typeof ClaudeAgentSDK.query
   }
 
-  private patch(moduleExports: typeof ClaudeAgentSDK): any {
+  private patch(moduleExports: any): any { // typeof ClaudeAgentSDK
     diag.debug('Patching @anthropic-ai/claude-agent-sdk');
 
     // Wrap the query function for automatic instrumentation
@@ -149,7 +151,7 @@ export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
     return moduleExports;
   }
 
-  private unpatch(moduleExports: typeof ClaudeAgentSDK): void {
+  private unpatch(moduleExports: any): void { // typeof ClaudeAgentSDK
     diag.debug('Unpatching @anthropic-ai/claude-agent-sdk');
 
     // Unwrap the query function
