@@ -1,4 +1,3 @@
-import { runServer, setCurrentTrace, stopServer } from "@lmnr-ai/claude-code-proxy";
 import { trace } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import * as net from "net";
@@ -98,6 +97,7 @@ function waitForPort(port: number, timeoutMs: number = 5000): Promise<boolean> {
  */
 function stopCcProxy() {
   try {
+    const { stopServer } = require("@lmnr-ai/claude-code-proxy");
     stopServer();
   } catch (e) {
     logger.debug(`Unable to stop cc-proxy: ${e instanceof Error ? e.message : String(e)}`);
@@ -137,6 +137,7 @@ export function getProxyBaseUrl(): string | null {
  */
 export async function startProxy(): Promise<string | null> {
   // If there's an ongoing startup, wait for it to complete
+
   if (ccProxyStartupPromise !== null) {
     logger.debug("Waiting for ongoing proxy startup to complete");
     await ccProxyStartupPromise;
@@ -168,6 +169,7 @@ export async function startProxy(): Promise<string | null> {
       process.env.ANTHROPIC_ORIGINAL_BASE_URL = targetUrl;
 
       try {
+        const { runServer } = require("@lmnr-ai/claude-code-proxy");
         runServer(targetUrl, port);
       } catch (e) {
         logger.warn(`Unable to start cc-proxy: ${e instanceof Error ? e.message : String(e)}`);
@@ -177,6 +179,7 @@ export async function startProxy(): Promise<string | null> {
       const isReady = await waitForPort(port);
       if (!isReady) {
         logger.warn(`cc-proxy failed to start on port ${port}`);
+        const { stopServer } = require("@lmnr-ai/claude-code-proxy");
         stopServer();
         return null;
       }
@@ -288,18 +291,30 @@ export function setTraceToProxy(): void {
   if (!payload) {
     return;
   }
+  try {
+    const { setCurrentTrace } = require("@lmnr-ai/claude-code-proxy");
 
-  setCurrentTrace({
-    traceId: payload.trace_id,
-    spanId: payload.span_id,
-    projectApiKey: payload.project_api_key,
-    spanIdsPath: payload.span_ids_path,
-    spanPath: payload.span_path,
-    laminarUrl: payload.laminar_url,
-  }).catch((error) => {
-    logger.debug(`Failed to set trace context to proxy: ${error}`);
-  }).finally(() => {
-    logger.debug("Set trace context to proxy");
-  });
+    setCurrentTrace({
+      traceId: payload.trace_id,
+      spanId: payload.span_id,
+      projectApiKey: payload.project_api_key,
+      spanIdsPath: payload.span_ids_path,
+      spanPath: payload.span_path,
+      laminarUrl: payload.laminar_url,
+    }).catch((error: any) => {
+      logger.debug(
+        "Failed to set trace context to proxy: " +
+        (error instanceof Error ? error.message : String(error)),
+      );
+    }).finally(() => {
+      logger.debug("Set trace context to proxy");
+    });
+  }
+  catch (e: any) {
+    logger.debug(
+      "Unable to set trace context to proxy: " +
+      (e instanceof Error ? e.message : String(e)),
+    );
+  }
 }
 
