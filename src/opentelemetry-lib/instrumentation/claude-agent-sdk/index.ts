@@ -131,8 +131,8 @@ export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
   }
 
   private patchQuery(): any {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return (original: Function) =>
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       instrumentClaudeAgentQuery(original as any); // typeof ClaudeAgentSDK.query
   }
 

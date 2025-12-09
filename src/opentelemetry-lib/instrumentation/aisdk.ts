@@ -1,4 +1,5 @@
 import type * as AI from "ai";
+
 import { getTracer } from "../tracing";
 
 const AI_FUNCTIONS = [
@@ -29,6 +30,7 @@ export const wrapAISDK = (ai: typeof AI): typeof AI => {
             },
           };
         }
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         return originalFn(...args);
       };
     } else {
@@ -36,4 +38,4 @@ export const wrapAISDK = (ai: typeof AI): typeof AI => {
     }
   });
   return wrapped as typeof AI;
-}
+};

@@ -4,9 +4,9 @@ import { after, afterEach, beforeEach, describe, it } from 'node:test';
 import { Span } from '@opentelemetry/api';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace-base';
 
+import { getTracer, observe } from '../src';
 import { Laminar } from '../src/laminar';
 import { _resetConfiguration, initializeTracing } from '../src/opentelemetry-lib/configuration';
-import { observe, getTracer } from '../src';
 import { getParentSpanId } from '../src/opentelemetry-lib/tracing/compat';
 
 void describe('Cross-Async Span Management - Basic Tests', () => {
@@ -117,7 +117,7 @@ void describe('Cross-Async Span Management - Promises inherit context', () => {
     const nextMicrotask = () => new Promise(resolve => setTimeout(resolve, sleepFor));
     let deferredChildSpan: Promise<void> | undefined;
 
-    await observe({ name: 'parent' }, async () => {
+    await observe({ name: 'parent' }, () => {
       // Create a promise that will create a child span LATER
       deferredChildSpan = nextMicrotask().then(() => {
         console.log('Creating child span NOW (after parent ended)');
