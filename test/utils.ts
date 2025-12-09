@@ -1,6 +1,7 @@
 import zlib from "node:zlib";
 
 import type { Definition as NockDefinition } from "nock";
+import { HrTime } from "@opentelemetry/api";
 
 /**
  * Decompresses a recording response based on its content-encoding header

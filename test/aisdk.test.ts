@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { openai } from "@ai-sdk/openai";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
-import { generateText } from "ai";
+import { generateText, streamText } from "ai";
 import nock from "nock";
 
 import { observe } from "../src/decorators";
@@ -100,7 +100,9 @@ void describe("aisdk instrumentation", () => {
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 2);
-    const outerSpan = spans.find(span => !span.name.includes("doGenerate"))!;
+    const outerSpan = spans.find(
+      span => !span.name.includes("doGenerate") && span.name !== "test",
+    )!;
     const innerSpan = spans.find(span => span.name.includes("doGenerate"))!;
     assert.strictEqual(outerSpan.spanContext().traceId, innerSpan.spanContext().traceId);
     assert.strictEqual(getParentSpanId(outerSpan), undefined);
@@ -142,7 +144,9 @@ void describe("aisdk instrumentation", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 3);
     const observeSpan = spans.find(span => span.name === "test")!;
-    const outerAiSDKSpan = spans.find(span => !span.name.includes("doGenerate"))!;
+    const outerAiSDKSpan = spans.find(
+      span => !span.name.includes("doGenerate") && span.name !== "test",
+    )!;
     const innerSpan = spans.find(span => span.name.includes("doGenerate"))!;
     assert.strictEqual(getParentSpanId(outerAiSDKSpan), observeSpan.spanContext().spanId);
     assert.strictEqual(observeSpan.spanContext().traceId, outerAiSDKSpan.spanContext().traceId);
@@ -184,7 +188,9 @@ void describe("aisdk instrumentation", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 3);
     const testSpan = spans.find(span => span.name === "test")!;
-    const outerAiSDKSpan = spans.find(span => !span.name.includes("doGenerate"))!;
+    const outerAiSDKSpan = spans.find(
+      span => !span.name.includes("doGenerate") && span.name !== "test",
+    )!;
     const innerSpan = spans.find(span => span.name.includes("doGenerate"))!;
     assert.strictEqual(getParentSpanId(outerAiSDKSpan), testSpan.spanContext().spanId);
     assert.strictEqual(testSpan.spanContext().traceId, outerAiSDKSpan.spanContext().traceId);
@@ -228,7 +234,9 @@ void describe("aisdk instrumentation", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 3);
     const testSpan = spans.find(span => span.name === "test")!;
-    const outerAiSDKSpan = spans.find(span => !span.name.includes("doGenerate"))!;
+    const outerAiSDKSpan = spans.find(
+      span => !span.name.includes("doGenerate") && span.name !== "test",
+    )!;
     const innerSpan = spans.find(span => span.name.includes("doGenerate"))!;
     assert.strictEqual(getParentSpanId(outerAiSDKSpan), testSpan.spanContext().spanId);
     assert.strictEqual(testSpan.spanContext().traceId, outerAiSDKSpan.spanContext().traceId);
@@ -251,11 +259,63 @@ void describe("aisdk instrumentation", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 3);
     const testSpan = spans.find(span => span.name === "test")!;
-    const outerAiSDKSpan = spans.find(span => !span.name.includes("doGenerate"))!;
+    const outerAiSDKSpan = spans.find(
+      span => !span.name.includes("doGenerate") && span.name !== "test",
+    )!;
     const innerSpan = spans.find(span => span.name.includes("doGenerate"))!;
     assert.strictEqual(getParentSpanId(outerAiSDKSpan), undefined);
     assert.notStrictEqual(testSpan.spanContext().traceId, outerAiSDKSpan.spanContext().traceId);
     assert.strictEqual((innerSpan.attributes['lmnr.span.path']! as string[]).length, 2);
+    assert.strictEqual(
+      outerAiSDKSpan.attributes['ai.prompt'],
+      '{"prompt":"What is the capital of France?"}',
+    );
+    assert.strictEqual(
+      outerAiSDKSpan.attributes['ai.response.text'],
+      "The capital of France is Paris.",
+    );
+    assert.deepStrictEqual(JSON.parse(innerSpan.attributes['ai.prompt.messages']! as string), [{
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "What is the capital of France?",
+        },
+      ],
+    }]);
+    assert.strictEqual(innerSpan.attributes['ai.response.text'], "The capital of France is Paris.");
+  });
+
+  void it("keeps the AI SDK stream spans inside the same span", async () => {
+    const stream = await observe({ name: "test" }, async () => {
+      const stream = streamText({
+        model,
+        prompt: "What is the capital of France?",
+        experimental_telemetry: {
+          isEnabled: true,
+          tracer: getTracer(),
+        },
+      });
+      return stream.toUIMessageStreamResponse();
+    });
+
+    // consume the stream elsewhere
+    const reader = stream.body!.getReader();
+    while (true) {
+      const { done } = await reader.read();
+      if (done) break;
+    }
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 3);
+    const observeSpan = spans.find(span => span.name === "test")!;
+    const outerAiSDKSpan = spans.find(
+      span => !span.name.includes("doStream") && span.name !== "test",
+    )!;
+    const innerSpan = spans.find(span => span.name.includes("doStream"))!;
+    assert.strictEqual(getParentSpanId(outerAiSDKSpan), observeSpan.spanContext().spanId);
+    assert.strictEqual(observeSpan.spanContext().traceId, outerAiSDKSpan.spanContext().traceId);
+    assert.strictEqual((innerSpan.attributes['lmnr.span.path']! as string[]).length, 3);
     assert.strictEqual(
       outerAiSDKSpan.attributes['ai.prompt'],
       '{"prompt":"What is the capital of France?"}',
