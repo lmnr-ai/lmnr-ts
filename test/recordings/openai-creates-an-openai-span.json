@@ -14,45 +14,35 @@
     },
     "status": 200,
     "response": [
-      "1b4503401c07ceb93c1687a82b087d86a89c4fa899fa899e2de935ed99abbb7a7e0829c0d4615198ba79711461e0b1fc5aedf3e501ae657917495856a22dea8df8a2829fee3e34740070c8dfecb448d8893e23d2692337e3ae7ef7d9fe5248ebe9f6743077e1e606879a90f2b5ea8f80098832cf005165452492a6282fd2225ceefda261258eb09999e56c60cd58416229156c241200e3d727f0016af80a101818314a023eb2430782ca30c7dfc168627278f6644871c7cba36eedebf09176fe396682fc7d0bd57231a4637377303d5e4a72bfa872ab66d60d981a7d9125c19f25d0ee8a3bdbd678618ba34c8b067d3f149912695bd5095a68a32ec8cbb410479430e20cfa87b655aafa78e39074ed1df9f6360aebbb5f3763a563839f0c33ff6fa3680031185fb64ddc212405177962966c8f84823a36a15b0110af20340e27064bb441c10f12bd7b05da924d645997890b2d"
+      "1b4503a01c07ceb93c1687a82b087d86a89c4fa899fa899e19fcbc4ffdf2f430e57d380903983a2c0a53372f8e428fe5e76880bd07b896e55d24e18789b6a837e28e0a7e8a7d681a00b8e26f7ed914a295cfe92e299733c9f37bd9e47e7f5d6f0ee4722d83878e438d47997a9547c058a2c63b20baa632851b447f91fee0128f9b41e412112bb7aac590ca459a20128e95c40060fffa043e404dde00450010735430931dba0e5483b9fc09e388b1e139921bc5bd2e8ffab46fc0441af997b905f2f43d78cfb99076cddd6e1a7c54d471d3d55ecfa91b2ab5ed8512094f56a13dc459c471349b6f7384b2196caf0fe5d5846fbbda7f0f67f405f9971ef48a124196b13d43df1e55bdbb09f0434b475ebd0fc79a1ed7ca5cd1d8d437d32afefb701a3a8c1d59f68d3ba022a516e562369c8e0481b63da4610710a9201c0e24c62ece06853d48e1a30610573c9f3333f0195a"
     ],
     "rawHeaders": {
       "access-control-expose-headers": "X-Request-ID",
       "alt-svc": "h3=\":443\"; ma=86400",
       "cf-cache-status": "DYNAMIC",
-      "cf-ray": "975d348bf95feed7-LHR",
+      "cf-ray": "9ab68dc6fe848c31-LHR",
       "connection": "keep-alive",
       "content-encoding": "br",
       "content-type": "application/json",
-      "date": "Wed, 27 Aug 2025 17:14:26 GMT",
+      "date": "Tue, 09 Dec 2025 18:26:58 GMT",
       "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
-      "openai-processing-ms": "230",
+      "openai-processing-ms": "271",
       "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
       "openai-version": "2020-10-01",
       "server": "cloudflare",
-      "set-cookie": "_cfuvid=7EcBiSGM6AfRx.vCaU0EtIWyhr3KNinNMhA18_HEX6k-1756314866948-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
+      "set-cookie": "_cfuvid=kGP30M3qQVul7fnITC1rtufenDsBNIzDF0o3aeDl_E0-1765304818192-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
       "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
       "transfer-encoding": "chunked",
       "x-content-type-options": "nosniff",
-      "x-envoy-upstream-service-time": "235",
+      "x-envoy-upstream-service-time": "290",
+      "x-openai-proxy-wasm": "v0.1",
       "x-ratelimit-limit-requests": "30000",
       "x-ratelimit-limit-tokens": "150000000",
       "x-ratelimit-remaining-requests": "29999",
       "x-ratelimit-remaining-tokens": "149999990",
       "x-ratelimit-reset-requests": "2ms",
       "x-ratelimit-reset-tokens": "0s",
-      "x-request-id": "req_79c1cf6266fd464381fcd6cf7551a215"
-    },
-    "reqheaders": {
-      "accept": "application/json",
-      "content-type": "application/json",
-      "x-stainless-arch": "arm64",
-      "x-stainless-lang": "js",
-      "x-stainless-os": "MacOS",
-      "x-stainless-package-version": "5.11.0",
-      "x-stainless-retry-count": "0",
-      "x-stainless-runtime": "node",
-      "x-stainless-runtime-version": "v23.3.0"
+      "x-request-id": "req_48d6273baef54a22ab4b38a8232af455"
     },
     "responseIsBinary": false
   }

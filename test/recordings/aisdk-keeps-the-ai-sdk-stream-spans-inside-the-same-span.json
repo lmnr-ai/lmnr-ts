@@ -248,5 +248,47 @@
       "x-request-id": "req_7b4e31c071c5429ba78561147a8ec5d4"
     },
     "responseIsBinary": false
+  },
+  {
+    "scope": "https://api.openai.com:443",
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "model": "gpt-4.1-nano",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "What is the capital of France?"
+            }
+          ]
+        }
+      ],
+      "stream": true
+    },
+    "status": 200,
+    "response": "event: response.created\ndata: {\"type\":\"response.created\",\"sequence_number\":0,\"response\":{\"id\":\"resp_06c47d2f4c4f89ec00693869fdd0088195a5a3401e829a96d5\",\"object\":\"response\",\"created_at\":1765304829,\"status\":\"in_progress\",\"background\":false,\"error\":null,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-4.1-nano-2025-04-14\",\"output\":[],\"parallel_tool_calls\":true,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":null,\"reasoning\":{\"effort\":null,\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"auto\",\"store\":true,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":1.0,\"truncation\":\"disabled\",\"usage\":null,\"user\":null,\"metadata\":{}}}\n\nevent: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"sequence_number\":1,\"response\":{\"id\":\"resp_06c47d2f4c4f89ec00693869fdd0088195a5a3401e829a96d5\",\"object\":\"response\",\"created_at\":1765304829,\"status\":\"in_progress\",\"background\":false,\"error\":null,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-4.1-nano-2025-04-14\",\"output\":[],\"parallel_tool_calls\":true,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":null,\"reasoning\":{\"effort\":null,\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"auto\",\"store\":true,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":1.0,\"truncation\":\"disabled\",\"usage\":null,\"user\":null,\"metadata\":{}}}\n\nevent: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"sequence_number\":2,\"output_index\":0,\"item\":{\"id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"type\":\"message\",\"status\":\"in_progress\",\"content\":[],\"role\":\"assistant\"}}\n\nevent: response.content_part.added\ndata: {\"type\":\"response.content_part.added\",\"sequence_number\":3,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"\"}}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":4,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"delta\":\"The\",\"logprobs\":[],\"obfuscation\":\"9g95WSZsgEqiS\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":5,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"delta\":\" capital\",\"logprobs\":[],\"obfuscation\":\"740COiu2\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":6,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"delta\":\" of\",\"logprobs\":[],\"obfuscation\":\"icZGoeoz56HcH\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":7,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"delta\":\" France\",\"logprobs\":[],\"obfuscation\":\"tu596BHjT\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":8,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"delta\":\" is\",\"logprobs\":[],\"obfuscation\":\"r0BuziUzw5hwI\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":9,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"delta\":\" Paris\",\"logprobs\":[],\"obfuscation\":\"yBAyIML88d\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":10,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"delta\":\".\",\"logprobs\":[],\"obfuscation\":\"1ctnNjqjQWrmlPO\"}\n\nevent: response.output_text.done\ndata: {\"type\":\"response.output_text.done\",\"sequence_number\":11,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"text\":\"The capital of France is Paris.\",\"logprobs\":[]}\n\nevent: response.content_part.done\ndata: {\"type\":\"response.content_part.done\",\"sequence_number\":12,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The capital of France is Paris.\"}}\n\nevent: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"sequence_number\":13,\"output_index\":0,\"item\":{\"id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The capital of France is Paris.\"}],\"role\":\"assistant\"}}\n\nevent: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":14,\"response\":{\"id\":\"resp_06c47d2f4c4f89ec00693869fdd0088195a5a3401e829a96d5\",\"object\":\"response\",\"created_at\":1765304829,\"status\":\"completed\",\"background\":false,\"error\":null,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-4.1-nano-2025-04-14\",\"output\":[{\"id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The capital of France is Paris.\"}],\"role\":\"assistant\"}],\"parallel_tool_calls\":true,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":null,\"reasoning\":{\"effort\":null,\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"store\":true,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":1.0,\"truncation\":\"disabled\",\"usage\":{\"input_tokens\":14,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":8,\"output_tokens_details\":{\"reasoning_tokens\":0},\"total_tokens\":22},\"user\":null,\"metadata\":{}}}\n\n",
+    "rawHeaders": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cf-cache-status": "DYNAMIC",
+      "cf-ray": "9ab68e11cf50949d-LHR",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "date": "Tue, 09 Dec 2025 18:27:09 GMT",
+      "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
+      "openai-processing-ms": "74",
+      "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
+      "openai-version": "2020-10-01",
+      "server": "cloudflare",
+      "set-cookie": "_cfuvid=lLuyTYvG6W294ID3is3FOA0409DwkIC_i_sNrT6ZFbQ-1765304829945-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "78",
+      "x-request-id": "req_7894720021584e5684eb4cf42d53d818"
+    },
+    "responseIsBinary": false
   }
 ]

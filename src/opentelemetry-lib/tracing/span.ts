@@ -163,4 +163,8 @@ export class LaminarSpan implements Span, ReadableSpan {
   public getParentSpanId(): string | undefined {
     return getParentSpanId(this._span as unknown as SdkSpan);
   }
+
+  public get isActivated(): boolean {
+    return this._activated;
+  }
 }

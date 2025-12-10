@@ -1,6 +1,8 @@
 import { Context, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 import { AsyncLocalStorage } from "async_hooks";
 
+import { LaminarSpan } from "./span";
+
 export class LaminarContextManager {
   private static _asyncLocalStorage = new AsyncLocalStorage<Context[]>();
   // Static registry for cross-async span management
@@ -31,6 +33,16 @@ export class LaminarContextManager {
 
       if (!span.isRecording() && span.spanContext().isRemote) {
         // Span is remote and not recording, it's valid
+        return context;
+      }
+
+      if (!(span instanceof LaminarSpan)) {
+        // Span is not a Laminar span, it's valid
+        return context;
+      }
+
+      if (!span.isActivated) {
+        // Span is not activated by Laminar.startActiveSpan(), it's valid
         return context;
       }
 
