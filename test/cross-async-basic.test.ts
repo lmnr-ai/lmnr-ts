@@ -120,7 +120,6 @@ void describe('Cross-Async Span Management - Promises inherit context', () => {
     await observe({ name: 'parent' }, () => {
       // Create a promise that will create a child span LATER
       deferredChildSpan = nextMicrotask().then(() => {
-        console.log('Creating child span NOW (after parent ended)');
         const childSpan = getTracer().startSpan('child');
         childSpan.end();
       });
