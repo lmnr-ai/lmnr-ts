@@ -88,6 +88,8 @@
   },
   "devDependencies": {
     "@ai-sdk/openai": "^2.0.22",
+    "@ai-sdk/provider": "^2.0.0",
+    "@ai-sdk/provider-v3": "npm:@ai-sdk/provider@3.0.0-beta.27",
     "@anthropic-ai/sdk": "^0.57.0",
     "@aws-sdk/client-bedrock-runtime": "^3.859.0",
     "@azure/openai": "^2.0.0",
@@ -104,7 +106,8 @@
     "@types/node": "^24.2.0",
     "@types/semver": "^7.7.0",
     "@types/uuid": "^10.0.0",
-    "ai": "^5.0.26",
+    "ai": "^5.0.115",
+    "ai-v6": "npm:ai@6.0.0-beta.159",
     "chromadb": "^3.0.10",
     "cohere-ai": "^7.20.0",
     "eslint": "^9.39.1",

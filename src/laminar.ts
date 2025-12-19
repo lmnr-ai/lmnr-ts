@@ -512,6 +512,7 @@ export class Laminar {
     userId,
     sessionId,
     metadata,
+    startTime,
   }: {
     name: string,
     input?: any,
@@ -522,6 +523,7 @@ export class Laminar {
     userId?: string,
     sessionId?: string,
     metadata?: Record<string, any>,
+    startTime?: TimeInput,
   }): Span {
     return this._startSpan({
       name,
@@ -534,6 +536,7 @@ export class Laminar {
       sessionId,
       metadata,
       activated: false,
+      startTime,
     });
   }
 
@@ -597,6 +600,7 @@ export class Laminar {
     userId,
     sessionId,
     metadata,
+    startTime,
   }: {
     name: string,
     input?: any,
@@ -607,6 +611,7 @@ export class Laminar {
     userId?: string,
     sessionId?: string,
     metadata?: Record<string, any>,
+    startTime?: TimeInput,
   }): Span {
     return this._startSpan({
       name,
@@ -619,6 +624,7 @@ export class Laminar {
       sessionId,
       metadata,
       activated: true,
+      startTime,
     });
   }
 
@@ -633,6 +639,7 @@ export class Laminar {
     sessionId,
     metadata,
     activated,
+    startTime,
   }: {
     name: string,
     input?: any,
@@ -644,6 +651,7 @@ export class Laminar {
     sessionId?: string,
     metadata?: Record<string, any>,
     activated?: boolean,
+    startTime?: TimeInput,
   }): Span {
     let entityContext = context ?? LaminarContextManager.getContext();
 
@@ -723,9 +731,10 @@ export class Laminar {
       ...(parentIdsPath ? { [PARENT_SPAN_IDS_PATH]: parentIdsPath } : {}),
     };
 
-    let span = getTracer().startSpan(name, { attributes }, entityContext);
-    span = new LaminarSpan(span);
-    (span as LaminarSpan).activated = activated ?? false;
+    const span = getTracer().startSpan(name, { attributes, startTime }, entityContext);
+    if (span instanceof LaminarSpan) {
+      span.activated = activated ?? false;
+    }
 
     if (input) {
       (span as LaminarSpan).setInput(input);
