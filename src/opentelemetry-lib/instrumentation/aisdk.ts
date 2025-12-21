@@ -27,8 +27,6 @@ import {
 } from "@ai-sdk/provider-v3"
 import { Laminar } from "../../laminar";
 import { LaminarClient } from "../../client";
-import { LaminarContextManager } from "../tracing/context"
-import { trace } from "@opentelemetry/api";
 
 const AI_FUNCTIONS = [
   'generateText',
@@ -210,11 +208,6 @@ class LaminarLanguageModelV3 { // implements LanguageModelV3
       const sessionId = process.env.LMNR_ROLLOUT_SESSION_ID;
       const pathArray = Laminar.getLaminarSpanContext()?.spanPath;
       if (pathArray) {
-        const context = LaminarContextManager.getContext();
-        const span = trace.getSpan(context);
-        if (span) {
-          span.setAttribute('lmnr.rollout.session_id', sessionId);
-        }
         const path = pathArray.join('.');
         const currentIndex = this.pathToCurrentIndex[path] ?? 0;
         if (this.pathToCount[path] && currentIndex >= this.pathToCount[path]) {
@@ -329,11 +322,6 @@ class LaminarLanguageModelV2 { // implements LanguageModelV2
       const sessionId = process.env.LMNR_ROLLOUT_SESSION_ID;
       const pathArray = Laminar.getLaminarSpanContext()?.spanPath;
       if (pathArray) {
-        const context = LaminarContextManager.getContext();
-        const span = trace.getSpan(context);
-        if (span) {
-          span.setAttribute('lmnr.rollout.session_id', sessionId);
-        }
         const path = pathArray.join('.');
         const currentIndex = this.pathToCurrentIndex[path] ?? 0;
         if (this.pathToCount[path] && currentIndex >= this.pathToCount[path]) {
