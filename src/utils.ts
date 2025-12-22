@@ -6,7 +6,7 @@ import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from 'uuid';
 
 import { ASSOCIATION_PROPERTIES } from './opentelemetry-lib/tracing/attributes';
-import { LaminarSpanContext } from './types';
+import { LaminarSpanContext, TraceType, TracingLevel } from './types';
 
 export function initializeLogger(options?: { colorize?: boolean, level?: Level }) {
   const colorize = options?.colorize ?? true;
@@ -221,6 +221,11 @@ export const deserializeLaminarSpanContext = (
   const isRemote = data.isRemote ?? data.is_remote ?? false;
   const spanPath = data.spanPath ?? data.span_path;
   const spanIdsPath = data.spanIdsPath ?? data.span_ids_path;
+  const userId = data.userId ?? data.user_id;
+  const sessionId = data.sessionId ?? data.session_id;
+  const metadata = data.metadata ?? data.metadata;
+  const traceType = data.traceType ?? data.trace_type;
+  const tracingLevel = data.tracingLevel ?? data.tracing_level;
 
   if (typeof traceId !== 'string' || typeof spanId !== 'string') {
     throw new Error('Invalid LaminarSpanContext: traceId and spanId must be strings');
@@ -237,6 +242,11 @@ export const deserializeLaminarSpanContext = (
     isRemote: Boolean(isRemote),
     spanPath: Array.isArray(spanPath) ? spanPath as string[] : undefined,
     spanIdsPath: Array.isArray(spanIdsPath) ? spanIdsPath as StringUUID[] : undefined,
+    userId: userId as string | undefined,
+    sessionId: sessionId as string | undefined,
+    metadata: metadata as Record<string, unknown> | undefined,
+    traceType: traceType as TraceType | undefined,
+    tracingLevel: tracingLevel as TracingLevel | undefined,
   };
 };
 

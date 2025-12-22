@@ -1,7 +1,16 @@
-import { Context, ROOT_CONTEXT, trace } from "@opentelemetry/api";
+import { Context, createContextKey, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 import { AsyncLocalStorage } from "async_hooks";
 
+import { TraceType, TracingLevel } from "../../types";
 import { LaminarSpan } from "./span";
+
+export const CONTEXT_SPAN_PATH_KEY = createContextKey("span_path");
+export const ASSOCIATION_PROPERTIES_KEY = createContextKey(
+  "association_properties",
+);
+export const CONTEXT_GLOBAL_METADATA_KEY = createContextKey(
+  "global_metadata",
+);
 
 export class LaminarContextManager {
   private static _asyncLocalStorage = new AsyncLocalStorage<Context[]>();
@@ -121,5 +130,46 @@ export class LaminarContextManager {
 
   public static removeActiveSpan(spanId: string): void {
     this._activeSpans.delete(spanId);
+  }
+
+  public static setAssociationProperties(span: LaminarSpan): Context {
+    const properties = span.laminarAssociationProperties;
+    const userId = properties.userId;
+    const sessionId = properties.sessionId;
+    const traceType = properties.traceType;
+    const metadata = properties.metadata;
+    const tracingLevel = properties.tracingLevel;
+
+    let entityContext = this.getContext();
+    entityContext = entityContext.setValue(ASSOCIATION_PROPERTIES_KEY, {
+      userId: userId,
+      sessionId: sessionId,
+      traceType: traceType,
+      metadata: metadata,
+      tracingLevel: tracingLevel,
+    });
+    return entityContext;
+  }
+
+  public static setGlobalMetadata(globalMetadata: Record<string, any>) {
+    let entityContext = this.getContext();
+    entityContext = entityContext.setValue(CONTEXT_GLOBAL_METADATA_KEY, globalMetadata);
+    return entityContext;
+  }
+
+  public static getGlobalMetadata(): Record<string, any> {
+    const entityContext = this.getContext();
+    return entityContext.getValue(CONTEXT_GLOBAL_METADATA_KEY) ?? {};
+  }
+
+  public static getAssociationProperties(): {
+    userId?: string;
+    sessionId?: string;
+    traceType?: TraceType;
+    tracingLevel?: TracingLevel;
+    metadata?: Record<string, any>;
+  } {
+    const entityContext = this.getContext();
+    return entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
   }
 }

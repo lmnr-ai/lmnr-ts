@@ -1,10 +1,23 @@
-import { context } from "@opentelemetry/api";
+import { AttributeValue } from "@opentelemetry/api";
 
 import { observeBase } from './opentelemetry-lib';
-import { LaminarContextManager } from "./opentelemetry-lib/tracing/context";
-import { ASSOCIATION_PROPERTIES_KEY } from "./opentelemetry-lib/tracing/utils";
+import {
+  ASSOCIATION_PROPERTIES,
+  PARENT_SPAN_IDS_PATH,
+  PARENT_SPAN_PATH,
+  SESSION_ID,
+  SPAN_TYPE,
+  TRACE_TYPE,
+  USER_ID,
+} from "./opentelemetry-lib/tracing/attributes";
+import {
+  ASSOCIATION_PROPERTIES_KEY,
+  LaminarContextManager,
+} from "./opentelemetry-lib/tracing/context";
 import { LaminarSpanContext, TraceType, TracingLevel } from './types';
-import { metadataToAttributes } from "./utils";
+import { deserializeLaminarSpanContext, initializeLogger, metadataToAttributes } from "./utils";
+
+const logger = initializeLogger();
 
 interface ObserveOptions {
   name?: string;
@@ -74,6 +87,7 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     userId,
     tags,
     metadata,
+    parentSpanContext,
   });
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
@@ -85,61 +99,6 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     ignoreOutput,
     parentSpanContext,
   }, fn, undefined, ...args);
-}
-
-/**
- * @deprecated Use `tags` in `observe` or in `Laminar.startSpan`, or `Laminar.setSpanTags` instead.
- * Sets the labels for any spans inside the function. This is useful for adding
- * labels to the spans created in the auto-instrumentations. Returns the result
- * of the wrapped function, so you can use it in an `await` statement if needed.
- *
- * Requirements:
- * - Labels must be created in your project in advance.
- * - Keys must be strings from your label names.
- * - Values must be strings matching the label's allowed values.
- *
- * @param labels - The labels to set.
- * @returns The result of the wrapped function.
- *
- * @example
- * ```typescript
- * import { withLabels } from '@lmnr-ai/lmnr';
- *
- * const result = await withLabels({ endpoint: "ft-openai-<id>" }, () => {
- *    openai.chat.completions.create({});
- * });
- * ```
- */
-export function withLabels<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
-  labels: string[],
-  fn: F,
-  ...args: A
-): ReturnType<F> {
-  let entityContext = context.active();
-  const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
-  const oldLabels = (currentAssociationProperties as Record<string, any>).labels ?? [];
-  const newLabels = [...oldLabels, ...labels];
-
-  entityContext = entityContext.setValue(
-    ASSOCIATION_PROPERTIES_KEY,
-    {
-      ...currentAssociationProperties,
-      labels: newLabels,
-    },
-  );
-
-  const result = context.with(entityContext, () => fn(...args));
-
-  const newAssociationProperties = (
-    entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {}
-  ) as Record<string, any>;
-
-  entityContext = entityContext.setValue(
-    ASSOCIATION_PROPERTIES_KEY,
-    { ...newAssociationProperties, labels: oldLabels },
-  );
-
-  return result;
 }
 
 /**
@@ -192,34 +151,86 @@ export function withTracingLevel<A extends unknown[], F extends (...args: A) => 
   return result;
 }
 
-function buildAssociationProperties(options: Partial<ObserveOptions>): Record<string, any> {
-  let associationProperties = {};
+const buildAssociationProperties = (options: Partial<ObserveOptions>):
+Record<string, AttributeValue> => {
+  const associationProperties: Record<string, AttributeValue> = {};
+  const parentSpanContext = options.parentSpanContext;
+  const globalMetadata = LaminarContextManager.getGlobalMetadata();
+  let parentPath: string[] | undefined;
+  let parentIdsPath: string[] | undefined;
+  let parentMetadata: Record<string, any> | undefined;
+  let parentTraceType: TraceType | undefined;
+  let parentTracingLevel: TracingLevel | undefined;
+  let parentUserId: string | undefined;
+  let parentSessionId: string | undefined;
+  const ctxAssociationProperties = LaminarContextManager.getAssociationProperties();
 
-  if (options.sessionId) {
-    associationProperties = { ...associationProperties, "session_id": options.sessionId };
-  }
-  if (options.traceType) {
-    associationProperties = { ...associationProperties, "trace_type": options.traceType };
-  }
-  if (options.spanType) {
-    associationProperties = { ...associationProperties, "span_type": options.spanType };
-  }
-  if (options.userId) {
-    associationProperties = { ...associationProperties, "user_id": options.userId };
-  }
-  if (options.tags) {
-    // Remove duplicates from tags
-    associationProperties = { ...associationProperties, "tags": Array.from(new Set(options.tags)) };
-  }
-  if (options.metadata) {
-    const metadataAttributes = metadataToAttributes(options.metadata);
-    if (metadataAttributes && Object.keys(metadataAttributes).length > 0) {
-      associationProperties = { ...associationProperties, ...metadataAttributes };
+  if (parentSpanContext) {
+    try {
+      const laminarContext = typeof parentSpanContext === 'string'
+        ? deserializeLaminarSpanContext(parentSpanContext)
+        : parentSpanContext;
+
+      parentPath = laminarContext.spanPath;
+      parentIdsPath = laminarContext.spanIdsPath;
+      parentMetadata = laminarContext.metadata;
+      parentTraceType = laminarContext.traceType;
+      parentTracingLevel = laminarContext.tracingLevel;
+      parentUserId = laminarContext.userId;
+      parentSessionId = laminarContext.sessionId;
+    } catch (e) {
+      logger.warn("Failed to parse parent span context: " +
+        (e instanceof Error ? e.message : String(e)),
+      );
     }
   }
 
-  return associationProperties;
-}
+  const sessionIdValue = options.sessionId ?? parentSessionId ?? ctxAssociationProperties.sessionId;
+  if (sessionIdValue) {
+    associationProperties[SESSION_ID] = sessionIdValue;
+  }
+  const userIdValue = options.userId ?? parentUserId ?? ctxAssociationProperties.userId;
+  if (userIdValue) {
+    associationProperties[USER_ID] = userIdValue;
+  }
+  const traceTypeValue = options.traceType ?? parentTraceType
+    ?? (["EVALUATION", "EXECUTOR", "EVALUATOR"].includes(options.spanType ?? "DEFAULT")
+      ? "EVALUATION"
+      : undefined
+    )
+    ?? ctxAssociationProperties.traceType
+    ?? "DEFAULT";
+  if (traceTypeValue) {
+    associationProperties[TRACE_TYPE] = traceTypeValue;
+  }
+
+  const tracingLevelValue = parentTracingLevel ?? ctxAssociationProperties.tracingLevel;
+  if (tracingLevelValue) {
+    associationProperties[`${ASSOCIATION_PROPERTIES}.tracing_level`] = tracingLevelValue;
+  }
+
+  if (options.spanType) {
+    associationProperties[SPAN_TYPE] = options.spanType;
+  }
+  if (options.tags) {
+    associationProperties[`${ASSOCIATION_PROPERTIES}.tags`] = Array.from(new Set(options.tags));
+  }
+
+  const mergedMetadata = {
+    ...globalMetadata,
+    ...ctxAssociationProperties.metadata,
+    ...parentMetadata,
+    ...options.metadata,
+  };
+
+  const metadataProperties = metadataToAttributes(mergedMetadata);
+  return {
+    ...associationProperties,
+    ...metadataProperties,
+    ...(parentPath ? { [PARENT_SPAN_PATH]: parentPath } : {}),
+    ...(parentIdsPath ? { [PARENT_SPAN_IDS_PATH]: parentIdsPath } : {}),
+  };
+};
 
 /**
  * Decorator that wraps a method to automatically observe it with Laminar tracing.
@@ -260,8 +271,7 @@ export function observeDecorator(
     descriptor: PropertyDescriptor,
   ) {
     if (!descriptor || typeof descriptor.value !== 'function') {
-      throw new
-      Error(
+      throw new Error(
         `observeDecorator can only be applied to methods. Applied to: ${String(propertyKey)}`,
       );
     }

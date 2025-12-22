@@ -27,22 +27,17 @@ import {
   PARENT_SPAN_IDS_PATH,
   PARENT_SPAN_PATH,
   SESSION_ID,
-  SPAN_IDS_PATH,
-  SPAN_INPUT,
-  SPAN_OUTPUT,
-  SPAN_PATH,
   SPAN_TYPE,
+  TRACE_TYPE,
   USER_ID,
 } from './opentelemetry-lib/tracing/attributes';
 import { LaminarContextManager } from './opentelemetry-lib/tracing/context';
 import { LaminarSpan } from './opentelemetry-lib/tracing/span';
-import { LaminarSpanContext, SessionRecordingOptions } from './types';
+import { LaminarSpanContext, SessionRecordingOptions, TraceType, TracingLevel } from './types';
 import {
   deserializeLaminarSpanContext,
   initializeLogger,
   metadataToAttributes,
-  otelSpanIdToUUID,
-  otelTraceIdToUUID,
   StringUUID,
   tryToOtelSpanContext,
   validateTracingConfig,
@@ -67,6 +62,7 @@ interface LaminarInitializeProps {
   maxExportBatchSize?: number;
   forceHttp?: boolean;
   sessionRecordingOptions?: SessionRecordingOptions;
+  metadata?: Record<string, any>;
 }
 
 type LaminarAttributesProp = Record<
@@ -78,6 +74,7 @@ export class Laminar {
   private static baseHttpUrl: string;
   private static projectApiKey: string;
   private static isInitialized: boolean = false;
+  private static globalMetadata: Record<string, any> = {};
   /**
    * Initialize Laminar context across the application.
    * This method must be called before using any other Laminar methods or decorators.
@@ -115,6 +112,9 @@ export class Laminar {
    * session recording.
    * Currently supports 'maskInputOptions' to control whether input fields are masked during
    * recording. Defaults to undefined (uses default masking behavior).
+   * @param {Record<string, any>} props.metadata - Global metadata to associate with all spans.
+   * This metadata will be associated with all spans, and merged with any metadata passed to
+   * each span. Must be JSON serializable.
    *
    * @example
    * import { Laminar } from '@lmnr-ai/lmnr';
@@ -147,6 +147,7 @@ export class Laminar {
     maxExportBatchSize,
     forceHttp,
     sessionRecordingOptions,
+    metadata,
   }: LaminarInitializeProps = {}) {
     if (this.isInitialized) {
       logger.warn("Laminar has already been initialized. Skipping initialization.");
@@ -181,6 +182,8 @@ export class Laminar {
       this.baseHttpUrl = '';
     }
 
+    this.globalMetadata = metadata ?? {};
+    LaminarContextManager.setGlobalMetadata(this.globalMetadata);
     this.isInitialized = true;
 
     const urlWithoutSlash = url?.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
@@ -322,8 +325,9 @@ export class Laminar {
       ...(userId ? { "lmnr.event.user_id": userId } : {}),
     } as Record<string, AttributeValue>;
 
-    const currentSpan = trace.getSpan(LaminarContextManager.getContext());
-    if (currentSpan === undefined || !isSpanContextValid(currentSpan.spanContext())) {
+    const currentSpan = Laminar.getCurrentSpan();
+
+    if (currentSpan === undefined) {
       const newSpan = Laminar.startSpan({ name });
       newSpan?.addEvent(name, allAttributes, timestamp);
       newSpan?.end();
@@ -331,6 +335,20 @@ export class Laminar {
     }
 
     currentSpan.addEvent(name, allAttributes, timestamp);
+  }
+
+  public static getCurrentSpan(
+    context?: Context,
+  ): Span | undefined {
+    const currentSpan = trace.getSpan(context ?? LaminarContextManager.getContext())
+      ?? trace.getActiveSpan();
+    if (currentSpan === undefined || !isSpanContextValid(currentSpan.spanContext())) {
+      return undefined;
+    }
+    if (currentSpan instanceof LaminarSpan) {
+      return currentSpan;
+    }
+    return new LaminarSpan(currentSpan);
   }
 
   /**
@@ -354,8 +372,8 @@ export class Laminar {
   public static setSpanAttributes(
     attributes: LaminarAttributesProp,
   ) {
-    const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
-    if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
+    const currentSpan = Laminar.getCurrentSpan();
+    if (currentSpan) {
       for (const [key, value] of Object.entries(attributes)) {
         currentSpan.setAttribute(key, value);
       }
@@ -371,38 +389,44 @@ export class Laminar {
     if (output == null) {
       return;
     }
-    const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
-    if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
-      currentSpan.setAttribute(SPAN_OUTPUT, JSON.stringify(output));
+    const currentSpan = Laminar.getCurrentSpan();
+    if (currentSpan) {
+      (currentSpan as LaminarSpan).setOutput(output);
     }
   }
 
   public static setTraceMetadata(metadata: Record<string, any>) {
-    const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
-    if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
-      const metadataAttributes = metadataToAttributes(metadata);
-      currentSpan.setAttributes(metadataAttributes);
+    const currentSpan = Laminar.getCurrentSpan();
+    if (currentSpan) {
+      (currentSpan as LaminarSpan).setTraceMetadata(metadata);
     }
   }
 
   public static setTraceSessionId(sessionId: string) {
-    const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
-    if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
-      currentSpan.setAttribute(SESSION_ID, sessionId);
+    const currentSpan = Laminar.getCurrentSpan();
+    if (currentSpan) {
+      (currentSpan as LaminarSpan).setTraceSessionId(sessionId);
     }
   }
 
   public static setTraceUserId(userId: string) {
-    const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
-    if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
-      currentSpan.setAttribute(USER_ID, userId);
+    const currentSpan = Laminar.getCurrentSpan();
+    if (currentSpan) {
+      (currentSpan as LaminarSpan).setTraceUserId(userId);
     }
   }
 
   public static setSpanTags(tags: string[]) {
-    const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
+    const currentSpan = Laminar.getCurrentSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
-      currentSpan.setAttribute(`${ASSOCIATION_PROPERTIES}.tags`, Array.from(new Set(tags)));
+      (currentSpan as LaminarSpan).setTags(tags);
+    }
+  }
+
+  public static addSpanTags(tags: string[]) {
+    const currentSpan = Laminar.getCurrentSpan();
+    if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
+      (currentSpan as LaminarSpan).addTags(tags);
     }
   }
 
@@ -488,55 +512,55 @@ export class Laminar {
   }
 
   /**
- * Start a new span, and set it as active. It is the caller's responsibility
- * to end the span. It is important to end the span, to avoid context mixing up.
- * We suggest ending the span in a finally block.
- * This is useful for manual instrumentation.
- * If span type is 'LLM', you should report usage manually.
- * See {@link setSpanAttributes} for more information.
- *
- * @param {Object} options
- * @param {string} options.name - name of the span
- * @param {any} options.input - input to the span. Will be sent as an attribute, so must
- * be JSON serializable
- * @param {string} options.spanType - type of the span. Defaults to 'DEFAULT'
- * @param {Context} options.context - raw OpenTelemetry context to bind the span to.
- * @param {string | LaminarSpanContext} options.parentSpanContext - parent span context
- * to bind the span to.
- * @param {string[]} options.tags - tags to associate with the span.
- * @param {string} options.userId - user ID to associate with the span.
- * @param {string} options.sessionId - session ID to associate with the span.
- * @param {Record<string, any>} options.metadata - metadata to associate with the span.
- * @returns The started span.
- *
- * @example
- * import { Laminar, observe } from '@lmnr-ai/lmnr';
- * const foo = async () => {
- *   await observe({ name: 'foo' }, async () => {
- *     // Your code here
- *   })
- * };
- * const bar = async (span: Span) => {
- *   await observe({ name: 'bar' }, async () => {
- *     await openai_client.chat.completions.create();
- *   })
- * };
- *
- * try {
- *   const parentSpan = Laminar.startActiveSpan({name: "outer"});
- *   foo();
- *   await bar();
- * } finally {
- *   parentSpan.end();
- * }
- *
- * // Results in:
- * // | outer
- * // |  | foo
- * // |  |  | ...
- * // |  | bar
- * // |  |  | openai.chat
- */
+   * Start a new span, and set it as active. It is the caller's responsibility
+   * to end the span. It is important to end the span, to avoid context mixing up.
+   * We suggest ending the span in a finally block.
+   * This is useful for manual instrumentation.
+   * If span type is 'LLM', you should report usage manually.
+   * See {@link setSpanAttributes} for more information.
+   *
+   * @param {Object} options
+   * @param {string} options.name - name of the span
+   * @param {any} options.input - input to the span. Will be sent as an attribute, so must
+   * be JSON serializable
+   * @param {string} options.spanType - type of the span. Defaults to 'DEFAULT'
+   * @param {Context} options.context - raw OpenTelemetry context to bind the span to.
+   * @param {string | LaminarSpanContext} options.parentSpanContext - parent span context
+   * to bind the span to.
+   * @param {string[]} options.tags - tags to associate with the span.
+   * @param {string} options.userId - user ID to associate with the span.
+   * @param {string} options.sessionId - session ID to associate with the span.
+   * @param {Record<string, any>} options.metadata - metadata to associate with the span.
+   * @returns The started span.
+   *
+   * @example
+   * import { Laminar, observe } from '@lmnr-ai/lmnr';
+   * const foo = async () => {
+   *   await observe({ name: 'foo' }, async () => {
+   *     // Your code here
+   *   })
+   * };
+   * const bar = async (span: Span) => {
+   *   await observe({ name: 'bar' }, async () => {
+   *     await openai_client.chat.completions.create();
+   *   })
+   * };
+   *
+   * try {
+   *   const parentSpan = Laminar.startActiveSpan({name: "outer"});
+   *   foo();
+   *   await bar();
+   * } finally {
+   *   parentSpan.end();
+   * }
+   *
+   * // Results in:
+   * // | outer
+   * // |  | foo
+   * // |  |  | ...
+   * // |  | bar
+   * // |  |  | openai.chat
+   */
   public static startActiveSpan({
     name,
     input,
@@ -600,7 +624,11 @@ export class Laminar {
     // Extract parent path information before converting to OpenTelemetry span context
     let parentPath: string[] | undefined;
     let parentIdsPath: string[] | undefined;
-
+    let parentMetadata: Record<string, any> | undefined;
+    let parentTraceType: TraceType | undefined;
+    let parentTracingLevel: TracingLevel | undefined;
+    let parentUserId: string | undefined;
+    let parentSessionId: string | undefined;
 
     if (parentSpanContext) {
       try {
@@ -610,6 +638,11 @@ export class Laminar {
 
         parentPath = laminarContext.spanPath;
         parentIdsPath = laminarContext.spanIdsPath;
+        parentMetadata = laminarContext.metadata;
+        parentTraceType = laminarContext.traceType;
+        parentTracingLevel = laminarContext.tracingLevel;
+        parentUserId = laminarContext.userId;
+        parentSessionId = laminarContext.sessionId;
 
         const spanContext = tryToOtelSpanContext(laminarContext);
         entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
@@ -623,30 +656,56 @@ export class Laminar {
     const tagProperties = tags
       ? { [`${ASSOCIATION_PROPERTIES}.tags`]: Array.from(new Set(tags)) }
       : {};
-    const userIdProperties = userId ? { [USER_ID]: userId } : {};
-    const sessionIdProperties = sessionId ? { [SESSION_ID]: sessionId } : {};
-    const metadataProperties = metadata
-      ? metadataToAttributes(metadata)
+    const ctxAssociationProperties = LaminarContextManager.getAssociationProperties();
+    const userIdValue = userId
+      ?? parentUserId
+      ?? ctxAssociationProperties.userId;
+    const sessionIdValue = sessionId
+      ?? parentSessionId
+      ?? ctxAssociationProperties.sessionId;
+    const traceTypeValue = parentTraceType
+      ?? ((spanType as string) === 'EVALUATION' ? 'EVALUATION' : undefined)
+      ?? ctxAssociationProperties.traceType;
+    const tracingLevelValue = parentTracingLevel
+      ?? ctxAssociationProperties.tracingLevel;
+    const ctxMetadata = ctxAssociationProperties.metadata;
+
+    const userIdProperties = userIdValue ? { [USER_ID]: userIdValue } : {};
+    const sessionIdProperties = sessionIdValue ? { [SESSION_ID]: sessionIdValue } : {};
+    const traceTypeProperties = traceTypeValue ? { [TRACE_TYPE]: traceTypeValue } : {};
+    const tracingLevelProperties = tracingLevelValue
+      ? { [`${ASSOCIATION_PROPERTIES}.tracing_level`]: tracingLevelValue }
       : {};
+
+    const mergedMetadata = {
+      ...this.globalMetadata,
+      ...ctxMetadata,
+      ...parentMetadata,
+      ...metadata,
+    };
+
+    const metadataProperties = metadataToAttributes(mergedMetadata);
     const attributes = {
       [SPAN_TYPE]: spanType ?? 'DEFAULT',
       ...tagProperties,
       ...userIdProperties,
       ...sessionIdProperties,
       ...metadataProperties,
+      ...traceTypeProperties,
+      ...tracingLevelProperties,
       ...(parentPath ? { [PARENT_SPAN_PATH]: parentPath } : {}),
       ...(parentIdsPath ? { [PARENT_SPAN_IDS_PATH]: parentIdsPath } : {}),
     };
 
-    const span = getTracer().startSpan(name, { attributes }, entityContext);
-    if (span instanceof LaminarSpan) {
-      span.activated = activated ?? false;
-    }
+    let span = getTracer().startSpan(name, { attributes }, entityContext);
+    span = new LaminarSpan(span);
+    (span as LaminarSpan).activated = activated ?? false;
 
     if (input) {
-      span.setAttribute(SPAN_INPUT, JSON.stringify(input));
+      (span as LaminarSpan).setInput(input);
     }
     if (activated) {
+      // entityContext = LaminarContextManager.setAssociationProperties(span as LaminarSpan);
       entityContext = trace.setSpan(entityContext, span);
       LaminarContextManager.pushContext(entityContext);
     }
@@ -692,7 +751,8 @@ export class Laminar {
           }
           throw error;
         }
-      }));
+      },
+    ));
   }
 
   public static serializeLaminarSpanContext(span?: Span): string | null {
@@ -704,23 +764,14 @@ export class Laminar {
   };
 
   public static getLaminarSpanContext(span?: Span): LaminarSpanContext | null {
-    const currentSpan = span ?? trace.getSpan(LaminarContextManager.getContext())
-      ?? trace.getActiveSpan();
+    let currentSpan = span ?? Laminar.getCurrentSpan();
     if (currentSpan === undefined || !isSpanContextValid(currentSpan.spanContext())) {
       return null;
     }
-
-    // Get path information from span attributes
-    const path = (currentSpan as any).attributes?.[SPAN_PATH] as string[] | undefined;
-    const idsPath = (currentSpan as any).attributes?.[SPAN_IDS_PATH] as StringUUID[] | undefined;
-
-    return {
-      traceId: otelTraceIdToUUID(currentSpan.spanContext().traceId),
-      spanId: otelSpanIdToUUID(currentSpan.spanContext().spanId) as StringUUID,
-      isRemote: currentSpan.spanContext().isRemote ?? false,
-      spanPath: path,
-      spanIdsPath: idsPath,
-    };
+    if (!(currentSpan instanceof LaminarSpan)) {
+      currentSpan = new LaminarSpan(currentSpan);
+    }
+    return (currentSpan as LaminarSpan).getLaminarSpanContext();
   }
 
   /**

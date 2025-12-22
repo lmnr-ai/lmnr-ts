@@ -1,4 +1,4 @@
-import { context, Span, trace } from "@opentelemetry/api";
+import { AttributeValue, context, Span, trace } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
 
 import { LaminarSpanContext } from "../../types";
@@ -10,22 +10,19 @@ import {
 } from "../../utils";
 import { getTracer, shouldSendTraces } from ".";
 import {
-  PARENT_SPAN_IDS_PATH,
-  PARENT_SPAN_PATH,
   SPAN_INPUT,
   SPAN_OUTPUT,
-  SPAN_TYPE,
 } from "./attributes";
-import { LaminarContextManager } from "./context";
 import {
-  ASSOCIATION_PROPERTIES_KEY,
-} from "./utils";
+  LaminarContextManager,
+} from "./context";
+import { LaminarSpan } from "./span";
 
 const logger = initializeLogger();
 
 export type DecoratorConfig = {
   name: string;
-  associationProperties?: { [name: string]: string };
+  associationProperties?: Record<string, AttributeValue>;
   input?: unknown;
   ignoreInput?: boolean;
   ignoreOutput?: boolean;
@@ -54,31 +51,15 @@ export function observeBase<
 ) {
   let entityContext = LaminarContextManager.getContext();
 
-  const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY);
-
-  // span type must not be passed down to the context, so remove it
-  const { "span_type": spanType, ...rest } = associationProperties ?? {};
-  if (associationProperties) {
-    // TODO: Remove this once we've removed older deprecated methods, such as
-    // withMetadata, withSession.
-    entityContext = entityContext.setValue(
-      ASSOCIATION_PROPERTIES_KEY,
-      { ...(currentAssociationProperties ?? {}), ...rest },
-    );
+  if (shouldSuppressTracing) {
+    entityContext = suppressTracing(entityContext);
   }
-  // ================================
-
-  let parentPath: string[] | undefined;
-  let parentIdsPath: string[] | undefined;
 
   if (parentSpanContext) {
     try {
       const laminarContext = typeof parentSpanContext === 'string'
         ? deserializeLaminarSpanContext(parentSpanContext)
         : parentSpanContext;
-
-      parentPath = laminarContext.spanPath;
-      parentIdsPath = laminarContext.spanIdsPath;
 
       const spanContext = tryToOtelSpanContext(laminarContext);
       entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
@@ -97,14 +78,11 @@ export function observeBase<
     getTracer().startActiveSpan(
       name,
       {
-        attributes: {
-          ...(parentPath ? { [PARENT_SPAN_PATH]: parentPath } : {}),
-          ...(parentIdsPath ? { [PARENT_SPAN_IDS_PATH]: parentIdsPath } : {}),
-          ...(spanType ? { [SPAN_TYPE]: spanType } : {}),
-        },
+        attributes: associationProperties,
       },
       entityContext,
       async (span: Span) => {
+        entityContext = LaminarContextManager.setAssociationProperties(span as LaminarSpan);
         if (shouldSendTraces() && !ignoreInput) {
           try {
             const spanInput = inputParameters ?? args;
@@ -124,7 +102,7 @@ export function observeBase<
               );
             } else {
               // pass an array of the arguments without names
-              // Need to convert it to hashmap from argument name to value,
+              // Need to convert it to map from argument name to value,
               // if we figure out how to do it elegantly
               span.setAttribute(
                 SPAN_INPUT,

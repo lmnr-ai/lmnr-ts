@@ -107,9 +107,9 @@ void describe("observeDecorator", () => {
     const attrs = spans[0].attributes;
     assert.strictEqual(attrs["lmnr.association.properties.metadata.version"], "1.0");
     assert.strictEqual(attrs["lmnr.association.properties.metadata.model"], "gpt-4");
-    assert.deepStrictEqual(attrs["tags"], ["test", "metadata"]);
-    assert.strictEqual(attrs["session_id"], "test-session-123");
-    assert.strictEqual(attrs["user_id"], "user-456");
+    assert.deepStrictEqual(attrs["lmnr.association.properties.tags"], ["test", "metadata"]);
+    assert.strictEqual(attrs["lmnr.association.properties.session_id"], "test-session-123");
+    assert.strictEqual(attrs["lmnr.association.properties.user_id"], "user-456");
   });
 
   void it("supports dynamic configuration function", async () => {
@@ -141,7 +141,7 @@ void describe("observeDecorator", () => {
     const attrs = spans[0].attributes;
     assert.strictEqual(attrs["lmnr.association.properties.metadata.operation"], "sum");
     assert.strictEqual(attrs["lmnr.association.properties.metadata.valueCount"], 3);
-    assert.deepStrictEqual(attrs["tags"], ["math", "sum"]);
+    assert.deepStrictEqual(attrs["lmnr.association.properties.tags"], ["math", "sum"]);
   });
 
   void it("handles exceptions in decorated methods", async () => {

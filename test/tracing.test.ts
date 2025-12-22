@@ -77,7 +77,7 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify("my_input"));
+    assert.strictEqual(spans[0].attributes['lmnr.span.input'], "my_input");
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
@@ -117,7 +117,7 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify("my_input"));
+    assert.strictEqual(spans[0].attributes['lmnr.span.input'], "my_input");
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);

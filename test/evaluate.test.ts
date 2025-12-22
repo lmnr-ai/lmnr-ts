@@ -94,7 +94,7 @@ void describe("evaluate", () => {
     );
     const executorSpan = spans.find((span) => span.attributes['lmnr.span.type'] === "EXECUTOR");
     assert.strictEqual(
-      JSON.parse(String(executorSpan?.attributes['lmnr.span.output'])),
+      String(executorSpan?.attributes['lmnr.span.output']),
       "a".repeat(150),
     );
     const evaluatorSpans = spans.filter(
