@@ -6,6 +6,7 @@ import { DatasetsResource } from "./resources/datasets";
 import { EvalsResource } from "./resources/evals";
 import { EvaluatorsResource } from "./resources/evaluators";
 import { RolloutSessionsResource } from "./resources/rollout-sessions";
+import { SqlResource } from "./resources/sql";
 import { TagsResource } from "./resources/tags";
 
 export class LaminarClient {
@@ -17,6 +18,7 @@ export class LaminarClient {
   private _evals: EvalsResource;
   private _evaluators: EvaluatorsResource;
   private _rolloutSessions: RolloutSessionsResource;
+  private _sql: SqlResource;
   private _tags: TagsResource;
 
   constructor({
@@ -45,6 +47,7 @@ export class LaminarClient {
     this._evals = new EvalsResource(this.baseUrl, this.projectApiKey);
     this._evaluators = new EvaluatorsResource(this.baseUrl, this.projectApiKey);
     this._rolloutSessions = new RolloutSessionsResource(this.baseUrl, this.projectApiKey);
+    this._sql = new SqlResource(this.baseUrl, this.projectApiKey);
     this._tags = new TagsResource(this.baseUrl, this.projectApiKey);
   }
 
@@ -70,6 +73,10 @@ export class LaminarClient {
 
   public get rolloutSessions() {
     return this._rolloutSessions;
+  }
+
+  public get sql() {
+    return this._sql;
   }
 
   public get tags() {

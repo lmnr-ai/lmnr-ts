@@ -12,6 +12,7 @@ import {
   handleDatasetsPush,
 } from "./datasets";
 import { runEvaluation } from "./evals";
+import { runServe } from "./rollout/serve";
 
 const logger = initializeLogger();
 
@@ -153,6 +154,28 @@ async function cli() {
     .action(async (name: string, paths: string[], options, cmd) => {
       const parentOpts = cmd.parent?.opts() || {};
       await handleDatasetsCreate(name, paths, { ...parentOpts, ...options });
+    });
+
+  // Serve command
+  program
+    .command("serve")
+    .description("Start a rollout debugging session")
+    .argument("<file>", "Path to file containing the agent function wrapped with observeRollout")
+    .option(
+      "--project-api-key <key>",
+      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .action(async (file: string, options) => {
+      await runServe(file, options);
     });
 
   // If no command provided, show help

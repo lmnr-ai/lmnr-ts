@@ -1,23 +1,16 @@
 import { AttributeValue } from "@opentelemetry/api";
 
 import { observeBase } from './opentelemetry-lib';
-import {
-  ASSOCIATION_PROPERTIES,
-  PARENT_SPAN_IDS_PATH,
-  PARENT_SPAN_PATH,
-  SESSION_ID,
-  SPAN_TYPE,
-  TRACE_TYPE,
-  USER_ID,
-} from "./opentelemetry-lib/tracing/attributes";
-import {
-  ASSOCIATION_PROPERTIES_KEY,
-  LaminarContextManager,
-} from "./opentelemetry-lib/tracing/context";
-import { LaminarSpanContext, TraceType, TracingLevel } from './types';
-import { deserializeLaminarSpanContext, initializeLogger, metadataToAttributes } from "./utils";
+import { LaminarContextManager } from "./opentelemetry-lib/tracing/context";
+import { ASSOCIATION_PROPERTIES_KEY } from "./opentelemetry-lib/tracing/utils";
+import { LaminarSpanContext, RolloutParam, TraceType, TracingLevel } from './types';
+import { metadataToAttributes } from "./utils";
 
-const logger = initializeLogger();
+declare global {
+  var _rolloutFunction: ((...args: any[]) => Promise<any>) | undefined;
+  var _rolloutFunctionParams: RolloutParam[] | undefined;
+  var _set_rollout_global: boolean;
+}
 
 interface ObserveOptions {
   name?: string;
@@ -102,6 +95,140 @@ export function observe<A extends unknown[], F extends (...args: A) => ReturnTyp
 }
 
 /**
+ * Extracts parameter names from a function using regex
+ */
+function extractParamNames(fn: Function): RolloutParam[] {
+  const fnStr = fn.toString();
+
+  // Match function parameters - handles regular functions, arrow functions, async functions
+  const paramMatch = fnStr.match(/(?:async\s+)?(?:function\s*)?\(([^)]*)\)|(?:async\s+)?([^=\s]+)\s*=>/);
+
+  if (!paramMatch) {
+    return [];
+  }
+
+  const paramsStr = paramMatch[1] || paramMatch[2] || '';
+
+  if (!paramsStr.trim()) {
+    return [];
+  }
+
+  // Split by comma and extract parameter names (simple version - just names, no destructuring)
+  const params = paramsStr.split(',').map(param => {
+    // Remove default values, type annotations, and whitespace
+    const name = param
+      .trim()
+      .replace(/=.+$/, '') // Remove default values
+      .replace(/:.+$/, '') // Remove type annotations
+      .replace(/\s+/g, ''); // Remove whitespace
+
+    // Extract just the parameter name (handle simple destructuring by taking the variable name)
+    const simpleNameMatch = name.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*/);
+    return simpleNameMatch ? simpleNameMatch[0] : name;
+  });
+
+  return params
+    .filter(name => name && name.length > 0)
+    .map(name => ({ name }));
+}
+
+/**
+ * Wrapper for agent entry points that supports rollout debugging sessions.
+ * This function wraps agent functions to enable caching of LLM responses
+ * during debugging sessions with the `npx lmnr serve` CLI command.
+ *
+ * @param options - Same options as `observe`
+ * @param fn - The function to wrap (typically an agent entry point)
+ * @param args - Arguments to pass to the function
+ * @returns Returns the result of the wrapped function
+ *
+ * @example
+ * ```typescript
+ * import { observeRollout } from '@lmnr-ai/lmnr';
+ *
+ * await observeRollout({ name: 'myAgent' }, async (instruction: string) => {
+ *    // Your agent code here
+ * }, 'tell me a joke');
+ * ```
+ */
+export async function observeRollout<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
+  options: ObserveOptions,
+  fn: F,
+  ...args: A
+): Promise<ReturnType<F>> {
+  if (fn === undefined || typeof fn !== "function") {
+    throw new Error("Invalid `observeRollout` usage. Second argument `fn` must be a function.");
+  }
+
+  // Extract parameter names
+  const params = extractParamNames(fn);
+  globalThis._rolloutFunctionParams = params;
+
+  // If we're in registration mode, register the function
+  if (globalThis._set_rollout_global) {
+    globalThis._rolloutFunction = fn as (...args: any[]) => Promise<any>;
+  }
+
+  // Always execute the function via observe
+  return await observe(options, fn, ...args);
+}
+
+/**
+ * @deprecated Use `tags` in `observe` or in `Laminar.startSpan`, or `Laminar.setSpanTags` instead.
+ * Sets the labels for any spans inside the function. This is useful for adding
+ * labels to the spans created in the auto-instrumentations. Returns the result
+ * of the wrapped function, so you can use it in an `await` statement if needed.
+ *
+ * Requirements:
+ * - Labels must be created in your project in advance.
+ * - Keys must be strings from your label names.
+ * - Values must be strings matching the label's allowed values.
+ *
+ * @param labels - The labels to set.
+ * @returns The result of the wrapped function.
+ *
+ * @example
+ * ```typescript
+ * import { withLabels } from '@lmnr-ai/lmnr';
+ *
+ * const result = await withLabels({ endpoint: "ft-openai-<id>" }, () => {
+ *    openai.chat.completions.create({});
+ * });
+ * ```
+ */
+export function withLabels<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
+  labels: string[],
+  fn: F,
+  ...args: A
+): ReturnType<F> {
+  let entityContext = context.active();
+  const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
+  const oldLabels = (currentAssociationProperties as Record<string, any>).labels ?? [];
+  const newLabels = [...oldLabels, ...labels];
+
+  entityContext = entityContext.setValue(
+    ASSOCIATION_PROPERTIES_KEY,
+    {
+      ...currentAssociationProperties,
+      labels: newLabels,
+    },
+  );
+
+  const result = context.with(entityContext, () => fn(...args));
+
+  const newAssociationProperties = (
+    entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {}
+  ) as Record<string, any>;
+
+  entityContext = entityContext.setValue(
+    ASSOCIATION_PROPERTIES_KEY,
+    { ...newAssociationProperties, labels: oldLabels },
+  );
+
+  return result;
+}
+
+/**
  * Sets the tracing level for any spans inside the function. This is useful for
  * conditionally disabling the tracing for certain functions.
  * Tracing level must be one of the values in {@link TracingLevel}. Returns the
@@ -152,7 +279,7 @@ export function withTracingLevel<A extends unknown[], F extends (...args: A) => 
 }
 
 const buildAssociationProperties = (options: Partial<ObserveOptions>):
-Record<string, AttributeValue> => {
+  Record<string, AttributeValue> => {
   const associationProperties: Record<string, AttributeValue> = {};
   const parentSpanContext = options.parentSpanContext;
   const globalMetadata = LaminarContextManager.getGlobalMetadata();
