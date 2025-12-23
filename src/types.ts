@@ -140,3 +140,34 @@ export interface MaskInputOptions {
 export interface SessionRecordingOptions {
   maskInputOptions?: MaskInputOptions;
 }
+
+/**
+ * Event payload for rollout debugging sessions run events
+ */
+export interface RolloutRunEvent {
+  event_type: 'run';
+  data: {
+    trace_id: string;
+    path_to_count: Record<string, number>;
+    args: Record<string, any>;
+    overrides?: Record<string, {
+      system?: string;
+      tools?: any[];
+    }>;
+  };
+}
+
+/**
+ * Parameter metadata for rollout functions
+ * 
+ * Future fields:
+ * - type: string - The TypeScript type of the parameter
+ * - required: boolean - Whether the parameter is required
+ * - nested: RolloutParam[] - For destructured parameters, contains nested parameter definitions
+ */
+export interface RolloutParam {
+  name: string;
+  // Future: type?: string;
+  // Future: required?: boolean;
+  // Future: nested?: RolloutParam[];
+}
