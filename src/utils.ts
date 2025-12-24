@@ -223,7 +223,7 @@ export const deserializeLaminarSpanContext = (
   const spanIdsPath = data.spanIdsPath ?? data.span_ids_path;
   const userId = data.userId ?? data.user_id;
   const sessionId = data.sessionId ?? data.session_id;
-  const metadata = data.metadata ?? data.metadata;
+  const metadata = data.metadata;
   const traceType = data.traceType ?? data.trace_type;
   const tracingLevel = data.tracingLevel ?? data.tracing_level;
 

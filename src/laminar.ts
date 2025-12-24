@@ -33,7 +33,13 @@ import {
 } from './opentelemetry-lib/tracing/attributes';
 import { LaminarContextManager } from './opentelemetry-lib/tracing/context';
 import { LaminarSpan } from './opentelemetry-lib/tracing/span';
-import { LaminarSpanContext, SessionRecordingOptions, TraceType, TracingLevel } from './types';
+import {
+  LaminarSpanContext,
+  SessionRecordingOptions,
+  SpanType,
+  TraceType,
+  TracingLevel,
+} from './types';
 import {
   deserializeLaminarSpanContext,
   initializeLogger,
@@ -490,7 +496,7 @@ export class Laminar {
   }: {
     name: string,
     input?: any,
-    spanType?: 'LLM' | 'DEFAULT' | 'TOOL',
+    spanType?: SpanType,
     context?: Context,
     parentSpanContext?: string | LaminarSpanContext,
     tags?: string[],
@@ -575,7 +581,7 @@ export class Laminar {
   }: {
     name: string,
     input?: any,
-    spanType?: 'LLM' | 'DEFAULT' | 'TOOL',
+    spanType?: SpanType,
     context?: Context,
     parentSpanContext?: string | LaminarSpanContext,
     tags?: string[],
@@ -611,7 +617,7 @@ export class Laminar {
   }: {
     name: string,
     input?: any,
-    spanType?: 'LLM' | 'DEFAULT' | 'TOOL',
+    spanType?: SpanType,
     context?: Context,
     parentSpanContext?: string | LaminarSpanContext,
     tags?: string[],

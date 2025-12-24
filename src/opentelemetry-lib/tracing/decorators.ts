@@ -69,10 +69,6 @@ export function observeBase<
     }
   }
 
-  if (shouldSuppressTracing) {
-    entityContext = suppressTracing(entityContext);
-  }
-
   return context.with(entityContext, () =>
     getTracer().startActiveSpan(
       name,

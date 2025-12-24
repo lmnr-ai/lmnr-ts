@@ -79,7 +79,6 @@ export type SemanticSearchResponse = {
  */
 export type SpanType = 'DEFAULT'
   | 'LLM'
-  | 'PIPELINE'
   | 'EXECUTOR'
   | 'EVALUATOR'
   | 'HUMAN_EVALUATOR'
