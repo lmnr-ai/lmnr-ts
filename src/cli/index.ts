@@ -160,7 +160,11 @@ async function cli() {
   program
     .command("serve")
     .description("Start a rollout debugging session")
-    .argument("<file>", "Path to file containing the agent function wrapped with observeRollout")
+    .argument("<file>", "Path to file containing the agent function(s)")
+    .option(
+      "--function <name>",
+      "Specific function to serve (if multiple rollout functions found)",
+    )
     .option(
       "--project-api-key <key>",
       "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",

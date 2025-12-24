@@ -1,7 +1,8 @@
 import { EventEmitter } from 'events';
-import { RolloutParam, RolloutRunEvent } from '../types';
+import { createParser } from 'eventsource-parser';
+import { RolloutHandshakeEvent, RolloutParam, RolloutRunEvent } from '../../types';
 
-const HEARTBEAT_INTERVAL = 2000; // 2 seconds
+const HEARTBEAT_INTERVAL = 5000; // 5 seconds
 const MAX_MISSED_HEARTBEATS = 3; // N missed intervals before reconnect
 
 export interface SSEClientOptions {
@@ -94,7 +95,13 @@ export class SSEClient extends EventEmitter {
   private async parseSSEStream(body: ReadableStream<Uint8Array>): Promise<void> {
     const reader = body.getReader();
     const decoder = new TextDecoder();
-    let buffer = '';
+
+    // Create SSE parser with proper event handling
+    const parser = createParser({
+      onEvent: (event: any) => {
+        this.processSSEEvent(event);
+      },
+    });
 
     try {
       while (true) {
@@ -104,15 +111,9 @@ export class SSEClient extends EventEmitter {
           break;
         }
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-
-        // Keep the last incomplete line in the buffer
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          this.processSSELine(line);
-        }
+        // Feed the chunks to the parser
+        const chunk = decoder.decode(value, { stream: true });
+        parser.feed(chunk);
       }
     } finally {
       reader.releaseLock();
@@ -125,26 +126,36 @@ export class SSEClient extends EventEmitter {
   }
 
   /**
-   * Processes a single SSE line
+   * Processes a parsed SSE event
    */
-  private processSSELine(line: string): void {
-    if (!line.trim() || !line.startsWith('data: ')) {
+  private processSSEEvent(event: any): void {
+    if (!event.data) {
       return;
     }
 
-    const data = line.slice(6); // Remove 'data: ' prefix
-
     try {
-      const event = JSON.parse(data);
-
-      if (event.event_type === 'heartbeat') {
+      // The event.event field contains the event type ('heartbeat' or 'run')
+      // The event.data field contains the JSON payload
+      if (event.event === 'heartbeat') {
         this.lastHeartbeat = Date.now();
         this.emit('heartbeat');
-      } else if (event.event_type === 'run') {
-        this.emit('run', event as RolloutRunEvent);
+      } else if (event.event === 'run') {
+        const parsedData = JSON.parse(event.data);
+        const runEvent: RolloutRunEvent = {
+          event_type: 'run',
+          data: parsedData,
+        };
+        this.emit('run', runEvent);
+      } else if (event.event === 'handshake') {
+        const parsedData = JSON.parse(event.data);
+        const handshakeEvent: RolloutHandshakeEvent = {
+          event_type: 'handshake',
+          data: parsedData,
+        }
+        this.emit('handshake', handshakeEvent);
       }
     } catch (error) {
-      this.emit('error', new Error(`Failed to parse SSE event: ${error}`));
+      this.emit('error', new Error(`Failed to parse SSE event data: ${error}`));
     }
   }
 
@@ -230,10 +241,9 @@ export class SSEClient extends EventEmitter {
 }
 
 /**
- * Creates and connects an SSE client
+ * Creates an SSE client (does not auto-connect)
+ * Call client.connect() after registering event listeners
  */
-export async function createSSEClient(options: SSEClientOptions): Promise<SSEClient> {
-  const client = new SSEClient(options);
-  await client.connect();
-  return client;
+export function createSSEClient(options: SSEClientOptions): SSEClient {
+  return new SSEClient(options);
 }

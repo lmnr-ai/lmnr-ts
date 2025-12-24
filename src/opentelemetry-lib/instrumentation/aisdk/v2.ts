@@ -9,7 +9,7 @@ import {
   LanguageModelV2Usage,
   SharedV2Headers,
   SharedV2ProviderMetadata,
-} from "@ai-sdk/provider";
+} from "@ai-sdk/provider-v2";
 import { Laminar } from "../../../laminar";
 import { LaminarClient } from "../../../client";
 import { convertToContentBlocks, fetchCachedSpan } from "./shared";
@@ -90,6 +90,8 @@ export class LaminarLanguageModelV2 { // implements LanguageModelV2
     warnings: Array<LanguageModelV2CallWarning>;
   }> {
     if (process.env.LMNR_ROLLOUT_SESSION_ID) {
+      // const span = Laminar.getCurrentSpan();
+      // span?.setAttribute('lmnr.rollout.session_id', process.env.LMNR_ROLLOUT_SESSION_ID);
       const pathArray = Laminar.getLaminarSpanContext()?.spanPath;
       if (pathArray) {
         const path = pathArray.join('.');

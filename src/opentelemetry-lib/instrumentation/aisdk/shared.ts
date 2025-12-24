@@ -1,5 +1,5 @@
-import { LanguageModelV2Content } from "@ai-sdk/provider";
-import { LanguageModelV3Content } from "@ai-sdk/provider-v3";
+import { LanguageModelV2Content } from "@ai-sdk/provider-v2";
+import { LanguageModelV3Content } from "@ai-sdk/provider";
 
 export interface CachedSpanData {
   span: {
