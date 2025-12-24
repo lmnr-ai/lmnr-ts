@@ -83,7 +83,7 @@ export function observeBase<
             if (input !== undefined) {
               span.setAttribute(
                 SPAN_INPUT,
-                serialize(input),
+                typeof input === 'string' ? input : serialize(input),
               );
             } else if (
               spanInput.length === 1 &&
@@ -92,7 +92,7 @@ export function observeBase<
             ) {
               span.setAttribute(
                 SPAN_INPUT,
-                serialize(spanInput[0]),
+                typeof spanInput[0] === 'string' ? spanInput[0] : serialize(spanInput[0]),
               );
             } else {
               // pass an array of the arguments without names
@@ -157,7 +157,7 @@ export function observeBase<
           if (shouldSendTraces() && !ignoreOutput) {
             span.setAttribute(
               SPAN_OUTPUT,
-              serialize(res),
+              typeof res === 'string' ? res : serialize(res),
             );
           }
         } catch (error) {

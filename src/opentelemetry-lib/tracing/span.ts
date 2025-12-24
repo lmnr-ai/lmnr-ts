@@ -209,6 +209,7 @@ export class LaminarSpan implements Span, ReadableSpan {
     let userId;
     let sessionId;
     let traceType;
+    let tracingLevel = TracingLevel.ALL;
     const metadata: Record<string, AttributeValue> = {};
 
     if (this._span.attributes) {
@@ -217,6 +218,9 @@ export class LaminarSpan implements Span, ReadableSpan {
       userId = this._span.attributes[USER_ID] as string;
       sessionId = this._span.attributes[SESSION_ID] as string;
       traceType = this._span.attributes[TRACE_TYPE] as TraceType;
+      tracingLevel = this._span.attributes[
+        `${ASSOCIATION_PROPERTIES}.tracing_level`
+      ] as TracingLevel ?? TracingLevel.ALL;
       for (const [key, rawValue] of Object.entries(this._span.attributes)) {
         if (key.startsWith(`${ASSOCIATION_PROPERTIES}.metadata.`)) {
           let value = rawValue!;
@@ -245,6 +249,7 @@ export class LaminarSpan implements Span, ReadableSpan {
       sessionId: sessionId,
       metadata: metadata,
       traceType: traceType,
+      tracingLevel: tracingLevel,
     };
   }
 
