@@ -16,7 +16,6 @@ import {
 import {
   LaminarContextManager,
 } from "./context";
-import { LaminarSpan } from "./span";
 
 const logger = initializeLogger();
 
@@ -82,7 +81,6 @@ export function observeBase<
       },
       entityContext,
       async (span: Span) => {
-        entityContext = LaminarContextManager.setAssociationProperties(span as LaminarSpan);
         if (shouldSendTraces() && !ignoreInput) {
           try {
             const spanInput = inputParameters ?? args;

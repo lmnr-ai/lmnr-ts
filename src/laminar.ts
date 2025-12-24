@@ -246,7 +246,8 @@ export class Laminar {
         LaminarContextManager.getContext(),
         trace.wrapSpanContext(otelSpanContext),
       );
-      LaminarContextManager.pushContext(baseContext);
+      const ctx = LaminarContextManager.setRawAssociationProperties(laminarContext, baseContext);
+      LaminarContextManager.pushContext(ctx);
 
       logger.debug("Initialized Laminar parent context from LMNR_SPAN_CONTEXT.");
     } catch (e) {
@@ -705,7 +706,10 @@ export class Laminar {
       (span as LaminarSpan).setInput(input);
     }
     if (activated) {
-      // entityContext = LaminarContextManager.setAssociationProperties(span as LaminarSpan);
+      entityContext = LaminarContextManager.setAssociationProperties(
+        span as LaminarSpan,
+        entityContext,
+      );
       entityContext = trace.setSpan(entityContext, span);
       LaminarContextManager.pushContext(entityContext);
     }
@@ -726,7 +730,13 @@ export class Laminar {
    * See {@link startSpan} docs for a usage example
    */
   public static withSpan<T>(span: Span, fn: () => T, endOnExit?: boolean): T | Promise<T> {
-    const context = trace.setSpan(LaminarContextManager.getContext(), span);
+    const ctx = LaminarContextManager.getContext();
+    const laminarSpan = new LaminarSpan(span);
+    const ctxWithAssociationProperties = LaminarContextManager.setAssociationProperties(
+      laminarSpan,
+      ctx,
+    );
+    const context = trace.setSpan(ctxWithAssociationProperties, span);
     return contextApi.with(context, () => LaminarContextManager.runWithIsolatedContext(
       [context],
       () => {

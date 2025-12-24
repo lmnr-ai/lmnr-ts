@@ -22,6 +22,11 @@ export class LaminarContextManager {
   // LaminarSpan adds and removes itself to and from this registry in start()
   // and end() methods respectively.
   private static _activeSpans: Set<string> = new Set();
+  private static _globalMetadata: Record<string, any> = {};
+
+  private constructor() {
+    throw new Error("LaminarContextManager is a static class and cannot be instantiated");
+  }
 
   public static getContext(): Context {
     const contexts = this._asyncLocalStorage.getStore() || [];
@@ -132,15 +137,22 @@ export class LaminarContextManager {
     this._activeSpans.delete(spanId);
   }
 
-  public static setAssociationProperties(span: LaminarSpan): Context {
+  public static setAssociationProperties(span: LaminarSpan, context: Context): Context {
     const properties = span.laminarAssociationProperties;
+
+    return this.setRawAssociationProperties(properties, context);
+  }
+
+  public static setRawAssociationProperties(
+    properties: Record<string, any>,
+    context: Context,
+  ): Context {
+    let entityContext = context ?? this.getContext();
     const userId = properties.userId;
     const sessionId = properties.sessionId;
     const traceType = properties.traceType;
     const metadata = properties.metadata;
     const tracingLevel = properties.tracingLevel;
-
-    let entityContext = this.getContext();
     entityContext = entityContext.setValue(ASSOCIATION_PROPERTIES_KEY, {
       userId: userId,
       sessionId: sessionId,
@@ -152,14 +164,11 @@ export class LaminarContextManager {
   }
 
   public static setGlobalMetadata(globalMetadata: Record<string, any>) {
-    let entityContext = this.getContext();
-    entityContext = entityContext.setValue(CONTEXT_GLOBAL_METADATA_KEY, globalMetadata);
-    return entityContext;
+    this._globalMetadata = globalMetadata;
   }
 
   public static getGlobalMetadata(): Record<string, any> {
-    const entityContext = this.getContext();
-    return entityContext.getValue(CONTEXT_GLOBAL_METADATA_KEY) ?? {};
+    return this._globalMetadata;
   }
 
   public static getAssociationProperties(): {
