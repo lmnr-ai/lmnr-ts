@@ -9,7 +9,7 @@ import {
   SharedV3Headers,
   SharedV3ProviderMetadata,
   SharedV3Warning
-} from "@ai-sdk/provider-v3";
+} from "@ai-sdk/provider";
 import { Laminar } from "../../../laminar";
 import { LaminarClient } from "../../../client";
 import { convertToContentBlocks, fetchCachedSpan } from "./shared";
@@ -97,6 +97,8 @@ export class LaminarLanguageModelV3 { // implements LanguageModelV3
     warnings: Array<SharedV3Warning>;
   }> {
     if (process.env.LMNR_ROLLOUT_SESSION_ID) {
+      // const span = Laminar.getCurrentSpan();
+      // span?.setAttribute('lmnr.rollout.session_id', process.env.LMNR_ROLLOUT_SESSION_ID);
       const pathArray = Laminar.getLaminarSpanContext()?.spanPath;
       if (pathArray) {
         const path = pathArray.join('.');

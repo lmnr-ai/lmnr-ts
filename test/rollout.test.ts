@@ -2,8 +2,7 @@ import { describe, it } from 'node:test';
 import * as assert from 'node:assert';
 import * as http from 'node:http';
 import { startCacheServer, CachedSpan } from '../src/cli/rollout/cache-server';
-import { observeRollout } from '../src/decorators';
-import { RolloutParam } from '../src';
+import { observe } from '../src/decorators';
 
 // Helper to make HTTP requests
 async function makeRequest(
@@ -201,62 +200,97 @@ describe('Cache Server Tests', () => {
   });
 });
 
-describe('observeRollout Tests', () => {
-  it('should register function when _set_rollout_global is true', async () => {
+describe('observe with rolloutEntrypoint Tests', () => {
+  it('should return a wrapped function when rolloutEntrypoint is true', () => {
+    const testFn = async (arg1: string, arg2: number) => {
+      return `${arg1}-${arg2}`;
+    };
+
+    const wrapped = observe({ name: 'testAgent', rolloutEntrypoint: true }, testFn);
+
+    assert.ok(typeof wrapped === 'function', 'Should return a function');
+  });
+
+  it('should register function in Map when _set_rollout_global is true', () => {
     globalThis._set_rollout_global = true;
-    globalThis._rolloutFunction = undefined;
-    globalThis._rolloutFunctionParams = undefined;
+    globalThis._rolloutFunctions = new Map();
 
     const testFn = async (arg1: string, arg2: number) => {
       return `${arg1}-${arg2}`;
     };
 
-    await observeRollout({ name: 'testAgent' }, testFn, 'hello', 42);
+    observe({ name: 'testAgent', rolloutEntrypoint: true }, testFn);
 
-    assert.ok(globalThis._rolloutFunction !== undefined, 'Function should be registered');
-    assert.ok(globalThis._rolloutFunctionParams !== undefined, 'Params should be extracted');
+    assert.ok(globalThis._rolloutFunctions.size > 0, 'Function should be registered in Map');
 
     // Clean up
     globalThis._set_rollout_global = false;
   });
 
-  it('should execute function normally when _set_rollout_global is false', async () => {
+  it('should call returned function successfully', async () => {
     globalThis._set_rollout_global = false;
-    globalThis._rolloutFunction = undefined;
 
     const testFn = async (arg1: string) => {
       return `result: ${arg1}`;
     };
 
-    const result = await observeRollout({ name: 'testAgent' }, testFn, 'test');
+    const wrapped = observe({ name: 'testAgent', rolloutEntrypoint: true }, testFn);
+    const result = await wrapped('test');
 
     assert.strictEqual(result, 'result: test');
   });
 
-  it('should extract parameter names from function', async () => {
+  it('should extract parameter names and store in Map', () => {
     globalThis._set_rollout_global = true;
-    globalThis._rolloutFunctionParams = undefined;
+    globalThis._rolloutFunctions = new Map();
 
     const testFn = async (instruction: string, temperature: number, options: any) => {
       return 'result';
     };
 
-    await observeRollout({ name: 'testAgent' }, testFn, 'test', 1, {});
+    observe({ name: 'testAgent', rolloutEntrypoint: true }, testFn);
 
-    assert.ok(globalThis._rolloutFunctionParams !== undefined);
-    assert.ok((globalThis._rolloutFunctionParams as RolloutParam[]).length >= 2);
+    assert.ok(globalThis._rolloutFunctions.size > 0);
+    const registered = Array.from(globalThis._rolloutFunctions.values())[0];
+    assert.ok(registered.params.length >= 2);
 
     // Clean up
     globalThis._set_rollout_global = false;
   });
 
+  it('should work in backward compatible mode (without rolloutEntrypoint)', async () => {
+    const testFn = async (arg1: string) => {
+      return `result: ${arg1}`;
+    };
+
+    const result = await observe({ name: 'testAgent' }, testFn, 'test');
+
+    assert.strictEqual(result, 'result: test');
+  });
+
   it('should throw error if fn is not a function', async () => {
     await assert.rejects(
       async () => {
-        await observeRollout({ name: 'test' }, null as any);
+        await observe({ name: 'test' }, null as any, 'arg');
       },
-      /Invalid `observeRollout` usage/
+      /Invalid `observe` usage/
     );
+  });
+
+  it('should handle multiple functions in Map', () => {
+    globalThis._set_rollout_global = true;
+    globalThis._rolloutFunctions = new Map();
+
+    const fn1 = async (x: string) => x;
+    const fn2 = async (y: number) => y;
+
+    observe({ name: 'agent1', rolloutEntrypoint: true }, fn1);
+    observe({ name: 'agent2', rolloutEntrypoint: true }, fn2);
+
+    assert.strictEqual(globalThis._rolloutFunctions.size, 2);
+
+    // Clean up
+    globalThis._set_rollout_global = false;
   });
 });
 

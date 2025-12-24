@@ -5,7 +5,7 @@ export class SqlResource extends BaseResource {
     super(baseHttpUrl, projectApiKey);
   }
 
-  public async query(sql: string): Promise<Array<Record<string, any>>> {
+  public async query(sql: string, params: Record<string, any> = {}): Promise<Array<Record<string, any>>> {
     const response = await fetch(`${this.baseHttpUrl}/v1/sql/query`, {
       method: "POST",
       headers: {
@@ -13,6 +13,7 @@ export class SqlResource extends BaseResource {
       },
       body: JSON.stringify({
         query: sql,
+        params,
       }),
     });
 
@@ -20,6 +21,6 @@ export class SqlResource extends BaseResource {
       await this.handleError(response);
     }
 
-    return await response.json() as Array<Record<string, any>>;
+    return (await response.json()).data as Array<Record<string, any>>;
   }
 }

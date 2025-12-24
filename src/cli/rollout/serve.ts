@@ -1,10 +1,11 @@
 import * as esbuild from 'esbuild';
 
 import { LaminarClient } from '../../client';
+import { Laminar } from '../../laminar';
 import { getDirname, initializeLogger, newUUID } from '../../utils';
 import { CachedSpan, startCacheServer } from './cache-server';
 import { createSSEClient, SSEClient } from './sse-client';
-import { RolloutRunEvent } from '../../types';
+import { RolloutHandshakeEvent, RolloutRunEvent } from '../../types';
 
 const logger = initializeLogger();
 
@@ -12,10 +13,11 @@ interface ServeOptions {
   projectApiKey?: string;
   baseUrl?: string;
   port?: number;
+  function?: string;
 }
 
 /**
- * Loads and executes a module to register the rollout function
+ * Loads and executes a module to register rollout functions
  */
 function loadModule({
   filename,
@@ -24,8 +26,7 @@ function loadModule({
   filename: string;
   moduleText: string;
 }): void {
-  globalThis._rolloutFunction = undefined;
-  globalThis._rolloutFunctionParams = undefined;
+  globalThis._rolloutFunctions = new Map();
   globalThis._set_rollout_global = true;
 
   const __filename = filename;
@@ -76,6 +77,43 @@ async function buildFile(filePath: string): Promise<string> {
 }
 
 /**
+ * Selects the appropriate rollout function from the registered functions
+ */
+function selectRolloutFunction(
+  requestedFunctionName?: string
+): { fn: (...args: any[]) => any; params: any[]; name: string } {
+  if (!globalThis._rolloutFunctions || globalThis._rolloutFunctions.size === 0) {
+    throw new Error(
+      'No rollout functions found in file. Make sure you are using observe with rolloutEntrypoint: true'
+    );
+  }
+
+  // If a specific function is requested, use that
+  if (requestedFunctionName) {
+    const selected = globalThis._rolloutFunctions.get(requestedFunctionName);
+    if (!selected) {
+      const available = Array.from(globalThis._rolloutFunctions.keys()).join(', ');
+      throw new Error(
+        `Function '${requestedFunctionName}' not found. Available functions: ${available}`
+      );
+    }
+    return selected;
+  }
+
+  // If only one function, auto-select it
+  if (globalThis._rolloutFunctions.size === 1) {
+    const [selected] = Array.from(globalThis._rolloutFunctions.values());
+    return selected;
+  }
+
+  // Multiple functions found without explicit selection
+  const available = Array.from(globalThis._rolloutFunctions.keys()).join(', ');
+  throw new Error(
+    `Multiple rollout functions found: ${available}. Use --function to specify which one to serve.`
+  );
+}
+
+/**
  * Handles a run event from the backend
  */
 async function handleRunEvent(
@@ -86,93 +124,113 @@ async function handleRunEvent(
   cacheServerPort: number,
   cache: Map<string, CachedSpan>,
   setMetadata: (metadata: any) => void,
+  options: ServeOptions,
+  functionName?: string,
 ): Promise<void> {
   logger.info('Received run event');
 
   const { trace_id, path_to_count, args, overrides } = event.data;
 
   try {
-    // Query spans from the backend
-    const paths = Object.keys(path_to_count);
-    if (paths.length === 0) {
-      logger.warn('No paths in path_to_count, skipping cache population');
-    } else {
-      const pathsStr = paths.map(p => `'${p.replace(/'/g, "\\'")}'`).join(', ');
-      const query = `
-        SELECT name, input, output, attributes, path, start_time
-        FROM spans
-        WHERE trace_id = '${trace_id}'
-          AND span_type = 'LLM'
-          AND path IN (${pathsStr})
-        ORDER BY start_time ASC
-      `;
-
-      logger.info('Querying spans from backend...');
-      const spans = await client.sql.query(query);
-      logger.info(`Received ${spans.length} spans from backend`);
-
-      // Group spans by path and filter to first N per path
-      const spansByPath: Record<string, any[]> = {};
-      for (const span of spans) {
-        const path = span.path as string;
-        if (!spansByPath[path]) {
-          spansByPath[path] = [];
-        }
-        spansByPath[path].push(span);
-      }
-
-      // Clear cache and populate with new data
+    // Check if we should populate cache from a previous trace
+    if (!trace_id || trace_id.trim() === '') {
+      logger.info('No trace_id provided, running without cached LLM calls');
+      // Clear cache and metadata since we're running fresh
       cache.clear();
-
-      for (const [path, pathSpans] of Object.entries(spansByPath)) {
-        const maxCount = path_to_count[path] || 0;
-        const spansToCache = pathSpans.slice(0, maxCount);
-
-        spansToCache.forEach((span, index) => {
-          // Parse JSON fields
-          let parsedInput = span.input;
-          let parsedOutput = span.output;
-          let parsedAttributes = span.attributes;
-
-          try {
-            parsedInput = typeof span.input === 'string' ? JSON.parse(span.input) : span.input;
-          } catch (e) {
-            // Keep as string
-          }
-
-          try {
-            parsedOutput = typeof span.output === 'string' ? span.output : JSON.stringify(span.output);
-          } catch (e) {
-            parsedOutput = String(span.output);
-          }
-
-          try {
-            parsedAttributes = typeof span.attributes === 'string' ? JSON.parse(span.attributes) : span.attributes;
-          } catch (e) {
-            parsedAttributes = {};
-          }
-
-          const cachedSpan: CachedSpan = {
-            name: span.name,
-            input: parsedInput,
-            output: parsedOutput,
-            attributes: parsedAttributes,
-          };
-
-          // Cache key is ${index}:${path}
-          const cacheKey = `${index}:${path}`;
-          cache.set(cacheKey, cachedSpan);
+      setMetadata({
+        pathToCount: {},
+        overrides: overrides,
+      });
+    } else {
+      // Query spans from the backend to populate cache
+      const paths = Object.keys(path_to_count || {});
+      if (paths.length === 0) {
+        logger.warn('No paths in path_to_count, skipping cache population');
+        cache.clear();
+        setMetadata({
+          pathToCount: {},
+          overrides: overrides,
         });
+      } else {
+        const query = `
+          SELECT name, input, output, attributes, path, start_time
+          FROM spans
+          WHERE trace_id = {traceId:UUID}
+            AND span_type = 'LLM'
+            AND path IN {paths:String[]}
+          ORDER BY start_time ASC
+        `;
 
-        logger.info(`Cached ${spansToCache.length} spans for path: ${path}`);
+        logger.info(`Querying spans from trace ${trace_id}...`);
+        const spans = await client.sql.query(query, {
+          traceId: trace_id,
+          paths: paths,
+        });
+        logger.info(`Received ${spans.length} spans from backend`);
+
+        // Group spans by path and filter to first N per path
+        const spansByPath: Record<string, any[]> = {};
+        for (const span of spans) {
+          const path = span.path as string;
+          if (!spansByPath[path]) {
+            spansByPath[path] = [];
+          }
+          spansByPath[path].push(span);
+        }
+
+        // Clear cache and populate with new data
+        cache.clear();
+
+        for (const [path, pathSpans] of Object.entries(spansByPath)) {
+          const maxCount = path_to_count?.[path] || 0;
+          const spansToCache = pathSpans.slice(0, maxCount);
+
+          spansToCache.forEach((span, index) => {
+            // Parse JSON fields
+            let parsedInput = span.input;
+            let parsedOutput = span.output;
+            let parsedAttributes = span.attributes;
+
+            try {
+              parsedInput = typeof span.input === 'string' ? JSON.parse(span.input) : span.input;
+            } catch (e) {
+              // Keep as string
+            }
+
+            try {
+              parsedOutput = typeof span.output === 'string' ? span.output : JSON.stringify(span.output);
+            } catch (e) {
+              parsedOutput = String(span.output);
+            }
+
+            try {
+              parsedAttributes = typeof span.attributes === 'string' ? JSON.parse(span.attributes) : span.attributes;
+            } catch (e) {
+              parsedAttributes = {};
+            }
+
+            const cachedSpan: CachedSpan = {
+              name: span.name,
+              input: parsedInput,
+              output: parsedOutput,
+              attributes: parsedAttributes,
+            };
+
+            // Cache key is ${index}:${path}
+            const cacheKey = `${index}:${path}`;
+            cache.set(cacheKey, cachedSpan);
+          });
+
+          logger.info(`Cached ${spansToCache.length} spans for path: ${path}`);
+        }
+
+        // Store metadata in cache server
+        setMetadata({
+          pathToCount: path_to_count || {},
+          overrides: overrides,
+        });
       }
     }
-
-    // Store metadata in cache server
-    setMetadata({
-      pathToCount: path_to_count,
-      overrides: overrides,
-    });
 
     // Set environment variables
     process.env.LMNR_ROLLOUT_SESSION_ID = sessionId;
@@ -188,14 +246,35 @@ async function handleRunEvent(
       moduleText,
     });
 
-    if (!globalThis._rolloutFunction) {
-      logger.error('No rollout function found in file. Make sure you are using observeRollout wrapper.');
-      return;
-    }
+    // Select the appropriate rollout function
+    const selectedFunction = selectRolloutFunction(functionName);
+    logger.info(`Selected function: ${selectedFunction.name}`);
+
+    // Initialize Laminar with CLI options (will be no-op if already initialized by user)
+    // Parse baseUrl similar to how evaluations does it
+    const baseUrl = options.baseUrl ?? process.env.LMNR_BASE_URL ?? 'https://api.lmnr.ai';
+    const httpPort = options.port ?? (
+      baseUrl.match(/:\d{1,5}$/g)
+        ? parseInt(baseUrl.match(/:\d{1,5}$/g)![0].slice(1))
+        : 443
+    );
+    const urlWithoutSlash = baseUrl.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
+    const baseHttpUrl = `${urlWithoutSlash}:${httpPort}`;
+
+    logger.info('Initializing Laminar...');
+    Laminar.initialize({
+      projectApiKey: options.projectApiKey,
+      baseUrl: baseUrl,
+      baseHttpUrl,
+      httpPort,
+    });
 
     // Execute the rollout function with args
+    // Convert args object to array of arguments based on parameter names
     logger.info('Executing rollout function...');
-    const result = await globalThis._rolloutFunction(args);
+    const orderedArgs = selectedFunction.params.map(param => args[param.name]);
+    logger.info(`Calling function with args: ${JSON.stringify(orderedArgs)}`);
+    const result = await selectedFunction.fn(...orderedArgs);
     logger.info('Rollout function completed successfully');
     logger.info(`Result: ${JSON.stringify(result, null, 2)}`);
   } catch (error) {
@@ -215,7 +294,6 @@ export async function runServe(
 ): Promise<void> {
   // Generate session ID
   const sessionId = newUUID();
-  logger.info(`Session ID: ${sessionId}`);
 
   // Initialize Laminar client
   const client = new LaminarClient({
@@ -225,12 +303,14 @@ export async function runServe(
   });
 
   // Start cache server
-  logger.info('Starting cache server...');
+  logger.debug('Starting cache server...');
   const { port: cacheServerPort, server: cacheServer, cache, setMetadata } = await startCacheServer();
-  logger.info(`Cache server started on port ${cacheServerPort}`);
+  logger.debug(`Cache server started on port ${cacheServerPort}`);
 
-  // Build file to extract parameters
-  logger.info('Parsing function parameters...');
+  // Build file to discover and select rollout functions
+  logger.debug('Discovering rollout functions...');
+  let selectedFunction: { fn: (...args: any[]) => any; params: any[]; name: string };
+
   try {
     const moduleText = await buildFile(filePath);
     loadModule({
@@ -238,32 +318,28 @@ export async function runServe(
       moduleText,
     });
 
-    if (!globalThis._rolloutFunctionParams) {
-      logger.warn('Could not extract function parameters. Continuing with empty params.');
-      globalThis._rolloutFunctionParams = [];
-    }
-
-    logger.info(`Function parameters: ${JSON.stringify(globalThis._rolloutFunctionParams)}`);
+    // Select the appropriate function
+    selectedFunction = selectRolloutFunction(options.function);
+    logger.info(`Serving function: ${selectedFunction.name}`);
+    logger.debug(`Function parameters: ${JSON.stringify(selectedFunction.params)}`);
   } catch (error) {
-    logger.error(`Failed to parse function parameters: ${error instanceof Error ? error.message : error}`);
-    logger.info('Continuing with empty params.');
-    globalThis._rolloutFunctionParams = [];
+    logger.error(`Failed to discover rollout functions: ${error instanceof Error ? error.message : error}`);
+    throw error;
   }
 
-  // Connect to SSE endpoint
-  logger.info('Connecting to backend...');
+  // Create SSE client (don't connect yet)
+  logger.debug('Setting up SSE client...');
   let sseClient: SSEClient | null = null;
 
   try {
-    sseClient = await createSSEClient({
+    sseClient = createSSEClient({
       baseUrl: client['baseUrl'], // Access private property for baseUrl
       sessionId,
       projectApiKey: client['projectApiKey'], // Access private property for projectApiKey
-      params: globalThis._rolloutFunctionParams || [],
+      params: selectedFunction.params || [],
     });
 
-    logger.info('Connected to backend. Waiting for run events...');
-
+    // Register all event listeners BEFORE connecting
     sseClient.on('heartbeat', () => {
       logger.debug('Heartbeat received');
     });
@@ -277,7 +353,15 @@ export async function runServe(
         cacheServerPort,
         cache,
         setMetadata,
+        options,
+        options.function,
       );
+    });
+
+    sseClient.on('handshake', (event: RolloutHandshakeEvent) => {
+      const projectId = event.data.project_id;
+      const sessionId = event.data.session_id;
+      logger.info(`View your session at https://laminar.sh/project/${projectId}/rolloutes/${sessionId}`);
     });
 
     sseClient.on('error', (error: Error) => {
@@ -292,16 +376,21 @@ export async function runServe(
       logger.warn('Heartbeat timeout, reconnecting...');
     });
 
+    // Now connect after listeners are registered
+    logger.debug('Connecting to backend...');
+    await sseClient.connect();
+    logger.debug('Connected to backend. Waiting for run events...');
+
     // Handle graceful shutdown
     const shutdown = () => {
-      logger.info('Shutting down...');
+      logger.debug('Shutting down...');
 
       if (sseClient) {
         sseClient.shutdown();
       }
 
       cacheServer.close(() => {
-        logger.info('Cache server closed');
+        logger.debug('Cache server closed');
         process.exit(0);
       });
     };

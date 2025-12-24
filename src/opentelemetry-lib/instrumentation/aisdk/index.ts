@@ -1,6 +1,6 @@
 import type * as AI from "ai";
-import { LanguageModelV2 } from "@ai-sdk/provider";
-import { LanguageModelV3 } from "@ai-sdk/provider-v3";
+import { LanguageModelV2 } from "@ai-sdk/provider-v2";
+import { LanguageModelV3 } from "@ai-sdk/provider";
 
 import { getTracer } from "../../tracing";
 import { LaminarLanguageModelV2 } from "./v2";

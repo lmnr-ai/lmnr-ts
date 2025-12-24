@@ -147,13 +147,21 @@ export interface SessionRecordingOptions {
 export interface RolloutRunEvent {
   event_type: 'run';
   data: {
-    trace_id: string;
-    path_to_count: Record<string, number>;
+    trace_id?: string;
+    path_to_count?: Record<string, number>;
     args: Record<string, any>;
     overrides?: Record<string, {
       system?: string;
       tools?: any[];
     }>;
+  };
+}
+
+export interface RolloutHandshakeEvent {
+  event_type: 'handshake';
+  data: {
+    session_id: string;
+    project_id: string;
   };
 }
 
