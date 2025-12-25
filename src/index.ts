@@ -2,10 +2,10 @@ export { LaminarClient } from './client';
 export { EvaluationDataset as Dataset, LaminarDataset } from './datasets';
 export { observe, observeDecorator, withTracingLevel } from './decorators';
 export {
-  Datapoint,
+  type Datapoint,
   evaluate,
-  EvaluatorFunction,
-  EvaluatorFunctionReturn,
+  type EvaluatorFunction,
+  type EvaluatorFunctionReturn,
   HumanEvaluator,
 } from './evaluations';
 export { Laminar } from './laminar';
@@ -16,16 +16,14 @@ export { LaminarAttributes } from './opentelemetry-lib/tracing/attributes';
 export { getTracer, getTracerProvider } from './opentelemetry-lib/tracing/index';
 export { initializeLaminarInstrumentations } from './opentelemetry-lib/tracing/instrumentations';
 export {
-  ChatMessage,
-  Dataset as DatasetType,
-  EvaluationDatapoint,
-  EvaluationDatapointDatasetLink,
-  Event,
-  LaminarSpanContext,
-  MaskInputOptions,
-  NodeInput,
-  PushDatapointsResponse,
-  SessionRecordingOptions,
+  type Dataset as DatasetType,
+  type EvaluationDatapoint,
+  type EvaluationDatapointDatasetLink,
+  type Event,
+  type LaminarSpanContext,
+  type MaskInputOptions,
+  type PushDatapointsResponse,
+  type SessionRecordingOptions,
   TracingLevel,
 } from './types';
 export { Span } from '@opentelemetry/api';

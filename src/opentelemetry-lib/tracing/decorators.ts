@@ -1,4 +1,4 @@
-import { AttributeValue, context, Span, trace } from "@opentelemetry/api";
+import { AttributeValue, context, type Span, trace } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
 
 import { LaminarSpanContext } from "../../types";
