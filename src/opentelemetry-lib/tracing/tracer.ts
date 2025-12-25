@@ -44,7 +44,11 @@ export class LaminarTracer implements Tracer {
 
     const wrapped = (fn: F) => (span: Span): ReturnType<F> => {
       const laminarSpan = new LaminarSpan(span);
-      const newContext = trace.setSpan(contextToUse, laminarSpan);
+      const ctxWithAssociationProperties = LaminarContextManager.setAssociationProperties(
+        laminarSpan,
+        contextToUse,
+      );
+      const newContext = trace.setSpan(ctxWithAssociationProperties, laminarSpan);
       const currentStack = LaminarContextManager.getContextStack();
       const res = LaminarContextManager.runWithIsolatedContext(
         [...currentStack, newContext],

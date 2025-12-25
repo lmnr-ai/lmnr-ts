@@ -30,12 +30,11 @@ import {
   getParentSpanId,
   makeSpanOtelV2Compatible,
 } from "./compat";
-import { LaminarSpanExporter } from "./exporter";
 import {
   ASSOCIATION_PROPERTIES_KEY,
-  getSpanPath,
-  SPAN_PATH_KEY,
-} from "./utils";
+  CONTEXT_SPAN_PATH_KEY,
+} from "./context";
+import { LaminarSpanExporter } from "./exporter";
 
 interface LaminarSpanProcessorOptions {
   /**
@@ -127,12 +126,10 @@ export class LaminarSpanProcessor implements SpanProcessor {
     const parentIdsPathFromAttribute =
       span.attributes?.[PARENT_SPAN_IDS_PATH] as StringUUID[] | undefined;
 
-    const contextSpanPath = getSpanPath(parentContext ?? context.active());
     const parentSpanId = getParentSpanId(span);
 
     // Use parent path from attributes if available, otherwise fall back to cached paths
     const parentSpanPath = parentPathFromAttribute
-      ?? contextSpanPath
       ?? (parentSpanId !== undefined
         ? this._spanIdToPath.get(parentSpanId)
         : undefined);
@@ -151,7 +148,7 @@ export class LaminarSpanProcessor implements SpanProcessor {
     this._spanIdLists.set(spanId, spanIdsPath);
 
     span.setAttribute(SPAN_PATH, spanPath);
-    context.active().setValue(SPAN_PATH_KEY, spanPath);
+    context.active().setValue(CONTEXT_SPAN_PATH_KEY, spanPath);
     this._spanIdToPath.set(spanId, spanPath);
 
     span.setAttribute(SPAN_INSTRUMENTATION_SOURCE, "javascript");

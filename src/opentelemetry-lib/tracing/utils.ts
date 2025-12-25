@@ -5,6 +5,8 @@ import {
   ROOT_CONTEXT,
 } from "@opentelemetry/api";
 
+import { CONTEXT_SPAN_PATH_KEY } from "./context";
+
 // Function to check if a global context manager is already configured
 export const isGlobalContextManagerConfigured = () => {
   // Create a temporary context key for testing
@@ -26,12 +28,7 @@ export const isGlobalContextManagerConfigured = () => {
   return isContextManagerWorking;
 };
 
-export const SPAN_PATH_KEY = createContextKey("span_path");
-export const ASSOCIATION_PROPERTIES_KEY = createContextKey(
-  "association_properties",
-);
-
 export const getSpanPath = (entityContext: Context): string | undefined => {
-  const path = entityContext.getValue(SPAN_PATH_KEY) as string | undefined;
+  const path = entityContext.getValue(CONTEXT_SPAN_PATH_KEY) as string | undefined;
   return path ? `${path}` : undefined;
 };

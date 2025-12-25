@@ -79,7 +79,6 @@ export type SemanticSearchResponse = {
  */
 export type SpanType = 'DEFAULT'
   | 'LLM'
-  | 'PIPELINE'
   | 'EXECUTOR'
   | 'EVALUATOR'
   | 'HUMAN_EVALUATOR'
@@ -123,6 +122,11 @@ export type LaminarSpanContext = {
   isRemote: boolean;
   spanPath?: string[];
   spanIdsPath?: StringUUID[];
+  userId?: string;
+  sessionId?: string;
+  metadata?: Record<string, any>;
+  traceType?: TraceType;
+  tracingLevel?: TracingLevel;
 };
 
 /**

@@ -1,7 +1,16 @@
-import { Context, ROOT_CONTEXT, trace } from "@opentelemetry/api";
+import { Context, createContextKey, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 import { AsyncLocalStorage } from "async_hooks";
 
+import { TraceType, TracingLevel } from "../../types";
 import { LaminarSpan } from "./span";
+
+export const CONTEXT_SPAN_PATH_KEY = createContextKey("span_path");
+export const ASSOCIATION_PROPERTIES_KEY = createContextKey(
+  "association_properties",
+);
+export const CONTEXT_GLOBAL_METADATA_KEY = createContextKey(
+  "global_metadata",
+);
 
 export class LaminarContextManager {
   private static _asyncLocalStorage = new AsyncLocalStorage<Context[]>();
@@ -13,6 +22,11 @@ export class LaminarContextManager {
   // LaminarSpan adds and removes itself to and from this registry in start()
   // and end() methods respectively.
   private static _activeSpans: Set<string> = new Set();
+  private static _globalMetadata: Record<string, any> = {};
+
+  private constructor() {
+    throw new Error("LaminarContextManager is a static class and cannot be instantiated");
+  }
 
   public static getContext(): Context {
     const contexts = this._asyncLocalStorage.getStore() || [];
@@ -121,5 +135,50 @@ export class LaminarContextManager {
 
   public static removeActiveSpan(spanId: string): void {
     this._activeSpans.delete(spanId);
+  }
+
+  public static setAssociationProperties(span: LaminarSpan, context: Context): Context {
+    const properties = span.laminarAssociationProperties;
+
+    return this.setRawAssociationProperties(properties, context);
+  }
+
+  public static setRawAssociationProperties(
+    properties: Record<string, any>,
+    context: Context,
+  ): Context {
+    let entityContext = context ?? this.getContext();
+    const userId = properties.userId;
+    const sessionId = properties.sessionId;
+    const traceType = properties.traceType;
+    const metadata = properties.metadata;
+    const tracingLevel = properties.tracingLevel;
+    entityContext = entityContext.setValue(ASSOCIATION_PROPERTIES_KEY, {
+      userId: userId,
+      sessionId: sessionId,
+      traceType: traceType,
+      metadata: metadata,
+      tracingLevel: tracingLevel,
+    });
+    return entityContext;
+  }
+
+  public static setGlobalMetadata(globalMetadata: Record<string, any>) {
+    this._globalMetadata = globalMetadata;
+  }
+
+  public static getGlobalMetadata(): Record<string, any> {
+    return this._globalMetadata;
+  }
+
+  public static getAssociationProperties(): {
+    userId?: string;
+    sessionId?: string;
+    traceType?: TraceType;
+    tracingLevel?: TracingLevel;
+    metadata?: Record<string, any>;
+  } {
+    const entityContext = this.getContext();
+    return entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
   }
 }

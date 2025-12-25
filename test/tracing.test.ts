@@ -77,7 +77,7 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify("my_input"));
+    assert.strictEqual(spans[0].attributes['lmnr.span.input'], "my_input");
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
@@ -117,7 +117,7 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify("my_input"));
+    assert.strictEqual(spans[0].attributes['lmnr.span.input'], "my_input");
     assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
@@ -1130,6 +1130,10 @@ void describe("tracing", () => {
       isRemote: false,
       spanPath: ["parent"],
       spanIdsPath: ["00000000-0000-0000-0123-456789abcdef"],
+      metadata: { key: "value" },
+      sessionId: "session1",
+      userId: "user1",
+      traceType: "EVALUATION",
     });
 
     Object.defineProperty(Laminar, "isInitialized", {
@@ -1157,7 +1161,22 @@ void describe("tracing", () => {
       "00000000-0000-0000-0123-456789abcdef",
     );
     assert.strictEqual(spans[0].spanContext().traceId, "0123456789abcdef0123456789abcdef");
-
+    assert.deepStrictEqual(
+      spans[0].attributes['lmnr.association.properties.metadata.key'],
+      "value",
+    );
+    assert.strictEqual(
+      spans[0].attributes['lmnr.association.properties.session_id'],
+      "session1",
+    );
+    assert.strictEqual(
+      spans[0].attributes['lmnr.association.properties.user_id'],
+      "user1",
+    );
+    assert.strictEqual(
+      spans[0].attributes['lmnr.association.properties.trace_type'],
+      "EVALUATION",
+    );
     process.env = originalEnv;
   });
 });
