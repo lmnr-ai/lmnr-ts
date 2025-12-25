@@ -346,7 +346,7 @@ export class Laminar {
 
   public static getCurrentSpan(
     context?: Context,
-  ): Span | undefined {
+  ): LaminarSpan | undefined {
     const currentSpan = trace.getSpan(context ?? LaminarContextManager.getContext())
       ?? trace.getActiveSpan();
     if (currentSpan === undefined || !isSpanContextValid(currentSpan.spanContext())) {
