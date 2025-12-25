@@ -8,14 +8,15 @@ import {
   LanguageModelV3Usage,
   SharedV3Headers,
   SharedV3ProviderMetadata,
-  SharedV3Warning
+  SharedV3Warning,
 } from "@ai-sdk/provider";
-import { Laminar } from "../../../laminar";
+
 import { LaminarClient } from "../../../client";
+import { Laminar } from "../../../laminar";
 import { convertToContentBlocks, fetchCachedSpan } from "./shared";
 
 export class LaminarLanguageModelV3 { // implements LanguageModelV3
-  readonly specificationVersion: 'v3' = 'v3';
+  readonly specificationVersion = 'v3';
 
   private readonly innerLanguageModel: LanguageModelV3;
   readonly provider: string;
@@ -57,7 +58,7 @@ export class LaminarLanguageModelV3 { // implements LanguageModelV3
     let parsedOutput: string | Record<string, any>[] = data.span.output;
     try {
       parsedOutput = JSON.parse(data.span.output);
-    } catch (error) {
+    } catch {
       // Ignore - keep as string
     }
 
@@ -79,7 +80,7 @@ export class LaminarLanguageModelV3 { // implements LanguageModelV3
       warnings: [],
       finishReason: data.span.attributes['ai.response.finishReason'] ?? 'stop',
       content,
-    }
+    };
   }
 
   doGenerate(options: LanguageModelV3CallOptions): PromiseLike<{

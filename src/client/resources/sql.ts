@@ -5,7 +5,10 @@ export class SqlResource extends BaseResource {
     super(baseHttpUrl, projectApiKey);
   }
 
-  public async query(sql: string, params: Record<string, any> = {}): Promise<Array<Record<string, any>>> {
+  public async query(
+    sql: string,
+    params: Record<string, any> = {},
+  ): Promise<Array<Record<string, any>>> {
     const response = await fetch(`${this.baseHttpUrl}/v1/sql/query`, {
       method: "POST",
       headers: {
