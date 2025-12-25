@@ -10,12 +10,12 @@
     "lint:fix": "next lint --fix"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^2.0.30",
+    "@ai-sdk/openai": "^3.0.1",
     "@lmnr-ai/lmnr": "file:../../dist",
     "@opentelemetry/api-logs": "^0.200.0",
     "@vercel/otel": "^1.13.0",
-    "ai": "^5.0.92",
-    "next": "^15.5.7",
+    "ai": "^6.0.3",
+    "next": "^15.5.9",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
