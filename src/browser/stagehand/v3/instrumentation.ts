@@ -1,4 +1,4 @@
-import { diag, Span, trace } from "@opentelemetry/api";
+import { diag, type Span, trace } from "@opentelemetry/api";
 import {
   InstrumentationBase,
   InstrumentationModuleDefinition,
@@ -11,7 +11,7 @@ import { observe as laminarObserve } from "../../../decorators";
 import { Laminar } from "../../../laminar";
 import { TRACE_HAS_BROWSER_SESSION } from "../../../opentelemetry-lib/tracing/attributes";
 import { LaminarContextManager } from "../../../opentelemetry-lib/tracing/context";
-import { SessionRecordingOptions } from "../../../types";
+import { type SessionRecordingOptions } from "../../../types";
 import { newUUID, NIL_UUID, otelTraceIdToUUID, StringUUID } from "../../../utils";
 import { nameArgsOrCopy, prettyPrintZodSchema } from "../../utils";
 import {

@@ -1,4 +1,4 @@
-import { diag, Span, trace } from '@opentelemetry/api';
+import { diag, type Span, trace } from '@opentelemetry/api';
 import {
   InstrumentationBase,
   InstrumentationModuleDefinition,

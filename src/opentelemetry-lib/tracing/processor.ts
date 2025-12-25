@@ -3,13 +3,13 @@ import {
   BatchSpanProcessor,
   ReadableSpan,
   SimpleSpanProcessor,
-  Span,
+  type Span,
   SpanExporter,
   SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import {
-  ReadableSpan as OTelV2ReadableSpan,
-  Span as OTelV2Span,
+  type ReadableSpan as OTelV2ReadableSpan,
+  type Span as OTelV2Span,
 } from "@opentelemetry/sdk-trace-base-v2";
 
 import { version as SDK_VERSION } from "../../../package.json";

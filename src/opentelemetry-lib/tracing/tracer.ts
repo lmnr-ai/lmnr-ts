@@ -1,4 +1,4 @@
-import { Context, Span, SpanOptions, trace, Tracer } from "@opentelemetry/api";
+import { Context, type Span, type SpanOptions, trace, type Tracer } from "@opentelemetry/api";
 
 import { LaminarContextManager } from "./context";
 import { LaminarSpan } from "./span";

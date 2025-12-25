@@ -26,4 +26,4 @@ export {
   type SessionRecordingOptions,
   TracingLevel,
 } from './types';
-export { Span } from '@opentelemetry/api';
+export { type Span } from '@opentelemetry/api';

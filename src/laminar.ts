@@ -3,7 +3,7 @@ import {
   Context,
   context as contextApi,
   isSpanContextValid,
-  Span,
+  type Span,
   TimeInput,
   trace,
 } from '@opentelemetry/api';
@@ -34,17 +34,17 @@ import {
 import { LaminarContextManager } from './opentelemetry-lib/tracing/context';
 import { LaminarSpan } from './opentelemetry-lib/tracing/span';
 import {
-  LaminarSpanContext,
-  SessionRecordingOptions,
-  SpanType,
-  TraceType,
+  type LaminarSpanContext,
+  type SessionRecordingOptions,
+  type SpanType,
+  type TraceType,
   TracingLevel,
 } from './types';
 import {
   deserializeLaminarSpanContext,
   initializeLogger,
   metadataToAttributes,
-  StringUUID,
+  type StringUUID,
   tryToOtelSpanContext,
   validateTracingConfig,
 } from './utils';
