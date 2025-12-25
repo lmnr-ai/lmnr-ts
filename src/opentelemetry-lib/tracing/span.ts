@@ -5,7 +5,7 @@ import {
   Exception,
   HrTime,
   Link,
-  Span,
+  type Span,
   SpanContext,
   SpanKind,
   SpanStatus,
@@ -13,7 +13,7 @@ import {
 } from "@opentelemetry/api";
 import { InstrumentationLibrary, InstrumentationScope } from "@opentelemetry/core";
 import { IResource } from "@opentelemetry/resources";
-import { ReadableSpan, Span as SdkSpan, TimedEvent } from "@opentelemetry/sdk-trace-base";
+import { ReadableSpan, type Span as SdkSpan, TimedEvent } from "@opentelemetry/sdk-trace-base";
 
 import { LaminarSpanContext, TraceType, TracingLevel } from "../../types";
 import {

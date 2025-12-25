@@ -2,11 +2,22 @@
   "name": "@lmnr-ai/lmnr",
   "version": "0.7.12",
   "description": "TypeScript SDK for Laminar AI",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "exports": {
+    ".": {
+      "types": {
+        "require": "./dist/index.d.cts",
+        "import": "./dist/index.d.mts"
+      },
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "types": "dist/index.d.cts",
   "scripts": {
-    "prepare": "tsup",
-    "build": "tsup",
+    "prepare": "tsdown",
+    "build": "tsdown",
     "test": "tsx --test test/*.test.ts",
     "lint": "eslint",
     "lint:fix": "eslint --fix"
@@ -15,7 +26,7 @@
     "dist"
   ],
   "bin": {
-    "lmnr": "./dist/cli.js"
+    "lmnr": "./dist/cli.cjs"
   },
   "repository": {
     "type": "git",
@@ -107,8 +118,8 @@
     "playwright": "^1.56.1",
     "puppeteer": "^24.28.0",
     "puppeteer-core": "^24.28.0",
-    "together-ai": "^0.21.0",
-    "tsup": "^8.5.1",
+    "together-ai": "^0.30.0",
+    "tsdown": "^0.18.3",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0"

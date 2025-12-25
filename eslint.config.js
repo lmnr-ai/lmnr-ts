@@ -15,7 +15,7 @@ export default tseslint.config(
       '**/*.min.js',
       'assets/**/*.min.cjs',
       'assets/**/*.min.js',
-      'tsup.config.ts',
+      'tsdown.config.ts',
       'eslint.config.js',
       'examples/**',
       "src/browser/recorder.ts",
@@ -41,6 +41,9 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",
+      parserOptions: {
+        projectService: true,
+      },
     },
 
     rules: {

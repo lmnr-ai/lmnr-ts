@@ -1,6 +1,6 @@
 import { diag, DiagConsoleLogger, DiagLogLevel } from "@opentelemetry/api";
 
-import { InitializeOptions } from "../interfaces";
+import { type InitializeOptions } from "../interfaces";
 import { startTracing } from "../tracing";
 
 export let _configuration: InitializeOptions | undefined;
