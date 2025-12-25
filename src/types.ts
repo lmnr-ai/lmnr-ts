@@ -167,7 +167,7 @@ export interface RolloutHandshakeEvent {
 
 /**
  * Parameter metadata for rollout functions
- * 
+ *
  * Future fields:
  * - type: string - The TypeScript type of the parameter
  * - required: boolean - Whether the parameter is required

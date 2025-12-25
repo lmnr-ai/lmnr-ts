@@ -1,5 +1,5 @@
-import { LanguageModelV2Content } from "@ai-sdk/provider-v2";
 import { LanguageModelV3Content } from "@ai-sdk/provider";
+import { LanguageModelV2Content } from "@ai-sdk/provider-v2";
 
 export interface CachedSpanData {
   span: {
@@ -16,7 +16,7 @@ export interface CachedSpanData {
  * Converts output from span to content blocks compatible with both V2 and V3
  */
 export const convertToContentBlocks = (
-  output: string | Record<string, any>[]
+  output: string | Record<string, any>[],
 ): Array<LanguageModelV3Content | LanguageModelV2Content> => {
   if (typeof output === 'string') {
     return [{
@@ -50,14 +50,14 @@ export const convertToContentBlocks = (
       type: 'text',
       text: JSON.stringify(item),
     }];
-  }
+  };
 
   return output.flatMap(item => {
     if (item.role && item.content) {
       let parsedContent: Record<string, any>[] = item.content;
       try {
         parsedContent = JSON.parse(item.content);
-      } catch (error) {
+      } catch {
         if (typeof item === 'string') {
           return [{
             type: 'text',
@@ -69,16 +69,16 @@ export const convertToContentBlocks = (
     }
     return handleItem(item);
   });
-}
+};
 
 /**
  * Fetches cached span data from the local rollout cache server
  */
 export async function fetchCachedSpan(
   path: string,
-  index: number
+  index: number,
 ): Promise<CachedSpanData | undefined> {
-  const serverUrl = process.env.LAMINAR_ROLLOUT_STATE_SERVER_ADDRESS;
+  const serverUrl = process.env.LMNR_ROLLOUT_STATE_SERVER_ADDRESS;
   if (!serverUrl) {
     return;
   }
@@ -98,7 +98,7 @@ export async function fetchCachedSpan(
     }
 
     return await response.json() as CachedSpanData;
-  } catch (error) {
+  } catch {
     // Network error or other issues - return undefined to fall back to original model
     return;
   }

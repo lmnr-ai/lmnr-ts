@@ -1,6 +1,6 @@
-import type * as AI from "ai";
-import { LanguageModelV2 } from "@ai-sdk/provider-v2";
 import { LanguageModelV3 } from "@ai-sdk/provider";
+import { LanguageModelV2 } from "@ai-sdk/provider-v2";
+import type * as AI from "ai";
 
 import { getTracer } from "../../tracing";
 import { LaminarLanguageModelV2 } from "./v2";
@@ -46,9 +46,11 @@ export const wrapAISDK = (ai: typeof AI): typeof AI => {
 
 export function laminarLanguageModel(languageModel: LanguageModelV3): LanguageModelV3;
 export function laminarLanguageModel(languageModel: LanguageModelV2): LanguageModelV2;
-export function laminarLanguageModel(languageModel: LanguageModelV2 | LanguageModelV3): LanguageModelV2 | LanguageModelV3 {
+export function laminarLanguageModel(
+  languageModel: LanguageModelV2 | LanguageModelV3,
+): LanguageModelV2 | LanguageModelV3 {
   if (languageModel.specificationVersion === 'v3') {
-    return new LaminarLanguageModelV3(languageModel as LanguageModelV3);
+    return new LaminarLanguageModelV3(languageModel);
   }
-  return new LaminarLanguageModelV2(languageModel as LanguageModelV2);
+  return new LaminarLanguageModelV2(languageModel);
 }

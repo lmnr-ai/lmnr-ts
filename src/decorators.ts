@@ -1,11 +1,23 @@
-import { AttributeValue } from "@opentelemetry/api";
+import { AttributeValue, context } from "@opentelemetry/api";
 
-import { Laminar } from './laminar';
 import { observeBase } from './opentelemetry-lib';
-import { LaminarContextManager } from "./opentelemetry-lib/tracing/context";
-import { ASSOCIATION_PROPERTIES_KEY } from "./opentelemetry-lib/tracing/utils";
+import {
+  ASSOCIATION_PROPERTIES,
+  PARENT_SPAN_IDS_PATH,
+  PARENT_SPAN_PATH,
+  SESSION_ID,
+  SPAN_TYPE,
+  TRACE_TYPE,
+  USER_ID,
+} from "./opentelemetry-lib/tracing/attributes";
+import {
+  ASSOCIATION_PROPERTIES_KEY,
+  LaminarContextManager,
+} from "./opentelemetry-lib/tracing/context";
 import { LaminarSpanContext, RolloutParam, TraceType, TracingLevel } from './types';
-import { metadataToAttributes } from "./utils";
+import { deserializeLaminarSpanContext, initializeLogger, metadataToAttributes } from "./utils";
+
+const logger = initializeLogger();
 
 declare global {
   var _rolloutFunctions: Map<string, {
@@ -35,11 +47,13 @@ interface ObserveOptions {
 /**
  * Extracts parameter names from a function using regex
  */
-function extractParamNames(fn: Function): RolloutParam[] {
+function extractParamNames(fn: (...args: any[]) => any): RolloutParam[] {
   const fnStr = fn.toString();
 
   // Match function parameters - handles regular functions, arrow functions, async functions
-  const paramMatch = fnStr.match(/(?:async\s+)?(?:function\s*)?\(([^)]*)\)|(?:async\s+)?([^=\s]+)\s*=>/);
+  const paramMatch = fnStr.match(
+    /(?:async\s+)?(?:function\s*)?\(([^)]*)\)|(?:async\s+)?([^=\s]+)\s*=>/,
+  );
 
   if (!paramMatch) {
     return [];
@@ -82,20 +96,24 @@ function extractParamNames(fn: Function): RolloutParam[] {
  * @param options.sessionId - Session ID to associate with the span and the following context.
  * @param options.userId - User ID to associate with the span and the following context.
  * This is different from the id of a Laminar user.
- * @param options.traceType - Type of the trace. Unless it is within evaluation, it should be 'DEFAULT'.
- * @param options.spanType - Type of the span. 'DEFAULT' is used if not specified. If the type is 'LLM',
- * you must manually specify some attributes. See `Laminar.setSpanAttributes` for more information.
- * @param options.input - Force override the input for the span. If not specified, the input will be the
- * arguments passed to the function.
+ * @param options.traceType - Type of the trace. Unless it is within evaluation, it should be
+ * 'DEFAULT'.
+ * @param options.spanType - Type of the span. 'DEFAULT' is used if not specified. If the type
+ * is 'LLM', you must manually specify some attributes. See `Laminar.setSpanAttributes`
+ * for more information.
+ * @param options.input - Force override the input for the span. If not specified, the
+ * input will be the arguments passed to the function.
  * @param options.ignoreInput - Whether to ignore the input altogether.
  * @param options.ignoreOutput - Whether to ignore the output altogether.
  * @param options.parentSpanContext - Parent span context to associate with this span.
- * @param options.metadata - Metadata to add to a trace for further filtering. Must be JSON serializable.
+ * @param options.metadata - Metadata to add to a trace for further filtering. Must be
+ * JSON serializable.
  * @param options.tags - Tags to associate with the span.
- * @param options.rolloutEntrypoint - When true, returns a wrapped function for rollout debugging.
- * When false/undefined, executes the function immediately.
+ * @param options.rolloutEntrypoint - When true, returns a wrapped function for
+ * rollout debugging. When false/undefined, executes the function immediately.
  * @param fn - The function to wrap
- * @param args - Arguments to pass to the function (only when rolloutEntrypoint is false/undefined)
+ * @param args - Arguments to pass to the function (only when rolloutEntrypoint is
+ * false/undefined)
  * @returns Wrapped function (when rolloutEntrypoint: true) or Promise with result
  * @throws Exception - Re-throws the exception if the wrapped function throws an exception.
  *
@@ -121,7 +139,7 @@ function extractParamNames(fn: Function): RolloutParam[] {
 // Overload: when rolloutEntrypoint is true, return wrapped function
 export function observe<F extends (...args: any[]) => any>(
   options: ObserveOptions & { rolloutEntrypoint: true },
-  fn: F
+  fn: F,
 ): F;
 
 // Overload: when rolloutEntrypoint is false/undefined, execute immediately
@@ -225,9 +243,10 @@ export function observe<F extends (...args: any[]) => any>(
     userId,
     tags,
     metadata,
+    parentSpanContext,
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+
   return observeBase({
     name: name ?? fn.name,
     associationProperties,
@@ -344,8 +363,9 @@ export function withTracingLevel<A extends unknown[], F extends (...args: A) => 
   return result;
 }
 
-const buildAssociationProperties = (options: Partial<ObserveOptions>):
-  Record<string, AttributeValue> => {
+const buildAssociationProperties = (
+  options: Partial<ObserveOptions>,
+): Record<string, AttributeValue> => {
   const associationProperties: Record<string, AttributeValue> = {};
   const parentSpanContext = options.parentSpanContext;
   const globalMetadata = LaminarContextManager.getGlobalMetadata();

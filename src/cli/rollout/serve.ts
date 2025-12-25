@@ -2,10 +2,10 @@ import * as esbuild from 'esbuild';
 
 import { LaminarClient } from '../../client';
 import { Laminar } from '../../laminar';
+import { RolloutHandshakeEvent, RolloutRunEvent } from '../../types';
 import { getDirname, initializeLogger, newUUID } from '../../utils';
 import { CachedSpan, startCacheServer } from './cache-server';
 import { createSSEClient, SSEClient } from './sse-client';
-import { RolloutHandshakeEvent, RolloutRunEvent } from '../../types';
 
 const logger = initializeLogger();
 
@@ -80,11 +80,12 @@ async function buildFile(filePath: string): Promise<string> {
  * Selects the appropriate rollout function from the registered functions
  */
 function selectRolloutFunction(
-  requestedFunctionName?: string
+  requestedFunctionName?: string,
 ): { fn: (...args: any[]) => any; params: any[]; name: string } {
   if (!globalThis._rolloutFunctions || globalThis._rolloutFunctions.size === 0) {
     throw new Error(
-      'No rollout functions found in file. Make sure you are using observe with rolloutEntrypoint: true'
+      "No rollout functions found in file. " +
+      " Make sure you are using observe with rolloutEntrypoint: true",
     );
   }
 
@@ -94,7 +95,7 @@ function selectRolloutFunction(
     if (!selected) {
       const available = Array.from(globalThis._rolloutFunctions.keys()).join(', ');
       throw new Error(
-        `Function '${requestedFunctionName}' not found. Available functions: ${available}`
+        `Function '${requestedFunctionName}' not found. Available functions: ${available}`,
       );
     }
     return selected;
@@ -109,7 +110,7 @@ function selectRolloutFunction(
   // Multiple functions found without explicit selection
   const available = Array.from(globalThis._rolloutFunctions.keys()).join(', ');
   throw new Error(
-    `Multiple rollout functions found: ${available}. Use --function to specify which one to serve.`
+    `Multiple rollout functions found: ${available}. Use --function to specify which one to serve.`,
   );
 }
 
@@ -193,19 +194,23 @@ async function handleRunEvent(
 
             try {
               parsedInput = typeof span.input === 'string' ? JSON.parse(span.input) : span.input;
-            } catch (e) {
+            } catch {
               // Keep as string
             }
 
             try {
-              parsedOutput = typeof span.output === 'string' ? span.output : JSON.stringify(span.output);
-            } catch (e) {
+              parsedOutput = typeof span.output === 'string'
+                ? span.output
+                : JSON.stringify(span.output);
+            } catch {
               parsedOutput = String(span.output);
             }
 
             try {
-              parsedAttributes = typeof span.attributes === 'string' ? JSON.parse(span.attributes) : span.attributes;
-            } catch (e) {
+              parsedAttributes = typeof span.attributes === 'string'
+                ? JSON.parse(span.attributes)
+                : span.attributes;
+            } catch {
               parsedAttributes = {};
             }
 
@@ -234,7 +239,7 @@ async function handleRunEvent(
 
     // Set environment variables
     process.env.LMNR_ROLLOUT_SESSION_ID = sessionId;
-    process.env.LAMINAR_ROLLOUT_STATE_SERVER_ADDRESS = `http://localhost:${cacheServerPort}`;
+    process.env.LMNR_ROLLOUT_STATE_SERVER_ADDRESS = `http://localhost:${cacheServerPort}`;
 
     // Build and load the user file
     logger.info('Building user file...');
@@ -272,12 +277,13 @@ async function handleRunEvent(
     // Execute the rollout function with args
     // Convert args object to array of arguments based on parameter names
     logger.info('Executing rollout function...');
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     const orderedArgs = selectedFunction.params.map(param => args[param.name]);
     logger.info(`Calling function with args: ${JSON.stringify(orderedArgs)}`);
     const result = await selectedFunction.fn(...orderedArgs);
     logger.info('Rollout function completed successfully');
     logger.info(`Result: ${JSON.stringify(result, null, 2)}`);
-  } catch (error) {
+  } catch (error: any) {
     logger.error(`Error handling run event: ${error instanceof Error ? error.message : error}`);
     if (error instanceof Error && error.stack) {
       logger.error(error.stack);
@@ -304,7 +310,12 @@ export async function runServe(
 
   // Start cache server
   logger.debug('Starting cache server...');
-  const { port: cacheServerPort, server: cacheServer, cache, setMetadata } = await startCacheServer();
+  const {
+    port: cacheServerPort,
+    server: cacheServer,
+    cache,
+    setMetadata,
+  } = await startCacheServer();
   logger.debug(`Cache server started on port ${cacheServerPort}`);
 
   // Build file to discover and select rollout functions
@@ -322,8 +333,9 @@ export async function runServe(
     selectedFunction = selectRolloutFunction(options.function);
     logger.info(`Serving function: ${selectedFunction.name}`);
     logger.debug(`Function parameters: ${JSON.stringify(selectedFunction.params)}`);
-  } catch (error) {
-    logger.error(`Failed to discover rollout functions: ${error instanceof Error ? error.message : error}`);
+  } catch (error: any) {
+    logger.error("Failed to discover rollout functions: " +
+      (error instanceof Error ? error.message : String(error)));
     throw error;
   }
 
@@ -344,8 +356,8 @@ export async function runServe(
       logger.debug('Heartbeat received');
     });
 
-    sseClient.on('run', async (event: RolloutRunEvent) => {
-      await handleRunEvent(
+    sseClient.on('run', (event: RolloutRunEvent) => {
+      handleRunEvent(
         event,
         sessionId,
         filePath,
@@ -355,13 +367,18 @@ export async function runServe(
         setMetadata,
         options,
         options.function,
-      );
+      ).catch((error) => {
+        // handleRunEvent already logs errors internally, but catch here
+        // to prevent unhandled promise rejections
+        logger.error('Unhandled error in run event handler: ' +
+          (error instanceof Error ? error.message : String(error)));
+      });
     });
 
     sseClient.on('handshake', (event: RolloutHandshakeEvent) => {
       const projectId = event.data.project_id;
       const sessionId = event.data.session_id;
-      logger.info(`View your session at https://laminar.sh/project/${projectId}/rolloutes/${sessionId}`);
+      logger.info(`View your session at https://laminar.sh/project/${projectId}/rollouts/${sessionId}`);
     });
 
     sseClient.on('error', (error: Error) => {
@@ -401,7 +418,8 @@ export async function runServe(
     // Keep the process running
     await new Promise(() => { });
   } catch (error) {
-    logger.error(`Failed to start serve command: ${error instanceof Error ? error.message : error}`);
+    logger.error("Failed to start serve command: " +
+      (error instanceof Error ? error.message : String(error)));
 
     cacheServer.close(() => {
       process.exit(1);

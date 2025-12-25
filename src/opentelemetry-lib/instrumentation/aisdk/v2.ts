@@ -10,12 +10,13 @@ import {
   SharedV2Headers,
   SharedV2ProviderMetadata,
 } from "@ai-sdk/provider-v2";
-import { Laminar } from "../../../laminar";
+
 import { LaminarClient } from "../../../client";
+import { Laminar } from "../../../laminar";
 import { convertToContentBlocks, fetchCachedSpan } from "./shared";
 
 export class LaminarLanguageModelV2 { // implements LanguageModelV2
-  readonly specificationVersion: 'v2' = 'v2';
+  readonly specificationVersion = 'v2';
 
   private readonly innerLanguageModel: LanguageModelV2;
 
@@ -58,7 +59,7 @@ export class LaminarLanguageModelV2 { // implements LanguageModelV2
     let parsedOutput: string | Record<string, any>[] = data.span.output;
     try {
       parsedOutput = JSON.parse(data.span.output);
-    } catch (error) {
+    } catch {
       // Ignore - keep as string
     }
 
@@ -72,7 +73,7 @@ export class LaminarLanguageModelV2 { // implements LanguageModelV2
       warnings: [],
       finishReason: data.span.attributes['ai.response.finishReason'] ?? 'stop',
       content,
-    }
+    };
   }
 
   doGenerate(options: LanguageModelV2CallOptions): PromiseLike<{

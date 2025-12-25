@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import { createParser } from 'eventsource-parser';
+
 import { RolloutHandshakeEvent, RolloutParam, RolloutRunEvent } from '../../types';
 
 const HEARTBEAT_INTERVAL = 5000; // 5 seconds
@@ -58,7 +59,7 @@ export class SSEClient extends EventEmitter {
           },
           body: JSON.stringify({ params: this.params }),
           signal: this.abortController.signal,
-        }
+        },
       );
 
       if (!response.ok) {
@@ -151,10 +152,10 @@ export class SSEClient extends EventEmitter {
         const handshakeEvent: RolloutHandshakeEvent = {
           event_type: 'handshake',
           data: parsedData,
-        }
+        };
         this.emit('handshake', handshakeEvent);
       }
-    } catch (error) {
+    } catch (error: any) {
       this.emit('error', new Error(`Failed to parse SSE event data: ${error}`));
     }
   }

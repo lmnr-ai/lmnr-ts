@@ -1,7 +1,8 @@
-import { describe, it } from 'node:test';
 import * as assert from 'node:assert';
 import * as http from 'node:http';
-import { startCacheServer, CachedSpan } from '../src/cli/rollout/cache-server';
+import { describe, it } from 'node:test';
+
+import { CachedSpan, startCacheServer } from '../src/cli/rollout/cache-server';
 import { observe } from '../src/decorators';
 
 // Helper to make HTTP requests
@@ -9,7 +10,7 @@ async function makeRequest(
   port: number,
   method: string,
   path: string,
-  body?: any
+  body?: any,
 ): Promise<{ status: number; data: any }> {
   return new Promise((resolve, reject) => {
     const options = {
@@ -34,7 +35,7 @@ async function makeRequest(
             status: res.statusCode || 0,
             data: data ? JSON.parse(data) : null,
           });
-        } catch (e) {
+        } catch {
           resolve({
             status: res.statusCode || 0,
             data: null,
@@ -68,8 +69,8 @@ async function closeServer(server: http.Server): Promise<void> {
   });
 }
 
-describe('Cache Server Tests', () => {
-  it('should start server on available port starting from 35667', async () => {
+void describe('Cache Server Tests', () => {
+  void it('should start server on available port starting from 35667', async () => {
     const { port, server } = await startCacheServer(35667);
 
     try {
@@ -79,7 +80,7 @@ describe('Cache Server Tests', () => {
     }
   });
 
-  it('should return 200 for health check', async () => {
+  void it('should return 200 for health check', async () => {
     const { port, server } = await startCacheServer();
 
     try {
@@ -92,7 +93,7 @@ describe('Cache Server Tests', () => {
     }
   });
 
-  it('should return 404 for missing cache keys', async () => {
+  void it('should return 404 for missing cache keys', async () => {
     const { port, server } = await startCacheServer();
 
     try {
@@ -107,7 +108,7 @@ describe('Cache Server Tests', () => {
     }
   });
 
-  it('should return cached span data with metadata', async () => {
+  void it('should return cached span data with metadata', async () => {
     const { port, server, cache, setMetadata } = await startCacheServer();
 
     try {
@@ -140,7 +141,7 @@ describe('Cache Server Tests', () => {
     }
   });
 
-  it('should handle cache key format with colons in path correctly', async () => {
+  void it('should handle cache key format with colons in path correctly', async () => {
     const { port, server, cache } = await startCacheServer();
 
     try {
@@ -168,7 +169,7 @@ describe('Cache Server Tests', () => {
     }
   });
 
-  it('should update metadata via setMetadata', async () => {
+  void it('should update metadata via setMetadata', async () => {
     const { port, server, setMetadata } = await startCacheServer();
 
     try {
@@ -200,24 +201,20 @@ describe('Cache Server Tests', () => {
   });
 });
 
-describe('observe with rolloutEntrypoint Tests', () => {
-  it('should return a wrapped function when rolloutEntrypoint is true', () => {
-    const testFn = async (arg1: string, arg2: number) => {
-      return `${arg1}-${arg2}`;
-    };
+void describe('observe with rolloutEntrypoint Tests', () => {
+  void it('should return a wrapped function when rolloutEntrypoint is true', () => {
+    const testFn = (arg1: string, arg2: number) => `${arg1}-${arg2}`;
 
     const wrapped = observe({ name: 'testAgent', rolloutEntrypoint: true }, testFn);
 
     assert.ok(typeof wrapped === 'function', 'Should return a function');
   });
 
-  it('should register function in Map when _set_rollout_global is true', () => {
+  void it('should register function in Map when _set_rollout_global is true', () => {
     globalThis._set_rollout_global = true;
     globalThis._rolloutFunctions = new Map();
 
-    const testFn = async (arg1: string, arg2: number) => {
-      return `${arg1}-${arg2}`;
-    };
+    const testFn = (arg1: string, arg2: number) => `${arg1}-${arg2}`;
 
     observe({ name: 'testAgent', rolloutEntrypoint: true }, testFn);
 
@@ -227,24 +224,26 @@ describe('observe with rolloutEntrypoint Tests', () => {
     globalThis._set_rollout_global = false;
   });
 
-  it('should call returned function successfully', async () => {
+  void it('should call returned function successfully', async () => {
     globalThis._set_rollout_global = false;
 
-    const testFn = async (arg1: string) => {
-      return `result: ${arg1}`;
-    };
+    const testFn = (arg1: string) => `result: ${arg1}`;
 
     const wrapped = observe({ name: 'testAgent', rolloutEntrypoint: true }, testFn);
+
+    // TODO: Cleanup the typing after the 0.8.0 release is merged
+    // eslint-disable-next-line @typescript-eslint/await-thenable
     const result = await wrapped('test');
 
     assert.strictEqual(result, 'result: test');
   });
 
-  it('should extract parameter names and store in Map', () => {
+  void it('should extract parameter names and store in Map', () => {
     globalThis._set_rollout_global = true;
     globalThis._rolloutFunctions = new Map();
 
-    const testFn = async (instruction: string, temperature: number, options: any) => {
+    const testFn = (instruction: string, temperature: number, options: any) => {
+      console.debug(instruction, temperature, options);
       return 'result';
     };
 
@@ -253,36 +252,37 @@ describe('observe with rolloutEntrypoint Tests', () => {
     assert.ok(globalThis._rolloutFunctions.size > 0);
     const registered = Array.from(globalThis._rolloutFunctions.values())[0];
     assert.ok(registered.params.length >= 2);
+    assert.deepStrictEqual(
+      registered.params, [{ name: 'instruction' }, { name: 'temperature' }, { name: 'options' }],
+    );
 
     // Clean up
     globalThis._set_rollout_global = false;
   });
 
-  it('should work in backward compatible mode (without rolloutEntrypoint)', async () => {
-    const testFn = async (arg1: string) => {
-      return `result: ${arg1}`;
-    };
+  void it('should work in backward compatible mode (without rolloutEntrypoint)', async () => {
+    const testFn = (arg1: string) => `result: ${arg1}`;
 
     const result = await observe({ name: 'testAgent' }, testFn, 'test');
 
     assert.strictEqual(result, 'result: test');
   });
 
-  it('should throw error if fn is not a function', async () => {
+  void it('should throw error if fn is not a function', async () => {
     await assert.rejects(
       async () => {
         await observe({ name: 'test' }, null as any, 'arg');
       },
-      /Invalid `observe` usage/
+      /Invalid `observe` usage/,
     );
   });
 
-  it('should handle multiple functions in Map', () => {
+  void it('should handle multiple functions in Map', () => {
     globalThis._set_rollout_global = true;
     globalThis._rolloutFunctions = new Map();
 
-    const fn1 = async (x: string) => x;
-    const fn2 = async (y: number) => y;
+    const fn1 = (x: string) => x;
+    const fn2 = (y: number) => y;
 
     observe({ name: 'agent1', rolloutEntrypoint: true }, fn1);
     observe({ name: 'agent2', rolloutEntrypoint: true }, fn2);
@@ -294,21 +294,21 @@ describe('observe with rolloutEntrypoint Tests', () => {
   });
 });
 
-describe('LaminarLanguageModel Cache Tests', () => {
-  it('should return undefined if LAMINAR_ROLLOUT_STATE_SERVER_ADDRESS is not set', async () => {
-    delete process.env.LAMINAR_ROLLOUT_STATE_SERVER_ADDRESS;
+void describe('LaminarLanguageModel Cache Tests', () => {
+  void it('returns undefined if LMNR_ROLLOUT_STATE_SERVER_ADDRESS is not set', () => {
+    delete process.env.LMNR_ROLLOUT_STATE_SERVER_ADDRESS;
 
     // This test would require importing and testing the actual LaminarLanguageModel classes
     // which have dependencies on the full OpenTelemetry setup
     // For now, we verify the env var behavior is documented
-    assert.strictEqual(process.env.LAMINAR_ROLLOUT_STATE_SERVER_ADDRESS, undefined);
+    assert.strictEqual(process.env.LMNR_ROLLOUT_STATE_SERVER_ADDRESS, undefined);
   });
 
-  it('should handle cache miss (404) gracefully', async () => {
+  void it('should handle cache miss (404) gracefully', async () => {
     const { port, server } = await startCacheServer();
 
     try {
-      process.env.LAMINAR_ROLLOUT_STATE_SERVER_ADDRESS = `http://localhost:${port}`;
+      process.env.LMNR_ROLLOUT_STATE_SERVER_ADDRESS = `http://localhost:${port}`;
 
       // Make a request that will result in cache miss
       const response = await makeRequest(port, 'POST', '/cached', {
@@ -319,12 +319,12 @@ describe('LaminarLanguageModel Cache Tests', () => {
       assert.strictEqual(response.status, 404);
     } finally {
       await closeServer(server);
-      delete process.env.LAMINAR_ROLLOUT_STATE_SERVER_ADDRESS;
+      delete process.env.LMNR_ROLLOUT_STATE_SERVER_ADDRESS;
     }
   });
 
-  it('should handle network errors gracefully', async () => {
-    process.env.LAMINAR_ROLLOUT_STATE_SERVER_ADDRESS = 'http://localhost:99999';
+  void it('should handle network errors gracefully', async () => {
+    process.env.LMNR_ROLLOUT_STATE_SERVER_ADDRESS = 'http://localhost:99999';
 
     try {
       // Attempt to fetch from invalid port should fail gracefully
@@ -341,7 +341,7 @@ describe('LaminarLanguageModel Cache Tests', () => {
         assert.ok(error); // Network error expected
       }
     } finally {
-      delete process.env.LAMINAR_ROLLOUT_STATE_SERVER_ADDRESS;
+      delete process.env.LMNR_ROLLOUT_STATE_SERVER_ADDRESS;
     }
   });
 });

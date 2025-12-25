@@ -450,7 +450,7 @@ export class StagehandV2Instrumentation extends InstrumentationBase {
               name: `stagehand.${methodName}`,
               input,
             },
-            async (thisArg, ...rest) => await original.apply(thisArg, ...rest),
+            async (thisArg: any, rest: any[]) => await original.apply(thisArg, rest),
             this, args,
           ),
         );

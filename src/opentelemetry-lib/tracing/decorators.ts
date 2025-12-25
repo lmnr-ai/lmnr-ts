@@ -212,7 +212,7 @@ const normalizePayload = (payload: unknown, seen: WeakSet<any>): unknown => {
     // serialize object one by one
     const output: any = {};
     Object.entries(payload as any).forEach(([key, value]) => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+
       output[key] = normalizePayload(value, seen);
     });
     return output;
