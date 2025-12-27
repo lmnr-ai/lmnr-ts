@@ -511,7 +511,7 @@ void describe("tracing", () => {
 
     const result = await observe({ name: "outer" }, async () => {
       const result = await observe({ name: "test" }, async () => {
-        const currentSpan = trace.getActiveSpan();
+        const currentSpan = Laminar.getCurrentSpan();
         if (!currentSpan) throw new Error("No active span");
 
         const serializedContext = Laminar.serializeLaminarSpanContext(currentSpan);
@@ -826,7 +826,7 @@ void describe("tracing", () => {
 
     await observe(
       { name: "evaluator", spanType: 'EVALUATOR' },
-      async () => await observe({ name: 'default' }, fn, 1, 2),
+      async (a, b) => await observe({ name: 'default' }, fn, a, b),
       1,
       2,
     );

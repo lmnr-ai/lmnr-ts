@@ -525,11 +525,11 @@ export class StagehandInstrumentation extends InstrumentationBase {
               name: `stagehand.${methodName}`,
               input,
             },
-            async (thisArg, ...rest) => {
+            async (thisArg: any, rest: any[]) => {
               const span = trace.getSpan(LaminarContextManager.getContext())
                 ?? trace.getActiveSpan();
               span?.setAttribute(TRACE_HAS_BROWSER_SESSION, true);
-              return await original.apply(thisArg, ...rest);
+              return await original.apply(thisArg, rest);
             },
             this, args,
           ),

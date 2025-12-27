@@ -6,8 +6,9 @@ import { fileURLToPath } from "node:url";
 
 import { openai } from "@ai-sdk/openai";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
-import { generateText, streamText } from "ai";
+import { generateText, streamText, tool } from "ai";
 import nock from "nock";
+import { z } from "zod";
 
 import { observe } from "../src/decorators";
 import { Laminar } from "../src/laminar";
@@ -334,5 +335,60 @@ void describe("aisdk instrumentation", () => {
       ],
     }]);
     assert.strictEqual(innerSpan.attributes['ai.response.text'], "The capital of France is Paris.");
+  });
+
+  void it("creates AI SDK spans with tool calls", async () => {
+    await generateText({
+      model,
+      messages: [{
+        role: "user",
+        content: [{
+          type: "text",
+          text: "What is the weather in SF?"
+        }]
+      }],
+      system: "You are a helpful assistant.",
+      tools: {
+        get_weather: tool({
+          description: "Get the weather in a given location",
+          inputSchema: z.object({
+            location: z.string().describe("The city and state, e.g. San Francisco, CA")
+          }),
+          execute: async ({ location }: { location: string }) => ({
+            location,
+            weather: "Sunny as always!"
+          })
+        }),
+        get_time: tool({
+          description: "Get the time in a given location",
+          inputSchema: z.object({
+            location: z.string().describe("The city and state, e.g. San Francisco, CA")
+          }),
+          execute: async ({ location }: { location: string }) => ({
+            location,
+            time: "12:00 PM"
+          })
+        }),
+      },
+      experimental_telemetry: {
+        isEnabled: true,
+        tracer: getTracer(),
+      }
+    });
+
+    const spans = exporter.getFinishedSpans();
+    // Should have: observe span(s), generateText span(s), doGenerate span(s), and tool spans
+    const llmSpans = spans.filter(span => span.name.includes("doGenerate"));
+    const toolSpans = spans.filter(span =>
+      span.attributes["ai.toolCall.id"] !== "undefined"
+    );
+    const generateTextSpans = spans.filter(span =>
+      span.name.includes("generateText") && !span.name.includes("doGenerate")
+    );
+
+    // Verify we have LLM and tool spans
+    assert.ok(llmSpans.length > 0, "Should have at least one LLM span");
+    assert.ok(toolSpans.length > 0, "Should have at least one tool span");
+    assert.ok(generateTextSpans.length > 0, "Should have generateText span");
   });
 });

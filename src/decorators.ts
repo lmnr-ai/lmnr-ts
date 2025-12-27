@@ -1,10 +1,11 @@
-import { AttributeValue } from "@opentelemetry/api";
+import { AttributeValue, context } from "@opentelemetry/api";
 
 import { observeBase } from './opentelemetry-lib';
 import {
   ASSOCIATION_PROPERTIES,
   PARENT_SPAN_IDS_PATH,
   PARENT_SPAN_PATH,
+  ROLLOUT_SESSION_ID,
   SESSION_ID,
   SPAN_TYPE,
   TRACE_TYPE,
@@ -14,15 +15,26 @@ import {
   ASSOCIATION_PROPERTIES_KEY,
   LaminarContextManager,
 } from "./opentelemetry-lib/tracing/context";
-import { LaminarSpanContext, TraceType, TracingLevel } from './types';
+import { LaminarSpanContext, RolloutParam, TraceType, TracingLevel } from './types';
 import { deserializeLaminarSpanContext, initializeLogger, metadataToAttributes } from "./utils";
 
 const logger = initializeLogger();
+
+declare global {
+  var _rolloutFunctions: Map<string, {
+    fn: (...args: any[]) => any;
+    params: RolloutParam[];
+    name: string;
+  }> | undefined;
+  var _set_rollout_global: boolean;
+  var _currentExportName: string | undefined;
+}
 
 interface ObserveOptions {
   name?: string;
   sessionId?: string;
   userId?: string;
+  rolloutSessionId?: string;
   traceType?: TraceType;
   spanType?: 'DEFAULT' | 'LLM' | 'TOOL' | 'EVALUATOR' | 'EVALUATION' | 'EXECUTOR';
   input?: unknown;
@@ -31,39 +43,127 @@ interface ObserveOptions {
   parentSpanContext?: string | LaminarSpanContext;
   metadata?: Record<string, any>;
   tags?: string[];
+  rolloutEntrypoint?: boolean;
+}
+
+/**
+ * Extracts parameter names from a function using regex
+ */
+const extractParamNames = (fn: (...args: any[]) => any): RolloutParam[] => {
+  const fnStr = fn.toString();
+
+  console.log('fnStr', fnStr);
+
+  // Match function parameters - handles regular functions, arrow functions, async functions
+  const paramMatch = fnStr.match(
+    /(?:async\s*)?(?:function\s*)?\(([^)]*)\)|(?:async\s+)?([^=\s]+)\s*=>/,
+  );
+
+  if (!paramMatch) {
+    return [];
+  }
+
+  const paramsStr = paramMatch[1] || paramMatch[2] || '';
+
+  if (!paramsStr.trim()) {
+    return [];
+  }
+
+  // Split by comma and extract parameter names (simple version - just names, no destructuring)
+  const params = paramsStr.split(',').map(param => {
+    // Remove default values, type annotations, and whitespace
+    const name = param
+      .trim()
+      .replace(/=.+$/, '') // Remove default values
+      .replace(/:.+$/, '') // Remove type annotations
+      .replace(/\s+/g, ''); // Remove whitespace
+
+    // Extract just the parameter name (handle simple destructuring by taking the variable name)
+    const simpleNameMatch = name.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*/);
+    return simpleNameMatch ? simpleNameMatch[0] : name;
+  });
+
+  return params
+    .filter(name => name && name.length > 0)
+    .map(name => ({ name }));
 }
 
 /**
  * The main decorator entrypoint for Laminar. This is used to wrap
  * functions and methods to create spans.
  *
- * @param name - Name of the span. Function name is used if not specified.
- * @param sessionId - Session ID to associate with the span and the following context.
- * @param userId - User ID to associate with the span and the following context.
+ * When `rolloutEntrypoint: true` is set, returns a wrapped function that can be
+ * used for rollout debugging sessions with `npx lmnr serve`.
+ *
+ * @param options - Configuration options for the span
+ * @param options.name - Name of the span. Function name is used if not specified.
+ * @param options.sessionId - Session ID to associate with the span and the following context.
+ * @param options.userId - User ID to associate with the span and the following context.
  * This is different from the id of a Laminar user.
- * @param traceType – Type of the trace. Unless it is within evaluation, it should be 'DEFAULT'.
- * @param spanType - Type of the span. 'DEFAULT' is used if not specified. If the type is 'LLM',
- * you must manually specify some attributes. See `Laminar.setSpanAttributes` for more
- * information.
- * @param input - Force override the input for the span. If not specified, the input will be the
- * arguments passed to the function.
- * @param ignoreInput - Whether to ignore the input altogether.
- * @param ignoreOutput - Whether to ignore the output altogether.
- * @param metadata - Metadata to add to a trace for further filtering. Must be JSON serializable.
- * @param tags - Tags to associate with the span.
- * @returns Returns the result of the wrapped function.
+ * @param options.traceType - Type of the trace. Unless it is within evaluation, it should be
+ * 'DEFAULT'.
+ * @param options.spanType - Type of the span. 'DEFAULT' is used if not specified. If the type
+ * is 'LLM', you must manually specify some attributes. See `Laminar.setSpanAttributes`
+ * for more information.
+ * @param options.input - Force override the input for the span. If not specified, the
+ * input will be the arguments passed to the function.
+ * @param options.ignoreInput - Whether to ignore the input altogether.
+ * @param options.ignoreOutput - Whether to ignore the output altogether.
+ * @param options.parentSpanContext - Parent span context to associate with this span.
+ * @param options.metadata - Metadata to add to a trace for further filtering. Must be
+ * JSON serializable.
+ * @param options.tags - Tags to associate with the span.
+ * @param options.rolloutEntrypoint - When true, returns a wrapped function for
+ * rollout debugging. When false/undefined, executes the function immediately.
+ * @param fn - The function to wrap
+ * @param args - Arguments to pass to the function (only when rolloutEntrypoint is
+ * false/undefined)
+ * @returns Wrapped function (when rolloutEntrypoint: true) or Promise with result
  * @throws Exception - Re-throws the exception if the wrapped function throws an exception.
  *
  * @example
  * ```typescript
- * import { observe } from '@lmnr-ai/lmnr';
- *
- * await observe({ name: 'my_function' }, () => {
+ * // Regular usage (immediate execution)
+ * await observe({ name: 'my_function' }, async (x: string) => {
  *    // Your code here
- * });
+ *    return x.toUpperCase();
+ * }, 'hello');
+ *
+ * // Rollout entrypoint (returns wrapped function)
+ * export const myAgent = observe(
+ *   { name: 'agent', rolloutEntrypoint: true },
+ *   async (input: string) => {
+ *     // Your agent code here
+ *     return processInput(input);
+ *   }
+ * );
+ * // Then call: await myAgent('hello');
+ * ```
  */
-export async function observe<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
-  {
+// Overload: when rolloutEntrypoint is true, return wrapped function
+export function observe<F extends (...args: any[]) => any>(
+  options: ObserveOptions & { rolloutEntrypoint: true },
+  fn: F,
+): F;
+
+// Overload: when rolloutEntrypoint is false/undefined, execute immediately
+export function observe<F extends (...args: any[]) => any>(
+  options: ObserveOptions,
+  fn: F,
+  ...args: Parameters<F>
+): Promise<ReturnType<F>>;
+
+// Implementation
+export function observe<F extends (...args: any[]) => any>(
+  options: ObserveOptions,
+  fn: F,
+  ...args: Parameters<F>
+): F | Promise<ReturnType<F>> {
+  if (fn === undefined || typeof fn !== "function") {
+    throw new Error("Invalid `observe` usage. Second argument `fn` must be a function.");
+  }
+
+  const {
     name,
     sessionId,
     userId,
@@ -75,11 +175,61 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     parentSpanContext,
     metadata,
     tags,
-  }: ObserveOptions, fn: F, ...args: A): Promise<ReturnType<F>> {
-  if (fn === undefined || typeof fn !== "function") {
-    throw new Error("Invalid `observe` usage. Second argument `fn` must be a function.");
+    rolloutEntrypoint,
+  } = options;
+  const spanName = name ?? fn.name;
+
+  // If rolloutEntrypoint is true, return a wrapped function
+  if (rolloutEntrypoint) {
+    // Extract parameter names for rollout
+    const params = extractParamNames(fn);
+    // Get rollout session ID from env var if in rollout mode
+    const envRolloutSessionId = process.env.LMNR_ROLLOUT_SESSION_ID;
+
+    // Create wrapped function
+    const wrappedFn = (async (...fnArgs: Parameters<F>): Promise<ReturnType<F>> => {
+
+      const associationProperties = buildAssociationProperties({
+        sessionId,
+        traceType,
+        spanType,
+        userId,
+        rolloutSessionId: envRolloutSessionId,
+        tags,
+        metadata,
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      return await observeBase({
+        name: spanName,
+        associationProperties,
+        input,
+        ignoreInput,
+        ignoreOutput,
+        parentSpanContext,
+      }, fn, undefined, ...fnArgs);
+    }) as F;
+
+    // If in registration mode, register this function
+    if (globalThis._set_rollout_global) {
+      if (!globalThis._rolloutFunctions) {
+        globalThis._rolloutFunctions = new Map();
+      }
+
+      // Use current export name if available, otherwise use function name
+      const exportName = globalThis._currentExportName || spanName || 'unknown';
+
+      globalThis._rolloutFunctions.set(exportName, {
+        fn: wrappedFn as (...args: any[]) => any,
+        params,
+        name: spanName,
+      });
+    }
+
+    return wrappedFn;
   }
 
+  // Regular execution mode (backward compatible)
   const associationProperties = buildAssociationProperties({
     sessionId,
     traceType,
@@ -90,15 +240,71 @@ export async function observe<A extends unknown[], F extends (...args: A) => Ret
     parentSpanContext,
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-  return await observeBase<A, F>({
-    name: name ?? fn.name,
+
+  return observeBase({
+    name: spanName,
     associationProperties,
     input,
     ignoreInput,
     ignoreOutput,
     parentSpanContext,
   }, fn, undefined, ...args);
+}
+
+
+/**
+ * @deprecated Use `tags` in `observe` or in `Laminar.startSpan`, or `Laminar.setSpanTags` instead.
+ * Sets the labels for any spans inside the function. This is useful for adding
+ * labels to the spans created in the auto-instrumentations. Returns the result
+ * of the wrapped function, so you can use it in an `await` statement if needed.
+ *
+ * Requirements:
+ * - Labels must be created in your project in advance.
+ * - Keys must be strings from your label names.
+ * - Values must be strings matching the label's allowed values.
+ *
+ * @param labels - The labels to set.
+ * @returns The result of the wrapped function.
+ *
+ * @example
+ * ```typescript
+ * import { withLabels } from '@lmnr-ai/lmnr';
+ *
+ * const result = await withLabels({ endpoint: "ft-openai-<id>" }, () => {
+ *    openai.chat.completions.create({});
+ * });
+ * ```
+ */
+export function withLabels<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
+  labels: string[],
+  fn: F,
+  ...args: A
+): ReturnType<F> {
+  let entityContext = context.active();
+  const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
+  const oldLabels = (currentAssociationProperties as Record<string, any>).labels ?? [];
+  const newLabels = [...oldLabels, ...labels];
+
+  entityContext = entityContext.setValue(
+    ASSOCIATION_PROPERTIES_KEY,
+    {
+      ...currentAssociationProperties,
+      labels: newLabels,
+    },
+  );
+
+  const result = context.with(entityContext, () => fn(...args));
+
+  const newAssociationProperties = (
+    entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {}
+  ) as Record<string, any>;
+
+  entityContext = entityContext.setValue(
+    ASSOCIATION_PROPERTIES_KEY,
+    { ...newAssociationProperties, labels: oldLabels },
+  );
+
+  return result;
 }
 
 /**
@@ -151,8 +357,9 @@ export function withTracingLevel<A extends unknown[], F extends (...args: A) => 
   return result;
 }
 
-const buildAssociationProperties = (options: Partial<ObserveOptions>):
-Record<string, AttributeValue> => {
+const buildAssociationProperties = (
+  options: Partial<ObserveOptions>,
+): Record<string, AttributeValue> => {
   const associationProperties: Record<string, AttributeValue> = {};
   const parentSpanContext = options.parentSpanContext;
   const globalMetadata = LaminarContextManager.getGlobalMetadata();
@@ -163,6 +370,7 @@ Record<string, AttributeValue> => {
   let parentTracingLevel: TracingLevel | undefined;
   let parentUserId: string | undefined;
   let parentSessionId: string | undefined;
+  let parentRolloutSessionId: string | undefined;
   const ctxAssociationProperties = LaminarContextManager.getAssociationProperties();
 
   if (parentSpanContext) {
@@ -178,6 +386,7 @@ Record<string, AttributeValue> => {
       parentTracingLevel = laminarContext.tracingLevel;
       parentUserId = laminarContext.userId;
       parentSessionId = laminarContext.sessionId;
+      parentRolloutSessionId = laminarContext.rolloutSessionId;
     } catch (e) {
       logger.warn("Failed to parse parent span context: " +
         (e instanceof Error ? e.message : String(e)),
@@ -192,6 +401,11 @@ Record<string, AttributeValue> => {
   const userIdValue = options.userId ?? parentUserId ?? ctxAssociationProperties.userId;
   if (userIdValue) {
     associationProperties[USER_ID] = userIdValue;
+  }
+  const rolloutSessionIdValue = options.rolloutSessionId ?? parentRolloutSessionId
+    ?? ctxAssociationProperties.rolloutSessionId;
+  if (rolloutSessionIdValue) {
+    associationProperties[ROLLOUT_SESSION_ID] = rolloutSessionIdValue;
   }
   const traceTypeValue = options.traceType ?? parentTraceType
     ?? (["EVALUATION", "EXECUTOR", "EVALUATOR"].includes(options.spanType ?? "DEFAULT")
@@ -271,9 +485,10 @@ export function observeDecorator(
     descriptor: PropertyDescriptor,
   ) {
     if (!descriptor || typeof descriptor.value !== 'function') {
-      throw new Error(
-        `observeDecorator can only be applied to methods. Applied to: ${String(propertyKey)}`,
-      );
+      throw new
+        Error(
+          `observeDecorator can only be applied to methods. Applied to: ${String(propertyKey)}`,
+        );
     }
 
     const originalMethod = descriptor.value;

@@ -19,33 +19,33 @@
     },
     "status": 200,
     "response": [
-      "1bc105009c07b68ded8c7a34192c75d09f16e74af9e88314464a3fa4e53134884257df1401e94b1d1605bfda6f338446a984d26edfee2d66c912a42f114db788b55f81a89dd224257408d3995fa1689a9bfce7492a07c0ec9791505863118b3cb83c4978819816224f8bc05cf098b30235dabb5f89718577567838499a4cf95859262edba4e5732c4b1381327f1c4b8e81c669c5791b845883e6b3c87f0ff9523c50e46e1f8dfaf2f3512115437a00d2773b00d55d0f80bc46d91b0d534e231b77faa466570875ab4f04af0ae1d21cd08ccf00c4717dcb0f7bf7ba1fdeb434f146f966b27030ee96959f9c3833edc995dd1237059eb0c27e2d6c16b254482c8cb1ce85052c11a8692ffd56e166b5878240430333c159d3521942152ca8528062f293fd99c27bed10c7793007183b03bc9dc0ff0f7bfcb7011bc6d57e4a4d8dcc431b9e4e7b0c8032140f7dff7dd33961ef9c9faf75c2f1902ad759d189876e5c890b6ea3c65ff268f6abefab60b498312c8899b7c23bb797592d02c53493d169fa1c0c8b6f99cb5d5a657560479cc03126d5900a9c68c83eb8410f243aa6143ccff61ebabeb612f5d2ee67332cd5baafc12bdc1a3baacd544a2ac4960d10065078b50e2301a48182a331ce74de7aab8b5b079e639be0d7e09aadfa797b81c997cc938149154d3c70838f31dd95747098cb3637ad00d8e80ed41e6cf29cd74ece363cd2f955333845de7b07"
+      "1bdf05009c07b68d6d8bbc06a5a51df8d3a24eaf5f7741e6e4babb4d3607d0f1384540fa528145a71540bafafefff7ee9c0f16684076d7bbed49458bb2e8dec6b2870d9ce2591e593aa4e5ab6f50349799fccdbf324638a8e93a082366cf14530963741811752f53ec5daf5dee3ad67b67b8d01852882664cd105292465321569689cb1a39f90766b4364671ece51c038ed38af3da845884e6b3287c0ff96cd961e4b09d1cee37d5bd426a02ea016a7603f7541c58118ca90ca56d50916ae3345cb19d6cbcba1f82429e30b9fa80e0cb136add8e5a85b1ff5a8e76970f76dfdcb6df397275477967b2ac641ce6f957c69cb776ecd6f52aab74cf397eeb7b0c5d9fb163aaf38ed7582c21e4712b6850e1669d2105018e06e682f3a6a53288b908523218c74bfc9a4265d90fd7eaee2f64ecc2c15b11fcdfb2a7ff4560d9b8e24fa9a991ba2fe12929b48032291efaeefcae73c2ed49989a4b84f2331a6367178fbaaf4723a6b88fe6f42b9fd4d4d25605a7c57ce221ceac66afb095695e048a78a6aad3f4191a1edf32a537a8c94ac09d74200672a95aa200d1903d70453d90e89870f879bef7accbb595a897be52f5fb35b66d115e1dd7d8a9da4cb4a8825c5a06a181c2bbb61f0490320a8e8e38e7f5730baeb8256041b649ec6bcef1b84db75798bcc9940c6caad4c48338f818d35d4907879d6c73d30a808dae44fc6695e2bc7872bee1136b6a8edf31f2de0d"
     ],
     "rawHeaders": {
       "alt-svc": "h3=\":443\"; ma=86400",
       "cf-cache-status": "DYNAMIC",
-      "cf-ray": "9ab68dc72a37949d-LHR",
+      "cf-ray": "9b42c8021dad416d-LHR",
       "connection": "keep-alive",
       "content-encoding": "br",
       "content-type": "application/json",
-      "date": "Tue, 09 Dec 2025 18:27:00 GMT",
+      "date": "Fri, 26 Dec 2025 18:53:29 GMT",
       "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
-      "openai-processing-ms": "2271",
+      "openai-processing-ms": "368",
       "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
       "openai-version": "2020-10-01",
       "server": "cloudflare",
-      "set-cookie": "_cfuvid=F_kp5xiErcuB4_KvCk_c.xOuapitJqalbM7U_SeDxSY-1765304820208-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
+      "set-cookie": "_cfuvid=dQ.9ZvA5dDTo.TyIHaYtsslZ1Tvn1Jtp.B4xPT52YFg-1766775209848-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
       "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
       "transfer-encoding": "chunked",
       "x-content-type-options": "nosniff",
-      "x-envoy-upstream-service-time": "2274",
+      "x-envoy-upstream-service-time": "371",
       "x-ratelimit-limit-requests": "30000",
       "x-ratelimit-limit-tokens": "150000000",
       "x-ratelimit-remaining-requests": "29999",
       "x-ratelimit-remaining-tokens": "149999967",
       "x-ratelimit-reset-requests": "2ms",
       "x-ratelimit-reset-tokens": "0s",
-      "x-request-id": "req_4b0339987d5848028063b6bb3845e38f"
+      "x-request-id": "req_c7ec3d23215c42ff9a3f0e304bc5a568"
     },
     "responseIsBinary": false
   },
@@ -69,133 +69,33 @@
     },
     "status": 200,
     "response": [
-      "1bc105209c07b68ded8c7a34192c75d09f16e74af9e883022afd90d2981b44a1ab6f8a80f4a50e8b825fbfb6199225428c7fdfee2d7682244b902c7afa8b58bb0a442d9d06ada2239ad6159e22b95474fb9b27a9120073b68c48721624cb7d12d10bc53421ca72a36c2ea4b5d1502b7d32329386e6994e3a23094e62264b81ab2c924b6ca0177fa05a494e8461a4c72e50679a701e7b1e86507b96041f215f2e66e4b89b0e477f65f35c113582b43ea27713e0d4ad8f603cc4e08d82c9a6110d3a7f62adab08baf50b425715616966a8c577008a717d8b0f7df7be1fdeac34f526e24d45de60dbf5ab3f2171605a925bbba5186563c1fca23c0962348f5ea9204c0f8608d3349572ab6cbbd4432ec850bf8c6fd6b22486409582753c10d326fd3379d20e8b6bf31036b07501b89bc0ff0e7bfcb301639d859f504b7df3d07aa7ad1efad085deb18fdf378513f2ce04cd354218f7b04a851595d1d08d2b52c17dd864977838676bd627c1283161580c336df95b3795462de72ba4998bcee34b302cbca529b7701545408e5880624ca43e1338498f7ec8082510e79851f82c5b7a56c52cdce9953d9bc3b054eb3484dbdbea3a92cd4c4a1a449631c83c24bc5b8711f11193f34f463727f3d6479fdb08688e4d825ebd75baea9bed152a5e22e5023f52d4f028757b4aa25dcb06c746b4bd65adff565b30bb372a32161e9badf75097ad9ec0c9f1f63b"
+      "1bdf05009c07b68d6d8bbc2685a51df8d33255af5f778618ebbad356802daf81e94e1190bed46151680590aebe176b6b86d0089990d2da2dae099225b1b48b58bb88442d9dc67c8baf3298ceada5022113fdffcdbf32b620287c1d84b9e9542b9ad02a6eb5768836686e434a98157a117c66c690d9e9d6048daa8395a4d154102bcbc4659192fc8b70d63a67a4c001c780e5b4c6796a42cc40e3b328f80cf944bfc0c861de3fd22f97a542aa0fd505d4ec16eea972604230a66ac86e853254374ec355b693f5d6f44350481126d7af107c2942ad5b5053fd06417fd4bb7e88fb96b6fd4e5a5377d477a1ab958cc330f5ca98f3d616bb77bdfa494c1bdbfce18d90811bd126744e0cc812421ee78206156ed732a420c0d1c05c70deb4d40c622e042b198ce32efc9a427ed957b7ca9e7764ec8ae05e04ffb7ece97f1198532ef33935d555f6253c25852aa44c8ac73e9ddfb59c707b24e8cd5942f9058d6dcb8e1f655f8f4a4cf118cdfc2bef17aebcd582d3623ef1106756b37b984b9f1781229ea9ea3cbd42c3e35b7a7a99aa2c0bdc492b622097aa250a1075c40327d406121d130e5fe6db9e75b96e25ea952f2e79bfc63acfc0cd718d9d6a9b891655904b73203450f854f783009243c1c911e7a87c6e4daadc2cb020db24f635dbf0b8f5db1b42df644a0636556ac4a3b6f029a6bb960e8ebd6c7bd30a80adf644fc661295327372bec1fb56ae89df31f2e60d"
     ],
     "rawHeaders": {
       "alt-svc": "h3=\":443\"; ma=86400",
       "cf-cache-status": "DYNAMIC",
-      "cf-ray": "9ab68dd69f70949d-LHR",
+      "cf-ray": "9b42c8062fee416d-LHR",
       "connection": "keep-alive",
       "content-encoding": "br",
       "content-type": "application/json",
-      "date": "Tue, 09 Dec 2025 18:27:02 GMT",
+      "date": "Fri, 26 Dec 2025 18:53:30 GMT",
       "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
-      "openai-processing-ms": "2222",
+      "openai-processing-ms": "361",
       "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
       "openai-version": "2020-10-01",
       "server": "cloudflare",
-      "set-cookie": "_cfuvid=kZeTiPFL42p5jM6_vEPgFxxPpy76YDYBHkxfHROAyPg-1765304822629-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
+      "set-cookie": "_cfuvid=LvRfxBXBPAsd4wDI6TqhDY4Oi8_5e1FvjdSmXxudPho-1766775210482-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
       "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
       "transfer-encoding": "chunked",
       "x-content-type-options": "nosniff",
-      "x-envoy-upstream-service-time": "2225",
-      "x-ratelimit-limit-requests": "30000",
-      "x-ratelimit-limit-tokens": "150000000",
-      "x-ratelimit-remaining-requests": "29999",
-      "x-ratelimit-remaining-tokens": "149999965",
-      "x-ratelimit-reset-requests": "2ms",
-      "x-ratelimit-reset-tokens": "0s",
-      "x-request-id": "req_40d899cf06644e9980ad03a02d7fbeb5"
-    },
-    "responseIsBinary": false
-  },
-  {
-    "scope": "https://api.openai.com:443",
-    "method": "POST",
-    "path": "/v1/responses",
-    "body": {
-      "model": "gpt-4.1-nano",
-      "input": [
-        {
-          "role": "user",
-          "content": [
-            {
-              "type": "input_text",
-              "text": "What is the capital of France?"
-            }
-          ]
-        }
-      ]
-    },
-    "status": 200,
-    "response": [
-      "1bc105202c0aec5806142d55467777887d49b2d15ceaf489b67a6f4c0c269e22207db6b62875f27bb30b8890f2255f355eeab028b4024857df8bb9dd111a99d0d2db1ed704691bd1d33f626d15885a3a8d96d1114deb0a4f915c2abafdcdaff49b241bef8ab4e8fed7da76d21004a22ca36eaca027ab0a73ac8eb50bcf5b1bb212335a0a5c65915c621d56fc8523bac15355cc2e60679a701e1b0f4b547b96041f219f6b67e8384c43b52f6f73455444d5fa143d4c08a7b03e81f11282770a2e9b4e3499ed835a1700bacd0b445701b07433aac56f92b47a44e5c3f6d94522569a69f046cf1bd9867ee10d8903d392dc3befed287367fd73c664b92eef5136cee9b121c4344ea5dc2adb2df5241764a85fce376f591283a04ad03a06c4b849be93572759dcdac46dc8d615c9dd04fe77d8d33f1bb0a2b3d227d4d2d8269377daeadb942ee99dfaf87d573821ef54d05ccb80f108fd2eaca84432eb012a780c23bfe270e38397243825260c8f61a62dbb85a9346a395f21cd5c74192fc1f0f096a6dcc4212a0b39d28228c6456a990024233e185109c43966143ecb979e556956dae9b58b37277b7f4c4b727b5b5da7643393a2069265856406099f0e51e0a382f3cfd4cde9762edee6b62c34c726895ecd3ad97fcdf606fd27522eb091520d4f42b7e78876231b9ca66877cb5aff9db6c4ec6694562d1d9baf7768e6c312383adebf01"
-    ],
-    "rawHeaders": {
-      "alt-svc": "h3=\":443\"; ma=86400",
-      "cf-cache-status": "DYNAMIC",
-      "cf-ray": "9ab68de5abda949d-LHR",
-      "connection": "keep-alive",
-      "content-encoding": "br",
-      "content-type": "application/json",
-      "date": "Tue, 09 Dec 2025 18:27:04 GMT",
-      "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
-      "openai-processing-ms": "2133",
-      "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
-      "openai-version": "2020-10-01",
-      "server": "cloudflare",
-      "set-cookie": "_cfuvid=vNI8O6YM5jkWjvP5XXiq2IbAldtZNMV33CDIy8CFgME-1765304824968-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
-      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
-      "transfer-encoding": "chunked",
-      "x-content-type-options": "nosniff",
-      "x-envoy-upstream-service-time": "2136",
-      "x-ratelimit-limit-requests": "30000",
-      "x-ratelimit-limit-tokens": "150000000",
-      "x-ratelimit-remaining-requests": "29999",
-      "x-ratelimit-remaining-tokens": "149999965",
-      "x-ratelimit-reset-requests": "2ms",
-      "x-ratelimit-reset-tokens": "0s",
-      "x-request-id": "req_4c830bd720474f56974e9a1d8619f874"
-    },
-    "responseIsBinary": false
-  },
-  {
-    "scope": "https://api.openai.com:443",
-    "method": "POST",
-    "path": "/v1/responses",
-    "body": {
-      "model": "gpt-4.1-nano",
-      "input": [
-        {
-          "role": "user",
-          "content": [
-            {
-              "type": "input_text",
-              "text": "What is the capital of France?"
-            }
-          ]
-        }
-      ]
-    },
-    "status": 200,
-    "response": [
-      "1bc105202c0aec58180eada9ce3ddd0de1412093b6a5be8e594bf70f0cb10df11401e9d3e54c79f4ba0b9450507a6afd924541a71540bafafecfe5de0b2cd080ecaffbadbb4d0d2aba0112fddf58765ae114cfe208d3114deb0a4f915c2abafdcdaff4359d6cbc2b7cac1be48dc3dd97ffd34754cfa85b3a1ca9356be7f049de6ed0b2104acc6829709545728919acf8838e6087a751cc2e60679a701e1b0f43aa3d4b828f901fb433741ca6a5da97b7b922aaa26a7d8a1e268453581fc17888e09d82cba6132d67fba0d623806efd02d135022cdd8c6a81cefddaeae1c4afb6c52ee2843036df5be0a1b26dd01c7d2171605a925be7bd1df588935f93158eb3b888cdceeab121c4344ea5dc2adb2ef5241764a85fce376f591283a06a111d0362dcb4bfc9934916d736293764ebc2c9dd04fe77d8d33f1b30d659f809b5b4b0c9e49db67ad2275dd23bf6f1fbae7042de9da0b94680f11c7d5d5851a964d60354701f467ec5e5c6072f49704a4c181ec34c5b760b5369d472be429ab9e83c5e82e1e12d4db9c0218a841c694114e322b54c0092b9be185109c43966143ecb979e556916eef4cac55b297b7f4c43b9bdadae53b299495103c932269941c2bb4314f88871fe89bad96ce752d9dc4642736c92e8d5acdbfdd26cafa83f22e5021b29d5f0a8eef614d1ae6583e3146d6f59ebbfd59698dd8cba66e1b1f97a97663e2c81a3e3931b"
-    ],
-    "rawHeaders": {
-      "alt-svc": "h3=\":443\"; ma=86400",
-      "cf-cache-status": "DYNAMIC",
-      "cf-ray": "9ab68df42ecc949d-LHR",
-      "connection": "keep-alive",
-      "content-encoding": "br",
-      "content-type": "application/json",
-      "date": "Tue, 09 Dec 2025 18:27:07 GMT",
-      "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
-      "openai-processing-ms": "2152",
-      "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
-      "openai-version": "2020-10-01",
-      "server": "cloudflare",
-      "set-cookie": "_cfuvid=YaX2c14riVh9mUCtxRsKz6w6ZtloNZOvTRvWWZCmTAM-1765304827310-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
-      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
-      "transfer-encoding": "chunked",
-      "x-content-type-options": "nosniff",
-      "x-envoy-upstream-service-time": "2158",
+      "x-envoy-upstream-service-time": "364",
       "x-ratelimit-limit-requests": "30000",
       "x-ratelimit-limit-tokens": "150000000",
       "x-ratelimit-remaining-requests": "29999",
       "x-ratelimit-remaining-tokens": "149999967",
       "x-ratelimit-reset-requests": "2ms",
       "x-ratelimit-reset-tokens": "0s",
-      "x-request-id": "req_2b4fb699e2204f33836ad38ee5f43ede"
+      "x-request-id": "req_625bf496716b47dda97152f11846d40e"
     },
     "responseIsBinary": false
   },
@@ -219,33 +119,133 @@
     },
     "status": 200,
     "response": [
-      "1bc105209c07b68d6d8bbc2685a51df8d3e25c291f7d50dea6f4434a19638a80f4a50e8b422b8074f5bde75e7d2f60010d90ddfa973d29a139e92e63d9d7a438c56be582544734ad2b3c4572a9e8f6ef8f524510ccb48cc812ed4224e2512bd22a326632999a2cf7c61b96f2f5df8885c4e439a75c6522f3b012335a0a5c65915c62119df8079e182d994a45226617b0334d388f8d8719a83d4b828f904f1433741ca6fdd15d34cf155103a8d6a7e8618280a6f30cc63318bc5370d974a25ee74eac750a41777881e84a212cdd8c6af13b088a717dab0f7ff7ae1fdeacb4f266eacd55dec836f4533f2171605a92b7764b318a85e0d2992c1a1ffcb971b1e9120539204388699c4ab955765aea492ec850bf9c6fdeb22406411582750c887113fe993cdf0e8b57f3e03764eb89e06e02ff3bece99f0d98d359e6136aa96b1e5aefb4d557215dd2bbf5f1fbae7042de91a0b96611c61dac626145653074e38a54f03e6ce812f7675aa94f825362c2f01866dab25b984aa396f315d2cc458ff125181eded294cbb88ab2408eb4208a71915a260049877fd8884a20ce31a3f059bef4ac4ab3cc4eefed34fb61a9d669066e6fabeb946c6652d440b2cc81cc20e1bb7518111f3976fedde8e668defae0729b059a639344af661daefa66fb82ab9748b9c0464a35bc89dddeb3680fb2c16d2a3addb2d6ffa42d31bb194585c81c9baf775f47ab237074bc7903"
+      "1bdf05002c0a6c47dae40e643ff59a82d393a0996c2df5f5376be9b001af9e22207daa1b2a5f0d49c7d9511a75973a2c0aad00d2d5f7ffbf77e70416684076d7bfed494573d2bb8d655f2b9ce259c6a90ca6736ba940c844ffbff995d690b0f1be20e6ec69b29b512ef3c6d418df345bcab4d325e67931f5b8b7fcaad87160256934e5c5ca32719985947f914ad56c36a19c63c0725ae33c75424c50e3b3c8fb0cf9885b60e4306f2ff2e56da9906a53750135bb837baa1c98108ca91a9253a104eac66898ca36b2d6281f4021064c6e5e21f86240ad595053fd26c12d4790874930c9690e486ba6c6794df26a25e3308cad8c396f6db17bc7dd4d42acd331e4aa9bf914e8b55f48e6882d21e4712e6850e16e2d430a021c0dcc04674d4bcd20e67cb4928371dcf9d714d2c3bcbab5cd6a47c6ae08f722f8bf654fff8bc0947289cfa9a9a66d1ec253522852caa478ead3f94dcb09b707bcde9c04ca1b684dcb8a4e671e97034cf1187a7ee5ed8d0f9e6ac168319f588833abb97b984b9f1781229ea9ea325ea161f12d3d3d8f43960477d28a18c8a4ea1205881a12c6136a03898e09872fb36dcfba5cb712f5dac59b9af7f6982770735c63a7da66a24515e4d214091d287c3ae60500495170b6c4d9dbce49cbca4d8205d926b1afb3f5b753bfbd2179912919b8a952239e98c2e74c77231d9cba6c77d30a809df644fcce24d8d2c4c9d9066f1bf990fc8e91576f"
     ],
     "rawHeaders": {
       "alt-svc": "h3=\":443\"; ma=86400",
       "cf-cache-status": "DYNAMIC",
-      "cf-ray": "9ab68e02caa1949d-LHR",
+      "cf-ray": "9b42c809d9c4416d-LHR",
       "connection": "keep-alive",
       "content-encoding": "br",
       "content-type": "application/json",
-      "date": "Tue, 09 Dec 2025 18:27:09 GMT",
+      "date": "Fri, 26 Dec 2025 18:53:31 GMT",
       "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
-      "openai-processing-ms": "2213",
+      "openai-processing-ms": "557",
       "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
       "openai-version": "2020-10-01",
       "server": "cloudflare",
-      "set-cookie": "_cfuvid=7fGorWpYAYR5aolEDe00zkxazBtLqR2jUk.jX8QkwN8-1765304829685-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
+      "set-cookie": "_cfuvid=0uuTI3Zw1Y3530n96jmveQ8jTKZ5794A0xt2yEsUoT4-1766775211248-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
       "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
       "transfer-encoding": "chunked",
       "x-content-type-options": "nosniff",
-      "x-envoy-upstream-service-time": "2216",
+      "x-envoy-upstream-service-time": "560",
       "x-ratelimit-limit-requests": "30000",
       "x-ratelimit-limit-tokens": "150000000",
       "x-ratelimit-remaining-requests": "29999",
       "x-ratelimit-remaining-tokens": "149999967",
       "x-ratelimit-reset-requests": "2ms",
       "x-ratelimit-reset-tokens": "0s",
-      "x-request-id": "req_7b4e31c071c5429ba78561147a8ec5d4"
+      "x-request-id": "req_be101e8fb2164fd7aef1c2ba8e59cc2d"
+    },
+    "responseIsBinary": false
+  },
+  {
+    "scope": "https://api.openai.com:443",
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "model": "gpt-4.1-nano",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "What is the capital of France?"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 200,
+    "response": [
+      "1bdf05009c07b68d6d8bbc06a5a51df8d336d5a65d730aa27b9a93bc4e04b915ccf71401e94b1d16855600e9eaebf7bfdf3a87d0c88496dedc993fb8264896c4d21bc4da8f4884dd2d5dace555194ce7d652819089feffe65f1932088a9c3ba986515483b9d556a40d4af9c64a6e3805ed63c42646a53d3a85ef9c92f1dcc04ad2642a889565e2b2482c7f0783f721388d28e718a89cd6384fbd1033d0f82c0a3e433ed12d287237efeffc2b65a990ea43750135bb857b548e9b00c6a886ec5a28437563344c651b596fe11f82428a30b97e45e04b116acd024df53708babd5eed0daf2bafdb95b4a6aeca5ed1562b8cbb61ea9131e7ad2d76ef7276939898fc03e7a4b34b11399bc6ef318425823ccd050d2adcae65a020c0d1c04c70d6b4d40c612e042b7918a75df83185fcbcad6e952ded60ec8ae05e04ffb7ecf1bf08cc2997f99c9aea2adb1c9e9242155286e2b14fe7372d27dc1e097a7396507e41436ed9f1bd6ccb5e89291ea3497ee5fd2255d65a305acc2716e2cc6afedecda5cf8b4011cf54759e5ea161f12d3dbd4c559605eec40a0c6452f589c2893a785313b48144c78483cb6cdb4337a85b897ae54b4adacea1ce3370735c63476d33d1920a71690e841e14deaadb4e00c929c1c91ee7a87cae6faedc2cb020db04fb7adbf0b0f6db1b682f3225033f5534e2512e7caad25d4b07c751b6bd6905c0567b10bf37896a9d3939dbe07d8b54e6778abc7903"
+    ],
+    "rawHeaders": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cf-cache-status": "DYNAMIC",
+      "cf-ray": "9b42c80ecc16416d-LHR",
+      "connection": "keep-alive",
+      "content-encoding": "br",
+      "content-type": "application/json",
+      "date": "Fri, 26 Dec 2025 18:53:32 GMT",
+      "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
+      "openai-processing-ms": "617",
+      "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
+      "openai-version": "2020-10-01",
+      "server": "cloudflare",
+      "set-cookie": "_cfuvid=zwFDDpJfbfTxpuyGoLl7IT_eZiLt4K70amvif4NzN6w-1766775212140-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "620",
+      "x-ratelimit-limit-requests": "30000",
+      "x-ratelimit-limit-tokens": "150000000",
+      "x-ratelimit-remaining-requests": "29999",
+      "x-ratelimit-remaining-tokens": "149999967",
+      "x-ratelimit-reset-requests": "2ms",
+      "x-ratelimit-reset-tokens": "0s",
+      "x-request-id": "req_10baeb6911694459a234174eda37ca6a"
+    },
+    "responseIsBinary": false
+  },
+  {
+    "scope": "https://api.openai.com:443",
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "model": "gpt-4.1-nano",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "What is the capital of France?"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 200,
+    "response": [
+      "1bdf05609c07b68d6d8bbc06a5a51df8d3e25a2a1ffd900229fddb523c825ec72902d2973a2c0aad00d2d577636d771f1a2113529afd704d902c89a50db1f611899a322da3ab9a557975608f22d9d4e46ffe953183a096eb20d401196a13acc1a04d41d44e96ec42522a59cb5c745dd6316a9184358a190d2b11a39dd05156c8f9952828a1f9a4364671c695ec000ea4e9e6b9f12f0b956779f806f2c97e856ec3727084df52d78aa70154b7569b3b9c3765066608769218fc6729314eed32ed14fd35fc100ed204c8cd1b445e9a20eb5654a7df20e88f76970f76dfc2b6df196be68ef2ce644ec9328cd3af7039682dd7a3ebd5cfe22667d9b45d9415a4db743b4c13328378c7a5404135bb9585b4821af5ca79e6ed4a5a107011b88501381ea2af690bcbbeb957f778204b37043721f8afb2a73f22306fa0ec27d54e4fdd17df94116a504b6a75eaadf95dd984d883b02be708e25734e6b24e1e755f8f4634f11ccde55739a8a5952d05ae099389c737539a3dc2523abc4815eecc5397e9e9191edcd2cd2bd41439204eda10fdb8382d4b80bccb1e38a302886bcc362cf085e7869c587179edabd4b85f635b66e1bab83a4ea96696453d12691e340607dfda7e103af2283d3b9c1cd7cf2d85cce68002d92051afd947c7add3de61f2a65026b07152054ff290e718eb462e38b58added6af5773a12eb9b598cf3ec91f96a0faca5057247b75b37"
+    ],
+    "rawHeaders": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cf-cache-status": "DYNAMIC",
+      "cf-ray": "9b42c8146eae416d-LHR",
+      "connection": "keep-alive",
+      "content-encoding": "br",
+      "content-type": "application/json",
+      "date": "Fri, 26 Dec 2025 18:53:32 GMT",
+      "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
+      "openai-processing-ms": "288",
+      "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
+      "openai-version": "2020-10-01",
+      "server": "cloudflare",
+      "set-cookie": "_cfuvid=QBVe_09dN2fWgH29ZJayM8Now92Aho4hX0tzz40pCI0-1766775212701-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "290",
+      "x-ratelimit-limit-requests": "30000",
+      "x-ratelimit-limit-tokens": "150000000",
+      "x-ratelimit-remaining-requests": "29999",
+      "x-ratelimit-remaining-tokens": "149999967",
+      "x-ratelimit-reset-requests": "2ms",
+      "x-ratelimit-reset-tokens": "0s",
+      "x-request-id": "req_9398e8ba998a4258864c52f2834925ca"
     },
     "responseIsBinary": false
   },
@@ -269,25 +269,25 @@
       "stream": true
     },
     "status": 200,
-    "response": "event: response.created\ndata: {\"type\":\"response.created\",\"sequence_number\":0,\"response\":{\"id\":\"resp_06c47d2f4c4f89ec00693869fdd0088195a5a3401e829a96d5\",\"object\":\"response\",\"created_at\":1765304829,\"status\":\"in_progress\",\"background\":false,\"error\":null,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-4.1-nano-2025-04-14\",\"output\":[],\"parallel_tool_calls\":true,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":null,\"reasoning\":{\"effort\":null,\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"auto\",\"store\":true,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":1.0,\"truncation\":\"disabled\",\"usage\":null,\"user\":null,\"metadata\":{}}}\n\nevent: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"sequence_number\":1,\"response\":{\"id\":\"resp_06c47d2f4c4f89ec00693869fdd0088195a5a3401e829a96d5\",\"object\":\"response\",\"created_at\":1765304829,\"status\":\"in_progress\",\"background\":false,\"error\":null,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-4.1-nano-2025-04-14\",\"output\":[],\"parallel_tool_calls\":true,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":null,\"reasoning\":{\"effort\":null,\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"auto\",\"store\":true,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":1.0,\"truncation\":\"disabled\",\"usage\":null,\"user\":null,\"metadata\":{}}}\n\nevent: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"sequence_number\":2,\"output_index\":0,\"item\":{\"id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"type\":\"message\",\"status\":\"in_progress\",\"content\":[],\"role\":\"assistant\"}}\n\nevent: response.content_part.added\ndata: {\"type\":\"response.content_part.added\",\"sequence_number\":3,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"\"}}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":4,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"delta\":\"The\",\"logprobs\":[],\"obfuscation\":\"9g95WSZsgEqiS\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":5,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"delta\":\" capital\",\"logprobs\":[],\"obfuscation\":\"740COiu2\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":6,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"delta\":\" of\",\"logprobs\":[],\"obfuscation\":\"icZGoeoz56HcH\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":7,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"delta\":\" France\",\"logprobs\":[],\"obfuscation\":\"tu596BHjT\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":8,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"delta\":\" is\",\"logprobs\":[],\"obfuscation\":\"r0BuziUzw5hwI\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":9,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"delta\":\" Paris\",\"logprobs\":[],\"obfuscation\":\"yBAyIML88d\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":10,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"delta\":\".\",\"logprobs\":[],\"obfuscation\":\"1ctnNjqjQWrmlPO\"}\n\nevent: response.output_text.done\ndata: {\"type\":\"response.output_text.done\",\"sequence_number\":11,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"text\":\"The capital of France is Paris.\",\"logprobs\":[]}\n\nevent: response.content_part.done\ndata: {\"type\":\"response.content_part.done\",\"sequence_number\":12,\"item_id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The capital of France is Paris.\"}}\n\nevent: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"sequence_number\":13,\"output_index\":0,\"item\":{\"id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The capital of France is Paris.\"}],\"role\":\"assistant\"}}\n\nevent: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":14,\"response\":{\"id\":\"resp_06c47d2f4c4f89ec00693869fdd0088195a5a3401e829a96d5\",\"object\":\"response\",\"created_at\":1765304829,\"status\":\"completed\",\"background\":false,\"error\":null,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-4.1-nano-2025-04-14\",\"output\":[{\"id\":\"msg_06c47d2f4c4f89ec00693869fe1e448195bbf0a1ba55018883\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The capital of France is Paris.\"}],\"role\":\"assistant\"}],\"parallel_tool_calls\":true,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":null,\"reasoning\":{\"effort\":null,\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"store\":true,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":1.0,\"truncation\":\"disabled\",\"usage\":{\"input_tokens\":14,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":8,\"output_tokens_details\":{\"reasoning_tokens\":0},\"total_tokens\":22},\"user\":null,\"metadata\":{}}}\n\n",
+    "response": "event: response.created\ndata: {\"type\":\"response.created\",\"sequence_number\":0,\"response\":{\"id\":\"resp_00b5e9694cbd1cb800694ed9ace8d4819b86b69581037ab262\",\"object\":\"response\",\"created_at\":1766775212,\"status\":\"in_progress\",\"background\":false,\"completed_at\":null,\"error\":null,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-4.1-nano-2025-04-14\",\"output\":[],\"parallel_tool_calls\":true,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":null,\"reasoning\":{\"effort\":null,\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"auto\",\"store\":true,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":1.0,\"truncation\":\"disabled\",\"usage\":null,\"user\":null,\"metadata\":{}}}\n\nevent: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"sequence_number\":1,\"response\":{\"id\":\"resp_00b5e9694cbd1cb800694ed9ace8d4819b86b69581037ab262\",\"object\":\"response\",\"created_at\":1766775212,\"status\":\"in_progress\",\"background\":false,\"completed_at\":null,\"error\":null,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-4.1-nano-2025-04-14\",\"output\":[],\"parallel_tool_calls\":true,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":null,\"reasoning\":{\"effort\":null,\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"auto\",\"store\":true,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":1.0,\"truncation\":\"disabled\",\"usage\":null,\"user\":null,\"metadata\":{}}}\n\nevent: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"sequence_number\":2,\"output_index\":0,\"item\":{\"id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"type\":\"message\",\"status\":\"in_progress\",\"content\":[],\"role\":\"assistant\"}}\n\nevent: response.content_part.added\ndata: {\"type\":\"response.content_part.added\",\"sequence_number\":3,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"\"}}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":4,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"delta\":\"The\",\"logprobs\":[],\"obfuscation\":\"fixWKPKuqhw9V\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":5,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"delta\":\" capital\",\"logprobs\":[],\"obfuscation\":\"cEVyPBbL\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":6,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"delta\":\" of\",\"logprobs\":[],\"obfuscation\":\"t0kSsSdjntBAb\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":7,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"delta\":\" France\",\"logprobs\":[],\"obfuscation\":\"ymSYOC641\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":8,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"delta\":\" is\",\"logprobs\":[],\"obfuscation\":\"gpop155HDRGl5\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":9,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"delta\":\" Paris\",\"logprobs\":[],\"obfuscation\":\"57z4vFihmB\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":10,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"delta\":\".\",\"logprobs\":[],\"obfuscation\":\"2i5sXH4iBovT5If\"}\n\nevent: response.output_text.done\ndata: {\"type\":\"response.output_text.done\",\"sequence_number\":11,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"text\":\"The capital of France is Paris.\",\"logprobs\":[]}\n\nevent: response.content_part.done\ndata: {\"type\":\"response.content_part.done\",\"sequence_number\":12,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The capital of France is Paris.\"}}\n\nevent: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"sequence_number\":13,\"output_index\":0,\"item\":{\"id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The capital of France is Paris.\"}],\"role\":\"assistant\"}}\n\nevent: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":14,\"response\":{\"id\":\"resp_00b5e9694cbd1cb800694ed9ace8d4819b86b69581037ab262\",\"object\":\"response\",\"created_at\":1766775212,\"status\":\"completed\",\"background\":false,\"completed_at\":1766775213,\"error\":null,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-4.1-nano-2025-04-14\",\"output\":[{\"id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The capital of France is Paris.\"}],\"role\":\"assistant\"}],\"parallel_tool_calls\":true,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":null,\"reasoning\":{\"effort\":null,\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"store\":true,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":1.0,\"truncation\":\"disabled\",\"usage\":{\"input_tokens\":14,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":8,\"output_tokens_details\":{\"reasoning_tokens\":0},\"total_tokens\":22},\"user\":null,\"metadata\":{}}}\n\n",
     "rawHeaders": {
       "alt-svc": "h3=\":443\"; ma=86400",
       "cf-cache-status": "DYNAMIC",
-      "cf-ray": "9ab68e11cf50949d-LHR",
+      "cf-ray": "9b42c8180833416d-LHR",
       "connection": "keep-alive",
       "content-type": "text/event-stream; charset=utf-8",
-      "date": "Tue, 09 Dec 2025 18:27:09 GMT",
+      "date": "Fri, 26 Dec 2025 18:53:33 GMT",
       "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
-      "openai-processing-ms": "74",
+      "openai-processing-ms": "46",
       "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
       "openai-version": "2020-10-01",
       "server": "cloudflare",
-      "set-cookie": "_cfuvid=lLuyTYvG6W294ID3is3FOA0409DwkIC_i_sNrT6ZFbQ-1765304829945-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
+      "set-cookie": "_cfuvid=GkIJWF6yIq6ImaPxuBHN.adDkZjRttIwdwJ6YGPiVA4-1766775213031-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
       "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
       "transfer-encoding": "chunked",
       "x-content-type-options": "nosniff",
-      "x-envoy-upstream-service-time": "78",
-      "x-request-id": "req_7894720021584e5684eb4cf42d53d818"
+      "x-envoy-upstream-service-time": "50",
+      "x-request-id": "req_14f34417290b44ac845424d31afe2437"
     },
     "responseIsBinary": false
   }
