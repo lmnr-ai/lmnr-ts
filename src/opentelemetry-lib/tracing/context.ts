@@ -178,6 +178,7 @@ export class LaminarContextManager {
   public static getAssociationProperties(): {
     userId?: string;
     sessionId?: string;
+    rolloutSessionId?: string;
     traceType?: TraceType;
     tracingLevel?: TracingLevel;
     metadata?: Record<string, any>;

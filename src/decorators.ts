@@ -5,6 +5,7 @@ import {
   ASSOCIATION_PROPERTIES,
   PARENT_SPAN_IDS_PATH,
   PARENT_SPAN_PATH,
+  ROLLOUT_SESSION_ID,
   SESSION_ID,
   SPAN_TYPE,
   TRACE_TYPE,
@@ -33,6 +34,7 @@ interface ObserveOptions {
   name?: string;
   sessionId?: string;
   userId?: string;
+  rolloutSessionId?: string;
   traceType?: TraceType;
   spanType?: 'DEFAULT' | 'LLM' | 'TOOL' | 'EVALUATOR' | 'EVALUATION' | 'EXECUTOR';
   input?: unknown;
@@ -47,12 +49,14 @@ interface ObserveOptions {
 /**
  * Extracts parameter names from a function using regex
  */
-function extractParamNames(fn: (...args: any[]) => any): RolloutParam[] {
+const extractParamNames = (fn: (...args: any[]) => any): RolloutParam[] => {
   const fnStr = fn.toString();
+
+  console.log('fnStr', fnStr);
 
   // Match function parameters - handles regular functions, arrow functions, async functions
   const paramMatch = fnStr.match(
-    /(?:async\s+)?(?:function\s*)?\(([^)]*)\)|(?:async\s+)?([^=\s]+)\s*=>/,
+    /(?:async\s*)?(?:function\s*)?\(([^)]*)\)|(?:async\s+)?([^=\s]+)\s*=>/,
   );
 
   if (!paramMatch) {
@@ -173,36 +177,26 @@ export function observe<F extends (...args: any[]) => any>(
     tags,
     rolloutEntrypoint,
   } = options;
+  const spanName = name ?? fn.name;
 
   // If rolloutEntrypoint is true, return a wrapped function
   if (rolloutEntrypoint) {
     // Extract parameter names for rollout
     const params = extractParamNames(fn);
-    const spanName = name ?? fn.name;
+    // Get rollout session ID from env var if in rollout mode
+    const envRolloutSessionId = process.env.LMNR_ROLLOUT_SESSION_ID;
 
     // Create wrapped function
     const wrappedFn = (async (...fnArgs: Parameters<F>): Promise<ReturnType<F>> => {
-      // Add rollout session ID to metadata if in rollout mode
-      const rolloutSessionId = process.env.LMNR_ROLLOUT_SESSION_ID;
-      let effectiveOptions = options;
-
-      if (rolloutSessionId) {
-        effectiveOptions = {
-          ...options,
-          metadata: {
-            ...metadata,
-            'lmnr.rollout.session_id': rolloutSessionId,
-          },
-        };
-      }
 
       const associationProperties = buildAssociationProperties({
         sessionId,
         traceType,
         spanType,
         userId,
+        rolloutSessionId: envRolloutSessionId,
         tags,
-        metadata: effectiveOptions.metadata,
+        metadata,
       });
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return
@@ -248,7 +242,7 @@ export function observe<F extends (...args: any[]) => any>(
 
 
   return observeBase({
-    name: name ?? fn.name,
+    name: spanName,
     associationProperties,
     input,
     ignoreInput,
@@ -376,6 +370,7 @@ const buildAssociationProperties = (
   let parentTracingLevel: TracingLevel | undefined;
   let parentUserId: string | undefined;
   let parentSessionId: string | undefined;
+  let parentRolloutSessionId: string | undefined;
   const ctxAssociationProperties = LaminarContextManager.getAssociationProperties();
 
   if (parentSpanContext) {
@@ -391,6 +386,7 @@ const buildAssociationProperties = (
       parentTracingLevel = laminarContext.tracingLevel;
       parentUserId = laminarContext.userId;
       parentSessionId = laminarContext.sessionId;
+      parentRolloutSessionId = laminarContext.rolloutSessionId;
     } catch (e) {
       logger.warn("Failed to parse parent span context: " +
         (e instanceof Error ? e.message : String(e)),
@@ -405,6 +401,11 @@ const buildAssociationProperties = (
   const userIdValue = options.userId ?? parentUserId ?? ctxAssociationProperties.userId;
   if (userIdValue) {
     associationProperties[USER_ID] = userIdValue;
+  }
+  const rolloutSessionIdValue = options.rolloutSessionId ?? parentRolloutSessionId
+    ?? ctxAssociationProperties.rolloutSessionId;
+  if (rolloutSessionIdValue) {
+    associationProperties[ROLLOUT_SESSION_ID] = rolloutSessionIdValue;
   }
   const traceTypeValue = options.traceType ?? parentTraceType
     ?? (["EVALUATION", "EXECUTOR", "EVALUATOR"].includes(options.spanType ?? "DEFAULT")

@@ -25,6 +25,7 @@ import {
 } from "../../utils";
 import {
   ASSOCIATION_PROPERTIES,
+  ROLLOUT_SESSION_ID,
   SESSION_ID,
   SPAN_IDS_PATH,
   SPAN_INPUT,
@@ -180,6 +181,10 @@ export class LaminarSpan implements Span, ReadableSpan {
     this._span.setAttribute(USER_ID, userId);
   }
 
+  public setTraceRolloutSessionId(rolloutSessionId: string): void {
+    this._span.setAttribute(ROLLOUT_SESSION_ID, rolloutSessionId);
+  }
+
   public setTraceMetadata(metadata: Record<string, any>): void {
     this._span.setAttributes(metadataToAttributes(metadata));
   }
@@ -208,6 +213,7 @@ export class LaminarSpan implements Span, ReadableSpan {
     let spanIdsPath: StringUUID[] = [];
     let userId;
     let sessionId;
+    let rolloutSessionId;
     let traceType;
     let tracingLevel = TracingLevel.ALL;
     const metadata: Record<string, AttributeValue> = {};
@@ -217,6 +223,7 @@ export class LaminarSpan implements Span, ReadableSpan {
       spanIdsPath = this._span.attributes[SPAN_IDS_PATH] as StringUUID[];
       userId = this._span.attributes[USER_ID] as string;
       sessionId = this._span.attributes[SESSION_ID] as string;
+      rolloutSessionId = this._span.attributes[ROLLOUT_SESSION_ID] as string;
       traceType = this._span.attributes[TRACE_TYPE] as TraceType;
       tracingLevel = this._span.attributes[
         `${ASSOCIATION_PROPERTIES}.tracing_level`
@@ -243,13 +250,14 @@ export class LaminarSpan implements Span, ReadableSpan {
       spanId: otelSpanIdToUUID(this._span.spanContext().spanId) as StringUUID,
       traceId: otelTraceIdToUUID(this._span.spanContext().traceId),
       isRemote: this._span.spanContext().isRemote ?? false,
-      spanPath: spanPath,
-      spanIdsPath: spanIdsPath,
-      userId: userId,
-      sessionId: sessionId,
-      metadata: metadata,
-      traceType: traceType,
-      tracingLevel: tracingLevel,
+      spanPath,
+      spanIdsPath,
+      userId,
+      sessionId,
+      rolloutSessionId,
+      metadata,
+      traceType,
+      tracingLevel,
     };
   }
 
@@ -290,6 +298,7 @@ export class LaminarSpan implements Span, ReadableSpan {
     metadata?: Record<string, any>;
     userId?: string;
     sessionId?: string;
+    rolloutSessionId?: string;
     traceType?: TraceType;
     tracingLevel?: TracingLevel;
   } {
@@ -325,6 +334,8 @@ export class LaminarSpan implements Span, ReadableSpan {
       ] as TracingLevel ?? TracingLevel.ALL;
       properties.userId = this._span.attributes[USER_ID] as string ?? undefined;
       properties.sessionId = this._span.attributes[SESSION_ID] as string ?? undefined;
+      properties.rolloutSessionId = this._span.attributes[ROLLOUT_SESSION_ID] as string
+        ?? undefined;
       properties.traceType = this._span.attributes[TRACE_TYPE] as TraceType ?? undefined;
       return {
         metadata,

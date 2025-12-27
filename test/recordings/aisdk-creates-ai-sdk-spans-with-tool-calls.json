@@ -248,5 +248,142 @@
       "x-request-id": "req_9398e8ba998a4258864c52f2834925ca"
     },
     "responseIsBinary": false
+  },
+  {
+    "scope": "https://api.openai.com:443",
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "model": "gpt-4.1-nano",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "What is the capital of France?"
+            }
+          ]
+        }
+      ],
+      "stream": true
+    },
+    "status": 200,
+    "response": "event: response.created\ndata: {\"type\":\"response.created\",\"sequence_number\":0,\"response\":{\"id\":\"resp_00b5e9694cbd1cb800694ed9ace8d4819b86b69581037ab262\",\"object\":\"response\",\"created_at\":1766775212,\"status\":\"in_progress\",\"background\":false,\"completed_at\":null,\"error\":null,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-4.1-nano-2025-04-14\",\"output\":[],\"parallel_tool_calls\":true,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":null,\"reasoning\":{\"effort\":null,\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"auto\",\"store\":true,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":1.0,\"truncation\":\"disabled\",\"usage\":null,\"user\":null,\"metadata\":{}}}\n\nevent: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"sequence_number\":1,\"response\":{\"id\":\"resp_00b5e9694cbd1cb800694ed9ace8d4819b86b69581037ab262\",\"object\":\"response\",\"created_at\":1766775212,\"status\":\"in_progress\",\"background\":false,\"completed_at\":null,\"error\":null,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-4.1-nano-2025-04-14\",\"output\":[],\"parallel_tool_calls\":true,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":null,\"reasoning\":{\"effort\":null,\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"auto\",\"store\":true,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":1.0,\"truncation\":\"disabled\",\"usage\":null,\"user\":null,\"metadata\":{}}}\n\nevent: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"sequence_number\":2,\"output_index\":0,\"item\":{\"id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"type\":\"message\",\"status\":\"in_progress\",\"content\":[],\"role\":\"assistant\"}}\n\nevent: response.content_part.added\ndata: {\"type\":\"response.content_part.added\",\"sequence_number\":3,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"\"}}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":4,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"delta\":\"The\",\"logprobs\":[],\"obfuscation\":\"fixWKPKuqhw9V\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":5,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"delta\":\" capital\",\"logprobs\":[],\"obfuscation\":\"cEVyPBbL\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":6,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"delta\":\" of\",\"logprobs\":[],\"obfuscation\":\"t0kSsSdjntBAb\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":7,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"delta\":\" France\",\"logprobs\":[],\"obfuscation\":\"ymSYOC641\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":8,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"delta\":\" is\",\"logprobs\":[],\"obfuscation\":\"gpop155HDRGl5\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":9,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"delta\":\" Paris\",\"logprobs\":[],\"obfuscation\":\"57z4vFihmB\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":10,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"delta\":\".\",\"logprobs\":[],\"obfuscation\":\"2i5sXH4iBovT5If\"}\n\nevent: response.output_text.done\ndata: {\"type\":\"response.output_text.done\",\"sequence_number\":11,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"text\":\"The capital of France is Paris.\",\"logprobs\":[]}\n\nevent: response.content_part.done\ndata: {\"type\":\"response.content_part.done\",\"sequence_number\":12,\"item_id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The capital of France is Paris.\"}}\n\nevent: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"sequence_number\":13,\"output_index\":0,\"item\":{\"id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The capital of France is Paris.\"}],\"role\":\"assistant\"}}\n\nevent: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":14,\"response\":{\"id\":\"resp_00b5e9694cbd1cb800694ed9ace8d4819b86b69581037ab262\",\"object\":\"response\",\"created_at\":1766775212,\"status\":\"completed\",\"background\":false,\"completed_at\":1766775213,\"error\":null,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-4.1-nano-2025-04-14\",\"output\":[{\"id\":\"msg_00b5e9694cbd1cb800694ed9ad3c00819b8a876b5e2c67368f\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"The capital of France is Paris.\"}],\"role\":\"assistant\"}],\"parallel_tool_calls\":true,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":null,\"reasoning\":{\"effort\":null,\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"store\":true,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":1.0,\"truncation\":\"disabled\",\"usage\":{\"input_tokens\":14,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":8,\"output_tokens_details\":{\"reasoning_tokens\":0},\"total_tokens\":22},\"user\":null,\"metadata\":{}}}\n\n",
+    "rawHeaders": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cf-cache-status": "DYNAMIC",
+      "cf-ray": "9b42c8180833416d-LHR",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "date": "Fri, 26 Dec 2025 18:53:33 GMT",
+      "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
+      "openai-processing-ms": "46",
+      "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
+      "openai-version": "2020-10-01",
+      "server": "cloudflare",
+      "set-cookie": "_cfuvid=GkIJWF6yIq6ImaPxuBHN.adDkZjRttIwdwJ6YGPiVA4-1766775213031-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "50",
+      "x-request-id": "req_14f34417290b44ac845424d31afe2437"
+    },
+    "responseIsBinary": false
+  },
+  {
+    "scope": "https://api.openai.com:443",
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "model": "gpt-4.1-nano",
+      "input": [
+        {
+          "role": "system",
+          "content": "You are a helpful assistant."
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "What is the weather in SF?"
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "Get the weather in a given location",
+          "parameters": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "location": {
+                "description": "The city and state, e.g. San Francisco, CA",
+                "type": "string"
+              }
+            },
+            "required": [
+              "location"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "type": "function",
+          "name": "get_time",
+          "description": "Get the time in a given location",
+          "parameters": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "location": {
+                "description": "The city and state, e.g. San Francisco, CA",
+                "type": "string"
+              }
+            },
+            "required": [
+              "location"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ],
+      "tool_choice": "auto"
+    },
+    "status": 200,
+    "response": [
+      "1b570a001c87e9c64eb654c96f55e75dea74cf32e534d716f0d8f286a493ed37706405db20225d7d5a8145a78ffffde53b13a068e6234669cfbdef9d94daad743a6ff7774ab368bae0063c4421a888118a8ea1b6ddbd78404374fb1fe61fb029506b1460991d293508caad363ae3053042941550580f4a5161a8e5de320252702a8165041472051a8da4a2ae2e0b598e392f7f836aa5b4968c8ac175403c96b82f44c54154f92e8adf21df5bada179b6da9bfd11c28690ea45c2fe2330d9e2ecad70b239f06e778a0b0cbab24942283452d9c6e00f0e0afd0e93f95b80afdfa136595b5541f7f26a8e89486932fa714a48eb5842444245b122718cfddf16bbddacb1db96f9b29273f18e2c275a4b4f4de1b52819432604c4638ab8324519a4b87ab827b8b059faff11962f7f503fbe30dd7979de7474e4d4ef8cf09b9fb60b79987664a84ff7ad81aa7c5a18a99e968f588038d69b15440770543456f52d9a4a016cc442d07daca42cf7f3ff25377efa357cf3de6a7b7a7e10a23d15e54ebd8c0771975f0e70e4b0cee6fd01487f6920416168a73a22330d398f750d88d2c3739886393ad6bb9febe028df0b1061b43409e5dc98baab33b49eb255e0af20a0f73aedb677ef36497d35b0d6848bb221d40ed8d6d8343155490f3c309912c9a543d4cec993f71108216c82b7127710b26969e271ee642aac63a5ed8d0682e07b21296c5d7cb9186f52c1cadf18c39bfdc2ffbb084f4c469c55ef3312401a2fdaac2b327993526956422c8ecc5e65c526acbdd4b07ed7b97d18fd7548ab74ed175ce7a9e6cdf7109a1bd8794b158ead5db6ecfe9bebe6624a0743de431bdb9e76ab8c4c9dc93ce28cf8685cd5c285eb74448cbf8c2389b42c4eb3eba76a0e5396c83011b4cc8cb21cb6a3370ca1ef5e35b9f5f9846eae36636fe10ec9cf64da0521ac8c6e9b8ac84d047cec2b68d2ed89b078a75c5dd5c9fa9b32efa2840f6e5e0e395f1820fac247affbdc0c"
+    ],
+    "rawHeaders": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cf-cache-status": "DYNAMIC",
+      "cf-ray": "9b42c81da8b0eb17-MAN",
+      "connection": "keep-alive",
+      "content-encoding": "br",
+      "content-type": "application/json",
+      "date": "Fri, 26 Dec 2025 18:53:35 GMT",
+      "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
+      "openai-processing-ms": "711",
+      "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
+      "openai-version": "2020-10-01",
+      "server": "cloudflare",
+      "set-cookie": "_cfuvid=M6BgSvsoijyW_HAa6bNiXCH3sC9TT8BU8kHKU0.uNJc-1766775215168-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "715",
+      "x-ratelimit-limit-requests": "30000",
+      "x-ratelimit-limit-tokens": "150000000",
+      "x-ratelimit-remaining-requests": "29999",
+      "x-ratelimit-remaining-tokens": "149999677",
+      "x-ratelimit-reset-requests": "2ms",
+      "x-ratelimit-reset-tokens": "0s",
+      "x-request-id": "req_adc074f9f7584b10821ee932caed1760"
+    },
+    "responseIsBinary": false
   }
 ]

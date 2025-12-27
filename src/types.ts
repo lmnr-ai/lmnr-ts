@@ -117,6 +117,7 @@ export type LaminarSpanContext = {
   spanIdsPath?: StringUUID[];
   userId?: string;
   sessionId?: string;
+  rolloutSessionId?: string;
   metadata?: Record<string, any>;
   traceType?: TraceType;
   tracingLevel?: TracingLevel;
@@ -141,6 +142,17 @@ export interface SessionRecordingOptions {
   maskInputOptions?: MaskInputOptions;
 }
 
+export interface LanguageModelTextBlock {
+  type: 'text';
+  text: string;
+}
+
+export interface LanguageModelToolDefinitionOverride {
+  name: string;
+  description?: string;
+  parameters?: Record<string, any>;
+}
+
 /**
  * Event payload for rollout debugging sessions run events
  */
@@ -151,8 +163,8 @@ export interface RolloutRunEvent {
     path_to_count?: Record<string, number>;
     args: Record<string, any>;
     overrides?: Record<string, {
-      system?: string;
-      tools?: any[];
+      system?: string | LanguageModelTextBlock[];
+      tools?: LanguageModelToolDefinitionOverride[];
     }>;
   };
 }

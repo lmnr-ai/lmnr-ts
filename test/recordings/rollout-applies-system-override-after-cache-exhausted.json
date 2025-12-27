@@ -1,0 +1,36 @@
+[
+  {
+    "scope": "http://localhost:35669",
+    "method": "POST",
+    "path": "/cached",
+    "body": {
+      "path": "agent.ai.generateText.ai.generateText.doGenerate",
+      "index": 0
+    },
+    "status": 200,
+    "response": {
+      "span": {
+        "name": "doGenerate",
+        "input": "{}",
+        "output": "[{\"type\":\"tool-call\",\"toolCallId\":\"call-1\",\"toolName\":\"calculate_base\",\"input\":\"{\\\"value\\\":5}\"}]",
+        "attributes": {
+          "ai.response.finishReason": "tool-calls"
+        }
+      },
+      "pathToCount": {
+        "agent.ai.generateText.ai.generateText.doGenerate": 2
+      }
+    },
+    "rawHeaders": {
+      "access-control-allow-headers": "Content-Type",
+      "access-control-allow-methods": "GET, POST, OPTIONS",
+      "access-control-allow-origin": "*",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "date": "Fri, 26 Dec 2025 19:26:53 GMT",
+      "keep-alive": "timeout=5",
+      "transfer-encoding": "chunked"
+    },
+    "responseIsBinary": false
+  }
+]

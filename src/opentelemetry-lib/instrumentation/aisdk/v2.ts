@@ -1,78 +1,33 @@
 import {
-  LanguageModelV2,
-  LanguageModelV2CallOptions,
-  LanguageModelV2CallWarning,
-  LanguageModelV2Content,
-  LanguageModelV2FinishReason,
-  LanguageModelV2ResponseMetadata,
-  LanguageModelV2StreamPart,
-  LanguageModelV2Usage,
-  SharedV2Headers,
-  SharedV2ProviderMetadata,
+  type LanguageModelV2,
+  type LanguageModelV2CallOptions,
+  type LanguageModelV2CallWarning,
+  type LanguageModelV2Content,
+  type LanguageModelV2FinishReason,
+  type LanguageModelV2ResponseMetadata,
+  type LanguageModelV2StreamPart,
+  type LanguageModelV2Usage,
+  type SharedV2Headers,
+  type SharedV2ProviderMetadata,
 } from "@ai-sdk/provider-v2";
 
-import { LaminarClient } from "../../../client";
-import { Laminar } from "../../../laminar";
-import { convertToContentBlocks, fetchCachedSpan } from "./shared";
+import { BaseLaminarLanguageModel } from "./base-language-model";
 
-export class LaminarLanguageModelV2 { // implements LanguageModelV2
+export class LaminarLanguageModelV2 extends BaseLaminarLanguageModel implements LanguageModelV2 {
   readonly specificationVersion = 'v2';
 
-  private readonly innerLanguageModel: LanguageModelV2;
-
-  readonly provider: string;
-  readonly modelId: string;
-  readonly supportedUrls: PromiseLike<Record<string, RegExp[]>> | Record<string, RegExp[]>;
-
-  private pathToCount: Record<string, number> = {};
-  private pathToCurrentIndex: Record<string, number> = {};
-  private client: LaminarClient;
+  protected readonly innerLanguageModel: LanguageModelV2;
 
   constructor(languageModel: LanguageModelV2) {
+    super(languageModel);
     this.innerLanguageModel = languageModel;
-    this.provider = languageModel.provider;
-    this.modelId = languageModel.modelId;
-    this.supportedUrls = languageModel.supportedUrls;
-    const baseUrl = Laminar.getHttpUrl();
-    const projectApiKey = Laminar.getProjectApiKey();
-    this.client = new LaminarClient({
-      baseUrl,
-      projectApiKey,
-    });
   }
 
-  private async cachedDoGenerate(path: string, index: number): Promise<undefined | {
-    content: Array<LanguageModelV2Content>;
-    finishReason: LanguageModelV2FinishReason;
-    usage: LanguageModelV2Usage;
-    warnings: Array<LanguageModelV2CallWarning>;
-  }> {
-    const data = await fetchCachedSpan(path, index);
-    if (!data) {
-      return;
-    }
-
-    // Update pathToCount from response (dynamic)
-    this.pathToCount = data.pathToCount;
-
-    // Parse output
-    let parsedOutput: string | Record<string, any>[] = data.span.output;
-    try {
-      parsedOutput = JSON.parse(data.span.output);
-    } catch {
-      // Ignore - keep as string
-    }
-
-    const content = convertToContentBlocks(parsedOutput) as Array<LanguageModelV2Content>;
+  protected createUsageObject(): LanguageModelV2Usage {
     return {
-      usage: {
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
-      },
-      warnings: [],
-      finishReason: data.span.attributes['ai.response.finishReason'] ?? 'stop',
-      content,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
     };
   }
 
@@ -90,29 +45,10 @@ export class LaminarLanguageModelV2 { // implements LanguageModelV2
     };
     warnings: Array<LanguageModelV2CallWarning>;
   }> {
-    if (process.env.LMNR_ROLLOUT_SESSION_ID) {
-      // const span = Laminar.getCurrentSpan();
-      // span?.setAttribute('lmnr.rollout.session_id', process.env.LMNR_ROLLOUT_SESSION_ID);
-      const pathArray = Laminar.getLaminarSpanContext()?.spanPath;
-      if (pathArray) {
-        const path = pathArray.join('.');
-        const currentIndex = this.pathToCurrentIndex[path] ?? 0;
-        if (this.pathToCount[path] && currentIndex >= this.pathToCount[path]) {
-          console.log('[exceeded count by path] returning original response');
-          return this.innerLanguageModel.doGenerate(options);
-        }
-        this.pathToCurrentIndex[path] = currentIndex + 1;
-        return this.cachedDoGenerate(path, currentIndex).then(cachedResponse => {
-          if (cachedResponse) {
-            console.log('returning cached response');
-            return cachedResponse;
-          }
-          console.log('returning original response');
-          return this.innerLanguageModel.doGenerate(options);
-        });
-      }
-    }
-    return this.innerLanguageModel.doGenerate(options);
+    return this.doGenerateWithCaching(
+      options,
+      (opts) => this.innerLanguageModel.doGenerate(opts)
+    );
   }
 
   doStream(options: LanguageModelV2CallOptions): PromiseLike<{
@@ -124,6 +60,71 @@ export class LaminarLanguageModelV2 { // implements LanguageModelV2
       headers?: SharedV2Headers;
     };
   }> {
-    return this.innerLanguageModel.doStream(options);
+    return this.doStreamWithCaching(
+      options,
+      (opts) => this.innerLanguageModel.doStream(opts)
+    );
+  }
+
+  protected createStreamFromCachedResponse(
+    content: Array<LanguageModelV2Content>,
+    finishReason: LanguageModelV2FinishReason,
+    usage: LanguageModelV2Usage
+  ): ReadableStream<LanguageModelV2StreamPart> {
+    const parts: LanguageModelV2StreamPart[] = [];
+
+    // Stream start
+    parts.push({ type: 'stream-start', warnings: [] });
+
+    // Process each content block
+    let textIndex = 0;
+    let toolIndex = 0;
+    let reasoningIndex = 0;
+
+    for (const block of content) {
+      if (block.type === 'text') {
+        const id = `text-${textIndex++}`;
+        parts.push({ type: 'text-start', id });
+        parts.push({ type: 'text-delta', id, delta: block.text });
+        parts.push({ type: 'text-end', id });
+      } else if (block.type === 'tool-call') {
+        const id = `tool-${toolIndex++}`;
+        parts.push({
+          type: 'tool-input-start',
+          id,
+          toolName: block.toolName
+        });
+        parts.push({
+          type: 'tool-input-delta',
+          id,
+          delta: block.input
+        });
+        parts.push({ type: 'tool-input-end', id });
+        parts.push({
+          type: 'tool-call',
+          toolCallId: block.toolCallId,
+          toolName: block.toolName,
+          input: block.input,
+        });
+      } else if (block.type === 'reasoning') {
+        const id = `reasoning-${reasoningIndex++}`;
+        parts.push({ type: 'reasoning-start', id });
+        parts.push({ type: 'reasoning-delta', id, delta: block.text });
+        parts.push({ type: 'reasoning-end', id });
+      }
+    }
+
+    // Finish event
+    parts.push({ type: 'finish', usage, finishReason });
+
+    // Create readable stream from the parts array
+    return new ReadableStream({
+      start(controller) {
+        for (const part of parts) {
+          controller.enqueue(part);
+        }
+        controller.close();
+      }
+    });
   }
 }
