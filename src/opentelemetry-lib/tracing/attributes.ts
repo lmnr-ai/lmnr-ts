@@ -17,6 +17,7 @@ export const HUMAN_EVALUATOR_OPTIONS = 'lmnr.span.human_evaluator_options';
 export const ASSOCIATION_PROPERTIES = "lmnr.association.properties";
 export const SESSION_ID = "lmnr.association.properties.session_id";
 export const USER_ID = "lmnr.association.properties.user_id";
+export const ROLLOUT_SESSION_ID = "lmnr.association.properties.rollout_session_id";
 export const TRACE_TYPE = "lmnr.association.properties.trace_type";
 
 export const ASSOCIATION_PROPERTIES_OVERRIDES: Record<string, string> = {

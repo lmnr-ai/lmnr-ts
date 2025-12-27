@@ -1,0 +1,184 @@
+[
+  {
+    "scope": "http://localhost:35669",
+    "method": "POST",
+    "path": "/cached",
+    "body": {
+      "path": "agent.ai.generateText.ai.generateText.doGenerate",
+      "index": 0
+    },
+    "status": 200,
+    "response": {
+      "span": {
+        "name": "doGenerate",
+        "input": "{}",
+        "output": "[{\"type\":\"tool-call\",\"toolCallId\":\"call-1\",\"toolName\":\"calculate_base\",\"input\":\"{\\\"value\\\":5}\"}]",
+        "attributes": {
+          "ai.response.finishReason": "tool-calls"
+        }
+      },
+      "pathToCount": {
+        "agent.ai.generateText.ai.generateText.doGenerate": 2
+      }
+    },
+    "rawHeaders": {
+      "access-control-allow-headers": "Content-Type",
+      "access-control-allow-methods": "GET, POST, OPTIONS",
+      "access-control-allow-origin": "*",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "date": "Fri, 26 Dec 2025 19:26:53 GMT",
+      "keep-alive": "timeout=5",
+      "transfer-encoding": "chunked"
+    },
+    "responseIsBinary": false
+  },
+  {
+    "scope": "http://localhost:35668",
+    "method": "POST",
+    "path": "/cached",
+    "body": {
+      "path": "fresh-agent.ai.generateText.ai.generateText.doGenerate",
+      "index": 0
+    },
+    "status": 404,
+    "response": {
+      "error": "Cache miss"
+    },
+    "rawHeaders": {
+      "access-control-allow-headers": "Content-Type",
+      "access-control-allow-methods": "GET, POST, OPTIONS",
+      "access-control-allow-origin": "*",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "date": "Fri, 26 Dec 2025 19:26:53 GMT",
+      "keep-alive": "timeout=5",
+      "transfer-encoding": "chunked"
+    },
+    "responseIsBinary": false
+  },
+  {
+    "scope": "https://api.openai.com:443",
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "model": "gpt-4.1-nano",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "What is 2+2?"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 200,
+    "response": [
+      "1bcf05609c07b6d3b42485239b7edbcbb6e64ad94eec51960a4a3f64b14c9720227da9c0a2d30a205d7d37d6f4aec255573815fa94d121394e4a03f7722051f9e92937db4ca490912eb076bf985ad5f3d863f4df7c51e5e1600ecb486832c67365b88dd1bb8c21c6990c81259c39c49465a99199e1b1cb4c922aef590a218f514f60280be47e4532c2214be238f9b638f28d0dc08b34dcfc32f66520f33c1f3c403e51ec6836f4f168ae30bf154f63c0ab55e715f7a6c84043b0d38cc17f8602e3c42ed24ed0edcc4938481120cf0f445e8a20eb76ca131afed7625c5ff2cd5ebde9871747ae5e285f4cc69434c396fa71979dd674bdb75b8a164b65f25b9ac689c5c47b654d1a4480590de21dbb404125d7a585a4821ab5ca59e6f54a58107021688501381ee19f49f3ed30de9a077b90a6dd031e3df0a8b4174b24dfb028f3d0eb9255295ea30c50052b69d5e31ec5efd224441e094a374b907e41954fe3e6380fddb8122d7c8c9a7009c7735843efb25bc2e4e1f1cc14664fe852e032abf0665e7a9efe8ee1c12c655da6559005a2a44174e3fcb4ac00f31df6c6460117d3985d68c2275a16d29ed9e4ad3dcc7658aab567e0b7b71a4ea16656453912670e2426ef3f5b8791d090c3d927a391b379eb9d896c16288f1512d59a4fb8ea8bf40d269f02ad7ceb2765f091bff229fa7ab6f61f6782ebf56af6af3a89e54d8b7291d9339fed715d580d99a3d9cd1b"
+    ],
+    "rawHeaders": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cf-cache-status": "DYNAMIC",
+      "cf-ray": "9b42f8a6aa497f11-MAN",
+      "connection": "keep-alive",
+      "content-encoding": "br",
+      "content-type": "application/json",
+      "date": "Fri, 26 Dec 2025 19:26:42 GMT",
+      "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
+      "openai-processing-ms": "567",
+      "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
+      "openai-version": "2020-10-01",
+      "server": "cloudflare",
+      "set-cookie": "_cfuvid=rNaqfWXdZWtQPq.Pc2Vuj4ktspBjm_a0o5TQ4LYVl.c-1766777202754-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "570",
+      "x-ratelimit-limit-requests": "30000",
+      "x-ratelimit-limit-tokens": "150000000",
+      "x-ratelimit-remaining-requests": "29999",
+      "x-ratelimit-remaining-tokens": "149999967",
+      "x-ratelimit-reset-requests": "2ms",
+      "x-ratelimit-reset-tokens": "0s",
+      "x-request-id": "req_006fbf8758924c57aeb0e6089fed9811"
+    },
+    "responseIsBinary": false
+  },
+  {
+    "scope": "http://localhost:35667",
+    "method": "POST",
+    "path": "/cached",
+    "body": {
+      "path": "test-agent.ai.generateText.ai.generateText.doGenerate",
+      "index": 0
+    },
+    "status": 404,
+    "response": {
+      "error": "Cache miss"
+    },
+    "rawHeaders": {
+      "access-control-allow-headers": "Content-Type",
+      "access-control-allow-methods": "GET, POST, OPTIONS",
+      "access-control-allow-origin": "*",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "date": "Fri, 26 Dec 2025 19:26:55 GMT",
+      "keep-alive": "timeout=5",
+      "transfer-encoding": "chunked"
+    },
+    "responseIsBinary": false
+  },
+  {
+    "scope": "https://api.openai.com:443",
+    "method": "POST",
+    "path": "/v1/responses",
+    "body": {
+      "model": "gpt-4.1-nano",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Hello"
+            }
+          ]
+        }
+      ]
+    },
+    "status": 200,
+    "response": [
+      "1be205009c05762c9e664a564e479eb216757abd99ee82149273eddd8e9be4805ab61de00411e94b05169d5600e9eaebfb8de97b55b242b9bb9f5c0a8c0a485d06a40a6a20d9e84dd5e9a91319c264f7e00f68babe6bb32070fc373bba3770d0691f049928334d535597b48e3346cc8b549538a12443434559342565b9a1aae1bc5056084ddaba72b112c697cc4889ff429ce7cc1c6382530c769c649c9e5e8871283e41ee3fe4c3d7cd466efa2494ab762fa1d404f000717b83cb2339a681c64843c20d8a4b6e94854ab6c27aef72112a44859357ef967c5161adda50aacb70700dc3313dd1d195ce1f456be588e991d2b4c2b979447f664cf3968abdf5dd5f5b30afc85c3286113556be945566d03b7bb294b79dd920e0cd2a0303268e04a682d3ae5d667ee83240461ec7ed71fc3383d4cbefaf75be3a8c33300cf760fef9117df939aa4b177d5305e836985efc84a1f13f89b76e9d7f4528ba5000c6307cd81ff4abe2b1bc07dc824e08d19fc9bd29ee62e8fc3b0c2216ef93a7aef8a4d3415d229415498a6639099b7f9acecb9e01213da9d5d3729386a6382ff69c0c5802e4133b44484dd5d70a03d5e984ed6019a223cdc177bafcb075b9e5a8f726ed2adfdf871e875fe4123bb24d5a8bf20cc7c103e8b1e17b830fc29124028f429cf36e747599dc040821f984007befe3bb5bba67cc017272a0668a1a3e68c63ec6d95e29088784e0cd7d0b016e7442fbfd9634593c31f605efbc752825de865eb901"
+    ],
+    "rawHeaders": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cf-cache-status": "DYNAMIC",
+      "cf-ray": "9b42f8ae9f197f11-MAN",
+      "connection": "keep-alive",
+      "content-encoding": "br",
+      "content-type": "application/json",
+      "date": "Fri, 26 Dec 2025 19:26:43 GMT",
+      "openai-organization": "user-xzaeeoqlanzncr8pomspsknu",
+      "openai-processing-ms": "549",
+      "openai-project": "proj_aT4OgTR5NJ9iNjg4xWc82hiE",
+      "openai-version": "2020-10-01",
+      "server": "cloudflare",
+      "set-cookie": "_cfuvid=uotU_as2zAr3ZEcsFvwKxkz_88rMqZj6uE3LBtXxAx8-1766777203703-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-envoy-upstream-service-time": "553",
+      "x-ratelimit-limit-requests": "30000",
+      "x-ratelimit-limit-tokens": "150000000",
+      "x-ratelimit-remaining-requests": "29999",
+      "x-ratelimit-remaining-tokens": "149999975",
+      "x-ratelimit-reset-requests": "2ms",
+      "x-ratelimit-reset-tokens": "0s",
+      "x-request-id": "req_76a0432288db4a21bd6d95d53e6ef564"
+    },
+    "responseIsBinary": false
+  }
+]

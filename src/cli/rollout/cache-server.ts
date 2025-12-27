@@ -1,4 +1,8 @@
 import * as http from 'http';
+import {
+  LanguageModelTextBlock,
+  LanguageModelToolDefinitionOverride,
+} from '../../types';
 
 export interface CachedSpan {
   name: string;
@@ -7,9 +11,18 @@ export interface CachedSpan {
   attributes: Record<string, any>; // Already parsed
 }
 
-export interface CacheMetadata {
+interface CacheMetadata {
   pathToCount: Record<string, number>;
-  overrides?: Record<string, { system?: string; tools?: any[] }>;
+  overrides?: Record<string, {
+    system?: string | LanguageModelTextBlock[];
+    tools?: LanguageModelToolDefinitionOverride[];
+  }>;
+}
+
+export interface CacheServerResponse {
+  span: CachedSpan;
+  pathToCount: CacheMetadata['pathToCount'];
+  overrides?: CacheMetadata['overrides'];
 }
 
 interface CacheServerResult {
@@ -129,7 +142,7 @@ export async function startCacheServer(
           }
 
           // Return cached span with metadata
-          const response = {
+          const response: CacheServerResponse = {
             span: cachedSpan,
             pathToCount: metadata.pathToCount,
             overrides: metadata.overrides,

@@ -18,7 +18,7 @@
   "scripts": {
     "prepare": "tsdown",
     "build": "tsdown",
-    "test": "tsx --test test/*.test.ts",
+    "test": "tsx --test test/*.test.ts test/**/*.test.ts",
     "lint": "eslint",
     "lint:fix": "eslint --fix"
   },

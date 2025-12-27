@@ -59,7 +59,8 @@ async function buildFile(filePath: string): Promise<string> {
     outfile: `tmp_out_${filePath}.js`,
     write: false,
     external: [
-      "node_modules/*",
+      "@lmnr-ai/*",
+      "esbuild",
       "playwright",
       "puppeteer",
       "puppeteer-core",
@@ -154,7 +155,7 @@ async function handleRunEvent(
         });
       } else {
         const query = `
-          SELECT name, input, output, attributes, path, start_time
+          SELECT name, input, output, attributes, path
           FROM spans
           WHERE trace_id = {traceId:UUID}
             AND span_type = 'LLM'
@@ -162,12 +163,12 @@ async function handleRunEvent(
           ORDER BY start_time ASC
         `;
 
-        logger.info(`Querying spans from trace ${trace_id}...`);
+        logger.debug(`Querying spans from trace ${trace_id}...`);
         const spans = await client.sql.query(query, {
           traceId: trace_id,
           paths: paths,
         });
-        logger.info(`Received ${spans.length} spans from backend`);
+        logger.debug(`Received ${spans.length} spans from backend`);
 
         // Group spans by path and filter to first N per path
         const spansByPath: Record<string, any[]> = {};
@@ -242,10 +243,10 @@ async function handleRunEvent(
     process.env.LMNR_ROLLOUT_STATE_SERVER_ADDRESS = `http://localhost:${cacheServerPort}`;
 
     // Build and load the user file
-    logger.info('Building user file...');
+    logger.debug('Building user file...');
     const moduleText = await buildFile(filePath);
 
-    logger.info('Loading user file...');
+    logger.debug('Loading user file...');
     loadModule({
       filename: filePath,
       moduleText,
@@ -266,7 +267,7 @@ async function handleRunEvent(
     const urlWithoutSlash = baseUrl.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
     const baseHttpUrl = `${urlWithoutSlash}:${httpPort}`;
 
-    logger.info('Initializing Laminar...');
+    logger.debug('Initializing Laminar...');
     Laminar.initialize({
       projectApiKey: options.projectApiKey,
       baseUrl: baseUrl,
@@ -276,13 +277,13 @@ async function handleRunEvent(
 
     // Execute the rollout function with args
     // Convert args object to array of arguments based on parameter names
-    logger.info('Executing rollout function...');
+    logger.debug('Executing rollout function...');
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     const orderedArgs = selectedFunction.params.map(param => args[param.name]);
     logger.info(`Calling function with args: ${JSON.stringify(orderedArgs)}`);
     const result = await selectedFunction.fn(...orderedArgs);
     logger.info('Rollout function completed successfully');
-    logger.info(`Result: ${JSON.stringify(result, null, 2)}`);
+    logger.debug(`Result: ${JSON.stringify(result, null, 2)}`);
   } catch (error: any) {
     logger.error(`Error handling run event: ${error instanceof Error ? error.message : error}`);
     if (error instanceof Error && error.stack) {
@@ -378,11 +379,11 @@ export async function runServe(
     sseClient.on('handshake', (event: RolloutHandshakeEvent) => {
       const projectId = event.data.project_id;
       const sessionId = event.data.session_id;
-      logger.info(`View your session at https://laminar.sh/project/${projectId}/rollouts/${sessionId}`);
+      logger.info(`View your session at https://laminar.sh/project/${projectId}/rollout-sessions/${sessionId}`);
     });
 
     sseClient.on('error', (error: Error) => {
-      logger.error(`SSE error: ${error.message}`);
+      logger.error(`Error connecting to backend: ${error.message}`);
     });
 
     sseClient.on('reconnecting', () => {
@@ -390,7 +391,7 @@ export async function runServe(
     });
 
     sseClient.on('heartbeat_timeout', () => {
-      logger.warn('Heartbeat timeout, reconnecting...');
+      logger.debug('Heartbeat timeout, reconnecting...');
     });
 
     // Now connect after listeners are registered
