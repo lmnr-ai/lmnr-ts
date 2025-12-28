@@ -344,46 +344,46 @@ void describe("aisdk instrumentation", () => {
         role: "user",
         content: [{
           type: "text",
-          text: "What is the weather in SF?"
-        }]
+          text: "What is the weather in SF?",
+        }],
       }],
       system: "You are a helpful assistant.",
       tools: {
         get_weather: tool({
           description: "Get the weather in a given location",
           inputSchema: z.object({
-            location: z.string().describe("The city and state, e.g. San Francisco, CA")
+            location: z.string().describe("The city and state, e.g. San Francisco, CA"),
           }),
-          execute: async ({ location }: { location: string }) => ({
+          execute: ({ location }: { location: string }) => ({
             location,
-            weather: "Sunny as always!"
-          })
+            weather: "Sunny as always!",
+          }),
         }),
         get_time: tool({
           description: "Get the time in a given location",
           inputSchema: z.object({
-            location: z.string().describe("The city and state, e.g. San Francisco, CA")
+            location: z.string().describe("The city and state, e.g. San Francisco, CA"),
           }),
-          execute: async ({ location }: { location: string }) => ({
+          execute: ({ location }: { location: string }) => ({
             location,
-            time: "12:00 PM"
-          })
+            time: "12:00 PM",
+          }),
         }),
       },
       experimental_telemetry: {
         isEnabled: true,
         tracer: getTracer(),
-      }
+      },
     });
 
     const spans = exporter.getFinishedSpans();
     // Should have: observe span(s), generateText span(s), doGenerate span(s), and tool spans
     const llmSpans = spans.filter(span => span.name.includes("doGenerate"));
     const toolSpans = spans.filter(span =>
-      span.attributes["ai.toolCall.id"] !== "undefined"
+      span.attributes["ai.toolCall.id"] !== "undefined",
     );
     const generateTextSpans = spans.filter(span =>
-      span.name.includes("generateText") && !span.name.includes("doGenerate")
+      span.name.includes("generateText") && !span.name.includes("doGenerate"),
     );
 
     // Verify we have LLM and tool spans

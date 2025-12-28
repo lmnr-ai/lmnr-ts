@@ -86,7 +86,7 @@ const extractParamNames = (fn: (...args: any[]) => any): RolloutParam[] => {
   return params
     .filter(name => name && name.length > 0)
     .map(name => ({ name }));
-}
+};
 
 /**
  * The main decorator entrypoint for Laminar. This is used to wrap

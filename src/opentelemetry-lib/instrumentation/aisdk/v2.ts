@@ -47,7 +47,7 @@ export class LaminarLanguageModelV2 extends BaseLaminarLanguageModel implements 
   }> {
     return this.doGenerateWithCaching(
       options,
-      (opts) => this.innerLanguageModel.doGenerate(opts)
+      (opts) => this.innerLanguageModel.doGenerate(opts),
     );
   }
 
@@ -62,14 +62,14 @@ export class LaminarLanguageModelV2 extends BaseLaminarLanguageModel implements 
   }> {
     return this.doStreamWithCaching(
       options,
-      (opts) => this.innerLanguageModel.doStream(opts)
+      (opts) => this.innerLanguageModel.doStream(opts),
     );
   }
 
   protected createStreamFromCachedResponse(
     content: Array<LanguageModelV2Content>,
     finishReason: LanguageModelV2FinishReason,
-    usage: LanguageModelV2Usage
+    usage: LanguageModelV2Usage,
   ): ReadableStream<LanguageModelV2StreamPart> {
     const parts: LanguageModelV2StreamPart[] = [];
 
@@ -92,12 +92,12 @@ export class LaminarLanguageModelV2 extends BaseLaminarLanguageModel implements 
         parts.push({
           type: 'tool-input-start',
           id,
-          toolName: block.toolName
+          toolName: block.toolName,
         });
         parts.push({
           type: 'tool-input-delta',
           id,
-          delta: block.input
+          delta: block.input,
         });
         parts.push({ type: 'tool-input-end', id });
         parts.push({
@@ -124,7 +124,7 @@ export class LaminarLanguageModelV2 extends BaseLaminarLanguageModel implements 
           controller.enqueue(part);
         }
         controller.close();
-      }
+      },
     });
   }
 }

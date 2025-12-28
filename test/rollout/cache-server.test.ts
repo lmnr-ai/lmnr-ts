@@ -169,7 +169,7 @@ void describe('Cache Server', () => {
   });
 
   void it('updates metadata via setMetadata', async () => {
-    const { port, server, setMetadata } = await startCacheServer();
+    const { server, setMetadata } = await startCacheServer();
 
     try {
       // First set metadata
@@ -268,7 +268,7 @@ void describe('Cache Server', () => {
           pathToCount: { 'test.path': i + 1 },
         });
         updates.push(
-          makeRequest(port, 'POST', '/cached', { path: 'test.path', index: i })
+          makeRequest(port, 'POST', '/cached', { path: 'test.path', index: i }),
         );
       }
 

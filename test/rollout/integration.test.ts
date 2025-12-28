@@ -13,8 +13,8 @@ import { z } from 'zod';
 
 import { startCacheServer } from '../../src/cli/rollout/cache-server';
 import { observe } from '../../src/decorators';
-import { laminarLanguageModel } from '../../src/opentelemetry-lib/instrumentation/aisdk';
 import { _resetConfiguration, initializeTracing } from '../../src/opentelemetry-lib/configuration';
+import { laminarLanguageModel } from '../../src/opentelemetry-lib/instrumentation/aisdk';
 import { getTracer } from '../../src/opentelemetry-lib/tracing';
 import { decompressRecordingResponse } from '../utils';
 
@@ -83,7 +83,7 @@ void describe('Rollout Integration Tests', () => {
       });
     } else {
       throw new Error(
-        `LMNR_TEST_RECORD_VCR variable is false and no recordings file exists: ${recordingsFile}`
+        `LMNR_TEST_RECORD_VCR variable is false and no recordings file exists: ${recordingsFile}`,
       );
     }
   });
@@ -121,7 +121,7 @@ void describe('Rollout Integration Tests', () => {
         type: 'tool-call',
         toolCallId: 'call-1',
         toolName: 'calculate_base',
-        input: '{"value":5}'
+        input: '{"value":5}',
       }]),
       attributes: { 'ai.response.finishReason': 'tool-calls' },
     });
@@ -133,7 +133,7 @@ void describe('Rollout Integration Tests', () => {
         type: 'tool-call',
         toolCallId: 'call-2',
         toolName: 'calculate_final',
-        input: '{"base":10}'
+        input: '{"base":10}',
       }]),
       attributes: { 'ai.response.finishReason': 'tool-calls' },
     });
@@ -150,33 +150,36 @@ void describe('Rollout Integration Tests', () => {
           model: laminarLanguageModel(model),
           messages: [{
             role: 'user',
-            content: [{ type: 'text', text: 'First calculate base from 5, then use that base to calculate final result' }]
+            content: [{
+              type: 'text',
+              text: 'First calculate base from 5, then use that base to calculate final result',
+            }],
           }],
           system: 'You are a calculator assistant. Call tools sequentially.',
           tools: {
             calculate_base: tool({
               description: 'Calculate a base number by doubling the input',
               inputSchema: z.object({
-                value: z.number().describe('A number to use as base')
+                value: z.number().describe('A number to use as base'),
               }),
-              execute: async ({ value }: { value: number }) => ({ result: value * 2 })
+              execute: ({ value }: { value: number }) => ({ result: value * 2 }),
             }),
             calculate_final: tool({
               description: 'Calculate final result by adding 10 to the base',
               inputSchema: z.object({
-                base: z.number().describe('Base number from previous calculation')
+                base: z.number().describe('Base number from previous calculation'),
               }),
-              execute: async ({ base }: { base: number }) => ({ result: base + 10 })
+              execute: ({ base }: { base: number }) => ({ result: base + 10 }),
             }),
           },
-          experimental_telemetry: { isEnabled: true, tracer: getTracer() }
+          experimental_telemetry: { isEnabled: true, tracer: getTracer() },
         });
         return result.text;
-      }
+      },
     );
 
     // Execute agent
-    // eslint-disable-next-line @typescript-eslint/await-thenable
+
     await agent();
 
     const spans = exporter.getFinishedSpans();
@@ -194,13 +197,13 @@ void describe('Rollout Integration Tests', () => {
       if (span.attributes['lmnr.association.properties.rollout_session_id']) {
         assert.strictEqual(
           span.attributes['lmnr.association.properties.rollout_session_id'],
-          'test-rollout-session'
+          'test-rollout-session',
         );
       }
     }
   });
 
-  void it('applies system override after cache exhausted', async () => {
+  void it('applies system override after cache exhausted', () => {
     const llmPath = 'test.ai.generateText.ai.generateText.doGenerate';
 
     // Cache first call only
@@ -217,8 +220,8 @@ void describe('Rollout Integration Tests', () => {
       overrides: {
         [llmPath]: {
           system: 'You are an override assistant.',
-        }
-      }
+        },
+      },
     });
 
     // This test would require multiple LLM calls to verify override application
@@ -226,7 +229,7 @@ void describe('Rollout Integration Tests', () => {
     assert.ok(true);
   });
 
-  void it('applies tool overrides after cache exhausted', async () => {
+  void it('applies tool overrides after cache exhausted', () => {
     const llmPath = 'test.ai.generateText.ai.generateText.doGenerate';
 
     cache.set(`0:${llmPath}`, {
@@ -246,12 +249,12 @@ void describe('Rollout Integration Tests', () => {
             parameters: {
               type: 'object',
               properties: {
-                value: { type: 'number', description: 'Value to calculate' }
-              }
-            }
-          }]
-        }
-      }
+                value: { type: 'number', description: 'Value to calculate' },
+              },
+            },
+          }],
+        },
+      },
     });
 
     // This test would verify tool definitions are updated on live calls
@@ -270,13 +273,13 @@ void describe('Rollout Integration Tests', () => {
         const result = await generateText({
           model: laminarLanguageModel(model),
           messages: [{ role: 'user', content: [{ type: 'text', text: input }] }],
-          experimental_telemetry: { isEnabled: true, tracer: getTracer() }
+          experimental_telemetry: { isEnabled: true, tracer: getTracer() },
         });
         return result.text;
-      }
+      },
     );
 
-    // eslint-disable-next-line @typescript-eslint/await-thenable
+
     const result = await agent('What is 2+2?');
 
     assert.ok(result);
@@ -288,7 +291,7 @@ void describe('Rollout Integration Tests', () => {
     assert.ok(agentSpan);
     assert.strictEqual(
       agentSpan.attributes['lmnr.association.properties.rollout_session_id'],
-      'test-rollout-session'
+      'test-rollout-session',
     );
   });
 
@@ -299,13 +302,13 @@ void describe('Rollout Integration Tests', () => {
         const result = await generateText({
           model: laminarLanguageModel(model),
           messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
-          experimental_telemetry: { isEnabled: true, tracer: getTracer() }
+          experimental_telemetry: { isEnabled: true, tracer: getTracer() },
         });
         return result.text;
-      }
+      },
     );
 
-    // eslint-disable-next-line @typescript-eslint/await-thenable
+
     await agent();
 
     const spans = exporter.getFinishedSpans();
@@ -313,12 +316,14 @@ void describe('Rollout Integration Tests', () => {
     // Verify all spans have rollout session ID
     const agentSpan = spans.find(s => s.name === 'test-agent');
     const llmSpans = spans.filter(s => s.name.includes('doGenerate'));
-    const generateTextSpans = spans.filter(s => s.name.includes('generateText') && !s.name.includes('doGenerate'));
+    const generateTextSpans = spans.filter(
+      s => s.name.includes('generateText') && !s.name.includes('doGenerate'),
+    );
 
     assert.ok(agentSpan, 'Should have agent span');
     assert.strictEqual(
       agentSpan.attributes['lmnr.association.properties.rollout_session_id'],
-      'test-rollout-session'
+      'test-rollout-session',
     );
 
     // Check LLM spans for direct attribute (set by BaseLaminarLanguageModel)
@@ -328,7 +333,7 @@ void describe('Rollout Integration Tests', () => {
       assert.strictEqual(
         rolloutId,
         'test-rollout-session',
-        'LLM span should have rollout session ID'
+        'LLM span should have rollout session ID',
       );
     }
 
@@ -340,7 +345,7 @@ void describe('Rollout Integration Tests', () => {
       if (rolloutId) {
         assert.strictEqual(
           rolloutId,
-          'test-rollout-session'
+          'test-rollout-session',
         );
       }
     }
@@ -364,10 +369,10 @@ void describe('Rollout Integration Tests', () => {
     const agent = observe(
       { name: 'test', rolloutEntrypoint: true },
       async () => {
-        const stream = await streamText({
+        const stream = streamText({
           model: laminarLanguageModel(model),
           messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
-          experimental_telemetry: { isEnabled: true, tracer: getTracer() }
+          experimental_telemetry: { isEnabled: true, tracer: getTracer() },
         });
 
         // Consume stream
@@ -376,10 +381,10 @@ void describe('Rollout Integration Tests', () => {
           fullText += chunk;
         }
         return fullText;
-      }
+      },
     );
 
-    // eslint-disable-next-line @typescript-eslint/await-thenable
+
     const result = await agent();
 
     assert.ok(result);
@@ -388,7 +393,7 @@ void describe('Rollout Integration Tests', () => {
     assert.ok(spans.length > 0);
   });
 
-  void it('tracks multiple paths independently', async () => {
+  void it('tracks multiple paths independently', () => {
     // Different paths with different counts
     const path1 = 'test.ai.generateText.ai.generateText.doGenerate';
     const path2 = 'test.tool1';
@@ -431,14 +436,14 @@ void describe('Rollout Integration Tests', () => {
         const result = await generateText({
           model: laminarLanguageModel(model),
           messages: [{ role: 'user', content: [{ type: 'text', text: 'Test' }] }],
-          experimental_telemetry: { isEnabled: true, tracer: getTracer() }
+          experimental_telemetry: { isEnabled: true, tracer: getTracer() },
         });
         return result.text;
-      }
+      },
     );
 
     // Should not throw, should fall back to live model
-    // eslint-disable-next-line @typescript-eslint/await-thenable
+
     const result = await agent();
 
     assert.ok(result);
@@ -456,28 +461,28 @@ void describe('Rollout Integration Tests', () => {
           model: laminarLanguageModel(model),
           messages: [{
             role: 'user',
-            content: [{ type: 'text', text: 'What is the weather in SF?' }]
+            content: [{ type: 'text', text: 'What is the weather in SF?' }],
           }],
           system: 'You are a helpful assistant.',
           tools: {
             get_weather: tool({
               description: 'Get the weather',
               inputSchema: z.object({
-                location: z.string()
+                location: z.string(),
               }),
-              execute: async ({ location }: { location: string }) => ({
+              execute: ({ location }: { location: string }) => ({
                 location,
-                weather: 'Sunny'
-              })
-            })
+                weather: 'Sunny',
+              }),
+            }),
           },
-          experimental_telemetry: { isEnabled: true, tracer: getTracer() }
+          experimental_telemetry: { isEnabled: true, tracer: getTracer() },
         });
         return result.text;
-      }
+      },
     );
 
-    // eslint-disable-next-line @typescript-eslint/await-thenable
+
     await agent();
 
     const spans = exporter.getFinishedSpans();

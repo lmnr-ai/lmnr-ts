@@ -417,42 +417,42 @@ export class Laminar {
     }
     const currentSpan = Laminar.getCurrentSpan();
     if (currentSpan) {
-      (currentSpan as LaminarSpan).setOutput(output);
+      (currentSpan).setOutput(output);
     }
   }
 
   public static setTraceMetadata(metadata: Record<string, any>) {
     const currentSpan = Laminar.getCurrentSpan();
     if (currentSpan) {
-      (currentSpan as LaminarSpan).setTraceMetadata(metadata);
+      (currentSpan).setTraceMetadata(metadata);
     }
   }
 
   public static setTraceSessionId(sessionId: string) {
     const currentSpan = Laminar.getCurrentSpan();
     if (currentSpan) {
-      (currentSpan as LaminarSpan).setTraceSessionId(sessionId);
+      (currentSpan).setTraceSessionId(sessionId);
     }
   }
 
   public static setTraceUserId(userId: string) {
     const currentSpan = Laminar.getCurrentSpan();
     if (currentSpan) {
-      (currentSpan as LaminarSpan).setTraceUserId(userId);
+      (currentSpan).setTraceUserId(userId);
     }
   }
 
   public static setSpanTags(tags: string[]) {
     const currentSpan = Laminar.getCurrentSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
-      (currentSpan as LaminarSpan).setTags(tags);
+      (currentSpan).setTags(tags);
     }
   }
 
   public static addSpanTags(tags: string[]) {
     const currentSpan = Laminar.getCurrentSpan();
     if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
-      (currentSpan as LaminarSpan).addTags(tags);
+      (currentSpan).addTags(tags);
     }
   }
 

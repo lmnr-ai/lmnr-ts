@@ -88,15 +88,15 @@ void describe('Tool Definition Overrides', () => {
         name: 'get_weather',
         description: 'Old description',
         inputSchema: { type: 'object', properties: { location: { type: 'string' } } },
-      }
+      },
     ];
 
     const overrides: Array<{ name: string; description?: string; parameters?: any }> = [
-      { name: 'get_weather', description: 'New description' }
+      { name: 'get_weather', description: 'New description' },
     ];
 
     const existingToolIndex = tools.findIndex(
-      tool => tool.type === 'function' && tool.name === 'get_weather'
+      tool => tool.type === 'function' && tool.name === 'get_weather',
     );
 
     const updatedTools = [...tools];
@@ -120,19 +120,19 @@ void describe('Tool Definition Overrides', () => {
         name: 'get_weather',
         description: 'Get weather',
         inputSchema: { type: 'object', properties: { location: { type: 'string' } } },
-      }
+      },
     ];
 
     const newSchema = {
       type: 'object',
       properties: {
         location: { type: 'string' },
-        units: { type: 'string', enum: ['celsius', 'fahrenheit'] }
-      }
+        units: { type: 'string', enum: ['celsius', 'fahrenheit'] },
+      },
     };
 
     const overrides: Array<{ name: string; description?: string; parameters?: any }> = [
-      { name: 'get_weather', parameters: newSchema }
+      { name: 'get_weather', parameters: newSchema },
     ];
 
     const updatedTools = [...tools];
@@ -157,7 +157,7 @@ void describe('Tool Definition Overrides', () => {
         name: 'calculate',
         description: 'Old description',
         inputSchema: { type: 'object', properties: { x: { type: 'number' } } },
-      }
+      },
     ];
 
     const overrides: Array<{ name: string; description?: string; parameters?: any }> = [
@@ -165,7 +165,7 @@ void describe('Tool Definition Overrides', () => {
         name: 'calculate',
         description: 'New description',
         // No parameters - should keep existing
-      }
+      },
     ];
 
     const updatedTools = [...tools];
@@ -189,7 +189,7 @@ void describe('Tool Definition Overrides', () => {
         name: 'existing',
         description: 'Existing tool',
         inputSchema: {},
-      }
+      },
     ];
 
     const overrides: Array<{ name: string; description?: string; parameters?: any }> = [
@@ -197,7 +197,7 @@ void describe('Tool Definition Overrides', () => {
         name: 'new_tool',
         description: 'New tool',
         parameters: { type: 'object', properties: { param: { type: 'string' } } },
-      }
+      },
     ];
 
     const updatedTools = [...tools];
@@ -224,7 +224,7 @@ void describe('Tool Definition Overrides', () => {
         name: 'existing',
         description: 'Existing',
         inputSchema: {},
-      }
+      },
     ];
 
     const overrides: Array<{ name: string; description?: string; parameters?: any }> = [
@@ -232,7 +232,7 @@ void describe('Tool Definition Overrides', () => {
         name: 'invalid_tool',
         description: 'Tool without schema',
         // No parameters
-      }
+      },
     ];
 
     const updatedTools = [...tools];
@@ -252,14 +252,12 @@ void describe('Tool Definition Overrides', () => {
   });
 
   void it('handles empty tools array with overrides', () => {
-    const tools: any[] = [];
-
     const overrides: Array<{ name: string; description?: string; parameters?: any }> = [
       {
         name: 'new_tool',
         description: 'First tool',
         parameters: { type: 'object' },
-      }
+      },
     ];
 
     const newTools: any[] = [];
@@ -290,20 +288,20 @@ void describe('Tool Definition Overrides', () => {
         name: 'user_tool',
         description: 'User tool',
         inputSchema: {},
-      }
+      },
     ];
 
     const overrides: Array<{ name: string; description?: string; parameters?: any }> = [
       {
         name: 'user_tool',
         description: 'Updated user tool',
-      }
+      },
     ];
 
     const updatedTools = [...tools];
     const override = overrides[0];
     const existingToolIndex = updatedTools.findIndex(
-      tool => tool.type === 'function' && tool.name === override.name
+      tool => tool.type === 'function' && tool.name === override.name,
     );
 
     if (existingToolIndex !== -1) {
@@ -336,7 +334,7 @@ void describe('Tool Definition Overrides', () => {
         name: 'tool2',
         description: 'Tool 2',
         inputSchema: { type: 'object' },
-      }
+      },
     ];
 
     const overrides: Array<{ name: string; description?: string; parameters?: any }> = [
@@ -348,7 +346,7 @@ void describe('Tool Definition Overrides', () => {
 
     for (const override of overrides) {
       const idx = updatedTools.findIndex(
-        tool => tool.type === 'function' && tool.name === override.name
+        tool => tool.type === 'function' && tool.name === override.name,
       );
       if (idx !== -1) {
         const existingTool = updatedTools[idx];

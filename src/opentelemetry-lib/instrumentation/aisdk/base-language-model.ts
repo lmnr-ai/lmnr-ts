@@ -1,4 +1,19 @@
 import {
+  type JSONSchema7,
+  type LanguageModelV3,
+  type LanguageModelV3CallOptions,
+  type LanguageModelV3Content,
+  type LanguageModelV3FinishReason,
+  type LanguageModelV3FunctionTool,
+  type LanguageModelV3Message,
+  type LanguageModelV3ProviderTool,
+  type LanguageModelV3ResponseMetadata,
+  type LanguageModelV3Usage,
+  type SharedV3Headers,
+  type SharedV3ProviderMetadata,
+  type SharedV3Warning,
+} from "@ai-sdk/provider";
+import {
   type LanguageModelV2,
   type LanguageModelV2CallOptions,
   type LanguageModelV2CallWarning,
@@ -12,25 +27,10 @@ import {
   type SharedV2Headers,
   type SharedV2ProviderMetadata,
 } from "@ai-sdk/provider-v2";
-import {
-  type LanguageModelV3,
-  type LanguageModelV3CallOptions,
-  type LanguageModelV3Content,
-  type LanguageModelV3FinishReason,
-  type LanguageModelV3FunctionTool,
-  type LanguageModelV3Message,
-  type LanguageModelV3ProviderTool,
-  type LanguageModelV3ResponseMetadata,
-  type LanguageModelV3Usage,
-  type SharedV3Headers,
-  type SharedV3ProviderMetadata,
-  type SharedV3Warning,
-  type JSONSchema7,
-} from "@ai-sdk/provider";
 
+import type { CacheServerResponse } from "../../../cli/rollout/cache-server";
 import { Laminar } from "../../../laminar";
 import type { LanguageModelTextBlock, LanguageModelToolDefinitionOverride } from "../../../types";
-import type { CacheServerResponse } from "../../../cli/rollout/cache-server";
 /**
  * Base class for Laminar language model wrappers.
  * Implements shared caching and override logic for both V2 and V3 specifications.
@@ -126,7 +126,7 @@ export abstract class BaseLaminarLanguageModel {
    */
   protected doGenerateWithCaching(
     options: LanguageModelV2CallOptions | LanguageModelV3CallOptions,
-    doGenerateFn: (opts: any) => PromiseLike<any>
+    doGenerateFn: (opts: any) => PromiseLike<any>,
   ): PromiseLike<any> {
     if (process.env.LMNR_ROLLOUT_SESSION_ID) {
       const span = Laminar.getCurrentSpan();
@@ -192,7 +192,7 @@ export abstract class BaseLaminarLanguageModel {
    */
   protected doStreamWithCaching(
     options: LanguageModelV2CallOptions | LanguageModelV3CallOptions,
-    doStreamFn: (opts: any) => PromiseLike<any>
+    doStreamFn: (opts: any) => PromiseLike<any>,
   ): PromiseLike<any> {
     if (process.env.LMNR_ROLLOUT_SESSION_ID) {
       const span = Laminar.getCurrentSpan();
@@ -226,7 +226,7 @@ export abstract class BaseLaminarLanguageModel {
    */
   private async fetchAndParseCachedSpan(
     path: string,
-    index: number
+    index: number,
   ): Promise<undefined | {
     content: Array<LanguageModelV2Content | LanguageModelV3Content>;
     finishReason: LanguageModelV2FinishReason | LanguageModelV3FinishReason;
@@ -287,7 +287,7 @@ export abstract class BaseLaminarLanguageModel {
     const stream = this.createStreamFromCachedResponse(
       parsed.content,
       parsed.finishReason,
-      parsed.usage
+      parsed.usage,
     );
 
     return { stream };
@@ -295,24 +295,28 @@ export abstract class BaseLaminarLanguageModel {
 
   private applyOverrides(
     path: string,
-    options: LanguageModelV2CallOptions | LanguageModelV3CallOptions
+    options: LanguageModelV2CallOptions | LanguageModelV3CallOptions,
   ): LanguageModelV2CallOptions | LanguageModelV3CallOptions {
     const pathOverride = this.overrides[path];
     if (!pathOverride) {
       return options;
     }
 
-    const modifiedOptions = { ...options } as any;
+    const modifiedOptions = {
+      ...options,
+    } as LanguageModelV2CallOptions | LanguageModelV3CallOptions;
 
     // Apply system override
     const systemOverride = this.normalizeSystemOverride(pathOverride.system);
     if (systemOverride) {
-      modifiedOptions.prompt = this.applySystemOverride(modifiedOptions.prompt, systemOverride);
+      modifiedOptions.prompt =
+        this.applySystemOverride(modifiedOptions.prompt, systemOverride) as any;
     }
 
     // Apply tool overrides
     if (pathOverride.tools) {
-      modifiedOptions.tools = this.applyToolOverrides(modifiedOptions.tools, pathOverride.tools);
+      modifiedOptions.tools =
+        this.applyToolOverrides(modifiedOptions.tools, pathOverride.tools) as any;
     }
 
     return modifiedOptions;
@@ -444,7 +448,7 @@ export abstract class BaseLaminarLanguageModel {
 
     // Add override as first message
     return [
-      { role: 'system', content: systemOverride } as any,
+      { role: 'system', content: systemOverride },
       ...withoutSystem,
     ];
   }
@@ -452,35 +456,38 @@ export abstract class BaseLaminarLanguageModel {
   /**
    * Applies tool overrides
    */
-  private applyToolOverrides(
-    tools: Array<any> | undefined,
+  private applyToolOverrides<
+    F extends LanguageModelV2FunctionTool | LanguageModelV3FunctionTool,
+    P extends LanguageModelV2ProviderDefinedTool | LanguageModelV3ProviderTool,
+  >(
+    tools: Array<F | P> | undefined,
     toolOverrides: LanguageModelToolDefinitionOverride[] | undefined,
-  ): Array<LanguageModelV2FunctionTool | LanguageModelV3FunctionTool | LanguageModelV2ProviderDefinedTool | LanguageModelV3ProviderTool> | undefined {
+  ): Array<F | P> | undefined {
     if (!toolOverrides || toolOverrides.length === 0) {
       return tools;
     }
 
     if (!tools || tools.length === 0) {
       // If no tools exist, create new tools from overrides that have inputSchema
-      const newTools: any[] = [];
+      const newTools = [];
       for (const override of toolOverrides) {
         if (override.parameters) {
           newTools.push({
             type: 'function',
             name: override.name,
             description: override.description,
-            inputSchema: override.parameters as JSONSchema7
+            inputSchema: override.parameters as JSONSchema7,
           });
         }
       }
-      return newTools.length > 0 ? newTools : undefined;
+      return newTools.length > 0 ? newTools as Array<F | P> : undefined;
     }
 
-    const updatedTools = [...tools];
+    const updatedTools = [...tools] as Array<F>;
 
     for (const override of toolOverrides) {
       const existingToolIndex = updatedTools.findIndex(
-        tool => tool.type === 'function' && tool.name === override.name
+        tool => tool.type === 'function' && tool.name === override.name,
       );
 
       if (existingToolIndex !== -1) {
@@ -491,7 +498,7 @@ export abstract class BaseLaminarLanguageModel {
           description: override.description ?? existingTool.description,
           inputSchema: override.parameters
             ? (override.parameters as JSONSchema7)
-            : (existingTool.inputSchema as JSONSchema7),
+            : (existingTool.inputSchema),
         };
       } else if (override.parameters) {
         // Add new tool if it has inputSchema
@@ -500,7 +507,7 @@ export abstract class BaseLaminarLanguageModel {
           name: override.name,
           description: override.description,
           inputSchema: override.parameters as JSONSchema7,
-        });
+        } as F);
       }
     }
 

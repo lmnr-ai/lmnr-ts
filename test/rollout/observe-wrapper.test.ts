@@ -113,6 +113,7 @@ void describe('observe with rolloutEntrypoint', () => {
     globalThis._set_rollout_global = true;
     globalThis._rolloutFunctions = new Map();
 
+    // eslint-disable-next-line @typescript-eslint/require-await
     const asyncFn = async (a: string, b: boolean) => ({ a, b });
 
     observe({ name: 'async', rolloutEntrypoint: true }, asyncFn);
