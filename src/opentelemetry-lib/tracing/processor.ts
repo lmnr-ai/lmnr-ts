@@ -179,6 +179,8 @@ export class LaminarSpanProcessor implements SpanProcessor {
           span.setAttribute(ASSOCIATION_PROPERTIES_OVERRIDES[key], value);
         } else if (key === "tracing_level") {
           span.setAttribute("lmnr.internal.tracing_level", value);
+        } else if (key === "rolloutSessionId") {
+          span.setAttribute("lmnr.rollout.session_id", value);
         } else {
           span.setAttribute(`${ASSOCIATION_PROPERTIES}.${key}`, value);
         }

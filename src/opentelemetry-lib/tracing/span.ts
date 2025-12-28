@@ -182,7 +182,7 @@ export class LaminarSpan implements Span, ReadableSpan {
   }
 
   public setTraceRolloutSessionId(rolloutSessionId: string): void {
-    this._span.setAttribute(ROLLOUT_SESSION_ID, rolloutSessionId);
+    this._span.setAttribute("lmnr.rollout.session_id", rolloutSessionId);
   }
 
   public setTraceMetadata(metadata: Record<string, any>): void {

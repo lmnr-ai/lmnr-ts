@@ -31,6 +31,7 @@ import {
 import type { CacheServerResponse } from "../../../cli/rollout/cache-server";
 import { Laminar } from "../../../laminar";
 import type { LanguageModelTextBlock, LanguageModelToolDefinitionOverride } from "../../../types";
+import { stringifyPromptForTelemetry } from "./utils";
 /**
  * Base class for Laminar language model wrappers.
  * Implements shared caching and override logic for both V2 and V3 specifications.
@@ -138,7 +139,21 @@ export abstract class BaseLaminarLanguageModel {
         if (this.pathToCount[path] && currentIndex >= this.pathToCount[path]) {
           console.log('[exceeded count by path] returning original response with overrides');
           this.pathToCurrentIndex[path] = currentIndex + 1;
-          return doGenerateFn(this.applyOverrides(path, options as any));
+          const optionsWithOverrides = this.applyOverrides(path, options);
+          // By this time, we are already inside the .doGenerate span, and the
+          // input attributes (ai.prompt.messages) and ai.prompt.tools have
+          // already been set, and so we can override them here.
+          span?.setAttribute(
+            'ai.prompt.messages',
+            stringifyPromptForTelemetry(optionsWithOverrides.prompt),
+          );
+          if (optionsWithOverrides.tools && optionsWithOverrides.tools.length > 0) {
+            span?.setAttribute(
+              'ai.prompt.tools',
+              optionsWithOverrides.tools.map(tool => JSON.stringify(tool)),
+            );
+          }
+          return doGenerateFn(optionsWithOverrides);
         }
         this.pathToCurrentIndex[path] = currentIndex + 1;
         return this.cachedDoGenerate(path, currentIndex).then(cachedResponse => {
@@ -204,7 +219,21 @@ export abstract class BaseLaminarLanguageModel {
         if (this.pathToCount[path] && currentIndex >= this.pathToCount[path]) {
           console.log('[exceeded count by path] returning original stream with overrides');
           this.pathToCurrentIndex[path] = currentIndex + 1;
-          return doStreamFn(this.applyOverrides(path, options as any));
+          const optionsWithOverrides = this.applyOverrides(path, options);
+          // By this time, we are already inside the .doStream span, and the
+          // input attributes (ai.prompt.messages) and ai.prompt.tools have
+          // already been set, and so we can override them here.
+          span?.setAttribute(
+            'ai.prompt.messages',
+            stringifyPromptForTelemetry(optionsWithOverrides.prompt),
+          );
+          if (optionsWithOverrides.tools && optionsWithOverrides.tools.length > 0) {
+            span?.setAttribute(
+              'ai.prompt.tools',
+              optionsWithOverrides.tools.map(tool => JSON.stringify(tool)),
+            );
+          }
+          return doStreamFn(optionsWithOverrides);
         }
         this.pathToCurrentIndex[path] = currentIndex + 1;
         return this.cachedDoStream(path, currentIndex).then(cachedStreamResult => {
@@ -249,6 +278,11 @@ export abstract class BaseLaminarLanguageModel {
       parsedOutput = JSON.parse(data.span.output);
     } catch {
       // Ignore - keep as string
+    }
+
+    const currentSpan = Laminar.getCurrentSpan();
+    if (currentSpan) {
+      currentSpan.setAttribute('lmnr.span.type', 'CACHED');
     }
 
     const content = this.convertToContentBlocks(parsedOutput);

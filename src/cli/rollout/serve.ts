@@ -131,7 +131,20 @@ async function handleRunEvent(
 ): Promise<void> {
   logger.info('Received run event');
 
-  const { trace_id, path_to_count, args, overrides } = event.data;
+  const { trace_id, path_to_count, args: rawArgs, overrides } = event.data;
+
+  const parsedArgs = Object.fromEntries(
+    Object.entries(rawArgs).map(([key, value]) => {
+      if (typeof value === 'string') {
+        try {
+          return [key, JSON.parse(value)];
+        } catch {
+          return [key, value];
+        }
+      }
+      return [key, value];
+    }),
+  ) as Record<string, any>;
 
   try {
     // Check if we should populate cache from a previous trace
@@ -279,7 +292,7 @@ async function handleRunEvent(
     // Convert args object to array of arguments based on parameter names
     logger.debug('Executing rollout function...');
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    const orderedArgs = selectedFunction.params.map(param => args[param.name]);
+    const orderedArgs = selectedFunction.params.map(param => parsedArgs[param.name]);
     logger.info(`Calling function with args: ${JSON.stringify(orderedArgs)}`);
     const result = await selectedFunction.fn(...orderedArgs);
     logger.info('Rollout function completed successfully');
@@ -383,7 +396,7 @@ export async function runServe(
     });
 
     sseClient.on('error', (error: Error) => {
-      logger.error(`Error connecting to backend: ${error.message}`);
+      logger.warn(`Error connecting to backend: ${error.message}`);
     });
 
     sseClient.on('reconnecting', () => {

@@ -52,8 +52,6 @@ interface ObserveOptions {
 const extractParamNames = (fn: (...args: any[]) => any): RolloutParam[] => {
   const fnStr = fn.toString();
 
-  console.log('fnStr', fnStr);
-
   // Match function parameters - handles regular functions, arrow functions, async functions
   const paramMatch = fnStr.match(
     /(?:async\s*)?(?:function\s*)?\(([^)]*)\)|(?:async\s+)?([^=\s]+)\s*=>/,
@@ -406,6 +404,7 @@ const buildAssociationProperties = (
     ?? ctxAssociationProperties.rolloutSessionId;
   if (rolloutSessionIdValue) {
     associationProperties[ROLLOUT_SESSION_ID] = rolloutSessionIdValue;
+    associationProperties["lmnr.rollout.session_id"] = rolloutSessionIdValue;
   }
   const traceTypeValue = options.traceType ?? parentTraceType
     ?? (["EVALUATION", "EXECUTOR", "EVALUATOR"].includes(options.spanType ?? "DEFAULT")
