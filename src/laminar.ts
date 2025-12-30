@@ -69,6 +69,7 @@ interface LaminarInitializeProps {
   forceHttp?: boolean;
   sessionRecordingOptions?: SessionRecordingOptions;
   metadata?: Record<string, any>;
+  inheritGlobalContext?: boolean;
 }
 
 type LaminarAttributesProp = Record<
@@ -121,6 +122,9 @@ export class Laminar {
    * @param {Record<string, any>} props.metadata - Global metadata to associate with all spans.
    * This metadata will be associated with all spans, and merged with any metadata passed to
    * each span. Must be JSON serializable.
+   * @param {boolean} props.inheritGlobalContext - Whether to inherit the global OpenTelemetry
+   * context. Defaults to false. This is useful if your library is instrumented with OpenTelemetry
+   * and you want Laminar spans to be children of the existing spans.
    *
    * @example
    * import { Laminar } from '@lmnr-ai/lmnr';
@@ -154,6 +158,7 @@ export class Laminar {
     forceHttp,
     sessionRecordingOptions,
     metadata,
+    inheritGlobalContext,
   }: LaminarInitializeProps = {}) {
     if (this.isInitialized) {
       logger.warn("Laminar has already been initialized. Skipping initialization.");
@@ -190,6 +195,9 @@ export class Laminar {
 
     this.globalMetadata = metadata ?? {};
     LaminarContextManager.setGlobalMetadata(this.globalMetadata);
+    if (inheritGlobalContext) {
+      LaminarContextManager.inheritGlobalContext = true;
+    }
     this.isInitialized = true;
 
     const urlWithoutSlash = url?.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');

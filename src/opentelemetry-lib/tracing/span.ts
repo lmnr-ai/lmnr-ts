@@ -344,11 +344,11 @@ export class LaminarSpan implements Span, ReadableSpan {
   }
 
   public get instrumentationScope(): InstrumentationScope {
-    return this._span.instrumentationLibrary;
+    return this._span.instrumentationLibrary as unknown as InstrumentationScope;
   }
 
   public get parentSpanContext(): SpanContext | undefined {
-    const parentSpanId = this._span.parentSpanId;
+    const parentSpanId = getParentSpanId(this._span);
     if (!parentSpanId) {
       return undefined;
     }

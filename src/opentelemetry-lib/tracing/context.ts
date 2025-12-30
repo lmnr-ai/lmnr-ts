@@ -1,4 +1,6 @@
-import { Context, createContextKey, ROOT_CONTEXT, trace } from "@opentelemetry/api";
+import {
+  Context, context as contextApi,
+  createContextKey, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 import { AsyncLocalStorage } from "async_hooks";
 
 import { TraceType, TracingLevel } from "../../types";
@@ -14,6 +16,8 @@ export const CONTEXT_GLOBAL_METADATA_KEY = createContextKey(
 
 export class LaminarContextManager {
   private static _asyncLocalStorage = new AsyncLocalStorage<Context[]>();
+  private static _globalMetadata: Record<string, any> = {};
+  private static _inheritGlobalContext: boolean = false;
   // Static registry for cross-async span management
   // We're keeping track of spans have started (and running) here for the cases when span
   // is started in one async context and ended in another
@@ -22,14 +26,13 @@ export class LaminarContextManager {
   // LaminarSpan adds and removes itself to and from this registry in start()
   // and end() methods respectively.
   private static _activeSpans: Set<string> = new Set();
-  private static _globalMetadata: Record<string, any> = {};
 
   private constructor() {
     throw new Error("LaminarContextManager is a static class and cannot be instantiated");
   }
 
   public static getContext(): Context {
-    const contexts = this._asyncLocalStorage.getStore() || [];
+    const contexts = this.getContextStack();
 
     // Walk through contexts from most recent to oldest
     // We're doing it this way because we want to return the most recent context
@@ -79,13 +82,13 @@ export class LaminarContextManager {
   }
 
   public static pushContext(context: Context) {
-    const contexts = this._asyncLocalStorage.getStore() || [];
+    const contexts = this.getContextStack();
     const newContexts = [...contexts, context];
     this._asyncLocalStorage.enterWith(newContexts);
   }
 
   public static popContext() {
-    const contexts = this._asyncLocalStorage.getStore() || [];
+    const contexts = this.getContextStack();
     if (contexts.length > 0) {
       // Remove the last context and filter out any contexts with inactive spans
       const newContexts = contexts.slice(0, -1).filter(context => {
@@ -118,7 +121,8 @@ export class LaminarContextManager {
   }
 
   public static getContextStack(): Context[] {
-    return this._asyncLocalStorage.getStore() || [];
+    return this._asyncLocalStorage.getStore()
+      || (this._inheritGlobalContext ? [contextApi.active()] : []);
   }
 
   /**
@@ -147,7 +151,7 @@ export class LaminarContextManager {
     properties: Record<string, any>,
     context: Context,
   ): Context {
-    let entityContext = context ?? this.getContext();
+    let entityContext = context;
     const userId = properties.userId;
     const sessionId = properties.sessionId;
     const traceType = properties.traceType;
@@ -180,5 +184,9 @@ export class LaminarContextManager {
   } {
     const entityContext = this.getContext();
     return entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
+  }
+
+  public static set inheritGlobalContext(inheritGlobalContext: boolean) {
+    this._inheritGlobalContext = inheritGlobalContext;
   }
 }
