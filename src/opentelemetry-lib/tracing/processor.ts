@@ -105,7 +105,6 @@ export class LaminarSpanProcessor implements SpanProcessor {
    * Not recommended with Laminar backends.
    */
   constructor(options: LaminarSpanProcessorOptions = {}) {
-    const exporter = options.exporter ?? new LaminarSpanExporter(options);
     if (options.spanProcessor && options.spanProcessor instanceof LaminarSpanProcessor) {
       this.instance = options.spanProcessor.instance;
       // Set by reference, so that updates from the inside are reflected here.
@@ -114,6 +113,7 @@ export class LaminarSpanProcessor implements SpanProcessor {
     } else if (options.spanProcessor) {
       this.instance = options.spanProcessor as BatchSpanProcessor | SimpleSpanProcessor;
     } else {
+      const exporter = options.exporter ?? new LaminarSpanExporter(options);
       this.instance = options.disableBatch
         ? new SimpleSpanProcessor(exporter)
         : new BatchSpanProcessor(exporter, {
