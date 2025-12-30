@@ -45,6 +45,7 @@ export const startTracing = (options: InitializeOptions) => {
 
   const port = options.forceHttp ? options.httpPort : options.port;
   spanProcessor = new LaminarSpanProcessor({
+    spanProcessor: options.spanProcessor,
     baseUrl: options.baseUrl,
     port,
     apiKey: options.apiKey,

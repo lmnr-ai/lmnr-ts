@@ -4,7 +4,7 @@ import type * as azure from "@azure/openai";
 import type * as vertexAI from "@google-cloud/vertexai";
 import type * as RunnableModule from "@langchain/core/runnables";
 import type * as VectorStoreModule from "@langchain/core/vectorstores";
-import { SpanExporter } from "@opentelemetry/sdk-trace-base";
+import { SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import type * as pinecone from "@pinecone-database/pinecone";
 import type * as qdrant from "@qdrant/js-client-rest";
 import type * as chromadb from "chromadb";
@@ -377,4 +377,10 @@ export interface InitializeOptions {
    * Defaults to undefined (uses default masking behavior).
    */
   sessionRecordingOptions?: SessionRecordingOptions;
+
+  /**
+   * The span processor to use. Warning: many other options will be ignored if this is provided.
+   * Optional. Defaults to a new LaminarSpanProcessor.
+   */
+  spanProcessor?: SpanProcessor;
 }
