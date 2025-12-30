@@ -76,6 +76,12 @@ interface LaminarSpanProcessorOptions {
    * Defaults to a new LaminarSpanExporter.
    */
   exporter?: SpanExporter;
+
+  /**
+   * The span processor to use. If passed, some of the other options will be ignored.
+   * If passed, wraps the underlying span processor.
+   */
+  spanProcessor?: SpanProcessor;
 }
 
 export class LaminarSpanProcessor implements SpanProcessor {
@@ -99,13 +105,22 @@ export class LaminarSpanProcessor implements SpanProcessor {
    * Not recommended with Laminar backends.
    */
   constructor(options: LaminarSpanProcessorOptions = {}) {
-    const exporter = options.exporter ?? new LaminarSpanExporter(options);
-    this.instance = options.disableBatch
-      ? new SimpleSpanProcessor(exporter)
-      : new BatchSpanProcessor(exporter, {
-        maxExportBatchSize: options.maxExportBatchSize ?? 512,
-        exportTimeoutMillis: options.traceExportTimeoutMillis ?? 30000,
-      });
+    if (options.spanProcessor && options.spanProcessor instanceof LaminarSpanProcessor) {
+      this.instance = options.spanProcessor.instance;
+      // Set by reference, so that updates from the inside are reflected here.
+      this._spanIdToPath = options.spanProcessor._spanIdToPath;
+      this._spanIdLists = options.spanProcessor._spanIdLists;
+    } else if (options.spanProcessor) {
+      this.instance = options.spanProcessor as BatchSpanProcessor | SimpleSpanProcessor;
+    } else {
+      const exporter = options.exporter ?? new LaminarSpanExporter(options);
+      this.instance = options.disableBatch
+        ? new SimpleSpanProcessor(exporter)
+        : new BatchSpanProcessor(exporter, {
+          maxExportBatchSize: options.maxExportBatchSize ?? 512,
+          exportTimeoutMillis: options.traceExportTimeoutMillis ?? 30000,
+        });
+    }
   }
 
   forceFlush(): Promise<void> {

@@ -7,6 +7,7 @@ import {
   TimeInput,
   trace,
 } from '@opentelemetry/api';
+import { SpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { config } from 'dotenv';
 
 import { InitializeOptions, initializeTracing, LaminarSpanProcessor } from './opentelemetry-lib';
@@ -70,6 +71,7 @@ interface LaminarInitializeProps {
   sessionRecordingOptions?: SessionRecordingOptions;
   metadata?: Record<string, any>;
   inheritGlobalContext?: boolean;
+  spanProcessor?: SpanProcessor;
 }
 
 type LaminarAttributesProp = Record<
@@ -125,6 +127,8 @@ export class Laminar {
    * @param {boolean} props.inheritGlobalContext - Whether to inherit the global OpenTelemetry
    * context. Defaults to false. This is useful if your library is instrumented with OpenTelemetry
    * and you want Laminar spans to be children of the existing spans.
+   * @param {SpanProcessor} props.spanProcessor - The span processor to use. If passed, some of
+   * the other options will be ignored.
    *
    * @example
    * import { Laminar } from '@lmnr-ai/lmnr';
@@ -159,6 +163,7 @@ export class Laminar {
     sessionRecordingOptions,
     metadata,
     inheritGlobalContext,
+    spanProcessor,
   }: LaminarInitializeProps = {}) {
     if (this.isInitialized) {
       logger.warn("Laminar has already been initialized. Skipping initialization.");
@@ -198,6 +203,11 @@ export class Laminar {
     if (inheritGlobalContext) {
       LaminarContextManager.inheritGlobalContext = true;
     }
+    if (spanProcessor && !(spanProcessor instanceof LaminarSpanProcessor)) {
+      logger.warn(
+        "Span processor is not a LaminarSpanProcessor. Some functionality may be impaired.",
+      );
+    }
     this.isInitialized = true;
 
     const urlWithoutSlash = url?.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
@@ -217,6 +227,7 @@ export class Laminar {
       maxExportBatchSize,
       traceExportTimeoutMillis,
       sessionRecordingOptions,
+      spanProcessor,
     });
 
     this._initializeContextFromEnv();
