@@ -44,4 +44,24 @@ export class RolloutSessionsResource extends BaseResource {
 
     return await response.json() as SessionResponse;
   }
+
+  public async setStatus({
+    sessionId,
+    status,
+  }: {
+    sessionId: string;
+    status: 'PENDING' | 'RUNNING' | 'FINISHED' | 'STOPPED';
+  }) {
+    const response = await fetch(`${this.baseHttpUrl}/v1/rollouts/${sessionId}/status`, {
+      method: "PATCH",
+      headers: {
+        ...this.headers(),
+      },
+      body: JSON.stringify({ status }),
+    });
+
+    if (!response.ok) {
+      await this.handleError(response);
+    }
+  }
 }

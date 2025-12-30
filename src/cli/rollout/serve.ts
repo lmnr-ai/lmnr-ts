@@ -147,6 +147,9 @@ async function handleRunEvent(
   ) as Record<string, any>;
 
   try {
+    // Reset abort flag at the start of each run
+    globalThis._rolloutAborted = false;
+
     // Check if we should populate cache from a previous trace
     if (!trace_id || trace_id.trim() === '') {
       logger.info('No trace_id provided, running without cached LLM calls');
@@ -280,12 +283,19 @@ async function handleRunEvent(
     const urlWithoutSlash = baseUrl.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
     const baseHttpUrl = `${urlWithoutSlash}:${httpPort}`;
 
-    logger.debug('Initializing Laminar...');
-    Laminar.initialize({
-      projectApiKey: options.projectApiKey,
-      baseUrl: baseUrl,
-      baseHttpUrl,
-      httpPort,
+    if (!Laminar.initialized()) {
+      logger.debug('Initializing Laminar...');
+      Laminar.initialize({
+        projectApiKey: options.projectApiKey,
+        baseUrl: baseUrl,
+        baseHttpUrl,
+        httpPort,
+      });
+    }
+
+    await client.rolloutSessions.setStatus({
+      sessionId,
+      status: 'RUNNING',
     });
 
     // Execute the rollout function with args
@@ -405,6 +415,16 @@ export async function runServe(
 
     sseClient.on('heartbeat_timeout', () => {
       logger.debug('Heartbeat timeout, reconnecting...');
+    });
+
+    sseClient.on('stop', () => {
+      logger.info('Stop event received from backend');
+      logger.debug(
+        'Setting abort flag - all subsequent AI SDK calls will return placeholder response',
+      );
+
+      // Set global abort flag that will be checked by the AI SDK wrapper
+      globalThis._rolloutAborted = true;
     });
 
     // Now connect after listeners are registered

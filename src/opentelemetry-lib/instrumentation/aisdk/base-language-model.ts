@@ -129,6 +129,19 @@ export abstract class BaseLaminarLanguageModel {
     options: LanguageModelV2CallOptions | LanguageModelV3CallOptions,
     doGenerateFn: (opts: any) => PromiseLike<any>,
   ): PromiseLike<any> {
+    // Check if rollout has been aborted
+    if (globalThis._rolloutAborted) {
+      return Promise.resolve({
+        content: [{
+          type: 'text' as const,
+          text: '[Laminar] Session aborted',
+        }],
+        finishReason: 'other' as LanguageModelV2FinishReason | LanguageModelV3FinishReason,
+        usage: this.createUsageObject(),
+        warnings: [],
+      });
+    }
+
     if (process.env.LMNR_ROLLOUT_SESSION_ID) {
       const span = Laminar.getCurrentSpan();
       span?.setAttribute('lmnr.rollout.session_id', process.env.LMNR_ROLLOUT_SESSION_ID);
@@ -209,6 +222,24 @@ export abstract class BaseLaminarLanguageModel {
     options: LanguageModelV2CallOptions | LanguageModelV3CallOptions,
     doStreamFn: (opts: any) => PromiseLike<any>,
   ): PromiseLike<any> {
+    // Check if rollout has been aborted
+    if (globalThis._rolloutAborted) {
+      const content = [{
+        type: 'text' as const,
+        text: '[Laminar] Session aborted',
+      }];
+      const finishReason = 'other' as LanguageModelV2FinishReason | LanguageModelV3FinishReason;
+      const usage = this.createUsageObject();
+
+      const stream = this.createStreamFromCachedResponse(
+        content,
+        finishReason,
+        usage,
+      );
+
+      return Promise.resolve({ stream });
+    }
+
     if (process.env.LMNR_ROLLOUT_SESSION_ID) {
       const span = Laminar.getCurrentSpan();
       span?.setAttribute('lmnr.rollout.session_id', process.env.LMNR_ROLLOUT_SESSION_ID);
