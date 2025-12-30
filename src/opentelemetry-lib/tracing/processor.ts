@@ -7,10 +7,6 @@ import {
   SpanExporter,
   SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
-import {
-  type ReadableSpan as OTelV2ReadableSpan,
-  type Span as OTelV2Span,
-} from "@opentelemetry/sdk-trace-base-v2";
 
 import { version as SDK_VERSION } from "../../../package.json";
 import { otelSpanIdToUUID, StringUUID } from "../../utils";
@@ -120,7 +116,7 @@ export class LaminarSpanProcessor implements SpanProcessor {
     return this.instance.shutdown();
   }
 
-  onStart(span: Span | OTelV2Span, parentContext: Context): void {
+  onStart(span: Span, parentContext: Context): void {
     // Check for parent path attributes first (from serialized span context)
     const parentPathFromAttribute = span.attributes?.[PARENT_SPAN_PATH] as string[] | undefined;
     const parentIdsPathFromAttribute =
@@ -175,10 +171,10 @@ export class LaminarSpanProcessor implements SpanProcessor {
     }
 
     makeSpanOtelV2Compatible(span);
-    this.instance.onStart((span as Span), parentContext);
+    this.instance.onStart((span), parentContext);
   }
 
-  onEnd(span: ReadableSpan | OTelV2ReadableSpan): void {
+  onEnd(span: ReadableSpan): void {
     // By default, we call the original onEnd.
     makeSpanOtelV2Compatible(span);
     this.instance.onEnd(span as Span);
