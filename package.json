@@ -106,7 +106,7 @@
     "@types/uuid": "^10.0.0",
     "ai": "^5.0.26",
     "chromadb": "^3.0.10",
-    "cohere-ai": "^7.18.0",
+    "cohere-ai": "^7.20.0",
     "eslint": "^9.39.1",
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "eslint-plugin-unused-imports": "^4.1.4",
