@@ -1,11 +1,10 @@
 import { AttributeValue, context, type Span, trace } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
 
-import { LaminarSpanContext } from "../../types";
+import { LaminarSpanContext, TraceType, TracingLevel } from "../../types";
 import {
   deserializeLaminarSpanContext,
   initializeLogger,
-  isOtelAttributeValueType,
   tryToOtelSpanContext,
 } from "../../utils";
 import { getTracer, shouldSendTraces } from ".";
@@ -14,6 +13,7 @@ import {
   SPAN_OUTPUT,
 } from "./attributes";
 import {
+  ASSOCIATION_PROPERTIES_KEY,
   LaminarContextManager,
 } from "./context";
 
@@ -21,7 +21,15 @@ const logger = initializeLogger();
 
 export type DecoratorConfig = {
   name: string;
-  associationProperties?: Record<string, AttributeValue>;
+  contextProperties?: {
+    userId?: string;
+    sessionId?: string;
+    rolloutSessionId?: string;
+    traceType?: TraceType;
+    tracingLevel?: TracingLevel;
+    metadata?: Record<string, any>;
+  };
+  spanAttributes?: Record<string, AttributeValue>;
   input?: unknown;
   ignoreInput?: boolean;
   ignoreOutput?: boolean;
@@ -60,7 +68,8 @@ export function observeBase<
 >(
   {
     name,
-    associationProperties,
+    contextProperties,
+    spanAttributes,
     input,
     ignoreInput,
     ignoreOutput,
@@ -93,11 +102,20 @@ export function observeBase<
     }
   }
 
+  // Set context properties for propagation to child spans
+  if (contextProperties && Object.keys(contextProperties).length > 0) {
+    const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
+    entityContext = entityContext.setValue(
+      ASSOCIATION_PROPERTIES_KEY,
+      { ...currentAssociationProperties, ...contextProperties },
+    );
+  }
+
   return context.with(entityContext, () =>
     getTracer().startActiveSpan(
       name,
       {
-        attributes: associationProperties,
+        attributes: spanAttributes,
       },
       entityContext,
       (span: Span) => {
@@ -132,15 +150,6 @@ export function observeBase<
               `${error instanceof Error ? error.message : String(error)}`);
           }
         }
-
-        // ================================
-        Object.entries(associationProperties || {}).forEach(([key, value]) => {
-          if (isOtelAttributeValueType(value)) {
-            span.setAttribute(key, value);
-          } else {
-            span.setAttribute(key, JSON.stringify(value));
-          }
-        });
 
         let res: ReturnType<F>;
         try {

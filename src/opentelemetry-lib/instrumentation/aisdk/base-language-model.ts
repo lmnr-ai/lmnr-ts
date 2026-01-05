@@ -313,7 +313,12 @@ export abstract class BaseLaminarLanguageModel {
 
     const currentSpan = Laminar.getCurrentSpan();
     if (currentSpan) {
-      currentSpan.setAttribute('lmnr.span.type', 'CACHED');
+      currentSpan.setAttributes({
+        'lmnr.span.type': 'CACHED',
+        'lmnr.span.original_type': 'LLM',
+        'lmnr.rollout.session_id': process.env.LMNR_ROLLOUT_SESSION_ID,
+        'lmnr.rollout.path.count': index + 1,
+      });
     }
 
     const content = this.convertToContentBlocks(parsedOutput);

@@ -163,7 +163,7 @@ async function handleRunEvent(
       // Query spans from the backend to populate cache
       const paths = Object.keys(path_to_count || {});
       if (paths.length === 0) {
-        logger.warn('No paths in path_to_count, skipping cache population');
+        logger.info('No spans to cache, starting fresh');
         cache.clear();
         setMetadata({
           pathToCount: {},
@@ -238,7 +238,6 @@ async function handleRunEvent(
               attributes: parsedAttributes,
             };
 
-            // Cache key is ${index}:${path}
             const cacheKey = `${index}:${path}`;
             cache.set(cacheKey, cachedSpan);
           });
@@ -293,10 +292,16 @@ async function handleRunEvent(
       });
     }
 
-    await client.rolloutSessions.setStatus({
-      sessionId,
-      status: 'RUNNING',
-    });
+    try {
+      await client.rolloutSessions.setStatus({
+        sessionId,
+        status: 'RUNNING',
+      });
+    } catch (error: any) {
+      logger.error(
+        `Error setting rollout session status: ${error instanceof Error ? error.message : error}`,
+      );
+    }
 
     // Execute the rollout function with args
     // Convert args object to array of arguments based on parameter names
@@ -305,6 +310,16 @@ async function handleRunEvent(
     const orderedArgs = selectedFunction.params.map(param => parsedArgs[param.name]);
     logger.info(`Calling function with args: ${JSON.stringify(orderedArgs)}`);
     const result = await selectedFunction.fn(...orderedArgs);
+    try {
+      await client.rolloutSessions.setStatus({
+        sessionId,
+        status: 'FINISHED',
+      });
+    } catch (error: any) {
+      logger.error(
+        `Error setting rollout session status: ${error instanceof Error ? error.message : error}`,
+      );
+    }
     logger.info('Rollout function completed successfully');
     logger.debug(`Result: ${JSON.stringify(result, null, 2)}`);
   } catch (error: any) {

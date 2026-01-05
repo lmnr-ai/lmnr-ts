@@ -8,18 +8,22 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 
 import { version as SDK_VERSION } from "../../../package.json";
-import { otelSpanIdToUUID, StringUUID } from "../../utils";
+import { metadataToAttributes, otelSpanIdToUUID, StringUUID } from "../../utils";
 import { getLangVersion } from "../../version";
 import {
   ASSOCIATION_PROPERTIES,
   ASSOCIATION_PROPERTIES_OVERRIDES,
   PARENT_SPAN_IDS_PATH,
   PARENT_SPAN_PATH,
+  ROLLOUT_SESSION_ID,
+  SESSION_ID,
   SPAN_IDS_PATH,
   SPAN_INSTRUMENTATION_SOURCE,
   SPAN_LANGUAGE_VERSION,
   SPAN_PATH,
   SPAN_SDK_VERSION,
+  TRACE_TYPE,
+  USER_ID,
 } from "./attributes";
 import {
   getParentSpanId,
@@ -181,7 +185,20 @@ export class LaminarSpanProcessor implements SpanProcessor {
         } else if (key === "tracing_level") {
           span.setAttribute("lmnr.internal.tracing_level", value);
         } else if (key === "rolloutSessionId") {
+          span.setAttribute(ROLLOUT_SESSION_ID, value);
           span.setAttribute("lmnr.rollout.session_id", value);
+        } else if (key === "metadata" && typeof value === "object" && value !== null) {
+          // Flatten metadata into individual attributes
+          const metadataAttrs = metadataToAttributes(value as Record<string, unknown>);
+          span.setAttributes(metadataAttrs);
+        } else if (key === "userId") {
+          span.setAttribute(USER_ID, value);
+        } else if (key === "sessionId") {
+          span.setAttribute(SESSION_ID, value);
+        } else if (key === "traceType") {
+          span.setAttribute(TRACE_TYPE, value);
+        } else if (key === "tracingLevel") {
+          span.setAttribute("lmnr.internal.tracing_level", value);
         } else {
           span.setAttribute(`${ASSOCIATION_PROPERTIES}.${key}`, value);
         }

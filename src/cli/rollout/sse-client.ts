@@ -154,6 +154,8 @@ export class SSEClient extends EventEmitter {
           data: parsedData,
         };
         this.emit('handshake', handshakeEvent);
+      } else if (event.event === 'stop') {
+        this.emit('stop');
       }
     } catch (error: any) {
       this.emit('error', new Error(`Failed to parse SSE event data: ${error}`));

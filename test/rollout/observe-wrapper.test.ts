@@ -26,7 +26,7 @@ void describe('observe with rolloutEntrypoint', () => {
     globalThis._set_rollout_global = false;
   });
 
-  void it('calls returned function successfully', async () => {
+  void it('calls returned function successfully', () => {
     globalThis._set_rollout_global = false;
 
     const testFn = (arg1: string) => `result: ${arg1}`;

@@ -5,18 +5,14 @@ import {
   ASSOCIATION_PROPERTIES,
   PARENT_SPAN_IDS_PATH,
   PARENT_SPAN_PATH,
-  ROLLOUT_SESSION_ID,
-  SESSION_ID,
   SPAN_TYPE,
-  TRACE_TYPE,
-  USER_ID,
 } from "./opentelemetry-lib/tracing/attributes";
 import {
   ASSOCIATION_PROPERTIES_KEY,
   LaminarContextManager,
 } from "./opentelemetry-lib/tracing/context";
 import { LaminarSpanContext, RolloutParam, TraceType, TracingLevel } from './types';
-import { deserializeLaminarSpanContext, initializeLogger, metadataToAttributes } from "./utils";
+import { deserializeLaminarSpanContext, initializeLogger } from "./utils";
 
 const logger = initializeLogger();
 
@@ -193,8 +189,7 @@ export function observe<A extends unknown[], F extends (...args: A) => ReturnTyp
 
     // Create wrapped function
     const wrappedFn = ((...fnArgs: Parameters<F>): ReturnType<F> => {
-
-      const associationProperties = buildAssociationProperties({
+      const observeOptions = {
         sessionId,
         traceType,
         spanType,
@@ -202,13 +197,17 @@ export function observe<A extends unknown[], F extends (...args: A) => ReturnTyp
         rolloutSessionId: envRolloutSessionId,
         tags,
         metadata,
-      });
+      };
+
+      const contextProperties = buildContextProperties(observeOptions);
+      const spanAttributes = buildSpanAttributes(observeOptions);
 
       const argsToPass = (args && args.length > 0) ? args : fnArgs;
 
       return observeBase<A, F>({
         name: spanName,
-        associationProperties,
+        contextProperties,
+        spanAttributes,
         input: input ?? argsToPass,
         ignoreInput,
         ignoreOutput,
@@ -236,7 +235,7 @@ export function observe<A extends unknown[], F extends (...args: A) => ReturnTyp
   }
 
   // Regular execution mode (backward compatible)
-  const associationProperties = buildAssociationProperties({
+  const observeOptions = {
     sessionId,
     traceType,
     spanType,
@@ -244,13 +243,15 @@ export function observe<A extends unknown[], F extends (...args: A) => ReturnTyp
     tags,
     metadata,
     parentSpanContext,
-  });
+  };
 
-
+  const contextProperties = buildContextProperties(observeOptions);
+  const spanAttributes = buildSpanAttributes(observeOptions);
 
   return observeBase<A, F>({
     name: spanName,
-    associationProperties,
+    contextProperties,
+    spanAttributes,
     input,
     ignoreInput,
     ignoreOutput,
@@ -364,21 +365,31 @@ export function withTracingLevel<A extends unknown[], F extends (...args: A) => 
   return result;
 }
 
-const buildAssociationProperties = (
+/**
+ * Builds context-level association properties that propagate to child spans.
+ * These properties flow through the OpenTelemetry context and are inherited by
+ * any child spans created with startActiveSpan.
+ */
+const buildContextProperties = (
   options: Partial<ObserveOptions>,
-): Record<string, AttributeValue> => {
-  const associationProperties: Record<string, AttributeValue> = {};
+): {
+  userId?: string;
+  sessionId?: string;
+  rolloutSessionId?: string;
+  traceType?: TraceType;
+  tracingLevel?: TracingLevel;
+  metadata?: Record<string, any>;
+} => {
   const parentSpanContext = options.parentSpanContext;
   const globalMetadata = LaminarContextManager.getGlobalMetadata();
-  let parentPath: string[] | undefined;
-  let parentIdsPath: string[] | undefined;
+  const ctxAssociationProperties = LaminarContextManager.getAssociationProperties();
+
   let parentMetadata: Record<string, any> | undefined;
   let parentTraceType: TraceType | undefined;
   let parentTracingLevel: TracingLevel | undefined;
   let parentUserId: string | undefined;
   let parentSessionId: string | undefined;
   let parentRolloutSessionId: string | undefined;
-  const ctxAssociationProperties = LaminarContextManager.getAssociationProperties();
 
   if (parentSpanContext) {
     try {
@@ -386,8 +397,6 @@ const buildAssociationProperties = (
         ? deserializeLaminarSpanContext(parentSpanContext)
         : parentSpanContext;
 
-      parentPath = laminarContext.spanPath;
-      parentIdsPath = laminarContext.spanIdsPath;
       parentMetadata = laminarContext.metadata;
       parentTraceType = laminarContext.traceType;
       parentTracingLevel = laminarContext.tracingLevel;
@@ -401,20 +410,31 @@ const buildAssociationProperties = (
     }
   }
 
+  const contextProperties: {
+    userId?: string;
+    sessionId?: string;
+    rolloutSessionId?: string;
+    traceType?: TraceType;
+    tracingLevel?: TracingLevel;
+    metadata?: Record<string, any>;
+  } = {};
+
   const sessionIdValue = options.sessionId ?? parentSessionId ?? ctxAssociationProperties.sessionId;
   if (sessionIdValue) {
-    associationProperties[SESSION_ID] = sessionIdValue;
+    contextProperties.sessionId = sessionIdValue;
   }
+
   const userIdValue = options.userId ?? parentUserId ?? ctxAssociationProperties.userId;
   if (userIdValue) {
-    associationProperties[USER_ID] = userIdValue;
+    contextProperties.userId = userIdValue;
   }
+
   const rolloutSessionIdValue = options.rolloutSessionId ?? parentRolloutSessionId
     ?? ctxAssociationProperties.rolloutSessionId;
   if (rolloutSessionIdValue) {
-    associationProperties[ROLLOUT_SESSION_ID] = rolloutSessionIdValue;
-    associationProperties["lmnr.rollout.session_id"] = rolloutSessionIdValue;
+    contextProperties.rolloutSessionId = rolloutSessionIdValue;
   }
+
   const traceTypeValue = options.traceType ?? parentTraceType
     ?? (["EVALUATION", "EXECUTOR", "EVALUATOR"].includes(options.spanType ?? "DEFAULT")
       ? "EVALUATION"
@@ -423,19 +443,12 @@ const buildAssociationProperties = (
     ?? ctxAssociationProperties.traceType
     ?? "DEFAULT";
   if (traceTypeValue) {
-    associationProperties[TRACE_TYPE] = traceTypeValue;
+    contextProperties.traceType = traceTypeValue;
   }
 
   const tracingLevelValue = parentTracingLevel ?? ctxAssociationProperties.tracingLevel;
   if (tracingLevelValue) {
-    associationProperties[`${ASSOCIATION_PROPERTIES}.tracing_level`] = tracingLevelValue;
-  }
-
-  if (options.spanType) {
-    associationProperties[SPAN_TYPE] = options.spanType;
-  }
-  if (options.tags) {
-    associationProperties[`${ASSOCIATION_PROPERTIES}.tags`] = Array.from(new Set(options.tags));
+    contextProperties.tracingLevel = tracingLevelValue;
   }
 
   const mergedMetadata = {
@@ -443,15 +456,53 @@ const buildAssociationProperties = (
     ...ctxAssociationProperties.metadata,
     ...parentMetadata,
     ...options.metadata,
+    ...{ 'rollout.session_id': rolloutSessionIdValue },
   };
 
-  const metadataProperties = metadataToAttributes(mergedMetadata);
-  return {
-    ...associationProperties,
-    ...metadataProperties,
-    ...(parentPath ? { [PARENT_SPAN_PATH]: parentPath } : {}),
-    ...(parentIdsPath ? { [PARENT_SPAN_IDS_PATH]: parentIdsPath } : {}),
-  };
+  if (Object.keys(mergedMetadata).length > 0) {
+    contextProperties.metadata = mergedMetadata;
+  }
+
+  return contextProperties;
+};
+
+/**
+ * Builds span-specific attributes that do NOT propagate to child spans.
+ * These include spanType, tags, and parent span path information.
+ */
+const buildSpanAttributes = (
+  options: Partial<ObserveOptions>,
+): Record<string, AttributeValue> => {
+  const spanAttributes: Record<string, AttributeValue> = {};
+
+  if (options.spanType) {
+    spanAttributes[SPAN_TYPE] = options.spanType;
+  }
+
+  if (options.tags) {
+    spanAttributes[`${ASSOCIATION_PROPERTIES}.tags`] = Array.from(new Set(options.tags));
+  }
+
+  if (options.parentSpanContext) {
+    try {
+      const laminarContext = typeof options.parentSpanContext === 'string'
+        ? deserializeLaminarSpanContext(options.parentSpanContext)
+        : options.parentSpanContext;
+
+      if (laminarContext.spanPath) {
+        spanAttributes[PARENT_SPAN_PATH] = laminarContext.spanPath;
+      }
+      if (laminarContext.spanIdsPath) {
+        spanAttributes[PARENT_SPAN_IDS_PATH] = laminarContext.spanIdsPath;
+      }
+    } catch (e) {
+      logger.warn("Failed to parse parent span context for span attributes: " +
+        (e instanceof Error ? e.message : String(e)),
+      );
+    }
+  }
+
+  return spanAttributes;
 };
 
 /**
@@ -522,11 +573,14 @@ export function observeDecorator<This, Args extends unknown[], Return>(
       }
 
       const observeName = actualConfig.name ?? methodName;
+      const contextProperties = buildContextProperties(actualConfig);
+      const spanAttributes = buildSpanAttributes(actualConfig);
 
       return observeBase(
         {
           name: observeName,
-          associationProperties: buildAssociationProperties(actualConfig),
+          contextProperties,
+          spanAttributes,
           input: actualConfig.input,
           ignoreInput: actualConfig.ignoreInput,
           ignoreOutput: actualConfig.ignoreOutput,
@@ -614,12 +668,15 @@ export function observeExperimentalDecorator(
       }
 
       const observeName = actualConfig.name ?? originalMethod.name;
+      const contextProperties = buildContextProperties(actualConfig);
+      const spanAttributes = buildSpanAttributes(actualConfig);
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return observeBase(
         {
           name: observeName,
-          associationProperties: buildAssociationProperties(actualConfig),
+          contextProperties,
+          spanAttributes,
           input: actualConfig.input,
           ignoreInput: actualConfig.ignoreInput,
           ignoreOutput: actualConfig.ignoreOutput,
