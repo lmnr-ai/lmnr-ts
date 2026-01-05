@@ -754,7 +754,7 @@ export class Laminar {
    *
    * See {@link startSpan} docs for a usage example
    */
-  public static withSpan<T>(span: Span, fn: () => T, endOnExit?: boolean): T | Promise<T> {
+  public static withSpan<T>(span: Span, fn: () => T, endOnExit?: boolean): T {
     const ctx = LaminarContextManager.getContext();
     const laminarSpan = new LaminarSpan(span);
     const ctxWithAssociationProperties = LaminarContextManager.setAssociationProperties(
@@ -768,11 +768,14 @@ export class Laminar {
         try {
           const result = fn();
           if (result instanceof Promise) {
-            return result.finally(() => {
+            return result.catch((err) => {
+              span.recordException(err as Error);
+              throw err;
+            }).finally(() => {
               if (endOnExit !== undefined && endOnExit) {
                 span.end();
               }
-            });
+            }) as T;
           }
           if (endOnExit !== undefined && endOnExit) {
             span.end();

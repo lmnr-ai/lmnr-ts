@@ -287,7 +287,7 @@ void describe("aisdk instrumentation", () => {
   });
 
   void it("keeps the AI SDK stream spans inside the same span", async () => {
-    const stream = await observe({ name: "test" }, () => {
+    const stream = observe({ name: "test" }, () => {
       const stream = streamText({
         model,
         prompt: "What is the capital of France?",
