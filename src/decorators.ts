@@ -140,24 +140,30 @@ const extractParamNames = (fn: (...args: any[]) => any): RolloutParam[] => {
  * ```
  */
 // Overload: when rolloutEntrypoint is true, return wrapped function
-export function observe<F extends (...args: any[]) => any>(
+export function observe<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
+  options: ObserveOptions & { rolloutEntrypoint: true },
+  fn: F,
+  ...args: A
+): F;
+
+export function observe<F extends (...args: any[]) => ReturnType<F>>(
   options: ObserveOptions & { rolloutEntrypoint: true },
   fn: F,
 ): F;
 
 // Overload: when rolloutEntrypoint is false/undefined, execute immediately
-export function observe<F extends (...args: any[]) => any>(
+export function observe<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
   options: ObserveOptions,
   fn: F,
-  ...args: Parameters<F>
-): Promise<ReturnType<F>>;
+  ...args: A
+): ReturnType<F>;
 
 // Implementation
-export function observe<F extends (...args: any[]) => any>(
+export function observe<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
   options: ObserveOptions,
   fn: F,
-  ...args: Parameters<F>
-): F | Promise<ReturnType<F>> {
+  ...args: A
+): F | ReturnType<F> {
   if (fn === undefined || typeof fn !== "function") {
     throw new Error("Invalid `observe` usage. Second argument `fn` must be a function.");
   }
@@ -186,7 +192,7 @@ export function observe<F extends (...args: any[]) => any>(
     const envRolloutSessionId = process.env.LMNR_ROLLOUT_SESSION_ID;
 
     // Create wrapped function
-    const wrappedFn = (async (...fnArgs: Parameters<F>): Promise<ReturnType<F>> => {
+    const wrappedFn = ((...fnArgs: Parameters<F>): ReturnType<F> => {
 
       const associationProperties = buildAssociationProperties({
         sessionId,
@@ -198,15 +204,16 @@ export function observe<F extends (...args: any[]) => any>(
         metadata,
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-      return await observeBase({
+      const argsToPass = (args && args.length > 0) ? args : fnArgs;
+
+      return observeBase<A, F>({
         name: spanName,
         associationProperties,
-        input,
+        input: input ?? argsToPass,
         ignoreInput,
         ignoreOutput,
         parentSpanContext,
-      }, fn, undefined, ...fnArgs);
+      }, fn, undefined, ...argsToPass);
     }) as F;
 
     // If in registration mode, register this function
@@ -240,7 +247,8 @@ export function observe<F extends (...args: any[]) => any>(
   });
 
 
-  return observeBase({
+
+  return observeBase<A, F>({
     name: spanName,
     associationProperties,
     input,

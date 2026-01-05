@@ -1,7 +1,6 @@
 import { Context, context } from "@opentelemetry/api";
 import {
   BatchSpanProcessor,
-  ReadableSpan,
   SimpleSpanProcessor,
   type Span,
   SpanExporter,
@@ -25,6 +24,7 @@ import {
 import {
   getParentSpanId,
   makeSpanOtelV2Compatible,
+  OTelSpanCompat,
 } from "./compat";
 import {
   ASSOCIATION_PROPERTIES_KEY,
@@ -131,7 +131,8 @@ export class LaminarSpanProcessor implements SpanProcessor {
     return this.instance.shutdown();
   }
 
-  onStart(span: Span, parentContext: Context): void {
+  onStart(spanArg: any, parentContext: Context): void {
+    const span = spanArg as OTelSpanCompat;
     // Check for parent path attributes first (from serialized span context)
     const parentPathFromAttribute = span.attributes?.[PARENT_SPAN_PATH] as string[] | undefined;
     const parentIdsPathFromAttribute =
@@ -191,7 +192,8 @@ export class LaminarSpanProcessor implements SpanProcessor {
     this.instance.onStart((span), parentContext);
   }
 
-  onEnd(span: ReadableSpan): void {
+  // type ReadableSpan
+  onEnd(span: any): void {
     // By default, we call the original onEnd.
     makeSpanOtelV2Compatible(span);
     this.instance.onEnd(span as Span);

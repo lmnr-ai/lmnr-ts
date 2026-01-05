@@ -11,8 +11,7 @@ import {
   SpanStatus,
   TimeInput,
 } from "@opentelemetry/api";
-import { InstrumentationLibrary, InstrumentationScope } from "@opentelemetry/core";
-import { IResource } from "@opentelemetry/resources";
+import { type InstrumentationScope } from "@opentelemetry/core";
 import { ReadableSpan, type Span as SdkSpan, TimedEvent } from "@opentelemetry/sdk-trace-base";
 
 import { LaminarSpanContext, TraceType, TracingLevel } from "../../types";
@@ -74,7 +73,7 @@ export class LaminarSpan implements Span, ReadableSpan {
     this.duration = (this._span as unknown as SdkSpan).duration;
     this.ended = (this._span as unknown as SdkSpan).ended;
     this.resource = (this._span as unknown as SdkSpan).resource;
-    this.instrumentationLibrary = (this._span as unknown as SdkSpan).instrumentationLibrary;
+    this.instrumentationLibrary = (this._span as any).instrumentationLibrary;
     this.droppedAttributesCount = (this._span as unknown as SdkSpan).droppedAttributesCount;
     this.droppedEventsCount = (this._span as unknown as SdkSpan).droppedEventsCount;
     this.droppedLinksCount = (this._span as unknown as SdkSpan).droppedLinksCount;
@@ -93,8 +92,8 @@ export class LaminarSpan implements Span, ReadableSpan {
   events: TimedEvent[];
   duration: HrTime;
   ended: boolean;
-  resource: IResource;
-  instrumentationLibrary: InstrumentationLibrary;
+  resource: any; // type IResource from `@opentelemetry/resources`
+  instrumentationLibrary: any; // type InstrumentationLibrary from `@opentelemetry/core`
   droppedAttributesCount: number;
   droppedEventsCount: number;
   droppedLinksCount: number;
@@ -355,7 +354,7 @@ export class LaminarSpan implements Span, ReadableSpan {
   }
 
   public get instrumentationScope(): InstrumentationScope {
-    return this._span.instrumentationLibrary as unknown as InstrumentationScope;
+    return (this._span as any).instrumentationLibrary as unknown as InstrumentationScope;
   }
 
   public get parentSpanContext(): SpanContext | undefined {

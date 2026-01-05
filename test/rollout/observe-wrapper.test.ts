@@ -33,9 +33,7 @@ void describe('observe with rolloutEntrypoint', () => {
 
     const wrapped = observe({ name: 'testAgent', rolloutEntrypoint: true }, testFn);
 
-    // TODO: Cleanup the typing after the 0.8.0 release is merged
-    // eslint-disable-next-line @typescript-eslint/await-thenable
-    const result = await wrapped('test');
+    const result = wrapped('test');
 
     assert.strictEqual(result, 'result: test');
   });
@@ -62,10 +60,10 @@ void describe('observe with rolloutEntrypoint', () => {
     globalThis._set_rollout_global = false;
   });
 
-  void it('works in backward compatible mode without rolloutEntrypoint', async () => {
+  void it('works in backward compatible mode without rolloutEntrypoint', () => {
     const testFn = (arg1: string) => `result: ${arg1}`;
 
-    const result = await observe({ name: 'testAgent' }, testFn, 'test');
+    const result = observe({ name: 'testAgent' }, testFn, 'test');
 
     assert.strictEqual(result, 'result: test');
   });
