@@ -74,12 +74,12 @@ void describe("global metadata", () => {
   void after(async () => {
     await exporter.shutdown();
   });
-  void it("propagates the global metadata to observe decorator", async () => {
+  void it("propagates the global metadata to observe decorator", () => {
     Laminar.initialize({
       projectApiKey: "test",
       metadata: { key: "value" },
     });
-    const result = await observe({ name: "test" }, () => 3);
+    const result = observe({ name: "test" }, () => 3);
     assert.strictEqual(result, 3);
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
@@ -114,13 +114,13 @@ void describe("association properties", () => {
     await exporter.shutdown();
   });
 
-  void it("propagates the association properties through withSpan", async () => {
+  void it("propagates the association properties through withSpan", () => {
     const parentSpanHandle = Laminar.startSpan({
       name: "parent",
       ...COMMON_ASSOCIATION_PROPERTIES,
     });
-    await Laminar.withSpan(parentSpanHandle, async () => {
-      const result = await observe({ name: "test" }, () => 3);
+    Laminar.withSpan(parentSpanHandle, () => {
+      const result = observe({ name: "test" }, () => 3);
       assert.strictEqual(result, 3);
     });
     parentSpanHandle.end();
@@ -132,14 +132,14 @@ void describe("association properties", () => {
     assertAssociationPropertiesPropagated(parentSpan!, childSpan!);
   });
 
-  void it("propagates the association properties through observe decorator", async () => {
-    const result = await observe(
+  void it("propagates the association properties through observe decorator", () => {
+    const result = observe(
       {
         name: "parentSpan",
         ...COMMON_ASSOCIATION_PROPERTIES,
       },
-      async () => {
-        const childResult = await observe({ name: "childSpan" }, () => 3);
+      () => {
+        const childResult = observe({ name: "childSpan" }, () => 3);
         return childResult;
       },
     );
@@ -152,13 +152,13 @@ void describe("association properties", () => {
     assertAssociationPropertiesPropagated(parentSpan!, childSpan!);
   });
 
-  void it("propagates the association properties through startActiveSpan", async () => {
+  void it("propagates the association properties through startActiveSpan", () => {
     const parentSpanHandle = Laminar.startActiveSpan({
       name: "parent",
       ...COMMON_ASSOCIATION_PROPERTIES,
     });
 
-    const result = await observe({ name: "test" }, () => 3);
+    const result = observe({ name: "test" }, () => 3);
     assert.strictEqual(result, 3);
     parentSpanHandle.end();
     const spans = exporter.getFinishedSpans();

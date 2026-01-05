@@ -47,17 +47,17 @@ void describe("span interface tests", () => {
     span.end();
   });
 
-  void it("returns a LaminarSpan from getCurrentSpan in withSpan", async () => {
+  void it("returns a LaminarSpan from getCurrentSpan in withSpan", () => {
     const span = Laminar.startSpan({ name: "test" });
-    await Laminar.withSpan(span, () => {
+    Laminar.withSpan(span, () => {
       const currentSpan = Laminar.getCurrentSpan();
       assert.strict(currentSpan instanceof LaminarSpan);
     });
     span.end();
   });
 
-  void it("returns a LaminarSpan from getCurrentSpan in observe", async () => {
-    await observe({ name: "test" }, () => {
+  void it("returns a LaminarSpan from getCurrentSpan in observe", () => {
+    observe({ name: "test" }, () => {
       const currentSpan = Laminar.getCurrentSpan();
       assert.strict(currentSpan instanceof LaminarSpan);
     });
