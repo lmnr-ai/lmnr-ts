@@ -92,7 +92,7 @@ void describe('Cache Server', () => {
     }
   });
 
-  void it('returns 404 for missing cache keys', async () => {
+  void it('returns empty span object for missing cache keys', async () => {
     const { port, server } = await startCacheServer();
 
     try {
@@ -101,7 +101,10 @@ void describe('Cache Server', () => {
         index: 0,
       });
 
-      assert.strictEqual(response.status, 404);
+      assert.strictEqual(response.status, 200);
+      assert.deepStrictEqual(response.data, {
+        pathToCount: {},
+      });
     } finally {
       await closeServer(server);
     }

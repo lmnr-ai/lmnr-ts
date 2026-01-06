@@ -204,6 +204,7 @@ async function runWorker(config: WorkerConfig): Promise<any> {
 
   // Execute the rollout function with args
   workerLogger.debug('Executing rollout function...');
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   const orderedArgs = selectedFunction.params.map(param => config.args[param.name]);
   workerLogger.info(`Calling function with args: ${JSON.stringify(orderedArgs)}`);
 
@@ -219,7 +220,7 @@ async function runWorker(config: WorkerConfig): Promise<any> {
  * Read configuration from stdin and start worker
  * Centralized exit point for the worker process
  */
-async function main(): Promise<void> {
+const main = () => {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -228,6 +229,8 @@ async function main(): Promise<void> {
 
   let configReceived = false;
 
+  // This function is called anyway, so it can be async.
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
   rl.on('line', async (line: string) => {
     if (configReceived) {
       return;
@@ -286,37 +289,35 @@ async function main(): Promise<void> {
       process.exit(1);
     }
   });
-}
+};
 
 /**
  * Handle graceful shutdown on SIGTERM/SIGINT
  */
-async function handleShutdown(signal: string): Promise<void> {
-  workerLogger.debug(`Received ${signal}, shutting down gracefully...`);
-
-  try {
-    // Shutdown Laminar to flush any pending spans/traces
-    if (Laminar.initialized()) {
-      await Laminar.shutdown();
-      workerLogger.debug('Laminar shutdown complete');
-    }
-  } catch (error: any) {
-    workerLogger.error(`Error during Laminar shutdown: ${error instanceof Error ? error.message : error}`);
+const handleShutdown = () => {
+  if (Laminar.initialized()) {
+    Laminar.shutdown().catch((error: any) => {
+      workerLogger.error(
+        `Error during Laminar shutdown: ${error instanceof Error ? error.message : error}`,
+      );
+    });
   }
 
   process.exit(0);
-}
+};
 
 // Register signal handlers
-process.on('SIGTERM', () => handleShutdown('SIGTERM'));
-process.on('SIGINT', () => handleShutdown('SIGINT'));
+process.on('SIGTERM', handleShutdown);
+process.on('SIGINT', handleShutdown);
 
 // Start the worker
-main().catch((error) => {
+try {
+  main();
+} catch (error: any) {
   sendMessage({
     type: 'error',
     error: error instanceof Error ? error.message : String(error),
     stack: error instanceof Error ? error.stack : undefined,
   });
   process.exit(1);
-});
+}

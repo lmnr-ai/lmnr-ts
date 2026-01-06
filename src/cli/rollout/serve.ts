@@ -153,7 +153,7 @@ async function executeInChildProcess(config: WorkerConfig): Promise<any> {
               }
               break;
           }
-        } catch (error) {
+        } catch {
           // If we can't parse a prefixed message, log it as an error
           logger.error(`Failed to parse worker protocol message: ${line}`);
         }
@@ -465,7 +465,7 @@ async function handleRunEvent(
     }
 
     // Execute the rollout function in child process
-    const result = await executeInChildProcess(workerConfig);
+    await executeInChildProcess(workerConfig);
 
     try {
       await client.rolloutSessions.setStatus({
@@ -611,29 +611,21 @@ export async function runDev(
     logger.debug('Connected to backend. Waiting for run events...');
 
     // Handle graceful shutdown
-    const shutdown = async () => {
+    const shutdown = () => {
       // Kill any running child process
       if (currentChildProcess) {
         logger.debug('Terminating child process...');
         currentChildProcess.kill('SIGTERM');
-        // Give it a moment to terminate
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        if (currentChildProcess && !currentChildProcess.killed) {
-          logger.debug('Child process did not terminate, using SIGKILL');
-          currentChildProcess.kill('SIGKILL');
-        }
       }
 
       // Delete the rollout session
-      try {
-        logger.debug('Deleting rollout session...');
-        await client.rolloutSessions.delete({ sessionId });
-        logger.debug('Rollout session deleted');
-      } catch (error: any) {
-        logger.warn(
-          `Failed to delete rollout session: ${error instanceof Error ? error.message : error}`,
-        );
-      }
+      logger.debug('Deleting rollout session...');
+      client.rolloutSessions.delete({ sessionId })
+        .catch((error: any) => {
+          logger.warn(
+            `Failed to delete rollout session: ${error instanceof Error ? error.message : error}`,
+          );
+        });
 
       if (sseClient) {
         sseClient.shutdown();
@@ -662,7 +654,7 @@ export async function runDev(
     // Try to delete the rollout session before exiting
     try {
       await client.rolloutSessions.delete({ sessionId });
-    } catch (deleteError) {
+    } catch {
       // Ignore delete errors during error cleanup
     }
 

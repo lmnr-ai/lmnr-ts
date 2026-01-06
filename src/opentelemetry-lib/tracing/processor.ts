@@ -8,6 +8,7 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 
 import { version as SDK_VERSION } from "../../../package.json";
+import { LaminarClient } from "../../client";
 import { metadataToAttributes, otelSpanIdToUUID, StringUUID } from "../../utils";
 import { getLangVersion } from "../../version";
 import {
@@ -22,7 +23,6 @@ import {
   SPAN_LANGUAGE_VERSION,
   SPAN_PATH,
   SPAN_SDK_VERSION,
-  SPAN_TYPE,
   TRACE_TYPE,
   USER_ID,
 } from "./attributes";
@@ -36,8 +36,6 @@ import {
   CONTEXT_SPAN_PATH_KEY,
 } from "./context";
 import { LaminarSpanExporter } from "./exporter";
-import { LaminarClient } from "../../client";
-import { SpanType } from "../../types";
 
 interface LaminarSpanProcessorOptions {
   /**
@@ -226,7 +224,9 @@ export class LaminarSpanProcessor implements SpanProcessor {
     makeSpanOtelV2Compatible(span);
 
     if (process.env.LMNR_ROLLOUT_SESSION_ID && this.client) {
-      // eslint-disable-next-line no-floating-promises -- this is a background task
+      // TODO: uncomment this once the frontend is updated to support span updates
+      // This is a background task, thus no await.
+      // TODO: eslint-disable-next-line @typescript-eslint/no-floating-promises
       // this.client.rolloutSessions.sendSpanUpdate({
       //   sessionId: process.env.LMNR_ROLLOUT_SESSION_ID,
       //   span: {
