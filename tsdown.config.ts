@@ -7,4 +7,5 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   external: ["puppeteer", "puppeteer-core", "playwright", "esbuild"],
+  noExternal: ["export-to-csv", "csv-parser"],
 });

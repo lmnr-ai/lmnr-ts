@@ -7,6 +7,7 @@ import * as readline from 'readline';
 import { LaminarClient } from '../../client';
 import { RolloutHandshakeEvent, RolloutRunEvent } from '../../types';
 import { getDirname, initializeLogger, newUUID } from '../../utils';
+import { buildFile, loadModule, selectRolloutFunction } from './build';
 import { CachedSpan, startCacheServer } from './cache-server';
 import { createSSEClient, SSEClient } from './sse-client';
 
@@ -202,102 +203,6 @@ async function executeInChildProcess(config: WorkerConfig): Promise<any> {
 /**
  * Loads and executes a module to register rollout functions
  */
-function loadModule({
-  filename,
-  moduleText,
-}: {
-  filename: string;
-  moduleText: string;
-}): void {
-  globalThis._rolloutFunctions = new Map();
-  globalThis._set_rollout_global = true;
-
-  const __filename = filename;
-  const __dirname = getDirname();
-
-  /* eslint-disable @typescript-eslint/no-implied-eval */
-  new Function(
-    "require",
-    "module",
-    "__filename",
-    "__dirname",
-    moduleText,
-  )(
-    require,
-    module,
-    __filename,
-    __dirname,
-  );
-  /* eslint-enable @typescript-eslint/no-implied-eval */
-}
-
-/**
- * Builds a file using esbuild
- */
-async function buildFile(filePath: string): Promise<string> {
-  const result = await esbuild.build({
-    bundle: true,
-    platform: "node" as esbuild.Platform,
-    entryPoints: [filePath],
-    outfile: `tmp_out_${filePath}.js`,
-    write: false,
-    external: [
-      "@lmnr-ai/*",
-      "esbuild",
-      "playwright",
-      "puppeteer",
-      "puppeteer-core",
-      "playwright-core",
-      "fsevents",
-    ],
-    treeShaking: true,
-  });
-
-  if (!result.outputFiles || result.outputFiles.length === 0) {
-    throw new Error("Failed to build file");
-  }
-
-  return result.outputFiles[0].text;
-}
-
-/**
- * Selects the appropriate rollout function from the registered functions
- */
-function selectRolloutFunction(
-  requestedFunctionName?: string,
-): { fn: (...args: any[]) => any; params: any[]; name: string } {
-  if (!globalThis._rolloutFunctions || globalThis._rolloutFunctions.size === 0) {
-    throw new Error(
-      "No rollout functions found in file. " +
-      " Make sure you are using observe with rolloutEntrypoint: true",
-    );
-  }
-
-  // If a specific function is requested, use that
-  if (requestedFunctionName) {
-    const selected = globalThis._rolloutFunctions.get(requestedFunctionName);
-    if (!selected) {
-      const available = Array.from(globalThis._rolloutFunctions.keys()).join(', ');
-      throw new Error(
-        `Function '${requestedFunctionName}' not found. Available functions: ${available}`,
-      );
-    }
-    return selected;
-  }
-
-  // If only one function, auto-select it
-  if (globalThis._rolloutFunctions.size === 1) {
-    const [selected] = Array.from(globalThis._rolloutFunctions.values());
-    return selected;
-  }
-
-  // Multiple functions found without explicit selection
-  const available = Array.from(globalThis._rolloutFunctions.keys()).join(', ');
-  throw new Error(
-    `Multiple rollout functions found: ${available}. Use --function to specify which one to serve.`,
-  );
-}
-
 /**
  * Handles a run event from the backend
  */
@@ -588,7 +493,7 @@ export async function runDev(
     });
 
     sseClient.on('stop', () => {
-      logger.info('Stop event received from backend');
+      logger.debug('Cancelling current run...');
 
       if (currentChildProcess) {
         logger.debug('Terminating child process...');
@@ -604,6 +509,7 @@ export async function runDev(
       } else {
         logger.debug('No child process running, stop event ignored');
       }
+      logger.info('Current run cancelled');
     });
 
     // Now connect after listeners are registered
@@ -621,20 +527,23 @@ export async function runDev(
       // Delete the rollout session
       logger.debug('Deleting rollout session...');
       client.rolloutSessions.delete({ sessionId })
+        .then(() => {
+          if (sseClient) {
+            sseClient.shutdown();
+          }
+
+          cacheServer.close(() => {
+            logger.debug('Cache server closed');
+          });
+          process.exit(0);
+        })
         .catch((error: any) => {
           logger.warn(
             `Failed to delete rollout session: ${error instanceof Error ? error.message : error}`,
           );
         });
 
-      if (sseClient) {
-        sseClient.shutdown();
-      }
 
-      cacheServer.close(() => {
-        logger.debug('Cache server closed');
-        process.exit(0);
-      });
     };
 
     process.on('SIGINT', shutdown);
