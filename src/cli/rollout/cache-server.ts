@@ -21,9 +21,9 @@ interface CacheMetadata {
 }
 
 export interface CacheServerResponse {
-  span: CachedSpan;
   pathToCount: CacheMetadata['pathToCount'];
   overrides?: CacheMetadata['overrides'];
+  span?: CachedSpan;
 }
 
 interface CacheServerResult {
@@ -135,12 +135,6 @@ export async function startCacheServer(
           // Cache key is ${index}:${path} to handle colons in paths
           const cacheKey = `${index}:${path}`;
           const cachedSpan = cache.get(cacheKey);
-
-          if (!cachedSpan) {
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Cache miss' }));
-            return;
-          }
 
           // Return cached span with metadata
           const response: CacheServerResponse = {

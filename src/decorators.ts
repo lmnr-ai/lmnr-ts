@@ -24,7 +24,6 @@ declare global {
   }> | undefined;
   var _set_rollout_global: boolean;
   var _currentExportName: string | undefined;
-  var _rolloutAborted: boolean | undefined;
 }
 
 interface ObserveOptions {

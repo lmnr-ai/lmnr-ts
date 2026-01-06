@@ -22,6 +22,7 @@ import {
   SPAN_LANGUAGE_VERSION,
   SPAN_PATH,
   SPAN_SDK_VERSION,
+  SPAN_TYPE,
   TRACE_TYPE,
   USER_ID,
 } from "./attributes";
@@ -35,6 +36,8 @@ import {
   CONTEXT_SPAN_PATH_KEY,
 } from "./context";
 import { LaminarSpanExporter } from "./exporter";
+import { LaminarClient } from "../../client";
+import { SpanType } from "../../types";
 
 interface LaminarSpanProcessorOptions {
   /**
@@ -86,10 +89,17 @@ interface LaminarSpanProcessorOptions {
    * If passed, wraps the underlying span processor.
    */
   spanProcessor?: SpanProcessor;
+
+  /**
+   * The HTTP port to use. Optional.
+   * If not provided, the `port` option will be used.
+   */
+  httpPort?: number;
 }
 
 export class LaminarSpanProcessor implements SpanProcessor {
   private instance: BatchSpanProcessor | SimpleSpanProcessor;
+  private client: LaminarClient | undefined;
   private readonly _spanIdToPath: Map<string, string[]> = new Map();
   private readonly _spanIdLists: Map<string, string[]> = new Map();
 
@@ -124,6 +134,14 @@ export class LaminarSpanProcessor implements SpanProcessor {
           maxExportBatchSize: options.maxExportBatchSize ?? 512,
           exportTimeoutMillis: options.traceExportTimeoutMillis ?? 30000,
         });
+    }
+
+    if (process.env.LMNR_ROLLOUT_SESSION_ID) {
+      this.client = new LaminarClient({
+        baseUrl: options.baseUrl,
+        projectApiKey: options.apiKey,
+        port: options.httpPort ?? options.port,
+      });
     }
   }
 
@@ -206,6 +224,22 @@ export class LaminarSpanProcessor implements SpanProcessor {
     }
 
     makeSpanOtelV2Compatible(span);
+
+    if (process.env.LMNR_ROLLOUT_SESSION_ID && this.client) {
+      // eslint-disable-next-line no-floating-promises -- this is a background task
+      // this.client.rolloutSessions.sendSpanUpdate({
+      //   sessionId: process.env.LMNR_ROLLOUT_SESSION_ID,
+      //   span: {
+      //     name: span.name,
+      //     startTime: new Date(span.startTime[0] * 1000 + span.startTime[1] / 1e6).toISOString(),
+      //     spanId: span.spanContext().spanId,
+      //     traceId: span.spanContext().traceId,
+      //     parentSpanId: getParentSpanId(span),
+      //     attributes: span.attributes,
+      //     spanType: (span.attributes[SPAN_TYPE] ?? 'DEFAULT') as SpanType,
+      //   },
+      // });
+    }
     this.instance.onStart((span), parentContext);
   }
 

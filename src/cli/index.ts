@@ -12,7 +12,7 @@ import {
   handleDatasetsPush,
 } from "./datasets";
 import { runEvaluation } from "./evals";
-import { runServe } from "./rollout/serve";
+import { runDev } from "./rollout/serve";
 
 const logger = initializeLogger();
 
@@ -158,7 +158,7 @@ async function cli() {
 
   // Serve command
   program
-    .command("serve")
+    .command("dev")
     .description("Start a rollout debugging session")
     .argument("<file>", "Path to file containing the agent function(s)")
     .option(
@@ -178,8 +178,13 @@ async function cli() {
       "Port for the Laminar API. Defaults to 443",
       (val) => parseInt(val, 10),
     )
+    .option(
+      "--grpc-port <port>",
+      "Port for the Laminar gRPC backend. Defaults to 8443",
+      (val) => parseInt(val, 10),
+    )
     .action(async (file: string, options) => {
-      await runServe(file, options);
+      await runDev(file, options);
     });
 
   // If no command provided, show help

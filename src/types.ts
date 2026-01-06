@@ -76,7 +76,8 @@ export type SpanType = 'DEFAULT'
   | 'EVALUATOR'
   | 'HUMAN_EVALUATOR'
   | 'EVALUATION'
-  | 'TOOL';
+  | 'TOOL'
+  | 'CACHED';
 
 
 /**

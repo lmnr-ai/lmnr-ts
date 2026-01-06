@@ -1,3 +1,5 @@
+import { SpanType } from "../../types";
+import { otelSpanIdToUUID, otelTraceIdToUUID } from "../../utils";
 import { BaseResource } from "./index";
 
 interface SessionResponse {
@@ -26,9 +28,7 @@ export class RolloutSessionsResource extends BaseResource {
   }): Promise<SessionResponse | undefined> {
     const response = await fetch(`${this.baseHttpUrl}/v1/rollouts/${sessionId}`, {
       method: "POST",
-      headers: {
-        ...this.headers(),
-      },
+      headers: this.headers(),
       body: JSON.stringify({
         path,
         index,
@@ -45,6 +45,21 @@ export class RolloutSessionsResource extends BaseResource {
     return await response.json() as SessionResponse;
   }
 
+  public async delete({
+    sessionId,
+  }: {
+    sessionId: string;
+  }) {
+    const response = await fetch(`${this.baseHttpUrl}/v1/rollouts/${sessionId}`, {
+      method: "DELETE",
+      headers: this.headers(),
+    });
+
+    if (!response.ok) {
+      await this.handleError(response);
+    }
+  }
+
   public async setStatus({
     sessionId,
     status,
@@ -54,10 +69,43 @@ export class RolloutSessionsResource extends BaseResource {
   }) {
     const response = await fetch(`${this.baseHttpUrl}/v1/rollouts/${sessionId}/status`, {
       method: "PATCH",
-      headers: {
-        ...this.headers(),
-      },
+      headers: this.headers(),
       body: JSON.stringify({ status }),
+    });
+
+    if (!response.ok) {
+      await this.handleError(response);
+    }
+  }
+
+  public async sendSpanUpdate({
+    sessionId,
+    span,
+  }: {
+    sessionId: string;
+    span: {
+      name: string;
+      startTime: string;
+      spanId: string;
+      traceId: string;
+      parentSpanId: string | undefined;
+      attributes: Record<string, any>;
+      spanType: SpanType;
+    };
+  }) {
+    const response = await fetch(`${this.baseHttpUrl}/v1/rollouts/${sessionId}/update`, {
+      method: "PATCH",
+      headers: this.headers(),
+      body: JSON.stringify({
+        type: "spanStart",
+        spanId: otelSpanIdToUUID(span.spanId),
+        traceId: otelTraceIdToUUID(span.traceId),
+        parentSpanId: span.parentSpanId ? otelSpanIdToUUID(span.parentSpanId) : undefined,
+        attributes: span.attributes,
+        startTime: span.startTime,
+        name: span.name,
+        spanType: span.spanType,
+      }),
     });
 
     if (!response.ok) {

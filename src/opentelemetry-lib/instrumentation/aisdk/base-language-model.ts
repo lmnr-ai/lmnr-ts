@@ -49,6 +49,7 @@ export abstract class BaseLaminarLanguageModel {
     system?: string | Array<{ type: 'text'; text: string }>;
     tools?: Array<{ name: string; description?: string; parameters?: Record<string, any> }>;
   }> = {};
+  private initialized: boolean = false;
 
   constructor(languageModel: LanguageModelV2 | LanguageModelV3) {
     this.innerLanguageModel = languageModel;
@@ -129,29 +130,15 @@ export abstract class BaseLaminarLanguageModel {
     options: LanguageModelV2CallOptions | LanguageModelV3CallOptions,
     doGenerateFn: (opts: any) => PromiseLike<any>,
   ): PromiseLike<any> {
-    // Check if rollout has been aborted
-    if (globalThis._rolloutAborted) {
-      return Promise.resolve({
-        content: [{
-          type: 'text' as const,
-          text: '[Laminar] Session aborted',
-        }],
-        finishReason: 'other' as LanguageModelV2FinishReason | LanguageModelV3FinishReason,
-        usage: this.createUsageObject(),
-        warnings: [],
-      });
-    }
-
-    if (process.env.LMNR_ROLLOUT_SESSION_ID) {
-      const span = Laminar.getCurrentSpan();
-      span?.setAttribute('lmnr.rollout.session_id', process.env.LMNR_ROLLOUT_SESSION_ID);
-      const pathArray = Laminar.getLaminarSpanContext()?.spanPath;
-      if (pathArray) {
-        const path = pathArray.join('.');
-        const currentIndex = this.pathToCurrentIndex[path] ?? 0;
-        if (this.pathToCount[path] && currentIndex >= this.pathToCount[path]) {
-          console.log('[exceeded count by path] returning original response with overrides');
-          this.pathToCurrentIndex[path] = currentIndex + 1;
+    const sessionId = process.env.LMNR_ROLLOUT_SESSION_ID;
+    if (sessionId) {
+      return this.ensureInitialized().then(() => {
+        const span = Laminar.getCurrentSpan();
+        span?.setAttribute('lmnr.rollout.session_id', sessionId);
+        const pathArray = Laminar.getLaminarSpanContext()?.spanPath;
+        if (pathArray) {
+          const path = pathArray.join('.');
+          const currentIndex = this.pathToCurrentIndex[path] ?? 0;
           const optionsWithOverrides = this.applyOverrides(path, options);
           // By this time, we are already inside the .doGenerate span, and the
           // input attributes (ai.prompt.messages) and ai.prompt.tools have
@@ -166,18 +153,20 @@ export abstract class BaseLaminarLanguageModel {
               optionsWithOverrides.tools.map(tool => JSON.stringify(tool)),
             );
           }
-          return doGenerateFn(optionsWithOverrides);
-        }
-        this.pathToCurrentIndex[path] = currentIndex + 1;
-        return this.cachedDoGenerate(path, currentIndex).then(cachedResponse => {
-          if (cachedResponse) {
-            console.log('returning cached response');
-            return cachedResponse;
+          if (this.pathToCount[path] && currentIndex >= this.pathToCount[path]) {
+            this.pathToCurrentIndex[path] = currentIndex + 1;
+            return doGenerateFn(optionsWithOverrides);
           }
-          console.log('cache miss - returning original response with overrides');
-          return doGenerateFn(this.applyOverrides(path, options as any));
-        });
-      }
+          this.pathToCurrentIndex[path] = currentIndex + 1;
+          return this.cachedDoGenerate(path, currentIndex).then(cachedResponse => {
+            if (cachedResponse) {
+              return cachedResponse;
+            }
+            return doGenerateFn(optionsWithOverrides);
+          });
+        }
+        return doGenerateFn(options);
+      });
     }
     return doGenerateFn(options);
   }
@@ -222,62 +211,72 @@ export abstract class BaseLaminarLanguageModel {
     options: LanguageModelV2CallOptions | LanguageModelV3CallOptions,
     doStreamFn: (opts: any) => PromiseLike<any>,
   ): PromiseLike<any> {
-    // Check if rollout has been aborted
-    if (globalThis._rolloutAborted) {
-      const content = [{
-        type: 'text' as const,
-        text: '[Laminar] Session aborted',
-      }];
-      const finishReason = 'other' as LanguageModelV2FinishReason | LanguageModelV3FinishReason;
-      const usage = this.createUsageObject();
-
-      const stream = this.createStreamFromCachedResponse(
-        content,
-        finishReason,
-        usage,
-      );
-
-      return Promise.resolve({ stream });
-    }
-
-    if (process.env.LMNR_ROLLOUT_SESSION_ID) {
-      const span = Laminar.getCurrentSpan();
-      span?.setAttribute('lmnr.rollout.session_id', process.env.LMNR_ROLLOUT_SESSION_ID);
-      const pathArray = Laminar.getLaminarSpanContext()?.spanPath;
-      if (pathArray) {
-        const path = pathArray.join('.');
-        const currentIndex = this.pathToCurrentIndex[path] ?? 0;
-        if (this.pathToCount[path] && currentIndex >= this.pathToCount[path]) {
-          console.log('[exceeded count by path] returning original stream with overrides');
-          this.pathToCurrentIndex[path] = currentIndex + 1;
-          const optionsWithOverrides = this.applyOverrides(path, options);
-          // By this time, we are already inside the .doStream span, and the
-          // input attributes (ai.prompt.messages) and ai.prompt.tools have
-          // already been set, and so we can override them here.
-          span?.setAttribute(
-            'ai.prompt.messages',
-            stringifyPromptForTelemetry(optionsWithOverrides.prompt),
-          );
-          if (optionsWithOverrides.tools && optionsWithOverrides.tools.length > 0) {
+    const sessionId = process.env.LMNR_ROLLOUT_SESSION_ID;
+    if (sessionId) {
+      return this.ensureInitialized().then(() => {
+        const span = Laminar.getCurrentSpan();
+        span?.setAttribute('lmnr.rollout.session_id', sessionId);
+        const pathArray = Laminar.getLaminarSpanContext()?.spanPath;
+        if (pathArray) {
+          const path = pathArray.join('.');
+          const currentIndex = this.pathToCurrentIndex[path] ?? 0;
+          if (this.pathToCount[path] && currentIndex >= this.pathToCount[path]) {
+            this.pathToCurrentIndex[path] = currentIndex + 1;
+            const optionsWithOverrides = this.applyOverrides(path, options);
+            // By this time, we are already inside the .doStream span, and the
+            // input attributes (ai.prompt.messages) and ai.prompt.tools have
+            // already been set, and so we can override them here.
             span?.setAttribute(
-              'ai.prompt.tools',
-              optionsWithOverrides.tools.map(tool => JSON.stringify(tool)),
+              'ai.prompt.messages',
+              stringifyPromptForTelemetry(optionsWithOverrides.prompt),
             );
+            if (optionsWithOverrides.tools && optionsWithOverrides.tools.length > 0) {
+              span?.setAttribute(
+                'ai.prompt.tools',
+                optionsWithOverrides.tools.map(tool => JSON.stringify(tool)),
+              );
+            }
+            return doStreamFn(optionsWithOverrides);
           }
-          return doStreamFn(optionsWithOverrides);
+          this.pathToCurrentIndex[path] = currentIndex + 1;
+          return this.cachedDoStream(path, currentIndex).then(cachedStreamResult => {
+            if (cachedStreamResult) {
+              return cachedStreamResult;
+            }
+            return doStreamFn(this.applyOverrides(path, options as any));
+          });
         }
-        this.pathToCurrentIndex[path] = currentIndex + 1;
-        return this.cachedDoStream(path, currentIndex).then(cachedStreamResult => {
-          if (cachedStreamResult) {
-            console.log('returning cached stream');
-            return cachedStreamResult;
-          }
-          console.log('cache miss - returning original stream with overrides');
-          return doStreamFn(this.applyOverrides(path, options as any));
-        });
-      }
+        return doStreamFn(options);
+      });
     }
     return doStreamFn(options);
+  }
+
+  /**
+   * Ensures metadata is initialized by fetching (pathToCount, overrides) from cache server.
+   * Only runs once per instance since each run event spawns a new worker process.
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
+
+    // Initialize by fetching metadata from cache server
+    await this.fetchInitialMetadata();
+    this.initialized = true;
+  }
+
+  /**
+   * Fetches initial metadata (pathToCount, overrides) from cache server.
+   */
+  private async fetchInitialMetadata(): Promise<void> {
+    const data = await this.fetchCachedSpan('', 0);
+    if (data) {
+      this.pathToCount = data.pathToCount;
+      if (data.overrides) {
+        this.overrides = data.overrides;
+      }
+    }
   }
 
   /**
@@ -301,6 +300,10 @@ export abstract class BaseLaminarLanguageModel {
     this.pathToCount = data.pathToCount;
     if (data.overrides) {
       this.overrides = data.overrides;
+    }
+
+    if (!data.span) {
+      return;
     }
 
     // Parse output

@@ -14,10 +14,15 @@ export function initializeLogger(options?: { colorize?: boolean, level?: Level }
     ?? (process.env.LMNR_LOG_LEVEL?.toLowerCase()?.trim() as Level)
     ?? 'info';
 
-  return pino(PinoPretty({
-    colorize,
-    minimumLevel: level,
-  }));
+  return pino(
+    {
+      level,
+    },
+    PinoPretty({
+      colorize,
+      minimumLevel: level,
+    })
+  );
 }
 
 const logger = initializeLogger();
