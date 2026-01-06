@@ -2,7 +2,6 @@
   "name": "@lmnr-ai/lmnr",
   "version": "0.8.0-alpha.1",
   "description": "TypeScript SDK for Laminar AI",
-  "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
   "exports": {

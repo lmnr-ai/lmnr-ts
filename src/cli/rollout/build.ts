@@ -11,14 +11,12 @@ export const rawMarkdownPlugin: esbuild.Plugin = {
   name: "raw-markdown",
   setup(build) {
     // Resolve .md imports
-    build.onResolve({ filter: /\.md$/ }, (args) => {
-      return {
-        path: path.isAbsolute(args.path)
-          ? args.path
-          : path.resolve(args.resolveDir, args.path),
-        namespace: "raw-markdown",
-      };
-    });
+    build.onResolve({ filter: /\.md$/ }, (args) => ({
+      path: path.isAbsolute(args.path)
+        ? args.path
+        : path.resolve(args.resolveDir, args.path),
+      namespace: "raw-markdown",
+    }));
 
     // Load .md files as raw strings
     build.onLoad({ filter: /.*/, namespace: "raw-markdown" }, async (args) => {

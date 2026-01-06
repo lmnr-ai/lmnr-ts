@@ -1,12 +1,11 @@
 import { ChildProcess, spawn } from 'child_process';
-import * as esbuild from 'esbuild';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 
 import { LaminarClient } from '../../client';
 import { RolloutHandshakeEvent, RolloutRunEvent } from '../../types';
-import { getDirname, initializeLogger, newUUID } from '../../utils';
+import { initializeLogger, newUUID } from '../../utils';
 import { buildFile, loadModule, selectRolloutFunction } from './build';
 import { CachedSpan, startCacheServer } from './cache-server';
 import { createSSEClient, SSEClient } from './sse-client';
