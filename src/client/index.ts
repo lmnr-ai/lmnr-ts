@@ -1,5 +1,4 @@
-import { config } from "dotenv";
-
+import { loadEnv } from "../utils";
 import { AgentResource } from "./resources/agent";
 import { BrowserEventsResource } from "./resources/browser-events";
 import { DatasetsResource } from "./resources/datasets";
@@ -30,9 +29,7 @@ export class LaminarClient {
     projectApiKey?: string,
     port?: number,
   } = {}) {
-    config({
-      quiet: true,
-    });
+    loadEnv();
     this.projectApiKey = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY!;
     const httpPort = port ?? (
       baseUrl?.match(/:\d{1,5}$/g)

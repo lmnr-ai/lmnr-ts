@@ -39,7 +39,7 @@ export class SSEClient extends EventEmitter {
   /**
    * Connects to the SSE endpoint
    */
-  async connect(): Promise<void> {
+  async connectAndListen(): Promise<void> {
     if (this.isShutdown) {
       return;
     }
@@ -210,7 +210,7 @@ export class SSEClient extends EventEmitter {
    */
   private reconnect(): void {
     this.disconnect(false);
-    this.connect().catch(error => {
+    this.connectAndListen().catch(error => {
       this.emit('error', error);
     });
   }

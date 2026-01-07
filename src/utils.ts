@@ -1,4 +1,5 @@
 import { AttributeValue, SpanContext, TraceFlags } from '@opentelemetry/api';
+import { config } from 'dotenv';
 import * as path from "path";
 import pino, { Level } from 'pino';
 import { PinoPretty } from 'pino-pretty';
@@ -383,4 +384,33 @@ export const validateTracingConfig = (apiKey?: string): void => {
       'or configure OTEL environment variables (OTEL_EXPORTER_OTLP_TRACES_ENDPOINT, etc.)',
     );
   }
+};
+
+export const loadEnv = (
+  options?: {
+    quiet?: boolean;
+    paths?: string[];
+  },
+): void => {
+  const nodeEnv = process.env.NODE_ENV || 'development';
+  const envDir = process.cwd();
+
+  // Files to load in order (lowest to highest priority)
+  // Later files override earlier ones
+  const envFiles = [
+    '.env',
+    '.env.local',
+    `.env.${nodeEnv}`,
+    `.env.${nodeEnv}.local`,
+  ];
+
+  const logLevel = process.env.LMNR_LOG_LEVEL ?? 'info';
+  const verbose = ['debug', 'trace'].includes(logLevel.trim().toLowerCase());
+
+  const quiet = options?.quiet ?? !verbose;
+
+  config({
+    path: options?.paths ?? envFiles.map(envFile => path.resolve(envDir, envFile)),
+    quiet,
+  });
 };

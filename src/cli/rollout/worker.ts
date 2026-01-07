@@ -200,10 +200,12 @@ const handleShutdown = () => {
       workerLogger.error(
         `Error during Laminar shutdown: ${error instanceof Error ? error.message : error}`,
       );
+    }).finally(() => {
+      process.exit(0);
     });
+  } else {
+    process.exit(0);
   }
-
-  process.exit(0);
 };
 
 // Register signal handlers

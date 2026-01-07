@@ -540,6 +540,7 @@ export async function runDev(
           logger.warn(
             `Failed to delete rollout session: ${error instanceof Error ? error.message : error}`,
           );
+          process.exit(1);
         });
 
 
@@ -553,8 +554,7 @@ export async function runDev(
     process.stdin.resume();
 
     // Keep the process running
-    // The function has an infinite loop that keeps the connection open
-    await sseClient.connect();
+    await sseClient.connectAndListen();
   } catch (error) {
     logger.error("Failed to start serve command: " +
       (error instanceof Error ? error.message : String(error)));

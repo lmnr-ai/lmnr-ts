@@ -8,7 +8,6 @@ import {
   trace,
 } from '@opentelemetry/api';
 import { SpanProcessor } from '@opentelemetry/sdk-trace-base';
-import { config } from 'dotenv';
 
 import { InitializeOptions, initializeTracing, LaminarSpanProcessor } from './opentelemetry-lib';
 import { _resetConfiguration } from './opentelemetry-lib/configuration';
@@ -44,15 +43,14 @@ import {
 import {
   deserializeLaminarSpanContext,
   initializeLogger,
+  loadEnv,
   metadataToAttributes,
   type StringUUID,
   tryToOtelSpanContext,
   validateTracingConfig,
 } from './utils';
 
-config({
-  quiet: true,
-});
+loadEnv();
 
 const logger = initializeLogger();
 

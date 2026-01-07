@@ -1,6 +1,5 @@
 import { trace } from "@opentelemetry/api";
 import * as cliProgress from "cli-progress";
-import { config } from 'dotenv';
 
 import { LaminarClient } from "./client";
 import { EvaluationDataset, LaminarDataset } from "./datasets";
@@ -12,6 +11,7 @@ import { LaminarContextManager } from "./opentelemetry-lib/tracing/context";
 import { EvaluationDatapoint } from "./types";
 import {
   initializeLogger,
+  loadEnv,
   newUUID,
   otelSpanIdToUUID,
   otelTraceIdToUUID,
@@ -19,9 +19,7 @@ import {
   StringUUID,
 } from "./utils";
 
-config({
-  quiet: true,
-});
+loadEnv();
 
 const DEFAULT_CONCURRENCY = 5;
 const MAX_EXPORT_BATCH_SIZE = 64;
