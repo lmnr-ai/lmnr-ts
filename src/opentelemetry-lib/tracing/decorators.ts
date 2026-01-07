@@ -25,19 +25,67 @@ import {
 
 const logger = initializeLogger();
 
+// Track pending stream processing promises
+const pendingStreamProcessing = new Set<Promise<void>>();
+
+/**
+ * Wait for all pending stream processing to complete with a timeout
+ * @param timeoutMs - Maximum time to wait in milliseconds (default: 5000)
+ */
+export const waitForPendingStreams = async (timeoutMs: number = 5000): Promise<void> => {
+  if (pendingStreamProcessing.size === 0) {
+    return;
+  }
+  logger.debug(`Waiting for ${pendingStreamProcessing.size} pending stream(s)`);
+
+  const initialCount = pendingStreamProcessing.size;
+  const pendingPromises = Array.from(pendingStreamProcessing);
+
+  let timedOut = false;
+  const timeoutPromise = new Promise<void>((resolve) => {
+    setTimeout(() => {
+      timedOut = true;
+      resolve();
+    }, timeoutMs);
+  });
+
+  await Promise.race([
+    Promise.allSettled(pendingPromises),
+    timeoutPromise,
+  ]);
+
+  if (timedOut && pendingStreamProcessing.size > 0) {
+    logger.warn(
+      `Timeout waiting for ${pendingStreamProcessing.size} pending stream(s)` +
+      `after ${timeoutMs}ms (started with ${initialCount})`,
+    );
+  }
+};
+
+/**
+ * Track a background promise and ensure cleanup
+ */
+const trackStreamProcessing = (task: () => Promise<void>): void => {
+  const processingPromise = task().finally(() => {
+    pendingStreamProcessing.delete(processingPromise);
+  });
+
+  pendingStreamProcessing.add(processingPromise);
+};
+
 /**
  * Handles streaming results by consuming the stream in the background
  * while passing through the original result to the caller
  */
-function handleStreamResult(
+const handleStreamResult = (
   originalResult: any,
   streamInfo: ReturnType<typeof getStream>,
   span: Span,
   ignoreOutput: boolean | undefined,
-): any {
+): any => {
   if (streamInfo.type === 'aisdk-result') {
     // For AI SDK results, consume the promise properties in the background
-    (async () => {
+    trackStreamProcessing(async () => {
       let partialOutput: any = {};
       try {
         partialOutput = await consumeAISDKResult(streamInfo.result);
@@ -61,13 +109,9 @@ function handleStreamResult(
           }
         }
         span.recordException(error as Error);
-        throw error;
       } finally {
         span.end();
       }
-    })().catch(() => {
-      // Error already recorded in the try-catch above
-      // This catch prevents unhandled promise rejection
     });
 
     return originalResult;
@@ -77,25 +121,26 @@ function handleStreamResult(
     const { stream, dataPromise } = consumeAndTeeReadableStream(streamInfo.stream);
 
     // Consume in background
-    (async () => {
-      const { chunks, error } = await dataPromise;
+    trackStreamProcessing(async () => {
+      try {
+        const { chunks, error } = await dataPromise;
 
-      if (shouldSendTraces() && !ignoreOutput) {
-        try {
-          const output = { type: 'stream', chunks };
-          span.setAttribute(SPAN_OUTPUT, serialize(output));
-        } catch (serError) {
-          logger.warn("Failed to serialize stream output: " +
-            `${serError instanceof Error ? serError.message : String(serError)}`);
+        if (shouldSendTraces() && !ignoreOutput) {
+          try {
+            const output = { type: 'stream', chunks };
+            span.setAttribute(SPAN_OUTPUT, serialize(output));
+          } catch (serError) {
+            logger.warn("Failed to serialize stream output: " +
+              `${serError instanceof Error ? serError.message : String(serError)}`);
+          }
         }
-      }
 
-      if (error) {
-        span.recordException(error as Error);
+        if (error) {
+          span.recordException(error as Error);
+        }
+      } finally {
+        span.end();
       }
-      span.end();
-    })().catch(() => {
-      // Error already handled above
     });
 
     return stream;
@@ -105,25 +150,26 @@ function handleStreamResult(
     const { iterable, dataPromise } = consumeAndTeeAsyncIterable(streamInfo.iterable);
 
     // Consume in background
-    (async () => {
-      const { chunks, error } = await dataPromise;
+    trackStreamProcessing(async () => {
+      try {
+        const { chunks, error } = await dataPromise;
 
-      if (shouldSendTraces() && !ignoreOutput) {
-        try {
-          const output = { type: 'async-iterable', chunks };
-          span.setAttribute(SPAN_OUTPUT, serialize(output));
-        } catch (serError) {
-          logger.warn("Failed to serialize async iterable output: " +
-            `${serError instanceof Error ? serError.message : String(serError)}`);
+        if (shouldSendTraces() && !ignoreOutput) {
+          try {
+            const output = { type: 'async-iterable', chunks };
+            span.setAttribute(SPAN_OUTPUT, serialize(output));
+          } catch (serError) {
+            logger.warn("Failed to serialize async iterable output: " +
+              `${serError instanceof Error ? serError.message : String(serError)}`);
+          }
         }
-      }
 
-      if (error) {
-        span.recordException(error as Error);
+        if (error) {
+          span.recordException(error as Error);
+        }
+      } finally {
+        span.end();
       }
-      span.end();
-    })().catch(() => {
-      // Error already handled above
     });
 
     return iterable;
@@ -149,7 +195,7 @@ function handleStreamResult(
     });
 
     // Consume the other stream in background
-    (async () => {
+    trackStreamProcessing(async () => {
       const chunks: string[] = [];
       let error: any = undefined;
 
@@ -182,8 +228,6 @@ function handleStreamResult(
       } finally {
         span.end();
       }
-    })().catch(() => {
-      // Error already handled above
     });
 
     return newResponse;
@@ -192,7 +236,7 @@ function handleStreamResult(
   // Should never reach here, but just in case
   span.end();
   return originalResult;
-}
+};
 
 export type DecoratorConfig = {
   name: string;

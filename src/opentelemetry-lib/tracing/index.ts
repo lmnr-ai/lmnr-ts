@@ -12,6 +12,7 @@ import { initializeLogger } from "../../utils";
 import { _configuration } from "../configuration";
 import { InitializeOptions } from "../interfaces";
 import { createResource } from "./compat";
+import { waitForPendingStreams } from "./decorators";
 import { initializeLaminarInstrumentations } from "./instrumentations";
 import { LaminarSpanProcessor } from "./processor";
 import { LaminarTracer } from "./tracer";
@@ -196,6 +197,8 @@ export const getTracer = (): Tracer => {
 export const getSpanProcessor = (): LaminarSpanProcessor | undefined => spanProcessor;
 
 export const forceFlush = async () => {
+  // Wait for pending stream processing with 5 second timeout
+  await waitForPendingStreams(5000);
   await spanProcessor.forceFlush();
 };
 

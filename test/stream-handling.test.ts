@@ -6,7 +6,7 @@ import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
 import { Laminar } from "../src";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
-import { observeBase } from "../src/opentelemetry-lib/tracing/decorators";
+import { observeBase, waitForPendingStreams } from "../src/opentelemetry-lib/tracing/decorators";
 
 void describe("Stream Handling in observeBase", () => {
   const exporter = new InMemorySpanExporter();
@@ -334,5 +334,39 @@ void describe("Stream Handling in observeBase", () => {
 
     const output = spans[0].attributes["lmnr.span.output"] as string;
     assert.strictEqual(output, "regular string result");
+  });
+
+  void it("waits for pending streams before shutdown", async () => {
+    // Create a stream that will stay open (not close immediately)
+    let controller: ReadableStreamDefaultController<string>;
+    const stream = new ReadableStream({
+      start(c) {
+        controller = c;
+        // Don't close - keep it pending
+      },
+    });
+
+    const fn = () => stream;
+    const result = observeBase(
+      { name: "testPendingStream" },
+      fn,
+      undefined,
+    );
+
+    // Start consuming but don't finish
+    const reader = result.getReader();
+
+    // This should timeout after 100ms since stream isn't closed
+    const startTime = Date.now();
+    await waitForPendingStreams(100);
+    const elapsed = Date.now() - startTime;
+
+    // Should have timed out around 100ms
+    assert.ok(elapsed >= 90 && elapsed < 200, `Expected timeout around 100ms, got ${elapsed}ms`);
+
+    // Clean up - close the stream and cancel the reader
+    controller!.close();
+    await reader.cancel();
+    reader.releaseLock();
   });
 });
