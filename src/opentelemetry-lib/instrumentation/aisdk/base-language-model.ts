@@ -130,45 +130,11 @@ export abstract class BaseLaminarLanguageModel {
     options: LanguageModelV2CallOptions | LanguageModelV3CallOptions,
     doGenerateFn: (opts: any) => PromiseLike<any>,
   ): PromiseLike<any> {
-    const sessionId = process.env.LMNR_ROLLOUT_SESSION_ID;
-    if (sessionId) {
-      return this.ensureInitialized().then(() => {
-        const span = Laminar.getCurrentSpan();
-        span?.setAttribute('lmnr.rollout.session_id', sessionId);
-        const pathArray = Laminar.getLaminarSpanContext()?.spanPath;
-        if (pathArray) {
-          const path = pathArray.join('.');
-          const currentIndex = this.pathToCurrentIndex[path] ?? 0;
-          const optionsWithOverrides = this.applyOverrides(path, options);
-          // By this time, we are already inside the .doGenerate span, and the
-          // input attributes (ai.prompt.messages) and ai.prompt.tools have
-          // already been set, and so we can override them here.
-          span?.setAttribute(
-            'ai.prompt.messages',
-            stringifyPromptForTelemetry(optionsWithOverrides.prompt),
-          );
-          if (optionsWithOverrides.tools && optionsWithOverrides.tools.length > 0) {
-            span?.setAttribute(
-              'ai.prompt.tools',
-              optionsWithOverrides.tools.map(tool => JSON.stringify(tool)),
-            );
-          }
-          if (this.pathToCount[path] && currentIndex >= this.pathToCount[path]) {
-            this.pathToCurrentIndex[path] = currentIndex + 1;
-            return doGenerateFn(optionsWithOverrides);
-          }
-          this.pathToCurrentIndex[path] = currentIndex + 1;
-          return this.cachedDoGenerate(path, currentIndex).then(cachedResponse => {
-            if (cachedResponse) {
-              return cachedResponse;
-            }
-            return doGenerateFn(optionsWithOverrides);
-          });
-        }
-        return doGenerateFn(options);
-      });
-    }
-    return doGenerateFn(options);
+    return this.doGenerateOrStreamWithCaching(
+      options,
+      doGenerateFn,
+      this.cachedDoGenerate.bind(this),
+    );
   }
 
   /**
@@ -211,6 +177,31 @@ export abstract class BaseLaminarLanguageModel {
     options: LanguageModelV2CallOptions | LanguageModelV3CallOptions,
     doStreamFn: (opts: any) => PromiseLike<any>,
   ): PromiseLike<any> {
+    return this.doGenerateOrStreamWithCaching(
+      options,
+      doStreamFn,
+      this.cachedDoStream.bind(this),
+    );
+  }
+
+  /**
+   * Common implementation for both doGenerateWithCaching and doStreamWithCaching.
+   * Handles rollout session logic, path tracking, cache lookups, and override application.
+   */
+  private doGenerateOrStreamWithCaching(
+    options: LanguageModelV2CallOptions | LanguageModelV3CallOptions,
+    originalFn: (opts: any) => PromiseLike<any>,
+    cachedFn: (path: string, index: number) => Promise<
+      {
+        stream: ReadableStream<any>;
+      } | {
+        content: Array<LanguageModelV2Content | LanguageModelV3Content>;
+        finishReason: LanguageModelV2FinishReason | LanguageModelV3FinishReason;
+        usage: LanguageModelV2Usage | LanguageModelV3Usage;
+        warnings: Array<LanguageModelV2CallWarning | SharedV3Warning>;
+      } | undefined
+    >,
+  ): PromiseLike<any> {
     const sessionId = process.env.LMNR_ROLLOUT_SESSION_ID;
     if (sessionId) {
       return this.ensureInitialized().then(() => {
@@ -220,36 +211,36 @@ export abstract class BaseLaminarLanguageModel {
         if (pathArray) {
           const path = pathArray.join('.');
           const currentIndex = this.pathToCurrentIndex[path] ?? 0;
+          const optionsWithOverrides = this.applyOverrides(path, options);
+          // By this time, we are already inside the .doGenerate/.doStream span, and the
+          // input attributes (ai.prompt.messages) and ai.prompt.tools have
+          // already been set, and so we can override them here.
+          span?.setAttribute(
+            'ai.prompt.messages',
+            stringifyPromptForTelemetry(optionsWithOverrides.prompt),
+          );
+          if (optionsWithOverrides.tools && optionsWithOverrides.tools.length > 0) {
+            span?.setAttribute(
+              'ai.prompt.tools',
+              optionsWithOverrides.tools.map(tool => JSON.stringify(tool)),
+            );
+          }
           if (this.pathToCount[path] && currentIndex >= this.pathToCount[path]) {
             this.pathToCurrentIndex[path] = currentIndex + 1;
-            const optionsWithOverrides = this.applyOverrides(path, options);
-            // By this time, we are already inside the .doStream span, and the
-            // input attributes (ai.prompt.messages) and ai.prompt.tools have
-            // already been set, and so we can override them here.
-            span?.setAttribute(
-              'ai.prompt.messages',
-              stringifyPromptForTelemetry(optionsWithOverrides.prompt),
-            );
-            if (optionsWithOverrides.tools && optionsWithOverrides.tools.length > 0) {
-              span?.setAttribute(
-                'ai.prompt.tools',
-                optionsWithOverrides.tools.map(tool => JSON.stringify(tool)),
-              );
-            }
-            return doStreamFn(optionsWithOverrides);
+            return originalFn(optionsWithOverrides);
           }
           this.pathToCurrentIndex[path] = currentIndex + 1;
-          return this.cachedDoStream(path, currentIndex).then(cachedStreamResult => {
-            if (cachedStreamResult) {
-              return cachedStreamResult;
+          return cachedFn(path, currentIndex).then(cachedResult => {
+            if (cachedResult) {
+              return cachedResult;
             }
-            return doStreamFn(this.applyOverrides(path, options as any));
+            return originalFn(optionsWithOverrides);
           });
         }
-        return doStreamFn(options);
+        return originalFn(options);
       });
     }
-    return doStreamFn(options);
+    return originalFn(options);
   }
 
   /**

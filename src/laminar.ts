@@ -729,17 +729,17 @@ export class Laminar {
       ...(parentIdsPath ? { [PARENT_SPAN_IDS_PATH]: parentIdsPath } : {}),
     };
 
-    const span = getTracer().startSpan(name, { attributes, startTime }, entityContext);
-    if (span instanceof LaminarSpan) {
-      span.activated = activated ?? false;
-    }
+    const span = new LaminarSpan(
+      getTracer().startSpan(name, { attributes, startTime }, entityContext),
+    );
+    span.activated = activated ?? false;
 
     if (input) {
-      (span as LaminarSpan).setInput(input);
+      span.setInput(input);
     }
     if (activated) {
       entityContext = LaminarContextManager.setAssociationProperties(
-        span as LaminarSpan,
+        span,
         entityContext,
       );
       entityContext = trace.setSpan(entityContext, span);
