@@ -7,6 +7,12 @@ import {
   initializeLogger,
   tryToOtelSpanContext,
 } from "../../utils";
+import {
+  consumeAISDKResult,
+  consumeAndTeeAsyncIterable,
+  consumeAndTeeReadableStream,
+  getStream,
+} from "../instrumentation/aisdk/utils";
 import { getTracer, shouldSendTraces } from ".";
 import {
   SPAN_INPUT,
@@ -18,6 +24,175 @@ import {
 } from "./context";
 
 const logger = initializeLogger();
+
+/**
+ * Handles streaming results by consuming the stream in the background
+ * while passing through the original result to the caller
+ */
+function handleStreamResult(
+  originalResult: any,
+  streamInfo: ReturnType<typeof getStream>,
+  span: Span,
+  ignoreOutput: boolean | undefined,
+): any {
+  if (streamInfo.type === 'aisdk-result') {
+    // For AI SDK results, consume the promise properties in the background
+    (async () => {
+      let partialOutput: any = {};
+      try {
+        partialOutput = await consumeAISDKResult(streamInfo.result);
+
+        if (shouldSendTraces() && !ignoreOutput) {
+          try {
+            span.setAttribute(SPAN_OUTPUT, serialize(partialOutput));
+          } catch (error) {
+            logger.warn("Failed to serialize AI SDK stream output: " +
+              `${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      } catch (error) {
+        // Record partial output if we have any
+        if (Object.keys(partialOutput).length > 0 && shouldSendTraces() && !ignoreOutput) {
+          try {
+            span.setAttribute(SPAN_OUTPUT, serialize(partialOutput));
+          } catch (serError) {
+            logger.warn("Failed to serialize partial AI SDK output: " +
+              `${serError instanceof Error ? serError.message : String(serError)}`);
+          }
+        }
+        span.recordException(error as Error);
+        throw error;
+      } finally {
+        span.end();
+      }
+    })().catch(() => {
+      // Error already recorded in the try-catch above
+      // This catch prevents unhandled promise rejection
+    });
+
+    return originalResult;
+  }
+
+  if (streamInfo.type === 'readable-stream') {
+    const { stream, dataPromise } = consumeAndTeeReadableStream(streamInfo.stream);
+
+    // Consume in background
+    (async () => {
+      const { chunks, error } = await dataPromise;
+
+      if (shouldSendTraces() && !ignoreOutput) {
+        try {
+          const output = { type: 'stream', chunks };
+          span.setAttribute(SPAN_OUTPUT, serialize(output));
+        } catch (serError) {
+          logger.warn("Failed to serialize stream output: " +
+            `${serError instanceof Error ? serError.message : String(serError)}`);
+        }
+      }
+
+      if (error) {
+        span.recordException(error as Error);
+      }
+      span.end();
+    })().catch(() => {
+      // Error already handled above
+    });
+
+    return stream;
+  }
+
+  if (streamInfo.type === 'async-iterable') {
+    const { iterable, dataPromise } = consumeAndTeeAsyncIterable(streamInfo.iterable);
+
+    // Consume in background
+    (async () => {
+      const { chunks, error } = await dataPromise;
+
+      if (shouldSendTraces() && !ignoreOutput) {
+        try {
+          const output = { type: 'async-iterable', chunks };
+          span.setAttribute(SPAN_OUTPUT, serialize(output));
+        } catch (serError) {
+          logger.warn("Failed to serialize async iterable output: " +
+            `${serError instanceof Error ? serError.message : String(serError)}`);
+        }
+      }
+
+      if (error) {
+        span.recordException(error as Error);
+      }
+      span.end();
+    })().catch(() => {
+      // Error already handled above
+    });
+
+    return iterable;
+  }
+
+  if (streamInfo.type === 'response') {
+    // For Response objects, extract the body stream and tee it
+    const originalResponse = streamInfo.response;
+
+    if (!originalResponse.body) {
+      // No body, just return as-is and end span
+      span.end();
+      return originalResult;
+    }
+
+    const [stream1, stream2] = originalResponse.body.tee();
+
+    // Create a new Response with the teed stream for the caller
+    const newResponse = new Response(stream1, {
+      status: originalResponse.status,
+      statusText: originalResponse.statusText,
+      headers: originalResponse.headers,
+    });
+
+    // Consume the other stream in background
+    (async () => {
+      const chunks: string[] = [];
+      let error: any = undefined;
+
+      try {
+        const reader = stream2.getReader();
+        const decoder = new TextDecoder();
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(decoder.decode(value, { stream: true }));
+          }
+        } finally {
+          reader.releaseLock();
+        }
+
+        if (shouldSendTraces() && !ignoreOutput) {
+          try {
+            const output = { type: 'response', chunks };
+            span.setAttribute(SPAN_OUTPUT, serialize(output));
+          } catch (serError) {
+            logger.warn("Failed to serialize response output: " +
+              `${serError instanceof Error ? serError.message : String(serError)}`);
+          }
+        }
+      } catch (err) {
+        error = err;
+        span.recordException(error as Error);
+      } finally {
+        span.end();
+      }
+    })().catch(() => {
+      // Error already handled above
+    });
+
+    return newResponse;
+  }
+
+  // Should never reach here, but just in case
+  span.end();
+  return originalResult;
+}
 
 export type DecoratorConfig = {
   name: string;
@@ -185,6 +360,13 @@ export function observeBase<
               throw error;
             }) as ReturnType<F>;
         }
+
+        // Check if the result is a stream
+        const streamInfo = getStream(res);
+        if (streamInfo.type !== null) {
+          return handleStreamResult(res, streamInfo, span, ignoreOutput) as ReturnType<F>;
+        }
+
         try {
           if (shouldSendTraces() && !ignoreOutput) {
             span.setAttribute(

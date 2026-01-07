@@ -307,6 +307,9 @@ void describe("aisdk instrumentation", () => {
       if (done) break;
     }
 
+    // Wait for background stream processing to complete
+    await new Promise(resolve => setTimeout(resolve, 50));
+
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 3);
     const observeSpan = spans.find(span => span.name === "test")!;
