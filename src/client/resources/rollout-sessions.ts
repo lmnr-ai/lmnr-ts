@@ -1,48 +1,46 @@
-import { SpanType } from "../../types";
+import { RolloutParam, SpanType } from "../../types";
 import { otelSpanIdToUUID, otelTraceIdToUUID } from "../../utils";
 import { BaseResource } from "./index";
-
-interface SessionResponse {
-  span: {
-    name: string;
-    input: string;
-    output: string;
-    attributes: Record<string, any>;
-  };
-  pathToCount: Record<string, number>;
-}
 
 export class RolloutSessionsResource extends BaseResource {
   constructor(baseHttpUrl: string, projectApiKey: string) {
     super(baseHttpUrl, projectApiKey);
   }
 
-  public async get({
-    path,
-    index,
+  /**
+   * Connects to the SSE stream for rollout debugging sessions
+   * Returns the Response object for streaming SSE events
+   */
+  public async connect({
     sessionId,
+    name,
+    params,
+    signal,
   }: {
-    path: string;
-    index: number;
     sessionId: string;
-  }): Promise<SessionResponse | undefined> {
+    params: RolloutParam[];
+    name: string;
+    signal?: AbortSignal;
+  }): Promise<Response> {
     const response = await fetch(`${this.baseHttpUrl}/v1/rollouts/${sessionId}`, {
       method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({
-        path,
-        index,
-      }),
+      headers: {
+        ...this.headers(),
+        'Accept': 'text/event-stream',
+      },
+      body: JSON.stringify({ name, params }),
+      signal,
     });
 
     if (!response.ok) {
-      if (response.status === 404) {
-        return;
-      }
-      throw new Error(`${response.status} ${await response.text()}`);
+      throw new Error(`SSE connection failed: ${response.status} ${response.statusText}`);
     }
 
-    return await response.json() as SessionResponse;
+    if (!response.body) {
+      throw new Error('No response body');
+    }
+
+    return response;
   }
 
   public async delete({

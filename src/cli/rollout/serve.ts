@@ -443,10 +443,10 @@ export async function runDev(
 
   try {
     sseClient = createSSEClient({
-      baseUrl: client['baseUrl'], // Access private property for baseUrl
+      client,
       sessionId,
-      projectApiKey: client['projectApiKey'], // Access private property for projectApiKey
       params: selectedFunction.params || [],
+      name: selectedFunction.name,
     });
 
     // Register all event listeners BEFORE connecting

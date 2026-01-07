@@ -44,9 +44,9 @@ export const wrapAISDK = (ai: typeof AI): typeof AI => {
   return wrapped as typeof AI;
 };
 
-export function laminarLanguageModel(languageModel: LanguageModelV3): LanguageModelV3;
-export function laminarLanguageModel(languageModel: LanguageModelV2): LanguageModelV2;
-export function laminarLanguageModel(
+export function wrapLanguageModel(languageModel: LanguageModelV3): LanguageModelV3;
+export function wrapLanguageModel(languageModel: LanguageModelV2): LanguageModelV2;
+export function wrapLanguageModel(
   languageModel: LanguageModelV2 | LanguageModelV3,
 ): LanguageModelV2 | LanguageModelV3 {
   if (languageModel.specificationVersion === 'v3') {

@@ -1,16 +1,17 @@
 import { EventEmitter } from 'events';
 import { createParser } from 'eventsource-parser';
 
+import { LaminarClient } from '../../client';
 import { RolloutHandshakeEvent, RolloutParam, RolloutRunEvent } from '../../types';
 
 const HEARTBEAT_INTERVAL = 5000; // 5 seconds
 const MAX_MISSED_HEARTBEATS = 3; // N missed intervals before reconnect
 
 export interface SSEClientOptions {
-  baseUrl: string;
+  client: LaminarClient;
   sessionId: string;
-  projectApiKey: string;
   params: RolloutParam[];
+  name: string;
 }
 
 /**
@@ -18,10 +19,10 @@ export interface SSEClientOptions {
  * Connects to the Laminar backend and listens for run events
  */
 export class SSEClient extends EventEmitter {
-  private baseUrl: string;
+  private client: LaminarClient;
   private sessionId: string;
-  private projectApiKey: string;
   private params: RolloutParam[];
+  private name: string;
   private abortController?: AbortController;
   private reconnectTimer?: NodeJS.Timeout;
   private lastHeartbeat: number = Date.now();
@@ -30,10 +31,10 @@ export class SSEClient extends EventEmitter {
 
   constructor(options: SSEClientOptions) {
     super();
-    this.baseUrl = options.baseUrl;
+    this.client = options.client;
     this.sessionId = options.sessionId;
-    this.projectApiKey = options.projectApiKey;
     this.params = options.params;
+    this.name = options.name;
   }
 
   /**
@@ -48,33 +49,18 @@ export class SSEClient extends EventEmitter {
     this.lastHeartbeat = Date.now();
 
     try {
-      const response = await fetch(
-        `${this.baseUrl}/v1/rollouts/${this.sessionId}`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${this.projectApiKey}`,
-            'Content-Type': 'application/json',
-            'Accept': 'text/event-stream',
-          },
-          body: JSON.stringify({ params: this.params }),
-          signal: this.abortController.signal,
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error(`SSE connection failed: ${response.status} ${response.statusText}`);
-      }
-
-      if (!response.body) {
-        throw new Error('No response body');
-      }
+      const response = await this.client.rolloutSessions.connect({
+        sessionId: this.sessionId,
+        params: this.params,
+        signal: this.abortController.signal,
+        name: this.name,
+      });
 
       this.emit('connected');
       this.startHeartbeatCheck();
 
       // Parse SSE stream
-      await this.parseSSEStream(response.body);
+      await this.parseSSEStream(response.body!);
     } catch (error: any) {
       if (error.name === 'AbortError') {
         // Connection was aborted intentionally

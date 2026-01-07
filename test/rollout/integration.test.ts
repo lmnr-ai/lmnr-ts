@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { startCacheServer } from '../../src/cli/rollout/cache-server';
 import { observe } from '../../src/decorators';
 import { _resetConfiguration, initializeTracing } from '../../src/opentelemetry-lib/configuration';
-import { laminarLanguageModel } from '../../src/opentelemetry-lib/instrumentation/aisdk';
+import { wrapLanguageModel } from '../../src/opentelemetry-lib/instrumentation/aisdk';
 import { getTracer } from '../../src/opentelemetry-lib/tracing';
 import { decompressRecordingResponse } from '../utils';
 
@@ -147,7 +147,7 @@ void describe('Rollout Integration Tests', () => {
       { name: 'agent', rolloutEntrypoint: true },
       async () => {
         const result = await generateText({
-          model: laminarLanguageModel(model),
+          model: wrapLanguageModel(model),
           messages: [{
             role: 'user',
             content: [{
@@ -271,7 +271,7 @@ void describe('Rollout Integration Tests', () => {
       { name: 'fresh-agent', rolloutEntrypoint: true },
       async (input: string) => {
         const result = await generateText({
-          model: laminarLanguageModel(model),
+          model: wrapLanguageModel(model),
           messages: [{ role: 'user', content: [{ type: 'text', text: input }] }],
           experimental_telemetry: { isEnabled: true, tracer: getTracer() },
         });
@@ -300,7 +300,7 @@ void describe('Rollout Integration Tests', () => {
       { name: 'test-agent', rolloutEntrypoint: true },
       async () => {
         const result = await generateText({
-          model: laminarLanguageModel(model),
+          model: wrapLanguageModel(model),
           messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
           experimental_telemetry: { isEnabled: true, tracer: getTracer() },
         });
@@ -370,7 +370,7 @@ void describe('Rollout Integration Tests', () => {
       { name: 'test', rolloutEntrypoint: true },
       async () => {
         const stream = streamText({
-          model: laminarLanguageModel(model),
+          model: wrapLanguageModel(model),
           messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
           experimental_telemetry: { isEnabled: true, tracer: getTracer() },
         });
@@ -434,7 +434,7 @@ void describe('Rollout Integration Tests', () => {
       { name: 'test', rolloutEntrypoint: true },
       async () => {
         const result = await generateText({
-          model: laminarLanguageModel(model),
+          model: wrapLanguageModel(model),
           messages: [{ role: 'user', content: [{ type: 'text', text: 'Test' }] }],
           experimental_telemetry: { isEnabled: true, tracer: getTracer() },
         });
@@ -458,7 +458,7 @@ void describe('Rollout Integration Tests', () => {
       { name: 'tool-agent', rolloutEntrypoint: true },
       async () => {
         const result = await generateText({
-          model: laminarLanguageModel(model),
+          model: wrapLanguageModel(model),
           messages: [{
             role: 'user',
             content: [{ type: 'text', text: 'What is the weather in SF?' }],
