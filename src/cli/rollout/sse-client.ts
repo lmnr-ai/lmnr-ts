@@ -224,8 +224,8 @@ export class SSEClient extends EventEmitter {
   shutdown(): void {
     this.isShutdown = true;
     this.disconnect(true);
-    this.removeAllListeners();
     this.emit('shutdown');
+    this.removeAllListeners();
   }
 }
 

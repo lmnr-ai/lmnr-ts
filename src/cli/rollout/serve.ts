@@ -55,7 +55,7 @@ interface WorkerConfig {
   env: Record<string, string>;
   cacheServerPort: number;
   baseUrl: string;
-  projectApiKey: string;
+  projectApiKey?: string;
   httpPort: number;
   grpcPort: number;
 }
@@ -155,7 +155,7 @@ async function executeInChildProcess(config: WorkerConfig): Promise<any> {
           }
         } catch {
           // If we can't parse a prefixed message, log it as an error
-          logger.error(`Failed to parse worker protocol message: ${line}`);
+          logger.debug(`Failed to parse worker protocol message: ${line}`);
         }
       } else {
         // This is user output from console.log - pass it through transparently
@@ -352,7 +352,7 @@ async function handleRunEvent(
       env,
       cacheServerPort,
       baseUrl,
-      projectApiKey: options.projectApiKey || '',
+      projectApiKey: options.projectApiKey,
       httpPort,
       grpcPort,
     };
@@ -385,6 +385,17 @@ async function handleRunEvent(
     logger.error(`Error handling run event: ${error instanceof Error ? error.message : error}`);
     if (error instanceof Error && error.stack) {
       logger.error(error.stack);
+    }
+    try {
+      await client.rolloutSessions.setStatus({
+        sessionId,
+        // TODO: set to failed, once the API supports it
+        status: 'FINISHED',
+      });
+    } catch (error: any) {
+      logger.error(
+        `Error setting rollout session status: ${error instanceof Error ? error.message : error}`,
+      );
     }
   }
 }

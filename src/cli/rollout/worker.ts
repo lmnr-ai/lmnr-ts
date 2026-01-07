@@ -1,6 +1,7 @@
 import * as readline from 'readline';
 
 import { Laminar } from '../../laminar';
+import { consumeStreamResult } from '../../opentelemetry-lib/tracing/stream-utils';
 import { buildFile, loadModule, selectRolloutFunction } from './build';
 
 /**
@@ -35,7 +36,7 @@ interface WorkerConfig {
   env: Record<string, string>;
   cacheServerPort: number;
   baseUrl: string;
-  projectApiKey: string;
+  projectApiKey?: string;
   httpPort: number;
   grpcPort: number;
 }
@@ -108,7 +109,11 @@ async function runWorker(config: WorkerConfig): Promise<any> {
   const orderedArgs = selectedFunction.params.map(param => config.args[param.name]);
   workerLogger.info(`Calling function with args: ${JSON.stringify(orderedArgs)}`);
 
-  const result = await selectedFunction.fn(...orderedArgs);
+  const rawResult = await selectedFunction.fn(...orderedArgs);
+
+  // Consume the result if it's a stream to ensure background processing completes
+  workerLogger.debug('Consuming result (if stream)...');
+  const result = await consumeStreamResult(rawResult);
 
   workerLogger.info('Rollout function completed successfully');
   workerLogger.debug(`Result: ${JSON.stringify(result, null, 2)}`);

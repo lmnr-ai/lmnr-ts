@@ -12,7 +12,9 @@ import { initializeLogger } from "../../utils";
 import { _configuration } from "../configuration";
 import { InitializeOptions } from "../interfaces";
 import { createResource } from "./compat";
-import { waitForPendingStreams } from "./decorators";
+import { consumeStreamResult,waitForPendingStreams } from "./stream-utils";
+
+export { consumeStreamResult,waitForPendingStreams };
 import { initializeLaminarInstrumentations } from "./instrumentations";
 import { LaminarSpanProcessor } from "./processor";
 import { LaminarTracer } from "./tracer";

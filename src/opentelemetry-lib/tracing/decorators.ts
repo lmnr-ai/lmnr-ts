@@ -7,12 +7,7 @@ import {
   initializeLogger,
   tryToOtelSpanContext,
 } from "../../utils";
-import {
-  consumeAISDKResult,
-  consumeAndTeeAsyncIterable,
-  consumeAndTeeReadableStream,
-  getStream,
-} from "../instrumentation/aisdk/utils";
+import { getStream } from "../instrumentation/aisdk/utils";
 import { getTracer, shouldSendTraces } from ".";
 import {
   SPAN_INPUT,
@@ -22,228 +17,17 @@ import {
   ASSOCIATION_PROPERTIES_KEY,
   LaminarContextManager,
 } from "./context";
+import { handleStreamResult } from "./stream-utils";
 
 const logger = initializeLogger();
 
-// Track pending stream processing promises
-const pendingStreamProcessing = new Set<Promise<void>>();
-
-/**
- * Wait for all pending stream processing to complete with a timeout
- * @param timeoutMs - Maximum time to wait in milliseconds (default: 5000)
- */
-export const waitForPendingStreams = async (timeoutMs: number = 5000): Promise<void> => {
-  if (pendingStreamProcessing.size === 0) {
-    return;
-  }
-  logger.debug(`Waiting for ${pendingStreamProcessing.size} pending stream(s)`);
-
-  const initialCount = pendingStreamProcessing.size;
-  const pendingPromises = Array.from(pendingStreamProcessing);
-
-  let timedOut = false;
-  const timeoutPromise = new Promise<void>((resolve) => {
-    setTimeout(() => {
-      timedOut = true;
-      resolve();
-    }, timeoutMs);
-  });
-
-  await Promise.race([
-    Promise.allSettled(pendingPromises),
-    timeoutPromise,
-  ]);
-
-  if (timedOut && pendingStreamProcessing.size > 0) {
-    logger.warn(
-      `Timeout waiting for ${pendingStreamProcessing.size} pending stream(s) ` +
-      `after ${timeoutMs}ms (started with ${initialCount})`,
-    );
-  }
-};
-
-/**
- * Track a background promise and ensure cleanup
- */
-const trackStreamProcessing = (task: () => Promise<void>): void => {
-  const processingPromise = task().finally(() => {
-    pendingStreamProcessing.delete(processingPromise);
-  });
-
-  pendingStreamProcessing.add(processingPromise);
-};
-
-/**
- * Handles streaming results by consuming the stream in the background
- * while passing through the original result to the caller
- */
-const handleStreamResult = (
-  originalResult: any,
-  streamInfo: ReturnType<typeof getStream>,
-  span: Span,
-  ignoreOutput: boolean | undefined,
-): any => {
-  if (streamInfo.type === 'aisdk-result') {
-    // For AI SDK results, consume the promise properties in the background
-    trackStreamProcessing(async () => {
-      let partialOutput: any = {};
-      try {
-        partialOutput = await consumeAISDKResult(streamInfo.result);
-
-        if (shouldSendTraces() && !ignoreOutput) {
-          try {
-            span.setAttribute(SPAN_OUTPUT, serialize(partialOutput));
-          } catch (error) {
-            logger.warn("Failed to serialize AI SDK stream output: " +
-              `${error instanceof Error ? error.message : String(error)}`);
-          }
-        }
-      } catch (error) {
-        // Record partial output if we have any
-        if (Object.keys(partialOutput).length > 0 && shouldSendTraces() && !ignoreOutput) {
-          try {
-            span.setAttribute(SPAN_OUTPUT, serialize(partialOutput));
-          } catch (serError) {
-            logger.warn("Failed to serialize partial AI SDK output: " +
-              `${serError instanceof Error ? serError.message : String(serError)}`);
-          }
-        }
-        span.recordException(error as Error);
-      } finally {
-        span.end();
-      }
-    });
-
-    return originalResult;
-  }
-
-  if (streamInfo.type === 'readable-stream') {
-    const { stream, dataPromise } = consumeAndTeeReadableStream(streamInfo.stream);
-
-    // Consume in background
-    trackStreamProcessing(async () => {
-      try {
-        const { chunks, error } = await dataPromise;
-
-        if (shouldSendTraces() && !ignoreOutput) {
-          try {
-            const output = { type: 'stream', chunks };
-            span.setAttribute(SPAN_OUTPUT, serialize(output));
-          } catch (serError) {
-            logger.warn("Failed to serialize stream output: " +
-              `${serError instanceof Error ? serError.message : String(serError)}`);
-          }
-        }
-
-        if (error) {
-          span.recordException(error as Error);
-        }
-      } finally {
-        span.end();
-      }
-    });
-
-    return stream;
-  }
-
-  if (streamInfo.type === 'async-iterable') {
-    const { iterable, dataPromise } = consumeAndTeeAsyncIterable(streamInfo.iterable);
-
-    // Consume in background
-    trackStreamProcessing(async () => {
-      try {
-        const { chunks, error } = await dataPromise;
-
-        if (shouldSendTraces() && !ignoreOutput) {
-          try {
-            const output = { type: 'async-iterable', chunks };
-            span.setAttribute(SPAN_OUTPUT, serialize(output));
-          } catch (serError) {
-            logger.warn("Failed to serialize async iterable output: " +
-              `${serError instanceof Error ? serError.message : String(serError)}`);
-          }
-        }
-
-        if (error) {
-          span.recordException(error as Error);
-        }
-      } finally {
-        span.end();
-      }
-    });
-
-    return iterable;
-  }
-
-  if (streamInfo.type === 'response') {
-    // For Response objects, extract the body stream and tee it
-    const originalResponse = streamInfo.response;
-
-    if (!originalResponse.body) {
-      // No body, just return as-is and end span
-      span.end();
-      return originalResult;
-    }
-
-    const [stream1, stream2] = originalResponse.body.tee();
-
-    // Create a new Response with the teed stream for the caller
-    const newResponse = new Response(stream1, {
-      status: originalResponse.status,
-      statusText: originalResponse.statusText,
-      headers: originalResponse.headers,
-    });
-
-    // Consume the other stream in background
-    trackStreamProcessing(async () => {
-      const chunks: string[] = [];
-      let error: any = undefined;
-
-      try {
-        const reader = stream2.getReader();
-        const decoder = new TextDecoder();
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(decoder.decode(value, { stream: true }));
-          }
-        } finally {
-          reader.releaseLock();
-        }
-
-        if (shouldSendTraces() && !ignoreOutput) {
-          try {
-            const output = { type: 'response', chunks };
-            span.setAttribute(SPAN_OUTPUT, serialize(output));
-          } catch (serError) {
-            logger.warn("Failed to serialize response output: " +
-              `${serError instanceof Error ? serError.message : String(serError)}`);
-          }
-        }
-      } catch (err) {
-        error = err;
-        span.recordException(error as Error);
-      } finally {
-        span.end();
-      }
-    });
-
-    return newResponse;
-  }
-
-  // Should never reach here, but just in case
-  span.end();
-  return originalResult;
-};
+export { consumeStreamResult, waitForPendingStreams } from "./stream-utils";
 
 export type DecoratorConfig = {
   name: string;
   contextProperties?: {
     userId?: string;
     sessionId?: string;
-    rolloutSessionId?: string;
     traceType?: TraceType;
     tracingLevel?: TracingLevel;
     metadata?: Record<string, any>;
@@ -381,6 +165,19 @@ export function observeBase<
 
         if (res instanceof Promise) {
           return res.then((resolvedRes) => {
+            // Check if the resolved result is a stream
+            const streamInfo = getStream(resolvedRes);
+            if (streamInfo.type !== null) {
+              return handleStreamResult(
+                resolvedRes,
+                streamInfo,
+                span,
+                ignoreOutput,
+                serialize,
+              ) as ReturnType<F>;
+            }
+
+            // Not a stream, handle normally
             try {
               if (shouldSendTraces() && !ignoreOutput) {
                 span.setAttribute(
@@ -408,7 +205,8 @@ export function observeBase<
         // Check if the result is a stream
         const streamInfo = getStream(res);
         if (streamInfo.type !== null) {
-          return handleStreamResult(res, streamInfo, span, ignoreOutput) as ReturnType<F>;
+          return handleStreamResult(
+            res, streamInfo, span, ignoreOutput, serialize) as ReturnType<F>;
         }
 
         try {

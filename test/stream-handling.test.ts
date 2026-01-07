@@ -6,7 +6,11 @@ import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
 import { Laminar } from "../src";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
-import { observeBase, waitForPendingStreams } from "../src/opentelemetry-lib/tracing/decorators";
+import { observeBase } from "../src/opentelemetry-lib/tracing/decorators";
+import {
+  consumeStreamResult,
+  waitForPendingStreams,
+} from "../src/opentelemetry-lib/tracing/stream-utils";
 
 void describe("Stream Handling in observeBase", () => {
   const exporter = new InMemorySpanExporter();
@@ -368,5 +372,70 @@ void describe("Stream Handling in observeBase", () => {
     controller!.close();
     await reader.cancel();
     reader.releaseLock();
+  });
+
+  void it("consumeStreamResult handles ReadableStream", async () => {
+    const chunks = ["chunk1", "chunk2", "chunk3"];
+    const stream = new ReadableStream({
+      start(controller) {
+        chunks.forEach(chunk => controller.enqueue(chunk));
+        controller.close();
+      },
+    });
+
+    const result = await consumeStreamResult(stream);
+    assert.ok(typeof result === 'object' && result !== null);
+    assert.strictEqual((result as any).type, 'stream');
+    assert.deepStrictEqual((result as any).chunks, chunks);
+  });
+
+  void it("consumeStreamResult handles AsyncIterable", async () => {
+    const items = [1, 2, 3, 4, 5];
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async function* generateItems() {
+      for (const item of items) {
+        yield item;
+      }
+    }
+
+    const result = await consumeStreamResult(generateItems());
+    assert.ok(typeof result === 'object' && result !== null);
+    assert.strictEqual((result as any).type, 'async-iterable');
+    assert.deepStrictEqual((result as any).chunks, items);
+  });
+
+  void it("consumeStreamResult handles AI SDK-like result", async () => {
+    const mockStreamTextResult = {
+      textStream: new ReadableStream({
+        start(controller) {
+          controller.enqueue("Hello");
+          controller.enqueue(" ");
+          controller.enqueue("World");
+          controller.close();
+        },
+      }),
+      text: Promise.resolve("Hello World"),
+      toolCalls: Promise.resolve([]),
+      reasoning: Promise.resolve([]),
+      finishReason: Promise.resolve("stop" as const),
+      usage: Promise.resolve({
+        promptTokens: 10,
+        completionTokens: 20,
+        totalTokens: 30,
+      }),
+      files: Promise.resolve([]),
+      sources: Promise.resolve([]),
+    };
+
+    const result = await consumeStreamResult(mockStreamTextResult);
+    // Should return the original result object
+    assert.strictEqual(result, mockStreamTextResult);
+  });
+
+  void it("consumeStreamResult handles non-stream results", async () => {
+    const regularResult = { foo: "bar", baz: 123 };
+    const result = await consumeStreamResult(regularResult);
+    assert.strictEqual(result, regularResult);
   });
 });
