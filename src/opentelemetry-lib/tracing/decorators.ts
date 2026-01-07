@@ -56,7 +56,7 @@ export const waitForPendingStreams = async (timeoutMs: number = 5000): Promise<v
 
   if (timedOut && pendingStreamProcessing.size > 0) {
     logger.warn(
-      `Timeout waiting for ${pendingStreamProcessing.size} pending stream(s)` +
+      `Timeout waiting for ${pendingStreamProcessing.size} pending stream(s) ` +
       `after ${timeoutMs}ms (started with ${initialCount})`,
     );
   }
