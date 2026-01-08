@@ -12,8 +12,8 @@ importers:
         specifier: ^1.13.4
         version: 1.14.0
       '@lmnr-ai/claude-code-proxy':
-        specifier: ^0.1.4
-        version: 0.1.4
+        specifier: ^0.1.5
+        version: 0.1.5
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.0
@@ -850,8 +850,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@lmnr-ai/claude-code-proxy@0.1.4':
-    resolution: {integrity: sha512-oQEo8wl6yE2I/ZX321HIpVBmiyCfAH9ol0I0kEpfjhX43bheS5TNhE4VuTRXyILrcE6wob6IRWNFQIrgEGSqtA==}
+  '@lmnr-ai/claude-code-proxy@0.1.5':
+    resolution: {integrity: sha512-4vei+TX0WsXf8iamfeUDlnH4mEXtZhvvRC5FGYTDv38S6KYFj/thH09aDv8GTKTTJfb/+C1WaMdaD6488qCBqQ==}
     engines: {node: '>=18.0.0'}
 
   '@modelcontextprotocol/sdk@1.24.2':
@@ -4611,7 +4611,7 @@ snapshots:
   '@lmnr-ai/claude-code-proxy-win32-x64-msvc@0.1.4':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy@0.1.4':
+  '@lmnr-ai/claude-code-proxy@0.1.5':
     optionalDependencies:
       '@lmnr-ai/claude-code-proxy-darwin-arm64': 0.1.4
       '@lmnr-ai/claude-code-proxy-darwin-x64': 0.1.4
