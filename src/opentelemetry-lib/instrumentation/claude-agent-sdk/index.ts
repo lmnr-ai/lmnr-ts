@@ -51,14 +51,21 @@ export function instrumentClaudeAgentQuery(
 
       try {
         // Start proxy (uses reference counting for concurrent requests)
-        await startProxy();
+        await startProxy({
+          env: params.options?.env ?? process.env,
+        });
 
         // Publish span context
         const proxyBaseUrl = getProxyBaseUrl();
+        logger.debug(`getProxyBaseUrl() result: ${proxyBaseUrl}`);
         if (proxyBaseUrl) {
           Laminar.withSpan(span, () => {
+            logger.debug('Setting trace to proxy...');
             setTraceToProxy();
           });
+          if (params.options?.env) {
+            params.options.env.ANTHROPIC_BASE_URL = proxyBaseUrl;
+          }
         } else {
           logger.debug("No claude proxy server found. Skipping span context publication.");
         }
