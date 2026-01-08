@@ -110,8 +110,20 @@ async function runWorker(config: WorkerConfig): Promise<any> {
 
   // Execute the rollout function with args
   workerLogger.debug('Executing rollout function...');
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-  const orderedArgs = selectedFunction.params.map(param => config.args[param.name]);
+
+  const orderedArgs = selectedFunction.params.map(param => {
+    // Handle destructured parameters by reconstructing the object from nested properties
+    if (param.nested && param.nested.length > 0) {
+      const reconstructed: Record<string, any> = {};
+      for (const nestedParam of param.nested) {
+        reconstructed[nestedParam.name] = config.args[nestedParam.name];
+      }
+      return reconstructed;
+    }
+    // Regular parameter
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return config.args[param.name];
+  });
   workerLogger.info(`Calling function with args: ${JSON.stringify(orderedArgs)}`);
 
   const rawResult = await selectedFunction.fn(...orderedArgs);

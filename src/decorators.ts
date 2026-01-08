@@ -490,7 +490,7 @@ const buildContextProperties = (
     ...ctxAssociationProperties.metadata,
     ...parentMetadata,
     ...options.metadata,
-    ...{ 'rollout.session_id': rolloutSessionIdValue },
+    ...(rolloutSessionIdValue ? { 'rollout.session_id': rolloutSessionIdValue } : {}),
   };
 
   if (Object.keys(mergedMetadata).length > 0) {

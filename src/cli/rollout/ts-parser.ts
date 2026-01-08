@@ -57,11 +57,18 @@ function parseTypeLiteral(
       const propType = member.type ? typeToString(member.type, sourceFile) : undefined;
       const propRequired = !member.questionToken;
 
-      nested.push({
+      const param: RolloutParam = {
         name: propName,
         type: propType,
         required: propRequired,
-      });
+      };
+
+      // Recursively parse nested object types
+      if (member.type && ts.isTypeLiteralNode(member.type)) {
+        param.nested = parseTypeLiteral(member.type, sourceFile);
+      }
+
+      nested.push(param);
     }
   }
 
@@ -91,6 +98,7 @@ function parseObjectBinding(
       // Find corresponding type in the type literal
       let propType: string | undefined;
       let propRequired = true;
+      let propTypeNode: ts.TypeNode | undefined;
 
       if (typeLiteral) {
         const member = typeLiteral.members.find(
@@ -103,6 +111,7 @@ function parseObjectBinding(
         if (member) {
           propType = member.type ? typeToString(member.type, sourceFile) : undefined;
           propRequired = !member.questionToken;
+          propTypeNode = member.type;
         }
       }
 
@@ -111,12 +120,19 @@ function parseObjectBinding(
         ? element.initializer.getText(sourceFile)
         : undefined;
 
-      nested.push({
+      const param: RolloutParam = {
         name: propName,
         type: propType,
         required: propRequired && !defaultValue,
         default: defaultValue,
-      });
+      };
+
+      // Recursively parse nested object types
+      if (propTypeNode && ts.isTypeLiteralNode(propTypeNode)) {
+        param.nested = parseTypeLiteral(propTypeNode, sourceFile);
+      }
+
+      nested.push(param);
     }
   }
 
@@ -129,6 +145,7 @@ function parseObjectBinding(
 function parseParameter(
   param: ts.ParameterDeclaration,
   sourceFile: ts.SourceFile,
+  destructuredName?: string,
 ): RolloutParam | null {
   // Handle simple identifier parameters
   if (ts.isIdentifier(param.name)) {
@@ -152,8 +169,9 @@ function parseParameter(
     const nested = parseObjectBinding(param.name, param.type, sourceFile);
 
     // Return a synthetic parameter representing the destructured object
+    // Use provided name or default to '_destructured'
     return {
-      name: '_destructured', // Special marker for destructured params
+      name: destructuredName ?? '_destructured',
       type: typeToString(param.type, sourceFile),
       required: !isParameterOptional(param),
       nested,
@@ -219,8 +237,44 @@ function extractFunctionParams(
 ): RolloutParam[] {
   const params: RolloutParam[] = [];
 
+  // First pass: collect all parameter names and count destructured params
+  const existingNames = new Set<string>();
+  let destructuredCount = 0;
+
   for (const param of func.parameters) {
-    const parsed = parseParameter(param, sourceFile);
+    if (ts.isIdentifier(param.name)) {
+      existingNames.add(param.name.text);
+    } else if (ts.isObjectBindingPattern(param.name)) {
+      destructuredCount++;
+    }
+  }
+
+  // Determine if we need indexed names for destructured params
+  const useIndexedNames = destructuredCount > 1;
+  let destructuredIndex = 0;
+
+  // Second pass: parse parameters with appropriate names
+  for (const param of func.parameters) {
+    let destructuredName: string | undefined;
+
+    if (ts.isObjectBindingPattern(param.name)) {
+      if (useIndexedNames) {
+        // Generate unique name and ensure no collision
+        do {
+          destructuredName = `_destructured${destructuredIndex}`;
+          destructuredIndex++;
+        } while (existingNames.has(destructuredName));
+        existingNames.add(destructuredName);
+      } else {
+        // Single destructured param - use simple name if no collision
+        destructuredName = existingNames.has('_destructured')
+          ? '_destructured0'
+          : '_destructured';
+        existingNames.add(destructuredName);
+      }
+    }
+
+    const parsed = parseParameter(param, sourceFile, destructuredName);
     if (parsed) {
       params.push(parsed);
     }
