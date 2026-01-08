@@ -51,7 +51,9 @@ export function instrumentClaudeAgentQuery(
 
       try {
         // Start proxy (uses reference counting for concurrent requests)
-        await startProxy();
+        await startProxy({
+          env: params.options?.env ?? process.env
+        });
 
         // Publish span context
         const proxyBaseUrl = getProxyBaseUrl();
@@ -61,14 +63,14 @@ export function instrumentClaudeAgentQuery(
             logger.debug('Setting trace to proxy...');
             setTraceToProxy();
           });
+          if (params.options?.env) {
+            params.options.env.ANTHROPIC_BASE_URL = proxyBaseUrl;
+          }
         } else {
           logger.debug("No claude proxy server found. Skipping span context publication.");
         }
 
         // Call original and wrap the generator
-        logger.debug(
-          `ANTHROPIC_BASE_URL before calling originalQuery: ${process.env.ANTHROPIC_BASE_URL}`,
-        );
         const originalGenerator = originalQuery(params);
 
         // Yield items and collect

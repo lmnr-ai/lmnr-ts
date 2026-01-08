@@ -138,7 +138,11 @@ export function getProxyBaseUrl(): string | null {
 /**
  * Start the claude-code proxy server with reference counting
  */
-export async function startProxy(): Promise<string | null> {
+export async function startProxy({
+  env,
+}: {
+  env: Record<string, string | undefined>;
+}): Promise<string | null> {
   // If there's an ongoing startup, wait for it to complete
 
   if (ccProxyStartupPromise !== null) {
@@ -165,14 +169,8 @@ export async function startProxy(): Promise<string | null> {
       const targetUrl =
         ccProxyTargetUrl ||
         process.env.ANTHROPIC_ORIGINAL_BASE_URL ||
-        process.env.ANTHROPIC_BASE_URL ||
+        env.ANTHROPIC_BASE_URL || process.env.ANTHROPIC_BASE_URL ||
         DEFAULT_ANTHROPIC_BASE_URL;
-
-      logger.debug(`process.env.ANTHROPIC_ORIGINAL_BASE_URL: ${process.env.ANTHROPIC_ORIGINAL_BASE_URL}`);
-      logger.debug(`process.env.ANTHROPIC_BASE_URL: ${process.env.ANTHROPIC_BASE_URL}`);
-      logger.debug(`DEFAULT_ANTHROPIC_BASE_URL: ${DEFAULT_ANTHROPIC_BASE_URL}`);
-
-      logger.debug(`Using anthropic base url: ${targetUrl}`);
 
       ccProxyTargetUrl = targetUrl;
       process.env.ANTHROPIC_ORIGINAL_BASE_URL = targetUrl;
@@ -180,7 +178,6 @@ export async function startProxy(): Promise<string | null> {
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { runServer } = require("@lmnr-ai/claude-code-proxy");
-        logger.debug(`Running cc-proxy server on port ${port} with target url ${targetUrl}`);
         runServer(targetUrl, port);
       } catch (e) {
         logger.warn(`Unable to start cc-proxy: ${e instanceof Error ? e.message : String(e)}`);
@@ -199,7 +196,6 @@ export async function startProxy(): Promise<string | null> {
       const proxyBaseUrl = `http://127.0.0.1:${port}`;
       ccProxyBaseUrl = proxyBaseUrl;
       ccProxyRefCount = 1;
-      logger.debug(`Setting ANTHROPIC_BASE_URL to: ${proxyBaseUrl}`);
       process.env.ANTHROPIC_BASE_URL = proxyBaseUrl;
       registerProxyShutdown();
 
