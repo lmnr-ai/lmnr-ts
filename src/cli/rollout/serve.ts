@@ -1,4 +1,5 @@
 import { ChildProcess, spawn } from 'child_process';
+import chokidar from 'chokidar';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
@@ -26,6 +27,13 @@ interface ServeOptions {
   frontendPort?: number;
   externalPackages?: string[];
   dynamicImportsToSkip?: string[];
+}
+
+interface LoadedFunction {
+  fn: (...args: any[]) => any;
+  params: any[];
+  name: string;
+  exportName: string;
 }
 
 /**
@@ -190,8 +198,73 @@ async function executeInChildProcess(config: WorkerConfig): Promise<any> {
 }
 
 /**
- * Loads and executes a module to register rollout functions
+ * Loads and discovers rollout functions from a file
  */
+async function loadRolloutModule(
+  filePath: string,
+  options: ServeOptions,
+): Promise<LoadedFunction> {
+  // FIRST: Extract TypeScript metadata if it's a .ts file
+  let paramsMetadata: Map<string, any> | undefined;
+  if (filePath.endsWith('.ts') || filePath.endsWith('.tsx')) {
+    try {
+      paramsMetadata = extractRolloutFunctions(filePath);
+      logger.debug(`Extracted TypeScript metadata for ${paramsMetadata.size} functions`);
+    } catch (error) {
+      logger.warn('Failed to extract TypeScript metadata, falling back to runtime parsing: ' +
+        (error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  // THEN: Build and load the module
+  const moduleText = await buildFile(filePath, {
+    externalPackages: options.externalPackages,
+    dynamicImportsToSkip: options.dynamicImportsToSkip,
+  });
+  loadModule({
+    filename: filePath,
+    moduleText,
+  });
+
+  // Select the appropriate function
+  const selectedFunction = selectRolloutFunction(options.function);
+
+  // If we have TypeScript metadata, use it to enrich the params
+  // The TypeScript parser stores functions by their export name (variable name),
+  // but runtime registration uses the span name as the key.
+  // We need to find the metadata entry where the span name matches.
+  if (paramsMetadata) {
+    logger.debug(`Available TS metadata keys: ${Array.from(paramsMetadata.keys()).join(', ')}`);
+    logger.debug(
+      `Looking for span name: ${selectedFunction.name} ` +
+      `(runtime key: ${selectedFunction.exportName})`,
+    );
+
+    // Search for metadata by span name
+    let foundMetadata: any = null;
+    for (const [exportName, metadata] of paramsMetadata.entries()) {
+      logger.debug(`Checking ${exportName}: span name = ${metadata.name}`);
+      if (metadata.name === selectedFunction.name) {
+        foundMetadata = metadata;
+        logger.debug(`Found match! Export name: ${exportName}, span name: ${metadata.name}`);
+        break;
+      }
+    }
+
+    if (foundMetadata) {
+      selectedFunction.params = foundMetadata.params;
+      logger.debug(`Using TypeScript metadata for span: ${selectedFunction.name}`);
+    } else {
+      logger.warn(`No TypeScript metadata found for span name: ${selectedFunction.name}`);
+    }
+  }
+
+  logger.info(`Serving function: ${selectedFunction.name}`);
+  logger.debug(`Function parameters: ${JSON.stringify(selectedFunction.params, null, 2)}`);
+
+  return selectedFunction;
+}
+
 /**
  * Handles a run event from the backend
  */
@@ -420,73 +493,53 @@ export async function runDev(
 
   // Build file to discover and select rollout functions
   logger.debug('Discovering rollout functions...');
-  let selectedFunction: {
-    fn: (...args: any[]) => any; params: any[]; name: string; exportName: string;
-  };
+  let selectedFunction: LoadedFunction;
 
   try {
-    // FIRST: Extract TypeScript metadata if it's a .ts file
-    let paramsMetadata: Map<string, any> | undefined;
-    if (filePath.endsWith('.ts') || filePath.endsWith('.tsx')) {
-      try {
-        paramsMetadata = extractRolloutFunctions(filePath);
-        logger.debug(`Extracted TypeScript metadata for ${paramsMetadata.size} functions`);
-      } catch (error) {
-        logger.warn('Failed to extract TypeScript metadata, falling back to runtime parsing: ' +
-          (error instanceof Error ? error.message : String(error)));
-      }
-    }
-
-    // THEN: Build and load the module
-    const moduleText = await buildFile(filePath, {
-      externalPackages: options.externalPackages,
-      dynamicImportsToSkip: options.dynamicImportsToSkip,
-    });
-    loadModule({
-      filename: filePath,
-      moduleText,
-    });
-
-    // Select the appropriate function
-    selectedFunction = selectRolloutFunction(options.function);
-
-    // If we have TypeScript metadata, use it to enrich the params
-    // The TypeScript parser stores functions by their export name (variable name),
-    // but runtime registration uses the span name as the key.
-    // We need to find the metadata entry where the span name matches.
-    if (paramsMetadata) {
-      logger.debug(`Available TS metadata keys: ${Array.from(paramsMetadata.keys()).join(', ')}`);
-      logger.debug(
-        `Looking for span name: ${selectedFunction.name} ` +
-        `(runtime key: ${selectedFunction.exportName})`,
-      );
-
-      // Search for metadata by span name
-      let foundMetadata: any = null;
-      for (const [exportName, metadata] of paramsMetadata.entries()) {
-        logger.debug(`Checking ${exportName}: span name = ${metadata.name}`);
-        if (metadata.name === selectedFunction.name) {
-          foundMetadata = metadata;
-          logger.debug(`Found match! Export name: ${exportName}, span name: ${metadata.name}`);
-          break;
-        }
-      }
-
-      if (foundMetadata) {
-        selectedFunction.params = foundMetadata.params;
-        logger.debug(`Using TypeScript metadata for span: ${selectedFunction.name}`);
-      } else {
-        logger.warn(`No TypeScript metadata found for span name: ${selectedFunction.name}`);
-      }
-    }
-
-    logger.info(`Serving function: ${selectedFunction.name}`);
-    logger.debug(`Function parameters: ${JSON.stringify(selectedFunction.params, null, 2)}`);
+    selectedFunction = await loadRolloutModule(filePath, options);
   } catch (error: any) {
     logger.error("Failed to discover rollout functions: " +
       (error instanceof Error ? error.message : String(error)));
     throw error;
   }
+
+  // Setup file watcher for hot reload
+  logger.debug('Setting up file watcher...');
+  const watcher = chokidar.watch('.', {
+    ignored: (path: string) => {
+      // Ignore if it's a directory and matches our ignore list
+      const ignoredDirs = [
+        'node_modules',
+        '.git',
+        'dist',
+        'build',
+        '.next',
+        'coverage',
+        '.turbo',
+        'tmp',
+        'temp',
+      ];
+
+      // Check if any segment of the path matches ignored directories
+      const pathSegments = path.split(/[/\\]/);
+      if (pathSegments.some(segment => ignoredDirs.includes(segment))) {
+        return true;
+      }
+
+      // Ignore log and map files
+      if (path.endsWith('.log') || path.endsWith('.map')) {
+        return true;
+      }
+
+      return false;
+    },
+    persistent: true,
+    ignoreInitial: true,
+    awaitWriteFinish: {
+      stabilityThreshold: 100,
+      pollInterval: 100,
+    },
+  });
 
   // Create SSE client (don't connect yet)
   logger.debug('Setting up SSE client...');
@@ -565,12 +618,59 @@ export async function runDev(
       logger.info('Current run cancelled');
     });
 
+    // Setup file change handler for hot reload
+    watcher.on('change', (changedPath: string) => {
+      logger.info(`File changed: ${changedPath}, reloading...`);
+
+      // Cancel running child process
+      if (currentChildProcess) {
+        logger.warn('Cancelling current run due to file change');
+        currentChildProcess.kill('SIGTERM');
+
+        // Fallback to SIGKILL
+        setTimeout(() => {
+          if (currentChildProcess && !currentChildProcess.killed) {
+            currentChildProcess.kill('SIGKILL');
+          }
+        }, 2000);
+      }
+
+      // Rebuild and reload
+      loadRolloutModule(filePath, options).then((newFunction) => {
+        // Update SSE client if params or name changed
+        if (JSON.stringify(newFunction.params) !== JSON.stringify(selectedFunction.params) ||
+          newFunction.name !== selectedFunction.name) {
+          logger.info('Function signature changed, updating session...');
+          if (sseClient) {
+            sseClient.updateMetadata(newFunction.params || [], newFunction.name);
+          }
+        }
+
+        selectedFunction = newFunction;
+        logger.debug(`Successfully reloaded function: ${selectedFunction.name}`);
+      }).catch((error: any) => {
+        // Log error but keep old version loaded
+        logger.error(
+          `Failed to reload: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        logger.warn('Keeping previous version active');
+      });
+    });
+
     // Now connect after listeners are registered
     logger.debug('Connecting to backend...');
     logger.debug('Connected to backend. Waiting for run events...');
 
     // Handle graceful shutdown
     const shutdown = () => {
+      // Close file watcher
+      logger.debug('Closing file watcher...');
+      watcher.close().catch((error: any) => {
+        logger.error(
+          `Failed to close file watcher: ${error instanceof Error ? error.message : error}`,
+        );
+      });
+
       // Kill any running child process
       if (currentChildProcess) {
         logger.debug('Terminating child process...');

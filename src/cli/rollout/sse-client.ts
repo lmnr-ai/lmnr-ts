@@ -219,6 +219,17 @@ export class SSEClient extends EventEmitter {
   }
 
   /**
+   * Updates the function metadata (params, name) and reconnects
+   */
+  updateMetadata(params: RolloutParam[], name: string): void {
+    this.params = params;
+    this.name = name;
+
+    // Reconnect to send updated metadata
+    this.reconnect();
+  }
+
+  /**
    * Shuts down the SSE client gracefully
    */
   shutdown(): void {

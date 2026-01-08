@@ -15,7 +15,7 @@ export default tseslint.config(
       '**/*.min.js',
       'assets/**/*.min.cjs',
       'assets/**/*.min.js',
-      'tsdown.config.ts',
+      'tsdown.config.mts',
       'eslint.config.mjs',
       'examples/**',
       "src/browser/recorder.ts",
