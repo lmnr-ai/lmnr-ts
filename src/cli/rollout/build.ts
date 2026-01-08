@@ -101,7 +101,7 @@ export function loadModule({
  */
 export function selectRolloutFunction(
   requestedFunctionName?: string,
-): { fn: (...args: any[]) => any; params: any[]; name: string } {
+): { fn: (...args: any[]) => any; params: any[]; name: string; exportName: string } {
   if (!globalThis._rolloutFunctions || globalThis._rolloutFunctions.size === 0) {
     throw new Error(
       "No rollout functions found in file. " +
@@ -118,13 +118,13 @@ export function selectRolloutFunction(
         `Function '${requestedFunctionName}' not found. Available functions: ${available}`,
       );
     }
-    return selected;
+    return { ...selected, exportName: requestedFunctionName };
   }
 
   // If only one function, auto-select it
   if (globalThis._rolloutFunctions.size === 1) {
-    const [selected] = Array.from(globalThis._rolloutFunctions.values());
-    return selected;
+    const [[exportName, selected]] = Array.from(globalThis._rolloutFunctions.entries());
+    return { ...selected, exportName };
   }
 
   // Multiple functions found without explicit selection

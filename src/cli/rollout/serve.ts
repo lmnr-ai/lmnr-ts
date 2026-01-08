@@ -9,6 +9,7 @@ import { initializeLogger, newUUID } from '../../utils';
 import { buildFile, loadModule, selectRolloutFunction } from './build';
 import { CachedSpan, startCacheServer } from './cache-server';
 import { createSSEClient, SSEClient } from './sse-client';
+import { extractRolloutFunctions } from './ts-parser';
 
 const logger = initializeLogger();
 
@@ -253,7 +254,6 @@ async function handleRunEvent(
           SELECT name, input, output, attributes, path
           FROM spans
           WHERE trace_id = {traceId:UUID}
-            AND span_type = 'LLM'
             AND path IN {paths:String[]}
           ORDER BY start_time ASC
         `;
@@ -429,9 +429,24 @@ export async function runDev(
 
   // Build file to discover and select rollout functions
   logger.debug('Discovering rollout functions...');
-  let selectedFunction: { fn: (...args: any[]) => any; params: any[]; name: string };
+  let selectedFunction: {
+    fn: (...args: any[]) => any; params: any[]; name: string; exportName: string;
+  };
 
   try {
+    // FIRST: Extract TypeScript metadata if it's a .ts file
+    let paramsMetadata: Map<string, any> | undefined;
+    if (filePath.endsWith('.ts') || filePath.endsWith('.tsx')) {
+      try {
+        paramsMetadata = extractRolloutFunctions(filePath);
+        logger.debug(`Extracted TypeScript metadata for ${paramsMetadata.size} functions`);
+      } catch (error) {
+        logger.warn('Failed to extract TypeScript metadata, falling back to runtime parsing: ' +
+          (error instanceof Error ? error.message : String(error)));
+      }
+    }
+
+    // THEN: Build and load the module
     const moduleText = await buildFile(filePath);
     loadModule({
       filename: filePath,
@@ -440,8 +455,39 @@ export async function runDev(
 
     // Select the appropriate function
     selectedFunction = selectRolloutFunction(options.function);
+
+    // If we have TypeScript metadata, use it to enrich the params
+    // The TypeScript parser stores functions by their export name (variable name),
+    // but runtime registration uses the span name as the key.
+    // We need to find the metadata entry where the span name matches.
+    if (paramsMetadata) {
+      logger.debug(`Available TS metadata keys: ${Array.from(paramsMetadata.keys()).join(', ')}`);
+      logger.debug(
+        `Looking for span name: ${selectedFunction.name} ` +
+        `(runtime key: ${selectedFunction.exportName})`,
+      );
+
+      // Search for metadata by span name
+      let foundMetadata: any = null;
+      for (const [exportName, metadata] of paramsMetadata.entries()) {
+        logger.debug(`Checking ${exportName}: span name = ${metadata.name}`);
+        if (metadata.name === selectedFunction.name) {
+          foundMetadata = metadata;
+          logger.debug(`Found match! Export name: ${exportName}, span name: ${metadata.name}`);
+          break;
+        }
+      }
+
+      if (foundMetadata) {
+        selectedFunction.params = foundMetadata.params;
+        logger.debug(`Using TypeScript metadata for span: ${selectedFunction.name}`);
+      } else {
+        logger.warn(`No TypeScript metadata found for span name: ${selectedFunction.name}`);
+      }
+    }
+
     logger.info(`Serving function: ${selectedFunction.name}`);
-    logger.debug(`Function parameters: ${JSON.stringify(selectedFunction.params)}`);
+    logger.debug(`Function parameters: ${JSON.stringify(selectedFunction.params, null, 2)}`);
   } catch (error: any) {
     logger.error("Failed to discover rollout functions: " +
       (error instanceof Error ? error.message : String(error)));

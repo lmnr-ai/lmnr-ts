@@ -185,10 +185,12 @@ export interface RolloutHandshakeEvent {
  * - type: string - The TypeScript type of the parameter
  * - required: boolean - Whether the parameter is required
  * - nested: RolloutParam[] - For destructured parameters, contains nested parameter definitions
+ * - default?: any - The default value of the parameter, if specified
  */
 export interface RolloutParam {
   name: string;
-  // Future: type?: string;
-  // Future: required?: boolean;
-  // Future: nested?: RolloutParam[];
+  type?: string;
+  required?: boolean;
+  nested?: RolloutParam[];
+  default?: string;
 }

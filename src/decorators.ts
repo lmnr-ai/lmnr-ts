@@ -43,14 +43,15 @@ interface ObserveOptions {
 }
 
 /**
- * Extracts parameter names from a function using regex
+ * Extracts parameter names from a function using regex (fallback for runtime parsing)
+ * Note: This is a best-effort fallback. For TypeScript files, use ts-parser.ts instead.
  */
 const extractParamNames = (fn: (...args: any[]) => any): RolloutParam[] => {
   const fnStr = fn.toString();
 
   // Match function parameters - handles regular functions, arrow functions, async functions
   const paramMatch = fnStr.match(
-    /(?:async\s*)?(?:function\s*)?\(([^)]*)\)|(?:async\s+)?([^=\s]+)\s*=>/,
+    /(?:async\s+)?(?:function\s*)?\(([^)]*)\)|(?:async\s*)?([^=\s(]+)\s*=>/,
   );
 
   if (!paramMatch) {
@@ -63,23 +64,57 @@ const extractParamNames = (fn: (...args: any[]) => any): RolloutParam[] => {
     return [];
   }
 
-  // Split by comma and extract parameter names (simple version - just names, no destructuring)
+  // Split by comma and extract parameter names with metadata
   const params = paramsStr.split(',').map(param => {
-    // Remove default values, type annotations, and whitespace
-    const name = param
-      .trim()
-      .replace(/=.+$/, '') // Remove default values
+    const trimmed = param.trim();
+
+    // Check if it's destructured (starts with { or [)
+    if (trimmed.startsWith('{')) {
+      return {
+        name: '_destructured',
+        required: !trimmed.includes('='), // Has default if includes =
+      };
+    }
+
+    if (trimmed.startsWith('[')) {
+      return {
+        name: '_arrayDestructured',
+        required: !trimmed.includes('='),
+      };
+    }
+
+    // Extract default value if present
+    const hasDefault = trimmed.includes('=');
+    let defaultValue: string | undefined;
+    let nameWithoutDefault = trimmed;
+
+    if (hasDefault) {
+      const parts = trimmed.split('=');
+      nameWithoutDefault = parts[0].trim();
+      defaultValue = parts.slice(1).join('=').trim();
+    }
+
+    // Check for optional marker (?)
+    const isOptional = nameWithoutDefault.includes('?');
+
+    // Remove type annotations and whitespace
+    const name = nameWithoutDefault
       .replace(/:.+$/, '') // Remove type annotations
+      .replace(/\?/g, '')  // Remove optional marker
       .replace(/\s+/g, ''); // Remove whitespace
 
-    // Extract just the parameter name (handle simple destructuring by taking the variable name)
+    // Extract just the parameter name
     const simpleNameMatch = name.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*/);
-    return simpleNameMatch ? simpleNameMatch[0] : name;
+    const paramName = simpleNameMatch ? simpleNameMatch[0] : name;
+
+    return {
+      name: paramName,
+      required: !hasDefault && !isOptional,
+      default: defaultValue,
+    };
   });
 
-  return params
-    .filter(name => name && name.length > 0)
-    .map(name => ({ name }));
+  return params.filter(p => p.name && p.name.length > 0);
 };
 
 /**

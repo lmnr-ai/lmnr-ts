@@ -53,7 +53,11 @@ void describe('observe with rolloutEntrypoint', () => {
     const registered = Array.from(globalThis._rolloutFunctions.values())[0];
     assert.ok(registered.params.length >= 2);
     assert.deepStrictEqual(
-      registered.params, [{ name: 'instruction' }, { name: 'temperature' }, { name: 'options' }],
+      registered.params, [
+        { name: 'instruction', required: true, default: undefined },
+        { name: 'temperature', required: true, default: undefined },
+        { name: 'options', required: true, default: undefined },
+      ],
     );
 
     // Clean up
@@ -102,7 +106,10 @@ void describe('observe with rolloutEntrypoint', () => {
     observe({ name: 'arrow', rolloutEntrypoint: true }, arrowFn);
 
     const registered = Array.from(globalThis._rolloutFunctions.values())[0];
-    assert.deepStrictEqual(registered.params, [{ name: 'x' }, { name: 'y' }]);
+    assert.deepStrictEqual(registered.params, [
+      { name: 'x', required: true, default: undefined },
+      { name: 'y', required: true, default: undefined },
+    ]);
 
     globalThis._set_rollout_global = false;
   });
@@ -117,7 +124,10 @@ void describe('observe with rolloutEntrypoint', () => {
     observe({ name: 'async', rolloutEntrypoint: true }, asyncFn);
 
     const registered = Array.from(globalThis._rolloutFunctions.values())[0];
-    assert.deepStrictEqual(registered.params, [{ name: 'a' }, { name: 'b' }]);
+    assert.deepStrictEqual(registered.params, [
+      { name: 'a', required: true, default: undefined },
+      { name: 'b', required: true, default: undefined },
+    ]);
 
     globalThis._set_rollout_global = false;
   });
@@ -132,7 +142,10 @@ void describe('observe with rolloutEntrypoint', () => {
     observe({ name: 'defaults', rolloutEntrypoint: true }, fnWithDefaults);
 
     const registered = Array.from(globalThis._rolloutFunctions.values())[0];
-    assert.deepStrictEqual(registered.params, [{ name: 'x' }, { name: 'y' }]);
+    assert.deepStrictEqual(registered.params, [
+      { name: 'x', required: true, default: undefined },
+      { name: 'y', required: false, default: '5' },
+    ]);
 
     globalThis._set_rollout_global = false;
   });
@@ -154,4 +167,3 @@ void describe('observe with rolloutEntrypoint', () => {
     delete process.env.LMNR_ROLLOUT_SESSION_ID;
   });
 });
-
