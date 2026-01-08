@@ -99,6 +99,7 @@ function stopCcProxy() {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { stopServer } = require("@lmnr-ai/claude-code-proxy");
+    logger.debug('Stopping cc-proxy...');
     stopServer();
   } catch (e) {
     logger.debug(`Unable to stop cc-proxy: ${e instanceof Error ? e.message : String(e)}`);
@@ -120,6 +121,7 @@ function stopCcProxy() {
 function registerProxyShutdown() {
   if (!ccProxyShutdownRegistered) {
     process.on('exit', () => {
+      logger.debug('process.on("exit") called');
       stopCcProxy();
     });
     ccProxyShutdownRegistered = true;
@@ -166,12 +168,19 @@ export async function startProxy(): Promise<string | null> {
         process.env.ANTHROPIC_BASE_URL ||
         DEFAULT_ANTHROPIC_BASE_URL;
 
+      logger.debug(`process.env.ANTHROPIC_ORIGINAL_BASE_URL: ${process.env.ANTHROPIC_ORIGINAL_BASE_URL}`);
+      logger.debug(`process.env.ANTHROPIC_BASE_URL: ${process.env.ANTHROPIC_BASE_URL}`);
+      logger.debug(`DEFAULT_ANTHROPIC_BASE_URL: ${DEFAULT_ANTHROPIC_BASE_URL}`);
+
+      logger.debug(`Using anthropic base url: ${targetUrl}`);
+
       ccProxyTargetUrl = targetUrl;
       process.env.ANTHROPIC_ORIGINAL_BASE_URL = targetUrl;
 
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { runServer } = require("@lmnr-ai/claude-code-proxy");
+        logger.debug(`Running cc-proxy server on port ${port} with target url ${targetUrl}`);
         runServer(targetUrl, port);
       } catch (e) {
         logger.warn(`Unable to start cc-proxy: ${e instanceof Error ? e.message : String(e)}`);
@@ -190,6 +199,7 @@ export async function startProxy(): Promise<string | null> {
       const proxyBaseUrl = `http://127.0.0.1:${port}`;
       ccProxyBaseUrl = proxyBaseUrl;
       ccProxyRefCount = 1;
+      logger.debug(`Setting ANTHROPIC_BASE_URL to: ${proxyBaseUrl}`);
       process.env.ANTHROPIC_BASE_URL = proxyBaseUrl;
       registerProxyShutdown();
 

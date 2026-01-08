@@ -55,8 +55,10 @@ export function instrumentClaudeAgentQuery(
 
         // Publish span context
         const proxyBaseUrl = getProxyBaseUrl();
+        logger.debug(`getProxyBaseUrl() result: ${proxyBaseUrl}`);
         if (proxyBaseUrl) {
           await Laminar.withSpan(span, () => {
+            logger.debug('Setting trace to proxy...');
             setTraceToProxy();
           });
         } else {
@@ -64,6 +66,9 @@ export function instrumentClaudeAgentQuery(
         }
 
         // Call original and wrap the generator
+        logger.debug(
+          `ANTHROPIC_BASE_URL before calling originalQuery: ${process.env.ANTHROPIC_BASE_URL}`,
+        );
         const originalGenerator = originalQuery(params);
 
         // Yield items and collect
