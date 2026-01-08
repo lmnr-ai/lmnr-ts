@@ -2,7 +2,9 @@ import * as esbuild from 'esbuild';
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { getDirname } from '../../utils';
+import { getDirname, initializeLogger } from '../../utils';
+
+const logger = initializeLogger();
 
 /**
  * esbuild plugin to load markdown files as raw strings
@@ -35,9 +37,46 @@ export const rawMarkdownPlugin: esbuild.Plugin = {
 };
 
 /**
+ * esbuild plugin to skip dynamic imports
+ */
+const createSkipDynamicImportsPlugin = (skipModules: string[]): esbuild.Plugin => ({
+  name: 'skip-dynamic-imports',
+  setup(build) {
+    if (!skipModules || skipModules.length === 0) return;
+
+    build.onResolve({ filter: /.*/ }, (args) => {
+      // Only handle dynamic imports
+      if (args.kind === 'dynamic-import' && skipModules.includes(args.path)) {
+        logger.warn(`Skipping dynamic import: ${args.path}`);
+        // Return a virtual module that exports an empty object
+        return {
+          path: args.path,
+          namespace: 'lmnr-skip-dynamic-import',
+        };
+      }
+    });
+
+    // Provide empty module content for skipped dynamic imports
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    build.onLoad({ filter: /.*/, namespace: 'lmnr-skip-dynamic-import' }, (args) => ({
+      contents: 'export default {};',
+      loader: 'js',
+    }));
+  },
+});
+
+export interface BuildOptions {
+  externalPackages?: string[];
+  dynamicImportsToSkip?: string[];
+}
+
+/**
  * Builds a file using esbuild
  */
-export async function buildFile(filePath: string): Promise<string> {
+export async function buildFile(
+  filePath: string,
+  options?: BuildOptions,
+): Promise<string> {
   const result = await esbuild.build({
     bundle: true,
     platform: "node" as esbuild.Platform,
@@ -52,8 +91,12 @@ export async function buildFile(filePath: string): Promise<string> {
       "puppeteer-core",
       "playwright-core",
       "fsevents",
+      ...(options?.externalPackages ?? []),
     ],
-    plugins: [rawMarkdownPlugin],
+    plugins: [
+      rawMarkdownPlugin,
+      createSkipDynamicImportsPlugin(options?.dynamicImportsToSkip ?? []),
+    ],
     treeShaking: true,
   });
 

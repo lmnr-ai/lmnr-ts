@@ -10,6 +10,7 @@ import { HUMAN_EVALUATOR_OPTIONS, SPAN_TYPE } from "./opentelemetry-lib/tracing/
 import { LaminarContextManager } from "./opentelemetry-lib/tracing/context";
 import { EvaluationDatapoint } from "./types";
 import {
+  getFrontendUrl,
   initializeLogger,
   loadEnv,
   newUUID,
@@ -32,20 +33,13 @@ declare global {
 
 const logger = initializeLogger();
 
-const getEvaluationUrl = (projectId: string, evaluationId: string, baseUrl?: string): string => {
-  let url = baseUrl ?? "https://api.lmnr.ai";
-  if (url === "https://api.lmnr.ai") {
-    url = "https://www.lmnr.ai";
-  }
-  url = url.replace(/\/$/, '');
-
-  if (/localhost|127\.0\.0\.1/.test(url)) {
-    const port = url.match(/:\d{1,5}$/g)?.[0]?.slice(1);
-    if (!port) {
-      // As a best effort, we assume that the frontend is running on port 5667
-      url = url + ":5667";
-    }
-  }
+const getEvaluationUrl = (
+  projectId: string,
+  evaluationId: string,
+  baseUrl?: string,
+  frontendPort?: number,
+): string => {
+  const url = getFrontendUrl(baseUrl, frontendPort);
   return `${url}/project/${projectId}/evaluations/${evaluationId}`;
 };
 
@@ -75,7 +69,7 @@ const getAverageScores =
 /**
  * Configuration for the Evaluator
  */
-interface EvaluatorConfig {
+interface EvaluationConfig {
   /**
    * The number of data points to evaluate in parallel at a time. Defaults to 5.
    */
@@ -128,6 +122,10 @@ interface EvaluatorConfig {
    * Maximum number of spans to export at a time. Defaults to 64.
    */
   traceExportBatchSize?: number;
+  /**
+   * The port for the Laminar , when running self-hosted. If not provided, the default is 5667.
+   */
+  frontendPort?: number;
 }
 
 /**
@@ -216,7 +214,7 @@ interface EvaluationConstructorProps<D, T, O> {
   /**
    * Optional override configurations for the evaluator.
    */
-  config?: EvaluatorConfig;
+  config?: EvaluationConfig;
 }
 
 interface EvaluationRunResult {
@@ -237,11 +235,14 @@ class EvaluationReporter {
   );
   private progressCounter: number = 0;
   public baseUrl: string;
+  public frontendPort?: number;
 
   constructor(
     baseUrl?: string,
+    frontendPort?: number,
   ) {
     this.baseUrl = baseUrl ?? 'https://api.lmnr.ai';
+    this.frontendPort = frontendPort;
   }
 
   public start({ length }: { length: number }) {
@@ -266,7 +267,7 @@ class EvaluationReporter {
     evaluationId,
   }: { averageScores: Record<string, number>, projectId: string, evaluationId: string }) {
     this.cliProgress.stop();
-    const url = getEvaluationUrl(projectId, evaluationId, this.baseUrl);
+    const url = getEvaluationUrl(projectId, evaluationId, this.baseUrl, this.frontendPort);
     process.stdout.write('\n');
     process.stdout.write('\nAverage scores:\n');
     for (const key in averageScores) {
@@ -283,6 +284,7 @@ export class Evaluation<D, T, O> {
   private executor: (data: D, ...args: any[]) => O | Promise<O>;
   private evaluators: Record<string, EvaluatorFunction<O, T, D> | HumanEvaluator>;
   private groupName?: string;
+  private frontendPort?: number;
   private name?: string;
   private metadata?: Record<string, any>;
   private concurrencyLimit: number = DEFAULT_CONCURRENCY;
@@ -310,7 +312,8 @@ export class Evaluation<D, T, O> {
       }
     }
 
-    this.progressReporter = new EvaluationReporter(config?.baseUrl);
+    this.frontendPort = config?.frontendPort;
+    this.progressReporter = new EvaluationReporter(config?.baseUrl, config?.frontendPort);
     this.data = data;
     this.executor = executor;
     this.evaluators = evaluators;
@@ -413,6 +416,7 @@ export class Evaluation<D, T, O> {
         evaluation.projectId,
         evaluation.id,
         this.progressReporter.baseUrl,
+        this.frontendPort,
       );
       process.stdout.write(`\nCheck results at ${url}\n`);
       this.progressReporter.start({ length: await this.getLength() });
@@ -619,6 +623,11 @@ export class Evaluation<D, T, O> {
 
   private async getLength(): Promise<number> {
     return this.data instanceof EvaluationDataset ? await this.data.size() : this.data.length;
+  }
+
+  public setFrontendPort(port: number) {
+    this.frontendPort = port;
+    this.progressReporter.frontendPort = port;
   }
 }
 

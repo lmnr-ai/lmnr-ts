@@ -414,3 +414,29 @@ export const loadEnv = (
     quiet,
   });
 };
+
+/**
+ * Converts an API base URL to the frontend/web URL.
+ * - Converts https://api.lmnr.ai to https://www.laminar.sh
+ * - Removes trailing slashes
+ * - For localhost/127.0.0.1, ensures a port is specified (defaults to 5667)
+ *
+ * @param baseUrl - The API base URL (defaults to "https://api.lmnr.ai")
+ * @returns The frontend URL
+ */
+export const getFrontendUrl = (
+  baseUrl?: string,
+  frontendPort?: number,
+): string => {
+  let url = baseUrl ?? "https://api.lmnr.ai";
+  if (url === "https://api.lmnr.ai") {
+    url = "https://www.laminar.sh";
+  }
+  url = url.replace(/\/$/, '');
+
+  if (/localhost|127\.0\.0\.1/.test(url)) {
+    const port = frontendPort ?? url.match(/:\d{1,5}$/g)?.[0]?.slice(1) ?? 5667;
+    url = url.replace(/:\d{1,5}$/g, `:${port}`);
+  }
+  return url;
+};

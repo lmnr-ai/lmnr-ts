@@ -59,6 +59,11 @@ async function cli() {
       "These dynamic imports will resolve to an empty module to prevent build failures. " +
       "This is meant to skip the imports that are not used in the evaluation itself.",
     )
+    .option(
+      "--frontend-port <port>",
+      "Port for the Laminar frontend. Defaults to 5667",
+      (val) => parseInt(val, 10),
+    )
     .action(async (files: string[], options) => {
       await runEvaluation(files, options);
     });
@@ -182,6 +187,23 @@ async function cli() {
       "--grpc-port <port>",
       "Port for the Laminar gRPC backend. Defaults to 8443",
       (val) => parseInt(val, 10),
+    )
+    .option(
+      "--frontend-port <port>",
+      "Port for the Laminar frontend. Defaults to 5667",
+      (val) => parseInt(val, 10),
+    )
+    .option(
+      "--external-packages <packages...>",
+      "[ADVANCED] List of packages to pass as external to esbuild. This will not link " +
+      "the packages directly into the dev file, but will instead require them at runtime. " +
+      "Read more: https://esbuild.github.io/api/#external",
+    )
+    .option(
+      "--dynamic-imports-to-skip <modules...>",
+      "[ADVANCED] List of module names to skip when encountered as dynamic imports. " +
+      "These dynamic imports will resolve to an empty module to prevent build failures. " +
+      "This is meant to skip the imports that are not used in the rollout itself.",
     )
     .action(async (file: string, options) => {
       await runDev(file, options);

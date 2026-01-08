@@ -73,6 +73,7 @@ export interface EvalCommandOptions {
   outputFile?: string;
   externalPackages?: string[];
   dynamicImportsToSkip?: string[];
+  frontendPort?: number;
 }
 
 export async function runEvaluation(
@@ -161,6 +162,9 @@ export async function runEvaluation(
         continue;
       }
 
+      if (options.frontendPort) {
+        evaluation.setFrontendPort(options.frontendPort);
+      }
       const evalResult = await evaluation.run();
       scores.push({
         file,

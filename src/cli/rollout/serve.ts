@@ -5,11 +5,12 @@ import * as readline from 'readline';
 
 import { LaminarClient } from '../../client';
 import { RolloutHandshakeEvent, RolloutRunEvent } from '../../types';
-import { initializeLogger, newUUID } from '../../utils';
+import { getFrontendUrl, initializeLogger, newUUID } from '../../utils';
 import { buildFile, loadModule, selectRolloutFunction } from './build';
 import { CachedSpan, startCacheServer } from './cache-server';
 import { createSSEClient, SSEClient } from './sse-client';
 import { extractRolloutFunctions } from './ts-parser';
+import { WorkerConfig } from './worker';
 
 const logger = initializeLogger();
 
@@ -22,6 +23,9 @@ interface ServeOptions {
   port?: number;
   grpcPort?: number;
   function?: string;
+  frontendPort?: number;
+  externalPackages?: string[];
+  dynamicImportsToSkip?: string[];
 }
 
 /**
@@ -45,21 +49,6 @@ interface WorkerErrorMessage {
 }
 
 type WorkerMessage = WorkerLogMessage | WorkerResultMessage | WorkerErrorMessage;
-
-/**
- * Configuration sent to worker process
- */
-interface WorkerConfig {
-  filePath: string;
-  functionName?: string;
-  args: Record<string, any>;
-  env: Record<string, string>;
-  cacheServerPort: number;
-  baseUrl: string;
-  projectApiKey?: string;
-  httpPort: number;
-  grpcPort: number;
-}
 
 /**
  * Prefix used by worker to identify protocol messages
@@ -355,6 +344,8 @@ async function handleRunEvent(
       projectApiKey: options.projectApiKey,
       httpPort,
       grpcPort,
+      externalPackages: options.externalPackages,
+      dynamicImportsToSkip: options.dynamicImportsToSkip,
     };
 
     try {
@@ -447,7 +438,10 @@ export async function runDev(
     }
 
     // THEN: Build and load the module
-    const moduleText = await buildFile(filePath);
+    const moduleText = await buildFile(filePath, {
+      externalPackages: options.externalPackages,
+      dynamicImportsToSkip: options.dynamicImportsToSkip,
+    });
     loadModule({
       filename: filePath,
       moduleText,
@@ -533,7 +527,10 @@ export async function runDev(
     sseClient.on('handshake', (event: RolloutHandshakeEvent) => {
       const projectId = event.data.project_id;
       const sessionId = event.data.session_id;
-      logger.info(`View your session at https://laminar.sh/project/${projectId}/rollout-sessions/${sessionId}`);
+      const frontendUrl = getFrontendUrl(options.baseUrl, options.frontendPort);
+      logger.info(
+        `View your session at ${frontendUrl}/project/${projectId}/rollout-sessions/${sessionId}`,
+      );
     });
 
     sseClient.on('error', (error: Error) => {

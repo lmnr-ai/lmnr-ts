@@ -29,7 +29,7 @@ type WorkerMessage = LogMessage | ResultMessage | ErrorMessage;
 /**
  * Configuration received from parent via stdin
  */
-interface WorkerConfig {
+export interface WorkerConfig {
   filePath: string;
   functionName?: string;
   args: Record<string, any>;
@@ -39,6 +39,8 @@ interface WorkerConfig {
   projectApiKey?: string;
   httpPort: number;
   grpcPort: number;
+  externalPackages?: string[];
+  dynamicImportsToSkip?: string[];
 }
 
 /**
@@ -75,7 +77,10 @@ async function runWorker(config: WorkerConfig): Promise<any> {
   }
 
   workerLogger.debug('Building user file...');
-  const moduleText = await buildFile(config.filePath);
+  const moduleText = await buildFile(config.filePath, {
+    externalPackages: config.externalPackages,
+    dynamicImportsToSkip: config.dynamicImportsToSkip,
+  });
 
   workerLogger.debug('Loading user file...');
   loadModule({
