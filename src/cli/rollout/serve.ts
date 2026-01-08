@@ -172,15 +172,15 @@ async function executeInChildProcess(config: WorkerConfig): Promise<any> {
       currentChildProcess = null;
 
       if (signal) {
-        logger.info(`Worker process terminated by signal: ${signal}`);
+        logger.debug(`Worker terminated by signal: ${signal}`);
         reject(new Error(`Worker terminated by signal: ${signal}`));
       } else if (code === 0) {
         resolve(result);
       } else {
         if (!hasError) {
-          logger.error(`Worker process exited with code ${code}`);
+          logger.debug(`Worker exited with code ${code}`);
         }
-        reject(new Error(`Worker process exited with code ${code}`));
+        reject(new Error(`Worker exited with code ${code}`));
       }
     });
 

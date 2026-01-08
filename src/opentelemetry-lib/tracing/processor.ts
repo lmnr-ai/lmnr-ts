@@ -6,10 +6,12 @@ import {
   SpanExporter,
   SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
+import { Logger } from "pino";
 
 import { version as SDK_VERSION } from "../../../package.json";
 import { LaminarClient } from "../../client";
-import { metadataToAttributes, otelSpanIdToUUID, StringUUID } from "../../utils";
+import { SpanType } from "../../types";
+import { initializeLogger, metadataToAttributes, otelSpanIdToUUID, StringUUID } from "../../utils";
 import { getLangVersion } from "../../version";
 import {
   ASSOCIATION_PROPERTIES,
@@ -23,6 +25,7 @@ import {
   SPAN_LANGUAGE_VERSION,
   SPAN_PATH,
   SPAN_SDK_VERSION,
+  SPAN_TYPE,
   TRACE_TYPE,
   USER_ID,
 } from "./attributes";
@@ -98,6 +101,7 @@ interface LaminarSpanProcessorOptions {
 export class LaminarSpanProcessor implements SpanProcessor {
   private instance: BatchSpanProcessor | SimpleSpanProcessor;
   private client: LaminarClient | undefined;
+  private logger: Logger;
   private readonly _spanIdToPath: Map<string, string[]> = new Map();
   private readonly _spanIdLists: Map<string, string[]> = new Map();
 
@@ -117,6 +121,7 @@ export class LaminarSpanProcessor implements SpanProcessor {
    * Not recommended with Laminar backends.
    */
   constructor(options: LaminarSpanProcessorOptions = {}) {
+    this.logger = initializeLogger();
     if (options.spanProcessor && options.spanProcessor instanceof LaminarSpanProcessor) {
       this.instance = options.spanProcessor.instance;
       // Set by reference, so that updates from the inside are reflected here.
@@ -224,21 +229,22 @@ export class LaminarSpanProcessor implements SpanProcessor {
     makeSpanOtelV2Compatible(span);
 
     if (process.env.LMNR_ROLLOUT_SESSION_ID && this.client) {
-      // TODO: uncomment this once the frontend is updated to support span updates
-      // This is a background task, thus no await.
-      // TODO: eslint-disable-next-line @typescript-eslint/no-floating-promises
-      // this.client.rolloutSessions.sendSpanUpdate({
-      //   sessionId: process.env.LMNR_ROLLOUT_SESSION_ID,
-      //   span: {
-      //     name: span.name,
-      //     startTime: new Date(span.startTime[0] * 1000 + span.startTime[1] / 1e6).toISOString(),
-      //     spanId: span.spanContext().spanId,
-      //     traceId: span.spanContext().traceId,
-      //     parentSpanId: getParentSpanId(span),
-      //     attributes: span.attributes,
-      //     spanType: (span.attributes[SPAN_TYPE] ?? 'DEFAULT') as SpanType,
-      //   },
-      // });
+      this.client.rolloutSessions.sendSpanUpdate({
+        sessionId: process.env.LMNR_ROLLOUT_SESSION_ID,
+        span: {
+          name: span.name,
+          startTime: new Date(span.startTime[0] * 1000 + span.startTime[1] / 1e6).toISOString(),
+          spanId: span.spanContext().spanId,
+          traceId: span.spanContext().traceId,
+          parentSpanId: getParentSpanId(span),
+          attributes: span.attributes,
+          spanType: (span.attributes[SPAN_TYPE] ?? 'DEFAULT') as SpanType,
+        },
+      }).catch((error: any) => {
+        this.logger.debug(
+          `Failed to send span update: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
     }
     this.instance.onStart((span), parentContext);
   }
