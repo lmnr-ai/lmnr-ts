@@ -12,6 +12,7 @@ import {
   handleDatasetsPush,
 } from "./datasets";
 import { runEvaluation } from "./evals";
+import { runDev } from "./rollout/serve";
 
 const logger = initializeLogger();
 
@@ -57,6 +58,11 @@ async function cli() {
       "[ADVANCED] List of module names to skip when encountered as dynamic imports. " +
       "These dynamic imports will resolve to an empty module to prevent build failures. " +
       "This is meant to skip the imports that are not used in the evaluation itself.",
+    )
+    .option(
+      "--frontend-port <port>",
+      "Port for the Laminar frontend. Defaults to 5667",
+      (val) => parseInt(val, 10),
     )
     .action(async (files: string[], options) => {
       await runEvaluation(files, options);
@@ -153,6 +159,54 @@ async function cli() {
     .action(async (name: string, paths: string[], options, cmd) => {
       const parentOpts = cmd.parent?.opts() || {};
       await handleDatasetsCreate(name, paths, { ...parentOpts, ...options });
+    });
+
+  // Serve command
+  program
+    .command("dev")
+    .description("Start a rollout debugging session")
+    .argument("<file>", "Path to file containing the agent function(s)")
+    .option(
+      "--function <name>",
+      "Specific function to serve (if multiple rollout functions found)",
+    )
+    .option(
+      "--project-api-key <key>",
+      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option(
+      "--grpc-port <port>",
+      "Port for the Laminar gRPC backend. Defaults to 8443",
+      (val) => parseInt(val, 10),
+    )
+    .option(
+      "--frontend-port <port>",
+      "Port for the Laminar frontend. Defaults to 5667",
+      (val) => parseInt(val, 10),
+    )
+    .option(
+      "--external-packages <packages...>",
+      "[ADVANCED] List of packages to pass as external to esbuild. This will not link " +
+      "the packages directly into the dev file, but will instead require them at runtime. " +
+      "Read more: https://esbuild.github.io/api/#external",
+    )
+    .option(
+      "--dynamic-imports-to-skip <modules...>",
+      "[ADVANCED] List of module names to skip when encountered as dynamic imports. " +
+      "These dynamic imports will resolve to an empty module to prevent build failures. " +
+      "This is meant to skip the imports that are not used in the rollout itself.",
+    )
+    .action(async (file: string, options) => {
+      await runDev(file, options);
     });
 
   // If no command provided, show help

@@ -15,8 +15,8 @@ export default tseslint.config(
       '**/*.min.js',
       'assets/**/*.min.cjs',
       'assets/**/*.min.js',
-      'tsdown.config.ts',
-      'eslint.config.js',
+      'tsdown.config.mts',
+      'eslint.config.mjs',
       'examples/**',
       "src/browser/recorder.ts",
       '**/*.sh',
@@ -47,10 +47,10 @@ export default tseslint.config(
     },
 
     rules: {
-      "@typescript-eslint/no-explicit-any": ["warn"],
+      "@typescript-eslint/no-explicit-any": ["off"],
       "@typescript-eslint/no-unsafe-argument": ["warn"],
-      "@typescript-eslint/no-unsafe-assignment": ["warn"],
-      "@typescript-eslint/no-unsafe-member-access": ["warn"],
+      "@typescript-eslint/no-unsafe-assignment": ["off"],
+      "@typescript-eslint/no-unsafe-member-access": ["off"],
       "@typescript-eslint/no-unsafe-call": ["warn"],
 
       "arrow-body-style": ["warn", "as-needed"],

@@ -12,6 +12,9 @@ import { initializeLogger } from "../../utils";
 import { _configuration } from "../configuration";
 import { InitializeOptions } from "../interfaces";
 import { createResource } from "./compat";
+import { consumeStreamResult,waitForPendingStreams } from "./stream-utils";
+
+export { consumeStreamResult,waitForPendingStreams };
 import { initializeLaminarInstrumentations } from "./instrumentations";
 import { LaminarSpanProcessor } from "./processor";
 import { LaminarTracer } from "./tracer";
@@ -44,10 +47,12 @@ export const startTracing = (options: InitializeOptions) => {
   });
 
   const port = options.forceHttp ? options.httpPort : options.port;
+
   spanProcessor = new LaminarSpanProcessor({
     spanProcessor: options.spanProcessor,
     baseUrl: options.baseUrl,
     port,
+    httpPort: options.httpPort,
     apiKey: options.apiKey,
     forceHttp: options.forceHttp,
     traceExportTimeoutMillis: options.traceExportTimeoutMillis,
@@ -194,6 +199,8 @@ export const getTracer = (): Tracer => {
 export const getSpanProcessor = (): LaminarSpanProcessor | undefined => spanProcessor;
 
 export const forceFlush = async () => {
+  // Wait for pending stream processing with 5 second timeout
+  await waitForPendingStreams(5000);
   await spanProcessor.forceFlush();
 };
 

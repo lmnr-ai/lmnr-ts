@@ -1,4 +1,5 @@
 import { AttributeValue, SpanContext, TraceFlags } from '@opentelemetry/api';
+import { config } from 'dotenv';
 import * as path from "path";
 import pino, { Level } from 'pino';
 import { PinoPretty } from 'pino-pretty';
@@ -14,10 +15,15 @@ export function initializeLogger(options?: { colorize?: boolean, level?: Level }
     ?? (process.env.LMNR_LOG_LEVEL?.toLowerCase()?.trim() as Level)
     ?? 'info';
 
-  return pino(PinoPretty({
-    colorize,
-    minimumLevel: level,
-  }));
+  return pino(
+    {
+      level,
+    },
+    PinoPretty({
+      colorize,
+      minimumLevel: level,
+    }),
+  );
 }
 
 const logger = initializeLogger();
@@ -226,6 +232,7 @@ export const deserializeLaminarSpanContext = (
   const metadata = data.metadata;
   const traceType = data.traceType ?? data.trace_type;
   const tracingLevel = data.tracingLevel ?? data.tracing_level;
+  const rolloutSessionId = data.rolloutSessionId ?? data.rollout_session_id;
 
   if (typeof traceId !== 'string' || typeof spanId !== 'string') {
     throw new Error('Invalid LaminarSpanContext: traceId and spanId must be strings');
@@ -247,6 +254,7 @@ export const deserializeLaminarSpanContext = (
     metadata: metadata as Record<string, unknown> | undefined,
     traceType: traceType as TraceType | undefined,
     tracingLevel: tracingLevel as TracingLevel | undefined,
+    rolloutSessionId: rolloutSessionId as string | undefined,
   };
 };
 
@@ -378,4 +386,65 @@ export const validateTracingConfig = (apiKey?: string): void => {
       'or configure OTEL environment variables (OTEL_EXPORTER_OTLP_TRACES_ENDPOINT, etc.)',
     );
   }
+};
+
+export const loadEnv = (
+  options?: {
+    quiet?: boolean;
+    paths?: string[];
+  },
+): void => {
+  const nodeEnv = process.env.NODE_ENV || 'development';
+  const envDir = process.cwd();
+
+  // Files to load in order (lowest to highest priority)
+  // Later files override earlier ones
+  const envFiles = [
+    '.env',
+    '.env.local',
+    `.env.${nodeEnv}`,
+    `.env.${nodeEnv}.local`,
+  ];
+
+  const logLevel = process.env.LMNR_LOG_LEVEL ?? 'info';
+  const verbose = ['debug', 'trace'].includes(logLevel.trim().toLowerCase());
+
+  const quiet = options?.quiet ?? !verbose;
+
+  config({
+    path: options?.paths ?? envFiles.map(envFile => path.resolve(envDir, envFile)),
+    quiet,
+  });
+};
+
+/**
+ * Converts an API base URL to the frontend/web URL.
+ * - Converts https://api.lmnr.ai to https://www.laminar.sh
+ * - Removes trailing slashes
+ * - For localhost/127.0.0.1, ensures a port is specified (defaults to 5667)
+ *
+ * @param baseUrl - The API base URL (defaults to "https://api.lmnr.ai")
+ * @returns The frontend URL
+ */
+export const getFrontendUrl = (
+  baseUrl?: string,
+  frontendPort?: number,
+): string => {
+  let url = baseUrl ?? "https://api.lmnr.ai";
+  if (url === "https://api.lmnr.ai") {
+    url = "https://www.laminar.sh";
+  }
+  url = url.replace(/\/$/, '');
+
+  if (/localhost|127\.0\.0\.1/.test(url)) {
+    const port = frontendPort ?? url.match(/:\d{1,5}$/g)?.[0]?.slice(1) ?? 5667;
+    if (/:(\d{1,5})$/.test(url)) {
+      // URL has a port, replace it
+      url = url.replace(/:\d{1,5}$/g, `:${port}`);
+    } else {
+      // URL has no port, append it
+      url = `${url}:${port}`;
+    }
+  }
+  return url;
 };

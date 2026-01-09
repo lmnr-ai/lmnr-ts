@@ -1,28 +1,36 @@
-import { AttributeValue } from "@opentelemetry/api";
+import { AttributeValue, context } from "@opentelemetry/api";
 
 import { observeBase } from './opentelemetry-lib';
 import {
   ASSOCIATION_PROPERTIES,
   PARENT_SPAN_IDS_PATH,
   PARENT_SPAN_PATH,
-  SESSION_ID,
   SPAN_TYPE,
-  TRACE_TYPE,
-  USER_ID,
 } from "./opentelemetry-lib/tracing/attributes";
 import {
   ASSOCIATION_PROPERTIES_KEY,
   LaminarContextManager,
 } from "./opentelemetry-lib/tracing/context";
-import { LaminarSpanContext, TraceType, TracingLevel } from './types';
-import { deserializeLaminarSpanContext, initializeLogger, metadataToAttributes } from "./utils";
+import { LaminarSpanContext, RolloutParam, TraceType, TracingLevel } from './types';
+import { deserializeLaminarSpanContext, initializeLogger } from "./utils";
 
 const logger = initializeLogger();
+
+declare global {
+  var _rolloutFunctions: Map<string, {
+    fn: (...args: any[]) => any;
+    params: RolloutParam[];
+    name: string;
+  }> | undefined;
+  var _set_rollout_global: boolean;
+  var _currentExportName: string | undefined;
+}
 
 interface ObserveOptions {
   name?: string;
   sessionId?: string;
   userId?: string;
+  rolloutSessionId?: string;
   traceType?: TraceType;
   spanType?: 'DEFAULT' | 'LLM' | 'TOOL' | 'EVALUATOR' | 'EVALUATION' | 'EXECUTOR';
   input?: unknown;
@@ -31,39 +39,166 @@ interface ObserveOptions {
   parentSpanContext?: string | LaminarSpanContext;
   metadata?: Record<string, any>;
   tags?: string[];
+  rolloutEntrypoint?: boolean;
 }
+
+/**
+ * Extracts parameter names from a function using regex (fallback for runtime parsing)
+ * Note: This is a best-effort fallback. For TypeScript files, use ts-parser.ts instead.
+ */
+const extractParamNames = (fn: (...args: any[]) => any): RolloutParam[] => {
+  const fnStr = fn.toString();
+
+  // Match function parameters - handles regular functions, arrow functions, async functions
+  const paramMatch = fnStr.match(
+    /(?:async\s+)?(?:function\s*)?\(([^)]*)\)|(?:async\s*)?([^=\s(]+)\s*=>/,
+  );
+
+  if (!paramMatch) {
+    return [];
+  }
+
+  const paramsStr = paramMatch[1] || paramMatch[2] || '';
+
+  if (!paramsStr.trim()) {
+    return [];
+  }
+
+  // Split by comma and extract parameter names with metadata
+  const params = paramsStr.split(',').map(param => {
+    const trimmed = param.trim();
+
+    // Check if it's destructured (starts with { or [)
+    if (trimmed.startsWith('{')) {
+      return {
+        name: '_destructured',
+        required: !trimmed.includes('='), // Has default if includes =
+      };
+    }
+
+    if (trimmed.startsWith('[')) {
+      return {
+        name: '_arrayDestructured',
+        required: !trimmed.includes('='),
+      };
+    }
+
+    // Extract default value if present
+    const hasDefault = trimmed.includes('=');
+    let defaultValue: string | undefined;
+    let nameWithoutDefault = trimmed;
+
+    if (hasDefault) {
+      const parts = trimmed.split('=');
+      nameWithoutDefault = parts[0].trim();
+      defaultValue = parts.slice(1).join('=').trim();
+    }
+
+    // Check for optional marker (?)
+    const isOptional = nameWithoutDefault.includes('?');
+
+    // Remove type annotations and whitespace
+    const name = nameWithoutDefault
+      .replace(/:.+$/, '') // Remove type annotations
+      .replace(/\?/g, '')  // Remove optional marker
+      .replace(/\s+/g, ''); // Remove whitespace
+
+    // Extract just the parameter name
+    const simpleNameMatch = name.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*/);
+    const paramName = simpleNameMatch ? simpleNameMatch[0] : name;
+
+    return {
+      name: paramName,
+      required: !hasDefault && !isOptional,
+      default: defaultValue,
+    };
+  });
+
+  return params.filter(p => p.name && p.name.length > 0);
+};
 
 /**
  * The main decorator entrypoint for Laminar. This is used to wrap
  * functions and methods to create spans.
  *
- * @param name - Name of the span. Function name is used if not specified.
- * @param sessionId - Session ID to associate with the span and the following context.
- * @param userId - User ID to associate with the span and the following context.
+ * When `rolloutEntrypoint: true` is set, returns a wrapped function that can be
+ * used for rollout debugging sessions with `npx lmnr serve`.
+ *
+ * @param options - Configuration options for the span
+ * @param options.name - Name of the span. Function name is used if not specified.
+ * @param options.sessionId - Session ID to associate with the span and the following context.
+ * @param options.userId - User ID to associate with the span and the following context.
  * This is different from the id of a Laminar user.
- * @param traceType – Type of the trace. Unless it is within evaluation, it should be 'DEFAULT'.
- * @param spanType - Type of the span. 'DEFAULT' is used if not specified. If the type is 'LLM',
- * you must manually specify some attributes. See `Laminar.setSpanAttributes` for more
- * information.
- * @param input - Force override the input for the span. If not specified, the input will be the
- * arguments passed to the function.
- * @param ignoreInput - Whether to ignore the input altogether.
- * @param ignoreOutput - Whether to ignore the output altogether.
- * @param metadata - Metadata to add to a trace for further filtering. Must be JSON serializable.
- * @param tags - Tags to associate with the span.
- * @returns Returns the result of the wrapped function.
+ * @param options.traceType - Type of the trace. Unless it is within evaluation, it should be
+ * 'DEFAULT'.
+ * @param options.spanType - Type of the span. 'DEFAULT' is used if not specified. If the type
+ * is 'LLM', you must manually specify some attributes. See `Laminar.setSpanAttributes`
+ * for more information.
+ * @param options.input - Force override the input for the span. If not specified, the
+ * input will be the arguments passed to the function.
+ * @param options.ignoreInput - Whether to ignore the input altogether.
+ * @param options.ignoreOutput - Whether to ignore the output altogether.
+ * @param options.parentSpanContext - Parent span context to associate with this span.
+ * @param options.metadata - Metadata to add to a trace for further filtering. Must be
+ * JSON serializable.
+ * @param options.tags - Tags to associate with the span.
+ * @param options.rolloutEntrypoint - When true, returns a wrapped function for
+ * rollout debugging. When false/undefined, executes the function immediately.
+ * @param fn - The function to wrap
+ * @param args - Arguments to pass to the function (only when rolloutEntrypoint is
+ * false/undefined)
+ * @returns Wrapped function (when rolloutEntrypoint: true) or Promise with result
  * @throws Exception - Re-throws the exception if the wrapped function throws an exception.
  *
  * @example
  * ```typescript
- * import { observe } from '@lmnr-ai/lmnr';
- *
- * await observe({ name: 'my_function' }, () => {
+ * // Regular usage (immediate execution)
+ * await observe({ name: 'my_function' }, async (x: string) => {
  *    // Your code here
- * });
+ *    return x.toUpperCase();
+ * }, 'hello');
+ *
+ * // Rollout entrypoint (returns wrapped function)
+ * export const myAgent = observe(
+ *   { name: 'agent', rolloutEntrypoint: true },
+ *   async (input: string) => {
+ *     // Your agent code here
+ *     return processInput(input);
+ *   }
+ * );
+ * // Then call: await myAgent('hello');
+ * ```
  */
+// Overload: when rolloutEntrypoint is true, return wrapped function
 export function observe<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
-  {
+  options: ObserveOptions & { rolloutEntrypoint: true },
+  fn: F,
+  ...args: A
+): F;
+
+export function observe<F extends (...args: any[]) => ReturnType<F>>(
+  options: ObserveOptions & { rolloutEntrypoint: true },
+  fn: F,
+): F;
+
+// Overload: when rolloutEntrypoint is false/undefined, execute immediately
+export function observe<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
+  options: ObserveOptions,
+  fn: F,
+  ...args: A
+): ReturnType<F>;
+
+// Implementation
+export function observe<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
+  options: ObserveOptions,
+  fn: F,
+  ...args: A
+): F | ReturnType<F> {
+  if (fn === undefined || typeof fn !== "function") {
+    throw new Error("Invalid `observe` usage. Second argument `fn` must be a function.");
+  }
+
+  const {
     name,
     sessionId,
     userId,
@@ -75,12 +210,66 @@ export function observe<A extends unknown[], F extends (...args: A) => ReturnTyp
     parentSpanContext,
     metadata,
     tags,
-  }: ObserveOptions, fn: F, ...args: A): ReturnType<F> {
-  if (fn === undefined || typeof fn !== "function") {
-    throw new Error("Invalid `observe` usage. Second argument `fn` must be a function.");
+    rolloutEntrypoint,
+  } = options;
+  const spanName = name ?? fn.name;
+
+  // If rolloutEntrypoint is true, return a wrapped function
+  if (rolloutEntrypoint) {
+    // Extract parameter names for rollout
+    const params = extractParamNames(fn);
+    // Get rollout session ID from env var if in rollout mode
+    const envRolloutSessionId = process.env.LMNR_ROLLOUT_SESSION_ID;
+
+    // Create wrapped function
+    const wrappedFn = ((...fnArgs: Parameters<F>): ReturnType<F> => {
+      const observeOptions = {
+        sessionId,
+        traceType,
+        spanType,
+        userId,
+        rolloutSessionId: envRolloutSessionId,
+        tags,
+        metadata,
+      };
+
+      const contextProperties = buildContextProperties(observeOptions);
+      const spanAttributes = buildSpanAttributes(observeOptions);
+
+      const argsToPass = (args && args.length > 0) ? args : fnArgs;
+
+      return observeBase<A, F>({
+        name: spanName,
+        contextProperties,
+        spanAttributes,
+        input: input ?? argsToPass,
+        ignoreInput,
+        ignoreOutput,
+        parentSpanContext,
+      }, fn, undefined, ...argsToPass);
+    }) as F;
+
+    // If in registration mode, register this function
+    if (globalThis._set_rollout_global) {
+      if (!globalThis._rolloutFunctions) {
+        globalThis._rolloutFunctions = new Map();
+      }
+
+      // Use current export name if available, otherwise use function name
+      const exportName = globalThis._currentExportName || spanName || 'unknown';
+
+      globalThis._rolloutFunctions.set(exportName, {
+        fn: wrappedFn as (...args: any[]) => any,
+        params,
+        name: spanName,
+      });
+    }
+
+    return wrappedFn;
   }
 
-  const associationProperties = buildAssociationProperties({
+  // Regular execution mode (backward compatible)
+  const observeOptions = {
     sessionId,
     traceType,
     spanType,
@@ -88,17 +277,65 @@ export function observe<A extends unknown[], F extends (...args: A) => ReturnTyp
     tags,
     metadata,
     parentSpanContext,
-  });
+  };
 
+  const contextProperties = buildContextProperties(observeOptions);
+  const spanAttributes = buildSpanAttributes(observeOptions);
 
   return observeBase<A, F>({
-    name: name ?? fn.name,
-    associationProperties,
+    name: spanName,
+    contextProperties,
+    spanAttributes,
     input,
     ignoreInput,
     ignoreOutput,
     parentSpanContext,
   }, fn, undefined, ...args);
+}
+
+
+/**
+ * @deprecated Use `tags` in `observe` or in `Laminar.startSpan`, or `Laminar.setSpanTags` instead.
+ * Sets the labels for any spans inside the function. This is useful for adding
+ * labels to the spans created in the auto-instrumentations. Returns the result
+ * of the wrapped function, so you can use it in an `await` statement if needed.
+ *
+ * Requirements:
+ * - Labels must be created in your project in advance.
+ * - Keys must be strings from your label names.
+ * - Values must be strings matching the label's allowed values.
+ *
+ * @param labels - The labels to set.
+ * @returns The result of the wrapped function.
+ *
+ * @example
+ * ```typescript
+ * import { withLabels } from '@lmnr-ai/lmnr';
+ *
+ * const result = await withLabels({ endpoint: "ft-openai-<id>" }, () => {
+ *    openai.chat.completions.create({});
+ * });
+ * ```
+ */
+export function withLabels<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
+  labels: string[],
+  fn: F,
+  ...args: A
+): ReturnType<F> {
+  let entityContext = context.active();
+  const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
+  const oldLabels = (currentAssociationProperties as Record<string, any>).labels ?? [];
+  const newLabels = [...oldLabels, ...labels];
+
+  entityContext = entityContext.setValue(
+    ASSOCIATION_PROPERTIES_KEY,
+    {
+      ...currentAssociationProperties,
+      labels: newLabels,
+    },
+  );
+
+  return context.with(entityContext, () => fn(...args));
 }
 
 /**
@@ -151,19 +388,31 @@ export function withTracingLevel<A extends unknown[], F extends (...args: A) => 
   return result;
 }
 
-const buildAssociationProperties = (options: Partial<ObserveOptions>):
-Record<string, AttributeValue> => {
-  const associationProperties: Record<string, AttributeValue> = {};
+/**
+ * Builds context-level association properties that propagate to child spans.
+ * These properties flow through the OpenTelemetry context and are inherited by
+ * any child spans created with startActiveSpan.
+ */
+const buildContextProperties = (
+  options: Partial<ObserveOptions>,
+): {
+  userId?: string;
+  sessionId?: string;
+  rolloutSessionId?: string;
+  traceType?: TraceType;
+  tracingLevel?: TracingLevel;
+  metadata?: Record<string, any>;
+} => {
   const parentSpanContext = options.parentSpanContext;
   const globalMetadata = LaminarContextManager.getGlobalMetadata();
-  let parentPath: string[] | undefined;
-  let parentIdsPath: string[] | undefined;
+  const ctxAssociationProperties = LaminarContextManager.getAssociationProperties();
+
   let parentMetadata: Record<string, any> | undefined;
   let parentTraceType: TraceType | undefined;
   let parentTracingLevel: TracingLevel | undefined;
   let parentUserId: string | undefined;
   let parentSessionId: string | undefined;
-  const ctxAssociationProperties = LaminarContextManager.getAssociationProperties();
+  let parentRolloutSessionId: string | undefined;
 
   if (parentSpanContext) {
     try {
@@ -171,13 +420,12 @@ Record<string, AttributeValue> => {
         ? deserializeLaminarSpanContext(parentSpanContext)
         : parentSpanContext;
 
-      parentPath = laminarContext.spanPath;
-      parentIdsPath = laminarContext.spanIdsPath;
       parentMetadata = laminarContext.metadata;
       parentTraceType = laminarContext.traceType;
       parentTracingLevel = laminarContext.tracingLevel;
       parentUserId = laminarContext.userId;
       parentSessionId = laminarContext.sessionId;
+      parentRolloutSessionId = laminarContext.rolloutSessionId;
     } catch (e) {
       logger.warn("Failed to parse parent span context: " +
         (e instanceof Error ? e.message : String(e)),
@@ -185,14 +433,31 @@ Record<string, AttributeValue> => {
     }
   }
 
+  const contextProperties: {
+    userId?: string;
+    sessionId?: string;
+    rolloutSessionId?: string;
+    traceType?: TraceType;
+    tracingLevel?: TracingLevel;
+    metadata?: Record<string, any>;
+  } = {};
+
   const sessionIdValue = options.sessionId ?? parentSessionId ?? ctxAssociationProperties.sessionId;
   if (sessionIdValue) {
-    associationProperties[SESSION_ID] = sessionIdValue;
+    contextProperties.sessionId = sessionIdValue;
   }
+
   const userIdValue = options.userId ?? parentUserId ?? ctxAssociationProperties.userId;
   if (userIdValue) {
-    associationProperties[USER_ID] = userIdValue;
+    contextProperties.userId = userIdValue;
   }
+
+  const rolloutSessionIdValue = options.rolloutSessionId ?? parentRolloutSessionId
+    ?? ctxAssociationProperties.rolloutSessionId;
+  if (rolloutSessionIdValue) {
+    contextProperties.rolloutSessionId = rolloutSessionIdValue;
+  }
+
   const traceTypeValue = options.traceType ?? parentTraceType
     ?? (["EVALUATION", "EXECUTOR", "EVALUATOR"].includes(options.spanType ?? "DEFAULT")
       ? "EVALUATION"
@@ -201,19 +466,12 @@ Record<string, AttributeValue> => {
     ?? ctxAssociationProperties.traceType
     ?? "DEFAULT";
   if (traceTypeValue) {
-    associationProperties[TRACE_TYPE] = traceTypeValue;
+    contextProperties.traceType = traceTypeValue;
   }
 
   const tracingLevelValue = parentTracingLevel ?? ctxAssociationProperties.tracingLevel;
   if (tracingLevelValue) {
-    associationProperties[`${ASSOCIATION_PROPERTIES}.tracing_level`] = tracingLevelValue;
-  }
-
-  if (options.spanType) {
-    associationProperties[SPAN_TYPE] = options.spanType;
-  }
-  if (options.tags) {
-    associationProperties[`${ASSOCIATION_PROPERTIES}.tags`] = Array.from(new Set(options.tags));
+    contextProperties.tracingLevel = tracingLevelValue;
   }
 
   const mergedMetadata = {
@@ -221,15 +479,53 @@ Record<string, AttributeValue> => {
     ...ctxAssociationProperties.metadata,
     ...parentMetadata,
     ...options.metadata,
+    ...(rolloutSessionIdValue ? { 'rollout.session_id': rolloutSessionIdValue } : {}),
   };
 
-  const metadataProperties = metadataToAttributes(mergedMetadata);
-  return {
-    ...associationProperties,
-    ...metadataProperties,
-    ...(parentPath ? { [PARENT_SPAN_PATH]: parentPath } : {}),
-    ...(parentIdsPath ? { [PARENT_SPAN_IDS_PATH]: parentIdsPath } : {}),
-  };
+  if (Object.keys(mergedMetadata).length > 0) {
+    contextProperties.metadata = mergedMetadata;
+  }
+
+  return contextProperties;
+};
+
+/**
+ * Builds span-specific attributes that do NOT propagate to child spans.
+ * These include spanType, tags, and parent span path information.
+ */
+const buildSpanAttributes = (
+  options: Partial<ObserveOptions>,
+): Record<string, AttributeValue> => {
+  const spanAttributes: Record<string, AttributeValue> = {};
+
+  if (options.spanType) {
+    spanAttributes[SPAN_TYPE] = options.spanType;
+  }
+
+  if (options.tags) {
+    spanAttributes[`${ASSOCIATION_PROPERTIES}.tags`] = Array.from(new Set(options.tags));
+  }
+
+  if (options.parentSpanContext) {
+    try {
+      const laminarContext = typeof options.parentSpanContext === 'string'
+        ? deserializeLaminarSpanContext(options.parentSpanContext)
+        : options.parentSpanContext;
+
+      if (laminarContext.spanPath) {
+        spanAttributes[PARENT_SPAN_PATH] = laminarContext.spanPath;
+      }
+      if (laminarContext.spanIdsPath) {
+        spanAttributes[PARENT_SPAN_IDS_PATH] = laminarContext.spanIdsPath;
+      }
+    } catch (e) {
+      logger.warn("Failed to parse parent span context for span attributes: " +
+        (e instanceof Error ? e.message : String(e)),
+      );
+    }
+  }
+
+  return spanAttributes;
 };
 
 /**
@@ -300,11 +596,14 @@ export function observeDecorator<This, Args extends unknown[], Return>(
       }
 
       const observeName = actualConfig.name ?? methodName;
+      const contextProperties = buildContextProperties(actualConfig);
+      const spanAttributes = buildSpanAttributes(actualConfig);
 
       return observeBase(
         {
           name: observeName,
-          associationProperties: buildAssociationProperties(actualConfig),
+          contextProperties,
+          spanAttributes,
           input: actualConfig.input,
           ignoreInput: actualConfig.ignoreInput,
           ignoreOutput: actualConfig.ignoreOutput,
@@ -392,12 +691,15 @@ export function observeExperimentalDecorator(
       }
 
       const observeName = actualConfig.name ?? originalMethod.name;
+      const contextProperties = buildContextProperties(actualConfig);
+      const spanAttributes = buildSpanAttributes(actualConfig);
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return observeBase(
         {
           name: observeName,
-          associationProperties: buildAssociationProperties(actualConfig),
+          contextProperties,
+          spanAttributes,
           input: actualConfig.input,
           ignoreInput: actualConfig.ignoreInput,
           ignoreOutput: actualConfig.ignoreOutput,

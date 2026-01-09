@@ -1,6 +1,10 @@
+import { type LanguageModelV3 } from "@ai-sdk/provider";
+import { type LanguageModelV2 } from "@ai-sdk/provider-v2";
 import type * as AI from "ai";
 
-import { getTracer } from "../tracing";
+import { getTracer } from "../../tracing";
+import { LaminarLanguageModelV2 } from "./v2";
+import { LaminarLanguageModelV3 } from "./v3";
 
 const AI_FUNCTIONS = [
   'generateText',
@@ -39,3 +43,14 @@ export const wrapAISDK = (ai: typeof AI): typeof AI => {
   });
   return wrapped as typeof AI;
 };
+
+export function wrapLanguageModel(languageModel: LanguageModelV3): LanguageModelV3;
+export function wrapLanguageModel(languageModel: LanguageModelV2): LanguageModelV2;
+export function wrapLanguageModel(
+  languageModel: LanguageModelV2 | LanguageModelV3,
+): LanguageModelV2 | LanguageModelV3 {
+  if (languageModel.specificationVersion === 'v3') {
+    return new LaminarLanguageModelV3(languageModel);
+  }
+  return new LaminarLanguageModelV2(languageModel);
+}

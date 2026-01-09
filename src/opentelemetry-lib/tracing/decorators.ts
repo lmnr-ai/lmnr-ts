@@ -1,27 +1,38 @@
 import { AttributeValue, context, type Span, trace } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
 
-import { LaminarSpanContext } from "../../types";
+import { LaminarSpanContext, TraceType, TracingLevel } from "../../types";
 import {
   deserializeLaminarSpanContext,
   initializeLogger,
-  isOtelAttributeValueType,
   tryToOtelSpanContext,
 } from "../../utils";
+import { getStream } from "../instrumentation/aisdk/utils";
 import { getTracer, shouldSendTraces } from ".";
 import {
   SPAN_INPUT,
   SPAN_OUTPUT,
 } from "./attributes";
 import {
+  ASSOCIATION_PROPERTIES_KEY,
   LaminarContextManager,
 } from "./context";
+import { handleStreamResult } from "./stream-utils";
 
 const logger = initializeLogger();
 
+export { consumeStreamResult, waitForPendingStreams } from "./stream-utils";
+
 export type DecoratorConfig = {
   name: string;
-  associationProperties?: Record<string, AttributeValue>;
+  contextProperties?: {
+    userId?: string;
+    sessionId?: string;
+    traceType?: TraceType;
+    tracingLevel?: TracingLevel;
+    metadata?: Record<string, any>;
+  };
+  spanAttributes?: Record<string, AttributeValue>;
   input?: unknown;
   ignoreInput?: boolean;
   ignoreOutput?: boolean;
@@ -60,7 +71,8 @@ export function observeBase<
 >(
   {
     name,
-    associationProperties,
+    contextProperties,
+    spanAttributes,
     input,
     ignoreInput,
     ignoreOutput,
@@ -93,11 +105,20 @@ export function observeBase<
     }
   }
 
+  // Set context properties for propagation to child spans
+  if (contextProperties && Object.keys(contextProperties).length > 0) {
+    const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
+    entityContext = entityContext.setValue(
+      ASSOCIATION_PROPERTIES_KEY,
+      { ...currentAssociationProperties, ...contextProperties },
+    );
+  }
+
   return context.with(entityContext, () =>
     getTracer().startActiveSpan(
       name,
       {
-        attributes: associationProperties,
+        attributes: spanAttributes,
       },
       entityContext,
       (span: Span) => {
@@ -133,15 +154,6 @@ export function observeBase<
           }
         }
 
-        // ================================
-        Object.entries(associationProperties || {}).forEach(([key, value]) => {
-          if (isOtelAttributeValueType(value)) {
-            span.setAttribute(key, value);
-          } else {
-            span.setAttribute(key, JSON.stringify(value));
-          }
-        });
-
         let res: ReturnType<F>;
         try {
           res = fn.apply(thisArg as ThisParameterType<F>, args);
@@ -153,6 +165,19 @@ export function observeBase<
 
         if (res instanceof Promise) {
           return res.then((resolvedRes) => {
+            // Check if the resolved result is a stream
+            const streamInfo = getStream(resolvedRes);
+            if (streamInfo.type !== null) {
+              return handleStreamResult(
+                resolvedRes,
+                streamInfo,
+                span,
+                ignoreOutput,
+                serialize,
+              ) as ReturnType<F>;
+            }
+
+            // Not a stream, handle normally
             try {
               if (shouldSendTraces() && !ignoreOutput) {
                 span.setAttribute(
@@ -176,6 +201,14 @@ export function observeBase<
               throw error;
             }) as ReturnType<F>;
         }
+
+        // Check if the result is a stream
+        const streamInfo = getStream(res);
+        if (streamInfo.type !== null) {
+          return handleStreamResult(
+            res, streamInfo, span, ignoreOutput, serialize) as ReturnType<F>;
+        }
+
         try {
           if (shouldSendTraces() && !ignoreOutput) {
             span.setAttribute(
@@ -212,7 +245,7 @@ const normalizePayload = (payload: unknown, seen: WeakSet<any>): unknown => {
     // serialize object one by one
     const output: any = {};
     Object.entries(payload as any).forEach(([key, value]) => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+
       output[key] = normalizePayload(value, seen);
     });
     return output;

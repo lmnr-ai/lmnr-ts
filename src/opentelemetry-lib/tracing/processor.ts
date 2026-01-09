@@ -1,30 +1,38 @@
-import { Context, context } from "@opentelemetry/api";
+import { AttributeValue, Context, context } from "@opentelemetry/api";
 import {
   BatchSpanProcessor,
-  ReadableSpan,
   SimpleSpanProcessor,
   type Span,
   SpanExporter,
   SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
+import { Logger } from "pino";
 
 import { version as SDK_VERSION } from "../../../package.json";
-import { otelSpanIdToUUID, StringUUID } from "../../utils";
+import { LaminarClient } from "../../client";
+import { SpanType } from "../../types";
+import { initializeLogger, metadataToAttributes, otelSpanIdToUUID, StringUUID } from "../../utils";
 import { getLangVersion } from "../../version";
 import {
   ASSOCIATION_PROPERTIES,
   ASSOCIATION_PROPERTIES_OVERRIDES,
   PARENT_SPAN_IDS_PATH,
   PARENT_SPAN_PATH,
+  ROLLOUT_SESSION_ID,
+  SESSION_ID,
   SPAN_IDS_PATH,
   SPAN_INSTRUMENTATION_SOURCE,
   SPAN_LANGUAGE_VERSION,
   SPAN_PATH,
   SPAN_SDK_VERSION,
+  SPAN_TYPE,
+  TRACE_TYPE,
+  USER_ID,
 } from "./attributes";
 import {
   getParentSpanId,
   makeSpanOtelV2Compatible,
+  OTelSpanCompat,
 } from "./compat";
 import {
   ASSOCIATION_PROPERTIES_KEY,
@@ -82,10 +90,18 @@ interface LaminarSpanProcessorOptions {
    * If passed, wraps the underlying span processor.
    */
   spanProcessor?: SpanProcessor;
+
+  /**
+   * The HTTP port to use. Optional.
+   * If not provided, the `port` option will be used.
+   */
+  httpPort?: number;
 }
 
 export class LaminarSpanProcessor implements SpanProcessor {
   private instance: BatchSpanProcessor | SimpleSpanProcessor;
+  private client: LaminarClient | undefined;
+  private logger: Logger;
   private readonly _spanIdToPath: Map<string, string[]> = new Map();
   private readonly _spanIdLists: Map<string, string[]> = new Map();
 
@@ -105,6 +121,7 @@ export class LaminarSpanProcessor implements SpanProcessor {
    * Not recommended with Laminar backends.
    */
   constructor(options: LaminarSpanProcessorOptions = {}) {
+    this.logger = initializeLogger();
     if (options.spanProcessor && options.spanProcessor instanceof LaminarSpanProcessor) {
       this.instance = options.spanProcessor.instance;
       // Set by reference, so that updates from the inside are reflected here.
@@ -121,6 +138,14 @@ export class LaminarSpanProcessor implements SpanProcessor {
           exportTimeoutMillis: options.traceExportTimeoutMillis ?? 30000,
         });
     }
+
+    if (process.env.LMNR_ROLLOUT_SESSION_ID) {
+      this.client = new LaminarClient({
+        baseUrl: options.baseUrl,
+        projectApiKey: options.apiKey,
+        port: options.httpPort ?? options.port,
+      });
+    }
   }
 
   forceFlush(): Promise<void> {
@@ -131,7 +156,8 @@ export class LaminarSpanProcessor implements SpanProcessor {
     return this.instance.shutdown();
   }
 
-  onStart(span: Span, parentContext: Context): void {
+  onStart(spanArg: any, parentContext: Context): void {
+    const span = spanArg as OTelSpanCompat;
     // Check for parent path attributes first (from serialized span context)
     const parentPathFromAttribute = span.attributes?.[PARENT_SPAN_PATH] as string[] | undefined;
     const parentIdsPathFromAttribute =
@@ -179,6 +205,21 @@ export class LaminarSpanProcessor implements SpanProcessor {
           span.setAttribute(ASSOCIATION_PROPERTIES_OVERRIDES[key], value);
         } else if (key === "tracing_level") {
           span.setAttribute("lmnr.internal.tracing_level", value);
+        } else if (key === "rolloutSessionId") {
+          span.setAttribute(ROLLOUT_SESSION_ID, value);
+          span.setAttribute("lmnr.rollout.session_id", value);
+        } else if (key === "metadata" && typeof value === "object" && value !== null) {
+          // Flatten metadata into individual attributes
+          const metadataAttrs = metadataToAttributes(value as Record<string, unknown>);
+          span.setAttributes(metadataAttrs);
+        } else if (key === "userId") {
+          span.setAttribute(USER_ID, value);
+        } else if (key === "sessionId") {
+          span.setAttribute(SESSION_ID, value);
+        } else if (key === "traceType") {
+          span.setAttribute(TRACE_TYPE, value);
+        } else if (key === "tracingLevel") {
+          span.setAttribute("lmnr.internal.tracing_level", value);
         } else {
           span.setAttribute(`${ASSOCIATION_PROPERTIES}.${key}`, value);
         }
@@ -186,10 +227,30 @@ export class LaminarSpanProcessor implements SpanProcessor {
     }
 
     makeSpanOtelV2Compatible(span);
+
+    if (process.env.LMNR_ROLLOUT_SESSION_ID && this.client) {
+      this.client.rolloutSessions.sendSpanUpdate({
+        sessionId: process.env.LMNR_ROLLOUT_SESSION_ID,
+        span: {
+          name: span.name,
+          startTime: new Date(span.startTime[0] * 1000 + span.startTime[1] / 1e6).toISOString(),
+          spanId: span.spanContext().spanId,
+          traceId: span.spanContext().traceId,
+          parentSpanId: getParentSpanId(span),
+          attributes: attributesForStartEvent(span.name, span.attributes),
+          spanType: inferSpanType(span.name, span.attributes),
+        },
+      }).catch((error: any) => {
+        this.logger.debug(
+          `Failed to send span update: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+    }
     this.instance.onStart((span), parentContext);
   }
 
-  onEnd(span: ReadableSpan): void {
+  // type ReadableSpan
+  onEnd(span: any): void {
     // By default, we call the original onEnd.
     makeSpanOtelV2Compatible(span);
     this.instance.onEnd(span as Span);
@@ -217,3 +278,57 @@ export class LaminarSpanProcessor implements SpanProcessor {
     this._spanIdLists.clear();
   }
 }
+
+const inferSpanType = (
+  name: string,
+  attributes: Record<string, AttributeValue | undefined>,
+): SpanType => {
+  if (attributes[SPAN_TYPE]) {
+    return attributes[SPAN_TYPE] as SpanType;
+  }
+  if (attributes['gen_ai.system']) {
+    return 'LLM';
+  }
+  if (Object.keys(attributes).some((k) => k.startsWith('gen_ai.') || k.startsWith('llm.'))) {
+    return 'LLM';
+  }
+  if (name === 'ai.toolCall' || attributes['ai.toolCall.id'] || attributes['ai.toolCall.name']) {
+    return 'TOOL';
+  }
+  return 'DEFAULT';
+};
+
+const attributesForStartEvent = (
+  name: string,
+  attributes: Record<string, AttributeValue | undefined>,
+): Record<string, AttributeValue> => {
+  const keysToKeep = [
+    SPAN_PATH,
+    SPAN_TYPE,
+    SPAN_IDS_PATH,
+    PARENT_SPAN_PATH,
+    PARENT_SPAN_IDS_PATH,
+    SPAN_INSTRUMENTATION_SOURCE,
+    SPAN_SDK_VERSION,
+    SPAN_LANGUAGE_VERSION,
+    "gen_ai.request.model",
+    "gen_ai.response.model",
+    "gen_ai.system",
+    "lmnr.span.original_type",
+    "ai.model.id",
+  ];
+  const newAttributes = Object.fromEntries(
+    Object.entries(attributes).filter(([key]) => keysToKeep.includes(key)),
+  );
+
+  // Common scenario, because we don't have the response model in the start event.
+  // Atrificially set the response model to the request model, just so frontend
+  // can show the model in the UI.
+  if (attributes["gen_ai.request.model"] && !attributes["gen_ai.response.model"]) {
+    newAttributes["gen_ai.response.model"] = attributes["gen_ai.request.model"];
+  }
+  return {
+    [SPAN_TYPE]: inferSpanType(name, attributes),
+    ...newAttributes,
+  };
+};

@@ -3,7 +3,7 @@ import { after, afterEach, beforeEach, describe, it } from "node:test";
 
 import { InMemorySpanExporter, type ReadableSpan } from "@opentelemetry/sdk-trace-base";
 
-import { Laminar, observe } from "../src/index";
+import { getTracer, Laminar, observe } from "../src/index";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 import { getParentSpanId } from "../src/opentelemetry-lib/tracing/compat";
 
@@ -141,6 +141,29 @@ void describe("association properties", () => {
       () => {
         const childResult = observe({ name: "childSpan" }, () => 3);
         return childResult;
+      },
+    );
+    assert.strictEqual(result, 3);
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 2);
+    const parentSpan = spans.find(span => span.name === "parentSpan");
+    const childSpan = spans.find(span => span.name === "childSpan");
+
+    assertAssociationPropertiesPropagated(parentSpan!, childSpan!);
+  });
+
+  void it("propagates the association properties through observe to startActiveSpan", () => {
+    const result = observe(
+      {
+        name: "parentSpan",
+        ...COMMON_ASSOCIATION_PROPERTIES,
+      },
+      () => {
+        const tracer = getTracer();
+        return tracer.startActiveSpan("childSpan", (span) => {
+          span.end();
+          return 3;
+        });
       },
     );
     assert.strictEqual(result, 3);

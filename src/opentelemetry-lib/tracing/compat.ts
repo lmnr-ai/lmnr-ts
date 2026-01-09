@@ -1,12 +1,18 @@
 // Forward-compatibility with OTel v2 / v0.200 SDKs
 import { SpanContext } from "@opentelemetry/api";
-import { IResource } from "@opentelemetry/resources";
 import { ReadableSpan, Span as SdkSpan } from "@opentelemetry/sdk-trace-base";
 
 // Type definitions that cover both OTel SDK v1 and v2
 // In v1: spans have parentSpanId and instrumentationLibrary
 // In v2: spans have parentSpanContext and instrumentationScope
-type OTelSpanCompat = (SdkSpan | ReadableSpan) & {
+export type OTelSpanCompat = SdkSpan & ReadableSpan & {
+  parentSpanId?: string;
+  parentSpanContext?: SpanContext;
+  instrumentationLibrary?: any;
+  instrumentationScope?: any;
+};
+
+type OTelReadableSpanCompat = ReadableSpan & {
   parentSpanId?: string;
   parentSpanContext?: SpanContext;
   instrumentationLibrary?: any;
@@ -15,7 +21,7 @@ type OTelSpanCompat = (SdkSpan | ReadableSpan) & {
 
 // In-place edits on span object for compatibility between OTel v1 and v2 SDKs
 export const makeSpanOtelV2Compatible = (
-  span: OTelSpanCompat,
+  span: OTelSpanCompat | OTelReadableSpanCompat,
 ) => {
   const spanAny = span as any;
   if (spanAny.instrumentationScope && !spanAny.instrumentationLibrary) {
@@ -60,7 +66,7 @@ export const makeSpanOtelV2Compatible = (
 };
 
 export const getParentSpanId = (
-  span: OTelSpanCompat,
+  span: OTelSpanCompat | OTelReadableSpanCompat,
 ): string | undefined => {
   const spanAny = span as any;
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
@@ -77,7 +83,7 @@ export const getParentSpanId = (
  */
 export const createResource = (
   attributes: Record<string, string>,
-): IResource => {
+): any => { // type IResource from `@opentelemetry/resources`
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const resources = require("@opentelemetry/resources");
