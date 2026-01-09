@@ -162,7 +162,7 @@ export interface RolloutRunEvent {
   data: {
     trace_id?: string;
     path_to_count?: Record<string, number>;
-    args: Record<string, any>;
+    args: Record<string, any> | any[];
     overrides?: Record<string, {
       system?: string | LanguageModelTextBlock[];
       tools?: LanguageModelToolDefinitionOverride[];

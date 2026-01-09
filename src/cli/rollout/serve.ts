@@ -265,6 +265,19 @@ async function loadRolloutModule(
   return selectedFunction;
 }
 
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+const tryParseArg = (arg: unknown) => {
+  if (typeof arg === 'string') {
+    try {
+      return JSON.parse(arg);
+    } catch {
+      return arg;
+    }
+  }
+  return arg;
+};
+/* eslint-enable @typescript-eslint/no-unsafe-return */
+
 /**
  * Handles a run event from the backend
  */
@@ -283,17 +296,8 @@ async function handleRunEvent(
 
   const { trace_id, path_to_count, args: rawArgs, overrides } = event.data;
 
-  const parsedArgs = Object.fromEntries(
-    Object.entries(rawArgs).map(([key, value]) => {
-      if (typeof value === 'string') {
-        try {
-          return [key, JSON.parse(value)];
-        } catch {
-          return [key, value];
-        }
-      }
-      return [key, value];
-    }),
+  const parsedArgs = Array.isArray(rawArgs) ? rawArgs.map(tryParseArg) : Object.fromEntries(
+    Object.entries(rawArgs).map(([key, value]) => [key, tryParseArg(value)]),
   ) as Record<string, any>;
 
   cache.clear();
