@@ -52,7 +52,7 @@ export function instrumentClaudeAgentQuery(
       try {
         // Start proxy (uses reference counting for concurrent requests)
         await startProxy({
-          env: params.options?.env ?? process.env
+          env: params.options?.env ?? process.env,
         });
 
         // Publish span context
