@@ -727,6 +727,7 @@ export async function runDev(
       // Ignore delete errors during error cleanup
     }
 
+    await watcher.close();
     cacheServer.close(() => {
       process.exit(1);
     });

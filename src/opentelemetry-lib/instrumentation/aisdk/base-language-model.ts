@@ -211,6 +211,8 @@ export abstract class BaseLaminarLanguageModel {
         if (pathArray) {
           const path = pathArray.join('.');
           const currentIndex = this.pathToCurrentIndex[path] ?? 0;
+          this.pathToCurrentIndex[path] = currentIndex + 1;
+
           const optionsWithOverrides = this.applyOverrides(path, options);
           // By this time, we are already inside the .doGenerate/.doStream span, and the
           // input attributes (ai.prompt.messages) and ai.prompt.tools have
@@ -226,10 +228,8 @@ export abstract class BaseLaminarLanguageModel {
             );
           }
           if (this.pathToCount[path] && currentIndex >= this.pathToCount[path]) {
-            this.pathToCurrentIndex[path] = currentIndex + 1;
             return originalFn(optionsWithOverrides);
           }
-          this.pathToCurrentIndex[path] = currentIndex + 1;
           return cachedFn(path, currentIndex).then(cachedResult => {
             if (cachedResult) {
               return cachedResult;
