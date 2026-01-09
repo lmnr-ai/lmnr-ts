@@ -1,4 +1,4 @@
-import { Context, context } from "@opentelemetry/api";
+import { AttributeValue, Context, context } from "@opentelemetry/api";
 import {
   BatchSpanProcessor,
   SimpleSpanProcessor,
@@ -237,8 +237,8 @@ export class LaminarSpanProcessor implements SpanProcessor {
           spanId: span.spanContext().spanId,
           traceId: span.spanContext().traceId,
           parentSpanId: getParentSpanId(span),
-          attributes: span.attributes,
-          spanType: (span.attributes[SPAN_TYPE] ?? 'DEFAULT') as SpanType,
+          attributes: attributesForStartEvent(span.name, span.attributes),
+          spanType: inferSpanType(span.name, span.attributes),
         },
       }).catch((error: any) => {
         this.logger.debug(
@@ -278,3 +278,57 @@ export class LaminarSpanProcessor implements SpanProcessor {
     this._spanIdLists.clear();
   }
 }
+
+const inferSpanType = (
+  name: string,
+  attributes: Record<string, AttributeValue | undefined>,
+): SpanType => {
+  if (attributes[SPAN_TYPE]) {
+    return attributes[SPAN_TYPE] as SpanType;
+  }
+  if (attributes['gen_ai.system']) {
+    return 'LLM';
+  }
+  if (Object.keys(attributes).some((k) => k.startsWith('gen_ai.') || k.startsWith('llm.'))) {
+    return 'LLM';
+  }
+  if (name === 'ai.toolCall' || attributes['ai.toolCall.id'] || attributes['ai.toolCall.name']) {
+    return 'TOOL';
+  }
+  return 'DEFAULT';
+};
+
+const attributesForStartEvent = (
+  name: string,
+  attributes: Record<string, AttributeValue | undefined>,
+): Record<string, AttributeValue> => {
+  const keysToKeep = [
+    SPAN_PATH,
+    SPAN_TYPE,
+    SPAN_IDS_PATH,
+    PARENT_SPAN_PATH,
+    PARENT_SPAN_IDS_PATH,
+    SPAN_INSTRUMENTATION_SOURCE,
+    SPAN_SDK_VERSION,
+    SPAN_LANGUAGE_VERSION,
+    "gen_ai.request.model",
+    "gen_ai.response.model",
+    "gen_ai.system",
+    "lmnr.span.original_type",
+    "ai.model.id",
+  ];
+  const newAttributes = Object.fromEntries(
+    Object.entries(attributes).filter(([key]) => keysToKeep.includes(key)),
+  );
+
+  // Common scenario, because we don't have the response model in the start event.
+  // Atrificially set the response model to the request model, just so frontend
+  // can show the model in the UI.
+  if (attributes["gen_ai.request.model"] && !attributes["gen_ai.response.model"]) {
+    newAttributes["gen_ai.response.model"] = attributes["gen_ai.request.model"];
+  }
+  return {
+    [SPAN_TYPE]: inferSpanType(name, attributes),
+    ...newAttributes,
+  };
+};
