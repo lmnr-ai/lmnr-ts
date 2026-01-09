@@ -1,4 +1,4 @@
-import { AttributeValue, context } from "@opentelemetry/api";
+import { AttributeValue } from "@opentelemetry/api";
 
 import { observeBase } from './opentelemetry-lib';
 import {
@@ -291,51 +291,6 @@ export function observe<A extends unknown[], F extends (...args: A) => ReturnTyp
     ignoreOutput,
     parentSpanContext,
   }, fn, undefined, ...args);
-}
-
-
-/**
- * @deprecated Use `tags` in `observe` or in `Laminar.startSpan`, or `Laminar.setSpanTags` instead.
- * Sets the labels for any spans inside the function. This is useful for adding
- * labels to the spans created in the auto-instrumentations. Returns the result
- * of the wrapped function, so you can use it in an `await` statement if needed.
- *
- * Requirements:
- * - Labels must be created in your project in advance.
- * - Keys must be strings from your label names.
- * - Values must be strings matching the label's allowed values.
- *
- * @param labels - The labels to set.
- * @returns The result of the wrapped function.
- *
- * @example
- * ```typescript
- * import { withLabels } from '@lmnr-ai/lmnr';
- *
- * const result = await withLabels({ endpoint: "ft-openai-<id>" }, () => {
- *    openai.chat.completions.create({});
- * });
- * ```
- */
-export function withLabels<A extends unknown[], F extends (...args: A) => ReturnType<F>>(
-  labels: string[],
-  fn: F,
-  ...args: A
-): ReturnType<F> {
-  let entityContext = context.active();
-  const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
-  const oldLabels = (currentAssociationProperties as Record<string, any>).labels ?? [];
-  const newLabels = [...oldLabels, ...labels];
-
-  entityContext = entityContext.setValue(
-    ASSOCIATION_PROPERTIES_KEY,
-    {
-      ...currentAssociationProperties,
-      labels: newLabels,
-    },
-  );
-
-  return context.with(entityContext, () => fn(...args));
 }
 
 /**
