@@ -195,7 +195,7 @@ export class SSEClient extends EventEmitter {
    * Reconnects to the SSE endpoint
    */
   private reconnect(): void {
-    this.disconnect(false);
+    this.disconnect(true);
     this.connectAndListen().catch(error => {
       this.emit('error', error);
     });
