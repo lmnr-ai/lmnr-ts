@@ -232,6 +232,7 @@ export const deserializeLaminarSpanContext = (
   const metadata = data.metadata;
   const traceType = data.traceType ?? data.trace_type;
   const tracingLevel = data.tracingLevel ?? data.tracing_level;
+  const rolloutSessionId = data.rolloutSessionId ?? data.rollout_session_id;
 
   if (typeof traceId !== 'string' || typeof spanId !== 'string') {
     throw new Error('Invalid LaminarSpanContext: traceId and spanId must be strings');
@@ -253,6 +254,7 @@ export const deserializeLaminarSpanContext = (
     metadata: metadata as Record<string, unknown> | undefined,
     traceType: traceType as TraceType | undefined,
     tracingLevel: tracingLevel as TracingLevel | undefined,
+    rolloutSessionId: rolloutSessionId as string | undefined,
   };
 };
 
@@ -436,7 +438,13 @@ export const getFrontendUrl = (
 
   if (/localhost|127\.0\.0\.1/.test(url)) {
     const port = frontendPort ?? url.match(/:\d{1,5}$/g)?.[0]?.slice(1) ?? 5667;
-    url = url.replace(/:\d{1,5}$/g, `:${port}`);
+    if (/:(\d{1,5})$/.test(url)) {
+      // URL has a port, replace it
+      url = url.replace(/:\d{1,5}$/g, `:${port}`);
+    } else {
+      // URL has no port, append it
+      url = `${url}:${port}`;
+    }
   }
   return url;
 };

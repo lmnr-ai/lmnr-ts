@@ -500,6 +500,7 @@ export async function runDev(
   } catch (error: any) {
     logger.error("Failed to discover rollout functions: " +
       (error instanceof Error ? error.message : String(error)));
+    cacheServer.close();
     throw error;
   }
 
@@ -603,13 +604,14 @@ export async function runDev(
 
       if (currentChildProcess) {
         logger.debug('Terminating child process...');
+        const processToKill = currentChildProcess;
         currentChildProcess.kill('SIGTERM');
 
         // Fallback to SIGKILL after 2 seconds
         setTimeout(() => {
-          if (currentChildProcess && !currentChildProcess.killed) {
+          if (processToKill && !processToKill.killed) {
             logger.warn('Child process did not terminate, using SIGKILL');
-            currentChildProcess.kill('SIGKILL');
+            processToKill.kill('SIGKILL');
           }
         }, 2000);
       } else {
@@ -625,12 +627,13 @@ export async function runDev(
       // Cancel running child process
       if (currentChildProcess) {
         logger.warn('Cancelling current run due to file change');
+        const processToKill = currentChildProcess;
         currentChildProcess.kill('SIGTERM');
 
         // Fallback to SIGKILL
         setTimeout(() => {
-          if (currentChildProcess && !currentChildProcess.killed) {
-            currentChildProcess.kill('SIGKILL');
+          if (processToKill && !processToKill.killed) {
+            processToKill.kill('SIGKILL');
           }
         }, 2000);
       }

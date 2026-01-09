@@ -335,18 +335,7 @@ export function withLabels<A extends unknown[], F extends (...args: A) => Return
     },
   );
 
-  const result = context.with(entityContext, () => fn(...args));
-
-  const newAssociationProperties = (
-    entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {}
-  ) as Record<string, any>;
-
-  entityContext = entityContext.setValue(
-    ASSOCIATION_PROPERTIES_KEY,
-    { ...newAssociationProperties, labels: oldLabels },
-  );
-
-  return result;
+  return context.with(entityContext, () => fn(...args));
 }
 
 /**
