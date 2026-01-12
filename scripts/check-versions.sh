@@ -1,0 +1,39 @@
+#!/bin/bash
+set -e
+
+# Get versions from package.json files
+ROOT_VERSION=$(node -p "require('./package.json').version")
+TYPES_VERSION=$(node -p "require('./packages/types/package.json').version")
+CLIENT_VERSION=$(node -p "require('./packages/client/package.json').version")
+LMNR_VERSION=$(node -p "require('./packages/lmnr/package.json').version")
+
+echo "Root version: $ROOT_VERSION"
+echo "Types version: $TYPES_VERSION"
+echo "Client version: $CLIENT_VERSION"
+echo "Lmnr version: $LMNR_VERSION"
+
+# Check if types, client, and lmnr have the same version
+if [ "$TYPES_VERSION" != "$CLIENT_VERSION" ] || [ "$TYPES_VERSION" != "$LMNR_VERSION" ]; then
+  echo ""
+  echo "❌ ERROR: Version mismatch detected!"
+  echo "  @lmnr-ai/types: $TYPES_VERSION"
+  echo "  @lmnr-ai/client: $CLIENT_VERSION"
+  echo "  @lmnr-ai/lmnr: $LMNR_VERSION"
+  echo ""
+  echo "These packages must have the same version."
+  exit 1
+fi
+
+# Check if they match the root version
+if [ "$ROOT_VERSION" != "$LMNR_VERSION" ]; then
+  echo ""
+  echo "❌ ERROR: Root version doesn't match package versions!"
+  echo "  Root (package.json): $ROOT_VERSION"
+  echo "  Packages: $LMNR_VERSION"
+  echo ""
+  echo "Root version should match @lmnr-ai/types, @lmnr-ai/client, and @lmnr-ai/lmnr."
+  exit 1
+fi
+
+echo ""
+echo "✅ All versions are consistent: $ROOT_VERSION"
