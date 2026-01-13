@@ -214,7 +214,8 @@ export class SubprocessManager {
 
       // Fallback to SIGKILL after 5 seconds
       setTimeout(() => {
-        if (processToKill && !processToKill.killed) {
+        // exitCode is null if the process is still running
+        if (processToKill && processToKill.exitCode === null) {
           logger.warn('Child process did not terminate, using SIGKILL');
           processToKill.kill('SIGKILL');
         }

@@ -5,4 +5,4 @@ export type {
   StagehandV3Context,
   StagehandV3Page,
   V3RecorderState,
-} from "@lmnr-ai/types";
+} from "./types";

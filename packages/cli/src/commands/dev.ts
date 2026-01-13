@@ -629,6 +629,11 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
     });
 
     sseClient.on('run', (event: RolloutRunEvent) => {
+      if (subprocessManager.isRunning()) {
+        logger.warn('Rollout is already running, skipping new run');
+        return;
+      }
+
       handleRunEvent(
         event,
         sessionId,
