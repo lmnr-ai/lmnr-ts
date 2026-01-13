@@ -1,4 +1,4 @@
-import { StringUUID } from "./utils";
+import { type StringUUID } from "./utils";
 
 export type InitEvaluationResponse = {
   id: StringUUID;

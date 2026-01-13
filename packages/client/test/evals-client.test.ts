@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { after, beforeEach, describe, it } from "node:test";
 
-import { StringUUID } from "@lmnr-ai/types";
+import { type StringUUID } from "@lmnr-ai/types";
 import nock from "nock";
 
 import { LaminarClient } from "../src/index";

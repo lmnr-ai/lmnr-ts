@@ -2,7 +2,7 @@
  * Agent resource for interacting with Laminar agents.
  */
 
-import { StringUUID } from "@lmnr-ai/types";
+import { type StringUUID } from "@lmnr-ai/types";
 import { trace } from "@opentelemetry/api";
 
 import { initializeLogger, otelSpanIdToUUID, otelTraceIdToUUID } from "../utils";
@@ -252,7 +252,7 @@ export class AgentResource extends BaseResource {
    * @returns { Promise<ReadableStream<RunAgentResponseChunk>> } The agent output streamed
    */
   public run(options: Omit<RunAgentOptions, 'stream'> & { stream: true }):
-  Promise<ReadableStream<RunAgentResponseChunk>>;
+    Promise<ReadableStream<RunAgentResponseChunk>>;
 
   /**
    * Run Laminar index agent

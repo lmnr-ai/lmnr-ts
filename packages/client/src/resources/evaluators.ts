@@ -1,4 +1,4 @@
-import { StringUUID } from "@lmnr-ai/types";
+import { type StringUUID } from "@lmnr-ai/types";
 
 import { isStringUUID, otelSpanIdToUUID, otelTraceIdToUUID } from "../utils";
 import { BaseResource } from ".";

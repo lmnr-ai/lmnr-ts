@@ -1,4 +1,4 @@
-import { StringUUID } from '@lmnr-ai/types';
+import { type StringUUID } from '@lmnr-ai/types';
 import { config } from 'dotenv';
 import * as path from 'path';
 import pino, { Level } from 'pino';

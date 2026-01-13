@@ -1,6 +1,6 @@
 import { SessionRecordingOptions } from "@lmnr-ai/types";
 
-import { StringUUID } from "../../../utils";
+import { type StringUUID } from "@lmnr-ai/types";
 import { EventChunk, sendEvents } from "../../utils";
 import { injectRecorderViaCDP, shouldSkipUrl } from "./cdp-helpers";
 import { logger } from "./constants";

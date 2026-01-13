@@ -1,7 +1,7 @@
 import { LaminarClient } from '@lmnr-ai/client';
 
 import { Datapoint } from './evaluations';
-import { StringUUID } from './utils';
+import { type StringUUID } from '@lmnr-ai/types';
 
 const DEFAULT_FETCH_SIZE = 25;
 
