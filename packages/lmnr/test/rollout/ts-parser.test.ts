@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { extractRolloutFunctions } from '../../src/cli/rollout/ts-parser';
+import { extractRolloutFunctions } from '../../src/cli/worker/ts-parser';
 
 /**
  * Helper to create a temporary TypeScript file for testing

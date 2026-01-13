@@ -20,7 +20,7 @@
     "build": "tsdown",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
-    "test": "tsx --test test/*.test.ts test/**/*.test.ts"
+    "test": "tsx --test test/*.test.ts"
   },
   "files": [
     "dist"

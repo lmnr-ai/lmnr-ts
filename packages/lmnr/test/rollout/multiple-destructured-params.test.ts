@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, it } from 'node:test';
 
-import { extractRolloutFunctions } from '../../src/cli/rollout/ts-parser';
+import { extractRolloutFunctions } from '../../src/cli/worker/ts-parser';
 
 void describe('Multiple Destructured Parameters', () => {
   void it('assigns unique names to multiple destructured parameters', () => {

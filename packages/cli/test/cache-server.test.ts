@@ -2,7 +2,9 @@ import * as assert from 'node:assert';
 import * as http from 'node:http';
 import { describe, it } from 'node:test';
 
-import { CachedSpan, startCacheServer } from '../../src/cli/rollout/cache-server';
+import { type CachedSpan } from '@lmnr-ai/types';
+
+import { startCacheServer } from '../src/cache-server';
 
 // Helper to make HTTP requests
 async function makeRequest(

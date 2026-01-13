@@ -9,7 +9,8 @@
   "scripts": {
     "build": "tsdown",
     "lint": "eslint",
-    "lint:fix": "eslint --fix"
+    "lint:fix": "eslint --fix",
+    "test": "tsx --test test/*.test.ts"
   },
   "files": [
     "dist"
