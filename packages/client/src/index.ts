@@ -1,4 +1,3 @@
-import { AgentResource } from "./resources/agent";
 import { BrowserEventsResource } from "./resources/browser-events";
 import { DatasetsResource } from "./resources/datasets";
 import { EvalsResource } from "./resources/evals";
@@ -11,7 +10,6 @@ import { loadEnv } from "./utils";
 export class LaminarClient {
   private baseUrl: string;
   private projectApiKey: string;
-  private _agent: AgentResource;
   private _browserEvents: BrowserEventsResource;
   private _datasets: DatasetsResource;
   private _evals: EvalsResource;
@@ -38,7 +36,6 @@ export class LaminarClient {
     const baseUrlNoPort = (baseUrl ?? process.env.LMNR_BASE_URL)
       ?.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
     this.baseUrl = `${baseUrlNoPort ?? 'https://api.lmnr.ai'}:${httpPort}`;
-    this._agent = new AgentResource(this.baseUrl, this.projectApiKey);
     this._browserEvents = new BrowserEventsResource(this.baseUrl, this.projectApiKey);
     this._datasets = new DatasetsResource(this.baseUrl, this.projectApiKey);
     this._evals = new EvalsResource(this.baseUrl, this.projectApiKey);
@@ -46,10 +43,6 @@ export class LaminarClient {
     this._rolloutSessions = new RolloutSessionsResource(this.baseUrl, this.projectApiKey);
     this._sql = new SqlResource(this.baseUrl, this.projectApiKey);
     this._tags = new TagsResource(this.baseUrl, this.projectApiKey);
-  }
-
-  public get agent() {
-    return this._agent;
   }
 
   public get browserEvents() {
