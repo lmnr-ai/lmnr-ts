@@ -220,8 +220,8 @@ async function handleRunEvent(
     };
 
     // Get worker command
-    const workerCommand = options.command && options.commandArgs
-      ? { command: options.command, args: options.commandArgs }
+    const workerCommand = options.command
+      ? { command: options.command, args: options.commandArgs ?? [] }
       : getWorkerCommand(filePath);
 
     try {
