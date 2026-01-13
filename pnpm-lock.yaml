@@ -26,6 +26,9 @@ importers:
       eslint-plugin-unused-imports:
         specifier: ^4.1.4
         version: 4.3.0(@typescript-eslint/eslint-plugin@8.46.2(@typescript-eslint/parser@8.46.2(eslint@9.39.1)(typescript@5.9.3))(eslint@9.39.1)(typescript@5.9.3))(eslint@9.39.1)
+      playwright:
+        specifier: ^1.56.1
+        version: 1.56.1
       tsdown:
         specifier: ^0.18.3
         version: 0.18.3(typescript@5.9.3)
@@ -299,9 +302,6 @@ importers:
       openai:
         specifier: ^6.9.1
         version: 6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12)
-      playwright:
-        specifier: ^1.56.1
-        version: 1.56.1
       puppeteer:
         specifier: ^24.28.0
         version: 24.28.0(bufferutil@4.0.9)(typescript@5.9.3)
