@@ -9,7 +9,7 @@ async function main() {
   const program = new Command();
 
   program
-    .name('lmnr-dev')
+    .name('@lmnr-ai/cli')
     .description('CLI for Laminar AI rollout debugging')
     .version(version, '-v, --version', 'display version number');
 
@@ -86,25 +86,12 @@ async function main() {
       'after',
       `
 Examples:
-  $ lmnr-dev dev agent.ts                    # TypeScript file
-  $ lmnr-dev dev agent.py                    # Python file (script mode)
-  $ lmnr-dev dev -m src.agent                # Python module (module mode)
-  $ lmnr-dev dev agent.ts --function myAgent # Specific function
+  $ @lmnr-ai/cli dev agent.ts                    # TypeScript file
+  $ @lmnr-ai/cli dev agent.py                    # Python file (script mode)
+  $ @lmnr-ai/cli dev -m src.agent                # Python module (module mode)
+  $ @lmnr-ai/cli dev agent.ts --function myAgent # Specific function
 `,
     );
-
-  // If no command provided, default to dev
-  if (process.argv.length === 2 || !process.argv[2].startsWith('-')) {
-    // If there's no subcommand, assume 'dev'
-    if (process.argv.length === 2) {
-      program.help();
-      return;
-    }
-    // Insert 'dev' as the first argument if it's not a flag
-    if (!process.argv[2].startsWith('-') && process.argv[2] !== 'dev') {
-      process.argv.splice(2, 0, 'dev');
-    }
-  }
 
   await program.parseAsync();
 }
