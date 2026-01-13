@@ -691,8 +691,9 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
 
       // Re-discover function metadata for supported file types
       if (
-        filePath &&
-        EXTENSIONS_TO_DISCOVER_METADATA.includes(path.extname(filePath))
+        isPythonModule ||
+        (filePath &&
+          EXTENSIONS_TO_DISCOVER_METADATA.includes(path.extname(filePath)))
       ) {
         discoverFunctionMetadata(filePathOrModule, options)
           .then((metadata) => {
