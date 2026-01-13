@@ -217,7 +217,7 @@ const discoverPythonMetadata = async (
       errorMessage.includes('spawn lmnr ENOENT')) {
       logger.info(
         "HINT: Make sure latest version of `lmnr` python package is installed. " +
-        "`pip install --upgrade lmnr`, or if you are running this command from a virtual" +
+        "`pip install --upgrade lmnr`, or if you are running this command from a virtual " +
         "environment, make sure to activate it. For `uv` users, rerun the command with `uv run`, " +
         `e.g. "uv run npx @lmnr-ai/cli dev ${filePathOrModule}"`,
       );
