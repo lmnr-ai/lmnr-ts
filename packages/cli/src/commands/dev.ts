@@ -1,10 +1,16 @@
 import { LaminarClient } from '@lmnr-ai/client';
-import { RolloutHandshakeEvent, RolloutParam, RolloutRunEvent, WorkerConfig } from '@lmnr-ai/types';
+import {
+  type CachedSpan,
+  type RolloutHandshakeEvent,
+  type RolloutParam,
+  type RolloutRunEvent,
+  type WorkerConfig,
+} from '@lmnr-ai/types';
 import chokidar from 'chokidar';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
-import { CachedSpan, startCacheServer } from '../cache-server';
+import { startCacheServer } from '../cache-server';
 import { createSSEClient, SSEClient } from '../sse-client';
 import { SubprocessManager } from '../subprocess/executor';
 import { initializeLogger } from '../utils';

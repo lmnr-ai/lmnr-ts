@@ -1,4 +1,4 @@
-import { RolloutParam, SpanType } from "@lmnr-ai/types";
+import { type RolloutParam, type SpanType } from "@lmnr-ai/types";
 
 import { otelSpanIdToUUID, otelTraceIdToUUID } from "../utils";
 import { BaseResource } from "./index";

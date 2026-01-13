@@ -1,9 +1,9 @@
-import { SessionRecordingOptions } from "@lmnr-ai/types";
+import { type SessionRecordingOptions, type StringUUID } from "@lmnr-ai/types";
 import { Page as PlaywrightPage } from "playwright";
 import { Page as PuppeteerPage } from "puppeteer";
 
 import { LaminarClient } from "..";
-import { initializeLogger, StringUUID } from "../utils";
+import { initializeLogger } from "../utils";
 import { RECORDER } from "./recorder";
 
 export const LMNR_SEND_EVENTS_FUNCTION_NAME = 'lmnrSendEvents';

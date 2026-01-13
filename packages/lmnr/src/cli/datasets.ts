@@ -1,7 +1,8 @@
 import { LaminarClient } from "@lmnr-ai/client";
+import { type StringUUID } from "@lmnr-ai/types";
 
 import { Datapoint } from "../evaluations";
-import { initializeLogger, StringUUID } from "../utils";
+import { initializeLogger } from "../utils";
 import { loadFromPaths, printToConsole, writeToFile } from "./file-utils";
 
 const logger = initializeLogger();

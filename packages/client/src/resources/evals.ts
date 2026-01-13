@@ -1,6 +1,11 @@
-import { EvaluationDatapoint, GetDatapointsResponse, InitEvaluationResponse } from "@lmnr-ai/types";
+import {
+  type EvaluationDatapoint,
+  type GetDatapointsResponse,
+  type InitEvaluationResponse,
+  type StringUUID,
+} from "@lmnr-ai/types";
 
-import { initializeLogger, newUUID, slicePayload, StringUUID } from "../utils";
+import { initializeLogger, newUUID, slicePayload } from "../utils";
 import { BaseResource } from ".";
 
 const logger = initializeLogger();

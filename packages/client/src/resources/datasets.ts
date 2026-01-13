@@ -1,6 +1,12 @@
-import { Datapoint, Dataset, GetDatapointsResponse, PushDatapointsResponse } from "@lmnr-ai/types";
+import {
+  type Datapoint,
+  type Dataset,
+  type GetDatapointsResponse,
+  type PushDatapointsResponse,
+  type StringUUID,
+} from "@lmnr-ai/types";
 
-import { initializeLogger, StringUUID } from "../utils";
+import { initializeLogger } from "../utils";
 import { BaseResource } from ".";
 
 const logger = initializeLogger();
