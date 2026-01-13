@@ -118,7 +118,7 @@ export async function runEvaluation(
       outfile: `tmp_out_${file}.js`,
       write: false,  // will be loaded in memory as a temp file
       external: [
-        "node_modules/*",
+        "@lmnr-ai/lmnr",
         "playwright",
         "puppeteer",
         "puppeteer-core",

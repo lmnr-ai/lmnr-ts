@@ -38,45 +38,39 @@ export class LaminarSpanExporter implements SpanExporter {
       headers = forceHttp
         ? { 'Authorization': `Bearer ${key}` }
         : { 'authorization': `Bearer ${key}` };
+      if (!url) {
+        url = 'https://api.lmnr.ai';
+      }
     } else {
       const otelHeaders = getOtelEnvVar('HEADERS');
       if (otelHeaders) {
         headers = parseOtelHeaders(otelHeaders);
       }
-    }
+      // Check for OTEL endpoint configuration
+      const otelEndpoint = getOtelEnvVar('ENDPOINT');
+      if (otelEndpoint && !url) {
+        url = otelEndpoint;
 
-    // Check for OTEL endpoint configuration
-    const otelEndpoint = getOtelEnvVar('ENDPOINT');
-    if (otelEndpoint && !url) {
-      url = otelEndpoint;
-
-      // Determine protocol from OTEL env vars
-      const otelProtocol = getOtelEnvVar('PROTOCOL') || 'grpc/protobuf';
-      const otelExporter = process?.env?.OTEL_EXPORTER;
-      forceHttp = otelProtocol === 'http/protobuf'
-        || otelProtocol === 'http/json'
-        || otelExporter === 'otlp_http';
-    } else if (otelEndpoint && url) {
-      logger.warn(
-        'OTEL_ENDPOINT is set, but Laminar base URL is also set. Ignoring OTEL_ENDPOINT.',
-      );
-    }
-
-    // Set default URL if not provided
-    if (!url) {
-      // If we have an API key (traditional Laminar mode), default to Laminar API
-      if (key) {
-        url = 'https://api.lmnr.ai';
-      } else {
-        // If we're using OTEL mode (no API key), we must have OTEL_ENDPOINT
-        // This should have been validated earlier, but just in case
-        throw new Error(
-          'Laminar base URL is not set and OTEL_ENDPOINT is not set. Please either\n' +
-          '- set the LMNR_BASE_URL environment variable\n' +
-          '- set the OTEL_ENDPOINT environment variable\n' +
-          '- pass the baseUrl parameter to Laminar.initialize',
+        // Determine protocol from OTEL env vars
+        const otelProtocol = getOtelEnvVar('PROTOCOL') || 'grpc/protobuf';
+        const otelExporter = process?.env?.OTEL_EXPORTER;
+        forceHttp = otelProtocol === 'http/protobuf'
+          || otelProtocol === 'http/json'
+          || otelExporter === 'otlp_http';
+      } else if (otelEndpoint && url) {
+        logger.warn(
+          'OTEL_ENDPOINT is set, but Laminar base URL is also set. Ignoring OTEL_ENDPOINT.',
         );
       }
+    }
+
+    if (!url) {
+      throw new Error(
+        'Laminar base URL is not set and OTEL_ENDPOINT is not set. Please either\n' +
+        '- set the LMNR_BASE_URL environment variable\n' +
+        '- set the OTEL_ENDPOINT environment variable (if you are not using a Laminar API key)\n' +
+        '- pass the baseUrl parameter to Laminar.initialize',
+      );
     }
 
     // Calculate port
