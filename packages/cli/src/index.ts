@@ -16,7 +16,14 @@ async function main() {
   program
     .command('dev')
     .description('Start a rollout debugging session')
-    .argument('<file>', 'Path to file containing the agent function(s)')
+    .argument(
+      '[file]',
+      'Path to file containing the agent function(s). Either `file` or `-m` must be provided.',
+    )
+    .option(
+      '-m, --python-module <module>',
+      'Python module path (e.g., src.myfile). Either `file` or `-m` must be provided.',
+    )
     .option(
       '--function <name>',
       'Specific function to serve (if multiple rollout functions found)',
@@ -62,9 +69,29 @@ async function main() {
       '--command-args <args...>',
       '[ADVANCED] Arguments for the custom command',
     )
-    .action(async (file: string, options) => {
+    .action(async (file: string | undefined, options) => {
+      // Validation: must have either file or python-module, but not both
+      if (!file && !options.pythonModule) {
+        console.error('Error: Must provide either a file path or --python-module (-m) flag');
+        process.exit(1);
+      }
+      if (file && options.pythonModule) {
+        console.error('Error: Cannot specify both file path and --python-module (-m) flag');
+        process.exit(1);
+      }
+
       await runDev(file, options);
-    });
+    })
+    .addHelpText(
+      'after',
+      `
+Examples:
+  $ lmnr-dev dev agent.ts                    # TypeScript file
+  $ lmnr-dev dev agent.py                    # Python file (script mode)
+  $ lmnr-dev dev -m src.agent                # Python module (module mode)
+  $ lmnr-dev dev agent.ts --function myAgent # Specific function
+`,
+    );
 
   // If no command provided, default to dev
   if (process.argv.length === 2 || !process.argv[2].startsWith('-')) {

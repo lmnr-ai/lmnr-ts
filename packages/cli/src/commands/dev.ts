@@ -24,6 +24,21 @@ interface FunctionMetadata {
 
 const logger = initializeLogger();
 
+// Extensions that use TypeScript/JavaScript build and runtime discovery
+const TS_JS_EXTENSIONS = [
+  '.ts',
+  '.tsx',
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.jsx',
+  '.mts',
+  '.cts',
+];
+
+// All extensions that support metadata discovery
+const EXTENSIONS_TO_DISCOVER_METADATA = [...TS_JS_EXTENSIONS, '.py'];
+
 export interface DevOptions {
   projectApiKey?: string;
   baseUrl?: string;
@@ -35,7 +50,222 @@ export interface DevOptions {
   dynamicImportsToSkip?: string[];
   command?: string;
   commandArgs?: string[];
+  pythonModule?: string; // Python module path (e.g., 'src.myfile')
 }
+
+interface DiscoveredMetadata {
+  functionName: string;
+  params: RolloutParam[];
+}
+
+/**
+ * Discovers function metadata for TypeScript and JavaScript files by:
+ * 1. Extracting TypeScript metadata (params with types from source - TS only)
+ * 2. Building and loading the module with esbuild
+ * 3. Selecting the appropriate function
+ * 4. Matching metadata by span name
+ *
+ * For JavaScript files, TypeScript metadata extraction fails gracefully, but runtime
+ * parameter extraction via regex still works (param names without types).
+ */
+const discoverTypeScriptMetadata = async (
+  filePath: string,
+  options: { function?: string; externalPackages?: string[]; dynamicImportsToSkip?: string[] },
+): Promise<DiscoveredMetadata> => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  // Use dynamic require to prevent bundler from trying to resolve at build time
+  const lmnrPackage = '@lmnr-ai/lmnr';
+  const { extractRolloutFunctions } = require(`${lmnrPackage}/dist/cli/worker/ts-parser.cjs`);
+  const {
+    buildFile,
+    loadModule,
+    selectRolloutFunction,
+  } = require(`${lmnrPackage}/dist/cli/worker/build.cjs`);
+  /* eslint-enable @typescript-eslint/no-require-imports */
+
+  // Extract TypeScript metadata
+  let paramsMetadata: Map<string, FunctionMetadata> | undefined;
+  try {
+    paramsMetadata = extractRolloutFunctions(filePath);
+    logger.debug(`Extracted TypeScript metadata for ${paramsMetadata?.size} functions`);
+  } catch (error) {
+    logger.warn(
+      'Failed to extract TypeScript metadata, falling back to runtime parsing: ' +
+      (error instanceof Error ? error.message : String(error)),
+    );
+  }
+
+  // Build and load the module
+  const moduleText = await buildFile(filePath, {
+    externalPackages: options.externalPackages,
+    dynamicImportsToSkip: options.dynamicImportsToSkip,
+  });
+  loadModule({
+    filename: filePath,
+    moduleText,
+  });
+
+  // Select the appropriate function
+  const selectedFunction = selectRolloutFunction(options.function);
+
+  // If we have TypeScript metadata, match by span name and enrich params
+  if (paramsMetadata) {
+    logger.debug(`Available TS metadata keys: ${Array.from(paramsMetadata.keys()).join(', ')}`);
+    logger.debug(
+      `Looking for span name: ${selectedFunction.name} ` +
+      `(runtime key: ${selectedFunction.exportName})`,
+    );
+
+    // Search for metadata by span name
+    let foundMetadata: FunctionMetadata | null = null;
+    for (const [exportName, metadata] of paramsMetadata.entries()) {
+      logger.debug(
+        `Checking ${exportName}: span name = ${metadata.name}, export name = ${exportName}`,
+      );
+      if (metadata.name === selectedFunction.name) {
+        foundMetadata = metadata;
+        logger.debug(`Match. Export name: ${exportName}, span name: ${metadata.name}`);
+        break;
+      }
+    }
+
+    if (foundMetadata) {
+      selectedFunction.params = foundMetadata.params;
+      logger.debug(`Using TypeScript metadata for span: ${selectedFunction.name}`);
+    } else {
+      logger.info(`No TypeScript metadata found for span name: ${selectedFunction.name}`);
+    }
+  }
+
+  return {
+    functionName: selectedFunction.name,
+    params: selectedFunction.params || [],
+  };
+};
+
+/**
+ * Helper to execute subprocess commands
+ */
+const execCommand = async (
+  command: string,
+  args: string[],
+): Promise<{ stdout: string; stderr: string }> => new Promise((resolve, reject) => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { spawn } = require('child_process');
+  const child = spawn(command, args);
+  let stdout = '';
+  let stderr = '';
+
+  child.stdout.on('data', (data: Buffer) => {
+    stdout += data.toString();
+  });
+  child.stderr.on('data', (data: Buffer) => {
+    stderr += data.toString();
+  });
+
+  child.on('close', (code: number | null) => {
+    if (code === 0) {
+      resolve({ stdout, stderr });
+    } else {
+      reject(new Error(`Command failed with code ${code}: ${stderr}`));
+    }
+  });
+
+  child.on('error', (error: Error) => {
+    reject(error);
+  });
+});
+
+/**
+ * Discovers function metadata for Python files/modules by calling the lmnr Python CLI
+ */
+const discoverPythonMetadata = async (
+  filePathOrModule: string,
+  options: DevOptions,
+): Promise<DiscoveredMetadata> => {
+  logger.debug(`Discovering Python metadata for ${filePathOrModule}`);
+  const args = ['discover'];
+
+  // Determine if we're using a file path or module
+  if (options.pythonModule) {
+    // Module mode: lmnr discover --module src.myfile
+    args.push('--module', options.pythonModule);
+  } else {
+    // Script mode: lmnr discover --file src/myfile.py
+    args.push('--file', filePathOrModule);
+  }
+
+  // Add optional function name
+  if (options.function) {
+    args.push('--function', options.function);
+  }
+
+  try {
+    // Execute: lmnr discover --file <path> | --module <module> [--function <name>]
+    const result = await execCommand('lmnr', args);
+    const response = JSON.parse(result.stdout);
+
+    // Response format: { "name": "...", "params": [...] }
+    return {
+      functionName: response.name,
+      params: response.params || [],
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`Failed to discover Python metadata: ${errorMessage}`);
+    if (errorMessage.toLowerCase().includes('command not found') ||
+      errorMessage.includes('spawn lmnr ENOENT')) {
+      logger.info(
+        "HINT: Make sure latest version of `lmnr` python package is installed. " +
+        "`pip install --upgrade lmnr`, or if you are running this command from a virtual" +
+        "environment, make sure to activate it. For `uv` users, rerun the command with `uv run`, " +
+        `e.g. "uv run npx @lmnr-ai/cli dev ${filePathOrModule}"`,
+      );
+      process.exit(1);
+    }
+    // Fallback
+    const defaultName = options.pythonModule
+      ? options.pythonModule.split('.').pop() || 'main'
+      : path.basename(filePathOrModule, '.py');
+    return {
+      functionName: options.function || defaultName,
+      params: [],
+    };
+  }
+};
+
+/**
+ * Generic metadata discovery dispatcher that routes to language-specific implementations
+ */
+const discoverFunctionMetadata = async (
+  filePathOrModule: string,
+  options: DevOptions,
+): Promise<DiscoveredMetadata> => {
+  // If pythonModule is set, we're in Python module mode
+  if (options.pythonModule) {
+    return await discoverPythonMetadata(filePathOrModule, options);
+  }
+
+  // Otherwise check file extension
+  const ext = path.extname(filePathOrModule);
+
+  // TypeScript and JavaScript files use the same build/load/select process
+  // For JS files, TypeScript metadata extraction will fail, but runtime param extraction works
+  if (TS_JS_EXTENSIONS.includes(ext)) {
+    return await discoverTypeScriptMetadata(filePathOrModule, options);
+  }
+
+  if (ext === '.py') {
+    return await discoverPythonMetadata(filePathOrModule, options);
+  }
+
+  // Fallback for unsupported file types
+  logger.warn(`No metadata discovery available for ${ext} files`);
+  return {
+    functionName: options.function || path.basename(filePathOrModule, ext),
+    params: [],
+  };
+};
 
 function newUUID(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -78,17 +308,17 @@ const tryParseArg = (arg: unknown) => {
 /**
  * Handles a run event from the backend
  */
-async function handleRunEvent(
+const handleRunEvent = async (
   event: RolloutRunEvent,
   sessionId: string,
-  filePath: string,
+  filePathOrModule: string,
   client: LaminarClient,
   cacheServerPort: number,
   cache: Map<string, CachedSpan>,
   setMetadata: (metadata: any) => void,
   options: DevOptions,
   subprocessManager: SubprocessManager,
-): Promise<void> {
+): Promise<void> => {
   logger.debug('Received run event');
 
   const { trace_id, path_to_count, args: rawArgs, overrides } = event.data;
@@ -212,7 +442,8 @@ async function handleRunEvent(
 
     // Prepare worker configuration
     const workerConfig: WorkerConfig = {
-      filePath,
+      filePath: options.pythonModule ? undefined : filePathOrModule,
+      modulePath: options.pythonModule,
       functionName: options.function,
       args: parsedArgs,
       env,
@@ -228,7 +459,7 @@ async function handleRunEvent(
     // Get worker command
     const workerCommand = options.command
       ? { command: options.command, args: options.commandArgs ?? [] }
-      : getWorkerCommand(filePath);
+      : getWorkerCommand(options.pythonModule ? undefined : filePathOrModule, options);
 
     try {
       await client.rolloutSessions.setStatus({
@@ -274,12 +505,16 @@ async function handleRunEvent(
       );
     }
   }
-}
+};
 
 /**
  * Main dev command handler
  */
-export async function runDev(filePath: string, options: DevOptions = {}): Promise<void> {
+export async function runDev(filePath?: string, options: DevOptions = {}): Promise<void> {
+  // Determine the actual path/module to use
+  const isPythonModule = !!options.pythonModule;
+  const filePathOrModule = filePath || options.pythonModule!;
+
   // Generate session ID
   const sessionId = newUUID();
 
@@ -300,84 +535,27 @@ export async function runDev(filePath: string, options: DevOptions = {}): Promis
   const subprocessManager = new SubprocessManager();
 
   // Get function metadata (name and params)
-  // For TypeScript files, build and load to discover functions
   let functionName = options.function;
-  let params: any[] = [];
+  let params: RolloutParam[] = [];
 
   try {
-    if (['.ts', '.tsx'].includes(path.extname(filePath))) {
+    // Check if we should discover metadata
+    const shouldDiscover =
+      isPythonModule ||
+      (filePath && EXTENSIONS_TO_DISCOVER_METADATA.includes(path.extname(filePath)));
+
+    if (shouldDiscover) {
       logger.debug('Discovering rollout functions...');
-
-      /* eslint-disable @typescript-eslint/no-require-imports */
-      const { extractRolloutFunctions } = require('@lmnr-ai/lmnr/dist/cli/worker/ts-parser.cjs');
-      const {
-        buildFile,
-        loadModule,
-        selectRolloutFunction,
-      } = require('@lmnr-ai/lmnr/dist/cli/worker/build.cjs');
-      /* eslint-enable @typescript-eslint/no-require-imports */
-
-      // Extract TypeScript metadata
-      let paramsMetadata: Map<string, FunctionMetadata> | undefined;
-      try {
-        paramsMetadata = extractRolloutFunctions(filePath);
-        logger.debug(`Extracted TypeScript metadata for ${paramsMetadata?.size} functions`);
-      } catch (error) {
-        logger.warn(
-          'Failed to extract TypeScript metadata, falling back to runtime parsing: ' +
-          (error instanceof Error ? error.message : String(error)),
-        );
-      }
-
-      // Build and load the module
-      const moduleText = await buildFile(filePath, {
-        externalPackages: options.externalPackages,
-        dynamicImportsToSkip: options.dynamicImportsToSkip,
-      });
-      loadModule({
-        filename: filePath,
-        moduleText,
-      });
-
-      // Select the appropriate function
-      const selectedFunction = selectRolloutFunction(options.function);
-
-      // If we have TypeScript metadata, match by span name and enrich params
-      if (paramsMetadata) {
-        logger.debug(`Available TS metadata keys: ${Array.from(paramsMetadata.keys()).join(', ')}`);
-        logger.debug(
-          `Looking for span name: ${selectedFunction.name} ` +
-          `(runtime key: ${selectedFunction.exportName})`,
-        );
-
-        // Search for metadata by span name
-        let foundMetadata: FunctionMetadata | null = null;
-        for (const [exportName, metadata] of paramsMetadata.entries()) {
-          logger.debug(`Checking ${exportName}: span name = ${metadata.name}`);
-          if (metadata.name === selectedFunction.name) {
-            foundMetadata = metadata;
-            logger.debug(`Found match! Export name: ${exportName}, span name: ${metadata.name}`);
-            break;
-          }
-        }
-
-        if (foundMetadata) {
-          selectedFunction.params = foundMetadata.params;
-          logger.debug(`Using TypeScript metadata for span: ${selectedFunction.name}`);
-        } else {
-          logger.warn(`No TypeScript metadata found for span name: ${selectedFunction.name}`);
-        }
-      }
-
-      functionName = selectedFunction.name;
-      params = selectedFunction.params || [];
+      const metadata = await discoverFunctionMetadata(filePathOrModule, options);
+      functionName = metadata.functionName;
+      params = metadata.params;
 
       logger.info(`Serving function: ${functionName}`);
       logger.debug(`Function parameters: ${JSON.stringify(params, null, 2)}`);
-    } else {
-      // For non-TS files, use fallback
+    } else if (filePath) {
+      // Unsupported file type
       functionName = options.function || path.basename(filePath, path.extname(filePath));
-      logger.info(`Serving function: ${functionName} (non-TS file, params not extracted)`);
+      logger.warn(`Metadata discovery not available for ${path.extname(filePath)} files`);
     }
   } catch (error) {
     logger.error(
@@ -402,6 +580,16 @@ export async function runDev(filePath: string, options: DevOptions = {}): Promis
         '.turbo',
         'tmp',
         'temp',
+        'venv',
+        '.venv',
+        'virtualenv',
+        '.virtualenv',
+        '__pycache__',
+        '.pytest_cache',
+        '.ruff_cache',
+        '.mypy_cache',
+        '.cache',
+        '.DS_Store',
       ];
 
       const pathSegments = path.split(/[/\\]/);
@@ -444,7 +632,7 @@ export async function runDev(filePath: string, options: DevOptions = {}): Promis
       handleRunEvent(
         event,
         sessionId,
-        filePath,
+        filePathOrModule,
         client,
         cacheServerPort,
         cache,
@@ -494,6 +682,30 @@ export async function runDev(filePath: string, options: DevOptions = {}): Promis
       if (subprocessManager.isRunning()) {
         logger.warn('Cancelling current run due to file change');
         subprocessManager.kill();
+      }
+
+      // Re-discover function metadata for supported file types
+      if (
+        filePath &&
+        EXTENSIONS_TO_DISCOVER_METADATA.includes(path.extname(filePath))
+      ) {
+        discoverFunctionMetadata(filePathOrModule, options)
+          .then((metadata) => {
+            logger.debug(`Updated function metadata: ${metadata.functionName}`);
+            logger.debug(`Updated parameters: ${JSON.stringify(metadata.params, null, 2)}`);
+
+            // Update the SSE client with new metadata
+            if (sseClient) {
+              sseClient.updateMetadata(metadata.params, metadata.functionName);
+              logger.debug('Notified backend of metadata changes');
+            }
+          })
+          .catch((error: any) => {
+            logger.error(
+              'Failed to update function metadata: ' +
+              (error instanceof Error ? error.message : String(error)),
+            );
+          });
       }
     });
 

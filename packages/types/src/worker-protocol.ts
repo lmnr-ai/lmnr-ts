@@ -11,7 +11,8 @@
  * Configuration sent to worker process via stdin
  */
 export interface WorkerConfig {
-  filePath: string;
+  filePath?: string; // File path for script mode (TS/JS/Python)
+  modulePath?: string; // Module path for Python module mode (e.g., 'src.myfile')
   functionName?: string;
   args: Record<string, any> | any[];
   env: Record<string, string>;
