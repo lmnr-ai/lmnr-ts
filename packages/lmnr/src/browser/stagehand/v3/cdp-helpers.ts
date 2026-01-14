@@ -3,18 +3,18 @@ import { SessionRecordingOptions } from "@lmnr-ai/types";
 import { RECORDER } from "../../recorder";
 import { injectScript } from "../../utils";
 import {
-  FrameTree,
-  RuntimeBindingCalledEvent,
-  RuntimeEvaluateResult,
-  StagehandCdpConnection,
-  StagehandV3Page,
-  V3RecorderState,
-} from "../types";
-import {
   CDP_OPERATION_TIMEOUT_MS,
   logger,
   SKIP_URL_PATTERNS,
 } from "./constants";
+import {
+  type FrameTree,
+  type RuntimeBindingCalledEvent,
+  type RuntimeEvaluateResult,
+  type StagehandCdpConnection,
+  type StagehandV3Page,
+  type V3RecorderState,
+} from "./types";
 
 /**
  * Check if a URL should be skipped for recording (error pages, blank pages, etc.)
