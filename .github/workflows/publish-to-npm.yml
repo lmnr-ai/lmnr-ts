@@ -5,20 +5,65 @@ on:
     types: [published]
 
 jobs:
-  publish-to-npm:
+  publish-cli:
+    if: startsWith(github.event.release.tag_name, 'cli:')
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      # pnpm publish calls npm publish under the hood, so make sure we use the latest npm
       - run: npm install -g npm@latest
-      - run: npm install -g pnpm
-      - run: pnpm i --frozen-lockfile && pnpm build
-      - run: pnpm test
-      - run: pnpm publish --provenance --no-git-checks --access public
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @lmnr-ai/cli build
+      - name: Publish CLI package
+        run: cd packages/cli && npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-sdk:
+    if: "!startsWith(github.event.release.tag_name, 'cli:')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@latest
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Check version consistency
+        run: pnpm check-versions
+
+      - name: Run tests
+        run: pnpm --filter @lmnr-ai/lmnr test
+
+      - name: Publish types package
+        run: cd packages/types && npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish client package
+        run: cd packages/client && npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish main SDK package
+        run: cd packages/lmnr && npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
