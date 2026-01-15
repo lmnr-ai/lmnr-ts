@@ -72,16 +72,37 @@ const discoverTypeScriptMetadata = async (
   filePath: string,
   options: { function?: string; externalPackages?: string[]; dynamicImportsToSkip?: string[] },
 ): Promise<DiscoveredMetadata> => {
-  /* eslint-disable @typescript-eslint/no-require-imports */
-  // Use dynamic require to prevent bundler from trying to resolve at build time
-  const lmnrPackage = '@lmnr-ai/lmnr';
-  const { extractRolloutFunctions } = require(`${lmnrPackage}/dist/cli/worker/ts-parser.cjs`);
-  const {
-    buildFile,
-    loadModule,
-    selectRolloutFunction,
-  } = require(`${lmnrPackage}/dist/cli/worker/build.cjs`);
-  /* eslint-enable @typescript-eslint/no-require-imports */
+  let extractRolloutFunctions: any;
+  let buildFile: any;
+  let loadModule: any;
+  let selectRolloutFunction: any;
+
+  try {
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    // Use dynamic require to prevent bundler from trying to resolve at build time
+    const lmnrPackage = '@lmnr-ai/lmnr';
+    extractRolloutFunctions = require(
+      `${lmnrPackage}/dist/cli/worker/ts-parser.cjs`,
+    ).extractRolloutFunctions;
+    const buildModule = require(`${lmnrPackage}/dist/cli/worker/build.cjs`);
+    buildFile = buildModule.buildFile;
+    loadModule = buildModule.loadModule;
+    selectRolloutFunction = buildModule.selectRolloutFunction;
+    /* eslint-enable @typescript-eslint/no-require-imports */
+  } catch (error: any) {
+    if (error.code === 'MODULE_NOT_FOUND') {
+      logger.error(
+        '@lmnr-ai/lmnr package not found. ' +
+        'For JavaScript projects, please install @lmnr-ai/lmnr in your project: ' +
+        'npm install @lmnr-ai/lmnr\n' +
+        'You might need to run `lmnr-cli` from the root of your project',
+      );
+      process.exit(1);
+    }
+    // Re-throw any other errors (syntax errors, etc.)
+    throw error;
+  }
+
 
   // Extract TypeScript metadata
   let paramsMetadata: Map<string, FunctionMetadata> | undefined;
@@ -514,6 +535,7 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
   // Determine the actual path/module to use
   const isPythonModule = !!options.pythonModule;
   const filePathOrModule = filePath || options.pythonModule!;
+  let didLogHandshake = false;
 
   // Generate session ID
   const sessionId = newUUID();
@@ -656,9 +678,12 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
       const projectId = event.data.project_id;
       const sessionId = event.data.session_id;
       const frontendUrl = getFrontendUrl(options.baseUrl, options.frontendPort);
-      logger.info(
-        `View your session at ${frontendUrl}/project/${projectId}/rollout-sessions/${sessionId}`,
-      );
+      if (!didLogHandshake) {
+        logger.info(
+          `View your session at ${frontendUrl}/project/${projectId}/rollout-sessions/${sessionId}`,
+        );
+      }
+      didLogHandshake = true;
     });
 
     sseClient.on('error', (error: Error) => {
