@@ -1,6 +1,6 @@
 {
   "name": "lmnr-cli",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0",
   "description": "CLI for Laminar AI rollout debugging",
   "main": "dist/index.cjs",
   "bin": {
@@ -38,5 +38,13 @@
   "devDependencies": {
     "@lmnr-ai/types": "workspace:*",
     "@lmnr-ai/client": "workspace:*"
+  },
+  "peerDependencies": {
+    "@lmnr-ai/lmnr": "*"
+  },
+  "peerDependenciesMeta": {
+    "@lmnr-ai/lmnr": {
+      "optional": true
+    }
   }
 }
