@@ -6,7 +6,7 @@ on:
 
 jobs:
   publish-cli:
-    if: startsWith(github.event.release.tag_name, 'cli:')
+    if: startsWith(github.event.release.tag_name, 'cli-')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,7 +29,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-sdk:
-    if: "!startsWith(github.event.release.tag_name, 'cli:')"
+    if: "!startsWith(github.event.release.tag_name, 'cli-')"
     runs-on: ubuntu-latest
     permissions:
       contents: read
