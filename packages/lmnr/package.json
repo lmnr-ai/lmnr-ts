@@ -105,7 +105,7 @@
     "@onkernel/sdk": "^0.18.0",
     "@pinecone-database/pinecone": "^5.1.2",
     "@playwright/test": "^1.54.2",
-    "@qdrant/js-client-rest": "^1.15.0",
+    "@qdrant/js-client-rest": "^1.16.2",
     "@types/cli-progress": "^3.11.6",
     "@types/node": "^24.2.0",
     "@types/semver": "^7.7.0",
