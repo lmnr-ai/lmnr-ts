@@ -292,9 +292,6 @@ importers:
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
-      undici:
-        specifier: ^6.23.0
-        version: 6.23.0
 
   packages/lmnr-cli:
     dependencies:

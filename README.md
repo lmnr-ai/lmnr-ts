@@ -29,7 +29,7 @@ npm install @lmnr-ai/lmnr
 ### For Rollout Debugging
 
 ```bash
-npx @lmnrcli@latest dev agent.ts
+npx lmnr-cli@latest dev agent.ts
 ```
 
 ## Development
@@ -55,7 +55,7 @@ pnpm test
 # Build specific package
 pnpm --filter @lmnr-ai/types build
 pnpm --filter @lmnr-ai/client build
-pnpm --filter @lmnr-cli build
+pnpm --filter lmnr-cli build
 pnpm --filter @lmnr-ai/lmnr build
 
 # Lint
