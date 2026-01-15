@@ -219,7 +219,7 @@ const discoverPythonMetadata = async (
         "HINT: Make sure latest version of `lmnr` python package is installed. " +
         "`pip install --upgrade lmnr`, or if you are running this command from a virtual " +
         "environment, make sure to activate it. For `uv` users, rerun the command with `uv run`, " +
-        `e.g. "uv run npx @lmnr-ai/cli dev ${filePathOrModule}"`,
+        `e.g. "uv run npx lmnr-cli dev ${filePathOrModule}"`,
       );
       process.exit(1);
     }

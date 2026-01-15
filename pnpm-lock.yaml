@@ -42,34 +42,6 @@ importers:
         specifier: ^8.38.0
         version: 8.46.2(eslint@9.39.1)(typescript@5.9.3)
 
-  packages/cli:
-    dependencies:
-      chokidar:
-        specifier: ^5.0.0
-        version: 5.0.0
-      commander:
-        specifier: ^14.0.2
-        version: 14.0.2
-      eventsource-parser:
-        specifier: ^3.0.6
-        version: 3.0.6
-      pino:
-        specifier: 9.12.0
-        version: 9.12.0
-      pino-pretty:
-        specifier: ^13.1.1
-        version: 13.1.2
-      uuid:
-        specifier: ^13.0.0
-        version: 13.0.0
-    devDependencies:
-      '@lmnr-ai/client':
-        specifier: workspace:*
-        version: link:../client
-      '@lmnr-ai/types':
-        specifier: workspace:*
-        version: link:../types
-
   packages/client:
     dependencies:
       '@opentelemetry/api':
@@ -267,8 +239,8 @@ importers:
         specifier: ^1.54.2
         version: 1.56.1
       '@qdrant/js-client-rest':
-        specifier: ^1.15.0
-        version: 1.15.1(typescript@5.9.3)
+        specifier: ^1.16.2
+        version: 1.16.2(typescript@5.9.3)
       '@types/cli-progress':
         specifier: ^3.11.6
         version: 3.11.6
@@ -298,7 +270,7 @@ importers:
         version: 0.3.37(@langchain/core@0.3.80(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12)))(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(axios@1.12.2)(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12))(ws@8.18.3(bufferutil@4.0.9))
       llamaindex:
         specifier: ^0.12.1
-        version: 0.12.1(@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.3)(zod@4.1.12))(hono@4.11.3)(p-retry@6.2.1)(tree-sitter@0.22.4)(web-tree-sitter@0.24.7)(zod@4.1.12)
+        version: 0.12.1(@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.4)(zod@4.1.12))(hono@4.11.4)(p-retry@6.2.1)(tree-sitter@0.22.4)(web-tree-sitter@0.24.7)(zod@4.1.12)
       nock:
         specifier: ^14.0.8
         version: 14.0.10
@@ -320,6 +292,34 @@ importers:
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
+
+  packages/lmnr-cli:
+    dependencies:
+      chokidar:
+        specifier: ^5.0.0
+        version: 5.0.0
+      commander:
+        specifier: ^14.0.2
+        version: 14.0.2
+      eventsource-parser:
+        specifier: ^3.0.6
+        version: 3.0.6
+      pino:
+        specifier: 9.12.0
+        version: 9.12.0
+      pino-pretty:
+        specifier: ^13.1.1
+        version: 13.1.2
+      uuid:
+        specifier: ^13.0.0
+        version: 13.0.0
+    devDependencies:
+      '@lmnr-ai/client':
+        specifier: workspace:*
+        version: link:../client
+      '@lmnr-ai/types':
+        specifier: workspace:*
+        version: link:../types
 
   packages/types:
     devDependencies:
@@ -1310,8 +1310,8 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  '@qdrant/js-client-rest@1.15.1':
-    resolution: {integrity: sha512-FAPMz6Z7RFj9vUun8R9e8SYcX6EkZtdfYfnh5lFXWcjEaat9q/jce1baAJCWAr3k8yHh62HpzCRYOatLVII28g==}
+  '@qdrant/js-client-rest@1.16.2':
+    resolution: {integrity: sha512-Zm4wEZURrZ24a+Hmm4l1QQYjiz975Ep3vF0yzWR7ICGcxittNz47YK2iBOk8kb8qseCu8pg7WmO1HOIsO8alvw==}
     engines: {node: '>=18.17.0', pnpm: '>=8'}
     peerDependencies:
       typescript: '>=4.7'
@@ -1405,9 +1405,6 @@ packages:
 
   '@selderee/plugin-htmlparser2@0.11.0':
     resolution: {integrity: sha512-P33hHGdldxGabLFjPPpaTxVolMrzrcegejx+0GxjrIb9Zv48D8yAIA/QTDR2dFl7Uz7urX8aX6+5bCZslr+gWQ==}
-
-  '@sevinf/maybe@0.5.0':
-    resolution: {integrity: sha512-ARhyoYDnY1LES3vYI0fiG6e9esWfTNcXcO6+MPJJXcnyMV3bim4lnFt45VXouV7y82F4x3YH8nOQ6VztuvUiWg==}
 
   '@smithy/abort-controller@4.2.4':
     resolution: {integrity: sha512-Z4DUr/AkgyFf1bOThW2HwzREagee0sB5ycl+hDiSZOfRLW8ZgrOjDi6g8mHH19yyU5E2A/64W3z6SMIf5XiUSQ==}
@@ -2588,8 +2585,8 @@ packages:
   help-me@5.0.0:
     resolution: {integrity: sha512-7xgomUX6ADmcYzFik0HzAxh/73YlKR9bmFzf51CZwR+b6YtzU2m0u49hQCqV6SvlqIqsaxovfwdvbnsw3b/zpg==}
 
-  hono@4.11.3:
-    resolution: {integrity: sha512-PmQi306+M/ct/m5s66Hrg+adPnkD5jiO6IjA7WhWw0gSBSo1EcRegwuI1deZ+wd5pzCGynCcn2DprnE4/yEV4w==}
+  hono@4.11.4:
+    resolution: {integrity: sha512-U7tt8JsyrxSRKspfhtLET79pU8K+tInj5QZXs1jSugO1Vq5dFj3kmZsRldo29mTBfcjDRVRXrEZ6LS63Cog9ZA==}
     engines: {node: '>=16.9.0'}
 
   hookable@6.0.1:
@@ -3617,8 +3614,8 @@ packages:
   undici-types@7.16.0:
     resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
 
-  undici@6.22.0:
-    resolution: {integrity: sha512-hU/10obOIu62MGYjdskASR3CUAiYaFTtC9Pa6vHyf//mAipSvSQg6od2CnJswq7fvzNS3zJhxoRkgNVaHurWKw==}
+  undici@6.23.0:
+    resolution: {integrity: sha512-VfQPToRA5FZs/qJxLIinmU59u0r7LXqoJkCzinq3ckNJp3vKEh7jTWN589YQ5+aoAC/TGRLyJLCPKcLQbM8r9g==}
     engines: {node: '>=18.17'}
 
   unpipe@1.0.0:
@@ -4576,9 +4573,9 @@ snapshots:
       protobufjs: 7.5.4
       yargs: 17.7.2
 
-  '@hono/node-server@1.19.8(hono@4.11.3)':
+  '@hono/node-server@1.19.8(hono@4.11.4)':
     dependencies:
-      hono: 4.11.3
+      hono: 4.11.4
     optional: true
 
   '@humanfs/core@0.19.1': {}
@@ -4682,18 +4679,18 @@ snapshots:
       tree-sitter: 0.22.4
       web-tree-sitter: 0.24.7
 
-  '@llamaindex/workflow-core@1.3.3(@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.3)(zod@4.1.12))(hono@4.11.3)(p-retry@6.2.1)(zod@4.1.12)':
+  '@llamaindex/workflow-core@1.3.3(@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.4)(zod@4.1.12))(hono@4.11.4)(p-retry@6.2.1)(zod@4.1.12)':
     optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.3)(zod@4.1.12)
-      hono: 4.11.3
+      '@modelcontextprotocol/sdk': 1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.4)(zod@4.1.12)
+      hono: 4.11.4
       p-retry: 6.2.1
       zod: 4.1.12
 
-  '@llamaindex/workflow@1.1.24(@llamaindex/core@0.6.22)(@llamaindex/env@0.1.30)(@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.3)(zod@4.1.12))(hono@4.11.3)(p-retry@6.2.1)(zod@4.1.12)':
+  '@llamaindex/workflow@1.1.24(@llamaindex/core@0.6.22)(@llamaindex/env@0.1.30)(@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.4)(zod@4.1.12))(hono@4.11.4)(p-retry@6.2.1)(zod@4.1.12)':
     dependencies:
       '@llamaindex/core': 0.6.22
       '@llamaindex/env': 0.1.30
-      '@llamaindex/workflow-core': 1.3.3(@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.3)(zod@4.1.12))(hono@4.11.3)(p-retry@6.2.1)(zod@4.1.12)
+      '@llamaindex/workflow-core': 1.3.3(@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.4)(zod@4.1.12))(hono@4.11.4)(p-retry@6.2.1)(zod@4.1.12)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - hono
@@ -4733,9 +4730,9 @@ snapshots:
       '@lmnr-ai/claude-code-proxy-linux-x64-musl': 0.1.4
       '@lmnr-ai/claude-code-proxy-win32-x64-msvc': 0.1.4
 
-  '@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.3)(zod@4.1.12)':
+  '@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.4)(zod@4.1.12)':
     dependencies:
-      '@hono/node-server': 1.19.8(hono@4.11.3)
+      '@hono/node-server': 1.19.8(hono@4.11.4)
       ajv: 8.17.1
       ajv-formats: 3.0.1(ajv@8.17.1)
       content-type: 1.0.5
@@ -5188,12 +5185,11 @@ snapshots:
       - react-native-b4a
       - supports-color
 
-  '@qdrant/js-client-rest@1.15.1(typescript@5.9.3)':
+  '@qdrant/js-client-rest@1.16.2(typescript@5.9.3)':
     dependencies:
       '@qdrant/openapi-typescript-fetch': 1.2.6
-      '@sevinf/maybe': 0.5.0
       typescript: 5.9.3
-      undici: 6.22.0
+      undici: 6.23.0
 
   '@qdrant/openapi-typescript-fetch@1.2.6': {}
 
@@ -5248,8 +5244,6 @@ snapshots:
     dependencies:
       domhandler: 5.0.3
       selderee: 0.11.0
-
-  '@sevinf/maybe@0.5.0': {}
 
   '@smithy/abort-controller@4.2.4':
     dependencies:
@@ -6721,7 +6715,7 @@ snapshots:
 
   help-me@5.0.0: {}
 
-  hono@4.11.3:
+  hono@4.11.4:
     optional: true
 
   hookable@6.0.1: {}
@@ -6944,12 +6938,12 @@ snapshots:
 
   lines-and-columns@1.2.4: {}
 
-  llamaindex@0.12.1(@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.3)(zod@4.1.12))(hono@4.11.3)(p-retry@6.2.1)(tree-sitter@0.22.4)(web-tree-sitter@0.24.7)(zod@4.1.12):
+  llamaindex@0.12.1(@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.4)(zod@4.1.12))(hono@4.11.4)(p-retry@6.2.1)(tree-sitter@0.22.4)(web-tree-sitter@0.24.7)(zod@4.1.12):
     dependencies:
       '@llamaindex/core': 0.6.22
       '@llamaindex/env': 0.1.30
       '@llamaindex/node-parser': 2.0.22(@llamaindex/core@0.6.22)(@llamaindex/env@0.1.30)(tree-sitter@0.22.4)(web-tree-sitter@0.24.7)
-      '@llamaindex/workflow': 1.1.24(@llamaindex/core@0.6.22)(@llamaindex/env@0.1.30)(@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.3)(zod@4.1.12))(hono@4.11.3)(p-retry@6.2.1)(zod@4.1.12)
+      '@llamaindex/workflow': 1.1.24(@llamaindex/core@0.6.22)(@llamaindex/env@0.1.30)(@modelcontextprotocol/sdk@1.25.2(@cfworker/json-schema@4.1.1)(hono@4.11.4)(zod@4.1.12))(hono@4.11.4)(p-retry@6.2.1)(zod@4.1.12)
       '@types/lodash': 4.17.20
       '@types/node': 24.10.0
       lodash: 4.17.21
@@ -7819,7 +7813,7 @@ snapshots:
 
   undici-types@7.16.0: {}
 
-  undici@6.22.0: {}
+  undici@6.23.0: {}
 
   unpipe@1.0.0:
     optional: true

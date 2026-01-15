@@ -22,9 +22,9 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm install -g npm@latest
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @lmnr-ai/cli build
+      - run: pnpm --filter lmnr-cli build
       - name: Publish CLI package
-        run: cd packages/cli && npm publish --provenance --access public
+        run: cd packages/lmnr-cli && pnpm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -54,16 +54,16 @@ jobs:
         run: pnpm --filter @lmnr-ai/lmnr test
 
       - name: Publish types package
-        run: cd packages/types && npm publish --provenance --access public
+        run: cd packages/types && pnpm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish client package
-        run: cd packages/client && npm publish --provenance --access public
+        run: cd packages/client && pnpm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish main SDK package
-        run: cd packages/lmnr && npm publish --provenance --access public
+        run: cd packages/lmnr && pnpm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

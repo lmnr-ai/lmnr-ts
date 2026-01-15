@@ -1,4 +1,4 @@
-# @lmnr-ai/cli
+# lmnr-cli
 
 Language-agnostic CLI for Laminar AI rollout debugging.
 
@@ -10,19 +10,19 @@ The Laminar CLI is a pure orchestrator that coordinates rollout debugging sessio
 
 ```bash
 # Run directly with npx
-npx @lmnr-ai/cli@latest dev agent.ts
+npx lmnr-cli@latest dev agent.ts
 
 # Or install globally
-npm install -g @lmnr-ai/cli@latest
-lmnr-dev dev agent.ts
+npm install -g lmnr-cli
+lmnr-cli dev agent.ts
 ```
 
 ## Usage
 
 ```bash
-lmnr-dev dev [file] [options]
+lmnr-cli dev [file] [options]
 # OR
-lmnr-dev dev -m <python-module> [options]
+lmnr-cli dev -m <python-module> [options]
 ```
 
 ### Options
@@ -43,16 +43,16 @@ lmnr-dev dev -m <python-module> [options]
 
 ```bash
 # TypeScript
-npx @lmnr-ai/cli@latest dev agent.ts
+npx lmnr-cli@latest dev agent.ts
 
 # JavaScript (extracts parameter names at runtime)
-npx @lmnr-ai/cli@latest dev agent.js
+npx lmnr-cli@latest dev agent.js
 
 # Python - Script mode
-npx @lmnr-ai/cli@latest dev agent.py
+npx lmnr-cli@latest dev agent.py
 
 # Python - Module mode
-npx @lmnr-ai/cli@latest dev -m src.agent
+npx lmnr-cli@latest dev -m src.agent
 ```
 
 ## Architecture
@@ -329,7 +329,7 @@ Python code can be executed in two modes, affecting how imports work:
 **Script Mode (default):**
 
 ```bash
-npx @lmnr-ai/cli dev src/myfile.py
+npx lmnr-cli dev src/myfile.py
 # Internally executes as: python src/myfile.py
 # Discovery uses: lmnr discover --file src/myfile.py
 ```
@@ -341,7 +341,7 @@ npx @lmnr-ai/cli dev src/myfile.py
 **Module Mode:**
 
 ```bash
-npx @lmnr-ai/cli dev -m src.myfile
+npx lmnr-cli dev -m src.myfile
 # Internally executes as: python -m src.myfile
 # Discovery uses: lmnr discover --module src.myfile
 ```
@@ -355,13 +355,13 @@ npx @lmnr-ai/cli dev -m src.myfile
 
 ```bash
 # Script mode - use file path with relative imports
-npx @lmnr-ai/cli dev agents/customer_support.py
+npx lmnr-cli dev agents/customer_support.py
 
 # Module mode - use module syntax with absolute imports
-npx @lmnr-ai/cli dev -m agents.customer_support
+npx lmnr-cli dev -m agents.customer_support
 
 # Specify a particular function
-npx @lmnr-ai/cli dev -m agents.customer_support --function run_agent
+npx lmnr-cli dev -m agents.customer_support --function run_agent
 ```
 
 ### Python Worker Requirements

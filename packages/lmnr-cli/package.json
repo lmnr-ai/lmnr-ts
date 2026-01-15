@@ -1,10 +1,10 @@
 {
-  "name": "@lmnr-ai/cli",
+  "name": "lmnr-cli",
   "version": "0.1.0-alpha.0",
   "description": "CLI for Laminar AI rollout debugging",
   "main": "dist/index.cjs",
   "bin": {
-    "lmnr-dev": "./dist/index.cjs"
+    "lmnr-cli": "./dist/index.cjs"
   },
   "scripts": {
     "build": "tsdown",
