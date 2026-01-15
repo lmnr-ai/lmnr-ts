@@ -172,7 +172,7 @@ async function cli() {
         "\x1b[33m%s\x1b[0m",  // Yellow text
         "\nThe 'lmnr dev' command has been moved to a separate package.\n\n" +
         "Please use:\n" +
-        "  npx @lmnr-ai/cli@latest dev [file] [options]\n\n",
+        "  npx lmnr-cli@latest dev [file] [options]\n\n",
       );
       process.exit(1);
     });

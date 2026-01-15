@@ -9,7 +9,7 @@ async function main() {
   const program = new Command();
 
   program
-    .name('@lmnr-ai/cli')
+    .name('lmnr-cli')
     .description('CLI for Laminar AI rollout debugging')
     .version(version, '-v, --version', 'display version number');
 
@@ -86,10 +86,10 @@ async function main() {
       'after',
       `
 Examples:
-  $ @lmnr-ai/cli dev agent.ts                    # TypeScript file
-  $ @lmnr-ai/cli dev agent.py                    # Python file (script mode)
-  $ @lmnr-ai/cli dev -m src.agent                # Python module (module mode)
-  $ @lmnr-ai/cli dev agent.ts --function myAgent # Specific function
+  $ lmnr-cli dev agent.ts                    # TypeScript file
+  $ lmnr-cli dev agent.py                    # Python file (script mode)
+  $ lmnr-cli dev -m src.agent                # Python module (module mode)
+  $ lmnr-cli dev agent.ts --function myAgent # Specific function
 `,
     );
 

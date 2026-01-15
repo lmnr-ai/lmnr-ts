@@ -15,8 +15,8 @@ This repository is organized as a monorepo with multiple packages:
 
 - **[@lmnr-ai/types](packages/types)** - Shared types and interfaces
 - **[@lmnr-ai/client](packages/client)** - HTTP client for Laminar API
-- **[@lmnr-ai/cli](packages/cli)** - CLI for rollout debugging
 - **[@lmnr-ai/lmnr](packages/lmnr)** - Main SDK with tracing and instrumentation
+- **[lmnr-cli](packages/lmnr-cli)** - CLI for rollout debugging
 
 ## Installation
 
@@ -29,7 +29,7 @@ npm install @lmnr-ai/lmnr
 ### For Rollout Debugging
 
 ```bash
-npx @lmnr-ai/cli@latest dev agent.ts
+npx @lmnrcli@latest dev agent.ts
 ```
 
 ## Development
@@ -55,7 +55,7 @@ pnpm test
 # Build specific package
 pnpm --filter @lmnr-ai/types build
 pnpm --filter @lmnr-ai/client build
-pnpm --filter @lmnr-ai/cli build
+pnpm --filter @lmnr-cli build
 pnpm --filter @lmnr-ai/lmnr build
 
 # Lint
