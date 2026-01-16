@@ -58,6 +58,16 @@ interface DiscoveredMetadata {
   params: RolloutParam[];
 }
 
+const logLmnrPackageNotFoundAndExit = () => {
+  logger.error(
+    '@lmnr-ai/lmnr package not found or outdated. ' +
+    'For JS/TS projects, please install the latest version of @lmnr-ai/lmnr in your project: ' +
+    'npm install @lmnr-ai/lmnr\n' +
+    'You might need to run `lmnr-cli` from the root of your project',
+  );
+  process.exit(1);
+};
+
 /**
  * Discovers function metadata for TypeScript and JavaScript files by:
  * 1. Extracting TypeScript metadata (params with types from source - TS only)
@@ -89,15 +99,12 @@ const discoverTypeScriptMetadata = async (
     loadModule = buildModule.loadModule;
     selectRolloutFunction = buildModule.selectRolloutFunction;
     /* eslint-enable @typescript-eslint/no-require-imports */
+    if (!extractRolloutFunctions || !buildFile || !loadModule || !selectRolloutFunction) {
+      logLmnrPackageNotFoundAndExit();
+    }
   } catch (error: any) {
     if (error.code === 'MODULE_NOT_FOUND') {
-      logger.error(
-        '@lmnr-ai/lmnr package not found. ' +
-        'For JavaScript projects, please install @lmnr-ai/lmnr in your project: ' +
-        'npm install @lmnr-ai/lmnr\n' +
-        'You might need to run `lmnr-cli` from the root of your project',
-      );
-      process.exit(1);
+      logLmnrPackageNotFoundAndExit();
     }
     // Re-throw any other errors (syntax errors, etc.)
     throw error;
