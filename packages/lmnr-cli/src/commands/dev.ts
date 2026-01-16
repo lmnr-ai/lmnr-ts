@@ -91,15 +91,25 @@ const discoverTypeScriptMetadata = async (
     /* eslint-disable @typescript-eslint/no-require-imports */
     // Use dynamic require to prevent bundler from trying to resolve at build time
     const lmnrPackage = '@lmnr-ai/lmnr';
-    extractRolloutFunctions = require(
-      `${lmnrPackage}/dist/cli/worker/ts-parser.cjs`,
-    ).extractRolloutFunctions;
-    const buildModule = require(`${lmnrPackage}/dist/cli/worker/build.cjs`);
+    const tsParserPath = require.resolve(`${lmnrPackage}/dist/cli/worker/ts-parser.cjs`);
+    const buildModulePath = require.resolve(`${lmnrPackage}/dist/cli/worker/build.cjs`);
+
+    // Clear require cache to ensure we get fresh modules on reload
+    delete require.cache[tsParserPath];
+    delete require.cache[buildModulePath];
+
+    extractRolloutFunctions = require(tsParserPath).extractRolloutFunctions;
+    const buildModule = require(buildModulePath);
     buildFile = buildModule.buildFile;
     loadModule = buildModule.loadModule;
     selectRolloutFunction = buildModule.selectRolloutFunction;
     /* eslint-enable @typescript-eslint/no-require-imports */
+
     if (!extractRolloutFunctions || !buildFile || !loadModule || !selectRolloutFunction) {
+      logger.error(
+        "Missing exports from @lmnr-ai/lmnr modules. " +
+        "This may indicate an outdated package version.",
+      );
       logLmnrPackageNotFoundAndExit();
     }
   } catch (error: any) {
@@ -107,6 +117,7 @@ const discoverTypeScriptMetadata = async (
       logLmnrPackageNotFoundAndExit();
     }
     // Re-throw any other errors (syntax errors, etc.)
+    logger.error(`Unexpected error loading @lmnr-ai/lmnr modules: ${error.message}`);
     throw error;
   }
 
@@ -711,45 +722,66 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
       logger.info('Current run cancelled');
     });
 
-    // Setup file change handler for hot reload
+    // Setup file change handler for hot reload with debouncing
+    let reloadTimeout: NodeJS.Timeout | null = null;
     watcher.on('change', (changedPath: string) => {
       logger.info(`File changed: ${changedPath}, reloading...`);
 
-      // Cancel running subprocess
+      // Clear any pending reload
+      if (reloadTimeout) {
+        clearTimeout(reloadTimeout);
+      }
+
+      // Cancel running subprocess immediately
       if (subprocessManager.isRunning()) {
         logger.warn('Cancelling current run due to file change');
         subprocessManager.kill();
       }
 
-      // Re-discover function metadata for supported file types
-      if (
-        isPythonModule ||
-        (filePath &&
-          EXTENSIONS_TO_DISCOVER_METADATA.includes(path.extname(filePath)))
-      ) {
-        discoverFunctionMetadata(filePathOrModule, options)
-          .then((metadata) => {
-            logger.debug(`Updated function metadata: ${metadata.functionName}`);
-            logger.debug(`Updated parameters: ${JSON.stringify(metadata.params, null, 2)}`);
+      // Debounce the reload to avoid reading partial file writes
+      reloadTimeout = setTimeout(() => {
+        logger.debug('Executing debounced reload...');
+        reloadTimeout = null;
 
-            // Update the SSE client with new metadata
-            if (sseClient) {
-              sseClient.updateMetadata(metadata.params, metadata.functionName);
-              logger.debug('Notified backend of metadata changes');
-            }
-          })
-          .catch((error: any) => {
-            logger.error(
-              'Failed to update function metadata: ' +
-              (error instanceof Error ? error.message : String(error)),
-            );
-          });
-      }
+        // Re-discover function metadata for supported file types
+        if (
+          isPythonModule ||
+          (filePath &&
+            EXTENSIONS_TO_DISCOVER_METADATA.includes(path.extname(filePath)))
+        ) {
+          discoverFunctionMetadata(filePathOrModule, options)
+            .then((metadata) => {
+              logger.debug(`Updated function metadata: ${metadata.functionName}`);
+              logger.debug(`Updated parameters: ${JSON.stringify(metadata.params, null, 2)}`);
+
+              // Update the SSE client with new metadata
+              if (sseClient) {
+                sseClient.updateMetadata(metadata.params, metadata.functionName);
+                logger.debug('Notified backend of metadata changes');
+              }
+            })
+            .catch((error: any) => {
+              logger.error(
+                'Failed to update function metadata: ' +
+                (error instanceof Error ? error.message : String(error)),
+              );
+              if (error instanceof Error && error.stack) {
+                logger.debug(`Stack trace: ${error.stack}`);
+              }
+            });
+        }
+      }, 100); // Wait 100ms after the last change before reloading
     });
 
     // Handle graceful shutdown
     const shutdown = () => {
       logger.debug('Shutting down...');
+
+      // Clear any pending reload timeout
+      if (reloadTimeout) {
+        clearTimeout(reloadTimeout);
+        reloadTimeout = null;
+      }
 
       // Close file watcher
       logger.debug('Closing file watcher...');
