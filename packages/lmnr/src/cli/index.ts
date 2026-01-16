@@ -12,6 +12,7 @@ import {
   handleDatasetsPush,
 } from "./datasets";
 import { runEvaluation } from "./evals";
+import { proxyToLmnrCli } from "./proxy-to-lmnr-cli.js";
 
 const logger = initializeLogger();
 
@@ -160,7 +161,7 @@ async function cli() {
       await handleDatasetsCreate(name, paths, { ...parentOpts, ...options });
     });
 
-  // Serve command (deprecated)
+  // Dev command - proxy to lmnr-cli
   program
     .command("dev")
     .description("Start a rollout debugging session")
@@ -168,13 +169,12 @@ async function cli() {
     .allowExcessArguments(true)
     .allowUnknownOption(true)
     .action(() => {
-      console.error(
-        "\x1b[33m%s\x1b[0m",  // Yellow text
-        "\nThe 'lmnr dev' command has been moved to a separate package.\n\n" +
-        "Please use:\n" +
-        "  npx lmnr-cli@latest dev [file] [options]\n\n",
-      );
-      process.exit(1);
+      // Find the dev command arguments (everything after 'dev')
+      const devIndex = process.argv.indexOf('dev');
+      const devArgs = devIndex !== -1 ? process.argv.slice(devIndex + 1) : [];
+
+      // Proxy to lmnr-cli with 'dev' command and all arguments
+      proxyToLmnrCli(['dev', ...devArgs]);
     });
 
   // If no command provided, show help
