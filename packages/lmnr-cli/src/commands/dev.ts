@@ -60,8 +60,8 @@ interface DiscoveredMetadata {
 
 const logLmnrPackageNotFoundAndExit = () => {
   logger.error(
-    '@lmnr-ai/lmnr package not found. ' +
-    'For JavaScript projects, please install @lmnr-ai/lmnr in your project: ' +
+    '@lmnr-ai/lmnr package not found or outdated. ' +
+    'For JS/TS projects, please install the latest version of @lmnr-ai/lmnr in your project: ' +
     'npm install @lmnr-ai/lmnr\n' +
     'You might need to run `lmnr-cli` from the root of your project',
   );
