@@ -35,6 +35,16 @@ export function proxyToLmnrCli(args: string[]): void {
     env: process.env,
   });
 
+  child.on('error', (error) => {
+    console.error(
+      "\x1b[31m%s\x1b[0m",  // Red text
+      `\nError: Failed to spawn lmnr-cli process.\n\n` +
+      `Details: ${error.message}\n\n` +
+      `Please report this issue at https://github.com/lmnr-ai/lmnr-ts/issues\n`,
+    );
+    process.exit(1);
+  });
+
   child.on('exit', (code) => {
     process.exit(code ?? 0);
   });
