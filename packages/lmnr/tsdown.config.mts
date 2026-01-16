@@ -4,6 +4,7 @@ export default defineConfig({
   entry: [
     "src/index.ts",
     "src/cli.ts",
+    "src/cli-dev.ts",              // Wrapper for lmnr-cli binary
     "src/cli/worker/index.ts",     // TypeScript worker
     "src/cli/worker/ts-parser.ts", // TypeScript parser (needed by CLI)
     "src/cli/worker/build.ts"      // Build utilities (needed by CLI)

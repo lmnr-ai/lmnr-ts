@@ -184,8 +184,8 @@ importers:
         specifier: ^12.0.0
         version: 12.0.0
       lmnr-cli:
-        specifier: ^0.1.1
-        version: 0.1.1(@lmnr-ai/lmnr@0.8.2)
+        specifier: ^0.1.2
+        version: 0.1.2(@lmnr-ai/lmnr@0.8.2)
       pino:
         specifier: 9.12.0
         version: 9.12.0
@@ -2866,8 +2866,8 @@ packages:
     resolution: {integrity: sha512-/tXXITk/iVGBycOFaDhev6dgTBIr6Ycu4FoPIt6A5JcEAiB6ujONjiV36flVXUR8JdqwMtS767XMjV+36nV4yQ==}
     engines: {node: '>=18.0.0'}
 
-  lmnr-cli@0.1.1:
-    resolution: {integrity: sha512-O7eekgYepRSNLBbYYKkTS0z7KLmJ4cRF6Ekb2AYM0qFWI2h5byASlVgIzgSF/3w1ZTHkpHfkvxKlOuHLgNGC2Q==}
+  lmnr-cli@0.1.2:
+    resolution: {integrity: sha512-g4FkFUbME82dynGJbcI+RYttRcXs4581sx2zbJcll60Xgso6ijIki2eJJBTo/whrkhx9ueH5PhPcwIBtKqY3/w==}
     hasBin: true
     peerDependencies:
       '@lmnr-ai/lmnr': '*'
@@ -7026,7 +7026,7 @@ snapshots:
       - web-tree-sitter
       - zod
 
-  lmnr-cli@0.1.1(@lmnr-ai/lmnr@0.8.2):
+  lmnr-cli@0.1.2(@lmnr-ai/lmnr@0.8.2):
     dependencies:
       chokidar: 5.0.0
       commander: 14.0.2
