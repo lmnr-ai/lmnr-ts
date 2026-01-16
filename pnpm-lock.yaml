@@ -184,8 +184,8 @@ importers:
         specifier: ^12.0.0
         version: 12.0.0
       lmnr-cli:
-        specifier: workspace:*
-        version: link:../lmnr-cli
+        specifier: ^0.1.1
+        version: 0.1.1(@lmnr-ai/lmnr@0.8.2)
       pino:
         specifier: 9.12.0
         version: 9.12.0
@@ -2865,6 +2865,15 @@ packages:
   llamaindex@0.12.1:
     resolution: {integrity: sha512-/tXXITk/iVGBycOFaDhev6dgTBIr6Ycu4FoPIt6A5JcEAiB6ujONjiV36flVXUR8JdqwMtS767XMjV+36nV4yQ==}
     engines: {node: '>=18.0.0'}
+
+  lmnr-cli@0.1.1:
+    resolution: {integrity: sha512-O7eekgYepRSNLBbYYKkTS0z7KLmJ4cRF6Ekb2AYM0qFWI2h5byASlVgIzgSF/3w1ZTHkpHfkvxKlOuHLgNGC2Q==}
+    hasBin: true
+    peerDependencies:
+      '@lmnr-ai/lmnr': '*'
+    peerDependenciesMeta:
+      '@lmnr-ai/lmnr':
+        optional: true
 
   locate-path@6.0.0:
     resolution: {integrity: sha512-iPZK6eYjbxRu3uB4/WZ3EsEIMJFMqAoopl3R+zuq0UjcAm/MO6KCweDgPfP3elTztoKP3KtnVHxTn2NHBSDVUw==}
@@ -7016,6 +7025,17 @@ snapshots:
       - tree-sitter
       - web-tree-sitter
       - zod
+
+  lmnr-cli@0.1.1(@lmnr-ai/lmnr@0.8.2):
+    dependencies:
+      chokidar: 5.0.0
+      commander: 14.0.2
+      eventsource-parser: 3.0.6
+      pino: 9.12.0
+      pino-pretty: 13.1.2
+      uuid: 13.0.0
+    optionalDependencies:
+      '@lmnr-ai/lmnr': 0.8.2
 
   locate-path@6.0.0:
     dependencies:
