@@ -36,7 +36,7 @@ And then fill in the `.env.local` file. Get [Laminar project API key](https://do
 npm i
 ```
 
-or `pnpm i`
+or `pnpm i --ignore-workspace`
 
 ### 5. [Optional] In real-world apps
 
