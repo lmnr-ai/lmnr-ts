@@ -216,6 +216,52 @@ const execCommand = async (
 });
 
 /**
+ * Protocol prefix for metadata discovery responses
+ * This allows us to safely parse JSON even if there are other log statements in stdout
+ */
+const METADATA_PROTOCOL_PREFIX = 'LMNR_METADATA:';
+
+/**
+ * Extracts JSON metadata from stdout that may contain other log statements
+ * Looks for lines matching the protocol prefix and parses the JSON payload
+ * 
+ * @param stdout - Raw stdout output that may contain logs and metadata
+ * @returns Parsed JSON object
+ * @throws Error if no valid metadata line is found or JSON parsing fails
+ */
+const extractMetadataFromStdout = (stdout: string): any => {
+  // Split by newlines, but also handle cases where logs don't end with newline
+  // Use regex to find all lines that might contain our protocol
+  const protocolRegex = new RegExp(`${METADATA_PROTOCOL_PREFIX}\\s*(.+?)(?=\\n|${METADATA_PROTOCOL_PREFIX}|$)`, 'g');
+  const matches = Array.from(stdout.matchAll(protocolRegex));
+
+  if (matches.length === 0) {
+    // Fallback: try parsing the entire stdout as JSON (backward compatibility)
+    try {
+      return JSON.parse(stdout.trim());
+    } catch {
+      throw new Error(
+        "No metadata found in output. " +
+        "Please make sure you are running the latest version of`lmnr` python package.",
+      );
+    }
+  }
+
+  // Use the last matching line (in case there are multiple)
+  const lastMatch = matches[matches.length - 1];
+  const jsonPayload = lastMatch[1].trim();
+
+  try {
+    return JSON.parse(jsonPayload);
+  } catch (error) {
+    throw new Error(
+      `Failed to parse metadata JSON: ${error instanceof Error ? error.message : String(error)}. ` +
+      `Payload was: ${jsonPayload}`
+    );
+  }
+};
+
+/**
  * Discovers function metadata for Python files/modules by calling the lmnr Python CLI
  */
 const discoverPythonMetadata = async (
@@ -242,7 +288,7 @@ const discoverPythonMetadata = async (
   try {
     // Execute: lmnr discover --file <path> | --module <module> [--function <name>]
     const result = await execCommand('lmnr', args);
-    const response = JSON.parse(result.stdout);
+    const response = extractMetadataFromStdout(result.stdout);
 
     // Response format: { "name": "...", "params": [...] }
     return {
