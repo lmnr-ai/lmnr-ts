@@ -242,7 +242,7 @@ const extractMetadataFromStdout = (stdout: string): any => {
     } catch {
       throw new Error(
         "No metadata found in output. " +
-        "Please make sure you are running the latest version of`lmnr` python package.",
+        "Please make sure you are running the latest version of `lmnr` python package.",
       );
     }
   }
