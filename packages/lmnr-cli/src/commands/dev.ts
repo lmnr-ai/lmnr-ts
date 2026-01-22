@@ -216,6 +216,130 @@ const execCommand = async (
 });
 
 /**
+ * Protocol prefix for metadata discovery responses
+ * This allows us to safely parse JSON even if there are other log statements in stdout
+ */
+export const METADATA_PROTOCOL_PREFIX = 'LMNR_METADATA:';
+
+/**
+ * Extracts JSON metadata from stdout that may contain other log statements
+ * Looks for lines matching the protocol prefix and parses the JSON payload
+ *
+ * @param stdout - Raw stdout output that may contain logs and metadata
+ * @returns Parsed JSON object
+ * @throws Error if no valid metadata line is found or JSON parsing fails
+ */
+export const extractMetadataFromStdout = (stdout: string): any => {
+  // Find all positions where LMNR_METADATA: appears
+  const prefixPositions: number[] = [];
+  let searchStart = 0;
+  while (true) {
+    const pos = stdout.indexOf(METADATA_PROTOCOL_PREFIX, searchStart);
+    if (pos === -1) break;
+    prefixPositions.push(pos);
+    searchStart = pos + METADATA_PROTOCOL_PREFIX.length;
+  }
+
+  if (prefixPositions.length === 0) {
+    // Fallback: try parsing the entire stdout as JSON (backward compatibility)
+    try {
+      return JSON.parse(stdout.trim());
+    } catch {
+      throw new Error(
+        "No metadata found in output. " +
+        "Please make sure you are running the latest version of `lmnr` python package.",
+      );
+    }
+  }
+
+  // Try to parse JSON starting from each prefix position
+  // We'll keep the last successfully parsed JSON
+  let lastValidJson: any = null;
+
+  for (const pos of prefixPositions) {
+    // Start after the prefix
+    const startPos = pos + METADATA_PROTOCOL_PREFIX.length;
+    const jsonText = stdout.slice(startPos).trim();
+
+    // Try to parse the JSON by attempting increasingly shorter substrings
+    // Strategy: Look for the end of the JSON object/array by finding matching braces
+    // This handles the case where there might be additional text after the JSON
+
+    // First, try parsing to the next newline (most common case)
+    const nextNewline = stdout.indexOf('\n', startPos);
+    if (nextNewline !== -1) {
+      const lineText = stdout.slice(startPos, nextNewline).trim();
+      try {
+        lastValidJson = JSON.parse(lineText);
+        continue;
+      } catch {
+        // If that fails, we'll try the more complex approach below
+      }
+    }
+
+    // More complex case: try to find the end of the JSON by counting braces
+    // This handles multi-line JSON or JSON followed by more text
+    try {
+      let depth = 0;
+      let inString = false;
+      let escapeNext = false;
+      let firstChar = -1;
+
+      for (let i = 0; i < jsonText.length; i++) {
+        const char = jsonText[i];
+
+        if (escapeNext) {
+          escapeNext = false;
+          continue;
+        }
+
+        if (char === '\\' && inString) {
+          escapeNext = true;
+          continue;
+        }
+
+        if (char === '"') {
+          inString = !inString;
+          continue;
+        }
+
+        if (inString) continue;
+
+        if (char === '{' || char === '[') {
+          if (firstChar === -1) firstChar = i;
+          depth++;
+        } else if (char === '}' || char === ']') {
+          depth--;
+          if (depth === 0 && firstChar !== -1) {
+            // Found the end of the JSON object/array
+            const candidate = jsonText.slice(0, i + 1);
+            lastValidJson = JSON.parse(candidate);
+            break;
+          }
+        }
+      }
+
+      // If we didn't find a complete object, try parsing the whole thing
+      if (depth !== 0 || firstChar === -1) {
+        lastValidJson = JSON.parse(jsonText);
+      }
+    } catch {
+      // If parsing fails, continue to the next prefix position
+      continue;
+    }
+  }
+
+  if (lastValidJson === null) {
+    throw new Error(
+      "No valid metadata JSON found in output. " +
+      "Please make sure you are running the latest version of `lmnr` python package.",
+    );
+  }
+
+  return lastValidJson;
+};
+
+/**
  * Discovers function metadata for Python files/modules by calling the lmnr Python CLI
  */
 const discoverPythonMetadata = async (
@@ -242,7 +366,7 @@ const discoverPythonMetadata = async (
   try {
     // Execute: lmnr discover --file <path> | --module <module> [--function <name>]
     const result = await execCommand('lmnr', args);
-    const response = JSON.parse(result.stdout);
+    const response = extractMetadataFromStdout(result.stdout);
 
     // Response format: { "name": "...", "params": [...] }
     return {
