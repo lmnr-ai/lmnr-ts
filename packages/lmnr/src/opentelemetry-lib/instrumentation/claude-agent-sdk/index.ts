@@ -104,14 +104,8 @@ export function instrumentClaudeAgentQuery(
           }
 
           // If Foundry is enabled, update Foundry-specific env vars
-          const foundryEnabled = (
-            params.options.env.CLAUDE_CODE_USE_FOUNDRY
-            || process.env.CLAUDE_CODE_USE_FOUNDRY
-          ) === "1";
+          const foundryEnabled = params.options.env.CLAUDE_CODE_USE_FOUNDRY === "1";
           if (foundryEnabled) {
-            if (!params.options.env.CLAUDE_CODE_USE_FOUNDRY) {
-              params.options.env.CLAUDE_CODE_USE_FOUNDRY = "1";
-            }
             params.options.env.ANTHROPIC_FOUNDRY_BASE_URL = proxyInstance.baseUrl;
           }
         } else {
