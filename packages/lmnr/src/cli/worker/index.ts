@@ -137,7 +137,6 @@ async function runWorker(config: WorkerConfig): Promise<any> {
   const result = await consumeStreamResult(rawResult);
 
   workerLogger.info('Rollout function completed successfully');
-  workerLogger.debug(`Result: ${JSON.stringify(result, null, 2)}`);
 
   return result;
 }
