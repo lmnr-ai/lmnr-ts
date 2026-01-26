@@ -10,11 +10,13 @@ import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
 import { SPAN_INPUT, SPAN_OUTPUT } from "../../tracing/attributes";
 import {
+  createProxyInstance,
   forceReleaseProxy,
-  getProxyBaseUrl,
-  releaseProxy,
-  setTraceToProxy,
-  startProxy,
+  getEnvVarsToRemove,
+  type ProxyInstance,
+  resolveTargetUrlFromEnv,
+  setTraceToProxyInstance,
+  stopProxyInstance,
 } from "./proxy";
 
 // Re-export forceReleaseProxy for cleanup in Laminar.shutdown()
@@ -48,26 +50,66 @@ export function instrumentClaudeAgentQuery(
 
     const generator = async function* () {
       const collected: any[] = []; // ClaudeAgentSDK.SDKMessage[]
+      let proxyInstance: ProxyInstance | null = null;
 
       try {
-        // Start proxy (uses reference counting for concurrent requests)
-        await startProxy({
-          env: params.options?.env ?? process.env,
+        // Merge environment variables: process.env + params.options.env
+        // params.options.env takes precedence
+        const mergedEnv = {
+          ...process.env,
+          ...(params.options?.env ?? {}),
+        };
+
+        // Resolve target URL before creating proxy
+        const targetUrl = resolveTargetUrlFromEnv(mergedEnv);
+
+        // Create a dedicated proxy instance for this request
+        proxyInstance = await createProxyInstance({
+          env: mergedEnv,
         });
 
-        // Publish span context
-        const proxyBaseUrl = getProxyBaseUrl();
-        logger.debug(`getProxyBaseUrl() result: ${proxyBaseUrl}`);
-        if (proxyBaseUrl) {
-          Laminar.withSpan(span, () => {
-            logger.debug('Setting trace to proxy...');
-            setTraceToProxy();
+        // Configure the request to use the proxy
+        if (proxyInstance && targetUrl) {
+          logger.debug(`Using proxy on port ${proxyInstance.port}`);
+
+          // Set trace context for this specific proxy instance
+          await Laminar.withSpan(span, async () => {
+            logger.debug('Setting trace to proxy instance...');
+            await setTraceToProxyInstance(proxyInstance);
           });
-          if (params.options?.env) {
-            params.options.env.ANTHROPIC_BASE_URL = proxyBaseUrl;
+
+          // Get environment variables that should be removed
+          const varsToRemove = getEnvVarsToRemove(mergedEnv);
+
+          // Update environment for subprocess
+          if (!params.options) {
+            params.options = {};
+          }
+          if (!params.options.env) {
+            params.options.env = {};
+          }
+
+          // Start with merged env and update for proxy
+          params.options.env = { ...mergedEnv };
+
+          // Set proxy URL
+          params.options.env.ANTHROPIC_BASE_URL = proxyInstance.baseUrl;
+
+          // Store original target URL so proxy knows where to forward
+          params.options.env.ANTHROPIC_ORIGINAL_BASE_URL = targetUrl;
+
+          // Remove proxy-related variables that would interfere
+          for (const varName of varsToRemove) {
+            delete params.options.env[varName];
+          }
+
+          // If Foundry is enabled, update Foundry-specific env vars
+          const foundryEnabled = params.options.env.CLAUDE_CODE_USE_FOUNDRY === "1";
+          if (foundryEnabled) {
+            params.options.env.ANTHROPIC_FOUNDRY_BASE_URL = proxyInstance.baseUrl;
           }
         } else {
-          logger.debug("No claude proxy server found. Skipping span context publication.");
+          logger.debug("No claude proxy server available. Proceeding without proxy.");
         }
 
         // Call original and wrap the generator
@@ -84,8 +126,8 @@ export function instrumentClaudeAgentQuery(
         });
         throw error;
       } finally {
-        // Release proxy (decrements ref count, only stops when count reaches 0)
-        releaseProxy();
+        // Stop this proxy instance
+        stopProxyInstance(proxyInstance);
         span.setAttribute(SPAN_OUTPUT, JSON.stringify(collected));
         span.end();
       }
@@ -168,4 +210,3 @@ export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
 /* eslint-enable
   @typescript-eslint/no-unsafe-function-type
 */
-
