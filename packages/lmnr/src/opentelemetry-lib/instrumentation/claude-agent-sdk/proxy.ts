@@ -25,9 +25,7 @@ let globalShutdownRegistered = false;
 /**
  * Check if environment variable value is truthy (equals '1')
  */
-const isTruthyEnv = (value: string | undefined): boolean => {
-  return value === "1";
-};
+const isTruthyEnv = (value: string | undefined): boolean => value === "1";
 
 /**
  * Resolve target URL from environment dictionary with process.env fallback.
@@ -55,9 +53,7 @@ export const resolveTargetUrlFromEnv = (
   fallback: string = DEFAULT_ANTHROPIC_BASE_URL,
 ): string | null => {
   // Helper to get value from envDict first, then process.env
-  const getEnvValue = (key: string): string | undefined => {
-    return envDict[key] || process.env[key];
-  };
+  const getEnvValue = (key: string): string | undefined => envDict[key] || process.env[key];
 
   // 1. Check for HTTPS_PROXY (highest priority)
   const httpsProxy = getEnvValue("HTTPS_PROXY");
@@ -88,7 +84,8 @@ export const resolveTargetUrlFromEnv = (
 
     // Foundry is enabled but misconfigured
     logger.error(
-      `${FOUNDRY_USE_ENV} is set but neither ${FOUNDRY_BASE_URL_ENV} nor ${FOUNDRY_RESOURCE_ENV} is configured. ` +
+      `${FOUNDRY_USE_ENV} is set but neither ${FOUNDRY_BASE_URL_ENV} ` +
+      `nor ${FOUNDRY_RESOURCE_ENV} is configured. ` +
       `Microsoft Foundry requires one of these values.`,
     );
     return null;
@@ -119,9 +116,7 @@ export const getEnvVarsToRemove = (envDict: Record<string, string | undefined>):
   ];
 
   // Helper to get value from envDict first, then process.env
-  const getEnvValue = (key: string): string | undefined => {
-    return envDict[key] || process.env[key];
-  };
+  const getEnvValue = (key: string): string | undefined => envDict[key] || process.env[key];
 
   // Remove FOUNDRY_RESOURCE if Foundry is enabled
   // (it's mutually exclusive with ANTHROPIC_BASE_URL which we'll set)
@@ -136,74 +131,76 @@ export const getEnvVarsToRemove = (envDict: Record<string, string | undefined>):
 /**
  * Find an available port starting from the given port
  */
-const findAvailablePort = (startPort: number, attempts: number): Promise<number | null> => {
-  return new Promise((resolve) => {
-    let currentAttempt = 0;
+const findAvailablePort = (
+  startPort: number,
+  attempts: number,
+): Promise<number | null> => new Promise((resolve) => {
+  let currentAttempt = 0;
 
-    const tryPort = (port: number) => {
-      const server = net.createServer();
+  const tryPort = (port: number) => {
+    const server = net.createServer();
 
-      server.once('error', () => {
-        server.close();
-        currentAttempt++;
-        if (currentAttempt < attempts) {
-          tryPort(startPort + currentAttempt);
-        } else {
-          resolve(null);
-        }
+    server.once('error', () => {
+      server.close();
+      currentAttempt++;
+      if (currentAttempt < attempts) {
+        tryPort(startPort + currentAttempt);
+      } else {
+        resolve(null);
+      }
+    });
+
+    server.once('listening', () => {
+      server.close(() => {
+        resolve(port);
       });
+    });
 
-      server.once('listening', () => {
-        server.close(() => {
-          resolve(port);
-        });
-      });
+    server.listen(port, '127.0.0.1');
+  };
 
-      server.listen(port, '127.0.0.1');
-    };
-
-    tryPort(startPort);
-  });
-}
+  tryPort(startPort);
+});
 
 /**
  * Wait for a port to be available
  */
-const waitForPort = (port: number, timeoutMs: number = 5000): Promise<boolean> => {
-  return new Promise((resolve) => {
-    const deadline = Date.now() + timeoutMs;
+const waitForPort = (
+  port: number,
+  timeoutMs: number = 5000,
+): Promise<boolean> => new Promise((resolve) => {
+  const deadline = Date.now() + timeoutMs;
 
-    const checkPort = () => {
-      if (Date.now() >= deadline) {
-        resolve(false);
-        return;
-      }
+  const checkPort = () => {
+    if (Date.now() >= deadline) {
+      resolve(false);
+      return;
+    }
 
-      const socket = new net.Socket();
+    const socket = new net.Socket();
 
-      socket.setTimeout(200);
+    socket.setTimeout(200);
 
-      socket.once('connect', () => {
-        socket.destroy();
-        resolve(true);
-      });
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
 
-      socket.once('timeout', () => {
-        socket.destroy();
-        setTimeout(checkPort, 100);
-      });
+    socket.once('timeout', () => {
+      socket.destroy();
+      setTimeout(checkPort, 100);
+    });
 
-      socket.once('error', () => {
-        socket.destroy();
-        setTimeout(checkPort, 100);
-      });
+    socket.once('error', () => {
+      socket.destroy();
+      setTimeout(checkPort, 100);
+    });
 
-      socket.connect(port, '127.0.0.1');
-    };
+    socket.connect(port, '127.0.0.1');
+  };
 
-    checkPort();
-  });
-}
+  checkPort();
+});
 
 /**
  * Register global cleanup on process exit for all active proxies
@@ -223,7 +220,7 @@ const registerGlobalProxyShutdown = () => {
     });
     globalShutdownRegistered = true;
   }
-}
+};
 
 /**
  * Interface for a proxy instance with its metadata
@@ -297,7 +294,7 @@ export const createProxyInstance = async ({
     logger.warn(`Failed to create proxy instance: ${e instanceof Error ? e.message : String(e)}`);
     return null;
   }
-}
+};
 
 /**
  * Stop a specific proxy instance
@@ -314,7 +311,7 @@ export const stopProxyInstance = (instance: ProxyInstance | null): void => {
   } catch (e) {
     logger.debug(`Failed to stop proxy instance: ${e instanceof Error ? e.message : String(e)}`);
   }
-}
+};
 
 /**
  * Force stop all active proxy servers
@@ -330,7 +327,7 @@ export const forceReleaseProxy = (): void => {
     }
   }
   activeProxyServers.clear();
-}
+};
 
 /**
  * Get the current span context payload for proxy
@@ -385,7 +382,7 @@ const getSpanContextPayload = (): {
     span_path: spanPath,
     laminar_url: laminarUrl || "https://api.lmnr.ai",
   };
-}
+};
 
 /**
  * Set the trace context for a specific proxy instance
@@ -416,4 +413,4 @@ export const setTraceToProxyInstance = async (instance: ProxyInstance | null): P
       (e instanceof Error ? e.message : String(e)),
     );
   }
-}
+};

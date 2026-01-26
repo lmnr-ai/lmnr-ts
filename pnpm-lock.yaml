@@ -186,9 +186,6 @@ importers:
       lmnr-cli:
         specifier: ^0.1.3
         version: 0.1.3(@lmnr-ai/lmnr@0.8.2)
-      lodash:
-        specifier: ^4.17.23
-        version: 4.17.23
       pino:
         specifier: 9.12.0
         version: 9.12.0
