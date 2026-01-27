@@ -396,6 +396,8 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
     // Track if we're currently processing a run event (including metadata discovery)
     // This prevents race conditions during the build/load phase
     let currentRunPromise: Promise<void> | null = null;
+    // Track if a stop was requested during the current run
+    let stopRequested = false;
 
     // Register all event listeners BEFORE connecting
     sseClient.on('heartbeat', () => {
@@ -412,10 +414,12 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
       // Create a promise chain that ensures metadata discovery completes before execution
       currentRunPromise = (async () => {
         try {
+          // Reset stop flag at the start of each run
+          stopRequested = false;
+
           // Check if a reload is scheduled and perform it before the run
           if (reloadScheduled) {
             logger.info('Reloading function metadata before run...');
-            reloadScheduled = false;
 
             // Re-discover function metadata for supported file types
             // IMPORTANT: This builds and loads the module, so we must await it
@@ -426,6 +430,13 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
             ) {
               try {
                 const metadata = await discoverFunctionMetadata(filePathOrModule, options);
+
+                // Check if stop was requested during metadata discovery
+                if (stopRequested) {
+                  logger.info('Run cancelled during metadata discovery');
+                  return;
+                }
+
                 logger.debug(`Updated function metadata: ${metadata.functionName}`);
                 logger.debug(`Updated parameters: ${JSON.stringify(metadata.params, null, 2)}`);
 
@@ -434,6 +445,7 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
                   sseClient.updateMetadata(metadata.params, metadata.functionName);
                   logger.debug('Notified backend of metadata changes');
                 }
+                reloadScheduled = false;
               } catch (error: any) {
                 logger.error(
                   'Failed to update function metadata: ' +
@@ -443,9 +455,19 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
                   logger.debug(`Stack trace: ${error.stack}`);
                 }
                 // Don't proceed with run if metadata discovery failed
+                // Keep reloadScheduled=true so next run will retry
                 return;
               }
+            } else {
+              // No metadata discovery needed, clear the flag
+              reloadScheduled = false;
             }
+          }
+
+          // Check if stop was requested before starting the subprocess
+          if (stopRequested) {
+            logger.info('Run cancelled before execution');
+            return;
           }
 
           // After metadata reload completes (if needed), handle the run event
@@ -497,11 +519,16 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
     });
 
     sseClient.on('stop', () => {
-      logger.debug('Cancelling current run...');
-      subprocessManager.kill();
-      // Note: currentRunPromise will be cleared by the finally block
-      // when the promise chain completes
-      logger.info('Current run cancelled');
+      logger.debug('Stop event received');
+      // Set the stop flag to abort any ongoing metadata discovery
+      stopRequested = true;
+      // Kill any running subprocess
+      const wasKilled = subprocessManager.kill();
+      // currentRunPromise will be cleared automatically when the run handler's
+      // promise chain completes (see the finally block in the 'run' event handler above)
+      if (wasKilled) {
+        logger.info('Current run cancelled');
+      }
     });
 
     // Setup file change handler for hot reload with debouncing
