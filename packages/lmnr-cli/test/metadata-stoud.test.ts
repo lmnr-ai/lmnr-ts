@@ -1,7 +1,10 @@
 import * as assert from 'node:assert';
 import { describe, it } from 'node:test';
 
-import { extractMetadataFromStdout, METADATA_PROTOCOL_PREFIX } from '../src/commands/dev.js';
+import {
+  extractMetadataFromStdout,
+  METADATA_PROTOCOL_PREFIX,
+} from '../src/commands/dev/metadata.js';
 
 void describe('extractMetadataFromStdout', () => {
   void describe('Basic functionality', () => {
