@@ -115,8 +115,9 @@ export class SubprocessManager {
 
   /**
    * Kill the currently running subprocess
+   * @returns true if a process was killed, false if no process was running
    */
-  kill(): void {
+  kill(): boolean {
     if (this.currentProcess) {
       const processToKill = this.currentProcess;
       this.currentProcess.kill('SIGTERM');
@@ -129,7 +130,9 @@ export class SubprocessManager {
           processToKill.kill('SIGKILL');
         }
       }, 5000);
+      return true;
     }
+    return false;
   }
 
   /**
