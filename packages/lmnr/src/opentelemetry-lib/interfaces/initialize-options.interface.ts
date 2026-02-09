@@ -9,7 +9,6 @@ import { SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import type * as pinecone from "@pinecone-database/pinecone";
 import type * as qdrant from "@qdrant/js-client-rest";
 import type * as chromadb from "chromadb";
-import type * as cohere from "cohere-ai";
 import type * as AgentsModule from "langchain/agents";
 import type * as ChainsModule from "langchain/chains";
 import type * as ToolsModule from "langchain/tools";
@@ -136,7 +135,7 @@ export interface InitializeOptions {
      * });
      * ```
      */
-    cohere?: typeof cohere;
+    cohere?: any;
     /**
      * @example
      * ```javascript

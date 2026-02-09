@@ -10,6 +10,15 @@ export const LMNR_SEND_EVENTS_FUNCTION_NAME = 'lmnrSendEvents';
 
 const logger = initializeLogger();
 
+interface LmnrWindow extends Window {
+  lmnrRrwebEventsBatch: any[];
+  lmnrChunkSequence: number;
+  lmnrSendInProgress: boolean;
+  lmnrStartedRecordingEvents: boolean;
+  lmnrRrweb: any;
+  lmnrSendEvents: (chunk: any) => void;
+}
+
 /**
  * If the first argument is a string, return an object with the name of the method
  * and the argument as the value.
@@ -40,50 +49,12 @@ export interface EventChunk {
   isFinal: boolean;
 }
 
-export const sendPageEvents = async (
-  client: LaminarClient,
-  page: PlaywrightPage | PuppeteerPage,
-  sessionId: StringUUID,
-  traceId: StringUUID,
-) => {
-  try {
-    // Puppeteer pages have the same evaluate method, but TypeScript
-    // isn't liking that the signature is different.
-
-    /* eslint-disable @typescript-eslint/no-unsafe-return */
-    const events = await (page as PlaywrightPage).evaluate(
-      async () => {
-        if (typeof (window as any).lmnrGetAndClearEvents !== 'function') {
-          return [];
-        }
-        return await (window as any).lmnrGetAndClearEvents();
-      },
-    );
-    /* eslint-enable @typescript-eslint/no-unsafe-return */
-    if (events == null || events.length === 0) {
-      return;
-    }
-
-    await client.browserEvents.send({
-      sessionId,
-      traceId,
-      events,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("Execution context was destroyed")
-      || message.includes("Target page, context or browser has been closed")) {
-      logger.debug(`Tried to flush events from a closed page. Continuing...`);
-    }
-  }
-};
-
 export const takeFullSnapshot = async (
   page: PlaywrightPage | PuppeteerPage,
 ): Promise<boolean> => await (page as PlaywrightPage).evaluate(() => {
-  if ((window as any).lmnrRrweb) {
+  if ((window as unknown as LmnrWindow).lmnrRrweb) {
     try {
-      (window as any).lmnrRrweb.record.takeFullSnapshot();
+      (window as unknown as LmnrWindow).lmnrRrweb.record.takeFullSnapshot();
       return true;
     } catch (error) {
       logger.error("Error taking full snapshot: " +
@@ -121,7 +92,7 @@ export const injectSessionRecorder = async (
   let isRrwebPresent = false;
   try {
     isRrwebPresent = await castedPage.evaluate(() =>
-      typeof (window as any).lmnrRrweb !== 'undefined',
+      typeof (window as unknown as LmnrWindow).lmnrRrweb !== 'undefined',
     );
   } catch (error) {
     logger.debug("ailed to check if session recorder is loaded: " +
@@ -380,364 +351,73 @@ export const modelToProvider = (model: string): string | undefined => {
  * The session recording inject script function.
  * This function runs in the browser context and sets up rrweb recording.
  * Exported so it can be converted to a string for CDP Runtime.evaluate.
- * @param sessionRecordingOptions - Optional recording options
- * @param stringifyCallbackArgs - If true, stringify arguments when calling
- * lmnrSendEvents (for raw CDP bindings)
+ * @param {SessionRecordingOptions} sessionRecordingOptions - Optional recording options
+ * for masking inputs
+ * @param {boolean} stringifyCallbackArgs - If true, stringify arguments when calling
+ * lmnrSendEvents (for raw CDP bindings).
  */
 export const injectScript = (
   sessionRecordingOptions?: SessionRecordingOptions,
   stringifyCallbackArgs?: boolean,
 ) => {
-  const BATCH_TIMEOUT = 2000; // Send events after 2 seconds
-  const MAX_WORKER_PROMISES = 50; // Max concurrent worker promises
-  const HEARTBEAT_INTERVAL = 2000;
-  const CHUNK_SIZE = 256 * 1024; // 256KB chunks
-  const CHUNK_SEND_DELAY = 100; // 100ms delay between chunks
+  const BATCH_TIMEOUT = 2000; // Send events every 2 seconds
+  const HEARTBEAT_INTERVAL = 1000;
+  const CHUNK_SIZE = 256 * 1024; // 256KB chunks for CDP message limits
 
-  (window as any).lmnrRrwebEventsBatch = [];
-  (window as any).lmnrChunkQueue = [];
-  (window as any).lmnrChunkSequence = 0;
-  (window as any).lmnrCurrentBatchId = null;
+  (window as unknown as LmnrWindow).lmnrRrwebEventsBatch = [];
+  (window as unknown as LmnrWindow).lmnrChunkSequence = 0;
+  (window as unknown as LmnrWindow).lmnrSendInProgress = false;
 
-  // Create a Web Worker for heavy JSON processing with chunked processing
-  const createCompressionWorker = (): Worker => {
-    const workerCode = `
-        self.onmessage = async (e) => {
-          const { jsonString, buffer, id, useBuffer } = e.data;
-          try {
-            let dataBytes;
-            if (useBuffer && buffer) {
-              // Use transferred ArrayBuffer (no copying needed!)
-              dataBytes = new Uint8Array(buffer);
-            } else {
-                // Convert JSON string to bytes
-                const textEncoder = new TextEncoder();
-                dataBytes = textEncoder.encode(jsonString);
-            }
+  // Define a wrapper function that handles stringification based on the parameter
+  const sendEvent = stringifyCallbackArgs
+    ? (chunk: any) => (window as unknown as LmnrWindow).lmnrSendEvents(JSON.stringify(chunk))
+    : (chunk: any) => (window as unknown as LmnrWindow).lmnrSendEvents(chunk);
 
-            const compressionStream = new CompressionStream('gzip');
-            const writer = compressionStream.writable.getWriter();
-            const reader = compressionStream.readable.getReader();
+  // Gzip compress a string using CompressionStream API (main thread, no workers)
+  const gzipCompress = async (str: string): Promise<Uint8Array<ArrayBuffer>> => {
+    const encoder = new TextEncoder();
+    const inputBytes = encoder.encode(str);
 
-            // TODO: investigate why the events are not sent if we await the 
-            // write and close
-            writer.write(dataBytes);
-            writer.close();
-
-            const chunks = [];
-            let totalLength = 0;
-
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              chunks.push(value);
-              totalLength += value.length;
-            }
-
-            const compressedData = new Uint8Array(totalLength);
-            let offset = 0;
-            for (const chunk of chunks) {
-                compressedData.set(chunk, offset);
-                offset += chunk.length;
-            }
-
-            self.postMessage({ id, success: true, data: compressedData });
-          } catch (error) {
-            self.postMessage({ id, success: false, error: error.message });
-          }
-        };
-      `;
-
-    const blob = new Blob([workerCode], { type: 'application/javascript' });
-    return new Worker(URL.createObjectURL(blob));
-  };
-
-  let compressionWorker: Worker | null = null;
-  const workerPromises = new Map();
-  let workerId = 0;
-  // null = unknown, true = supported, false = blocked by CSP
-  let workerSupported: boolean | null = null;
-
-  // Test if workers are supported (not blocked by CSP)
-  const testWorkerSupport = () => {
-    if (workerSupported !== null) {
-      return workerSupported;
-    }
-
-    try {
-      const testWorker = createCompressionWorker();
-      testWorker.terminate();
-      workerSupported = true;
-      return true;
-    } catch (error) {
-      console.warn('Web Workers blocked by CSP, will use main thread compression:', error);
-      workerSupported = false;
-      return false;
-    }
-  };
-
-  // Cleanup function for worker
-  const cleanupWorker = () => {
-    if (compressionWorker) {
-      compressionWorker.terminate();
-      compressionWorker = null;
-    }
-    workerPromises.clear();
-    workerId = 0;
-  };
-
-  // Clean up stale promises to prevent memory leaks
-  const cleanupStalePromises = () => {
-    if (workerPromises.size > MAX_WORKER_PROMISES) {
-      const toDelete = [];
-      for (const [id, promise] of workerPromises) {
-        if (toDelete.length >= workerPromises.size - MAX_WORKER_PROMISES) {
-          break;
-        }
-        toDelete.push(id);
-        promise.reject(new Error('Promise cleaned up due to memory pressure'));
-      }
-      toDelete.forEach(id => workerPromises.delete(id));
-    }
-  };
-
-  // Non-blocking JSON.stringify using chunked processing
-  const stringifyNonBlocking = (
-    obj: unknown,
-    chunkSize = 10000,
-  ): Promise<string> => new Promise((resolve, reject) => {
-    try {
-      // For very large objects, we need to be more careful
-      // Use requestIdleCallback if available, otherwise setTimeout
-      const scheduleWork = window.requestIdleCallback ||
-        ((cb) => setTimeout(cb, 0));
-
-      let result = '';
-      let keys: string[] = [];
-      let keyIndex = 0;
-
-      // Pre-process to get all keys if it's an object
-      if (typeof obj === 'object' && obj !== null && !Array.isArray(obj)) {
-        keys = Object.keys(obj);
-      }
-
-      const processChunk = () => {
-        try {
-          if (Array.isArray(obj) || typeof obj !== 'object' || obj === null) {
-            // For arrays and primitives, just stringify directly
-            result = JSON.stringify(obj);
-            resolve(result);
-            return;
-          }
-
-          // For objects, process in chunks
-          const endIndex = Math.min(keyIndex + chunkSize, keys.length);
-
-          if (keyIndex === 0) {
-            result = '{';
-          }
-
-          for (let i = keyIndex; i < endIndex; i++) {
-            const key = keys[i];
-            const value = (obj as Record<string, unknown>)[key];
-
-            if (i > 0) result += ',';
-            result += JSON.stringify(key) + ':' + JSON.stringify(value);
-          }
-
-          keyIndex = endIndex;
-
-          if (keyIndex >= keys.length) {
-            result += '}';
-            resolve(result);
-          } else {
-            // Schedule next chunk
-            scheduleWork(processChunk);
-          }
-        } catch (error) {
-          reject(error as Error);
-        }
-      };
-
-      processChunk();
-    } catch (error) {
-      reject(error as Error);
-    }
-  });
-
-  // Fast compression for small objects (main thread)
-  const compressSmallObject = async (data: unknown) => {
-    const jsonString = JSON.stringify(data);
-    const textEncoder = new TextEncoder();
-    const bytes = textEncoder.encode(jsonString);
-
-    const compressionStream = new CompressionStream('gzip');
-    const writer = compressionStream.writable.getWriter();
-    const reader = compressionStream.readable.getReader();
+    const cs = new CompressionStream('gzip');
+    const writer = cs.writable.getWriter();
+    const reader = cs.readable.getReader();
 
     // TODO: investigate why the events are not sent if we await the write and close
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    writer.write(bytes);
+    writer.write(inputBytes);
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     writer.close();
 
-    const chunks = [];
+    const parts = [];
     let totalLength = 0;
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      chunks.push(value);
+      parts.push(value);
       totalLength += value.length;
     }
 
-    const compressedData = new Uint8Array(totalLength);
+    const result = new Uint8Array(totalLength);
     let offset = 0;
-    for (const chunk of chunks) {
-      compressedData.set(chunk, offset);
-      offset += chunk.length;
+    for (const part of parts) {
+      result.set(part, offset);
+      offset += part.length;
     }
-
-    return compressedData;
+    return result;
   };
 
-  // Alternative: Use transferable objects for maximum efficiency
-  const compressLargeObjectTransferable = async (data: unknown): Promise<Uint8Array> => {
-    try {
-      if (!testWorkerSupport()) {
-        return compressSmallObject(data);
-      }
-
-      // Clean up stale promises first
-      cleanupStalePromises();
-
-      // Stringify on main thread but non-blocking
-      const jsonString = await stringifyNonBlocking(data);
-
-      // Convert to ArrayBuffer (transferable)
-      const encoder = new TextEncoder();
-      const uint8Array = encoder.encode(jsonString);
-      const buffer = uint8Array.buffer; // Use the original buffer for transfer
-
-      return new Promise((resolve, reject) => {
-        if (!compressionWorker) {
-          compressionWorker = createCompressionWorker();
-          compressionWorker.onmessage = (e) => {
-            const { id, success, data: result, error } = e.data;
-            const promise = workerPromises.get(id);
-            if (promise) {
-              workerPromises.delete(id);
-              if (success) {
-                promise.resolve(result);
-              } else {
-                promise.reject(new Error(error));
-              }
-            }
-          };
-
-          compressionWorker.onerror = (error) => {
-            console.error('Compression worker error:', error);
-            cleanupWorker();
-            compressSmallObject(data).then(resolve, reject);
-          };
-        }
-
-        const id = ++workerId;
-        workerPromises.set(id, { resolve, reject });
-
-        // Set timeout to prevent hanging promises
-        setTimeout(() => {
-          if (workerPromises.has(id)) {
-            workerPromises.delete(id);
-            reject(new Error('Compression timeout'));
-          }
-        }, 10000);
-
-        // Transfer the ArrayBuffer (no copying!)
-        compressionWorker.postMessage({
-          buffer,
-          id,
-          useBuffer: true,
-        }, [buffer]);
-      });
-    } catch {
-      // Silently fall back to main thread compression
-      return compressSmallObject(data);
-    }
-  };
-
-  // Worker-based compression for large objects
-  const compressLargeObject = async (data: unknown): Promise<Uint8Array> => {
-    try {
-      // Use transferable objects for better performance
-      return await compressLargeObjectTransferable(data);
-    } catch (error) {
-      console.warn('Transferable failed, falling back to string method:', error);
-      try {
-        // Fallback to string method
-        const jsonString = await stringifyNonBlocking(data);
-
-        return new Promise((resolve, reject) => {
-          if (!compressionWorker) {
-            compressionWorker = createCompressionWorker();
-            compressionWorker.onmessage = (e) => {
-              const { id, success, data: result, error } = e.data;
-              const promise = workerPromises.get(id);
-              if (promise) {
-                workerPromises.delete(id);
-                if (success) {
-                  promise.resolve(result);
-                } else {
-                  promise.reject(new Error(error));
-                }
-              }
-            };
-
-            compressionWorker.onerror = (error) => {
-              console.error('Compression worker error:', error);
-              cleanupWorker();
-            };
-          }
-
-          const id = ++workerId;
-          workerPromises.set(id, { resolve, reject });
-
-          // Set timeout to prevent hanging promises
-          setTimeout(() => {
-            if (workerPromises.has(id)) {
-              workerPromises.delete(id);
-              reject(new Error('Compression timeout'));
-            }
-          }, 10000);
-
-          compressionWorker.postMessage({ jsonString, id });
-        });
-      } catch (workerError) {
-        logger.warn("Worker creation failed, falling back to main thread compression: " +
-          `${workerError instanceof Error ? workerError.message : String(workerError)}`);
-        // Final fallback: compress on main thread (may block UI but will work)
-        return await compressSmallObject(data);
-      }
-    }
-  };
-
-
-  setInterval(cleanupWorker, 5000);
-
-  const isLargeEvent = (type: number) => {
-    const LARGE_EVENT_TYPES: number[] = [
-      2, // FullSnapshot
-    ];
-
-    if (LARGE_EVENT_TYPES.includes(type)) {
-      return true;
-    }
-
-    return false;
+  // Convert a Uint8Array to base64 string
+  const bufferToBase64 = async (buffer: Uint8Array<ArrayBuffer>): Promise<string> => {
+    const base64url = await new Promise<string>((r) => {
+      const reader = new FileReader();
+      reader.onload = () => r(reader.result as string);
+      reader.readAsDataURL(new Blob([buffer]));
+    });
+    return base64url.slice(base64url.indexOf(',') + 1);
   };
 
   // Create chunks from a string with metadata
-  const createChunks = (str: string, batchId: string) => {
+  const createChunks = (str: string, batchId: string): EventChunk[] => {
     const chunks = [];
     const totalChunks = Math.ceil(str.length / CHUNK_SIZE);
 
@@ -755,107 +435,75 @@ export const injectScript = (
     return chunks;
   };
 
-  // Send chunks with flow control
-  const sendChunks = async (chunks: any[]) => {
-    if (typeof (window as any).lmnrSendEvents !== 'function') {
+  const sendBatchIfReady = async () => {
+    if ((window as unknown as LmnrWindow).lmnrRrwebEventsBatch.length === 0) {
+      return;
+    }
+    if (typeof (window as unknown as LmnrWindow).lmnrSendEvents !== 'function') {
+      return;
+    }
+    // Prevent overlapping sends - if previous send is still in progress,
+    // events stay in the batch and will be picked up next interval
+    if ((window as unknown as LmnrWindow).lmnrSendInProgress) {
       return;
     }
 
-    (window as any).lmnrChunkQueue.push(...chunks);
+    (window as unknown as LmnrWindow).lmnrSendInProgress = true;
+    const events = (window as unknown as LmnrWindow).lmnrRrwebEventsBatch;
+    (window as unknown as LmnrWindow).lmnrRrwebEventsBatch = [];
 
-    // Process queue
-    while ((window as any).lmnrChunkQueue.length > 0) {
-      const chunk = (window as any).lmnrChunkQueue.shift();
-      try {
-        // CDP bindings require stringified arguments, Playwright/Puppeteer auto-serialize
-        const arg = stringifyCallbackArgs ? JSON.stringify(chunk) : chunk;
-        await (window as any).lmnrSendEvents(arg);
-        // Small delay between chunks to avoid overwhelming CDP
-        await new Promise(resolve => setTimeout(resolve, CHUNK_SEND_DELAY));
-      } catch (error) {
-        console.error('Failed to send chunk:', error);
-        // On error, clear failed chunk batch from queue
-        (window as any).lmnrChunkQueue = (window as any).lmnrChunkQueue.filter(
-          (c: any) => c.batchId !== chunk.batchId,
-        );
-        break;
-      }
-    }
-  };
-
-  const sendBatchIfReady = async () => {
-    if ((window as any).lmnrRrwebEventsBatch.length > 0
-      && typeof (window as any).lmnrSendEvents === 'function') {
-      const events = (window as any).lmnrRrwebEventsBatch;
-      (window as any).lmnrRrwebEventsBatch = [];
-
-      try {
-        // Generate unique batch ID
-        const batchId = `${Date.now()}_${(window as any).lmnrChunkSequence++}`;
-        (window as any).lmnrCurrentBatchId = batchId;
-
-        // Stringify the entire batch
-        const batchString = JSON.stringify(events);
-
-        // Check size and chunk if necessary
-        if (batchString.length <= CHUNK_SIZE) {
-          // Small enough to send as single chunk
-          const chunk = {
-            batchId: batchId,
-            chunkIndex: 0,
-            totalChunks: 1,
-            data: batchString,
-            isFinal: true,
-          };
-          // CDP bindings require stringified arguments, Playwright/Puppeteer auto-serialize
-          const arg = stringifyCallbackArgs ? JSON.stringify(chunk) : chunk;
-          await (window as any).lmnrSendEvents(arg);
-        } else {
-          // Need to chunk
-          const chunks = createChunks(batchString, batchId);
-          await sendChunks(chunks);
+    try {
+      // Compress each event's data field individually
+      const compressedEvents = [];
+      for (const event of events) {
+        try {
+          const dataString = JSON.stringify(event.data);
+          const compressed = await gzipCompress(dataString);
+          const base64Data = await bufferToBase64(compressed);
+          compressedEvents.push({
+            ...event,
+            data: base64Data,
+          });
+        } catch (e) {
+          console.error('Failed to compress event:', e);
         }
-      } catch (error) {
-        console.error('Failed to send events:', error);
-        // Clear batch to prevent memory buildup
-        (window as any).lmnrRrwebEventsBatch = [];
       }
+
+      const batchId = `${Date.now()}_${(window as unknown as LmnrWindow).lmnrChunkSequence++}`;
+      const batchString = JSON.stringify(compressedEvents);
+
+      if (batchString.length <= CHUNK_SIZE) {
+        sendEvent({
+          batchId: batchId,
+          chunkIndex: 0,
+          totalChunks: 1,
+          data: batchString,
+          isFinal: true,
+        });
+      } else {
+        const chunks = createChunks(batchString, batchId);
+        for (const chunk of chunks) {
+          sendEvent(chunk);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to send events:', error);
+    } finally {
+      (window as unknown as LmnrWindow).lmnrSendInProgress = false;
     }
   };
 
-  const bufferToBase64 = async (buffer: Uint8Array) => {
-    const base64url = await new Promise<string>(resolve => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.readAsDataURL(new Blob([buffer.slice()]));
-    });
-
-    return base64url.slice(base64url.indexOf(',') + 1);
-  };
-
-  if (!(window as any).lmnrStartedRecordingEvents) {
+  if (!(window as unknown as LmnrWindow).lmnrStartedRecordingEvents) {
     // It's fine to retrigger the interval even if the original function
     // is async and still running.
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     setInterval(sendBatchIfReady, BATCH_TIMEOUT);
 
-    (window as any).lmnrRrweb.record({
-      async emit(event: any) {
-        try {
-          const isLarge = isLargeEvent(event.type);
-          const compressedResult = isLarge ?
-            await compressLargeObject(event.data) :
-            await compressSmallObject(event.data);
-
-          const base64Data = await bufferToBase64(compressedResult);
-          const eventToSend = {
-            ...event,
-            data: base64Data,
-          };
-          (window as any).lmnrRrwebEventsBatch.push(eventToSend);
-        } catch (error) {
-          console.warn('Failed to push event to batch', error);
-        }
+    (window as unknown as LmnrWindow).lmnrRrweb.record({
+      emit(event: any) {
+        // Synchronous emit - just push to batch, no async processing.
+        // Compression happens later in sendBatchIfReady.
+        (window as unknown as LmnrWindow).lmnrRrwebEventsBatch.push(event);
       },
       recordCanvas: true,
       collectFonts: true,
@@ -871,23 +519,21 @@ export const injectScript = (
       },
     });
 
-    function heartbeat() {
-      // Add heartbeat events
-      setInterval(
-        () => {
-          (window as any).lmnrRrweb.record.addCustomEvent('heartbeat', {
-            title: document.title,
-            url: document.URL,
-          });
-        },
-        HEARTBEAT_INTERVAL,
-      );
-    }
+    // Heartbeat events to indicate the session is still alive
+    setInterval(
+      () => {
+        (window as unknown as LmnrWindow).lmnrRrweb.record.addCustomEvent('heartbeat', {
+          title: document.title,
+          url: document.URL,
+        });
+      },
+      HEARTBEAT_INTERVAL,
+    );
 
-    heartbeat();
-    (window as any).lmnrStartedRecordingEvents = true;
+    (window as unknown as LmnrWindow).lmnrStartedRecordingEvents = true;
   }
 };
+
 
 // Buffer for storing incomplete chunk batches
 export interface ChunkBuffer {

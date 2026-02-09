@@ -21,7 +21,6 @@ import {
   injectSessionRecorder,
   LMNR_SEND_EVENTS_FUNCTION_NAME,
   sendEvents,
-  sendPageEvents,
   takeFullSnapshot,
 } from "./utils";
 
@@ -250,16 +249,6 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         await injectSessionRecorder(page, this._sessionRecordingOptions);
       } catch (error) {
         logger.error("Error in onLoad handler: " +
-          `${error instanceof Error ? error.message : String(error)}`);
-      }
-    });
-
-    page.on('close', async () => {
-      try {
-        // Send any remaining events before closing
-        await sendPageEvents(this._client, page, sessionId, traceId);
-      } catch (error) {
-        logger.error("Error in onClose handler: " +
           `${error instanceof Error ? error.message : String(error)}`);
       }
     });

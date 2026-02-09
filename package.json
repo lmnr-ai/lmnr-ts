@@ -1,7 +1,7 @@
 {
   "name": "@lmnr-ai/lmnr-ts",
   "private": true,
-  "version": "0.8.9",
+  "version": "0.8.10",
   "description": "Laminar AI TypeScript SDK",
   "scripts": {
     "build": "pnpm -r build",
