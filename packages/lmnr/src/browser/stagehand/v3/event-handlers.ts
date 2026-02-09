@@ -21,6 +21,7 @@ export function createBindingHandler(
     if (event.name !== "lmnrSendEvents") return;
     const sessionInfo = state.contextIdToSession.get(event.executionContextId);
     if (!sessionInfo) {
+      logger.debug("No session info found for context ID: " + event.executionContextId);
       // Try to find any matching session (for cases where context ID changed)
       // This is a fallback - normally the context should be mapped
       if (state.contextIdToSession.size > 0) {

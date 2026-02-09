@@ -12,7 +12,7 @@ import { observe as laminarObserve } from "../../../decorators";
 import { Laminar } from "../../../laminar";
 import { TRACE_HAS_BROWSER_SESSION } from "../../../opentelemetry-lib/tracing/attributes";
 import { LaminarContextManager } from "../../../opentelemetry-lib/tracing/context";
-import { newUUID, NIL_UUID, otelTraceIdToUUID, StringUUID } from "../../../utils";
+import { newUUID, otelTraceIdToUUID, StringUUID } from "../../../utils";
 import { nameArgsOrCopy, prettyPrintZodSchema } from "../../utils";
 import {
   createLLMClientCreateChatCompletionWrapper,
@@ -234,8 +234,8 @@ export class StagehandInstrumentation extends InstrumentationBase {
       const currentSpan = trace.getSpan(LaminarContextManager.getContext())
         ?? trace.getActiveSpan();
       currentSpan?.setAttribute(TRACE_HAS_BROWSER_SESSION, true);
-      const otelTraceId = currentSpan?.spanContext().traceId;
-      const traceId = otelTraceId ? otelTraceIdToUUID(otelTraceId) : NIL_UUID;
+      const otelTraceId = parentSpan.spanContext().traceId;
+      const traceId = otelTraceIdToUUID(otelTraceId);
 
       // Call the original init method first
       const result = await original.bind(this).apply(this);

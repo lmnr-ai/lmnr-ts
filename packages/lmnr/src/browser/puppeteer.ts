@@ -21,7 +21,6 @@ import {
   injectSessionRecorder,
   LMNR_SEND_EVENTS_FUNCTION_NAME,
   sendEvents,
-  sendPageEvents,
   takeFullSnapshot,
 } from "./utils";
 
@@ -268,13 +267,6 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
     page.on('domcontentloaded', () => {
       injectSessionRecorder(page, this._sessionRecordingOptions).catch(error => {
         logger.error("Error in onLoad handler: " +
-          `${error instanceof Error ? error.message : String(error)}`);
-      });
-    });
-
-    page.on('close', () => {
-      sendPageEvents(this._client, page, sessionId, traceId).catch(error => {
-        logger.error("Error in onClose handler: " +
           `${error instanceof Error ? error.message : String(error)}`);
       });
     });
