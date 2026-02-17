@@ -317,10 +317,8 @@ export class StagehandInstrumentation extends InstrumentationBase {
         const errorMessage = error instanceof Error ? error.message : String(error);
         parentSpan.recordException(errorMessage);
         parentSpan.setStatus({ code: SpanStatusCode.ERROR, message: errorMessage });
-        diag.error('Error in stagehand init', { error });
-      }
-      finally {
         parentSpan.end();
+        throw error;
       }
     };
   }
