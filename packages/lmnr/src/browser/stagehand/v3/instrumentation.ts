@@ -223,7 +223,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
       const sessionId = newUUID();
 
       // Create parent span for this Stagehand session
-      const parentSpan = Laminar.startSpan({
+      const parentSpan = Laminar.startActiveSpan({
         name: 'Stagehand',
       });
       instrumentation.sessionIdToParentSpan.set(sessionId, parentSpan);
