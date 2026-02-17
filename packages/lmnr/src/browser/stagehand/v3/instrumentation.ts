@@ -1,6 +1,6 @@
 import { LaminarClient } from "@lmnr-ai/client";
 import { type SessionRecordingOptions } from "@lmnr-ai/types";
-import { diag, type Span, trace } from "@opentelemetry/api";
+import { diag, type Span, SpanStatusCode, trace } from "@opentelemetry/api";
 import {
   InstrumentationBase,
   InstrumentationModuleDefinition,
@@ -223,95 +223,103 @@ export class StagehandInstrumentation extends InstrumentationBase {
       const sessionId = newUUID();
 
       // Create parent span for this Stagehand session
-      const parentSpan = Laminar.startSpan({
+      const parentSpan = Laminar.startActiveSpan({
         name: 'Stagehand',
       });
-      instrumentation.sessionIdToParentSpan.set(sessionId, parentSpan);
+      try {
+        instrumentation.sessionIdToParentSpan.set(sessionId, parentSpan);
 
-      instrumentation.stagehandInstanceToSessionId.set(this, sessionId);
+        instrumentation.stagehandInstanceToSessionId.set(this, sessionId);
 
-      // Get trace ID from current span context
-      const currentSpan = trace.getSpan(LaminarContextManager.getContext())
-        ?? trace.getActiveSpan();
-      currentSpan?.setAttribute(TRACE_HAS_BROWSER_SESSION, true);
-      const otelTraceId = parentSpan.spanContext().traceId;
-      const traceId = otelTraceIdToUUID(otelTraceId);
+        // Get trace ID from current span context
+        const currentSpan = trace.getSpan(LaminarContextManager.getContext())
+          ?? trace.getActiveSpan();
+        currentSpan?.setAttribute(TRACE_HAS_BROWSER_SESSION, true);
+        const otelTraceId = parentSpan.spanContext().traceId;
+        const traceId = otelTraceIdToUUID(otelTraceId);
 
-      // Call the original init method first
-      const result = await original.bind(this).apply(this);
+        // Call the original init method first
+        const result = await original.bind(this).apply(this);
 
-      // After init, wrap the global methods on the stagehand instance
-      instrumentation._wrap(
-        this,
-        'act',
-        instrumentation.patchStagehandGlobalMethod('act', sessionId, parentSpan),
-      );
-
-      instrumentation._wrap(
-        this,
-        'extract',
-        instrumentation.patchStagehandGlobalMethod('extract', sessionId, parentSpan),
-      );
-
-      instrumentation._wrap(
-        this,
-        'observe',
-        instrumentation.patchStagehandGlobalMethod('observe', sessionId, parentSpan),
-      );
-
-      // Wrap handler methods if they exist
-      if (this.actHandler) {
-        instrumentation.patchActHandler(this.actHandler);
-      }
-
-      if (this.extractHandler) {
-        instrumentation.patchExtractHandler(this.extractHandler);
-      }
-
-      if (this.observeHandler) {
-        instrumentation.patchObserveHandler(this.observeHandler);
-      }
-
-      // Wrap LLM client if it exists
-      if (this.llmClient) {
-        instrumentation.globalLLMClientOptions.set(this.llmClient, {
-          provider: this.llmClient.type,
-          model: this.llmClient.modelName,
-        });
+        // After init, wrap the global methods on the stagehand instance
         instrumentation._wrap(
-          this.llmClient,
-          'createChatCompletion',
-          instrumentation.patchStagehandLLMClientCreateChatCompletion(),
+          this,
+          'act',
+          instrumentation.patchStagehandGlobalMethod('act', sessionId, parentSpan),
         );
-      }
 
-      // Wrap agent method if it exists
-      instrumentation._wrap(
-        this,
-        'agent',
-        instrumentation.patchStagehandAgentInitializer(sessionId, parentSpan),
-      );
+        instrumentation._wrap(
+          this,
+          'extract',
+          instrumentation.patchStagehandGlobalMethod('extract', sessionId, parentSpan),
+        );
 
-      // Set up session recording if client is available
-      if (instrumentation._client) {
-        await instrumentation.setupSessionRecording(this, sessionId, traceId);
-      }
+        instrumentation._wrap(
+          this,
+          'observe',
+          instrumentation.patchStagehandGlobalMethod('observe', sessionId, parentSpan),
+        );
 
-      // Patch all existing pages
-      if (this.context && this.context.pages) {
-        for (const page of this.context.pages()) {
-          instrumentation.patchStagehandPage(page, parentSpan);
+        // Wrap handler methods if they exist
+        if (this.actHandler) {
+          instrumentation.patchActHandler(this.actHandler);
         }
-      }
 
-      // Set up listener for new pages
-      if (this.context && this.context.on) {
-        this.context.on('page', (page: any) => {
-          instrumentation.patchStagehandPage(page, parentSpan);
-        });
-      }
+        if (this.extractHandler) {
+          instrumentation.patchExtractHandler(this.extractHandler);
+        }
 
-      return result;
+        if (this.observeHandler) {
+          instrumentation.patchObserveHandler(this.observeHandler);
+        }
+
+        // Wrap LLM client if it exists
+        if (this.llmClient) {
+          instrumentation.globalLLMClientOptions.set(this.llmClient, {
+            provider: this.llmClient.type,
+            model: this.llmClient.modelName,
+          });
+          instrumentation._wrap(
+            this.llmClient,
+            'createChatCompletion',
+            instrumentation.patchStagehandLLMClientCreateChatCompletion(),
+          );
+        }
+
+        // Wrap agent method if it exists
+        instrumentation._wrap(
+          this,
+          'agent',
+          instrumentation.patchStagehandAgentInitializer(sessionId, parentSpan),
+        );
+
+        // Set up session recording if client is available
+        if (instrumentation._client) {
+          await instrumentation.setupSessionRecording(this, sessionId, traceId);
+        }
+
+        // Patch all existing pages
+        if (this.context && this.context.pages) {
+          for (const page of this.context.pages()) {
+            instrumentation.patchStagehandPage(page, parentSpan);
+          }
+        }
+
+        // Set up listener for new pages
+        if (this.context && this.context.on) {
+          this.context.on('page', (page: any) => {
+            instrumentation.patchStagehandPage(page, parentSpan);
+          });
+        }
+
+        return result;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        parentSpan.recordException(errorMessage);
+        parentSpan.setStatus({ code: SpanStatusCode.ERROR, message: errorMessage });
+        parentSpan.end();
+        throw error;
+      }
     };
   }
 
