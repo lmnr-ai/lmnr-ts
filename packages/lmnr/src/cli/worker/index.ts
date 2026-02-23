@@ -117,7 +117,7 @@ async function runWorker(config: WorkerConfig): Promise<void> {
   }
 
   // Execute the rollout function with args
-  await workerLogger.debug('Executing rollout function...');
+  await workerLogger.debug('Executing entrypoint function...');
 
   const orderedArgs = Array.isArray(config.args)
     ? config.args

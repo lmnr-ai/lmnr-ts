@@ -237,11 +237,11 @@ const handleRunEvent = async (
       });
     } catch (error: any) {
       logger.error(
-        `Error setting rollout session status: ${error instanceof Error ? error.message : error}`,
+        `Error setting debugger session status: ${error instanceof Error ? error.message : error}`,
       );
     }
 
-    // Execute the rollout function in subprocess
+    // Execute the entrypoint function in subprocess
     await subprocessManager.execute({
       command: workerCommand.command,
       args: workerCommand.args,
@@ -255,7 +255,7 @@ const handleRunEvent = async (
       });
     } catch (error: any) {
       logger.error(
-        `Error setting rollout session status: ${error instanceof Error ? error.message : error}`,
+        `Error setting debugger session status: ${error instanceof Error ? error.message : error}`,
       );
     }
   } catch (error: any) {
@@ -270,7 +270,7 @@ const handleRunEvent = async (
       });
     } catch (error: any) {
       logger.error(
-        `Error setting rollout session status: ${error instanceof Error ? error.message : error}`,
+        `Error setting debugger session status: ${error instanceof Error ? error.message : error}`,
       );
     }
   }
@@ -315,7 +315,7 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
       (filePath && EXTENSIONS_TO_DISCOVER_METADATA.includes(path.extname(filePath)));
 
     if (shouldDiscover) {
-      logger.debug('Discovering rollout functions...');
+      logger.debug('Discovering entrypoint functions...');
       const metadata = await discoverFunctionMetadata(filePathOrModule, options);
       functionName = metadata.functionName;
       params = metadata.params;
@@ -329,7 +329,7 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
     }
   } catch (error) {
     logger.error(
-      'Failed to discover rollout functions: ' +
+      'Failed to discover entrypoint functions: ' +
       (error instanceof Error ? error.message : String(error)),
     );
     cacheServer.close();
@@ -574,8 +574,8 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
       // Kill any running subprocess
       subprocessManager.kill();
 
-      // Delete the rollout session
-      logger.debug('Deleting rollout session...');
+      // Delete the debugger session
+      logger.debug('Deleting debugger session...');
       client.rolloutSessions
         .delete({ sessionId })
         .then(() => {
@@ -590,7 +590,7 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
         })
         .catch((error: any) => {
           logger.warn(
-            `Failed to delete rollout session: ${error instanceof Error ? error.message : error}`,
+            `Failed to delete debugger session: ${error instanceof Error ? error.message : error}`,
           );
           process.exit(1);
         });
@@ -610,7 +610,7 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
       'Failed to start dev command: ' + (error instanceof Error ? error.message : String(error)),
     );
 
-    // Try to delete the rollout session before exiting
+    // Try to delete the debugger session before exiting
     try {
       await client.rolloutSessions.delete({ sessionId });
     } catch {

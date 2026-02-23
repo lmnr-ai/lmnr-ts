@@ -23,7 +23,7 @@
     "laminar",
     "lmnr",
     "cli",
-    "rollout"
+    "debugger"
   ],
   "author": "founders@lmnr.ai",
   "license": "Apache-2.0",
