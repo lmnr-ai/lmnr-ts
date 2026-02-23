@@ -70,7 +70,8 @@ export class SubprocessManager {
                 break;
             }
           } catch {
-            logger.error(`Failed to parse worker protocol message: ${line}`);
+            logger.debug(`Failed to parse worker protocol message. Printing raw line: ${line}`);
+            console.log(line.substring(WORKER_MESSAGE_PREFIX.length));
           }
         } else {
           // This is user output from console.log - pass it through transparently

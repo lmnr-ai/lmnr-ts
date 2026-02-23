@@ -49,21 +49,28 @@ export interface WorkerConfig {
 const WORKER_MESSAGE_PREFIX = '__LMNR_WORKER__:';
 
 /**
- * Sends a message to parent process via stdout
- * Uses a special prefix to distinguish from user's console.log output
+ * Sends a message to parent process via stdout.
+ * Returns a Promise that resolves only once the data has been handed off to the
+ * OS pipe buffer (via the write callback). This must be awaited before any
+ * process.exit() call so that large messages are not truncated when Node.js
+ * discards its internal stream buffers on exit.
  */
-function sendMessage(message: WorkerMessage): void {
-  console.log(WORKER_MESSAGE_PREFIX + JSON.stringify(message));
+const sendMessage = (message: WorkerMessage): Promise<void> => {
+  return new Promise((resolve) => {
+    process.stdout.write(WORKER_MESSAGE_PREFIX + JSON.stringify(message) + '\n', () => resolve());
+  });
 }
 
 /**
- * Logger that sends log messages to parent
+ * Logger that sends log messages to parent.
+ * These are fire-and-forget: since stream writes are FIFO, awaiting the final
+ * sendMessage (result/error) before exit is sufficient to flush all prior logs.
  */
 const workerLogger = {
-  info: (message: string) => sendMessage({ type: 'log', level: 'info', message }),
-  debug: (message: string) => sendMessage({ type: 'log', level: 'debug', message }),
-  error: (message: string) => sendMessage({ type: 'log', level: 'error', message }),
-  warn: (message: string) => sendMessage({ type: 'log', level: 'warn', message }),
+  info: async (message: string) => { await sendMessage({ type: 'log', level: 'info', message }); },
+  debug: async (message: string) => { await sendMessage({ type: 'log', level: 'debug', message }); },
+  error: async (message: string) => { await sendMessage({ type: 'log', level: 'error', message }); },
+  warn: async (message: string) => { await sendMessage({ type: 'log', level: 'warn', message }); },
 };
 
 /**
@@ -76,13 +83,13 @@ async function runWorker(config: WorkerConfig): Promise<any> {
     process.env[key] = value;
   }
 
-  workerLogger.debug('Building user file...');
+  await workerLogger.debug('Building user file...');
   const moduleText = await buildFile(config.filePath, {
     externalPackages: config.externalPackages,
     dynamicImportsToSkip: config.dynamicImportsToSkip,
   });
 
-  workerLogger.debug('Loading user file...');
+  await workerLogger.debug('Loading user file...');
   loadModule({
     filename: config.filePath,
     moduleText,
@@ -90,7 +97,7 @@ async function runWorker(config: WorkerConfig): Promise<any> {
 
   // Select the appropriate rollout function
   const selectedFunction = selectRolloutFunction(config.functionName);
-  workerLogger.debug(`Selected function: ${selectedFunction.name}`);
+  await workerLogger.debug(`Selected function: ${selectedFunction.name}`);
 
   // Initialize Laminar
   const urlWithoutSlash = config.baseUrl.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
@@ -126,17 +133,17 @@ async function runWorker(config: WorkerConfig): Promise<any> {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return (config.args as Record<string, any>)[param.name];
     });
-  workerLogger.info(
+  await workerLogger.info(
     `Calling function ${selectedFunction.name} with args: ${JSON.stringify(orderedArgs)}`,
   );
 
   const rawResult = await selectedFunction.fn(...orderedArgs);
 
   // Consume the result if it's a stream to ensure background processing completes
-  workerLogger.debug('Consuming result (if stream)...');
+  await workerLogger.debug('Consuming result (if stream)...');
   const result = await consumeStreamResult(rawResult);
 
-  workerLogger.info('Rollout function completed successfully');
+  await workerLogger.info('Rollout function completed successfully');
 
   return result;
 }
@@ -173,31 +180,26 @@ const main = () => {
           await Laminar.flush();
         }
 
-        // Send result back to parent
-        sendMessage({ type: 'result', data: result });
-
-        // Exit successfully
+        // Send result back to parent and wait for the write to flush before
+        // exiting, otherwise process.exit() discards buffered stream data.
+        await sendMessage({ type: 'result', data: result });
         process.exit(0);
       } catch (error: any) {
-
-
-        workerLogger.error(`Error in worker: ${error instanceof Error ? error.message : error}`);
-
-        sendMessage({
-          type: 'error',
-          error: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
-        });
+        await workerLogger.error(`Error in worker: ${error instanceof Error ? error.message : error}`);
 
         if (Laminar.initialized()) {
           await Laminar.flush();
         }
 
-        // Exit with error code
+        await sendMessage({
+          type: 'error',
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
         process.exit(1);
       }
     } catch (error: any) {
-      sendMessage({
+      await sendMessage({
         type: 'error',
         error: `Failed to parse config: ${error instanceof Error ? error.message : error}`,
       });
@@ -207,11 +209,10 @@ const main = () => {
 
   rl.on('close', () => {
     if (!configReceived) {
-      sendMessage({
+      void sendMessage({
         type: 'error',
         error: 'No configuration received on stdin',
-      });
-      process.exit(1);
+      }).then(() => process.exit(1));
     }
   });
 };
@@ -224,7 +225,7 @@ const handleShutdown = () => {
     Laminar.shutdown().catch((error: any) => {
       workerLogger.error(
         `Error during Laminar shutdown: ${error instanceof Error ? error.message : error}`,
-      );
+      ).catch(() => { });
     }).finally(() => {
       process.exit(0);
     });
@@ -241,10 +242,9 @@ process.on('SIGINT', handleShutdown);
 try {
   main();
 } catch (error: any) {
-  sendMessage({
+  void sendMessage({
     type: 'error',
     error: error instanceof Error ? error.message : String(error),
     stack: error instanceof Error ? error.stack : undefined,
-  });
-  process.exit(1);
+  }).then(() => process.exit(1));
 }
