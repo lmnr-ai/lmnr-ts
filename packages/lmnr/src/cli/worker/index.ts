@@ -13,18 +13,13 @@ interface LogMessage {
   message: string;
 }
 
-interface ResultMessage {
-  type: 'result';
-  data: any;
-}
-
 interface ErrorMessage {
   type: 'error';
   error: string;
   stack?: string;
 }
 
-type WorkerMessage = LogMessage | ResultMessage | ErrorMessage;
+type WorkerMessage = LogMessage | ErrorMessage;
 
 /**
  * Configuration received from parent via stdin
@@ -55,11 +50,9 @@ const WORKER_MESSAGE_PREFIX = '__LMNR_WORKER__:';
  * process.exit() call so that large messages are not truncated when Node.js
  * discards its internal stream buffers on exit.
  */
-const sendMessage = (message: WorkerMessage): Promise<void> => {
-  return new Promise((resolve) => {
-    process.stdout.write(WORKER_MESSAGE_PREFIX + JSON.stringify(message) + '\n', () => resolve());
-  });
-}
+const sendMessage = (message: WorkerMessage): Promise<void> => new Promise((resolve) => {
+  process.stdout.write(WORKER_MESSAGE_PREFIX + JSON.stringify(message) + '\n', () => resolve());
+});
 
 /**
  * Logger that sends log messages to parent.
@@ -67,17 +60,25 @@ const sendMessage = (message: WorkerMessage): Promise<void> => {
  * sendMessage (result/error) before exit is sufficient to flush all prior logs.
  */
 const workerLogger = {
-  info: async (message: string) => { await sendMessage({ type: 'log', level: 'info', message }); },
-  debug: async (message: string) => { await sendMessage({ type: 'log', level: 'debug', message }); },
-  error: async (message: string) => { await sendMessage({ type: 'log', level: 'error', message }); },
-  warn: async (message: string) => { await sendMessage({ type: 'log', level: 'warn', message }); },
+  info: async (message: string) => {
+    await sendMessage({ type: 'log', level: 'info', message });
+  },
+  debug: async (message: string) => {
+    await sendMessage({ type: 'log', level: 'debug', message });
+  },
+  error: async (message: string) => {
+    await sendMessage({ type: 'log', level: 'error', message });
+  },
+  warn: async (message: string) => {
+    await sendMessage({ type: 'log', level: 'warn', message });
+  },
 };
 
 /**
  * Main worker execution function
  * Returns the result of the rollout function or throws an error
  */
-async function runWorker(config: WorkerConfig): Promise<any> {
+async function runWorker(config: WorkerConfig): Promise<void> {
   // Set environment variables
   for (const [key, value] of Object.entries(config.env)) {
     process.env[key] = value;
@@ -104,7 +105,7 @@ async function runWorker(config: WorkerConfig): Promise<any> {
   const baseHttpUrl = `${urlWithoutSlash}:${config.httpPort}`;
 
   if (!Laminar.initialized()) {
-    workerLogger.debug('Initializing Laminar...');
+    await workerLogger.debug('Initializing Laminar...');
     Laminar.initialize({
       projectApiKey: config.projectApiKey,
       baseUrl: config.baseUrl,
@@ -116,7 +117,7 @@ async function runWorker(config: WorkerConfig): Promise<any> {
   }
 
   // Execute the rollout function with args
-  workerLogger.debug('Executing rollout function...');
+  await workerLogger.debug('Executing rollout function...');
 
   const orderedArgs = Array.isArray(config.args)
     ? config.args
@@ -141,11 +142,9 @@ async function runWorker(config: WorkerConfig): Promise<any> {
 
   // Consume the result if it's a stream to ensure background processing completes
   await workerLogger.debug('Consuming result (if stream)...');
-  const result = await consumeStreamResult(rawResult);
+  await consumeStreamResult(rawResult);
 
-  await workerLogger.info('Rollout function completed successfully');
-
-  return result;
+  await workerLogger.info('Function execution completed successfully');
 }
 
 /**
@@ -175,17 +174,17 @@ const main = () => {
 
       // Execute the worker and handle result/errors
       try {
-        const result = await runWorker(config);
+        await runWorker(config);
         if (Laminar.initialized()) {
           await Laminar.flush();
         }
 
-        // Send result back to parent and wait for the write to flush before
-        // exiting, otherwise process.exit() discards buffered stream data.
-        await sendMessage({ type: 'result', data: result });
+        // Exit successfully
         process.exit(0);
       } catch (error: any) {
-        await workerLogger.error(`Error in worker: ${error instanceof Error ? error.message : error}`);
+        await workerLogger.error(
+          `Error in worker: ${error instanceof Error ? error.message : error}`,
+        );
 
         if (Laminar.initialized()) {
           await Laminar.flush();

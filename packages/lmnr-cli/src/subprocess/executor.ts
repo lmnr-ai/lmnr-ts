@@ -32,7 +32,7 @@ export class SubprocessManager {
     this.currentProcess = child;
 
     return new Promise((resolve, reject) => {
-      let result: any = undefined;
+      const result: any = undefined;
       let hasError = false;
 
       // Set up readline interface for stdout
@@ -57,9 +57,6 @@ export class SubprocessManager {
                 logger[message.level](message.message);
                 break;
               }
-              case 'result':
-                result = message.data;
-                break;
 
               case 'error':
                 hasError = true;
@@ -70,7 +67,7 @@ export class SubprocessManager {
                 break;
             }
           } catch {
-            logger.debug(`Failed to parse worker protocol message. Printing raw line: ${line}`);
+            logger.debug("Failed to parse worker protocol message. Printing raw line");
             console.log(line.substring(WORKER_MESSAGE_PREFIX.length));
           }
         } else {
