@@ -1,3 +1,4 @@
+import { SpanStatusCode } from "@opentelemetry/api";
 import { SpanAttributes } from "@traceloop/ai-semantic-conventions";
 
 import { LaminarSpan } from "../../tracing/span";
@@ -126,11 +127,12 @@ export function setRequestAttributes(
       safeSetAttribute(span, "gen_ai.request.stop_sequences", JSON.stringify(config.stopSequences));
     }
 
-    if (config.responseSchema) {
+    const outputSchema = config.responseSchema ?? config.responseJsonSchema;
+    if (outputSchema) {
       safeSetAttribute(
         span,
         "gen_ai.request.structured_output_schema",
-        JSON.stringify(toDict(config.responseSchema)),
+        JSON.stringify(toDict(outputSchema)),
       );
     }
 
@@ -363,8 +365,9 @@ export function wrapStreamingResponse(
       setResponseAttributes(span, compoundResponse, traceContent);
       span.end();
     } catch (error) {
+      span.setAttribute("error.type", (error as Error).constructor?.name ?? "Error");
       span.recordException(error as Error);
-      span.setStatus({ code: 2 }); // StatusCode.ERROR
+      span.setStatus({ code: SpanStatusCode.ERROR });
       span.end();
       throw error;
     }

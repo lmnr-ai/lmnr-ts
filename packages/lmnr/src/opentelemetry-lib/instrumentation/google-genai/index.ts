@@ -1,9 +1,9 @@
 import { context, diag, SpanStatusCode, trace } from "@opentelemetry/api";
+import { isTracingSuppressed } from "@opentelemetry/core";
 import {
   InstrumentationBase,
   InstrumentationModuleDefinition,
   InstrumentationNodeModuleDefinition,
-  isWrapped,
 } from "@opentelemetry/instrumentation";
 
 import { version as SDK_VERSION } from "../../../../package.json";
@@ -11,9 +11,15 @@ import { Laminar } from "../../../laminar";
 import { setRequestAttributes, setResponseAttributes, wrapStreamingResponse } from "./utils";
 
 const WRAPPED_SYMBOL = Symbol("lmnr.google-genai.wrapped");
+const CLASS_PATCH_DATA_SYMBOL = Symbol("lmnr.google-genai.classPatchData");
+
+type ClassPatchData = {
+  instrumentation: GoogleGenAiInstrumentation;
+  traceContent: boolean;
+  originalModelsDescriptor: PropertyDescriptor | undefined;
+};
 
 /* eslint-disable
-  @typescript-eslint/no-this-alias,
   @typescript-eslint/no-unsafe-return
 */
 export class GoogleGenAiInstrumentation extends InstrumentationBase {
@@ -39,75 +45,129 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
 
   public manuallyInstrument(genaiModule: any): void {
     diag.debug("Manually instrumenting @google/genai");
-    if (genaiModule.GoogleGenAI) {
-      try {
-        this._wrap(
-          genaiModule,
-          "GoogleGenAI",
-          this.wrapGoogleGenAIClass.bind(this),
-        );
-      } catch {
-        // ES module namespace objects have non-configurable properties,
-        // so _wrap (which uses Object.defineProperty) will throw.
-        // Fall back to direct property assignment on mutable objects.
-        const patched = this.wrapGoogleGenAIClass(genaiModule.GoogleGenAI);
-        try {
-          genaiModule.GoogleGenAI = patched;
-        } catch {
-          diag.warn(
-            "Could not patch GoogleGenAI on the provided module object. " +
-            "Pass a mutable object: { GoogleGenAI } instead of the ES module namespace.",
-          );
-        }
-      }
+    const GoogleGenAIClass = this.resolveGoogleGenAIClass(genaiModule);
+    if (GoogleGenAIClass) {
+      this.patchGoogleGenAIClass(GoogleGenAIClass);
+    } else {
+      diag.warn(
+        "Could not find GoogleGenAI class in google_genai manual instrumentation input. " +
+        "Pass either GoogleGenAI class or module object with GoogleGenAI export.",
+      );
     }
   }
 
   private patch(moduleExports: any): any {
     diag.debug("Patching @google/genai");
-    if (moduleExports.GoogleGenAI) {
-      this._wrap(
-        moduleExports,
-        "GoogleGenAI",
-        this.wrapGoogleGenAIClass.bind(this),
-      );
+    const GoogleGenAIClass = this.resolveGoogleGenAIClass(moduleExports);
+    if (GoogleGenAIClass) {
+      this.patchGoogleGenAIClass(GoogleGenAIClass);
     }
     return moduleExports;
   }
 
   private unpatch(moduleExports: any): void {
     diag.debug("Unpatching @google/genai");
-    if (isWrapped(moduleExports.GoogleGenAI)) {
-      this._unwrap(moduleExports, "GoogleGenAI");
+    const GoogleGenAIClass = this.resolveGoogleGenAIClass(moduleExports);
+    if (GoogleGenAIClass) {
+      this.unpatchGoogleGenAIClass(GoogleGenAIClass);
     }
   }
 
-  private wrapGoogleGenAIClass(Original: any): any {
-    const instrumentation = this;
-
-    class PatchedGoogleGenAI extends Original {
-      constructor(...args: any[]) {
-        super(...args);
-        instrumentation.patchModelsInstance(this.models);
-      }
+  private resolveGoogleGenAIClass(moduleOrClass: any): any {
+    if (typeof moduleOrClass === "function") {
+      return moduleOrClass;
     }
-
-    return PatchedGoogleGenAI;
+    if (moduleOrClass?.GoogleGenAI && typeof moduleOrClass.GoogleGenAI === "function") {
+      return moduleOrClass.GoogleGenAI;
+    }
+    return undefined;
   }
 
-  private patchModelsInstance(models: any): void {
+  private patchGoogleGenAIClass(GoogleGenAIClass: any): void {
+    const classPatchData = (
+      GoogleGenAIClass[CLASS_PATCH_DATA_SYMBOL] as ClassPatchData | undefined
+    );
+    if (classPatchData) {
+      classPatchData.instrumentation = this;
+      classPatchData.traceContent = this.traceContent;
+      return;
+    }
+
+    const originalModelsDescriptor = Object.getOwnPropertyDescriptor(
+      GoogleGenAIClass.prototype,
+      "models",
+    );
+    if (originalModelsDescriptor && !originalModelsDescriptor.configurable) {
+      diag.warn("Could not patch GoogleGenAI.prototype.models: descriptor is non-configurable.");
+      return;
+    }
+
+    const patchData: ClassPatchData = {
+      instrumentation: this,
+      traceContent: this.traceContent,
+      originalModelsDescriptor,
+    };
+    Object.defineProperty(GoogleGenAIClass, CLASS_PATCH_DATA_SYMBOL, {
+      value: patchData,
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+
+    Object.defineProperty(GoogleGenAIClass.prototype, "models", {
+      configurable: true,
+      enumerable: originalModelsDescriptor?.enumerable ?? true,
+      get: function () {
+        if (originalModelsDescriptor?.get) {
+          return originalModelsDescriptor.get.call(this);
+        }
+        return undefined;
+      },
+      set: function (value: any) {
+        patchData.instrumentation.patchModelsInstance(value, patchData);
+        if (originalModelsDescriptor?.set) {
+          originalModelsDescriptor.set.call(this, value);
+          return;
+        }
+        Object.defineProperty(this, "models", {
+          value,
+          writable: true,
+          configurable: true,
+          enumerable: true,
+        });
+      },
+    });
+  }
+
+  private unpatchGoogleGenAIClass(GoogleGenAIClass: any): void {
+    const classPatchData = GoogleGenAIClass[CLASS_PATCH_DATA_SYMBOL] as ClassPatchData | undefined;
+    if (!classPatchData) {
+      return;
+    }
+    if (classPatchData.originalModelsDescriptor) {
+      Object.defineProperty(
+        GoogleGenAIClass.prototype,
+        "models",
+        classPatchData.originalModelsDescriptor,
+      );
+    } else {
+      delete GoogleGenAIClass.prototype.models;
+    }
+    delete GoogleGenAIClass[CLASS_PATCH_DATA_SYMBOL];
+  }
+
+  private patchModelsInstance(models: any, classPatchData: ClassPatchData): void {
+    if (!models || typeof models !== "object") return;
+    if (typeof models.generateContent !== "function") return;
+    if (typeof models.generateContentStream !== "function") return;
+
     // Guard against double-wrapping
     if (models[WRAPPED_SYMBOL]) return;
 
     const originalGenerateContent = models.generateContent.bind(models);
     const originalGenerateContentStream = models.generateContentStream.bind(models);
-    const traceContent = this.traceContent;
-
     models.generateContent = async function (params: any) {
-      // Check OTel suppression
-      const activeContext = context.active();
-      const suppressionKey = Symbol.for("OpenTelemetry Context Key SUPPRESS_TRACING");
-      if (activeContext.getValue(suppressionKey)) {
+      if (isTracingSuppressed(context.active())) {
         return originalGenerateContent(params);
       }
 
@@ -116,14 +176,14 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
         spanType: "LLM",
       });
 
-      setRequestAttributes(span, params, traceContent);
+      setRequestAttributes(span, params, classPatchData.traceContent);
 
       return context.with(
         trace.setSpan(context.active(), span),
         async () => {
           try {
             const response = await originalGenerateContent(params);
-            setResponseAttributes(span, response, traceContent);
+            setResponseAttributes(span, response, classPatchData.traceContent);
             span.end();
             return response;
           } catch (error) {
@@ -138,10 +198,7 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
     };
 
     models.generateContentStream = async function (params: any) {
-      // Check OTel suppression
-      const activeContext = context.active();
-      const suppressionKey = Symbol.for("OpenTelemetry Context Key SUPPRESS_TRACING");
-      if (activeContext.getValue(suppressionKey)) {
+      if (isTracingSuppressed(context.active())) {
         return originalGenerateContentStream(params);
       }
 
@@ -150,14 +207,14 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
         spanType: "LLM",
       });
 
-      setRequestAttributes(span, params, traceContent);
+      setRequestAttributes(span, params, classPatchData.traceContent);
 
       return context.with(
         trace.setSpan(context.active(), span),
         async () => {
           try {
             const asyncGen = await originalGenerateContentStream(params);
-            return wrapStreamingResponse(span, asyncGen, traceContent);
+            return wrapStreamingResponse(span, asyncGen, classPatchData.traceContent);
           } catch (error) {
             span.setAttribute("error.type", (error as Error).constructor?.name ?? "Error");
             span.recordException(error as Error);
@@ -173,6 +230,5 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
   }
 }
 /* eslint-enable
-  @typescript-eslint/no-this-alias,
   @typescript-eslint/no-unsafe-return
 */

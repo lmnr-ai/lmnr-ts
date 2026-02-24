@@ -5,7 +5,9 @@ import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { GoogleGenAI } from "@google/genai";
-import { SpanStatusCode } from "@opentelemetry/api";
+import * as genaiNamespace from "@google/genai";
+import { context, SpanStatusCode } from "@opentelemetry/api";
+import { suppressTracing } from "@opentelemetry/core";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import nock from "nock";
 
@@ -18,8 +20,7 @@ void describe("google-genai instrumentation", () => {
     : path.dirname(fileURLToPath(import.meta.url));
   const recordingsDir = path.join(dirname, "recordings");
 
-  // Create a mutable module-like object for manual instrumentation.
-  // _wrap uses Object.defineProperty which fails on frozen ES module namespaces.
+  // Create a mutable module-like object for the default manual instrumentation path.
   let genaiModule: { GoogleGenAI: typeof GoogleGenAI };
 
   const getRecordingFile = (testName: string) => {
@@ -90,15 +91,28 @@ void describe("google-genai instrumentation", () => {
     }
   };
 
-  void beforeEach(async (t) => {
+  const reinitializeGoogleGenAiTracing = ({
+    googleGenAiInput,
+    traceContent = true,
+  }: {
+    googleGenAiInput: any,
+    traceContent?: boolean,
+  }) => {
     _resetConfiguration();
-    genaiModule = { GoogleGenAI };
     initializeTracing({
       exporter,
       disableBatch: true,
+      traceContent,
       instrumentModules: {
-        google_genai: genaiModule,
+        google_genai: googleGenAiInput,
       },
+    });
+  };
+
+  void beforeEach(async (t) => {
+    genaiModule = { GoogleGenAI };
+    reinitializeGoogleGenAiTracing({
+      googleGenAiInput: genaiModule,
     });
     await setupNock(t.name);
   });
@@ -234,16 +248,10 @@ void describe("google-genai instrumentation", () => {
   });
 
   void it("respects traceContent off", async () => {
-    // Reinitialize with traceContent disabled
-    _resetConfiguration();
     genaiModule = { GoogleGenAI };
-    initializeTracing({
-      exporter,
-      disableBatch: true,
+    reinitializeGoogleGenAiTracing({
+      googleGenAiInput: genaiModule,
       traceContent: false,
-      instrumentModules: {
-        google_genai: genaiModule,
-      },
     });
 
     await withVertexDisabled(async () => {
@@ -283,6 +291,58 @@ void describe("google-genai instrumentation", () => {
         span.attributes["gen_ai.completion.0.role"],
         undefined,
       );
+    });
+  });
+
+  void it("supports manual instrumentation with class input", async () => {
+    reinitializeGoogleGenAiTracing({
+      googleGenAiInput: GoogleGenAI,
+    });
+
+    await withVertexDisabled(async () => {
+      const client = new GoogleGenAI({ apiKey: "dummy-key" });
+      await client.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: "What is the capital of France?",
+      });
+
+      const spans = exporter.getFinishedSpans();
+      assert.strictEqual(spans.length, 1);
+      assert.strictEqual(spans[0].name, "gemini.generate_content");
+    });
+  });
+
+  void it("supports manual instrumentation with namespace module input", async () => {
+    reinitializeGoogleGenAiTracing({
+      googleGenAiInput: genaiNamespace,
+    });
+
+    await withVertexDisabled(async () => {
+      const client = new genaiNamespace.GoogleGenAI({ apiKey: "dummy-key" });
+      await client.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: "What is the capital of France?",
+      });
+
+      const spans = exporter.getFinishedSpans();
+      assert.strictEqual(spans.length, 1);
+      assert.strictEqual(spans[0].name, "gemini.generate_content");
+    });
+  });
+
+  void it("respects otel tracing suppression", async () => {
+    await withVertexDisabled(async () => {
+      const client = new genaiModule.GoogleGenAI({ apiKey: "dummy-key" });
+
+      await context.with(suppressTracing(context.active()), async () => {
+        await client.models.generateContent({
+          model: "gemini-2.0-flash",
+          contents: "What is the capital of France?",
+        });
+      });
+
+      const spans = exporter.getFinishedSpans();
+      assert.strictEqual(spans.length, 0);
     });
   });
 });
