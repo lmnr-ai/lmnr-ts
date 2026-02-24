@@ -278,7 +278,7 @@ function mergeTextParts(parts: any[]): any[] {
 
 /**
  * Wrap a streaming async generator to accumulate response data and set span attributes
- * once the stream is exhausted.
+ * when iteration completes, throws, or is terminated early by the consumer.
  *
  * generateContentStream returns Promise<AsyncGenerator<GenerateContentResponse>>.
  * This wraps the inner async generator.
@@ -296,8 +296,11 @@ export function wrapStreamingResponse(
   let cachedContentTokenCount: number | undefined;
   let role: string | undefined;
   let modelVersion: string | undefined;
+  let sawUsageMetadata = false;
 
   async function* wrapper(): AsyncGenerator<any> {
+    let streamError: unknown;
+    let finalizeError: unknown;
     try {
       for await (const chunk of asyncGen) {
         // Accumulate parts
@@ -316,6 +319,7 @@ export function wrapStreamingResponse(
         // Accumulate usage
         const usage = chunk?.usageMetadata;
         if (usage) {
+          sawUsageMetadata = true;
           if (promptTokenCount === undefined && usage.promptTokenCount !== undefined) {
             promptTokenCount = usage.promptTokenCount;
           }
@@ -340,36 +344,57 @@ export function wrapStreamingResponse(
 
         yield chunk;
       }
-
-      // Stream exhausted — build compound response and set attributes
-      const mergedParts = mergeTextParts(accumulatedParts);
-      const compoundResponse = {
-        modelVersion,
-        candidates: [
-          {
-            content: {
-              role: role ?? "model",
-              parts: mergedParts,
-            },
-          },
-        ],
-        usageMetadata: {
-          promptTokenCount,
-          candidatesTokenCount,
-          thoughtsTokenCount,
-          totalTokenCount,
-          cachedContentTokenCount,
-        },
-      };
-
-      setResponseAttributes(span, compoundResponse, traceContent);
-      span.end();
     } catch (error) {
+      streamError = error;
       span.setAttribute("error.type", (error as Error).constructor?.name ?? "Error");
       span.recordException(error as Error);
       span.setStatus({ code: SpanStatusCode.ERROR });
-      span.end();
       throw error;
+    } finally {
+      try {
+        const hasResponseData = (
+          modelVersion !== undefined
+          || role !== undefined
+          || accumulatedParts.length > 0
+          || sawUsageMetadata
+        );
+        if (hasResponseData) {
+          const mergedParts = mergeTextParts(accumulatedParts);
+          const compoundResponse = {
+            modelVersion,
+            candidates: [
+              {
+                content: {
+                  role: role ?? "model",
+                  parts: mergedParts,
+                },
+              },
+            ],
+            usageMetadata: {
+              promptTokenCount,
+              candidatesTokenCount,
+              thoughtsTokenCount,
+              totalTokenCount,
+              cachedContentTokenCount,
+            },
+          };
+
+          setResponseAttributes(span, compoundResponse, traceContent);
+        }
+      } catch (caughtFinalizeError) {
+        // Do not override the original stream error.
+        if (!streamError) {
+          finalizeError = caughtFinalizeError;
+        }
+      } finally {
+        span.end();
+      }
+    }
+    if (finalizeError) {
+      if (finalizeError instanceof Error) {
+        throw finalizeError;
+      }
+      throw new Error("Failed to finalize google-genai stream span");
     }
   }
 

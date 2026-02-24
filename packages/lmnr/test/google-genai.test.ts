@@ -215,6 +215,35 @@ void describe("google-genai instrumentation", () => {
     });
   });
 
+  void it("ends span when stream is not fully consumed", async () => {
+    await withVertexDisabled(async () => {
+      const client = new genaiModule.GoogleGenAI({ apiKey: "dummy-key" });
+      const stream = await client.models.generateContentStream({
+        model: "gemini-2.0-flash",
+        contents: "What is the capital of France?",
+      });
+
+      let firstChunkText = "";
+      for await (const chunk of stream) {
+        firstChunkText = chunk.text ?? "";
+        break;
+      }
+
+      assert.ok(firstChunkText.length > 0, "first chunk should contain text");
+
+      const spans = exporter.getFinishedSpans();
+      assert.strictEqual(spans.length, 1);
+
+      const span = spans[0];
+      assert.strictEqual(span.name, "gemini.generate_content_stream");
+      assert.strictEqual(span.attributes["gen_ai.completion.0.content"], firstChunkText);
+      assert.ok(
+        span.attributes["gen_ai.usage.output_tokens"] !== undefined,
+        "partial stream usage should be set",
+      );
+    });
+  });
+
   void it("records error on api failure", async () => {
     await withVertexDisabled(async () => {
       const client = new genaiModule.GoogleGenAI({ apiKey: "dummy-key" });
