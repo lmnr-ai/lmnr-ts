@@ -101,6 +101,7 @@
     "@aws-sdk/client-bedrock-runtime": "^3.985.0",
     "@azure/openai": "^2.0.0",
     "@google-cloud/vertexai": "^1.10.0",
+    "@google/genai": "^1.42.0",
     "@langchain/core": "^0.3.80",
     "@lmnr-ai/client": "workspace:*",
     "@lmnr-ai/types": "workspace:*",
