@@ -148,7 +148,7 @@ export function selectRolloutFunction(
 ): { fn: (...args: any[]) => any; params: any[]; name: string; exportName: string } {
   if (!globalThis._rolloutFunctions || globalThis._rolloutFunctions.size === 0) {
     throw new Error(
-      "No rollout functions found in file. " +
+      "No entrypoint functions found in file. " +
       " Make sure you are using observe with rolloutEntrypoint: true",
     );
   }
@@ -174,6 +174,7 @@ export function selectRolloutFunction(
   // Multiple functions found without explicit selection
   const available = Array.from(globalThis._rolloutFunctions.keys()).join(', ');
   throw new Error(
-    `Multiple rollout functions found: ${available}. Use --function to specify which one to serve.`,
+    `Multiple entrypoint functions found: ${available}.` +
+    " Use --function to specify which one to serve.",
   );
 }

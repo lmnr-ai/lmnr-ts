@@ -122,7 +122,7 @@ const extractParamNames = (fn: (...args: any[]) => any): RolloutParam[] => {
  * functions and methods to create spans.
  *
  * When `rolloutEntrypoint: true` is set, returns a wrapped function that can be
- * used for rollout debugging sessions with `npx lmnr serve`.
+ * used for agent debugging sessions with `npx lmnr serve`.
  *
  * @param options - Configuration options for the span
  * @param options.name - Name of the span. Function name is used if not specified.

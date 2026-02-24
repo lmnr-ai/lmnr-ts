@@ -16,7 +16,7 @@ This repository is organized as a monorepo with multiple packages:
 - **[@lmnr-ai/types](packages/types)** - Shared types and interfaces
 - **[@lmnr-ai/client](packages/client)** - HTTP client for Laminar API
 - **[@lmnr-ai/lmnr](packages/lmnr)** - Main SDK with tracing and instrumentation
-- **[lmnr-cli](packages/lmnr-cli)** - CLI for rollout debugging
+- **[lmnr-cli](packages/lmnr-cli)** - CLI for agent debugging
 
 ## Installation
 
@@ -26,7 +26,7 @@ This repository is organized as a monorepo with multiple packages:
 npm install @lmnr-ai/lmnr
 ```
 
-### For Rollout Debugging
+### For Agent Debugging
 
 ```bash
 npx lmnr-cli@latest dev agent.ts

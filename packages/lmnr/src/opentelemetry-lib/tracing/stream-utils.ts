@@ -54,7 +54,7 @@ export const waitForPendingStreams = async (timeoutMs: number = 5000): Promise<v
 
 /**
  * Consumes a stream result to ensure background processing completes.
- * This is useful in rollout mode where there's no caller to consume the stream.
+ * This is useful in debugger mode where there's no caller to consume the stream.
  * @param result - The result that might be a stream
  * @returns The same result, or accumulated data if it was a stream
  */
