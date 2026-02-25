@@ -1,4 +1,4 @@
-import { registerOTel } from '@vercel/otel';
+// import { registerOTel } from '@vercel/otel';
 
 export async function register() {
   // Only use this function if you want to send Next.js traces to an

@@ -145,15 +145,15 @@ const handleRunEvent = async (
 
           spansToCache.forEach((span, index) => {
             // Parse JSON fields
-            let parsedInput = span.input;
-            let parsedOutput = span.output;
-            let parsedAttributes = span.attributes;
+            let parsedInput;
+            let parsedOutput;
+            let parsedAttributes;
 
             try {
               parsedInput =
                 typeof span.input === 'string' ? JSON.parse(span.input) : span.input;
             } catch {
-              // Keep as string
+              parsedInput = span.input;
             }
 
             try {

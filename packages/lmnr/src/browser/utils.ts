@@ -269,7 +269,6 @@ export const prettyPrintZodSchema = (schema: any, indent = 2): string => {
         if (!result.endsWith('.nullable()')) {
           result = `${getBaseType(currentVal._def.innerType)}.optional()`;
         }
-        currentVal = currentVal._def.innerType;
       }
 
       // Check for description

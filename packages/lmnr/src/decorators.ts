@@ -335,7 +335,7 @@ export function withTracingLevel<A extends unknown[], F extends (...args: A) => 
   ) as Record<string, any>;
   delete newAssociationProperties["tracing_level"];
 
-  entityContext = entityContext.setValue(
+  entityContext.setValue(
     ASSOCIATION_PROPERTIES_KEY,
     newAssociationProperties,
   );

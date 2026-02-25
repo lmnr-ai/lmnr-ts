@@ -29,7 +29,6 @@ Never give medical advice or diagnose conditions.`
     return NextResponse.json({ message: response.text });
 
   } catch (error) {
-    console.error("Error in chat API:", error);
     return NextResponse.json(
       { error: "Failed to process request" },
       { status: 500 }
