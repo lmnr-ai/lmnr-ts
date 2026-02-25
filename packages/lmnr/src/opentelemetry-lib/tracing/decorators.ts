@@ -7,7 +7,7 @@ import {
   initializeLogger,
   tryToOtelSpanContext,
 } from "../../utils";
-import { getStream } from "../instrumentation/aisdk/utils";
+import { getStream, StreamInfo } from "../instrumentation/aisdk/utils";
 import { getTracer, shouldSendTraces } from ".";
 import {
   SPAN_INPUT,
@@ -177,20 +177,21 @@ export function observeBase<
         if (res instanceof Promise) {
           return res.then((resolvedRes) => {
             // Check if the resolved result is a stream
+            let streamInfo: StreamInfo = { type: null };
             try {
-              const streamInfo = getStream(resolvedRes);
-              if (streamInfo.type !== null) {
-                return handleStreamResult(
-                  resolvedRes,
-                  streamInfo,
-                  span,
-                  ignoreOutput,
-                  serialize,
-                ) as ReturnType<F>;
-              }
+              streamInfo = getStream(resolvedRes);
             } catch (error) {
               logger.warn("Failed to get stream info: " +
                 `${error instanceof Error ? error.message : String(error)}`);
+            }
+            if (streamInfo.type !== null) {
+              return handleStreamResult(
+                resolvedRes,
+                streamInfo,
+                span,
+                ignoreOutput,
+                serialize,
+              ) as ReturnType<F>;
             }
 
             // Not a stream, handle normally
@@ -229,15 +230,16 @@ export function observeBase<
         }
 
         // Check if the result is a stream
+        let streamInfo: StreamInfo = { type: null };
         try {
-          const streamInfo = getStream(res);
-          if (streamInfo.type !== null) {
-            return handleStreamResult(
-              res, streamInfo, span, ignoreOutput, serialize) as ReturnType<F>;
-          }
+          streamInfo = getStream(res);
         } catch (error) {
           logger.warn("Failed to get stream info: " +
             `${error instanceof Error ? error.message : String(error)}`);
+        }
+        if (streamInfo.type !== null) {
+          return handleStreamResult(
+            res, streamInfo, span, ignoreOutput, serialize) as ReturnType<F>;
         }
 
         try {
