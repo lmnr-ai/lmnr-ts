@@ -7,7 +7,7 @@ import {
   initializeLogger,
   tryToOtelSpanContext,
 } from "../../utils";
-import { getStream } from "../instrumentation/aisdk/utils";
+import { getStream, StreamInfo } from "../instrumentation/aisdk/utils";
 import { getTracer, shouldSendTraces } from ".";
 import {
   SPAN_INPUT,
@@ -106,11 +106,17 @@ export function observeBase<
   }
 
   // Set context properties for propagation to child spans
-  if (contextProperties && Object.keys(contextProperties).length > 0) {
-    const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
-    entityContext = entityContext.setValue(
-      ASSOCIATION_PROPERTIES_KEY,
-      { ...currentAssociationProperties, ...contextProperties },
+  try {
+    if (contextProperties && Object.keys(contextProperties).length > 0) {
+      const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
+      entityContext = entityContext.setValue(
+        ASSOCIATION_PROPERTIES_KEY,
+        { ...currentAssociationProperties, ...contextProperties },
+      );
+    }
+  } catch (e) {
+    logger.warn("Failed to set context properties: " +
+      (e instanceof Error ? e.message : String(e)),
     );
   }
 
@@ -158,15 +164,26 @@ export function observeBase<
         try {
           res = fn.apply(thisArg as ThisParameterType<F>, args);
         } catch (error) {
-          span.recordException(error as Error);
-          span.end();
+          try {
+            span.recordException(error as Error);
+            span.end();
+          } catch (error) {
+            logger.warn("Failed to record exception and end span: " +
+              `${error instanceof Error ? error.message : String(error)}`);
+          }
           throw error;
         }
 
         if (res instanceof Promise) {
           return res.then((resolvedRes) => {
             // Check if the resolved result is a stream
-            const streamInfo = getStream(resolvedRes);
+            let streamInfo: StreamInfo = { type: null };
+            try {
+              streamInfo = getStream(resolvedRes);
+            } catch (error) {
+              logger.warn("Failed to get stream info: " +
+                `${error instanceof Error ? error.message : String(error)}`);
+            }
             if (streamInfo.type !== null) {
               return handleStreamResult(
                 resolvedRes,
@@ -189,21 +206,37 @@ export function observeBase<
               logger.warn("Failed to serialize async output: " +
                 `${error instanceof Error ? error.message : String(error)}`);
             } finally {
-              span.end();
+              try {
+                span.end();
+              } catch (error) {
+                logger.warn("Failed to end span: " +
+                  `${error instanceof Error ? error.message : String(error)}`);
+              }
             }
 
             // eslint-disable-next-line @typescript-eslint/no-unsafe-return
             return resolvedRes;
           })
             .catch((error) => {
-              span.recordException(error as Error);
-              span.end();
+              try {
+                span.recordException(error as Error);
+                span.end();
+              } catch (error) {
+                logger.warn("Failed to record exception and end span: " +
+                  `${error instanceof Error ? error.message : String(error)}`);
+              }
               throw error;
             }) as ReturnType<F>;
         }
 
         // Check if the result is a stream
-        const streamInfo = getStream(res);
+        let streamInfo: StreamInfo = { type: null };
+        try {
+          streamInfo = getStream(res);
+        } catch (error) {
+          logger.warn("Failed to get stream info: " +
+            `${error instanceof Error ? error.message : String(error)}`);
+        }
         if (streamInfo.type !== null) {
           return handleStreamResult(
             res, streamInfo, span, ignoreOutput, serialize) as ReturnType<F>;
@@ -220,7 +253,12 @@ export function observeBase<
           logger.warn("Failed to serialize output: " +
             `${error instanceof Error ? error.message : String(error)}`);
         } finally {
-          span.end();
+          try {
+            span.end();
+          } catch (error) {
+            logger.warn("Failed to end span: " +
+              `${error instanceof Error ? error.message : String(error)}`);
+          }
         }
 
         return res;

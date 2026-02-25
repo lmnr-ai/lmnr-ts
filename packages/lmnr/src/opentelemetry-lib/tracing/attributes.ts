@@ -1,5 +1,3 @@
-import { SpanAttributes } from '@traceloop/ai-semantic-conventions';
-
 export const SPAN_INPUT = "lmnr.span.input";
 export const SPAN_OUTPUT = "lmnr.span.output";
 export const SPAN_TYPE = "lmnr.span.type";
@@ -27,14 +25,13 @@ export const ASSOCIATION_PROPERTIES_OVERRIDES: Record<string, string> = {
 export const LaminarAttributes = {
   // == This is the minimum set of attributes for a proper LLM span ==
   //
-  // not SpanAttributes.LLM_USAGE_PROMPT_TOKENS
   INPUT_TOKEN_COUNT: "gen_ai.usage.input_tokens",
-  // not SpanAttributes.LLM_USAGE_COMPLETION_TOKENS
   OUTPUT_TOKEN_COUNT: "gen_ai.usage.output_tokens",
-  TOTAL_TOKEN_COUNT: SpanAttributes.LLM_USAGE_TOTAL_TOKENS,
-  PROVIDER: SpanAttributes.LLM_SYSTEM,
-  REQUEST_MODEL: SpanAttributes.LLM_REQUEST_MODEL,
-  RESPONSE_MODEL: SpanAttributes.LLM_RESPONSE_MODEL,
+  TOTAL_TOKEN_COUNT: "llm.usage.total_tokens",
+  // TODO: Update to gen_ai.provider.name
+  PROVIDER: "gen_ai.system",
+  REQUEST_MODEL: "gen_ai.request.model",
+  RESPONSE_MODEL: "gen_ai.response.model",
   //
   // == End of minimum set ==
   // == Additional attributes ==
