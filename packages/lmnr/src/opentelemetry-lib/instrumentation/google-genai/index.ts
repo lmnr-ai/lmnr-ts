@@ -1,4 +1,4 @@
-import { context, diag, SpanStatusCode, trace } from "@opentelemetry/api";
+import { context, diag, SpanStatusCode } from "@opentelemetry/api";
 import { isTracingSuppressed } from "@opentelemetry/core";
 import {
   InstrumentationBase,
@@ -178,23 +178,20 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
 
       setRequestAttributes(span, params, classPatchData.traceContent);
 
-      return context.with(
-        trace.setSpan(context.active(), span),
-        async () => {
-          try {
-            const response = await originalGenerateContent(params);
-            setResponseAttributes(span, response, classPatchData.traceContent);
-            span.end();
-            return response;
-          } catch (error) {
-            span.setAttribute("error.type", (error as Error).constructor?.name ?? "Error");
-            span.recordException(error as Error);
-            span.setStatus({ code: SpanStatusCode.ERROR });
-            span.end();
-            throw error;
-          }
-        },
-      );
+      return Laminar.withSpan(span, async () => {
+        try {
+          const response = await originalGenerateContent(params);
+          setResponseAttributes(span, response, classPatchData.traceContent);
+          span.end();
+          return response;
+        } catch (error) {
+          span.setAttribute("error.type", (error as Error).constructor?.name ?? "Error");
+          span.recordException(error as Error);
+          span.setStatus({ code: SpanStatusCode.ERROR });
+          span.end();
+          throw error;
+        }
+      });
     };
 
     models.generateContentStream = async function (params: any) {
@@ -209,21 +206,18 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
 
       setRequestAttributes(span, params, classPatchData.traceContent);
 
-      return context.with(
-        trace.setSpan(context.active(), span),
-        async () => {
-          try {
-            const asyncGen = await originalGenerateContentStream(params);
-            return wrapStreamingResponse(span, asyncGen, classPatchData.traceContent);
-          } catch (error) {
-            span.setAttribute("error.type", (error as Error).constructor?.name ?? "Error");
-            span.recordException(error as Error);
-            span.setStatus({ code: SpanStatusCode.ERROR });
-            span.end();
-            throw error;
-          }
-        },
-      );
+      return Laminar.withSpan(span, async () => {
+        try {
+          const asyncGen = await originalGenerateContentStream(params);
+          return wrapStreamingResponse(span, asyncGen, classPatchData.traceContent);
+        } catch (error) {
+          span.setAttribute("error.type", (error as Error).constructor?.name ?? "Error");
+          span.recordException(error as Error);
+          span.setStatus({ code: SpanStatusCode.ERROR });
+          span.end();
+          throw error;
+        }
+      });
     };
 
     models[WRAPPED_SYMBOL] = true;
