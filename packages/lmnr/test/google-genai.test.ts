@@ -149,7 +149,6 @@ void describe("google-genai instrumentation", () => {
         span.attributes["gen_ai.request.model"],
         "gemini-2.0-flash",
       );
-      assert.strictEqual(span.attributes["llm.request.type"], "completion");
 
       // Usage tokens
       assert.strictEqual(span.attributes["gen_ai.usage.input_tokens"], 8);

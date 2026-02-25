@@ -1,14 +1,12 @@
 import { SpanStatusCode } from "@opentelemetry/api";
-import { SpanAttributes } from "@traceloop/ai-semantic-conventions";
 
 import { LaminarSpan } from "../../tracing/span";
 
 // Re-export attribute keys we use frequently
-const LLM_REQUEST_MODEL = SpanAttributes.LLM_REQUEST_MODEL;
-const LLM_RESPONSE_MODEL = SpanAttributes.LLM_RESPONSE_MODEL;
-const LLM_SYSTEM = SpanAttributes.LLM_SYSTEM;
-const LLM_REQUEST_TYPE = SpanAttributes.LLM_REQUEST_TYPE;
-const LLM_USAGE_TOTAL_TOKENS = SpanAttributes.LLM_USAGE_TOTAL_TOKENS;
+const LLM_REQUEST_MODEL = "gen_ai.request.model";
+const LLM_RESPONSE_MODEL = "gen_ai.response.model";
+const LLM_SYSTEM = "gen_ai.system";
+const LLM_USAGE_TOTAL_TOKENS = "llm.usage.total_tokens";
 
 /**
  * Set an attribute on a span only if the value is non-null, non-undefined, and non-empty.
@@ -54,7 +52,7 @@ function contentToMessages(
     if (typeof systemInstruction === "string") {
       messages.push({ role: "system", content: systemInstruction });
     } else if (typeof systemInstruction === "object" && systemInstruction !== null) {
-      messages.push({ role: "system", ...toDict(systemInstruction) });
+      messages.push({ role: "system", ...(toDict(systemInstruction) as Record<string, any>) });
     }
   }
 
@@ -108,7 +106,6 @@ export function setRequestAttributes(
   traceContent: boolean,
 ): void {
   safeSetAttribute(span, LLM_SYSTEM, "gemini");
-  safeSetAttribute(span, LLM_REQUEST_TYPE, "completion");
 
   safeSetAttribute(span, LLM_REQUEST_MODEL, params?.model);
 
