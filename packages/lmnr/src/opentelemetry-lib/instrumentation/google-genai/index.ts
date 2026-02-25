@@ -182,16 +182,13 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
         try {
           const response = await originalGenerateContent(params);
           setResponseAttributes(span, response, classPatchData.traceContent);
-          span.end();
           return response;
         } catch (error) {
           span.setAttribute("error.type", (error as Error).constructor?.name ?? "Error");
-          span.recordException(error as Error);
           span.setStatus({ code: SpanStatusCode.ERROR });
-          span.end();
           throw error;
         }
-      });
+      }, true);
     };
 
     models.generateContentStream = async function (params: any) {
@@ -206,18 +203,16 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
 
       setRequestAttributes(span, params, classPatchData.traceContent);
 
-      return Laminar.withSpan(span, async () => {
-        try {
-          const asyncGen = await originalGenerateContentStream(params);
-          return wrapStreamingResponse(span, asyncGen, classPatchData.traceContent);
-        } catch (error) {
-          span.setAttribute("error.type", (error as Error).constructor?.name ?? "Error");
-          span.recordException(error as Error);
-          span.setStatus({ code: SpanStatusCode.ERROR });
-          span.end();
-          throw error;
-        }
-      });
+      try {
+        const asyncGen = await originalGenerateContentStream(params);
+        return wrapStreamingResponse(span, asyncGen, classPatchData.traceContent);
+      } catch (error) {
+        span.setAttribute("error.type", (error as Error).constructor?.name ?? "Error");
+        span.recordException(error as Error);
+        span.setStatus({ code: SpanStatusCode.ERROR });
+        span.end();
+        throw error;
+      }
     };
 
     models[WRAPPED_SYMBOL] = true;
