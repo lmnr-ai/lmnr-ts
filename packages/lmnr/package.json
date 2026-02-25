@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.8.11",
+  "version": "0.8.12",
   "description": "TypeScript SDK for Laminar AI",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -64,7 +64,6 @@
     "@opentelemetry/sdk-trace-base": "^1.30.1 || ^2.0.0",
     "@opentelemetry/sdk-trace-node": "^1.30.1 || ^2.0.0",
     "@opentelemetry/semantic-conventions": "^1.36.0",
-    "@traceloop/ai-semantic-conventions": "^0.12.0",
     "@traceloop/instrumentation-anthropic": "^0.12.0",
     "@traceloop/instrumentation-azure": "^0.12.0",
     "@traceloop/instrumentation-bedrock": "^0.12.0",

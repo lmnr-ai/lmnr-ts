@@ -106,127 +106,150 @@ export function observeBase<
   }
 
   // Set context properties for propagation to child spans
-  if (contextProperties && Object.keys(contextProperties).length > 0) {
-    const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
-    entityContext = entityContext.setValue(
-      ASSOCIATION_PROPERTIES_KEY,
-      { ...currentAssociationProperties, ...contextProperties },
+  try {
+    if (contextProperties && Object.keys(contextProperties).length > 0) {
+      const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
+      entityContext = entityContext.setValue(
+        ASSOCIATION_PROPERTIES_KEY,
+        { ...currentAssociationProperties, ...contextProperties },
+      );
+    }
+  } catch (e) {
+    logger.warn("Failed to set context properties: " +
+      (e instanceof Error ? e.message : String(e)),
     );
   }
 
-  return context.with(entityContext, () =>
-    getTracer().startActiveSpan(
-      name,
-      {
-        attributes: spanAttributes,
-      },
-      entityContext,
-      (span: Span) => {
-        if (shouldSendTraces() && !ignoreInput) {
-          try {
-            const spanInput = inputParameters ?? args;
-            if (input !== undefined) {
-              span.setAttribute(
-                SPAN_INPUT,
-                typeof input === 'string' ? input : serialize(input),
-              );
-            } else if (
-              spanInput.length === 1 &&
-              typeof spanInput[0] === "object" &&
-              !(spanInput[0] instanceof Map)
-            ) {
-              span.setAttribute(
-                SPAN_INPUT,
-                typeof spanInput[0] === 'string' ? spanInput[0] : serialize(spanInput[0]),
-              );
-            } else {
-              // pass an array of the arguments without names
-              // Need to convert it to map from argument name to value,
-              // if we figure out how to do it elegantly
-              span.setAttribute(
-                SPAN_INPUT,
-                serialize(spanInput.length > 0 ? spanInput : {}),
-              );
-            }
-          } catch (error) {
-            logger.warn("Failed to serialize input: " +
-              `${error instanceof Error ? error.message : String(error)}`);
-          }
-        }
-
-        let res: ReturnType<F>;
-        try {
-          res = fn.apply(thisArg as ThisParameterType<F>, args);
-        } catch (error) {
-          span.recordException(error as Error);
-          span.end();
-          throw error;
-        }
-
-        if (res instanceof Promise) {
-          return res.then((resolvedRes) => {
-            // Check if the resolved result is a stream
-            const streamInfo = getStream(resolvedRes);
-            if (streamInfo.type !== null) {
-              return handleStreamResult(
-                resolvedRes,
-                streamInfo,
-                span,
-                ignoreOutput,
-                serialize,
-              ) as ReturnType<F>;
-            }
-
-            // Not a stream, handle normally
+  try {
+    return context.with(entityContext, () =>
+      getTracer().startActiveSpan(
+        name,
+        {
+          attributes: spanAttributes,
+        },
+        entityContext,
+        (span: Span) => {
+          if (shouldSendTraces() && !ignoreInput) {
             try {
-              if (shouldSendTraces() && !ignoreOutput) {
+              const spanInput = inputParameters ?? args;
+              if (input !== undefined) {
                 span.setAttribute(
-                  SPAN_OUTPUT,
-                  serialize(resolvedRes),
+                  SPAN_INPUT,
+                  typeof input === 'string' ? input : serialize(input),
+                );
+              } else if (
+                spanInput.length === 1 &&
+                typeof spanInput[0] === "object" &&
+                !(spanInput[0] instanceof Map)
+              ) {
+                span.setAttribute(
+                  SPAN_INPUT,
+                  typeof spanInput[0] === 'string' ? spanInput[0] : serialize(spanInput[0]),
+                );
+              } else {
+                // pass an array of the arguments without names
+                // Need to convert it to map from argument name to value,
+                // if we figure out how to do it elegantly
+                span.setAttribute(
+                  SPAN_INPUT,
+                  serialize(spanInput.length > 0 ? spanInput : {}),
                 );
               }
             } catch (error) {
-              logger.warn("Failed to serialize async output: " +
+              logger.warn("Failed to serialize input: " +
                 `${error instanceof Error ? error.message : String(error)}`);
-            } finally {
-              span.end();
             }
-
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-            return resolvedRes;
-          })
-            .catch((error) => {
-              span.recordException(error as Error);
-              span.end();
-              throw error;
-            }) as ReturnType<F>;
-        }
-
-        // Check if the result is a stream
-        const streamInfo = getStream(res);
-        if (streamInfo.type !== null) {
-          return handleStreamResult(
-            res, streamInfo, span, ignoreOutput, serialize) as ReturnType<F>;
-        }
-
-        try {
-          if (shouldSendTraces() && !ignoreOutput) {
-            span.setAttribute(
-              SPAN_OUTPUT,
-              typeof res === 'string' ? res : serialize(res),
-            );
           }
-        } catch (error) {
-          logger.warn("Failed to serialize output: " +
-            `${error instanceof Error ? error.message : String(error)}`);
-        } finally {
-          span.end();
-        }
 
-        return res;
-      },
-    ),
-  );
+          let res: ReturnType<F>;
+          try {
+            res = fn.apply(thisArg as ThisParameterType<F>, args);
+          } catch (error) {
+            span.recordException(error as Error);
+            span.end();
+            throw error;
+          }
+
+          if (res instanceof Promise) {
+            return res.then((resolvedRes) => {
+              // Check if the resolved result is a stream
+              try {
+                const streamInfo = getStream(resolvedRes);
+                if (streamInfo.type !== null) {
+                  return handleStreamResult(
+                    resolvedRes,
+                    streamInfo,
+                    span,
+                    ignoreOutput,
+                    serialize,
+                  ) as ReturnType<F>;
+                }
+              } catch (error) {
+                logger.warn("Failed to get stream info: " +
+                  `${error instanceof Error ? error.message : String(error)}`);
+              }
+
+              // Not a stream, handle normally
+              try {
+                if (shouldSendTraces() && !ignoreOutput) {
+                  span.setAttribute(
+                    SPAN_OUTPUT,
+                    serialize(resolvedRes),
+                  );
+                }
+              } catch (error) {
+                logger.warn("Failed to serialize async output: " +
+                  `${error instanceof Error ? error.message : String(error)}`);
+              } finally {
+                span.end();
+              }
+
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+              return resolvedRes;
+            })
+              .catch((error) => {
+                span.recordException(error as Error);
+                span.end();
+                throw error;
+              }) as ReturnType<F>;
+          }
+
+          // Check if the result is a stream
+          try {
+            const streamInfo = getStream(res);
+            if (streamInfo.type !== null) {
+              return handleStreamResult(
+                res, streamInfo, span, ignoreOutput, serialize) as ReturnType<F>;
+            }
+          } catch (error) {
+            logger.warn("Failed to get stream info: " +
+              `${error instanceof Error ? error.message : String(error)}`);
+          }
+
+          try {
+            if (shouldSendTraces() && !ignoreOutput) {
+              span.setAttribute(
+                SPAN_OUTPUT,
+                typeof res === 'string' ? res : serialize(res),
+              );
+            }
+          } catch (error) {
+            logger.warn("Failed to serialize output: " +
+              `${error instanceof Error ? error.message : String(error)}`);
+          } finally {
+            span.end();
+          }
+
+          return res;
+        },
+      ),
+    );
+  } catch (e) {
+    logger.warn("Failed to start active span: " +
+      (e instanceof Error ? e.message : String(e)),
+    );
+    return fn.apply(thisArg as ThisParameterType<F>, args);
+  }
 }
 
 const normalizePayload = (payload: unknown, seen: WeakSet<any>): unknown => {
