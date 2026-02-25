@@ -140,18 +140,6 @@ export function setRequestAttributes(
     const toolDefs = extractToolDefinitions(config);
     if (toolDefs.length > 0) {
       safeSetAttribute(span, "gen_ai.tool.definitions", JSON.stringify(toolDefs));
-      for (let i = 0; i < toolDefs.length; i++) {
-        const td = toolDefs[i];
-        safeSetAttribute(span, `llm.request.functions.${i}.name`, td.name);
-        safeSetAttribute(span, `llm.request.functions.${i}.description`, td.description);
-        if (td.parameters) {
-          safeSetAttribute(
-            span,
-            `llm.request.functions.${i}.parameters`,
-            JSON.stringify(td.parameters),
-          );
-        }
-      }
     }
   }
 
@@ -189,7 +177,7 @@ export function setResponseAttributes(
 
     safeSetAttribute(span, LLM_USAGE_TOTAL_TOKENS, usage.totalTokenCount);
     safeSetAttribute(span, "gen_ai.usage.reasoning_tokens", usage.thoughtsTokenCount);
-    safeSetAttribute(span, "llm.usage.cache_read_input_tokens", usage.cachedContentTokenCount);
+    safeSetAttribute(span, "gen_ai.usage.cache_read_input_tokens", usage.cachedContentTokenCount);
   }
 
   // Response content (content-traced only)
@@ -223,21 +211,6 @@ export function setResponseAttributes(
       }
 
       const completionContent = textParts.join("");
-      safeSetAttribute(span, `gen_ai.completion.${i}.role`, role);
-      safeSetAttribute(span, `gen_ai.completion.${i}.content`, completionContent);
-
-      for (let j = 0; j < toolCalls.length; j++) {
-        const tc = toolCalls[j];
-        safeSetAttribute(span, `gen_ai.completion.${i}.tool_calls.${j}.name`, tc.name);
-        if (tc.id) {
-          safeSetAttribute(span, `gen_ai.completion.${i}.tool_calls.${j}.id`, tc.id);
-        }
-        safeSetAttribute(
-          span,
-          `gen_ai.completion.${i}.tool_calls.${j}.arguments`,
-          tc.arguments,
-        );
-      }
 
       outputMessages.push({
         role,
@@ -290,9 +263,9 @@ export function wrapStreamingResponse(
 ): AsyncGenerator<any> {
   const accumulatedParts: any[] = [];
   let promptTokenCount: number | undefined;
-  let candidatesTokenCount = 0;
-  let thoughtsTokenCount = 0;
-  let totalTokenCount = 0;
+  let candidatesTokenCount: number | undefined;
+  let thoughtsTokenCount: number | undefined;
+  let totalTokenCount: number | undefined;
   let cachedContentTokenCount: number | undefined;
   let role: string | undefined;
   let modelVersion: string | undefined;
