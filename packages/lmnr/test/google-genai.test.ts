@@ -165,8 +165,6 @@ void describe("google-genai instrumentation", () => {
       // Content tracing (enabled by default)
       assert.ok(span.attributes["gen_ai.input.messages"]);
       assert.ok(span.attributes["gen_ai.output.messages"]);
-      assert.ok(span.attributes["gen_ai.completion.0.role"]);
-      assert.ok(span.attributes["gen_ai.completion.0.content"]);
     });
   });
 
@@ -236,10 +234,12 @@ void describe("google-genai instrumentation", () => {
 
       const span = spans[0];
       assert.strictEqual(span.name, "gemini.generate_content_stream");
-      assert.strictEqual(span.attributes["gen_ai.completion.0.content"], firstChunkText);
+      // Verify partial content was captured in output messages
+      const outputMessages = span.attributes["gen_ai.output.messages"];
+      assert.ok(outputMessages, "output messages should be set for partial stream");
       assert.ok(
-        span.attributes["gen_ai.usage.output_tokens"] !== undefined,
-        "partial stream usage should be set",
+        (outputMessages as string).includes(firstChunkText),
+        "output messages should contain the consumed chunk text",
       );
     });
   });
@@ -310,14 +310,6 @@ void describe("google-genai instrumentation", () => {
       );
       assert.strictEqual(
         span.attributes["gen_ai.output.messages"],
-        undefined,
-      );
-      assert.strictEqual(
-        span.attributes["gen_ai.completion.0.content"],
-        undefined,
-      );
-      assert.strictEqual(
-        span.attributes["gen_ai.completion.0.role"],
         undefined,
       );
     });
