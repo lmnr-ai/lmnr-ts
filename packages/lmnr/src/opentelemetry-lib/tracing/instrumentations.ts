@@ -22,6 +22,7 @@ import { PuppeteerInstrumentation } from "../../browser/puppeteer";
 import { StagehandV2Instrumentation } from "../../browser/stagehand/v2";
 import { StagehandInstrumentation as StagehandV3Instrumentation } from "../../browser/stagehand/v3";
 import { ClaudeAgentSDKInstrumentation } from "../instrumentation/claude-agent-sdk";
+import { GoogleGenAiInstrumentation } from "../instrumentation/google-genai";
 import { KernelInstrumentation } from "../instrumentation/kernel";
 import { InitializeOptions } from "../interfaces";
 
@@ -200,6 +201,10 @@ const initInstrumentations = (
     instrumentations.push(new PuppeteerInstrumentation(client, sessionRecordingOptions));
   }
 
+  instrumentations.push(new GoogleGenAiInstrumentation({
+    traceContent: !suppressContentTracing,
+  }));
+
   instrumentations.push(new KernelInstrumentation());
 
   instrumentations.push(new ClaudeAgentSDKInstrumentation());
@@ -364,6 +369,14 @@ const manuallyInitInstrumentations = (
     );
     instrumentations.push(stagehandInstrumentation);
     stagehandInstrumentation.manuallyInstrument(instrumentModules.stagehand);
+  }
+
+  if (instrumentModules?.google_genai) {
+    const googleGenAiInstrumentation = new GoogleGenAiInstrumentation({
+      traceContent: !suppressContentTracing,
+    });
+    instrumentations.push(googleGenAiInstrumentation);
+    googleGenAiInstrumentation.manuallyInstrument(instrumentModules.google_genai);
   }
 
   if (instrumentModules?.kernel) {

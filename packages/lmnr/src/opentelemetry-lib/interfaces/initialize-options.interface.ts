@@ -289,6 +289,22 @@ export interface InitializeOptions {
     /**
      * @example
      * ```javascript
+     * import { GoogleGenAI } from "@google/genai";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { google_genai: GoogleGenAI },
+     * });
+     * ```
+     *
+     * // Also supported:
+     * // import * as genai from "@google/genai";
+     * // instrumentModules: { google_genai: genai }
+     */
+    google_genai?: any,
+    /**
+     * @example
+     * ```javascript
      * import kernel from "@onkernel/sdk";
      * import Laminar from "@lmnr-ai/lmnr";
      *

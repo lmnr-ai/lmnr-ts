@@ -1,0 +1,18 @@
+[
+  {
+    "scope": "https://generativelanguage.googleapis.com:443",
+    "method": "POST",
+    "path": "/v1beta/models/gemini-2.0-flash:generateContent",
+    "status": 400,
+    "response": {
+      "error": {
+        "code": 400,
+        "message": "Invalid request: contents is required",
+        "status": "INVALID_ARGUMENT"
+      }
+    },
+    "headers": {
+      "content-type": "application/json"
+    }
+  }
+]
