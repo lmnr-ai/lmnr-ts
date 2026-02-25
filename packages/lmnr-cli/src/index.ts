@@ -10,15 +10,15 @@ async function main() {
 
   program
     .name('lmnr-cli')
-    .description('CLI for Laminar AI rollout debugging')
+    .description('CLI for Laminar agent debugger')
     .version(version, '-v, --version', 'display version number');
 
   program
     .command('dev')
-    .description('Start a rollout debugging session')
+    .description('Start a debugging session')
     .argument(
       '[file]',
-      'Path to file containing the agent function(s). Either `file` or `-m` must be provided.',
+      'Path to file containing the entrypoint function(s). Either `file` or `-m` must be provided.',
     )
     .option(
       '-m, --python-module <module>',
@@ -26,7 +26,7 @@ async function main() {
     )
     .option(
       '--function <name>',
-      'Specific function to serve (if multiple rollout functions found)',
+      'Specific function to serve (if multiple entrypoint functions found)',
     )
     .option(
       '--project-api-key <key>',
@@ -59,7 +59,7 @@ async function main() {
       '--dynamic-imports-to-skip <modules...>',
       '[ADVANCED] List of module names to skip when encountered as dynamic imports. ' +
       'These dynamic imports will resolve to an empty module to prevent build failures. ' +
-      'This is meant to skip the imports that are not used in the rollout itself.',
+      'This is meant to skip the imports that are not used in the entrypoint function itself.',
     )
     .option(
       '--command <command>',

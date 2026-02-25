@@ -6,8 +6,7 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "lint:fix": "next lint --fix"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.1",
@@ -15,25 +14,26 @@
     "@opentelemetry/api-logs": "^0.200.0",
     "@vercel/otel": "^1.13.0",
     "ai": "^6.0.3",
-    "next": "16.1.6",
-    "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "next": "^16.1.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.1",
+    "@eslint/js": "^10.0.1",
+    "@next/eslint-plugin-next": "^16.1.6",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/node": "^24.0.8",
-    "@types/react": "19.2.10",
-    "@types/react-dom": "19.2.3",
-    "eslint": "^9.39.1",
-    "eslint-config-next": "16.1.6",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^10.0.2",
     "tailwindcss": "^4.1.18",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.56.1"
   },
   "pnpm": {
     "overrides": {
-      "@types/react": "19.2.10",
-      "@types/react-dom": "19.2.3"
+      "@types/react": "^19.2.10",
+      "@types/react-dom": "^19.2.3"
     }
   }
 }

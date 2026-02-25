@@ -348,7 +348,7 @@ const discoverPythonMetadata = async (
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`Failed to discover Python metadata: ${errorMessage}`);
+    logger.error(`Error while loading Python file/module: ${errorMessage}`);
     if (errorMessage.toLowerCase().includes('command not found') ||
       errorMessage.includes('spawn lmnr ENOENT')) {
       logger.info(
@@ -357,16 +357,8 @@ const discoverPythonMetadata = async (
         "environment, make sure to activate it. For `uv` users, rerun the command with `uv run`, " +
         `e.g. "uv run npx lmnr-cli dev ${filePathOrModule}"`,
       );
-      process.exit(1);
     }
-    // Fallback
-    const defaultName = options.pythonModule
-      ? options.pythonModule.split('.').pop() || 'main'
-      : path.basename(filePathOrModule, '.py');
-    return {
-      functionName: options.function || defaultName,
-      params: [],
-    };
+    throw error;
   }
 };
 

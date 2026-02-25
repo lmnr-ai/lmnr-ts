@@ -1,10 +1,10 @@
 # lmnr-cli
 
-Language-agnostic CLI for Laminar AI rollout debugging.
+Language-agnostic CLI for Laminar AI agent debugging.
 
 ## Overview
 
-The Laminar CLI is a pure orchestrator that coordinates rollout debugging sessions between your code and the Laminar backend. It is designed to be completely language-agnostic, delegating language-specific execution to worker processes.
+The Laminar CLI is a pure orchestrator that coordinates debugging sessions between your code and the Laminar backend. It is designed to be completely language-agnostic, delegating language-specific execution to worker processes.
 
 ## Installation
 
@@ -28,7 +28,7 @@ lmnr-cli dev -m <python-module> [options]
 ### Options
 
 - `-m, --python-module <module>` - Python module path (e.g., `src.myfile`)
-- `--function <name>` - Specific function to serve (if multiple rollout functions found)
+- `--function <name>` - Specific function to serve (if multiple entrypoint functions found)
 - `--project-api-key <key>` - Project API key (or set `LMNR_PROJECT_API_KEY` env variable)
 - `--base-url <url>` - Base URL for the Laminar API (default: https://api.lmnr.ai)
 - `--port <port>` - Port for the Laminar API (default: 443)
@@ -144,7 +144,7 @@ Any stdout without the `__LMNR_WORKER__:` prefix is considered user output (e.g.
 
 The CLI sets these environment variables for the worker:
 
-- `LMNR_ROLLOUT_SESSION_ID`: Session ID for this rollout run
+- `LMNR_ROLLOUT_SESSION_ID`: Session ID for this debugger run
 - `LMNR_ROLLOUT_STATE_SERVER_ADDRESS`: Cache server URL (http://localhost:35667)
 
 ### Cache Server API
@@ -293,7 +293,7 @@ lmnr discover --module <module> [--function <name>]
 
 **Arguments:**
 
-- `--file <filepath>`: Path to the Python file containing rollout functions (script mode)
+- `--file <filepath>`: Path to the Python file containing entrypoint functions (script mode)
 - `--module <module>`: Python module path like `src.myfile` (module mode)
 - `--function <name>`: (Optional) Specific function name to discover. If omitted, discover all.
 
@@ -366,7 +366,7 @@ npx lmnr-cli dev -m agents.customer_support --function run_agent
 
 ### Python Worker Requirements
 
-The Python `lmnr` package must implement a worker that executes rollout functions:
+The Python `lmnr` package must implement a worker that executes entrypoint functions:
 
 ```bash
 python -m lmnr.cli.worker

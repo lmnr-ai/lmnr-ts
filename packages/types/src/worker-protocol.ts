@@ -35,14 +35,6 @@ export interface WorkerLogMessage {
 }
 
 /**
- * Result message when function completes successfully
- */
-export interface WorkerResultMessage {
-  type: 'result';
-  data: any;
-}
-
-/**
  * Error message when function fails
  */
 export interface WorkerErrorMessage {
@@ -56,7 +48,6 @@ export interface WorkerErrorMessage {
  */
 export type WorkerMessage =
   | WorkerLogMessage
-  | WorkerResultMessage
   | WorkerErrorMessage;
 
 /**
