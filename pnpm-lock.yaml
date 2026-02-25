@@ -268,9 +268,6 @@ importers:
       chromadb:
         specifier: ^3.0.10
         version: 3.1.0
-      hono:
-        specifier: ^4.12.2
-        version: 4.12.2
       llamaindex:
         specifier: ^0.12.1
         version: 0.12.1(@modelcontextprotocol/sdk@1.26.0(@cfworker/json-schema@4.1.1)(zod@4.1.12))(hono@4.12.2)(p-retry@6.2.1)(tree-sitter@0.22.4)(web-tree-sitter@0.24.7)(zod@4.1.12)
@@ -6325,7 +6322,8 @@ snapshots:
 
   help-me@5.0.0: {}
 
-  hono@4.12.2: {}
+  hono@4.12.2:
+    optional: true
 
   hookable@6.0.1: {}
 
