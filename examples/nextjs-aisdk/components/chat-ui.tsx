@@ -57,7 +57,6 @@ export default function ChatUI() {
       // Add assistant's response
       setMessages(prev => [...prev, { role: 'assistant', content: data.message }]);
     } catch (error) {
-      console.error("Error:", error);
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: "I'm sorry, I'm having trouble responding right now. Please try again in a moment."
@@ -69,7 +68,7 @@ export default function ChatUI() {
 
   return (
     <div className="flex flex-col w-full max-w-2xl mx-auto h-[70vh]">
-      <div className="bg-white dark:bg-gray-800 rounded-t-lg p-4 border border-gray-200 dark:border-gray-700 overflow-y-auto flex-grow">
+      <div className="bg-white dark:bg-gray-800 rounded-t-lg p-4 border border-gray-200 dark:border-gray-700 overflow-y-auto grow">
         <div className="space-y-4">
           {messages.map((message, i) => (
             <div key={i} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -102,7 +101,7 @@ export default function ChatUI() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Type your message here..."
-          className="flex-grow mt-2 p-4 focus:outline-none bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 resize-none"
+          className="grow mt-2 p-4 focus:outline-none bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 resize-none"
           disabled={isLoading}
           rows={3}
           onKeyDown={(e) => {
