@@ -181,8 +181,8 @@ importers:
         specifier: ^13.0.6
         version: 13.0.6
       lmnr-cli:
-        specifier: ^0.1.5
-        version: 0.1.5(@lmnr-ai/lmnr@0.8.12)
+        specifier: ^0.1.6
+        version: 0.1.6(@lmnr-ai/lmnr@0.8.12)
       pino:
         specifier: 9.12.0
         version: 9.12.0
@@ -225,10 +225,10 @@ importers:
         version: 1.42.0(@modelcontextprotocol/sdk@1.26.0(@cfworker/json-schema@4.1.1)(zod@4.1.12))(bufferutil@4.0.9)
       '@langchain/classic':
         specifier: ^1.0.20
-        version: 1.0.20(@langchain/core@1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12)))(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12))(ws@8.18.3(bufferutil@4.0.9))
+        version: 1.0.20(@langchain/core@1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)))(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12))(ws@8.19.0(bufferutil@4.0.9))
       '@langchain/core':
         specifier: ^1.1.28
-        version: 1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12))
+        version: 1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12))
       '@lmnr-ai/client':
         specifier: workspace:*
         version: link:../client
@@ -276,13 +276,13 @@ importers:
         version: 14.0.10
       openai:
         specifier: ^6.9.1
-        version: 6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12)
+        version: 6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)
       puppeteer:
-        specifier: ^24.28.0
-        version: 24.28.0(bufferutil@4.0.9)(typescript@5.9.3)
+        specifier: ^24.37.5
+        version: 24.37.5(bufferutil@4.0.9)(typescript@5.9.3)
       puppeteer-core:
-        specifier: ^24.28.0
-        version: 24.28.0(bufferutil@4.0.9)
+        specifier: ^24.37.5
+        version: 24.37.5(bufferutil@4.0.9)
       together-ai:
         specifier: ^0.30.0
         version: 0.30.0(bufferutil@4.0.9)
@@ -1312,8 +1312,8 @@ packages:
   '@protobufjs/utf8@1.1.0':
     resolution: {integrity: sha512-Vvn3zZrhQZkkBE8LSuW3em98c0FwgO4nxzv6OdSxPKJIEKY2bGbHn+mhGIPerzI4twdxaP8/0+06HBpwf345Lw==}
 
-  '@puppeteer/browsers@2.10.13':
-    resolution: {integrity: sha512-a9Ruw3j3qlnB5a/zHRTkruppynxqaeE4H9WNj5eYGRWqw0ZauZ23f4W2ARf3hghF5doozyD+CRtt7XSYuYRI/Q==}
+  '@puppeteer/browsers@2.13.0':
+    resolution: {integrity: sha512-46BZJYJjc/WwmKjsvDFykHtXrtomsCIrwYQPOP7VfMJoZY2bsDF9oROBABR3paDjDcmkUye1Pb1BqdcdiipaWA==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -1932,8 +1932,8 @@ packages:
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
 
-  basic-ftp@5.0.5:
-    resolution: {integrity: sha512-4Bcg1P8xhUuqcii/S0Z9wiHIrQVPMermM1any+MX5GeGD7faD3/msQUDGLol9wOcz4/jbg/WJnGqoJF6LiBdtg==}
+  basic-ftp@5.2.0:
+    resolution: {integrity: sha512-VoMINM2rqJwJgfdHq6RiUudKt2BV+FY5ZFezP/ypmwayk68+NzzAQy4XXLlqsGD4MCzq3DrmNFD/uUmBJuGoXw==}
     engines: {node: '>=10.0.0'}
 
   bignumber.js@9.3.1:
@@ -2042,8 +2042,8 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
-  chromium-bidi@10.5.1:
-    resolution: {integrity: sha512-rlj6OyhKhVTnk4aENcUme3Jl9h+cq4oXu4AzBcvr8RMmT6BR4a3zSNT9dbIfXr9/BS6ibzRyDhowuw4n2GgzsQ==}
+  chromium-bidi@14.0.0:
+    resolution: {integrity: sha512-9gYlLtS6tStdRWzrtXaTMnqcM4dudNegMXJxkR0I/CXObHalYeYcAMPrL19eroNZHtJ8DQmu1E+ZNOYu/IXMXw==}
     peerDependencies:
       devtools-protocol: '*'
 
@@ -2158,8 +2158,8 @@ packages:
     resolution: {integrity: sha512-g7nH6P6dyDioJogAAGprGpCtVImJhpPk/roCzdb3fIh61/s/nPsfR6onyMwkCAR/OlC3yBC0lESvUoQEAssIrw==}
     engines: {node: '>= 0.8'}
 
-  devtools-protocol@0.0.1521046:
-    resolution: {integrity: sha512-vhE6eymDQSKWUXwwA37NtTTVEzjtGVfDr3pRbsWEQ5onH/Snp2c+2xZHWJJawG/0hCCJLRGt4xVtEVUVILol4w==}
+  devtools-protocol@0.0.1566079:
+    resolution: {integrity: sha512-MJfAEA1UfVhSs7fbSQOG4czavUp1ajfg6prlAN0+cmfa2zNjaIbvq8VneP7do1WAQQIvgNJWSMeP6UyI90gIlQ==}
 
   dom-serializer@2.0.0:
     resolution: {integrity: sha512-wIkAryiqt/nV5EQKqQpo3SToSOV9J0DnbJqwK7Wv/Trc92zIAYZ4FlMu+JPFW1DfGFt81ZTCGgDEabffXeLyJg==}
@@ -2756,8 +2756,8 @@ packages:
     resolution: {integrity: sha512-/tXXITk/iVGBycOFaDhev6dgTBIr6Ycu4FoPIt6A5JcEAiB6ujONjiV36flVXUR8JdqwMtS767XMjV+36nV4yQ==}
     engines: {node: '>=18.0.0'}
 
-  lmnr-cli@0.1.5:
-    resolution: {integrity: sha512-HVQarUWmc6DHKSwIsyU8LGWTJyOwoAPBDiH0RRTICE4+oml5Q96Ch4yXTuqkksa6Ll4s+/0RS2AlxtjNq7egGA==}
+  lmnr-cli@0.1.6:
+    resolution: {integrity: sha512-q0po7DSZe+gIk7Is2XCH/Q5rv7DEqKQXU4Wupbbgm1sulTN2Zxm86QPVrnG4aFzoguPyYbhKurs+d9k0h08xig==}
     hasBin: true
     peerDependencies:
       '@lmnr-ai/lmnr': '*'
@@ -3120,12 +3120,12 @@ packages:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
 
-  puppeteer-core@24.28.0:
-    resolution: {integrity: sha512-QpAqaYgeZHF5/xAZ4jAOzsU+l0Ed4EJoWkRdfw8rNqmSN7itcdYeCJaSPQ0s5Pyn/eGNC4xNevxbgY+5bzNllw==}
+  puppeteer-core@24.37.5:
+    resolution: {integrity: sha512-ybL7iE78YPN4T6J+sPLO7r0lSByp/0NN6PvfBEql219cOnttoTFzCWKiBOjstXSqi/OKpwae623DWAsL7cn2MQ==}
     engines: {node: '>=18'}
 
-  puppeteer@24.28.0:
-    resolution: {integrity: sha512-KLRGFNCGmXJpocEBbEIoHJB0vNRZLQNBjl5ExXEv0z7MIU+qqVEQcfWTyat+qxPDk/wZvSf+b30cQqAfWxX0zg==}
+  puppeteer@24.37.5:
+    resolution: {integrity: sha512-3PAOIQLceyEmn1Fi76GkGO2EVxztv5OtdlB1m8hMUZL3f8KDHnlvXbvCXv+Ls7KzF1R0KdKBqLuT/Hhrok12hQ==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -3251,6 +3251,11 @@ packages:
 
   semver@7.7.3:
     resolution: {integrity: sha512-SdsKMrI9TdgjdweUSR9MweHA4EJ8YxHn8DFaDisvhVlUOe4BF1tLD7GAj0lIqWVl+dPb/rExr0Btby5loQm20Q==}
+    engines: {node: '>=10'}
+    hasBin: true
+
+  semver@7.7.4:
+    resolution: {integrity: sha512-vFKC2IEtQnVhpT78h1Yp8wzwrf8CM+MzKMHGJZfBtzhZNycRFnXsHk6E5TxIkkMsgNS7mdX3AGB7x2QM2di4lA==}
     engines: {node: '>=10'}
     hasBin: true
 
@@ -3543,8 +3548,8 @@ packages:
   web-tree-sitter@0.24.7:
     resolution: {integrity: sha512-CdC/TqVFbXqR+C51v38hv6wOPatKEUGxa39scAeFSm98wIhZxAYonhRQPSMmfZ2w7JDI0zQDdzdmgtNk06/krQ==}
 
-  webdriver-bidi-protocol@0.3.8:
-    resolution: {integrity: sha512-21Yi2GhGntMc671vNBCjiAeEVknXjVRoyu+k+9xOMShu+ZQfpGQwnBqbNz/Sv4GXZ6JmutlPAi2nIJcrymAWuQ==}
+  webdriver-bidi-protocol@0.4.1:
+    resolution: {integrity: sha512-ARrjNjtWRRs2w4Tk7nqrf2gBI0QXWuOmMCx2hU+1jUt6d00MjMxURrhxhGbrsoiZKJrhTSTzbIrc554iKI10qw==}
 
   webidl-conversions@3.0.1:
     resolution: {integrity: sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ==}
@@ -3577,6 +3582,18 @@ packages:
 
   ws@8.18.3:
     resolution: {integrity: sha512-PEIGCY5tSlUt50cqyMXfCzX+oOPqN0vuGqWzbcJ2xvnkzkq46oOpz7dQaTDBdfICb4N14+GARUDw2XV2N4tvzg==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
+  ws@8.19.0:
+    resolution: {integrity: sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -4346,11 +4363,11 @@ snapshots:
 
   '@js-sdsl/ordered-map@4.4.2': {}
 
-  '@langchain/classic@1.0.20(@langchain/core@1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12)))(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12))(ws@8.18.3(bufferutil@4.0.9))':
+  '@langchain/classic@1.0.20(@langchain/core@1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)))(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12))(ws@8.19.0(bufferutil@4.0.9))':
     dependencies:
-      '@langchain/core': 1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12))
-      '@langchain/openai': 1.2.10(@langchain/core@1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12)))(ws@8.18.3(bufferutil@4.0.9))
-      '@langchain/textsplitters': 1.0.1(@langchain/core@1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12)))
+      '@langchain/core': 1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12))
+      '@langchain/openai': 1.2.10(@langchain/core@1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)))(ws@8.19.0(bufferutil@4.0.9))
+      '@langchain/textsplitters': 1.0.1(@langchain/core@1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)))
       handlebars: 4.7.8
       js-yaml: 4.1.1
       jsonpointer: 5.0.1
@@ -4359,7 +4376,7 @@ snapshots:
       yaml: 2.8.2
       zod: 4.1.12
     optionalDependencies:
-      langsmith: 0.5.6(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12))
+      langsmith: 0.5.6(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12))
     transitivePeerDependencies:
       - '@opentelemetry/api'
       - '@opentelemetry/exporter-trace-otlp-proto'
@@ -4367,14 +4384,14 @@ snapshots:
       - openai
       - ws
 
-  '@langchain/core@1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12))':
+  '@langchain/core@1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12))':
     dependencies:
       '@cfworker/json-schema': 4.1.1
       ansi-styles: 5.2.0
       camelcase: 6.3.0
       decamelize: 1.2.0
       js-tiktoken: 1.0.21
-      langsmith: 0.5.6(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12))
+      langsmith: 0.5.6(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12))
       mustache: 4.2.0
       p-queue: 6.6.2
       uuid: 10.0.0
@@ -4385,18 +4402,18 @@ snapshots:
       - '@opentelemetry/sdk-trace-base'
       - openai
 
-  '@langchain/openai@1.2.10(@langchain/core@1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12)))(ws@8.18.3(bufferutil@4.0.9))':
+  '@langchain/openai@1.2.10(@langchain/core@1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)))(ws@8.19.0(bufferutil@4.0.9))':
     dependencies:
-      '@langchain/core': 1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12))
+      '@langchain/core': 1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12))
       js-tiktoken: 1.0.21
-      openai: 6.25.0(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12)
+      openai: 6.25.0(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)
       zod: 4.1.12
     transitivePeerDependencies:
       - ws
 
-  '@langchain/textsplitters@1.0.1(@langchain/core@1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12)))':
+  '@langchain/textsplitters@1.0.1(@langchain/core@1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)))':
     dependencies:
-      '@langchain/core': 1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12))
+      '@langchain/core': 1.1.28(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12))
       js-tiktoken: 1.0.21
 
   '@llamaindex/core@0.6.22':
@@ -4513,7 +4530,7 @@ snapshots:
       eventsource-parser: 3.0.6
       export-to-csv: 1.4.0
       glob: 13.0.6
-      lmnr-cli: 0.1.5(@lmnr-ai/lmnr@0.8.12)
+      lmnr-cli: 0.1.6(@lmnr-ai/lmnr@0.8.12)
       pino: 9.12.0
       pino-pretty: 13.1.2
       uuid: 11.1.0
@@ -4953,13 +4970,13 @@ snapshots:
 
   '@protobufjs/utf8@1.1.0': {}
 
-  '@puppeteer/browsers@2.10.13':
+  '@puppeteer/browsers@2.13.0':
     dependencies:
       debug: 4.4.3
       extract-zip: 2.0.1
       progress: 2.0.3
       proxy-agent: 6.5.0
-      semver: 7.7.3
+      semver: 7.7.4
       tar-fs: 3.1.1
       yargs: 17.7.2
     transitivePeerDependencies:
@@ -5758,7 +5775,7 @@ snapshots:
 
   base64-js@1.5.1: {}
 
-  basic-ftp@5.0.5: {}
+  basic-ftp@5.2.0: {}
 
   bignumber.js@9.3.1: {}
 
@@ -5855,9 +5872,9 @@ snapshots:
       chromadb-js-bindings-linux-x64-gnu: 1.0.9
       chromadb-js-bindings-win32-x64-msvc: 1.0.9
 
-  chromium-bidi@10.5.1(devtools-protocol@0.0.1521046):
+  chromium-bidi@14.0.0(devtools-protocol@0.0.1566079):
     dependencies:
-      devtools-protocol: 0.0.1521046
+      devtools-protocol: 0.0.1566079
       mitt: 3.0.1
       zod: 3.25.76
 
@@ -5951,7 +5968,7 @@ snapshots:
   depd@2.0.0:
     optional: true
 
-  devtools-protocol@0.0.1521046: {}
+  devtools-protocol@0.0.1566079: {}
 
   dom-serializer@2.0.0:
     dependencies:
@@ -6375,7 +6392,7 @@ snapshots:
 
   get-uri@6.0.5:
     dependencies:
-      basic-ftp: 5.0.5
+      basic-ftp: 5.2.0
       data-uri-to-buffer: 6.0.2
       debug: 4.4.3
     transitivePeerDependencies:
@@ -6630,7 +6647,7 @@ snapshots:
     dependencies:
       json-buffer: 3.0.1
 
-  langsmith@0.5.6(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12)):
+  langsmith@0.5.6(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.208.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)):
     dependencies:
       '@types/uuid': 10.0.0
       chalk: 5.6.2
@@ -6642,7 +6659,7 @@ snapshots:
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/exporter-trace-otlp-proto': 0.208.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-trace-base': 2.2.0(@opentelemetry/api@1.9.0)
-      openai: 6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12)
+      openai: 6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)
 
   leac@0.6.0: {}
 
@@ -6675,7 +6692,7 @@ snapshots:
       - web-tree-sitter
       - zod
 
-  lmnr-cli@0.1.5(@lmnr-ai/lmnr@0.8.12):
+  lmnr-cli@0.1.6(@lmnr-ai/lmnr@0.8.12):
     dependencies:
       chokidar: 5.0.0
       commander: 14.0.2
@@ -6800,14 +6817,14 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  openai@6.25.0(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12):
+  openai@6.25.0(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12):
     optionalDependencies:
-      ws: 8.18.3(bufferutil@4.0.9)
+      ws: 8.19.0(bufferutil@4.0.9)
       zod: 4.1.12
 
-  openai@6.9.1(ws@8.18.3(bufferutil@4.0.9))(zod@4.1.12):
+  openai@6.9.1(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12):
     optionalDependencies:
-      ws: 8.18.3(bufferutil@4.0.9)
+      ws: 8.19.0(bufferutil@4.0.9)
       zod: 4.1.12
 
   openapi-types@12.1.3: {}
@@ -7044,15 +7061,15 @@ snapshots:
 
   punycode@2.3.1: {}
 
-  puppeteer-core@24.28.0(bufferutil@4.0.9):
+  puppeteer-core@24.37.5(bufferutil@4.0.9):
     dependencies:
-      '@puppeteer/browsers': 2.10.13
-      chromium-bidi: 10.5.1(devtools-protocol@0.0.1521046)
+      '@puppeteer/browsers': 2.13.0
+      chromium-bidi: 14.0.0(devtools-protocol@0.0.1566079)
       debug: 4.4.3
-      devtools-protocol: 0.0.1521046
+      devtools-protocol: 0.0.1566079
       typed-query-selector: 2.12.0
-      webdriver-bidi-protocol: 0.3.8
-      ws: 8.18.3(bufferutil@4.0.9)
+      webdriver-bidi-protocol: 0.4.1
+      ws: 8.19.0(bufferutil@4.0.9)
     transitivePeerDependencies:
       - bare-abort-controller
       - bare-buffer
@@ -7061,13 +7078,13 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  puppeteer@24.28.0(bufferutil@4.0.9)(typescript@5.9.3):
+  puppeteer@24.37.5(bufferutil@4.0.9)(typescript@5.9.3):
     dependencies:
-      '@puppeteer/browsers': 2.10.13
-      chromium-bidi: 10.5.1(devtools-protocol@0.0.1521046)
+      '@puppeteer/browsers': 2.13.0
+      chromium-bidi: 14.0.0(devtools-protocol@0.0.1566079)
       cosmiconfig: 9.0.0(typescript@5.9.3)
-      devtools-protocol: 0.0.1521046
-      puppeteer-core: 24.28.0(bufferutil@4.0.9)
+      devtools-protocol: 0.0.1566079
+      puppeteer-core: 24.37.5(bufferutil@4.0.9)
       typed-query-selector: 2.12.0
     transitivePeerDependencies:
       - bare-abort-controller
@@ -7212,6 +7229,8 @@ snapshots:
       parseley: 0.12.1
 
   semver@7.7.3: {}
+
+  semver@7.7.4: {}
 
   send@1.2.1:
     dependencies:
@@ -7540,7 +7559,7 @@ snapshots:
 
   web-tree-sitter@0.24.7: {}
 
-  webdriver-bidi-protocol@0.3.8: {}
+  webdriver-bidi-protocol@0.4.1: {}
 
   webidl-conversions@3.0.1: {}
 
@@ -7572,6 +7591,10 @@ snapshots:
   wrappy@1.0.2: {}
 
   ws@8.18.3(bufferutil@4.0.9):
+    optionalDependencies:
+      bufferutil: 4.0.9
+
+  ws@8.19.0(bufferutil@4.0.9):
     optionalDependencies:
       bufferutil: 4.0.9
 
