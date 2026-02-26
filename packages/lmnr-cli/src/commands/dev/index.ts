@@ -98,11 +98,11 @@ const handleRunEvent = async (
   const parsedArgs = Array.isArray(rawArgs)
     ? rawArgs.map(tryParseArg)
     : (Object.fromEntries(
-        Object.entries(rawArgs).map(([key, value]) => [
-          key,
-          tryParseArg(value),
-        ]),
-      ) as Record<string, any>);
+      Object.entries(rawArgs).map(([key, value]) => [
+        key,
+        tryParseArg(value),
+      ]),
+    ) as Record<string, any>);
 
   cache.clear();
   setMetadata({
@@ -240,9 +240,9 @@ const handleRunEvent = async (
     const workerCommand = options.command
       ? { command: options.command, args: options.commandArgs ?? [] }
       : getWorkerCommand(
-          options.pythonModule ? undefined : filePathOrModule,
-          options,
-        );
+        options.pythonModule ? undefined : filePathOrModule,
+        options,
+      );
 
     try {
       await client.rolloutSessions.setStatus({
