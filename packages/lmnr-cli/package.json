@@ -1,6 +1,6 @@
 {
   "name": "lmnr-cli",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "CLI for Laminar AI rollout debugging",
   "main": "dist/index.cjs",
   "bin": {

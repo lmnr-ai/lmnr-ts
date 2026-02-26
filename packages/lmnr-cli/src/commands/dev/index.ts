@@ -1,24 +1,24 @@
-import { LaminarClient } from '@lmnr-ai/client';
+import { LaminarClient } from "@lmnr-ai/client";
 import {
   type CachedSpan,
   type RolloutHandshakeEvent,
   type RolloutParam,
   type RolloutRunEvent,
   type WorkerConfig,
-} from '@lmnr-ai/types';
-import chokidar from 'chokidar';
-import * as path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+} from "@lmnr-ai/types";
+import chokidar from "chokidar";
+import * as path from "path";
+import { v4 as uuidv4 } from "uuid";
 
-import { startCacheServer } from '../../cache-server';
-import { createSSEClient, SSEClient } from '../../sse-client';
-import { SubprocessManager } from '../../subprocess/executor';
-import { initializeLogger } from '../../utils';
-import { getWorkerCommand } from '../../worker-registry';
+import { startCacheServer } from "../../cache-server";
+import { createSSEClient, SSEClient } from "../../sse-client";
+import { SubprocessManager } from "../../subprocess/executor";
+import { initializeLogger } from "../../utils";
+import { getWorkerCommand } from "../../worker-registry";
 import {
   discoverFunctionMetadata,
   EXTENSIONS_TO_DISCOVER_METADATA,
-} from './metadata';
+} from "./metadata";
 
 const logger = initializeLogger();
 
@@ -37,22 +37,25 @@ export interface DevOptions {
 }
 
 function newUUID(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return crypto.randomUUID();
   }
   return uuidv4();
 }
 
 function getFrontendUrl(baseUrl?: string, frontendPort?: number): string {
-  let url = baseUrl ?? 'https://api.lmnr.ai';
-  if (url === 'https://api.lmnr.ai') {
-    url = 'https://www.laminar.sh';
+  let url = baseUrl ?? "https://api.lmnr.ai";
+  if (url === "https://api.lmnr.ai") {
+    url = "https://www.laminar.sh";
   }
-  url = url.replace(/\/$/, '');
+  url = url.replace(/\/$/, "");
 
   if (/localhost|127\.0\.0\.1/.test(url)) {
     const port = frontendPort ?? url.match(/:\d{1,5}$/g)?.[0]?.slice(1) ?? 5667;
-    url = url.replace(/:\d{1,5}$/g, '');
+    url = url.replace(/:\d{1,5}$/g, "");
     return `${url}:${port}`;
   }
 
@@ -63,7 +66,7 @@ function getFrontendUrl(baseUrl?: string, frontendPort?: number): string {
  * Parses request arguments, attempting JSON parse for strings
  */
 const tryParseArg = (arg: unknown) => {
-  if (typeof arg === 'string') {
+  if (typeof arg === "string") {
     try {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return JSON.parse(arg);
@@ -88,14 +91,17 @@ const handleRunEvent = async (
   options: DevOptions,
   subprocessManager: SubprocessManager,
 ): Promise<void> => {
-  logger.debug('Received run event');
+  logger.debug("Received run event");
 
   const { trace_id, path_to_count, args: rawArgs, overrides } = event.data;
 
   const parsedArgs = Array.isArray(rawArgs)
     ? rawArgs.map(tryParseArg)
     : (Object.fromEntries(
-      Object.entries(rawArgs).map(([key, value]) => [key, tryParseArg(value)]),
+      Object.entries(rawArgs).map(([key, value]) => [
+        key,
+        tryParseArg(value),
+      ]),
     ) as Record<string, any>);
 
   cache.clear();
@@ -106,13 +112,13 @@ const handleRunEvent = async (
 
   try {
     // Check if we should populate cache from a previous trace
-    if (!trace_id || trace_id.trim() === '') {
-      logger.info('No spans in cache, starting fresh');
+    if (!trace_id || trace_id.trim() === "") {
+      logger.info("No spans in cache, starting fresh");
     } else {
       // Query spans from the backend to populate cache
       const paths = Object.keys(path_to_count || {});
       if (paths.length === 0) {
-        logger.info('No spans to cache, starting fresh');
+        logger.info("No spans to cache, starting fresh");
       } else {
         const query = `
           SELECT name, input, output, attributes, path
@@ -151,21 +157,25 @@ const handleRunEvent = async (
 
             try {
               parsedInput =
-                typeof span.input === 'string' ? JSON.parse(span.input) : span.input;
+                typeof span.input === "string"
+                  ? JSON.parse(span.input)
+                  : span.input;
             } catch {
               parsedInput = span.input;
             }
 
             try {
               parsedOutput =
-                typeof span.output === 'string' ? span.output : JSON.stringify(span.output);
+                typeof span.output === "string"
+                  ? span.output
+                  : JSON.stringify(span.output);
             } catch {
               parsedOutput = String(span.output);
             }
 
             try {
               parsedAttributes =
-                typeof span.attributes === 'string'
+                typeof span.attributes === "string"
                   ? JSON.parse(span.attributes)
                   : span.attributes;
             } catch {
@@ -195,7 +205,8 @@ const handleRunEvent = async (
     }
 
     // Parse baseUrl similar to how evaluations does it
-    const baseUrl = options.baseUrl ?? process.env.LMNR_BASE_URL ?? 'https://api.lmnr.ai';
+    const baseUrl =
+      options.baseUrl ?? process.env.LMNR_BASE_URL ?? "https://api.lmnr.ai";
     const httpPort =
       options.port ??
       (baseUrl.match(/:\d{1,5}$/g)
@@ -228,12 +239,15 @@ const handleRunEvent = async (
     // Get worker command
     const workerCommand = options.command
       ? { command: options.command, args: options.commandArgs ?? [] }
-      : getWorkerCommand(options.pythonModule ? undefined : filePathOrModule, options);
+      : getWorkerCommand(
+        options.pythonModule ? undefined : filePathOrModule,
+        options,
+      );
 
     try {
       await client.rolloutSessions.setStatus({
         sessionId,
-        status: 'RUNNING',
+        status: "RUNNING",
       });
     } catch (error: any) {
       logger.error(
@@ -251,7 +265,7 @@ const handleRunEvent = async (
     try {
       await client.rolloutSessions.setStatus({
         sessionId,
-        status: 'FINISHED',
+        status: "FINISHED",
       });
     } catch (error: any) {
       logger.error(
@@ -259,14 +273,16 @@ const handleRunEvent = async (
       );
     }
   } catch (error: any) {
-    logger.error(`Error handling run event: ${error instanceof Error ? error.message : error}`);
+    logger.error(
+      `Error handling run event: ${error instanceof Error ? error.message : error}`,
+    );
     if (error instanceof Error && error.stack) {
       logger.error(error.stack);
     }
     try {
       await client.rolloutSessions.setStatus({
         sessionId,
-        status: 'FINISHED',
+        status: "FINISHED",
       });
     } catch (error: any) {
       logger.error(
@@ -279,7 +295,10 @@ const handleRunEvent = async (
 /**
  * Main dev command handler
  */
-export async function runDev(filePath?: string, options: DevOptions = {}): Promise<void> {
+export async function runDev(
+  filePath?: string,
+  options: DevOptions = {},
+): Promise<void> {
   // Determine the actual path/module to use
   const isPythonModule = !!options.pythonModule;
   const filePathOrModule = filePath || options.pythonModule!;
@@ -296,9 +315,13 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
   });
 
   // Start cache server
-  logger.debug('Starting cache server...');
-  const { port: cacheServerPort, server: cacheServer, cache, setMetadata } =
-    await startCacheServer();
+  logger.debug("Starting cache server...");
+  const {
+    port: cacheServerPort,
+    server: cacheServer,
+    cache,
+    setMetadata,
+  } = await startCacheServer();
   logger.debug(`Cache server started on port ${cacheServerPort}`);
 
   // Create subprocess manager
@@ -312,11 +335,15 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
     // Check if we should discover metadata
     const shouldDiscover =
       isPythonModule ||
-      (filePath && EXTENSIONS_TO_DISCOVER_METADATA.includes(path.extname(filePath)));
+      (filePath &&
+        EXTENSIONS_TO_DISCOVER_METADATA.includes(path.extname(filePath)));
 
     if (shouldDiscover) {
-      logger.debug('Discovering entrypoint functions...');
-      const metadata = await discoverFunctionMetadata(filePathOrModule, options);
+      logger.debug("Discovering entrypoint functions...");
+      const metadata = await discoverFunctionMetadata(
+        filePathOrModule,
+        options,
+      );
       functionName = metadata.functionName;
       params = metadata.params;
 
@@ -324,42 +351,45 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
       logger.debug(`Function parameters: ${JSON.stringify(params, null, 2)}`);
     } else if (filePath) {
       // Unsupported file type
-      functionName = options.function || path.basename(filePath, path.extname(filePath));
-      logger.warn(`Metadata discovery not available for ${path.extname(filePath)} files`);
+      functionName =
+        options.function || path.basename(filePath, path.extname(filePath));
+      logger.warn(
+        `Metadata discovery not available for ${path.extname(filePath)} files`,
+      );
     }
   } catch (error) {
     logger.error(
-      'Failed to discover entrypoint functions: ' +
-      (error instanceof Error ? error.message : String(error)),
+      "Failed to discover entrypoint functions: " +
+        (error instanceof Error ? error.message : String(error)),
     );
     cacheServer.close();
     throw error;
   }
 
   // Setup file watcher for hot reload
-  logger.debug('Setting up file watcher...');
-  const watcher = chokidar.watch('.', {
+  logger.debug("Setting up file watcher...");
+  const watcher = chokidar.watch(".", {
     ignored: (path: string) => {
       const ignoredDirs = [
-        'node_modules',
-        '.git',
-        'dist',
-        'build',
-        '.next',
-        'coverage',
-        '.turbo',
-        'tmp',
-        'temp',
-        'venv',
-        '.venv',
-        'virtualenv',
-        '.virtualenv',
-        '__pycache__',
-        '.pytest_cache',
-        '.ruff_cache',
-        '.mypy_cache',
-        '.cache',
-        '.DS_Store',
+        "node_modules",
+        ".git",
+        "dist",
+        "build",
+        ".next",
+        "coverage",
+        ".turbo",
+        "tmp",
+        "temp",
+        "venv",
+        ".venv",
+        "virtualenv",
+        ".virtualenv",
+        "__pycache__",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".mypy_cache",
+        ".cache",
+        ".DS_Store",
       ];
 
       const pathSegments = path.split(/[/\\]/);
@@ -367,7 +397,7 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
         return true;
       }
 
-      if (path.endsWith('.log') || path.endsWith('.map')) {
+      if (path.endsWith(".log") || path.endsWith(".map")) {
         return true;
       }
 
@@ -382,7 +412,7 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
   });
 
   // Create SSE client
-  logger.debug('Setting up SSE client...');
+  logger.debug("Setting up SSE client...");
   let sseClient: SSEClient | null = null;
 
   try {
@@ -390,7 +420,7 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
       client,
       sessionId,
       params: params,
-      name: functionName ?? '',
+      name: functionName ?? "",
     });
 
     // Track if we're currently processing a run event (including metadata discovery)
@@ -400,14 +430,14 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
     let stopRequested = false;
 
     // Register all event listeners BEFORE connecting
-    sseClient.on('heartbeat', () => {
-      logger.debug('Heartbeat received');
+    sseClient.on("heartbeat", () => {
+      logger.debug("Heartbeat received");
     });
 
-    sseClient.on('run', (event: RolloutRunEvent) => {
+    sseClient.on("run", (event: RolloutRunEvent) => {
       // Check if we're already processing a run (including metadata discovery)
       if (currentRunPromise !== null) {
-        logger.warn('Already processing a run event, skipping new run');
+        logger.warn("Already processing a run event, skipping new run");
         return;
       }
 
@@ -419,37 +449,49 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
 
           // Check if a reload is scheduled and perform it before the run
           if (reloadScheduled) {
-            logger.info('Reloading function metadata before run...');
+            logger.info("Reloading function metadata before run...");
 
             // Re-discover function metadata for supported file types
             // IMPORTANT: This builds and loads the module, so we must await it
             if (
               isPythonModule ||
               (filePath &&
-                EXTENSIONS_TO_DISCOVER_METADATA.includes(path.extname(filePath)))
+                EXTENSIONS_TO_DISCOVER_METADATA.includes(
+                  path.extname(filePath),
+                ))
             ) {
               try {
-                const metadata = await discoverFunctionMetadata(filePathOrModule, options);
+                const metadata = await discoverFunctionMetadata(
+                  filePathOrModule,
+                  options,
+                );
 
                 // Check if stop was requested during metadata discovery
                 if (stopRequested) {
-                  logger.info('Run cancelled during metadata discovery');
+                  logger.info("Run cancelled during metadata discovery");
                   return;
                 }
 
-                logger.debug(`Updated function metadata: ${metadata.functionName}`);
-                logger.debug(`Updated parameters: ${JSON.stringify(metadata.params, null, 2)}`);
+                logger.debug(
+                  `Updated function metadata: ${metadata.functionName}`,
+                );
+                logger.debug(
+                  `Updated parameters: ${JSON.stringify(metadata.params, null, 2)}`,
+                );
 
                 // Update the SSE client with new metadata
                 if (sseClient) {
-                  sseClient.updateMetadata(metadata.params, metadata.functionName);
-                  logger.debug('Notified backend of metadata changes');
+                  sseClient.updateMetadata(
+                    metadata.params,
+                    metadata.functionName,
+                  );
+                  logger.debug("Notified backend of metadata changes");
                 }
                 reloadScheduled = false;
               } catch (error: any) {
                 logger.error(
-                  'Failed to update function metadata: ' +
-                  (error instanceof Error ? error.message : String(error)),
+                  "Failed to update function metadata: " +
+                    (error instanceof Error ? error.message : String(error)),
                 );
                 if (error instanceof Error && error.stack) {
                   logger.debug(`Stack trace: ${error.stack}`);
@@ -466,7 +508,7 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
 
           // Check if stop was requested before starting the subprocess
           if (stopRequested) {
-            logger.info('Run cancelled before execution');
+            logger.info("Run cancelled before execution");
             return;
           }
 
@@ -484,8 +526,8 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
           );
         } catch (error) {
           logger.error(
-            'Unhandled error in run event handler: ' +
-            (error instanceof Error ? error.message : String(error)),
+            "Unhandled error in run event handler: " +
+              (error instanceof Error ? error.message : String(error)),
           );
         } finally {
           // Clear the promise so the next run can proceed
@@ -494,32 +536,32 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
       })();
     });
 
-    sseClient.on('handshake', (event: RolloutHandshakeEvent) => {
+    sseClient.on("handshake", (event: RolloutHandshakeEvent) => {
       const projectId = event.data.project_id;
       const sessionId = event.data.session_id;
       const frontendUrl = getFrontendUrl(options.baseUrl, options.frontendPort);
       if (!didLogHandshake) {
         logger.info(
-          `View your session at ${frontendUrl}/project/${projectId}/rollout-sessions/${sessionId}`,
+          `View your session at ${frontendUrl}/project/${projectId}/debugger-sessions/${sessionId}`,
         );
       }
       didLogHandshake = true;
     });
 
-    sseClient.on('error', (error: Error) => {
+    sseClient.on("error", (error: Error) => {
       logger.warn(`Error connecting to backend: ${error.message}`);
     });
 
-    sseClient.on('reconnecting', () => {
-      logger.info('Reconnecting to backend...');
+    sseClient.on("reconnecting", () => {
+      logger.info("Reconnecting to backend...");
     });
 
-    sseClient.on('heartbeat_timeout', () => {
-      logger.debug('Heartbeat timeout, reconnecting...');
+    sseClient.on("heartbeat_timeout", () => {
+      logger.debug("Heartbeat timeout, reconnecting...");
     });
 
-    sseClient.on('stop', () => {
-      logger.debug('Stop event received');
+    sseClient.on("stop", () => {
+      logger.debug("Stop event received");
       // Set the stop flag to abort any ongoing metadata discovery
       stopRequested = true;
       // Kill any running subprocess
@@ -527,14 +569,14 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
       // currentRunPromise will be cleared automatically when the run handler's
       // promise chain completes (see the finally block in the 'run' event handler above)
       if (wasKilled) {
-        logger.info('Current run cancelled');
+        logger.info("Current run cancelled");
       }
     });
 
     // Setup file change handler for hot reload with debouncing
     let reloadTimeout: NodeJS.Timeout | null = null;
     let reloadScheduled = false;
-    watcher.on('change', (changedPath: string) => {
+    watcher.on("change", (changedPath: string) => {
       logger.info(`File changed: ${changedPath}, scheduling reload...`);
 
       // Clear any pending debounce timeout
@@ -544,7 +586,7 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
 
       // Debounce the reload flag to avoid multiple rapid file changes
       reloadTimeout = setTimeout(() => {
-        logger.debug('Marking reload as scheduled for next run...');
+        logger.debug("Marking reload as scheduled for next run...");
         reloadTimeout = null;
         reloadScheduled = true;
       }, 100); // Wait 100ms after the last change before marking reload
@@ -552,7 +594,7 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
 
     // Handle graceful shutdown
     const shutdown = () => {
-      logger.debug('Shutting down...');
+      logger.debug("Shutting down...");
 
       // Clear any pending reload timeout and scheduled reload
       if (reloadTimeout) {
@@ -562,20 +604,18 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
       reloadScheduled = false;
 
       // Close file watcher
-      logger.debug('Closing file watcher...');
-      watcher
-        .close()
-        .catch((error: any) => {
-          logger.error(
-            `Failed to close file watcher: ${error instanceof Error ? error.message : error}`,
-          );
-        });
+      logger.debug("Closing file watcher...");
+      watcher.close().catch((error: any) => {
+        logger.error(
+          `Failed to close file watcher: ${error instanceof Error ? error.message : error}`,
+        );
+      });
 
       // Kill any running subprocess
       subprocessManager.kill();
 
       // Delete the debugger session
-      logger.debug('Deleting debugger session...');
+      logger.debug("Deleting debugger session...");
       client.rolloutSessions
         .delete({ sessionId })
         .then(() => {
@@ -584,7 +624,7 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
           }
 
           cacheServer.close(() => {
-            logger.debug('Cache server closed');
+            logger.debug("Cache server closed");
           });
           process.exit(0);
         })
@@ -596,18 +636,19 @@ export async function runDev(filePath?: string, options: DevOptions = {}): Promi
         });
     };
 
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
 
     // Keep stdin open to prevent process from exiting
     process.stdin.resume();
 
     // Connect to backend and start listening
-    logger.debug('Connecting to backend...');
+    logger.debug("Connecting to backend...");
     await sseClient.connectAndListen();
   } catch (error) {
     logger.error(
-      'Failed to start dev command: ' + (error instanceof Error ? error.message : String(error)),
+      "Failed to start dev command: " +
+        (error instanceof Error ? error.message : String(error)),
     );
 
     // Try to delete the debugger session before exiting
