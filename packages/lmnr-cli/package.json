@@ -38,13 +38,5 @@
   "devDependencies": {
     "@lmnr-ai/types": "workspace:*",
     "@lmnr-ai/client": "workspace:*"
-  },
-  "peerDependencies": {
-    "@lmnr-ai/lmnr": "*"
-  },
-  "peerDependenciesMeta": {
-    "@lmnr-ai/lmnr": {
-      "optional": true
-    }
   }
 }
