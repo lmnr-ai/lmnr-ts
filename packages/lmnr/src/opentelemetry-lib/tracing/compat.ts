@@ -2,15 +2,20 @@
 import { SpanContext } from "@opentelemetry/api";
 import { ReadableSpan, Span as SdkSpan } from "@opentelemetry/sdk-trace-base";
 
+import { initializeLogger } from "../../utils";
+
+const logger = initializeLogger();
+
 // Type definitions that cover both OTel SDK v1 and v2
 // In v1: spans have parentSpanId and instrumentationLibrary
 // In v2: spans have parentSpanContext and instrumentationScope
-export type OTelSpanCompat = SdkSpan & ReadableSpan & {
-  parentSpanId?: string;
-  parentSpanContext?: SpanContext;
-  instrumentationLibrary?: any;
-  instrumentationScope?: any;
-};
+export type OTelSpanCompat = SdkSpan &
+  ReadableSpan & {
+    parentSpanId?: string;
+    parentSpanContext?: SpanContext;
+    instrumentationLibrary?: any;
+    instrumentationScope?: any;
+  };
 
 type OTelReadableSpanCompat = ReadableSpan & {
   parentSpanId?: string;
@@ -40,7 +45,7 @@ export const makeSpanOtelV2Compatible = (
   // SDK v1 uses parentSpanId (string), SDK v2 uses parentSpanContext (SpanContext)
   if (spanAny.parentSpanContext && !spanAny.parentSpanId) {
     // SDK v2 -> SDK v1: Extract spanId from parentSpanContext
-    Object.defineProperty(span, 'parentSpanId', {
+    Object.defineProperty(span, "parentSpanId", {
       value: spanAny.parentSpanContext.spanId,
       writable: true,
       enumerable: true,
@@ -50,7 +55,7 @@ export const makeSpanOtelV2Compatible = (
     // SDK v1 -> SDK v2: Create a proper SpanContext object
     // We need to get the traceId from the span's own spanContext
     const spanContext = span.spanContext();
-    Object.defineProperty(span, 'parentSpanContext', {
+    Object.defineProperty(span, "parentSpanContext", {
       value: {
         traceId: spanContext.traceId,
         spanId: spanAny.parentSpanId,
@@ -81,9 +86,8 @@ export const getParentSpanId = (
  *
  * This function automatically detects which version is available and uses the appropriate API.
  */
-export const createResource = (
-  attributes: Record<string, string>,
-): any => { // type IResource from `@opentelemetry/resources`
+export const createResource = (attributes: Record<string, string>): any => {
+  // type IResource from `@opentelemetry/resources`
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const resources = require("@opentelemetry/resources");
@@ -99,9 +103,10 @@ export const createResource = (
     }
 
     throw new Error("Unable to create Resource: neither v1 nor v2 API found");
-  } catch (error) {
-    throw new Error(
-      `Failed to create Resource: ${error instanceof Error ? error.message : String(error)}`,
+  } catch {
+    logger.debug(
+      "Laminar failed to @opentelemetry/resources, continuing without it",
     );
+    return undefined;
   }
 };

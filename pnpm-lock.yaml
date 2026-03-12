@@ -76,8 +76,8 @@ importers:
         specifier: ^1.13.4
         version: 1.14.0
       '@lmnr-ai/claude-code-proxy':
-        specifier: ^0.1.14
-        version: 0.1.14
+        specifier: ^0.1.16
+        version: 0.1.16
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.0
@@ -270,7 +270,7 @@ importers:
         version: 3.1.0
       llamaindex:
         specifier: ^0.12.1
-        version: 0.12.1(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.1.12))(hono@4.12.5)(p-retry@6.2.1)(tree-sitter@0.22.4)(web-tree-sitter@0.24.7)(zod@4.1.12)
+        version: 0.12.1(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.1.12))(hono@4.12.7)(p-retry@6.2.1)(tree-sitter@0.22.4)(web-tree-sitter@0.24.7)(zod@4.1.12)
       nock:
         specifier: ^14.0.8
         version: 14.0.10
@@ -929,50 +929,50 @@ packages:
       '@llamaindex/core': 0.6.22
       '@llamaindex/env': 0.1.30
 
-  '@lmnr-ai/claude-code-proxy-darwin-arm64@0.1.14':
-    resolution: {integrity: sha512-ZAozpP29+q82bEyV2rIrM8LWmXSa5qQ31f0lmBsRjkxfPT5xlap4HgAKBIDVLTea0qlLDsxSZ16xWxL/M2Xtmg==}
+  '@lmnr-ai/claude-code-proxy-darwin-arm64@0.1.16':
+    resolution: {integrity: sha512-Np7rb0a25+Np/ya4YIIbvAeEoqMlFUGjy2GpEE+OBKbXjFUc2juGt4A/qNP4+oBfzlxp3nggINCc3SjTSsfqUw==}
     engines: {node: '>=18.0.0'}
     cpu: [arm64]
     os: [darwin]
 
-  '@lmnr-ai/claude-code-proxy-darwin-x64@0.1.14':
-    resolution: {integrity: sha512-dkbVLO6w4Kp1tZUG3ZZZ8ug+bTba8UvsEZxXpAmS6nizdD3RBYW4K2rLE6m0+V+Mrf23QsEcGflk4mOxRMe3pw==}
+  '@lmnr-ai/claude-code-proxy-darwin-x64@0.1.16':
+    resolution: {integrity: sha512-QjooZ/U+Ljk8B4Zdp2dp8S1HZk3d71ZDIT+z5VVHFC+SvieF9++OrHZBlVKsxDlesmNLRxV+92LJ82fHT4P2XQ==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [darwin]
 
-  '@lmnr-ai/claude-code-proxy-linux-arm64-gnu@0.1.14':
-    resolution: {integrity: sha512-yvu5M28Hrngew3jIFpfXjVs8EJLHJP2ACm2gmpM7NZABeUecw1YlNLN+mPW3VUIjbd80bx2dRBh5Sb4DNS7Rlg==}
+  '@lmnr-ai/claude-code-proxy-linux-arm64-gnu@0.1.16':
+    resolution: {integrity: sha512-5VfFiuhIRhHjfuHRusfhI7vs9EY4QWcWe2Z9l82pipwJMOlJZRcdauQihJvCnQ+nYeEFMC5mC4F+z6rQbpwteA==}
     engines: {node: '>=18.0.0'}
     cpu: [arm64]
     os: [linux]
 
-  '@lmnr-ai/claude-code-proxy-linux-arm64-musl@0.1.14':
-    resolution: {integrity: sha512-zlIfdyW49bYVECY4FpHyGUxs/mWuVvpk/O+b1hmQa66tONOKa8Z3HnY1hqWqt4SrsJwBZ3fSfStMZPkDWmBzpg==}
+  '@lmnr-ai/claude-code-proxy-linux-arm64-musl@0.1.16':
+    resolution: {integrity: sha512-UWS2BOipAWGbgyth9Bu5KNdJZLOBjmrpsjjy33xRfsmqaXUtov4aseMt0i2lRCgIIEZ5oKOQeLvc806AQ/F4gA==}
     engines: {node: '>=18.0.0'}
     cpu: [arm64]
     os: [linux]
 
-  '@lmnr-ai/claude-code-proxy-linux-x64-gnu@0.1.14':
-    resolution: {integrity: sha512-19BFqqZ+c/O6Ildq/xqFM6YafB8Na4Bp+Ge17fgqU0XFkoxYRDF2ZdeIFUyfhm2BRsdq4VKsKdhpgtc4Vo2gNA==}
+  '@lmnr-ai/claude-code-proxy-linux-x64-gnu@0.1.16':
+    resolution: {integrity: sha512-jPfSDf2NvcW8oHhr/4jYALHEy8XD3X/JOXSKCNqolFsBqR4+xMcB0AvQNi4uKV6GysltiN2MnREu/69AUCCvTA==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [linux]
 
-  '@lmnr-ai/claude-code-proxy-linux-x64-musl@0.1.14':
-    resolution: {integrity: sha512-L8AFjr3Uo6nBCqFXpIFJSAJ0vYkbB5D2Ocib1ClofU6NTzCyXXs4LE/Feg0daQnTyJk3T/3hndQQxEYEk8HtNA==}
+  '@lmnr-ai/claude-code-proxy-linux-x64-musl@0.1.16':
+    resolution: {integrity: sha512-daLK4TXrL5zhJDUrMjIlRPsJt3fXMi8e1oc678/CVFW/zobSmM16gOrNrUOaKgOoOwaOuWbtJPyfh5+pwzug0g==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [linux]
 
-  '@lmnr-ai/claude-code-proxy-win32-x64-msvc@0.1.14':
-    resolution: {integrity: sha512-jKTJyDTrt1z1JGitv+YMcfJoyhcY3JmAnqQ6vQp/u78HNMRVRFjM/qmvpXnWJXzR/OcDT5sJZDmWPAb9wTuZww==}
+  '@lmnr-ai/claude-code-proxy-win32-x64-msvc@0.1.16':
+    resolution: {integrity: sha512-/5U+hXPJx2Y5Psd/7+nITNILJHho+JelF/1kIMI05bUqgRYviM0AKejpZ+WWTTa6/tlYLODIqyyx2RFaA82igA==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [win32]
 
-  '@lmnr-ai/claude-code-proxy@0.1.14':
-    resolution: {integrity: sha512-fIRSCxt0b2J8LeWKCr7OaVr6lNonlxDgVIVdNpKfzM7/noEzMRV7NUCSiu7fafMIxsdykd2cuiYjX+ZYE0A+8w==}
+  '@lmnr-ai/claude-code-proxy@0.1.16':
+    resolution: {integrity: sha512-+TNYE07/9+SaCyPcvlsSqX7JmppTszAtDapzjnqRAKXPnEQkAsJtARDgHcI1GXpRiprmhKz5fRROFnlUBpZAqg==}
     engines: {node: '>=18.0.0'}
 
   '@lmnr-ai/lmnr@0.8.12':
@@ -2554,8 +2554,8 @@ packages:
   help-me@5.0.0:
     resolution: {integrity: sha512-7xgomUX6ADmcYzFik0HzAxh/73YlKR9bmFzf51CZwR+b6YtzU2m0u49hQCqV6SvlqIqsaxovfwdvbnsw3b/zpg==}
 
-  hono@4.12.5:
-    resolution: {integrity: sha512-3qq+FUBtlTHhtYxbxheZgY8NIFnkkC/MR8u5TTsr7YZ3wixryQ3cCwn3iZbg8p8B88iDBBAYSfZDS75t8MN7Vg==}
+  hono@4.12.7:
+    resolution: {integrity: sha512-jq9l1DM0zVIvsm3lv9Nw9nlJnMNPOcAtsbsgiUhWcFzPE99Gvo6yRTlszSLLYacMeQ6quHD6hMfId8crVHvexw==}
     engines: {node: '>=16.9.0'}
 
   hookable@6.0.1:
@@ -4330,9 +4330,9 @@ snapshots:
       protobufjs: 7.5.4
       yargs: 17.7.2
 
-  '@hono/node-server@1.19.11(hono@4.12.5)':
+  '@hono/node-server@1.19.11(hono@4.12.7)':
     dependencies:
-      hono: 4.12.5
+      hono: 4.12.7
     optional: true
 
   '@humanfs/core@0.19.1': {}
@@ -4449,18 +4449,18 @@ snapshots:
       tree-sitter: 0.22.4
       web-tree-sitter: 0.24.7
 
-  '@llamaindex/workflow-core@1.3.3(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.1.12))(hono@4.12.5)(p-retry@6.2.1)(zod@4.1.12)':
+  '@llamaindex/workflow-core@1.3.3(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.1.12))(hono@4.12.7)(p-retry@6.2.1)(zod@4.1.12)':
     optionalDependencies:
       '@modelcontextprotocol/sdk': 1.27.1(@cfworker/json-schema@4.1.1)(zod@4.1.12)
-      hono: 4.12.5
+      hono: 4.12.7
       p-retry: 6.2.1
       zod: 4.1.12
 
-  '@llamaindex/workflow@1.1.24(@llamaindex/core@0.6.22)(@llamaindex/env@0.1.30)(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.1.12))(hono@4.12.5)(p-retry@6.2.1)(zod@4.1.12)':
+  '@llamaindex/workflow@1.1.24(@llamaindex/core@0.6.22)(@llamaindex/env@0.1.30)(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.1.12))(hono@4.12.7)(p-retry@6.2.1)(zod@4.1.12)':
     dependencies:
       '@llamaindex/core': 0.6.22
       '@llamaindex/env': 0.1.30
-      '@llamaindex/workflow-core': 1.3.3(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.1.12))(hono@4.12.5)(p-retry@6.2.1)(zod@4.1.12)
+      '@llamaindex/workflow-core': 1.3.3(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.1.12))(hono@4.12.7)(p-retry@6.2.1)(zod@4.1.12)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - hono
@@ -4469,41 +4469,41 @@ snapshots:
       - rxjs
       - zod
 
-  '@lmnr-ai/claude-code-proxy-darwin-arm64@0.1.14':
+  '@lmnr-ai/claude-code-proxy-darwin-arm64@0.1.16':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-darwin-x64@0.1.14':
+  '@lmnr-ai/claude-code-proxy-darwin-x64@0.1.16':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-linux-arm64-gnu@0.1.14':
+  '@lmnr-ai/claude-code-proxy-linux-arm64-gnu@0.1.16':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-linux-arm64-musl@0.1.14':
+  '@lmnr-ai/claude-code-proxy-linux-arm64-musl@0.1.16':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-linux-x64-gnu@0.1.14':
+  '@lmnr-ai/claude-code-proxy-linux-x64-gnu@0.1.16':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-linux-x64-musl@0.1.14':
+  '@lmnr-ai/claude-code-proxy-linux-x64-musl@0.1.16':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-win32-x64-msvc@0.1.14':
+  '@lmnr-ai/claude-code-proxy-win32-x64-msvc@0.1.16':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy@0.1.14':
+  '@lmnr-ai/claude-code-proxy@0.1.16':
     optionalDependencies:
-      '@lmnr-ai/claude-code-proxy-darwin-arm64': 0.1.14
-      '@lmnr-ai/claude-code-proxy-darwin-x64': 0.1.14
-      '@lmnr-ai/claude-code-proxy-linux-arm64-gnu': 0.1.14
-      '@lmnr-ai/claude-code-proxy-linux-arm64-musl': 0.1.14
-      '@lmnr-ai/claude-code-proxy-linux-x64-gnu': 0.1.14
-      '@lmnr-ai/claude-code-proxy-linux-x64-musl': 0.1.14
-      '@lmnr-ai/claude-code-proxy-win32-x64-msvc': 0.1.14
+      '@lmnr-ai/claude-code-proxy-darwin-arm64': 0.1.16
+      '@lmnr-ai/claude-code-proxy-darwin-x64': 0.1.16
+      '@lmnr-ai/claude-code-proxy-linux-arm64-gnu': 0.1.16
+      '@lmnr-ai/claude-code-proxy-linux-arm64-musl': 0.1.16
+      '@lmnr-ai/claude-code-proxy-linux-x64-gnu': 0.1.16
+      '@lmnr-ai/claude-code-proxy-linux-x64-musl': 0.1.16
+      '@lmnr-ai/claude-code-proxy-win32-x64-msvc': 0.1.16
 
   '@lmnr-ai/lmnr@0.8.12':
     dependencies:
       '@grpc/grpc-js': 1.14.0
-      '@lmnr-ai/claude-code-proxy': 0.1.14
+      '@lmnr-ai/claude-code-proxy': 0.1.16
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/context-async-hooks': 2.2.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/core': 2.2.0(@opentelemetry/api@1.9.0)
@@ -4549,7 +4549,7 @@ snapshots:
 
   '@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.1.12)':
     dependencies:
-      '@hono/node-server': 1.19.11(hono@4.12.5)
+      '@hono/node-server': 1.19.11(hono@4.12.7)
       ajv: 8.18.0
       ajv-formats: 3.0.1(ajv@8.18.0)
       content-type: 1.0.5
@@ -4559,7 +4559,7 @@ snapshots:
       eventsource-parser: 3.0.6
       express: 5.2.1
       express-rate-limit: 8.3.1(express@5.2.1)
-      hono: 4.12.5
+      hono: 4.12.7
       jose: 6.1.3
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
@@ -6484,7 +6484,7 @@ snapshots:
 
   help-me@5.0.0: {}
 
-  hono@4.12.5:
+  hono@4.12.7:
     optional: true
 
   hookable@6.0.1: {}
@@ -6684,12 +6684,12 @@ snapshots:
 
   lines-and-columns@1.2.4: {}
 
-  llamaindex@0.12.1(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.1.12))(hono@4.12.5)(p-retry@6.2.1)(tree-sitter@0.22.4)(web-tree-sitter@0.24.7)(zod@4.1.12):
+  llamaindex@0.12.1(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.1.12))(hono@4.12.7)(p-retry@6.2.1)(tree-sitter@0.22.4)(web-tree-sitter@0.24.7)(zod@4.1.12):
     dependencies:
       '@llamaindex/core': 0.6.22
       '@llamaindex/env': 0.1.30
       '@llamaindex/node-parser': 2.0.22(@llamaindex/core@0.6.22)(@llamaindex/env@0.1.30)(tree-sitter@0.22.4)(web-tree-sitter@0.24.7)
-      '@llamaindex/workflow': 1.1.24(@llamaindex/core@0.6.22)(@llamaindex/env@0.1.30)(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.1.12))(hono@4.12.5)(p-retry@6.2.1)(zod@4.1.12)
+      '@llamaindex/workflow': 1.1.24(@llamaindex/core@0.6.22)(@llamaindex/env@0.1.30)(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.1.12))(hono@4.12.7)(p-retry@6.2.1)(zod@4.1.12)
       '@types/lodash': 4.17.20
       '@types/node': 24.10.0
       lodash: 4.17.23
