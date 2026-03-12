@@ -1,20 +1,21 @@
 import { context, trace, Tracer, TracerProvider } from "@opentelemetry/api";
-import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { AlwaysOnSampler } from "@opentelemetry/sdk-trace-base";
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import {
-  NodeTracerProvider,
-} from "@opentelemetry/sdk-trace-node";
-import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions";
+  ATTR_SERVICE_NAME,
+  ATTR_SERVICE_VERSION,
+} from "@opentelemetry/semantic-conventions";
 
 import { version as SDK_VERSION } from "../../../package.json";
 import { initializeLogger } from "../../utils";
 import { _configuration } from "../configuration";
 import { InitializeOptions } from "../interfaces";
 import { createResource } from "./compat";
-import { consumeStreamResult,waitForPendingStreams } from "./stream-utils";
+import { consumeStreamResult, waitForPendingStreams } from "./stream-utils";
 
-export { consumeStreamResult,waitForPendingStreams };
+export { consumeStreamResult, waitForPendingStreams };
 import { initializeLaminarInstrumentations } from "./instrumentations";
 import { LaminarSpanProcessor } from "./processor";
 import { LaminarTracer } from "./tracer";
@@ -64,12 +65,10 @@ export const startTracing = (options: InitializeOptions) => {
   const newProvider = new NodeTracerProvider({
     spanProcessors: [spanProcessor],
     sampler: new AlwaysOnSampler(),
-    resource: createResource(
-      {
-        [ATTR_SERVICE_NAME]: "laminar-tracer-resource",
-        [ATTR_SERVICE_VERSION]: SDK_VERSION,
-      },
-    ),
+    resource: createResource({
+      [ATTR_SERVICE_NAME]: "laminar-tracer-resource",
+      [ATTR_SERVICE_VERSION]: SDK_VERSION,
+    }),
   });
 
   tracerProvider = newProvider;
@@ -102,12 +101,13 @@ export const startTracing = (options: InitializeOptions) => {
     const contextManager = new AsyncLocalStorageContextManager();
     contextManager.enable();
     context.setGlobalContextManager(contextManager);
-    logger.debug('Laminar set global OTel Context Manager');
+    logger.debug("Laminar set global OTel Context Manager");
   }
-  logger.debug('Global OTel Context Manager exists');
+  logger.debug("Global OTel Context Manager exists");
 
-
-  logger.debug(`Laminar registering ${instrumentations.length} instrumentations`);
+  logger.debug(
+    `Laminar registering ${instrumentations.length} instrumentations`,
+  );
   // Similarly, we carry our global tracer provider around without globally
   // registering it.
   registerInstrumentations({
@@ -116,7 +116,9 @@ export const startTracing = (options: InitializeOptions) => {
   });
 };
 
-export const patchModules = (modules: InitializeOptions["instrumentModules"]) => {
+export const patchModules = (
+  modules: InitializeOptions["instrumentModules"],
+) => {
   const instrumentations = initializeLaminarInstrumentations({
     baseUrl: _baseHttpUrl,
     apiKey: _apiKey,
@@ -129,7 +131,6 @@ export const patchModules = (modules: InitializeOptions["instrumentModules"]) =>
     tracerProvider: tracerProvider,
   });
 };
-
 
 export const shouldSendTraces = () => {
   if (!_configuration) {
@@ -158,7 +159,8 @@ export const shouldSendTraces = () => {
  * otherwise returns the global tracer provider.
  * @returns The tracer provider.
  */
-export const getTracerProvider = (): TracerProvider => tracerProvider ?? trace.getTracerProvider();
+export const getTracerProvider = (): TracerProvider =>
+  tracerProvider ?? trace.getTracerProvider();
 
 /**
  * Get the tracer.
@@ -196,7 +198,8 @@ export const getTracer = (): Tracer => {
  * Used internally for setting parent path information when initializing from environment.
  * @returns The span processor, or undefined if not initialized.
  */
-export const getSpanProcessor = (): LaminarSpanProcessor | undefined => spanProcessor;
+export const getSpanProcessor = (): LaminarSpanProcessor | undefined =>
+  spanProcessor;
 
 export const forceFlush = async () => {
   // Wait for pending stream processing with 5 second timeout
