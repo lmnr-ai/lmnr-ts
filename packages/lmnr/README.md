@@ -69,35 +69,6 @@ const poemWriter = async (topic = "turbulence") => {
 await observe({name: 'poemWriter'}, async () => await poemWriter('laminar flow'))
 ```
 
-### Sending spans to Laminar from a different tracing library
-
-Many tracing libraries accept `spanProcessors` as an initialization parameter.
-
-Laminar exposes `LaminarSpanProcessor` that you could use for these purposes.
-
-Be careful NOT to call `Laminar.initialize` in such setup, to avoid double tracing.
-
-#### Example with @vercel/otel
-
-For example, in Next.js instrumentation.ts you could do:
-
-```javascript
-import { registerOTel } from '@vercel/otel'
-
-export async function register() {
-  if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { Laminar, LaminarSpanProcessor, initializeLaminarInstrumentations } = await import("@lmnr-ai/lmnr");
-    registerOTel({
-      serviceName: "my-service",
-      spanProcessors: [
-        new LaminarSpanProcessor(),
-      ],
-      instrumentations: initializeLaminarInstrumentations(),
-    });
-  }
-}
-```
-
 ## Evaluations
 
 ### Quickstart
