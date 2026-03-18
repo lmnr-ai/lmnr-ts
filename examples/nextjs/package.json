@@ -12,7 +12,7 @@
     "@anthropic-ai/sdk": "^0.78.0",
     "@lmnr-ai/lmnr": "file:../../packages/lmnr",
     "@vercel/otel": "^2.1.1",
-    "next": "^16.1.6",
+    "next": "^16.1.7",
     "openai": "^6.29.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
