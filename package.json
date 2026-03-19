@@ -32,5 +32,8 @@
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.57.0"
+  },
+  "dependencies": {
+    "@opentelemetry/semantic-conventions": "^1.40.0"
   }
 }

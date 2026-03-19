@@ -1,7 +1,7 @@
 import { LaminarClient } from "@lmnr-ai/client";
 import { SessionRecordingOptions } from "@lmnr-ai/types";
 import { Instrumentation } from "@opentelemetry/instrumentation";
-import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
+import { AnthropicInstrumentation } from "../instrumentation/anthropic/instrumentation";
 import { AzureOpenAIInstrumentation } from "@traceloop/instrumentation-azure";
 import { BedrockInstrumentation } from "@traceloop/instrumentation-bedrock";
 import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
@@ -52,12 +52,12 @@ import { InitializeOptions } from "../interfaces";
  */
 export const initializeLaminarInstrumentations = (
   options: {
-    baseUrl?: string,
-    apiKey?: string,
-    httpPort?: number,
-    suppressContentTracing?: boolean,
-    instrumentModules?: InitializeOptions["instrumentModules"],
-    sessionRecordingOptions?: SessionRecordingOptions,
+    baseUrl?: string;
+    apiKey?: string;
+    httpPort?: number;
+    suppressContentTracing?: boolean;
+    instrumentModules?: InitializeOptions["instrumentModules"];
+    sessionRecordingOptions?: SessionRecordingOptions;
   } = {},
 ) => {
   const apiKey = options.apiKey ?? process.env.LMNR_PROJECT_API_KEY;
@@ -66,12 +66,14 @@ export const initializeLaminarInstrumentations = (
   // session events to Laminar backend, but not other OTEL backends.
   let client: LaminarClient | undefined;
   if (apiKey) {
-    const url = options.baseUrl ?? process?.env?.LMNR_BASE_URL ?? 'https://api.lmnr.ai';
-    const port = options.httpPort ?? (
-      url.match(/:\d{1,5}$/g)
+    const url =
+      options.baseUrl ?? process?.env?.LMNR_BASE_URL ?? "https://api.lmnr.ai";
+    const port =
+      options.httpPort ??
+      (url.match(/:\d{1,5}$/g)
         ? parseInt(url.match(/:\d{1,5}$/g)![0].slice(1))
         : 443);
-    const urlWithoutSlash = url.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
+    const urlWithoutSlash = url.replace(/\/$/, "").replace(/:\d{1,5}$/g, "");
     client = new LaminarClient({
       baseUrl: `${urlWithoutSlash}:${port}`,
       projectApiKey: apiKey,
@@ -80,16 +82,16 @@ export const initializeLaminarInstrumentations = (
 
   return options?.instrumentModules !== undefined
     ? manuallyInitInstrumentations(
-      client,
-      options.instrumentModules,
-      options.suppressContentTracing,
-      options.sessionRecordingOptions,
-    )
+        client,
+        options.instrumentModules,
+        options.suppressContentTracing,
+        options.sessionRecordingOptions,
+      )
     : initInstrumentations(
-      client,
-      options.suppressContentTracing,
-      options.sessionRecordingOptions,
-    );
+        client,
+        options.suppressContentTracing,
+        options.sessionRecordingOptions,
+      );
 };
 
 /**
@@ -106,21 +108,24 @@ const getStagehandInstrumentation = (
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const stagehandPkg = require("@browserbasehq/stagehand/package.json");
     const version = stagehandPkg.version;
-    const majorVersion = parseInt(version.split('.')[0], 10);
+    const majorVersion = parseInt(version.split(".")[0], 10);
 
     if (majorVersion >= 3) {
-      const stagehandInstrumentation = new StagehandV3Instrumentation(sessionRecordingOptions);
+      const stagehandInstrumentation = new StagehandV3Instrumentation(
+        sessionRecordingOptions,
+      );
       stagehandInstrumentation.setClient(client);
       return stagehandInstrumentation;
-    }
-    else {
+    } else {
       return new StagehandV2Instrumentation(playwrightInstrumentation);
     }
   } catch {
     // If we can't find the package, default to v3
   }
 
-  const stagehandInstrumentation = new StagehandV3Instrumentation(sessionRecordingOptions);
+  const stagehandInstrumentation = new StagehandV3Instrumentation(
+    sessionRecordingOptions,
+  );
   stagehandInstrumentation.setClient(client);
   return stagehandInstrumentation;
 };
@@ -133,56 +138,80 @@ const initInstrumentations = (
   const enrichTokens = false;
   const instrumentations: Instrumentation[] = [];
 
-  instrumentations.push(new OpenAIInstrumentation({
-    enrichTokens,
-    traceContent: !suppressContentTracing,
-  }));
+  instrumentations.push(
+    new OpenAIInstrumentation({
+      enrichTokens,
+      traceContent: !suppressContentTracing,
+    }),
+  );
 
-  instrumentations.push(new AnthropicInstrumentation({
-    traceContent: !suppressContentTracing,
-  }));
+  instrumentations.push(
+    new AnthropicInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
 
-  instrumentations.push(new AzureOpenAIInstrumentation({
-    traceContent: !suppressContentTracing,
-  }));
+  instrumentations.push(
+    new AzureOpenAIInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
 
-  instrumentations.push(new CohereInstrumentation({
-    traceContent: !suppressContentTracing,
-  }));
+  instrumentations.push(
+    new CohereInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
 
-  instrumentations.push(new VertexAIInstrumentation({
-    traceContent: !suppressContentTracing,
-  }));
+  instrumentations.push(
+    new VertexAIInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
 
-  instrumentations.push(new AIPlatformInstrumentation({
-    traceContent: !suppressContentTracing,
-  }));
+  instrumentations.push(
+    new AIPlatformInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
 
-  instrumentations.push(new BedrockInstrumentation({
-    traceContent: !suppressContentTracing,
-  }));
+  instrumentations.push(
+    new BedrockInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
 
   instrumentations.push(new PineconeInstrumentation());
 
-  instrumentations.push(new LangChainInstrumentation({
-    traceContent: !suppressContentTracing,
-  }));
+  instrumentations.push(
+    new LangChainInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
 
-  instrumentations.push(new LlamaIndexInstrumentation({
-    traceContent: !suppressContentTracing,
-  }));
+  instrumentations.push(
+    new LlamaIndexInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
 
-  instrumentations.push(new TogetherInstrumentation({
-    traceContent: !suppressContentTracing,
-  }));
+  instrumentations.push(
+    new TogetherInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
 
-  instrumentations.push(new ChromaDBInstrumentation({
-    traceContent: !suppressContentTracing,
-  }));
+  instrumentations.push(
+    new ChromaDBInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
 
-  instrumentations.push(new QdrantInstrumentation({
-    traceContent: !suppressContentTracing,
-  }));
+  instrumentations.push(
+    new QdrantInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
 
   // Browser instrumentations require a client (API key)
   if (client) {
@@ -192,18 +221,24 @@ const initInstrumentations = (
     );
     instrumentations.push(playwrightInstrumentation);
 
-    instrumentations.push(getStagehandInstrumentation(
-      playwrightInstrumentation,
-      client,
-      sessionRecordingOptions,
-    ));
+    instrumentations.push(
+      getStagehandInstrumentation(
+        playwrightInstrumentation,
+        client,
+        sessionRecordingOptions,
+      ),
+    );
 
-    instrumentations.push(new PuppeteerInstrumentation(client, sessionRecordingOptions));
+    instrumentations.push(
+      new PuppeteerInstrumentation(client, sessionRecordingOptions),
+    );
   }
 
-  instrumentations.push(new GoogleGenAiInstrumentation({
-    traceContent: !suppressContentTracing,
-  }));
+  instrumentations.push(
+    new GoogleGenAiInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
 
   instrumentations.push(new KernelInstrumentation());
 
@@ -225,7 +260,7 @@ const manuallyInitInstrumentations = (
   if (instrumentModules?.OpenAI && instrumentModules?.openAI) {
     throw new Error(
       "`openAI` is deprecated, but both `OpenAI` and `openAI` are provided. " +
-      "Please use `OpenAI` only.",
+        "Please use `OpenAI` only.",
     );
   }
 
@@ -252,7 +287,9 @@ const manuallyInitInstrumentations = (
       traceContent: !suppressContentTracing,
     });
     instrumentations.push(anthropicInstrumentation);
-    anthropicInstrumentation.manuallyInstrument(instrumentModules.anthropic as any);
+    anthropicInstrumentation.manuallyInstrument(
+      instrumentModules.anthropic as any,
+    );
   }
 
   if (instrumentModules?.azureOpenAI) {
@@ -260,7 +297,9 @@ const manuallyInitInstrumentations = (
       traceContent: !suppressContentTracing,
     });
     instrumentations.push(azureOpenAIInstrumentation as Instrumentation);
-    azureOpenAIInstrumentation.manuallyInstrument(instrumentModules.azureOpenAI);
+    azureOpenAIInstrumentation.manuallyInstrument(
+      instrumentModules.azureOpenAI,
+    );
   }
 
   if (instrumentModules?.cohere) {
@@ -342,24 +381,35 @@ const manuallyInitInstrumentations = (
       traceContent: !suppressContentTracing,
     });
     instrumentations.push(togetherInstrumentation);
-    togetherInstrumentation.manuallyInstrument(instrumentModules.together as any);
+    togetherInstrumentation.manuallyInstrument(
+      instrumentModules.together as any,
+    );
   }
 
   if (instrumentModules?.playwright && client) {
-    playwrightInstrumentation = new PlaywrightInstrumentation(client, sessionRecordingOptions);
+    playwrightInstrumentation = new PlaywrightInstrumentation(
+      client,
+      sessionRecordingOptions,
+    );
     instrumentations.push(playwrightInstrumentation);
     playwrightInstrumentation.manuallyInstrument(instrumentModules.playwright);
   }
 
   if (instrumentModules?.puppeteer && client) {
-    const puppeteerInstrumentation = new PuppeteerInstrumentation(client, sessionRecordingOptions);
+    const puppeteerInstrumentation = new PuppeteerInstrumentation(
+      client,
+      sessionRecordingOptions,
+    );
     instrumentations.push(puppeteerInstrumentation);
     puppeteerInstrumentation.manuallyInstrument(instrumentModules.puppeteer);
   }
 
   if (instrumentModules?.stagehand && client) {
     if (!playwrightInstrumentation) {
-      playwrightInstrumentation = new PlaywrightInstrumentation(client, sessionRecordingOptions);
+      playwrightInstrumentation = new PlaywrightInstrumentation(
+        client,
+        sessionRecordingOptions,
+      );
       instrumentations.push(playwrightInstrumentation);
     }
     const stagehandInstrumentation = getStagehandInstrumentation(
@@ -376,7 +426,9 @@ const manuallyInitInstrumentations = (
       traceContent: !suppressContentTracing,
     });
     instrumentations.push(googleGenAiInstrumentation);
-    googleGenAiInstrumentation.manuallyInstrument(instrumentModules.google_genai);
+    googleGenAiInstrumentation.manuallyInstrument(
+      instrumentModules.google_genai,
+    );
   }
 
   if (instrumentModules?.kernel) {
@@ -388,7 +440,9 @@ const manuallyInitInstrumentations = (
   if (instrumentModules?.claudeAgentSDK) {
     const claudeAgentInstrumentation = new ClaudeAgentSDKInstrumentation();
     instrumentations.push(claudeAgentInstrumentation);
-    claudeAgentInstrumentation.manuallyInstrument(instrumentModules.claudeAgentSDK);
+    claudeAgentInstrumentation.manuallyInstrument(
+      instrumentModules.claudeAgentSDK,
+    );
   }
 
   return instrumentations;
