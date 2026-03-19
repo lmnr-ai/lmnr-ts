@@ -186,7 +186,6 @@ export class AnthropicInstrumentation extends InstrumentationBase {
             plugin._streamingWrapPromise({
               span,
               type,
-              params,
               promise: execPromise,
             }),
           );
@@ -202,12 +201,10 @@ export class AnthropicInstrumentation extends InstrumentationBase {
     {
       span,
       type,
-      params,
       promise,
     }: {
       span: Span;
       type: "chat" | "completion";
-      params: Record<string, any>;
       promise: Promise<Stream<MessageStreamEvent>> | Promise<Stream<Completion>>;
     },
   ) {
