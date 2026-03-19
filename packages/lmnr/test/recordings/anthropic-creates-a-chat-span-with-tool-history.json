@@ -1,0 +1,103 @@
+[
+  {
+    "scope": "https://api.anthropic.com:443",
+    "method": "POST",
+    "path": "/v1/messages",
+    "body": {
+      "max_tokens": 1024,
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is the weather and current time in San Francisco?"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "I'll help you get the weather and current time in San Francisco."
+            },
+            {
+              "id": "call_1",
+              "type": "tool_use",
+              "name": "get_weather",
+              "input": {
+                "location": "San Francisco, CA"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "content": "Sunny and 65 degrees Fahrenheit",
+              "tool_use_id": "call_1"
+            }
+          ]
+        }
+      ],
+      "model": "claude-3-5-haiku-20241022",
+      "tools": [
+        {
+          "name": "get_weather",
+          "description": "Get the current weather in a given location",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string",
+                "description": "The city and state"
+              }
+            },
+            "required": ["location"]
+          }
+        },
+        {
+          "name": "get_time",
+          "description": "Get the current time in a given time zone",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "timezone": {
+                "type": "string",
+                "description": "The IANA time zone name"
+              }
+            },
+            "required": ["timezone"]
+          }
+        }
+      ]
+    },
+    "status": 200,
+    "response": {
+      "id": "msg_04ToolHistory",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-3-5-haiku-20241022",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_03time",
+          "name": "get_time",
+          "input": {
+            "timezone": "America/Los_Angeles"
+          }
+        }
+      ],
+      "stop_reason": "tool_use",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 200,
+        "output_tokens": 50,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    },
+    "rawHeaders": {
+      "content-type": "application/json"
+    },
+    "responseIsBinary": false
+  }
+]
