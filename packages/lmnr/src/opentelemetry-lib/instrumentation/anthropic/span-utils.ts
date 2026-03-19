@@ -154,11 +154,12 @@ export const setResponseAttributes = (
 
   const usage = response.usage;
   if (usage) {
-    const inputTokens = (usage.input_tokens ?? 0);
+    const promptTokens = (usage.input_tokens ?? 0);
     const outputTokens = (usage.output_tokens ?? 0);
     const cacheReadTokens = usage.cache_read_input_tokens ?? 0;
     const cacheCreationTokens = usage.cache_creation_input_tokens ?? 0;
 
+    const inputTokens = promptTokens + cacheReadTokens + cacheCreationTokens;
     setSpanAttribute(span, "gen_ai.usage.input_tokens", inputTokens);
     setSpanAttribute(span, "gen_ai.usage.output_tokens", outputTokens);
 
