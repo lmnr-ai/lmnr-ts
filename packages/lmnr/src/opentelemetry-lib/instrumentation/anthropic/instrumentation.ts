@@ -192,7 +192,7 @@ export class AnthropicInstrumentation extends InstrumentationBase {
           );
         }
 
-        const wrappedPromise = plugin._wrapPromise(type, span, params, execPromise);
+        const wrappedPromise = plugin._wrapPromise(span, execPromise);
         return context.bind(execContext, wrappedPromise as any);
       };
     };
@@ -296,9 +296,7 @@ export class AnthropicInstrumentation extends InstrumentationBase {
   }
 
   private _wrapPromise<T>(
-    type: "chat" | "completion",
     span: Span,
-    params: Record<string, any>,
     promise: Promise<T>,
   ): Promise<T> {
     return promise
@@ -351,7 +349,6 @@ const resolveAnthropicClass = (module: any): any => {
 
 /**
  * Extract response data from various response types.
- * Handles both regular responses and with_raw_response wrapped responses.
  */
 const extractResponseData = (response: unknown): Record<string, any> => {
   if (response === null || response === undefined) {
@@ -359,19 +356,7 @@ const extractResponseData = (response: unknown): Record<string, any> => {
   }
 
   if (typeof response === "object") {
-    // Handle with_raw_response wrapped responses
-    if ("parse" in response && typeof (response as any).parse === "function") {
-      try {
-        const parsed = (response as any).parse();
-        if (typeof parsed === "object" && parsed !== null) {
-          return parsed;
-        }
-      } catch {
-        // fall through
-      }
-    }
-
-    // Regular response objects - convert to plain object
+    // Anthropic SDK objects have toJSON - convert to plain object
     if ("toJSON" in response && typeof (response as any).toJSON === "function") {
       return (response as any).toJSON();
     }
