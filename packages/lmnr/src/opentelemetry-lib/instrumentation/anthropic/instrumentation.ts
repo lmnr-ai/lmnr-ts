@@ -283,16 +283,16 @@ export class AnthropicInstrumentation extends InstrumentationBase {
 
     // Wrap the promise: when it resolves to a Stream, replace the stream's
     // async iterator with our instrumented one that collects span attributes.
-    return (promise as Promise<any>).then(
-      (realStream: any) => {
+    return (promise as Promise<any>)
+      .then((realStream: any) => {
         // Use the Stream constructor to create a new stream with the same
         // controller and client, but with our instrumented iterator.
         return new realStream.constructor(
           () => iterateStream(realStream),
           realStream.controller,
         );
-      },
-      (error: Error) => {
+      })
+      .catch((error: Error) => {
         span.setStatus({
           code: SpanStatusCode.ERROR,
           message: error.message,
@@ -300,8 +300,7 @@ export class AnthropicInstrumentation extends InstrumentationBase {
         span.recordException(error);
         span.end();
         throw error;
-      },
-    );
+      });
   }
 
   private _wrapPromise<T>(
