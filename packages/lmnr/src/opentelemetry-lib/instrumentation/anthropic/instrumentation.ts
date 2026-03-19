@@ -20,6 +20,7 @@ import type {
 import type { Stream } from "@anthropic-ai/sdk/streaming";
 import { version } from "../../../../package.json";
 import {
+  modelAsDict,
   setInputAttributes,
   setResponseAttributes,
   setStreamingResponseAttributes,
@@ -310,7 +311,7 @@ export class AnthropicInstrumentation extends InstrumentationBase {
     return promise
       .then((result) => {
         try {
-          const responseData = extractResponseData(result);
+          const responseData = modelAsDict(result);
           setResponseAttributes(span, responseData, this.traceContent);
           span.setStatus({ code: SpanStatusCode.OK });
         } catch (e) {
@@ -355,22 +356,3 @@ const resolveAnthropicClass = (module: any): any => {
   return module.Anthropic ?? module;
 };
 
-/**
- * Extract response data from various response types.
- */
-const extractResponseData = (response: unknown): Record<string, any> => {
-  if (response === null || response === undefined) {
-    return {};
-  }
-
-  if (typeof response === "object") {
-    // Anthropic SDK objects have toJSON - convert to plain object
-    if ("toJSON" in response && typeof (response as any).toJSON === "function") {
-      return (response as any).toJSON();
-    }
-
-    return response as Record<string, any>;
-  }
-
-  return {};
-};
