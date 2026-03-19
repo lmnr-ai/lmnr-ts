@@ -1,0 +1,94 @@
+[
+  {
+    "scope": "https://api.anthropic.com:443",
+    "method": "POST",
+    "path": "/v1/messages",
+    "body": {
+      "max_tokens": 1024,
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is the weather like right now in New York? Also what time is it there now?"
+        }
+      ],
+      "model": "claude-3-5-sonnet-20240620",
+      "tools": [
+        {
+          "name": "get_weather",
+          "description": "Get the current weather in a given location",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string",
+                "description": "The city and state, e.g. San Francisco, CA"
+              },
+              "unit": {
+                "type": "string",
+                "enum": ["celsius", "fahrenheit"],
+                "description": "The unit of temperature"
+              }
+            },
+            "required": ["location"]
+          }
+        },
+        {
+          "name": "get_time",
+          "description": "Get the current time in a given time zone",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "timezone": {
+                "type": "string",
+                "description": "The IANA time zone name, e.g. America/Los_Angeles"
+              }
+            },
+            "required": ["timezone"]
+          }
+        }
+      ]
+    },
+    "status": 200,
+    "response": {
+      "id": "msg_03ToolUse",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-3-5-sonnet-20240620",
+      "content": [
+        {
+          "type": "text",
+          "text": "I'll check the weather and time in New York for you."
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_01weather",
+          "name": "get_weather",
+          "input": {
+            "location": "New York, NY",
+            "unit": "fahrenheit"
+          }
+        },
+        {
+          "type": "tool_use",
+          "id": "toolu_02time",
+          "name": "get_time",
+          "input": {
+            "timezone": "America/New_York"
+          }
+        }
+      ],
+      "stop_reason": "tool_use",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 514,
+        "output_tokens": 120,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    },
+    "rawHeaders": {
+      "content-type": "application/json"
+    },
+    "responseIsBinary": false
+  }
+]
