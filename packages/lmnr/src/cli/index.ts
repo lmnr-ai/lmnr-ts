@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
 
 import { version } from "../../package.json";
 import { Evaluation } from "../evaluations";
@@ -13,6 +13,7 @@ import {
 } from "./datasets";
 import { runEvaluation } from "./evals";
 import { proxyToLmnrCli } from "./proxy-to-lmnr-cli.js";
+import { handleSql } from "./sql";
 
 const logger = initializeLogger();
 
@@ -159,6 +160,64 @@ async function cli() {
     .action(async (name: string, paths: string[], options, cmd) => {
       const parentOpts = cmd.parent?.opts() || {};
       await handleDatasetsCreate(name, paths, { ...parentOpts, ...options });
+    });
+
+  // SQL command
+  program
+    .command("sql")
+    .description("Execute a SQL query against your Laminar project data")
+    .argument("[query]", "SQL query to execute (SELECT only)")
+    .option(
+      "-e, --execute <sql>",
+      "SQL query to execute (alternative to positional argument)",
+    )
+    .option(
+      "-f, --file <path>",
+      "Read SQL query from a file",
+    )
+    .option(
+      "-o, --format <format>",
+      "Output format: json, csv, or table (default: table in TTY, json when piped)",
+      (val: string) => {
+        if (!["json", "csv", "table"].includes(val)) {
+          throw new InvalidArgumentError(
+            `Unknown format '${val}'. Allowed: json, csv, table`,
+          );
+        }
+        return val;
+      },
+    )
+    .option(
+      "--json",
+      "Output as JSON (shorthand for --format json)",
+    )
+    .option(
+      "--csv",
+      "Output as CSV (shorthand for --format csv)",
+    )
+    .option(
+      "-p, --params <json>",
+      "Query parameters as JSON object, e.g. '{\"trace_id\": \"abc-123\"}'",
+    )
+    .option(
+      "--project-api-key <key>",
+      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .action(async (query: string | undefined, options) => {
+      // Handle shorthand format flags
+      let format = options.format;
+      if (options.json) format = "json";
+      if (options.csv) format = "csv";
+      await handleSql(query, { ...options, format });
     });
 
   // Dev command - proxy to lmnr-cli
