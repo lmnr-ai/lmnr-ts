@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
 
 import { version } from "../../package.json";
 import { Evaluation } from "../evaluations";
@@ -178,6 +178,14 @@ async function cli() {
     .option(
       "-o, --format <format>",
       "Output format: json, csv, or table (default: table in TTY, json when piped)",
+      (val: string) => {
+        if (!["json", "csv", "table"].includes(val)) {
+          throw new InvalidArgumentError(
+            `Unknown format '${val}'. Allowed: json, csv, table`,
+          );
+        }
+        return val;
+      },
     )
     .option(
       "--json",

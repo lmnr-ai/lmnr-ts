@@ -259,6 +259,12 @@ export const handleSql = async (
           );
         }
         break;
+      default:
+        logger.error(
+          `Unknown format: '${format as string}'. `
+          + "Supported formats: json, csv, table",
+        );
+        process.exit(2);
     }
   } catch (error) {
     const message = error instanceof Error
