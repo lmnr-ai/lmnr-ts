@@ -131,10 +131,14 @@ const formatTable = (
 
   const columns = Object.keys(data[0]);
 
-  // Calculate column widths (min 4 chars for readability)
+  // Calculate column widths (min 4 chars for readability).
+  // Uses reduce instead of Math.max(...) to avoid stack
+  // overflow on large result sets.
   const widths = columns.map((col) => {
-    const values = data.map((row) => stringify(row[col]));
-    const maxVal = Math.max(...values.map((v) => v.length));
+    const maxVal = data.reduce((max, row) => {
+      const len = stringify(row[col]).length;
+      return len > max ? len : max;
+    }, 0);
     return Math.min(Math.max(col.length, maxVal, 4), 60);
   });
 
