@@ -16,7 +16,7 @@ async function main() {
 
   program
     .name('lmnr-cli')
-    .description('CLI for Laminar agent debugger')
+    .description('CLI for the Laminar agent observability platform')
     .version(version, '-v, --version', 'display version number');
 
 
