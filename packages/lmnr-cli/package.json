@@ -10,7 +10,8 @@
     "build": "tsdown",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
-    "test": "tsx --test test/*.test.ts"
+    "test": "vitest run",
+    "dev": "tsx src/index.ts"
   },
   "files": [
     "dist"
@@ -28,6 +29,7 @@
   "author": "founders@lmnr.ai",
   "license": "Apache-2.0",
   "dependencies": {
+    "@lmnr-ai/client": "workspace:*",
     "chokidar": "^5.0.0",
     "commander": "^14.0.2",
     "eventsource-parser": "^3.0.6",
@@ -37,7 +39,9 @@
   },
   "devDependencies": {
     "@lmnr-ai/types": "workspace:*",
-    "@lmnr-ai/client": "workspace:*"
+    "csv-parser": "^3.2.0",
+    "export-to-csv": "^1.4.0",
+    "vitest": "^4.1.1"
   },
   "peerDependencies": {
     "@lmnr-ai/lmnr": "*"

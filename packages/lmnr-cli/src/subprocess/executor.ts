@@ -2,7 +2,7 @@ import { WORKER_MESSAGE_PREFIX, WorkerConfig, WorkerMessage } from '@lmnr-ai/typ
 import { ChildProcess, spawn } from 'child_process';
 import * as readline from 'readline';
 
-import { initializeLogger } from '../utils';
+import { initializeLogger } from '../utils/logger';
 
 const logger = initializeLogger();
 

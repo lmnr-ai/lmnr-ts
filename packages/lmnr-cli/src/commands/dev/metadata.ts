@@ -1,7 +1,7 @@
 import type { RolloutParam } from '@lmnr-ai/types';
 import * as path from 'path';
 
-import { initializeLogger } from '../../utils';
+import { initializeLogger } from '../../utils/logger';
 
 const logger = initializeLogger();
 

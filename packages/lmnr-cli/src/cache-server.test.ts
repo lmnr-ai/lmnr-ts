@@ -1,10 +1,9 @@
-import * as assert from 'node:assert';
 import * as http from 'node:http';
-import { describe, it } from 'node:test';
 
 import { type CachedSpan } from '@lmnr-ai/types';
+import { describe, expect, it } from 'vitest';
 
-import { startCacheServer } from '../src/cache-server';
+import { startCacheServer } from './cache-server';
 
 // Helper to make HTTP requests
 async function makeRequest(
@@ -70,31 +69,31 @@ async function closeServer(server: http.Server): Promise<void> {
   });
 }
 
-void describe('Cache Server', () => {
-  void it('starts server on available port from 35667', async () => {
+describe('Cache Server', () => {
+  it('starts server on available port from 35667', async () => {
     const { port, server } = await startCacheServer(35667);
 
     try {
-      assert.ok(port >= 35667, 'Port should be >= 35667');
+      expect(port >= 35667).toBeTruthy();
     } finally {
       await closeServer(server);
     }
   });
 
-  void it('returns 200 for health check', async () => {
+  it('returns 200 for health check', async () => {
     const { port, server } = await startCacheServer();
 
     try {
       const response = await makeRequest(port, 'GET', '/health');
 
-      assert.strictEqual(response.status, 200);
-      assert.deepStrictEqual(response.data, { status: 'ok' });
+      expect(response.status).toBe(200);
+      expect(response.data).toEqual({ status: 'ok' });
     } finally {
       await closeServer(server);
     }
   });
 
-  void it('returns empty span object for missing cache keys', async () => {
+  it('returns empty span object for missing cache keys', async () => {
     const { port, server } = await startCacheServer();
 
     try {
@@ -103,8 +102,8 @@ void describe('Cache Server', () => {
         index: 0,
       });
 
-      assert.strictEqual(response.status, 200);
-      assert.deepStrictEqual(response.data, {
+      expect(response.status).toBe(200);
+      expect(response.data).toEqual({
         pathToCount: {},
       });
     } finally {
@@ -112,7 +111,7 @@ void describe('Cache Server', () => {
     }
   });
 
-  void it('returns cached span data with metadata', async () => {
+  it('returns cached span data with metadata', async () => {
     const { port, server, cache, setMetadata } = await startCacheServer();
 
     try {
@@ -136,16 +135,16 @@ void describe('Cache Server', () => {
         index: 0,
       });
 
-      assert.strictEqual(response.status, 200);
-      assert.deepStrictEqual(response.data.span, testSpan);
-      assert.deepStrictEqual(response.data.pathToCount, { 'test.path': 1 });
-      assert.ok(response.data.overrides);
+      expect(response.status).toBe(200);
+      expect(response.data.span).toEqual(testSpan);
+      expect(response.data.pathToCount).toEqual({ 'test.path': 1 });
+      expect(response.data.overrides).toBeTruthy();
     } finally {
       await closeServer(server);
     }
   });
 
-  void it('handles cache key format with colons in path correctly', async () => {
+  it('handles cache key format with colons in path correctly', async () => {
     const { port, server, cache } = await startCacheServer();
 
     try {
@@ -166,14 +165,14 @@ void describe('Cache Server', () => {
         index: 0,
       });
 
-      assert.strictEqual(response.status, 200);
-      assert.deepStrictEqual(response.data.span, testSpan);
+      expect(response.status).toBe(200);
+      expect(response.data.span).toEqual(testSpan);
     } finally {
       await closeServer(server);
     }
   });
 
-  void it('updates metadata via setMetadata', async () => {
+  it('updates metadata via setMetadata', async () => {
     const { server, setMetadata } = await startCacheServer();
 
     try {
@@ -190,13 +189,13 @@ void describe('Cache Server', () => {
 
       // Since we can't easily check metadata without a cached span,
       // this test verifies setMetadata doesn't throw
-      assert.ok(true);
+      expect(true).toBeTruthy();
     } finally {
       await closeServer(server);
     }
   });
 
-  void it('handles multiple simultaneous requests', async () => {
+  it('handles multiple simultaneous requests', async () => {
     const { port, server, cache } = await startCacheServer();
 
     try {
@@ -220,16 +219,16 @@ void describe('Cache Server', () => {
         makeRequest(port, 'POST', '/cached', { path: 'path.b', index: 0 }),
       ]);
 
-      assert.strictEqual(response1.status, 200);
-      assert.strictEqual(response2.status, 200);
-      assert.strictEqual(response1.data.span.name, 'span-a');
-      assert.strictEqual(response2.data.span.name, 'span-b');
+      expect(response1.status).toBe(200);
+      expect(response2.status).toBe(200);
+      expect(response1.data.span.name).toBe('span-a');
+      expect(response2.data.span.name).toBe('span-b');
     } finally {
       await closeServer(server);
     }
   });
 
-  void it('handles large payloads', async () => {
+  it('handles large payloads', async () => {
     const { port, server, cache } = await startCacheServer();
 
     try {
@@ -249,14 +248,14 @@ void describe('Cache Server', () => {
         index: 0,
       });
 
-      assert.strictEqual(response.status, 200);
-      assert.strictEqual(response.data.span.output, largeOutput);
+      expect(response.status).toBe(200);
+      expect(response.data.span.output).toBe(largeOutput);
     } finally {
       await closeServer(server);
     }
   });
 
-  void it('handles concurrent cache updates', async () => {
+  it('handles concurrent cache updates', async () => {
     const { port, server, cache, setMetadata } = await startCacheServer();
 
     try {
@@ -281,8 +280,8 @@ void describe('Cache Server', () => {
 
       // All requests should succeed
       responses.forEach((response, i) => {
-        assert.strictEqual(response.status, 200);
-        assert.strictEqual(response.data.span.name, `span-${i}`);
+        expect(response.status).toBe(200);
+        expect(response.data.span.name).toBe(`span-${i}`);
       });
     } finally {
       await closeServer(server);
