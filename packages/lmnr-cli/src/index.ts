@@ -10,6 +10,7 @@ import {
   handleDatasetsPush,
 } from './commands/dataset';
 import { runDev } from './commands/dev';
+import { handleSqlQuery } from './commands/sql';
 
 async function main() {
   const program = new Command();
@@ -190,6 +191,43 @@ Examples:
     });
 
 
+  // TODO: does it make sense to make query a subcommand here?
+  // I'm not sure what other subcommands would be here.
+  const sqlCmd = program
+    .command("sql")
+    .description("Run SQL queries against your Laminar project data")
+    .option(
+      "--project-api-key <key>",
+      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option("--json", "Output structured JSON to stdout");
+
+  sqlCmd
+    .command("query")
+    .description("Execute a SQL query")
+    .argument("<query>", "SQL query string")
+    .option("-p, --parameters <json>", "Query parameters as a JSON object, e.g. '{\"limit\": 10}'")
+    .action(async (query: string, _options, cmd) => {
+      await handleSqlQuery(query, cmd.optsWithGlobals());
+    })
+    .addHelpText(
+      "after",
+      `
+Examples:
+  $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10"
+  $ lmnr-cli sql query "SELECT * FROM spans WHERE id = :id" -p '{"id": "abc"}'
+  $ lmnr-cli sql query "SELECT * FROM traces LIMIT 10" --json
+`,
+    );
   await program.parseAsync();
 }
 
