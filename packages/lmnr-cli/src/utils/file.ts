@@ -193,6 +193,19 @@ const writeJsonFile = async <D, T>(
 };
 
 /**
+ * Format data as a CSV string.
+ */
+const formatCsv = <D, T>(data: Datapoint<D, T>[]): string => {
+  const formattedData = data.map(item =>
+    Object.fromEntries(Object.entries(item).map(([key, value]) => [key, stringifyForCsv(value)]),
+    ));
+
+  const csvConfig = mkConfig({ useKeysAsHeaders: true });
+  const csvOutput = generateCsv(csvConfig)(formattedData);
+  return asString(csvOutput);
+};
+
+/**
  * Write data to a CSV file.
  */
 const writeCsvFile = async <D, T>(
@@ -203,16 +216,7 @@ const writeCsvFile = async <D, T>(
     throw new Error('No data to write to CSV');
   }
 
-  const formattedData = data.map(item =>
-    Object.fromEntries(Object.entries(item).map(([key, value]) => [key, stringifyForCsv(value)]),
-    ));
-
-  const csvConfig = mkConfig({ useKeysAsHeaders: true });
-
-  const csvOutput = generateCsv(csvConfig)(formattedData);
-  const csvString = asString(csvOutput);
-
-  await fs.writeFile(filepath, csvString, 'utf-8');
+  await fs.writeFile(filepath, formatCsv(data), 'utf-8');
 };
 
 /**
@@ -293,15 +297,7 @@ export const printToConsole = <D, T>(
       return;
     }
 
-    const formattedData = data.map(item =>
-      Object.fromEntries(Object.entries(item).map(([key, value]) => [key, stringifyForCsv(value)]),
-      ));
-
-    const csvConfig = mkConfig({ useKeysAsHeaders: true });
-
-    const csvOutput = generateCsv(csvConfig)(formattedData);
-    const csvString = asString(csvOutput);
-    console.log(csvString);
+    console.log(formatCsv(data));
   } else if (format === 'jsonl') {
     data.forEach((item) => console.log(JSON.stringify(item)));
   } else {

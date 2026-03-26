@@ -147,8 +147,8 @@ export const handleDatasetsPush = async (
 
     if (data.length === 0) {
       if (options.json) outputJsonError("No data to push");
-      logger.warn("No data to push. Skipping");
-      return;
+      logger.error("No data to push. Skipping");
+      process.exit(1);
     }
 
     const identifier = options.name ? { name: options.name } : { id: options.id };
@@ -265,8 +265,8 @@ export const handleDatasetsCreate = async (
 
     if (data.length === 0) {
       if (options.json) outputJsonError("No data to push");
-      logger.warn("No data to push. Skipping");
-      return;
+      logger.error("No data to push. Skipping");
+      process.exit(1);
     }
 
     // Push data to create/populate the dataset

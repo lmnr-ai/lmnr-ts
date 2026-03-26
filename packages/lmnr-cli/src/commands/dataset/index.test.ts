@@ -126,10 +126,12 @@ describe('handleDatasetsPush', () => {
     expect(output.error).toContain('name or id');
   });
 
-  it('returns early when no data to push', async () => {
+  it('exits with error when no data to push', async () => {
     mockedLoadFromPaths.mockResolvedValue([]);
 
-    await handleDatasetsPush(['./data'], { ...baseOpts, name: 'test' });
+    await expect(
+      handleDatasetsPush(['./data'], { ...baseOpts, name: 'test' }),
+    ).rejects.toThrow('process.exit(1)');
 
     expect(mockPush).not.toHaveBeenCalled();
   });
@@ -230,10 +232,12 @@ describe('handleDatasetsPull', () => {
 });
 
 describe('handleDatasetsCreate', () => {
-  it('returns early when no data to push', async () => {
+  it('exits with error when no data to push', async () => {
     mockedLoadFromPaths.mockResolvedValue([]);
 
-    await handleDatasetsCreate('my-ds', ['./data'], { ...baseOpts, outputFile: '/tmp/out.json' });
+    await expect(
+      handleDatasetsCreate('my-ds', ['./data'], { ...baseOpts, outputFile: '/tmp/out.json' }),
+    ).rejects.toThrow('process.exit(1)');
 
     expect(mockPush).not.toHaveBeenCalled();
   });
