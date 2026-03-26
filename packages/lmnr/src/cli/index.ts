@@ -68,10 +68,14 @@ async function cli() {
       await runEvaluation(files, options);
     });
 
+  const deprecatedDatasetsWarning =
+    "DeprecationWarning: `lmnr datasets` is deprecated and will be removed in a future version. " +
+    "Use `lmnr-cli datasets` instead.";
+
   // Datasets command with global options
   const datasetsCmd = program
     .command("datasets")
-    .description("Manage datasets")
+    .description("[DEPRECATED] Manage datasets. Use `lmnr-cli datasets` instead.")
     .option(
       "--project-api-key <key>",
       "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
@@ -91,6 +95,7 @@ async function cli() {
     .command("list")
     .description("List all datasets")
     .action(async (options, cmd) => {
+      process.stderr.write(deprecatedDatasetsWarning + "\n");
       const parentOpts = cmd.parent?.opts() || {};
       await handleDatasetsList({ ...parentOpts, ...options });
     });
@@ -110,6 +115,7 @@ async function cli() {
       100,
     )
     .action(async (paths: string[], options, cmd) => {
+      process.stderr.write(deprecatedDatasetsWarning + "\n");
       const parentOpts = cmd.parent?.opts() || {};
       await handleDatasetsPush(paths, { ...parentOpts, ...options });
     });
@@ -134,6 +140,7 @@ async function cli() {
     .option("--limit <limit>", "Limit number of datapoints to pull", (val) => parseInt(val, 10))
     .option("--offset <offset>", "Offset for pagination", (val) => parseInt(val, 10), 0)
     .action(async (outputPath: string | undefined, options, cmd) => {
+      process.stderr.write(deprecatedDatasetsWarning + "\n");
       const parentOpts = cmd.parent?.opts() || {};
       await handleDatasetsPull(outputPath, { ...parentOpts, ...options });
     });
@@ -157,6 +164,7 @@ async function cli() {
       100,
     )
     .action(async (name: string, paths: string[], options, cmd) => {
+      process.stderr.write(deprecatedDatasetsWarning + "\n");
       const parentOpts = cmd.parent?.opts() || {};
       await handleDatasetsCreate(name, paths, { ...parentOpts, ...options });
     });
