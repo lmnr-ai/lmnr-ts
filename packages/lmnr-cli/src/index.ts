@@ -233,6 +233,19 @@ Examples:
       process.stdout.write(SQL_SCHEMA_HELP);
     });
 
+  program.addHelpText('after', `
+Examples:
+  lmnr-cli dev agent.ts                                       # Debugger TypeScript entrypoint
+  lmnr-cli dev agent.py                                       # Debugger Python script mode
+  lmnr-cli dev -m src.agent                                   # Debuger Python module mode
+  lmnr-cli datasets list --json                               # List all datasets
+  lmnr-cli datasets push data.jsonl -n my-dataset --json     # Push data to a dataset
+  lmnr-cli datasets pull output.jsonl -n my-dataset --json   # Pull data from a dataset
+  lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json   # Query spans
+  lmnr-cli sql query "SELECT t.id, t.total_cost, s.name, s.duration FROM traces t JOIN spans s ON t.id = s.trace_id WHERE t.total_cost > 0.01 LIMIT 20" --json
+  lmnr-cli sql schema                                         # Show available tables
+`);
+
   await program.parseAsync();
 }
 
