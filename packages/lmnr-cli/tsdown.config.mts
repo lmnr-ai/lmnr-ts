@@ -6,5 +6,5 @@ export default defineConfig({
   dts: true,
   sourcemap: true,
   clean: true,
-  noExternal: ["@lmnr-ai/types", "@lmnr-ai/client"],
+  noExternal: ["@lmnr-ai/types", "@lmnr-ai/client", "csv-parser", "export-to-csv"],
 });
