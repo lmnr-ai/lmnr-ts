@@ -41,7 +41,4 @@ Available tables:
   dataset_datapoints
     id (UUID), created_at (DateTime64), dataset_id (UUID),
     data (String), target (String), metadata (String)
-
-Joins:
-  spans.trace_id = traces.id
 `;
