@@ -11,6 +11,7 @@ import {
 } from './commands/dataset';
 import { runDev } from './commands/dev';
 import { handleSqlQuery } from './commands/sql';
+import { SQL_SCHEMA_HELP } from './commands/sql/schema';
 
 async function main() {
   const program = new Command();
@@ -215,19 +216,23 @@ Examples:
     .command("query")
     .description("Execute a SQL query")
     .argument("<query>", "SQL query string")
-    .option("-p, --parameters <json>", "Query parameters as a JSON object, e.g. '{\"limit\": 10}'")
     .action(async (query: string, _options, cmd) => {
       await handleSqlQuery(query, cmd.optsWithGlobals());
     })
-    .addHelpText(
-      "after",
-      `
+    .addHelpText("after", SQL_SCHEMA_HELP + `
 Examples:
   $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10"
-  $ lmnr-cli sql query "SELECT * FROM spans WHERE id = :id" -p '{"id": "abc"}'
-  $ lmnr-cli sql query "SELECT * FROM traces LIMIT 10" --json
-`,
-    );
+  $ lmnr-cli sql query "SELECT id, total_cost, status FROM traces LIMIT 20"
+  $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json
+`);
+
+  sqlCmd
+    .command("schema")
+    .description("Show available tables and their columns")
+    .action(() => {
+      process.stdout.write(SQL_SCHEMA_HELP);
+    });
+
   await program.parseAsync();
 }
 
