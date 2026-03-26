@@ -38,7 +38,7 @@ export const handleSqlQuery = async (
     // TODO: is there a standard library for printing these types of tables?
     const columns = Object.keys(rows[0]);
     const widths = columns.map((col) =>
-      Math.max(col.length, ...rows.map((r) => String(r[col] ?? "").length)),
+      rows.reduce((max, r) => Math.max(max, String(r[col] ?? "").length), col.length),
     );
 
     const header = columns.map((col, i) => col.padEnd(widths[i])).join(" ");
