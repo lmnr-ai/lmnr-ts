@@ -2,7 +2,6 @@ import { execFile } from 'child_process';
 import * as http from 'http';
 import * as path from 'path';
 import { promisify } from 'util';
-
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const exec = promisify(execFile);
