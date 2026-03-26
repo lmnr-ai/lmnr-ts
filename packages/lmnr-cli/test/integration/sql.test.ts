@@ -30,20 +30,6 @@ async function runCli(args: string[]): Promise<CliResult> {
   }
 }
 
-describe('sql CLI integration — validation errors', () => {
-  it('sql query --json with invalid --parameters outputs JSON error', async () => {
-    const { stdout, exitCode } = await runCli([
-      'sql', 'query', 'SELECT * FROM spans',
-      '--json', '--parameters', 'not-json',
-      '--project-api-key', 'fake',
-    ]);
-
-    expect(exitCode).not.toBe(0);
-    const parsed = JSON.parse(stdout.trim());
-    expect(parsed.error).toContain('--parameters must be valid JSON');
-  });
-});
-
 describe('sql CLI integration — with mock server', () => {
   let mockServer: http.Server;
   let mockPort: number;
@@ -97,41 +83,6 @@ describe('sql CLI integration — with mock server', () => {
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed.length).toBe(2);
     expect(parsed[0].id).toBe('span-001');
-  });
-
-  it('sql query forwards --parameters to the server', async () => {
-    let capturedBody = '';
-
-    const paramsServer = http.createServer((req, res) => {
-      let body = '';
-      req.on('data', (chunk) => { body += chunk; });
-      req.on('end', () => {
-        capturedBody = body;
-        res.setHeader('Content-Type', 'application/json');
-        res.writeHead(200);
-        res.end(JSON.stringify({ data: [] }));
-      });
-    });
-
-    const paramsPort = await new Promise<number>((resolve) => {
-      paramsServer.listen(0, () => {
-        resolve((paramsServer.address() as any).port);
-      });
-    });
-
-    await runCli([
-      'sql', 'query', 'SELECT * FROM spans WHERE id = :id',
-      '--json',
-      '--parameters', '{"id": "span-001"}',
-      '--base-url', `http://localhost:${paramsPort}`,
-      '--port', String(paramsPort),
-      '--project-api-key', 'fake-key',
-    ]);
-
-    await new Promise<void>((resolve) => paramsServer.close(() => resolve()));
-
-    const body = JSON.parse(capturedBody);
-    expect(body.parameters).toEqual({ id: 'span-001' });
   });
 
   it('server error in --json mode exits non-zero with JSON error', async () => {

@@ -10,25 +10,12 @@ interface SqlCommandOptions {
   baseUrl?: string;
   port?: number;
   json?: boolean;
-  parameters?: string;
 }
 
 export const handleSqlQuery = async (
   query: string,
   options: SqlCommandOptions,
 ): Promise<void> => {
-  let parameters: Record<string, unknown> = {};
-
-  if (options.parameters) {
-    try {
-      parameters = JSON.parse(options.parameters) as Record<string, unknown>;
-    } catch {
-      if (options.json) outputJsonError("--parameters must be valid JSON");
-      logger.error("--parameters must be valid JSON");
-      process.exit(1);
-    }
-  }
-
   const client = new LaminarClient({
     projectApiKey: options.projectApiKey,
     baseUrl: options.baseUrl,
@@ -36,7 +23,7 @@ export const handleSqlQuery = async (
   });
 
   try {
-    const rows = await client.sql.query(query, parameters);
+    const rows = await client.sql.query(query);
 
     if (options.json) {
       outputJson(rows);
@@ -72,3 +59,4 @@ export const handleSqlQuery = async (
     process.exit(1);
   }
 };
+
