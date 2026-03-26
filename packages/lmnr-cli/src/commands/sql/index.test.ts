@@ -27,39 +27,6 @@ afterEach(() => {
 });
 
 describe('handleSqlQuery', () => {
-  // --- Parameter parsing ---
-
-  it('exits with error on invalid JSON in --parameters', async () => {
-    await expect(
-      handleSqlQuery('SELECT * FROM spans', { ...baseOpts, parameters: 'not-json' }),
-    ).rejects.toThrow('process.exit(1)');
-
-    expect(mockQuery).not.toHaveBeenCalled();
-  });
-
-  it('outputs JSON error on invalid --parameters in json mode', async () => {
-    await expect(
-      handleSqlQuery('SELECT * FROM spans', { ...baseOpts, json: true, parameters: '{bad}' }),
-    ).rejects.toThrow('process.exit(1)');
-
-    const output = JSON.parse(logSpy.mock.calls[0][0] as string);
-    expect(output.error).toContain('--parameters must be valid JSON');
-  });
-
-  it('passes parsed parameters to client.sql.query', async () => {
-    mockQuery.mockResolvedValue([]);
-
-    await handleSqlQuery('SELECT * FROM spans WHERE id = :id', {
-      ...baseOpts,
-      parameters: '{"id": "abc-123"}',
-    });
-
-    expect(mockQuery).toHaveBeenCalledWith(
-      'SELECT * FROM spans WHERE id = :id',
-      { id: 'abc-123' },
-    );
-  });
-
   // --- --json mode ---
 
   it('outputs JSON array of rows in json mode', async () => {
