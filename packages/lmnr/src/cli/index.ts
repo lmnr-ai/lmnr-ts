@@ -73,7 +73,7 @@ async function cli() {
     "Use `lmnr-cli dataset` instead.";
 
   // Datasets command with global options
-  const datasetsCmd = program
+  const datasetCmd = program
     .command("datasets")
     .description("[DEPRECATED] Manage datasets. Use `lmnr-cli dataset` instead.")
     .option(
@@ -91,7 +91,7 @@ async function cli() {
     );
 
   // Datasets list command
-  datasetsCmd
+  datasetCmd
     .command("list")
     .description("List all datasets")
     .action(async (options, cmd) => {
@@ -101,7 +101,7 @@ async function cli() {
     });
 
   // Datasets push command
-  datasetsCmd
+  datasetCmd
     .command("push")
     .description("Push datapoints to an existing dataset")
     .argument("<paths...>", "Paths to files or directories containing data to push")
@@ -121,7 +121,7 @@ async function cli() {
     });
 
   // Datasets pull command
-  datasetsCmd
+  datasetCmd
     .command("pull")
     .description("Pull data from a dataset")
     .argument("[output-path]", "Path to save the data. If not provided, prints to console")
@@ -146,7 +146,7 @@ async function cli() {
     });
 
   // Datasets create command
-  datasetsCmd
+  datasetCmd
     .command("create")
     .description("Create a dataset from input files")
     .argument("<name>", "Name of the dataset to create")
