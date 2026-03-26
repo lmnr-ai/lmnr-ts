@@ -30,7 +30,7 @@ export const handleTraceTagAdd = async (
     const result = await client.tags.tag(traceId, tags);
 
     if (options.json) {
-      outputJson({ ...result, traceId, tags });
+      outputJson({ traceId, tags, ...result });
       return;
     }
 
