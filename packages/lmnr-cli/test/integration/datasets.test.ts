@@ -34,7 +34,7 @@ async function runCli(args: string[]): Promise<CliResult> {
 describe('datasets CLI integration — validation errors', () => {
   it('datasets push --json with no name/id outputs JSON error', async () => {
     const { stdout, exitCode } = await runCli([
-      'datasets', 'push', '--json', '--project-api-key', 'fake', './nonexistent',
+      'dataset', 'push', '--json', '--project-api-key', 'fake', './nonexistent',
     ]);
 
     expect(exitCode).not.toBe(0);
@@ -45,7 +45,7 @@ describe('datasets CLI integration — validation errors', () => {
 
   it('datasets push --json with both name and id outputs JSON error', async () => {
     const { stdout, exitCode } = await runCli([
-      'datasets', 'push', '--json', '--name', 'x', '--id', 'y',
+      'dataset', 'push', '--json', '--name', 'x', '--id', 'y',
       '--project-api-key', 'fake', './nonexistent',
     ]);
 
@@ -56,7 +56,7 @@ describe('datasets CLI integration — validation errors', () => {
 
   it('datasets pull --json with no name/id outputs JSON error', async () => {
     const { stdout, exitCode } = await runCli([
-      'datasets', 'pull', '--json', '--project-api-key', 'fake',
+      'dataset', 'pull', '--json', '--project-api-key', 'fake',
     ]);
 
     expect(exitCode).not.toBe(0);
@@ -66,8 +66,8 @@ describe('datasets CLI integration — validation errors', () => {
 
   it('all --json error outputs are valid JSON', async () => {
     const results = await Promise.all([
-      runCli(['datasets', 'push', '--json', '--project-api-key', 'fake', './x']),
-      runCli(['datasets', 'pull', '--json', '--project-api-key', 'fake']),
+      runCli(['dataset', 'push', '--json', '--project-api-key', 'fake', './x']),
+      runCli(['dataset', 'pull', '--json', '--project-api-key', 'fake']),
     ]);
 
     for (const { stdout } of results) {
@@ -139,7 +139,7 @@ describe('datasets CLI integration — with mock server', () => {
 
   it('datasets list --json returns JSON array', async () => {
     const { stdout, exitCode } = await runCli([
-      'datasets', 'list', '--json',
+      'dataset', 'list', '--json',
       '--base-url', `http://localhost:${mockPort}`,
       '--port', String(mockPort),
       '--project-api-key', 'fake-key',
@@ -154,7 +154,7 @@ describe('datasets CLI integration — with mock server', () => {
 
   it('datasets pull --json returns datapoints', async () => {
     const { stdout, exitCode } = await runCli([
-      'datasets', 'pull', '--json', '--name', 'test-dataset',
+      'dataset', 'pull', '--json', '--name', 'test-dataset',
       '--base-url', `http://localhost:${mockPort}`,
       '--port', String(mockPort),
       '--project-api-key', 'fake-key',
@@ -173,7 +173,7 @@ describe('datasets CLI integration — with mock server', () => {
     await fs.writeFile(dataFile, JSON.stringify([{ data: { x: 1 } }, { data: { x: 2 } }]));
 
     const { stdout, exitCode } = await runCli([
-      'datasets', 'push', '--json', '--name', 'test-dataset',
+      'dataset', 'push', '--json', '--name', 'test-dataset',
       '--base-url', `http://localhost:${mockPort}`,
       '--port', String(mockPort),
       '--project-api-key', 'fake-key',

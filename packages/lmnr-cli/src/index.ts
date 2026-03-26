@@ -8,7 +8,7 @@ import {
   handleDatasetsList,
   handleDatasetsPull,
   handleDatasetsPush,
-} from './commands/datasets';
+} from './commands/dataset';
 import { runDev } from './commands/dev';
 
 async function main() {
@@ -101,7 +101,7 @@ Examples:
     );
 
   const datasetsCmd = program
-    .command("datasets")
+    .command("dataset")
     .description("Manage datasets")
     .option(
       "--project-api-key <key>",
