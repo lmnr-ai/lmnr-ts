@@ -141,17 +141,18 @@ export const handleDatasetsPush = async (
     port: options.port,
   });
 
-  const data = await loadFromPaths(paths, options.recursive);
-
-  if (data.length === 0) {
-    if (options.json) outputJsonError("No data to push");
-    logger.warn("No data to push. Skipping");
-    return;
-  }
-
-  const identifier = options.name ? { name: options.name } : { id: options.id };
 
   try {
+    const data = await loadFromPaths(paths, options.recursive);
+
+    if (data.length === 0) {
+      if (options.json) outputJsonError("No data to push");
+      logger.warn("No data to push. Skipping");
+      return;
+    }
+
+    const identifier = options.name ? { name: options.name } : { id: options.id };
+
     const result = await client.datasets.push({
       points: data,
       ...identifier,
@@ -258,19 +259,19 @@ export const handleDatasetsCreate = async (
     port: options.port,
   });
 
-  // Load data from input files
-  const data = await loadFromPaths(paths, options.recursive);
-
-  if (data.length === 0) {
-    if (options.json) outputJsonError("No data to push");
-    logger.warn("No data to push. Skipping");
-    return;
-  }
-
-  // Push data to create/populate the dataset
-  logger.info(`Pushing ${data.length} data points to dataset '${name}'...`);
-
   try {
+    // Load data from input files
+    const data = await loadFromPaths(paths, options.recursive);
+
+    if (data.length === 0) {
+      if (options.json) outputJsonError("No data to push");
+      logger.warn("No data to push. Skipping");
+      return;
+    }
+
+    // Push data to create/populate the dataset
+    logger.info(`Pushing ${data.length} data points to dataset '${name}'...`);
+
     await client.datasets.push({
       points: data,
       name,
