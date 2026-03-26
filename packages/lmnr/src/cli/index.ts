@@ -70,12 +70,12 @@ async function cli() {
 
   const deprecatedDatasetsWarning =
     "DeprecationWarning: `lmnr datasets` is deprecated and will be removed in a future version. " +
-    "Use `lmnr-cli datasets` instead.";
+    "Use `lmnr-cli dataset` instead.";
 
   // Datasets command with global options
   const datasetsCmd = program
     .command("datasets")
-    .description("[DEPRECATED] Manage datasets. Use `lmnr-cli datasets` instead.")
+    .description("[DEPRECATED] Manage datasets. Use `lmnr-cli dataset` instead.")
     .option(
       "--project-api-key <key>",
       "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
