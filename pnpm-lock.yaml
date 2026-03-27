@@ -295,9 +295,6 @@ importers:
 
   packages/lmnr-cli:
     dependencies:
-      '@lmnr-ai/client':
-        specifier: workspace:*
-        version: link:../client
       '@lmnr-ai/lmnr':
         specifier: '*'
         version: 0.8.12
@@ -326,6 +323,9 @@ importers:
         specifier: ^13.0.0
         version: 13.0.0
     devDependencies:
+      '@lmnr-ai/client':
+        specifier: workspace:*
+        version: link:../client
       '@lmnr-ai/types':
         specifier: workspace:*
         version: link:../types
