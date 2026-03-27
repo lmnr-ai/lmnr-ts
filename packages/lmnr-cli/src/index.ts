@@ -12,6 +12,7 @@ import {
 import { runDev } from './commands/dev';
 import { handleSqlQuery } from './commands/sql';
 import { SQL_SCHEMA_HELP } from './commands/sql/schema';
+import { handleTraceTagAdd } from './commands/trace';
 
 async function main() {
   const program = new Command();
@@ -231,14 +232,47 @@ Examples:
       process.stdout.write(SQL_SCHEMA_HELP);
     });
 
+  // Trace command group
+  const traceCmd = program
+    .command("trace")
+    .description("Manage traces")
+    .option(
+      "--project-api-key <key>",
+      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option("--json", "Output structured JSON to stdout");
+
+  const traceTagCmd = traceCmd
+    .command("tag")
+    .description("Manage trace tags");
+
+  traceTagCmd
+    .command("add")
+    .description("Add tags to a trace")
+    .argument("<trace-id>", "ID of the trace to tag (UUID or OpenTelemetry format)")
+    .argument("<tags...>", "Tags to add to the trace")
+    .action(async (traceId: string, tags: string[], _options, cmd) => {
+      await handleTraceTagAdd(traceId, tags, cmd.optsWithGlobals());
+    });
+
   program.addHelpText('after', `
 Examples:
   lmnr-cli dev agent.ts                                       # Debugger TypeScript entrypoint
   lmnr-cli dev agent.py                                       # Debugger Python script mode
-  lmnr-cli dev -m src.agent                                   # Debuger Python module mode
-  lmnr-cli datasets list --json                               # List all datasets
-  lmnr-cli datasets push data.jsonl -n my-dataset --json     # Push data to a dataset
-  lmnr-cli datasets pull output.jsonl -n my-dataset --json   # Pull data from a dataset
+  lmnr-cli dev -m src.agent                                   # Debugger Python module mode
+  lmnr-cli dataset list --json                                # List all datasets
+  lmnr-cli dataset push data.jsonl -n my-dataset --json      # Push data to a dataset
+  lmnr-cli dataset pull output.jsonl -n my-dataset --json    # Pull data from a dataset
+  lmnr-cli trace tag add <trace-id> tag1 tag2 --json         # Tag a trace
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json   # Query spans
   lmnr-cli sql query "SELECT t.id, t.total_cost, s.name, s.duration FROM traces t JOIN spans s ON t.id = s.trace_id WHERE t.total_cost > 0.01 LIMIT 20" --json
   lmnr-cli sql schema                                         # Show available tables
