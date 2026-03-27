@@ -102,7 +102,7 @@
     "@google-cloud/vertexai": "^1.10.0",
     "@google/genai": "^1.42.0",
     "@langchain/classic": "^1.0.25",
-    "@langchain/core": "^1.1.28",
+    "@langchain/core": "^1.1.36",
     "@lmnr-ai/client": "workspace:*",
     "@lmnr-ai/types": "workspace:*",
     "@onkernel/sdk": "^0.18.0",
