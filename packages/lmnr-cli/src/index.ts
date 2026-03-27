@@ -192,8 +192,6 @@ Examples:
     });
 
 
-  // TODO: does it make sense to make query a subcommand here?
-  // I'm not sure what other subcommands would be here.
   const sqlCmd = program
     .command("sql")
     .description("Run SQL queries against your Laminar project data")
