@@ -10,6 +10,8 @@ import {
   handleDatasetsPush,
 } from './commands/dataset';
 import { runDev } from './commands/dev';
+import { handleSqlQuery } from './commands/sql';
+import { SQL_SCHEMA_HELP } from './commands/sql/schema';
 
 async function main() {
   const program = new Command();
@@ -189,6 +191,58 @@ Examples:
       await handleDatasetsCreate(name, paths, cmd.optsWithGlobals());
     });
 
+
+  const sqlCmd = program
+    .command("sql")
+    .description("Run SQL queries against your Laminar project data")
+    .option(
+      "--project-api-key <key>",
+      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option("--json", "Output structured JSON to stdout");
+
+  sqlCmd
+    .command("query")
+    .description("Execute a SQL query")
+    .argument("<query>", "SQL query string")
+    .action(async (query: string, _options, cmd) => {
+      await handleSqlQuery(query, cmd.optsWithGlobals());
+    })
+    .addHelpText("after", SQL_SCHEMA_HELP + `
+Examples:
+  $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10"
+  $ lmnr-cli sql query "SELECT id, total_cost, status FROM traces LIMIT 20"
+  $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json
+`);
+
+  sqlCmd
+    .command("schema")
+    .description("Show available tables and their columns")
+    .action(() => {
+      process.stdout.write(SQL_SCHEMA_HELP);
+    });
+
+  program.addHelpText('after', `
+Examples:
+  lmnr-cli dev agent.ts                                       # Debugger TypeScript entrypoint
+  lmnr-cli dev agent.py                                       # Debugger Python script mode
+  lmnr-cli dev -m src.agent                                   # Debuger Python module mode
+  lmnr-cli datasets list --json                               # List all datasets
+  lmnr-cli datasets push data.jsonl -n my-dataset --json     # Push data to a dataset
+  lmnr-cli datasets pull output.jsonl -n my-dataset --json   # Pull data from a dataset
+  lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json   # Query spans
+  lmnr-cli sql query "SELECT t.id, t.total_cost, s.name, s.duration FROM traces t JOIN spans s ON t.id = s.trace_id WHERE t.total_cost > 0.01 LIMIT 20" --json
+  lmnr-cli sql schema                                         # Show available tables
+`);
 
   await program.parseAsync();
 }
