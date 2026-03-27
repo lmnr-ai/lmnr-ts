@@ -13,7 +13,7 @@ import { v4 as uuidv4 } from "uuid";
 import { startCacheServer } from "../../cache-server";
 import { createSSEClient, SSEClient } from "../../sse-client";
 import { SubprocessManager } from "../../subprocess/executor";
-import { initializeLogger } from "../../utils";
+import { initializeLogger } from "../../utils/logger";
 import { getWorkerCommand } from "../../worker-registry";
 import {
   discoverFunctionMetadata,
@@ -360,7 +360,7 @@ export async function runDev(
   } catch (error) {
     logger.error(
       "Failed to discover entrypoint functions: " +
-        (error instanceof Error ? error.message : String(error)),
+      (error instanceof Error ? error.message : String(error)),
     );
     cacheServer.close();
     throw error;
@@ -491,7 +491,7 @@ export async function runDev(
               } catch (error: any) {
                 logger.error(
                   "Failed to update function metadata: " +
-                    (error instanceof Error ? error.message : String(error)),
+                  (error instanceof Error ? error.message : String(error)),
                 );
                 if (error instanceof Error && error.stack) {
                   logger.debug(`Stack trace: ${error.stack}`);
@@ -527,7 +527,7 @@ export async function runDev(
         } catch (error) {
           logger.error(
             "Unhandled error in run event handler: " +
-              (error instanceof Error ? error.message : String(error)),
+            (error instanceof Error ? error.message : String(error)),
           );
         } finally {
           // Clear the promise so the next run can proceed
@@ -648,7 +648,7 @@ export async function runDev(
   } catch (error) {
     logger.error(
       "Failed to start dev command: " +
-        (error instanceof Error ? error.message : String(error)),
+      (error instanceof Error ? error.message : String(error)),
     );
 
     // Try to delete the debugger session before exiting

@@ -68,10 +68,14 @@ async function cli() {
       await runEvaluation(files, options);
     });
 
+  const deprecatedDatasetsWarning =
+    "DeprecationWarning: `lmnr datasets` is deprecated and will be removed in a future version. " +
+    "Use `lmnr-cli dataset` instead.";
+
   // Datasets command with global options
-  const datasetsCmd = program
+  const datasetCmd = program
     .command("datasets")
-    .description("Manage datasets")
+    .description("[DEPRECATED] Manage datasets. Use `lmnr-cli dataset` instead.")
     .option(
       "--project-api-key <key>",
       "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
@@ -87,16 +91,17 @@ async function cli() {
     );
 
   // Datasets list command
-  datasetsCmd
+  datasetCmd
     .command("list")
     .description("List all datasets")
     .action(async (options, cmd) => {
+      process.stderr.write(deprecatedDatasetsWarning + "\n");
       const parentOpts = cmd.parent?.opts() || {};
       await handleDatasetsList({ ...parentOpts, ...options });
     });
 
   // Datasets push command
-  datasetsCmd
+  datasetCmd
     .command("push")
     .description("Push datapoints to an existing dataset")
     .argument("<paths...>", "Paths to files or directories containing data to push")
@@ -110,12 +115,13 @@ async function cli() {
       100,
     )
     .action(async (paths: string[], options, cmd) => {
+      process.stderr.write(deprecatedDatasetsWarning + "\n");
       const parentOpts = cmd.parent?.opts() || {};
       await handleDatasetsPush(paths, { ...parentOpts, ...options });
     });
 
   // Datasets pull command
-  datasetsCmd
+  datasetCmd
     .command("pull")
     .description("Pull data from a dataset")
     .argument("[output-path]", "Path to save the data. If not provided, prints to console")
@@ -134,12 +140,13 @@ async function cli() {
     .option("--limit <limit>", "Limit number of datapoints to pull", (val) => parseInt(val, 10))
     .option("--offset <offset>", "Offset for pagination", (val) => parseInt(val, 10), 0)
     .action(async (outputPath: string | undefined, options, cmd) => {
+      process.stderr.write(deprecatedDatasetsWarning + "\n");
       const parentOpts = cmd.parent?.opts() || {};
       await handleDatasetsPull(outputPath, { ...parentOpts, ...options });
     });
 
   // Datasets create command
-  datasetsCmd
+  datasetCmd
     .command("create")
     .description("Create a dataset from input files")
     .argument("<name>", "Name of the dataset to create")
@@ -157,6 +164,7 @@ async function cli() {
       100,
     )
     .action(async (name: string, paths: string[], options, cmd) => {
+      process.stderr.write(deprecatedDatasetsWarning + "\n");
       const parentOpts = cmd.parent?.opts() || {};
       await handleDatasetsCreate(name, paths, { ...parentOpts, ...options });
     });

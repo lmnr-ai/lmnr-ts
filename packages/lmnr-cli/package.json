@@ -10,7 +10,8 @@
     "build": "tsdown",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
-    "test": "tsx --test test/*.test.ts"
+    "test": "vitest run",
+    "dev": "tsx src/index.ts"
   },
   "files": [
     "dist"
@@ -33,11 +34,14 @@
     "eventsource-parser": "^3.0.6",
     "pino": "9.12.0",
     "pino-pretty": "^13.1.1",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "csv-parser": "^3.2.0",
+    "export-to-csv": "^1.4.0"
   },
   "devDependencies": {
+    "@lmnr-ai/client": "workspace:*",
     "@lmnr-ai/types": "workspace:*",
-    "@lmnr-ai/client": "workspace:*"
+    "vitest": "^4.1.1"
   },
   "peerDependencies": {
     "@lmnr-ai/lmnr": "*"

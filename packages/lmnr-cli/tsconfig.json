@@ -5,6 +5,8 @@
     "rootDir": "src"
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "test/**/*",
+    "vitest.config.mts"
   ]
 }

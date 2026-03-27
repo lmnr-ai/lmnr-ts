@@ -1,11 +1,10 @@
-import * as assert from 'node:assert';
-import { describe, it } from 'node:test';
+import { describe, expect, it } from 'vitest';
 
 // We'll test the private methods indirectly through the public API
 // by setting up scenarios and verifying behavior
 
-void describe('System Message Overrides', () => {
-  void it('replaces system message with string override', () => {
+describe('System Message Overrides', () => {
+  it('replaces system message with string override', () => {
     const prompt = [
       { role: 'system', content: 'Old system' },
       { role: 'user', content: [{ type: 'text', text: 'Hello' }] },
@@ -18,13 +17,13 @@ void describe('System Message Overrides', () => {
       ...withoutSystem,
     ];
 
-    assert.strictEqual(newPrompt[0].role, 'system');
-    assert.strictEqual(newPrompt[0].content, 'New system override');
-    assert.strictEqual(newPrompt[1].role, 'user');
-    assert.strictEqual(newPrompt.length, 2);
+    expect(newPrompt[0].role).toBe('system');
+    expect(newPrompt[0].content).toBe('New system override');
+    expect(newPrompt[1].role).toBe('user');
+    expect(newPrompt.length).toBe(2);
   });
 
-  void it('replaces multiple system messages', () => {
+  it('replaces multiple system messages', () => {
     const prompt = [
       { role: 'system', content: 'System 1' },
       { role: 'system', content: 'System 2' },
@@ -37,12 +36,12 @@ void describe('System Message Overrides', () => {
       ...withoutSystem,
     ];
 
-    assert.strictEqual(newPrompt.length, 2);
-    assert.strictEqual(newPrompt[0].content, 'Override');
-    assert.strictEqual(newPrompt[1].role, 'user');
+    expect(newPrompt.length).toBe(2);
+    expect(newPrompt[0].content).toBe('Override');
+    expect(newPrompt[1].role).toBe('user');
   });
 
-  void it('handles array of text blocks as system override', () => {
+  it('handles array of text blocks as system override', () => {
     const textBlocks = [
       { type: 'text', text: 'Part 1' },
       { type: 'text', text: 'Part 2' },
@@ -52,10 +51,10 @@ void describe('System Message Overrides', () => {
     // normalizeSystemOverride joins with newline
     const normalized = textBlocks.map(block => block.text ?? '').join('\n');
 
-    assert.strictEqual(normalized, 'Part 1\nPart 2\nPart 3');
+    expect(normalized).toBe('Part 1\nPart 2\nPart 3');
   });
 
-  void it('handles empty text blocks', () => {
+  it('handles empty text blocks', () => {
     const textBlocks = [
       { type: 'text', text: 'Part 1' },
       { type: 'text', text: '' },
@@ -64,10 +63,10 @@ void describe('System Message Overrides', () => {
 
     const normalized = textBlocks.map(block => block.text ?? '').join('\n');
 
-    assert.strictEqual(normalized, 'Part 1\n\nPart 3');
+    expect(normalized).toBe('Part 1\n\nPart 3');
   });
 
-  void it('returns original prompt when no override provided', () => {
+  it('returns original prompt when no override provided', () => {
     const prompt = [
       { role: 'system', content: 'Original' },
       { role: 'user', content: [{ type: 'text', text: 'Hello' }] },
@@ -76,12 +75,12 @@ void describe('System Message Overrides', () => {
     const systemOverride = undefined;
     const result = systemOverride ? [] : prompt;
 
-    assert.deepStrictEqual(result, prompt);
+    expect(result).toEqual(prompt);
   });
 });
 
-void describe('Tool Definition Overrides', () => {
-  void it('overrides existing tool description', () => {
+describe('Tool Definition Overrides', () => {
+  it('overrides existing tool description', () => {
     const tools = [
       {
         type: 'function',
@@ -109,11 +108,11 @@ void describe('Tool Definition Overrides', () => {
       inputSchema: override.parameters ?? existingTool.inputSchema,
     };
 
-    assert.strictEqual(updatedTools[0].description, 'New description');
-    assert.deepStrictEqual(updatedTools[0].inputSchema, existingTool.inputSchema);
+    expect(updatedTools[0].description).toBe('New description');
+    expect(updatedTools[0].inputSchema).toEqual(existingTool.inputSchema);
   });
 
-  void it('overrides existing tool inputSchema', () => {
+  it('overrides existing tool inputSchema', () => {
     const tools = [
       {
         type: 'function',
@@ -146,11 +145,11 @@ void describe('Tool Definition Overrides', () => {
       inputSchema: override.parameters ?? existingTool.inputSchema,
     };
 
-    assert.strictEqual(updatedTools[0].description, 'Get weather');
-    assert.deepStrictEqual(updatedTools[0].inputSchema, newSchema);
+    expect(updatedTools[0].description).toBe('Get weather');
+    expect(updatedTools[0].inputSchema).toEqual(newSchema);
   });
 
-  void it('merges override with existing tool', () => {
+  it('merges override with existing tool', () => {
     const tools = [
       {
         type: 'function',
@@ -178,11 +177,11 @@ void describe('Tool Definition Overrides', () => {
       inputSchema: override.parameters ?? existingTool.inputSchema,
     };
 
-    assert.strictEqual(updatedTools[0].description, 'New description');
-    assert.deepStrictEqual(updatedTools[0].inputSchema, existingTool.inputSchema);
+    expect(updatedTools[0].description).toBe('New description');
+    expect(updatedTools[0].inputSchema).toEqual(existingTool.inputSchema);
   });
 
-  void it('adds new tool with inputSchema', () => {
+  it('adds new tool with inputSchema', () => {
     const tools = [
       {
         type: 'function',
@@ -212,12 +211,12 @@ void describe('Tool Definition Overrides', () => {
       });
     }
 
-    assert.strictEqual(updatedTools.length, 2);
-    assert.strictEqual(updatedTools[1].name, 'new_tool');
-    assert.strictEqual(updatedTools[1].description, 'New tool');
+    expect(updatedTools.length).toBe(2);
+    expect(updatedTools[1].name).toBe('new_tool');
+    expect(updatedTools[1].description).toBe('New tool');
   });
 
-  void it('skips tools without inputSchema', () => {
+  it('skips tools without inputSchema', () => {
     const tools = [
       {
         type: 'function',
@@ -248,10 +247,10 @@ void describe('Tool Definition Overrides', () => {
     }
 
     // Should not add the tool
-    assert.strictEqual(updatedTools.length, 1);
+    expect(updatedTools.length).toBe(1);
   });
 
-  void it('handles empty tools array with overrides', () => {
+  it('handles empty tools array with overrides', () => {
     const overrides: Array<{ name: string; description?: string; parameters?: any }> = [
       {
         name: 'new_tool',
@@ -272,11 +271,11 @@ void describe('Tool Definition Overrides', () => {
       }
     }
 
-    assert.strictEqual(newTools.length, 1);
-    assert.strictEqual(newTools[0].name, 'new_tool');
+    expect(newTools.length).toBe(1);
+    expect(newTools[0].name).toBe('new_tool');
   });
 
-  void it('preserves provider-defined tools', () => {
+  it('preserves provider-defined tools', () => {
     const tools: any[] = [
       {
         type: 'provider-defined',
@@ -314,14 +313,14 @@ void describe('Tool Definition Overrides', () => {
     }
 
     // Provider tool unchanged
-    assert.strictEqual(updatedTools[0].type, 'provider-defined');
-    assert.strictEqual(updatedTools[0].name, 'provider_tool');
+    expect(updatedTools[0].type).toBe('provider-defined');
+    expect(updatedTools[0].name).toBe('provider_tool');
 
     // User tool updated
-    assert.strictEqual(updatedTools[1].description, 'Updated user tool');
+    expect(updatedTools[1].description).toBe('Updated user tool');
   });
 
-  void it('handles multiple tool overrides', () => {
+  it('handles multiple tool overrides', () => {
     const tools = [
       {
         type: 'function',
@@ -358,8 +357,7 @@ void describe('Tool Definition Overrides', () => {
       }
     }
 
-    assert.strictEqual(updatedTools[0].description, 'Updated Tool 1');
-    assert.strictEqual(updatedTools[1].description, 'Updated Tool 2');
+    expect(updatedTools[0].description).toBe('Updated Tool 1');
+    expect(updatedTools[1].description).toBe('Updated Tool 2');
   });
 });
-

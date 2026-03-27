@@ -15,6 +15,7 @@ export function initializeLogger(options?: { colorize?: boolean; level?: Level }
     PinoPretty({
       colorize,
       minimumLevel: level,
+      destination: 2,
     }),
   );
 }
