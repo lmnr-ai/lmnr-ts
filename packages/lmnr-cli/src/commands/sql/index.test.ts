@@ -64,7 +64,8 @@ describe('handleSqlQuery', () => {
     await handleSqlQuery('SELECT * FROM spans', baseOpts);
 
     const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
-    expect(output).toMatch(/-+/);
+    // @oclif/table uses box-drawing characters
+    expect(output).toMatch(/[─├┼┤╫╪═]+/);
   });
 
   it('prints each row', async () => {

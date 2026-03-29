@@ -2,6 +2,7 @@ import { LaminarClient } from "@lmnr-ai/client";
 
 import { initializeLogger } from "../../utils/logger";
 import { outputJson, outputJsonError } from "../../utils/output";
+import { renderTable } from "../../utils/table";
 
 const logger = initializeLogger();
 
@@ -35,23 +36,12 @@ export const handleSqlQuery = async (
       return;
     }
 
-    // TODO: is there a standard library for printing these types of tables?
     const columns = Object.keys(rows[0]);
-    const widths = columns.map((col) =>
-      rows.reduce((max, r) => Math.max(max, String(r[col] ?? "").length), col.length),
+    const tableRows = rows.map((row) =>
+      columns.map((col) => String(row[col] ?? "")),
     );
 
-    const header = columns.map((col, i) => col.padEnd(widths[i])).join(" ");
-
-    const divider = widths.map((w) => "-".repeat(w)).join(" ");
-
-    console.log(`\n${header}`);
-    console.log(divider);
-
-    for (const row of rows) {
-      console.log(columns.map((col, i) => String(row[col] ?? "").padEnd(widths[i])).join(" "));
-    }
-
+    console.log(renderTable(columns, tableRows));
     console.log(`\n${rows.length} row(s)\n`);
   } catch (error) {
     if (options.json) outputJsonError(error);
