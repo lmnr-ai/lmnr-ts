@@ -240,8 +240,7 @@ Examples:
   lmnr-cli dataset push data.jsonl -n my-dataset --json     # Push data to a dataset
   lmnr-cli dataset pull output.jsonl -n my-dataset --json   # Pull data from a dataset
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json   # Query spans
-  lmnr-cli sql query "SELECT t.id, s.name FROM traces t \
-    JOIN spans s ON t.id = s.trace_id LIMIT 20" --json
+  lmnr-cli sql query "SELECT t.id, s.name FROM traces t JOIN spans s ON t.id = s.trace_id" --json
   lmnr-cli sql schema                                         # Show available tables
 `);
 
