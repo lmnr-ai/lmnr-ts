@@ -233,15 +233,15 @@ Examples:
 
   program.addHelpText('after', `
 Examples:
-  lmnr-cli dev agent.ts                                       # Debugger TypeScript entrypoint
-  lmnr-cli dev agent.py                                       # Debugger Python script mode
-  lmnr-cli dev -m src.agent                                   # Debuger Python module mode
-  lmnr-cli dataset list --json                               # List all datasets
-  lmnr-cli dataset push data.jsonl -n my-dataset --json     # Push data to a dataset
-  lmnr-cli dataset pull output.jsonl -n my-dataset --json   # Pull data from a dataset
-  lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json   # Query spans
+  lmnr-cli dev agent.ts                                    # Debugger TypeScript entrypoint
+  lmnr-cli dev agent.py                                    # Debugger Python script mode
+  lmnr-cli dev -m src.agent                                # Debugger Python module mode
+  lmnr-cli dataset list --json                             # List all datasets
+  lmnr-cli dataset push data.jsonl -n my-dataset --json    # Push data to a dataset
+  lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a dataset
+  lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json # Query spans
   lmnr-cli sql query "SELECT t.id, s.name FROM traces t JOIN spans s ON t.id = s.trace_id" --json
-  lmnr-cli sql schema                                         # Show available tables
+  lmnr-cli sql schema                                      # Show available tables
 `);
 
   await program.parseAsync();
