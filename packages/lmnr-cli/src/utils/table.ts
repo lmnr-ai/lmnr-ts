@@ -1,8 +1,14 @@
 import Table from "cli-table3";
 
 const DEFAULT_TERMINAL_WIDTH = 80;
-const CELL_PADDING = 2; // cli-table3 adds 1 char padding on each side
-const BORDER_CHAR = 1; // each border character
+const PADDING_RIGHT = 2;
+
+const noBorderChars = {
+  top: "", "top-mid": "", "top-left": "", "top-right": "",
+  bottom: "", "bottom-mid": "", "bottom-left": "", "bottom-right": "",
+  left: "", "left-mid": "", mid: "", "mid-mid": "",
+  right: "", "right-mid": "", middle: "",
+};
 
 function getTerminalWidth(): number {
   return process.stdout.columns || DEFAULT_TERMINAL_WIDTH;
@@ -16,11 +22,10 @@ function fitColumnWidths(
   contentWidths: number[],
   terminalWidth: number,
 ): number[] | undefined {
-  const numCols = contentWidths.length;
-  const overhead = numCols * CELL_PADDING + (numCols + 1) * BORDER_CHAR;
+  // With no borders, overhead is just padding-right per column
+  const overhead = contentWidths.length * PADDING_RIGHT;
   const totalContentWidth = contentWidths.reduce((sum, w) => sum + w, 0);
 
-  // If it fits, let cli-table3 auto-size
   if (totalContentWidth + overhead <= terminalWidth) {
     return undefined;
   }
@@ -43,7 +48,7 @@ function truncate(str: string, maxLen: number): string {
 }
 
 /**
- * Render a table from column headers and row data.
+ * Render a borderless table from column headers and row data.
  * Automatically truncates content when the table exceeds terminal width.
  */
 export function renderTable(head: string[], rows: string[][]): string {
@@ -57,12 +62,17 @@ export function renderTable(head: string[], rows: string[][]): string {
 
   const table = new Table({
     head,
+    chars: noBorderChars,
+    style: {
+      "padding-left": 0,
+      "padding-right": PADDING_RIGHT,
+    },
     ...(colWidths && { colWidths }),
   });
 
   if (colWidths) {
     for (const row of rows) {
-      table.push(row.map((cell, i) => truncate(cell, colWidths[i] - CELL_PADDING)));
+      table.push(row.map((cell, i) => truncate(cell, colWidths[i])));
     }
   } else {
     for (const row of rows) {
