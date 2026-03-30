@@ -61,8 +61,12 @@ export function renderTable(head: string[], rows: string[][]): string {
 
   const colWidths = fitColumnWidths(contentWidths, terminalWidth);
 
+  const truncatedHead = colWidths
+    ? head.map((h, i) => truncate(h, colWidths[i] - PADDING_RIGHT))
+    : head;
+
   const table = new Table({
-    head,
+    head: truncatedHead,
     chars: noBorderChars,
     style: {
       "padding-left": 0,
