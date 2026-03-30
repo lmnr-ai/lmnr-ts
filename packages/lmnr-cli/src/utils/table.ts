@@ -33,10 +33,11 @@ function fitColumnWidths(
   const availableContent = terminalWidth - overhead;
   const minColWidth = 5;
 
+  // Return widths including padding, since cli-table3's colWidths includes padding
   return contentWidths.map((w) =>
     Math.max(
-      minColWidth,
-      Math.floor((w / totalContentWidth) * availableContent),
+      minColWidth + PADDING_RIGHT,
+      Math.floor((w / totalContentWidth) * availableContent) + PADDING_RIGHT,
     ),
   );
 }
@@ -72,7 +73,7 @@ export function renderTable(head: string[], rows: string[][]): string {
 
   if (colWidths) {
     for (const row of rows) {
-      table.push(row.map((cell, i) => truncate(cell, colWidths[i])));
+      table.push(row.map((cell, i) => truncate(cell, colWidths[i] - PADDING_RIGHT)));
     }
   } else {
     for (const row of rows) {
