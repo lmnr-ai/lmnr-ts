@@ -55,7 +55,7 @@ export function renderTable(head: string[], rows: string[][]): string {
   const terminalWidth = getTerminalWidth();
 
   const contentWidths = head.map((h, i) =>
-    Math.max(h.length, ...rows.map((row) => (row[i] ?? "").length)),
+    rows.reduce((max, row) => Math.max(max, (row[i] ?? "").length), h.length),
   );
 
   const colWidths = fitColumnWidths(contentWidths, terminalWidth);
