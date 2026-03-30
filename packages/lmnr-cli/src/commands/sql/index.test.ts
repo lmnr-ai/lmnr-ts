@@ -58,13 +58,16 @@ describe('handleSqlQuery', () => {
     expect(output).toContain('name');
   });
 
-  it('prints a divider row', async () => {
+  it('separates columns with spacing', async () => {
     mockQuery.mockResolvedValue([{ id: '1', name: 'alice' }]);
 
     await handleSqlQuery('SELECT * FROM spans', baseOpts);
 
     const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
-    expect(output).toMatch(/-+/);
+    // Strip ANSI codes then check column spacing
+    // eslint-disable-next-line no-control-regex
+    const plain = output.replace(/\x1b\[[0-9;]*m/g, '');
+    expect(plain).toMatch(/id\s+name/);
   });
 
   it('prints each row', async () => {

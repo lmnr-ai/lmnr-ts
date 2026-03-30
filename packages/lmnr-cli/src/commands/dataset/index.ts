@@ -4,6 +4,7 @@ import { Datapoint, type StringUUID } from "@lmnr-ai/types";
 import { loadFromPaths, printToConsole, writeToFile } from "../../utils/file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson, outputJsonError } from "../../utils/output";
+import { renderTable } from "../../utils/table";
 
 const logger = initializeLogger();
 const DEFAULT_DATASET_PULL_BATCH_SIZE = 100;
@@ -85,22 +86,13 @@ export const handleDatasetsList = async (
       return;
     }
 
-    // Print table header
-    const idWidth = 36; // UUID length
-    const createdAtWidth = 19; // YYYY-MM-DD HH:MM:SS format
-
-    console.log(`\n${'ID'.padEnd(idWidth)}  ${'Created At'.padEnd(createdAtWidth)}  Name`);
-    console.log(`${'-'.repeat(idWidth)}  ${'-'.repeat(createdAtWidth)}  ${'-'.repeat(20)}`);
-
-    // Print each dataset row
-    for (const dataset of datasets) {
+    const rows = datasets.map((dataset) => {
       const createdAt = new Date(dataset.createdAt);
       const createdAtStr = createdAt.toISOString().replace('T', ' ').substring(0, 19);
-      console.log(
-        `${dataset.id.padEnd(idWidth)}  ${createdAtStr.padEnd(createdAtWidth)}  ${dataset.name}`,
-      );
-    }
+      return [dataset.id, createdAtStr, dataset.name];
+    });
 
+    console.log(renderTable(['ID', 'Created At', 'Name'], rows));
     console.log(`\nTotal: ${datasets.length} dataset(s)\n`);
   } catch (error) {
     if (options.json) outputJsonError(error);
