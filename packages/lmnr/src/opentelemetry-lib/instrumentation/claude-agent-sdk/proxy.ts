@@ -1,6 +1,9 @@
 import { trace } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
+import * as fs from "fs";
 import * as net from "net";
+import * as os from "os";
+import * as path from "path";
 
 import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
@@ -18,6 +21,11 @@ const FOUNDRY_BASE_URL_ENV = "ANTHROPIC_FOUNDRY_BASE_URL";
 const FOUNDRY_RESOURCE_ENV = "ANTHROPIC_FOUNDRY_RESOURCE";
 const FOUNDRY_USE_ENV = "CLAUDE_CODE_USE_FOUNDRY";
 
+// Bedrock configuration constants
+const BEDROCK_BASE_URL_ENV = "ANTHROPIC_BEDROCK_BASE_URL";
+const BEDROCK_USE_ENV = "CLAUDE_CODE_USE_BEDROCK";
+const BEDROCK_AWS_REGION_ENV = "AWS_REGION";
+
 // Track all active proxy instances for cleanup
 const activeProxyServers = new Set<any>(); // Set<ProxyServer>
 let globalShutdownRegistered = false;
@@ -28,6 +36,28 @@ let globalShutdownRegistered = false;
 const isTruthyEnv = (value: string | undefined): boolean => value === "1";
 
 /**
+ * Read region for a given profile from ~/.aws/config.
+ */
+const getRegionFromAwsConfig = (profile: string): string | null => {
+  const configPath = path.join(os.homedir(), ".aws", "config");
+  let content: string;
+  try {
+    content = fs.readFileSync(configPath, "utf-8");
+  } catch {
+    return null;
+  }
+
+  const profileHeader = profile === "default" ? "default" : `profile ${profile}`;
+  const escapedHeader = profileHeader.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(
+    `\\[${escapedHeader}\\][^\\[]*?region\\s*=\\s*([^\\s\\n]+)`,
+    "s",
+  );
+  const match = content.match(regex);
+  return match ? match[1] : null;
+};
+
+/**
  * Resolve target URL from environment dictionary with process.env fallback.
  *
  * This is the single source of truth for determining the target URL for the proxy.
@@ -35,10 +65,14 @@ const isTruthyEnv = (value: string | undefined): boolean => value === "1";
  * Resolution order (highest to lowest priority):
  * 1. HTTPS_PROXY - if set, use as target (our proxy will forward to it)
  * 2. HTTP_PROXY - if set, use as target (our proxy will forward to it)
- * 3. Third-party provider URLs (e.g., Foundry):
+ * 3. Third-party provider URLs (e.g., Foundry, Bedrock):
  *    - If CLAUDE_CODE_USE_FOUNDRY is truthy:
  *      - Use ANTHROPIC_FOUNDRY_BASE_URL, or
  *      - Construct from ANTHROPIC_FOUNDRY_RESOURCE
+ *    - If CLAUDE_CODE_USE_BEDROCK is truthy:
+ *      - Use ANTHROPIC_BEDROCK_BASE_URL, or
+ *      - Construct from AWS_REGION env var, or
+ *      - Construct by reading region from ~/.aws/config via AWS_PROFILE
  * 4. ANTHROPIC_BASE_URL - standard Anthropic API base URL
  * 5. Fall back to default (https://api.anthropic.com)
  *
@@ -87,6 +121,31 @@ export const resolveTargetUrlFromEnv = (
       `${FOUNDRY_USE_ENV} is set but neither ${FOUNDRY_BASE_URL_ENV} ` +
       `nor ${FOUNDRY_RESOURCE_ENV} is configured. ` +
       `Microsoft Foundry requires one of these values.`,
+    );
+    return null;
+  }
+
+  // 3b. Check for Bedrock
+  const bedrockEnabled = isTruthyEnv(getEnvValue(BEDROCK_USE_ENV));
+  if (bedrockEnabled) {
+    const bedrockBaseUrl = getEnvValue(BEDROCK_BASE_URL_ENV);
+    if (bedrockBaseUrl) {
+      return bedrockBaseUrl.replace(/\/$/, "");
+    }
+
+    let region = getEnvValue(BEDROCK_AWS_REGION_ENV);
+    if (!region) {
+      const awsProfile = getEnvValue("AWS_PROFILE") || "default";
+      region = getRegionFromAwsConfig(awsProfile) ?? undefined;
+    }
+
+    if (region) {
+      return `https://bedrock-runtime.${region}.amazonaws.com`;
+    }
+
+    logger.error(
+      `${BEDROCK_USE_ENV} is set but could not determine AWS region. ` +
+      `Set ${BEDROCK_AWS_REGION_ENV} or configure a region in ~/.aws/config for the active profile.`,
     );
     return null;
   }

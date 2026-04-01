@@ -108,6 +108,12 @@ export function instrumentClaudeAgentQuery(
           if (foundryEnabled) {
             params.options.env.ANTHROPIC_FOUNDRY_BASE_URL = proxyInstance.baseUrl;
           }
+
+          // If Bedrock is enabled, update Bedrock-specific env vars
+          const bedrockEnabled = params.options.env.CLAUDE_CODE_USE_BEDROCK === "1";
+          if (bedrockEnabled) {
+            params.options.env.ANTHROPIC_BEDROCK_BASE_URL = proxyInstance.baseUrl;
+          }
         } else {
           logger.debug("No claude proxy server available. Proceeding without proxy.");
         }
