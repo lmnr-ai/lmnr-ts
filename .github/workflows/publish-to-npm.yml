@@ -25,8 +25,6 @@ jobs:
       - run: pnpm --filter lmnr-cli build
       - name: Publish CLI package
         run: cd packages/lmnr-cli && pnpm publish --provenance --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-sdk:
     if: "!startsWith(github.event.release.tag_name, 'cli-')"
@@ -55,15 +53,9 @@ jobs:
 
       - name: Publish types package
         run: cd packages/types && pnpm publish --provenance --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish client package
         run: cd packages/client && pnpm publish --provenance --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish main SDK package
         run: cd packages/lmnr && pnpm publish --provenance --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
