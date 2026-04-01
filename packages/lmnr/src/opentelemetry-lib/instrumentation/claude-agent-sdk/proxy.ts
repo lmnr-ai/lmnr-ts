@@ -50,8 +50,8 @@ const getRegionFromAwsConfig = (profile: string): string | null => {
   const profileHeader = profile === "default" ? "default" : `profile ${profile}`;
   const escapedHeader = profileHeader.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const regex = new RegExp(
-    `\\[${escapedHeader}\\][^\\[]*?region\\s*=\\s*([^\\s\\n]+)`,
-    "s",
+    `\\[${escapedHeader}\\][^\\[]*?^\\s*region\\s*=\\s*([^\\s\\n]+)`,
+    "ms",
   );
   const match = content.match(regex);
   return match ? match[1] : null;
