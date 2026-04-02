@@ -1,6 +1,9 @@
 import { trace } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
+import * as fs from "fs";
 import * as net from "net";
+import * as os from "os";
+import * as path from "path";
 
 import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
@@ -18,6 +21,11 @@ const FOUNDRY_BASE_URL_ENV = "ANTHROPIC_FOUNDRY_BASE_URL";
 const FOUNDRY_RESOURCE_ENV = "ANTHROPIC_FOUNDRY_RESOURCE";
 const FOUNDRY_USE_ENV = "CLAUDE_CODE_USE_FOUNDRY";
 
+// Bedrock configuration constants
+const BEDROCK_BASE_URL_ENV = "ANTHROPIC_BEDROCK_BASE_URL";
+const BEDROCK_USE_ENV = "CLAUDE_CODE_USE_BEDROCK";
+const BEDROCK_AWS_REGION_ENV = "AWS_REGION";
+
 // Track all active proxy instances for cleanup
 const activeProxyServers = new Set<any>(); // Set<ProxyServer>
 let globalShutdownRegistered = false;
@@ -28,6 +36,29 @@ let globalShutdownRegistered = false;
 const isTruthyEnv = (value: string | undefined): boolean => value === "1";
 
 /**
+ * Read region for a given profile from ~/.aws/config.
+ */
+const getRegionFromAwsConfig = (profile: string): string | null => {
+  const configPath = path.join(os.homedir(), ".aws", "config");
+  let content: string;
+  try {
+    content = fs.readFileSync(configPath, "utf-8");
+  } catch {
+    return null;
+  }
+
+  const profileHeader =
+    profile === "default" ? "default" : `profile ${profile}`;
+  const escapedHeader = profileHeader.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(
+    `\\[${escapedHeader}\\][^\\[]*?^\\s*region\\s*=\\s*([^\\s\\n]+)`,
+    "ms",
+  );
+  const match = content.match(regex);
+  return match ? match[1] : null;
+};
+
+/**
  * Resolve target URL from environment dictionary with process.env fallback.
  *
  * This is the single source of truth for determining the target URL for the proxy.
@@ -35,10 +66,14 @@ const isTruthyEnv = (value: string | undefined): boolean => value === "1";
  * Resolution order (highest to lowest priority):
  * 1. HTTPS_PROXY - if set, use as target (our proxy will forward to it)
  * 2. HTTP_PROXY - if set, use as target (our proxy will forward to it)
- * 3. Third-party provider URLs (e.g., Foundry):
+ * 3. Third-party provider URLs (e.g., Foundry, Bedrock):
  *    - If CLAUDE_CODE_USE_FOUNDRY is truthy:
  *      - Use ANTHROPIC_FOUNDRY_BASE_URL, or
  *      - Construct from ANTHROPIC_FOUNDRY_RESOURCE
+ *    - If CLAUDE_CODE_USE_BEDROCK is truthy:
+ *      - Use ANTHROPIC_BEDROCK_BASE_URL, or
+ *      - Construct from AWS_REGION env var, or
+ *      - Construct by reading region from ~/.aws/config via AWS_PROFILE
  * 4. ANTHROPIC_BASE_URL - standard Anthropic API base URL
  * 5. Fall back to default (https://api.anthropic.com)
  *
@@ -53,7 +88,8 @@ export const resolveTargetUrlFromEnv = (
   fallback: string = DEFAULT_ANTHROPIC_BASE_URL,
 ): string | null => {
   // Helper to get value from envDict first, then process.env
-  const getEnvValue = (key: string): string | undefined => envDict[key] || process.env[key];
+  const getEnvValue = (key: string): string | undefined =>
+    envDict[key] || process.env[key];
 
   // 1. Check for HTTPS_PROXY (highest priority)
   const httpsProxy = getEnvValue("HTTPS_PROXY");
@@ -85,8 +121,34 @@ export const resolveTargetUrlFromEnv = (
     // Foundry is enabled but misconfigured
     logger.error(
       `${FOUNDRY_USE_ENV} is set but neither ${FOUNDRY_BASE_URL_ENV} ` +
-      `nor ${FOUNDRY_RESOURCE_ENV} is configured. ` +
-      `Microsoft Foundry requires one of these values.`,
+        `nor ${FOUNDRY_RESOURCE_ENV} is configured. ` +
+        `Microsoft Foundry requires one of these values.`,
+    );
+    return null;
+  }
+
+  // 3b. Check for Bedrock
+  const bedrockEnabled = isTruthyEnv(getEnvValue(BEDROCK_USE_ENV));
+  if (bedrockEnabled) {
+    const bedrockBaseUrl = getEnvValue(BEDROCK_BASE_URL_ENV);
+    if (bedrockBaseUrl) {
+      return bedrockBaseUrl.replace(/\/$/, "");
+    }
+
+    let region = getEnvValue(BEDROCK_AWS_REGION_ENV);
+    if (!region) {
+      const awsProfile = getEnvValue("AWS_PROFILE") || "default";
+      region = getRegionFromAwsConfig(awsProfile) ?? undefined;
+    }
+
+    if (region) {
+      return `https://bedrock-runtime.${region}.amazonaws.com`;
+    }
+
+    logger.error(
+      `${BEDROCK_USE_ENV} is set but could not determine AWS region. ` +
+        `Set ${BEDROCK_AWS_REGION_ENV} or configure a region ` +
+        "in ~/.aws/config for the active profile.",
     );
     return null;
   }
@@ -109,14 +171,14 @@ export const resolveTargetUrlFromEnv = (
  * @param envDict - Dictionary of environment variables
  * @returns Array of environment variable keys to remove
  */
-export const getEnvVarsToRemove = (envDict: Record<string, string | undefined>): string[] => {
-  const toRemove: string[] = [
-    "HTTPS_PROXY",
-    "HTTP_PROXY",
-  ];
+export const getEnvVarsToRemove = (
+  envDict: Record<string, string | undefined>,
+): string[] => {
+  const toRemove: string[] = ["HTTPS_PROXY", "HTTP_PROXY"];
 
   // Helper to get value from envDict first, then process.env
-  const getEnvValue = (key: string): string | undefined => envDict[key] || process.env[key];
+  const getEnvValue = (key: string): string | undefined =>
+    envDict[key] || process.env[key];
 
   // Remove FOUNDRY_RESOURCE if Foundry is enabled
   // (it's mutually exclusive with ANTHROPIC_BASE_URL which we'll set)
@@ -134,33 +196,34 @@ export const getEnvVarsToRemove = (envDict: Record<string, string | undefined>):
 const findAvailablePort = (
   startPort: number,
   attempts: number,
-): Promise<number | null> => new Promise((resolve) => {
-  let currentAttempt = 0;
+): Promise<number | null> =>
+  new Promise((resolve) => {
+    let currentAttempt = 0;
 
-  const tryPort = (port: number) => {
-    const server = net.createServer();
+    const tryPort = (port: number) => {
+      const server = net.createServer();
 
-    server.once('error', () => {
-      server.close();
-      currentAttempt++;
-      if (currentAttempt < attempts) {
-        tryPort(startPort + currentAttempt);
-      } else {
-        resolve(null);
-      }
-    });
-
-    server.once('listening', () => {
-      server.close(() => {
-        resolve(port);
+      server.once("error", () => {
+        server.close();
+        currentAttempt++;
+        if (currentAttempt < attempts) {
+          tryPort(startPort + currentAttempt);
+        } else {
+          resolve(null);
+        }
       });
-    });
 
-    server.listen(port, '127.0.0.1');
-  };
+      server.once("listening", () => {
+        server.close(() => {
+          resolve(port);
+        });
+      });
 
-  tryPort(startPort);
-});
+      server.listen(port, "127.0.0.1");
+    };
+
+    tryPort(startPort);
+  });
 
 /**
  * Wait for a port to be available
@@ -168,52 +231,55 @@ const findAvailablePort = (
 const waitForPort = (
   port: number,
   timeoutMs: number = 5000,
-): Promise<boolean> => new Promise((resolve) => {
-  const deadline = Date.now() + timeoutMs;
+): Promise<boolean> =>
+  new Promise((resolve) => {
+    const deadline = Date.now() + timeoutMs;
 
-  const checkPort = () => {
-    if (Date.now() >= deadline) {
-      resolve(false);
-      return;
-    }
+    const checkPort = () => {
+      if (Date.now() >= deadline) {
+        resolve(false);
+        return;
+      }
 
-    const socket = new net.Socket();
+      const socket = new net.Socket();
 
-    socket.setTimeout(200);
+      socket.setTimeout(200);
 
-    socket.once('connect', () => {
-      socket.destroy();
-      resolve(true);
-    });
+      socket.once("connect", () => {
+        socket.destroy();
+        resolve(true);
+      });
 
-    socket.once('timeout', () => {
-      socket.destroy();
-      setTimeout(checkPort, 100);
-    });
+      socket.once("timeout", () => {
+        socket.destroy();
+        setTimeout(checkPort, 100);
+      });
 
-    socket.once('error', () => {
-      socket.destroy();
-      setTimeout(checkPort, 100);
-    });
+      socket.once("error", () => {
+        socket.destroy();
+        setTimeout(checkPort, 100);
+      });
 
-    socket.connect(port, '127.0.0.1');
-  };
+      socket.connect(port, "127.0.0.1");
+    };
 
-  checkPort();
-});
+    checkPort();
+  });
 
 /**
  * Register global cleanup on process exit for all active proxies
  */
 const registerGlobalProxyShutdown = () => {
   if (!globalShutdownRegistered) {
-    process.on('exit', () => {
+    process.on("exit", () => {
       logger.debug('process.on("exit") called - stopping all active proxies');
       for (const proxyServer of activeProxyServers) {
         try {
           proxyServer.stopServer();
         } catch (e) {
-          logger.debug(`Failed to stop proxy: ${e instanceof Error ? e.message : String(e)}`);
+          logger.debug(
+            `Failed to stop proxy: ${e instanceof Error ? e.message : String(e)}`,
+          );
         }
       }
       activeProxyServers.clear();
@@ -242,7 +308,10 @@ export const createProxyInstance = async ({
   env: Record<string, string | undefined>;
 }): Promise<ProxyInstance | null> => {
   try {
-    const port = await findAvailablePort(DEFAULT_CC_PROXY_PORT, CC_PROXY_PORT_ATTEMPTS);
+    const port = await findAvailablePort(
+      DEFAULT_CC_PROXY_PORT,
+      CC_PROXY_PORT_ATTEMPTS,
+    );
     if (port === null) {
       logger.warn("Unable to allocate port for cc-proxy.");
       return null;
@@ -251,11 +320,15 @@ export const createProxyInstance = async ({
     // Resolve target URL using the priority order
     const targetUrl = resolveTargetUrlFromEnv(env);
     if (!targetUrl) {
-      logger.warn("Unable to resolve target URL for cc-proxy (provider misconfigured).");
+      logger.warn(
+        "Unable to resolve target URL for cc-proxy (provider misconfigured).",
+      );
       return null;
     }
 
-    logger.debug(`Creating proxy instance on port ${port} targeting: ${targetUrl}`);
+    logger.debug(
+      `Creating proxy instance on port ${port} targeting: ${targetUrl}`,
+    );
 
     try {
       // Dynamically import ProxyServer class
@@ -287,11 +360,15 @@ export const createProxyInstance = async ({
         targetUrl,
       };
     } catch (e) {
-      logger.warn(`Unable to start cc-proxy: ${e instanceof Error ? e.message : String(e)}`);
+      logger.warn(
+        `Unable to start cc-proxy: ${e instanceof Error ? e.message : String(e)}`,
+      );
       return null;
     }
   } catch (e) {
-    logger.warn(`Failed to create proxy instance: ${e instanceof Error ? e.message : String(e)}`);
+    logger.warn(
+      `Failed to create proxy instance: ${e instanceof Error ? e.message : String(e)}`,
+    );
     return null;
   }
 };
@@ -309,7 +386,9 @@ export const stopProxyInstance = (instance: ProxyInstance | null): void => {
     instance.server.stopServer();
     activeProxyServers.delete(instance.server);
   } catch (e) {
-    logger.debug(`Failed to stop proxy instance: ${e instanceof Error ? e.message : String(e)}`);
+    logger.debug(
+      `Failed to stop proxy instance: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 };
 
@@ -318,12 +397,16 @@ export const stopProxyInstance = (instance: ProxyInstance | null): void => {
  * Used during shutdown to ensure cleanup
  */
 export const forceReleaseProxy = (): void => {
-  logger.debug(`Force stopping all ${activeProxyServers.size} active proxy servers`);
+  logger.debug(
+    `Force stopping all ${activeProxyServers.size} active proxy servers`,
+  );
   for (const proxyServer of activeProxyServers) {
     try {
       proxyServer.stopServer();
     } catch (e) {
-      logger.debug(`Failed to stop proxy: ${e instanceof Error ? e.message : String(e)}`);
+      logger.debug(
+        `Failed to stop proxy: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
   activeProxyServers.clear();
@@ -341,7 +424,10 @@ const getSpanContextPayload = (): {
   laminar_url: string;
 } | null => {
   const currentSpan = trace.getSpan(LaminarContextManager.getContext());
-  if (!currentSpan || !currentSpan.spanContext().isRemote && !currentSpan.isRecording()) {
+  if (
+    !currentSpan ||
+    (!currentSpan.spanContext().isRemote && !currentSpan.isRecording())
+  ) {
     return null;
   }
 
@@ -387,7 +473,9 @@ const getSpanContextPayload = (): {
 /**
  * Set the trace context for a specific proxy instance
  */
-export const setTraceToProxyInstance = async (instance: ProxyInstance | null): Promise<void> => {
+export const setTraceToProxyInstance = async (
+  instance: ProxyInstance | null,
+): Promise<void> => {
   if (!instance) {
     return;
   }
@@ -410,7 +498,7 @@ export const setTraceToProxyInstance = async (instance: ProxyInstance | null): P
   } catch (e: any) {
     logger.debug(
       `Unable to set trace context to proxy on port ${instance.port}: ` +
-      (e instanceof Error ? e.message : String(e)),
+        (e instanceof Error ? e.message : String(e)),
     );
   }
 };
