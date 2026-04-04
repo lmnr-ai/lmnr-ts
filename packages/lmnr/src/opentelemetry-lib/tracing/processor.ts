@@ -59,6 +59,10 @@ const MAX_PATH_CACHE_ENTRIES = 50_000;
 // for eviction from the in-memory cache.
 const TRACE_IDLE_TIMEOUT_SECONDS = 1800;
 
+// Minimum interval (ms) between stale-trace eviction scans to avoid
+// O(T) iteration on every span start.
+const EVICTION_INTERVAL_MS = 60_000;
+
 interface PathEntry {
   spanPath: string[];
   spanIdsPath: StringUUID[];
@@ -131,8 +135,12 @@ export class LaminarSpanProcessor implements SpanProcessor {
   private readonly _pathCache: Map<string, PathEntry> = new Map();
   // traceId (hex string) -> set of spanIds belonging to this trace
   private readonly _traceSpans: Map<string, Set<string>> = new Map();
+  // spanId (hex string) -> traceId (hex string) reverse mapping for O(1) eviction
+  private readonly _spanTrace: Map<string, string> = new Map();
   // traceId (hex string) -> last access timestamp (ms, from performance.now())
   private readonly _traceLastAccess: Map<string, number> = new Map();
+  // Timestamp of the last stale-trace eviction scan
+  private _lastEvictionTime = 0;
 
   /**
    * @param {object} options - The options for the Laminar span processor.
@@ -159,6 +167,7 @@ export class LaminarSpanProcessor implements SpanProcessor {
       // Set by reference, so that updates from the inside are reflected here.
       this._pathCache = options.spanProcessor._pathCache;
       this._traceSpans = options.spanProcessor._traceSpans;
+      this._spanTrace = options.spanProcessor._spanTrace;
       this._traceLastAccess = options.spanProcessor._traceLastAccess;
     } else if (options.spanProcessor) {
       this.instance = options.spanProcessor as
@@ -193,6 +202,11 @@ export class LaminarSpanProcessor implements SpanProcessor {
 
   private _evictStaleTraces(): void {
     const now = performance.now();
+    if (now - this._lastEvictionTime < EVICTION_INTERVAL_MS) {
+      return;
+    }
+    this._lastEvictionTime = now;
+
     const staleTraceIds: string[] = [];
     for (const [tid, ts] of this._traceLastAccess) {
       if (now - ts > TRACE_IDLE_TIMEOUT_SECONDS * 1000) {
@@ -204,6 +218,7 @@ export class LaminarSpanProcessor implements SpanProcessor {
       if (spanIds) {
         for (const sid of spanIds) {
           this._pathCache.delete(sid);
+          this._spanTrace.delete(sid);
         }
       }
       this._traceSpans.delete(tid);
@@ -212,7 +227,7 @@ export class LaminarSpanProcessor implements SpanProcessor {
   }
 
   private _cachePut(spanId: string, traceId: string, entry: PathEntry): void {
-    // Lazy eviction of stale traces on every write
+    // Lazy eviction of stale traces (amortized, not on every write)
     this._evictStaleTraces();
 
     // Prune oldest entries if at cap (Map iterates in insertion order)
@@ -220,9 +235,18 @@ export class LaminarSpanProcessor implements SpanProcessor {
       const firstKey = this._pathCache.keys().next().value;
       if (firstKey !== undefined) {
         this._pathCache.delete(firstKey);
-        // Clean up trace->span mapping
-        for (const sids of this._traceSpans.values()) {
-          sids.delete(firstKey);
+        // O(1) cleanup via reverse mapping
+        const evictedTid = this._spanTrace.get(firstKey);
+        this._spanTrace.delete(firstKey);
+        if (evictedTid !== undefined) {
+          const sids = this._traceSpans.get(evictedTid);
+          if (sids) {
+            sids.delete(firstKey);
+            if (sids.size === 0) {
+              this._traceSpans.delete(evictedTid);
+              this._traceLastAccess.delete(evictedTid);
+            }
+          }
         }
       } else {
         break;
@@ -230,6 +254,7 @@ export class LaminarSpanProcessor implements SpanProcessor {
     }
 
     this._pathCache.set(spanId, entry);
+    this._spanTrace.set(spanId, traceId);
     const traceSpans = this._traceSpans.get(traceId);
     if (traceSpans) {
       traceSpans.add(spanId);
@@ -447,7 +472,9 @@ export class LaminarSpanProcessor implements SpanProcessor {
   clear() {
     this._pathCache.clear();
     this._traceSpans.clear();
+    this._spanTrace.clear();
     this._traceLastAccess.clear();
+    this._lastEvictionTime = 0;
   }
 }
 
