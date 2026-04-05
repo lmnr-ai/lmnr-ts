@@ -11,7 +11,12 @@ import {
 import { Logger } from "pino";
 
 import { version as SDK_VERSION } from "../../../package.json";
-import { initializeLogger, metadataToAttributes, otelSpanIdToUUID, StringUUID } from "../../utils";
+import {
+  initializeLogger,
+  metadataToAttributes,
+  otelSpanIdToUUID,
+  StringUUID,
+} from "../../utils";
 import { getLangVersion } from "../../version";
 import {
   ASSOCIATION_PROPERTIES,
@@ -34,10 +39,7 @@ import {
   makeSpanOtelV2Compatible,
   OTelSpanCompat,
 } from "./compat";
-import {
-  ASSOCIATION_PROPERTIES_KEY,
-  CONTEXT_SPAN_PATH_KEY,
-} from "./context";
+import { ASSOCIATION_PROPERTIES_KEY, CONTEXT_SPAN_PATH_KEY } from "./context";
 import { LaminarSpanExporter } from "./exporter";
 
 interface LaminarSpanProcessorOptions {
@@ -122,13 +124,18 @@ export class LaminarSpanProcessor implements SpanProcessor {
    */
   constructor(options: LaminarSpanProcessorOptions = {}) {
     this.logger = initializeLogger();
-    if (options.spanProcessor && options.spanProcessor instanceof LaminarSpanProcessor) {
+    if (
+      options.spanProcessor &&
+      options.spanProcessor instanceof LaminarSpanProcessor
+    ) {
       this.instance = options.spanProcessor.instance;
       // Set by reference, so that updates from the inside are reflected here.
       this._spanIdToPath = options.spanProcessor._spanIdToPath;
       this._spanIdLists = options.spanProcessor._spanIdLists;
     } else if (options.spanProcessor) {
-      this.instance = options.spanProcessor as BatchSpanProcessor | SimpleSpanProcessor;
+      this.instance = options.spanProcessor as
+        | BatchSpanProcessor
+        | SimpleSpanProcessor;
     } else {
       const exporter = options.exporter ?? new LaminarSpanExporter(options);
       this.instance = options.disableBatch
@@ -159,27 +166,34 @@ export class LaminarSpanProcessor implements SpanProcessor {
   onStart(spanArg: any, parentContext: Context): void {
     const span = spanArg as OTelSpanCompat;
     // Check for parent path attributes first (from serialized span context)
-    const parentPathFromAttribute = span.attributes?.[PARENT_SPAN_PATH] as string[] | undefined;
-    const parentIdsPathFromAttribute =
-      span.attributes?.[PARENT_SPAN_IDS_PATH] as StringUUID[] | undefined;
+    const parentPathFromAttribute = span.attributes?.[PARENT_SPAN_PATH] as
+      | string[]
+      | undefined;
+    const parentIdsPathFromAttribute = span.attributes?.[
+      PARENT_SPAN_IDS_PATH
+    ] as StringUUID[] | undefined;
 
     const parentSpanId = getParentSpanId(span);
 
     // Use parent path from attributes if available, otherwise fall back to cached paths
-    const parentSpanPath = parentPathFromAttribute
-      ?? (parentSpanId !== undefined
+    const parentSpanPath =
+      parentPathFromAttribute ??
+      (parentSpanId !== undefined
         ? this._spanIdToPath.get(parentSpanId)
         : undefined);
 
     const spanId = span.spanContext().spanId;
-    const parentSpanIdsPath = parentIdsPathFromAttribute
-      ?? (parentSpanId
-        ? this._spanIdLists.get(parentSpanId)
-        : []);
-    const spanPath = parentSpanPath ? [...parentSpanPath, span.name] : [span.name];
+    const parentSpanIdsPath =
+      parentIdsPathFromAttribute ??
+      (parentSpanId ? this._spanIdLists.get(parentSpanId) : []);
+    const spanPath = parentSpanPath
+      ? [...parentSpanPath, span.name]
+      : [span.name];
 
     const spanIdUuid = otelSpanIdToUUID(spanId);
-    const spanIdsPath = parentSpanIdsPath ? [...parentSpanIdsPath, spanIdUuid] : [spanIdUuid];
+    const spanIdsPath = parentSpanIdsPath
+      ? [...parentSpanIdsPath, spanIdUuid]
+      : [spanIdUuid];
 
     span.setAttribute(SPAN_IDS_PATH, spanIdsPath);
     this._spanIdLists.set(spanId, spanIdsPath);
@@ -208,9 +222,15 @@ export class LaminarSpanProcessor implements SpanProcessor {
         } else if (key === "rolloutSessionId") {
           span.setAttribute(ROLLOUT_SESSION_ID, value);
           span.setAttribute("lmnr.rollout.session_id", value);
-        } else if (key === "metadata" && typeof value === "object" && value !== null) {
+        } else if (
+          key === "metadata" &&
+          typeof value === "object" &&
+          value !== null
+        ) {
           // Flatten metadata into individual attributes
-          const metadataAttrs = metadataToAttributes(value as Record<string, unknown>);
+          const metadataAttrs = metadataToAttributes(
+            value as Record<string, unknown>,
+          );
           span.setAttributes(metadataAttrs);
         } else if (key === "userId") {
           span.setAttribute(USER_ID, value);
@@ -229,29 +249,35 @@ export class LaminarSpanProcessor implements SpanProcessor {
     makeSpanOtelV2Compatible(span);
 
     if (process.env.LMNR_ROLLOUT_SESSION_ID && this.client) {
-      this.client.rolloutSessions.sendSpanUpdate({
-        sessionId: process.env.LMNR_ROLLOUT_SESSION_ID,
-        span: {
-          name: span.name,
-          startTime: new Date(span.startTime[0] * 1000 + span.startTime[1] / 1e6).toISOString(),
-          spanId: span.spanContext().spanId,
-          traceId: span.spanContext().traceId,
-          parentSpanId: getParentSpanId(span),
-          attributes: attributesForStartEvent(span.name, span.attributes),
-          spanType: inferSpanType(span.name, span.attributes),
-        },
-      }).catch((error: any) => {
-        this.logger.debug(
-          `Failed to send span update: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      });
+      this.client.rolloutSessions
+        .sendSpanUpdate({
+          sessionId: process.env.LMNR_ROLLOUT_SESSION_ID,
+          span: {
+            name: span.name,
+            startTime: new Date(
+              span.startTime[0] * 1000 + span.startTime[1] / 1e6,
+            ).toISOString(),
+            spanId: span.spanContext().spanId,
+            traceId: span.spanContext().traceId,
+            parentSpanId: getParentSpanId(span),
+            attributes: attributesForStartEvent(span.name, span.attributes),
+            spanType: inferSpanType(span.name, span.attributes),
+          },
+        })
+        .catch((error: any) => {
+          this.logger.debug(
+            `Failed to send span update: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
     }
-    this.instance.onStart((span), parentContext);
+    this.instance.onStart(span, parentContext);
   }
 
   // type ReadableSpan
   onEnd(span: any): void {
-    // By default, we call the original onEnd.
+    const spanId = (span as Span).spanContext().spanId;
+    this._spanIdLists.delete(spanId);
+    this._spanIdToPath.delete(spanId);
     makeSpanOtelV2Compatible(span);
     this.instance.onEnd(span as Span);
   }
@@ -286,16 +312,24 @@ const inferSpanType = (
   if (attributes[SPAN_TYPE]) {
     return attributes[SPAN_TYPE] as SpanType;
   }
-  if (attributes['gen_ai.system']) {
-    return 'LLM';
+  if (attributes["gen_ai.system"]) {
+    return "LLM";
   }
-  if (Object.keys(attributes).some((k) => k.startsWith('gen_ai.') || k.startsWith('llm.'))) {
-    return 'LLM';
+  if (
+    Object.keys(attributes).some(
+      (k) => k.startsWith("gen_ai.") || k.startsWith("llm."),
+    )
+  ) {
+    return "LLM";
   }
-  if (name === 'ai.toolCall' || attributes['ai.toolCall.id'] || attributes['ai.toolCall.name']) {
-    return 'TOOL';
+  if (
+    name === "ai.toolCall" ||
+    attributes["ai.toolCall.id"] ||
+    attributes["ai.toolCall.name"]
+  ) {
+    return "TOOL";
   }
-  return 'DEFAULT';
+  return "DEFAULT";
 };
 
 const attributesForStartEvent = (
@@ -324,7 +358,10 @@ const attributesForStartEvent = (
   // Common scenario, because we don't have the response model in the start event.
   // Atrificially set the response model to the request model, just so frontend
   // can show the model in the UI.
-  if (attributes["gen_ai.request.model"] && !attributes["gen_ai.response.model"]) {
+  if (
+    attributes["gen_ai.request.model"] &&
+    !attributes["gen_ai.response.model"]
+  ) {
     newAttributes["gen_ai.response.model"] = attributes["gen_ai.request.model"];
   }
   return {
