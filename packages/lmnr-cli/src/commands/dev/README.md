@@ -253,19 +253,19 @@ npx lmnr-cli dev -m src.myfile
 # Discovery uses: lmnr discover --module src.myfile
 ```
 
-### Python Worker Requirements
+### Python Worker
 
-The Python `lmnr` package must implement a worker:
+The Python `lmnr` package implements a worker:
 
 ```bash
 python -m lmnr.cli.worker
 ```
 
-The worker should:
+The worker:
 
-1. Read JSON configuration from stdin containing either `filePath` (script mode) or `modulePath` (module mode)
-2. Set environment variables from config
-3. Initialize the `lmnr` SDK
-4. Load and execute the specified function based on the mode
-5. Send protocol messages to stdout (see [Worker Protocol](#worker-protocol))
-6. Exit with appropriate code
+1. Reads JSON configuration from stdin containing either `filePath` (script mode) or `modulePath` (module mode)
+2. Sets environment variables from config
+3. Initializes the `lmnr` SDK
+4. Loads and executes the specified function based on the mode
+5. Sends protocol messages to stdout (see [Worker Protocol](#worker-protocol))
+6. Exits with appropriate code
