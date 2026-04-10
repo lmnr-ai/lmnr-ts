@@ -20,11 +20,11 @@ import { PlaywrightInstrumentation } from "../../browser";
 import { PuppeteerInstrumentation } from "../../browser/puppeteer";
 import { StagehandV2Instrumentation } from "../../browser/stagehand/v2";
 import { StagehandInstrumentation as StagehandV3Instrumentation } from "../../browser/stagehand/v3";
+import { initializeLogger } from "../../utils";
 import { ClaudeAgentSDKInstrumentation } from "../instrumentation/claude-agent-sdk";
 import { GoogleGenAiInstrumentation } from "../instrumentation/google-genai";
 import { KernelInstrumentation } from "../instrumentation/kernel";
 import { InitializeOptions } from "../interfaces";
-import { initializeLogger } from "../../utils";
 
 const logger = initializeLogger();
 
@@ -84,16 +84,16 @@ export const initializeLaminarInstrumentations = (
 
   return options?.instrumentModules !== undefined
     ? manuallyInitInstrumentations(
-        client,
-        options.instrumentModules,
-        options.suppressContentTracing,
-        options.sessionRecordingOptions,
-      )
+      client,
+      options.instrumentModules,
+      options.suppressContentTracing,
+      options.sessionRecordingOptions,
+    )
     : initInstrumentations(
-        client,
-        options.suppressContentTracing,
-        options.sessionRecordingOptions,
-      );
+      client,
+      options.suppressContentTracing,
+      options.sessionRecordingOptions,
+    );
 };
 
 /**
@@ -284,7 +284,7 @@ const manuallyInitInstrumentations = (
     });
     instrumentations.push(anthropicInstrumentation);
     anthropicInstrumentation.manuallyInstrument(
-      instrumentModules.anthropic as any,
+      instrumentModules.anthropic,
     );
   }
 
@@ -376,7 +376,7 @@ const manuallyInitInstrumentations = (
     });
     instrumentations.push(togetherInstrumentation);
     togetherInstrumentation.manuallyInstrument(
-      instrumentModules.together as any,
+      instrumentModules.together,
     );
   }
 
