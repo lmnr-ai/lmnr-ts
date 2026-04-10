@@ -113,6 +113,7 @@
     "ai-v5": "npm:ai@5.0.116",
     "chromadb": "^3.0.10",
     "nock": "^14.0.8",
+    "openai": "^6.33.0",
     "puppeteer": "^24.37.5",
     "puppeteer-core": "^24.37.5",
     "undici-types": "^8.0.2"

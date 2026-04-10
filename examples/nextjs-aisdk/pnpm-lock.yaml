@@ -89,6 +89,10 @@ packages:
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
 
+  '@colors/colors@1.5.0':
+    resolution: {integrity: sha512-ooWCrlZP11i8GImSjTHYHLkvFDP48nS4+204nGb1RiX/WXYHmJA2III9/e2DWVabCESdW7hBAEzHRqUn9OUVvQ==}
+    engines: {node: '>=0.1.90'}
+
   '@emnapi/runtime@1.8.1':
     resolution: {integrity: sha512-mehfKSMWjjNol8659Z8KxEMrdSJDDot5SXMq00dM8BN4o+CLNXQ0xH2V7EchNHV4RmbZLmmPdEaXZc5H2FXmDg==}
 
@@ -491,50 +495,50 @@ packages:
   '@js-sdsl/ordered-map@4.4.2':
     resolution: {integrity: sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==}
 
-  '@lmnr-ai/claude-code-proxy-darwin-arm64@0.1.18':
-    resolution: {integrity: sha512-OBdXPppxtjYZM4zD7eFovsf8fiLswWyu+JsJ/INj01yztTCaCP7g6w2ZJO2jC/LMNUq1m0M3Sx6gCSP6Yr+wLQ==}
+  '@lmnr-ai/claude-code-proxy-darwin-arm64@0.1.19':
+    resolution: {integrity: sha512-IhtxzywAeiB9v7LokYdJA5nc8G0T+3XIENZP7fg4aw5KXqVcmwwUbNHzwun4wO5W5jJozh4xJf3I6Klv+utEcw==}
     engines: {node: '>=18.0.0'}
     cpu: [arm64]
     os: [darwin]
 
-  '@lmnr-ai/claude-code-proxy-darwin-x64@0.1.18':
-    resolution: {integrity: sha512-wedBTcfZb6ZIEU1bMpUM9fzcM7kZw3aucwLWg43Rk28ieDaYR1lt7koIi9mnQAV3YemVkH+vD7cqWXZ5iiHn4A==}
+  '@lmnr-ai/claude-code-proxy-darwin-x64@0.1.19':
+    resolution: {integrity: sha512-gztKdmBw84hcGpf1klMH/8DyeHvukMktIPIqdjcS6QH/+wYrAeG36ME4AFSU9i1axQgJ4rGFA8gGrbQSXwvX7Q==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [darwin]
 
-  '@lmnr-ai/claude-code-proxy-linux-arm64-gnu@0.1.18':
-    resolution: {integrity: sha512-7QQcZLHgduu9MQ3j9TOxq9RxEQ1vBHCN8W3WKKnH6Qhu3mnKQhq45GPB9jJjISKYo6ySdVBSHrfI+oYKikvPLg==}
+  '@lmnr-ai/claude-code-proxy-linux-arm64-gnu@0.1.19':
+    resolution: {integrity: sha512-deZVjXnEYP5+/8WlcPuafvlz7pXBKz7tfGIk8R3onE/VBSiS/D6cOD4gMZy5IDMzGIXAvmcMU+N29TAHg6ZqiQ==}
     engines: {node: '>=18.0.0'}
     cpu: [arm64]
     os: [linux]
 
-  '@lmnr-ai/claude-code-proxy-linux-arm64-musl@0.1.18':
-    resolution: {integrity: sha512-vzQaJ4Tk8VVH/vItVpu6WsGmUYH2k2te+78Ru0fNClo2l3AOV9mwnUwvunKoiLaQlWB4kOVxvylHpfBF2Ic7tw==}
+  '@lmnr-ai/claude-code-proxy-linux-arm64-musl@0.1.19':
+    resolution: {integrity: sha512-dFwFY7nPVM6DZM2jhsKLlWtDDR1rw5ZMz0oC/FmI1YquAgatnExW4fsAxSzeMmkE/kFcaffJR+7kIJxDqzgDuA==}
     engines: {node: '>=18.0.0'}
     cpu: [arm64]
     os: [linux]
 
-  '@lmnr-ai/claude-code-proxy-linux-x64-gnu@0.1.18':
-    resolution: {integrity: sha512-H0QdgIyqWrdsNJ0GbJKeSKZNNPWvQxuvGzvJwZc8NkmEZVYy8quBFfmKtoWdbuGtvEKCTUC2mpyhBWUIvMHnVg==}
+  '@lmnr-ai/claude-code-proxy-linux-x64-gnu@0.1.19':
+    resolution: {integrity: sha512-slbKp529z0mKFSCobemiKGrIozuvLKc0vgVYerAaCSk+cfzceCg9mHEBGrF2Wzk3Ywrde4ZiDN5t/u1I/fejQA==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [linux]
 
-  '@lmnr-ai/claude-code-proxy-linux-x64-musl@0.1.18':
-    resolution: {integrity: sha512-Bsu7KVXaoa5ctxtpwAbx19I79yhPsRN94DPtMG4LgGuc9eycnVjw/CGNMFSIDpfTRMK5tIWpoIw7T+uu+N+GzQ==}
+  '@lmnr-ai/claude-code-proxy-linux-x64-musl@0.1.19':
+    resolution: {integrity: sha512-En8yt8qT+MGc74oVrAbQzyYpvz8zZ4wMij9w55FPzSL7WcMsKk8cYrvdtIplWVGIWh0+1mnpqKmviaxVTEwpSg==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [linux]
 
-  '@lmnr-ai/claude-code-proxy-win32-x64-msvc@0.1.18':
-    resolution: {integrity: sha512-VtDkOtoFdfxNX4aUQ17wnxegq7Eztd3xz2sQB1evgiz6Te0JHDrvU8wOtLykjOs2l3WkecmfbRgS1Rb5YHHT1Q==}
+  '@lmnr-ai/claude-code-proxy-win32-x64-msvc@0.1.19':
+    resolution: {integrity: sha512-KHzJBcDJJadInCrtGqujlflVtIYZTJUI+HuY5Dhne4mosN/nx1Z9MZP60LnvvjzAraXMC/cKCVMLjAizOJwkJA==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [win32]
 
-  '@lmnr-ai/claude-code-proxy@0.1.18':
-    resolution: {integrity: sha512-jCQxcP91FLcPZ+UVvo5eFWXq0FnzmgEkPbU0RzUZQnBavErSdnj2Qw0mdp293NEeWyKWnkTz2n9syAjqg3yVEQ==}
+  '@lmnr-ai/claude-code-proxy@0.1.19':
+    resolution: {integrity: sha512-ABCCN/irh8tnEcv34AV0+w5TXPr8igpEe3drXlKAw26zNTl62LAihEN5ob/Lnm+2k/n8PqsoNNZ0Iw4502qUPg==}
     engines: {node: '>=18.0.0'}
 
   '@lmnr-ai/lmnr@file:../../packages/lmnr':
@@ -1239,6 +1243,10 @@ packages:
     resolution: {integrity: sha512-tRkV3HJ1ASwm19THiiLIXLO7Im7wlTuKnvkYaTkyoAPefqjNg7W7DHKUlGRxy9vxDvbyCYQkQozvptuMkGCg8A==}
     engines: {node: '>=4'}
 
+  cli-table3@0.6.5:
+    resolution: {integrity: sha512-+W/5efTR7y5HRD7gACw9yQjqMVvEMLBHmboM/kPWam+H+Hmyrgjh6YncVKK122YZkXrLudzTuAukUw9FnMf7IQ==}
+    engines: {node: 10.* || >= 12.*}
+
   client-only@0.0.1:
     resolution: {integrity: sha512-IV3Ou0jSMzZrd3pZ48nLkT9DA7Ag1pnPzaiQhpW7c3RbcqqzvzzVu+L8gfqMp/8IM2MQtSiqaCxrrcfu8I8rMA==}
 
@@ -1593,9 +1601,9 @@ packages:
     resolution: {integrity: sha512-utfs7Pr5uJyyvDETitgsaqSyjCb2qNRAtuqUeWIAKztsOYdcACf2KtARYXg2pSvhkt+9NfoaNY7fxjl6nuMjIQ==}
     engines: {node: '>= 12.0.0'}
 
-  lmnr-cli@0.1.7:
-    resolution: {integrity: sha512-BOLtrYjPFl9WBBR6wYK8dRggY+l3eocO1FYDoMlmFuvHr7lGlJzqWFmHXnK2MHqZxTXfzLqg6PyenL6mzlzIRQ==}
-    version: 0.1.7
+  lmnr-cli@0.1.8:
+    resolution: {integrity: sha512-pe1LLX/PR3xuGl7nbQ7rqigiLGinhdQsPcMJd1mIA9sYWxo7e8kXp7VntiGu7zaN264KOA0w/Aq2WYEcks4spQ==}
+    version: 0.1.8
     hasBin: true
     peerDependencies:
       '@lmnr-ai/lmnr': '*'
@@ -2011,6 +2019,9 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
+  '@colors/colors@1.5.0':
+    optional: true
+
   '@emnapi/runtime@1.8.1':
     dependencies:
       tslib: 2.8.1
@@ -2273,41 +2284,41 @@ snapshots:
 
   '@js-sdsl/ordered-map@4.4.2': {}
 
-  '@lmnr-ai/claude-code-proxy-darwin-arm64@0.1.18':
+  '@lmnr-ai/claude-code-proxy-darwin-arm64@0.1.19':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-darwin-x64@0.1.18':
+  '@lmnr-ai/claude-code-proxy-darwin-x64@0.1.19':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-linux-arm64-gnu@0.1.18':
+  '@lmnr-ai/claude-code-proxy-linux-arm64-gnu@0.1.19':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-linux-arm64-musl@0.1.18':
+  '@lmnr-ai/claude-code-proxy-linux-arm64-musl@0.1.19':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-linux-x64-gnu@0.1.18':
+  '@lmnr-ai/claude-code-proxy-linux-x64-gnu@0.1.19':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-linux-x64-musl@0.1.18':
+  '@lmnr-ai/claude-code-proxy-linux-x64-musl@0.1.19':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-win32-x64-msvc@0.1.18':
+  '@lmnr-ai/claude-code-proxy-win32-x64-msvc@0.1.19':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy@0.1.18':
+  '@lmnr-ai/claude-code-proxy@0.1.19':
     optionalDependencies:
-      '@lmnr-ai/claude-code-proxy-darwin-arm64': 0.1.18
-      '@lmnr-ai/claude-code-proxy-darwin-x64': 0.1.18
-      '@lmnr-ai/claude-code-proxy-linux-arm64-gnu': 0.1.18
-      '@lmnr-ai/claude-code-proxy-linux-arm64-musl': 0.1.18
-      '@lmnr-ai/claude-code-proxy-linux-x64-gnu': 0.1.18
-      '@lmnr-ai/claude-code-proxy-linux-x64-musl': 0.1.18
-      '@lmnr-ai/claude-code-proxy-win32-x64-msvc': 0.1.18
+      '@lmnr-ai/claude-code-proxy-darwin-arm64': 0.1.19
+      '@lmnr-ai/claude-code-proxy-darwin-x64': 0.1.19
+      '@lmnr-ai/claude-code-proxy-linux-arm64-gnu': 0.1.19
+      '@lmnr-ai/claude-code-proxy-linux-arm64-musl': 0.1.19
+      '@lmnr-ai/claude-code-proxy-linux-x64-gnu': 0.1.19
+      '@lmnr-ai/claude-code-proxy-linux-x64-musl': 0.1.19
+      '@lmnr-ai/claude-code-proxy-win32-x64-msvc': 0.1.19
 
   '@lmnr-ai/lmnr@file:../../packages/lmnr':
     dependencies:
       '@grpc/grpc-js': 1.14.3
-      '@lmnr-ai/claude-code-proxy': 0.1.18
+      '@lmnr-ai/claude-code-proxy': 0.1.19
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/context-async-hooks': 2.4.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.0)
@@ -2341,7 +2352,7 @@ snapshots:
       eventsource-parser: 3.0.6
       export-to-csv: 1.4.0
       glob: 13.0.6
-      lmnr-cli: 0.1.7(@lmnr-ai/lmnr@file:../../packages/lmnr)
+      lmnr-cli: 0.1.8(@lmnr-ai/lmnr@file:../../packages/lmnr)
       pino: 9.12.0
       pino-pretty: 13.1.3
       uuid: 11.1.0
@@ -3172,6 +3183,12 @@ snapshots:
     dependencies:
       string-width: 4.2.3
 
+  cli-table3@0.6.5:
+    dependencies:
+      string-width: 4.2.3
+    optionalDependencies:
+      '@colors/colors': 1.5.0
+
   client-only@0.0.1: {}
 
   cliui@8.0.1:
@@ -3504,9 +3521,10 @@ snapshots:
       lightningcss-win32-arm64-msvc: 1.30.2
       lightningcss-win32-x64-msvc: 1.30.2
 
-  lmnr-cli@0.1.7(@lmnr-ai/lmnr@file:../../packages/lmnr):
+  lmnr-cli@0.1.8(@lmnr-ai/lmnr@file:../../packages/lmnr):
     dependencies:
       chokidar: 5.0.0
+      cli-table3: 0.6.5
       commander: 14.0.2
       csv-parser: 3.2.0
       eventsource-parser: 3.0.6
