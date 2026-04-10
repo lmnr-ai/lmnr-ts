@@ -14,6 +14,15 @@ npm install -g lmnr-cli
 
 ## Commands
 
+### [`sql`](src/commands/sql/README.md) - SQL Queries
+
+Run SQL queries against your Laminar project data (spans, traces, events, and more).
+
+```bash
+lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json
+lmnr-cli sql schema                                      # Show available tables
+```
+
 ### [`dev`](src/commands/dev/README.md) - Agent Debugger
 
 Start a language-agnostic debugging session for your AI agents. Connects to the Laminar backend, spawns a worker process for your code, and orchestrates the debugging flow.
@@ -34,15 +43,6 @@ lmnr-cli dataset list --json                             # List all datasets
 lmnr-cli dataset push data.jsonl -n my-dataset --json    # Push data to a dataset
 lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a dataset
 lmnr-cli dataset create my-dataset data.jsonl -o out.jsonl
-```
-
-### [`sql`](src/commands/sql/README.md) - SQL Queries
-
-Run SQL queries against your Laminar project data (spans, traces, events, and more).
-
-```bash
-lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json
-lmnr-cli sql schema                                      # Show available tables
 ```
 
 ## Global Options
