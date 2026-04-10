@@ -1,22 +1,13 @@
-import type * as anthropic from "@anthropic-ai/sdk";
 import type * as bedrock from "@aws-sdk/client-bedrock-runtime";
 import type * as azure from "@azure/openai";
 import type * as vertexAI from "@google-cloud/vertexai";
-import type * as ChainsModule from "@langchain/classic/chains";
-import type * as AgentsModule from "@langchain/core/agents";
-import type * as RunnableModule from "@langchain/core/runnables";
-import type * as ToolsModule from "@langchain/core/tools";
-import type * as VectorStoreModule from "@langchain/core/vectorstores";
 import type { SessionRecordingOptions } from "@lmnr-ai/types";
 import { SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import type * as pinecone from "@pinecone-database/pinecone";
 import type * as qdrant from "@qdrant/js-client-rest";
 import type * as chromadb from "chromadb";
-import type * as llamaindex from "llamaindex";
-import type * as openai from "openai";
 import type * as playwright from "playwright";
 import type * as puppeteer from "puppeteer";
-import type * as together from "together-ai";
 
 /**
  * Options for initializing the Traceloop SDK.
@@ -87,7 +78,7 @@ export interface InitializeOptions {
     /**
      * @deprecated Use `OpenAI` instead for consistent casing.
      */
-    openAI?: typeof openai.OpenAI;
+    openAI?: any;
     /**
      * @example
      * ```javascript
@@ -99,7 +90,7 @@ export interface InitializeOptions {
      * });
      * ```
      */
-    OpenAI?: typeof openai.OpenAI;
+    OpenAI?: any;
     /**
      * @example
      * ```javascript
@@ -111,7 +102,7 @@ export interface InitializeOptions {
      * });
      * ```
      */
-    anthropic?: typeof anthropic;
+    anthropic?: any;
     /**
      * @example
      * ```javascript
@@ -200,13 +191,19 @@ export interface InitializeOptions {
      * ```
      */
     langchain?: {
-      agentsModule?: typeof AgentsModule;
-      chainsModule?: typeof ChainsModule;
-      runnablesModule?: typeof RunnableModule;
-      toolsModule?: typeof ToolsModule;
-      vectorStoreModule?: typeof VectorStoreModule;
+      // import type * as ChainsModule from "@langchain/classic/chains";
+      // import type * as AgentsModule from "@langchain/core/agents";
+      // import type * as RunnableModule from "@langchain/core/runnables";
+      // import type * as ToolsModule from "@langchain/core/tools";
+      // import type * as VectorStoreModule from "@langchain/core/vectorstores";
+      agentsModule?: any;
+      chainsModule?: any;
+      runnablesModule?: any;
+      toolsModule?: any;
+      vectorStoreModule?: any;
     };
     /**
+     * @deprecated llamaIndex JS package is deprecated. This is a no-op and will be removed
      * @example
      * ```javascript
      * import llamaindex from "llamaindex";
@@ -217,7 +214,7 @@ export interface InitializeOptions {
      * });
      * ```
      */
-    llamaIndex?: typeof llamaindex;
+    llamaIndex?: any;
     /**
      * @example
      * ```javascript
@@ -258,10 +255,10 @@ export interface InitializeOptions {
      * ```
      */
     playwright?: {
-      chromium?: typeof playwright.chromium,
-      firefox?: typeof playwright.firefox,
-      webkit?: typeof playwright.webkit,
-    },
+      chromium?: typeof playwright.chromium;
+      firefox?: typeof playwright.firefox;
+      webkit?: typeof playwright.webkit;
+    };
     /**
      * @example
      * ```javascript
@@ -273,7 +270,7 @@ export interface InitializeOptions {
      * });
      * ```
      */
-    puppeteer?: typeof puppeteer,
+    puppeteer?: typeof puppeteer;
     /**
      * @example
      * ```javascript
@@ -285,7 +282,7 @@ export interface InitializeOptions {
      * });
      * ```
      */
-    together?: typeof together,
+    together?: any;
     /**
      * @example
      * ```javascript
@@ -301,7 +298,7 @@ export interface InitializeOptions {
      * // import * as genai from "@google/genai";
      * // instrumentModules: { google_genai: genai }
      */
-    google_genai?: any,
+    google_genai?: any;
     /**
      * @example
      * ```javascript
@@ -313,7 +310,7 @@ export interface InitializeOptions {
      * });
      * ```
      */
-    kernel?: any,
+    kernel?: any;
     /**
      * Note: When you import query before Laminar.initialize(),
      * OR if you have "type": "module" in your package.json,
@@ -334,8 +331,8 @@ export interface InitializeOptions {
      * ```
      */
     claudeAgentSDK?: {
-      query?: any, // typeof claudeAgentSDK.query
-    },
+      query?: any; // typeof claudeAgentSDK.query
+    };
     /**
      * @example
      * ```javascript
@@ -351,7 +348,7 @@ export interface InitializeOptions {
      * });
      * ```
      */
-    stagehand?: any,
+    stagehand?: any;
   };
 
   /**

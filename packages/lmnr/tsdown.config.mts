@@ -13,16 +13,19 @@ export default defineConfig({
   dts: true, // Generate declaration file (.d.ts)
   sourcemap: true,
   clean: true,
-  external: [
-    "puppeteer",
-    "puppeteer-core",
-    "playwright",
-    "esbuild",
-  ],
-  noExternal: [
-    "@lmnr-ai/types",
-    "@lmnr-ai/client",
-    "export-to-csv",
-    "csv-parser",
-  ],
+  deps: {
+    neverBundle: [
+      "puppeteer",
+      "puppeteer-core",
+      "playwright",
+      "esbuild",
+      "together-ai",
+    ],
+    alwaysBundle: [
+      "@lmnr-ai/types",
+      "@lmnr-ai/client",
+      "export-to-csv",
+      "csv-parser",
+    ],
+  },
 });

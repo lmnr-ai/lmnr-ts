@@ -1,7 +1,7 @@
 {
   "name": "@lmnr-ai/lmnr-ts",
   "private": true,
-  "version": "0.8.17",
+  "version": "0.8.18",
   "description": "Laminar AI TypeScript SDK",
   "scripts": {
     "build": "pnpm -r build",
@@ -28,9 +28,9 @@
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "eslint-plugin-unused-imports": "^4.4.1",
     "playwright": "^1.56.1",
-    "tsdown": "^0.18.3",
-    "tsx": "^4.20.3",
-    "typescript": "^5.8.3",
+    "tsdown": "^0.21.7",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
     "typescript-eslint": "^8.57.2"
   }
 }
