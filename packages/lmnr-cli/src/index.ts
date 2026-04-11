@@ -232,6 +232,12 @@ Examples:
     });
 
   program.addHelpText('after', `
+Authentication:
+  Most commands require a project API key. Provide it in one of two ways:
+    1. Environment variable: export LMNR_PROJECT_API_KEY=<your-key>
+    2. CLI flag:             --project-api-key <your-key>
+  Get your key at https://www.laminar.sh (Settings > Project API Keys).
+
 Examples:
   lmnr-cli dev agent.ts                                    # Debugger TypeScript entrypoint
   lmnr-cli dev agent.py                                    # Debugger Python script mode
@@ -242,6 +248,10 @@ Examples:
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json # Query spans
   lmnr-cli sql query "SELECT t.id, s.name FROM traces t JOIN spans s ON t.id = s.trace_id" --json
   lmnr-cli sql schema                                      # Show available tables
+
+For more information about the Laminar platfrom:
+  Documentation: https://docs.laminar.sh
+  Dashboard:     https://www.laminar.sh
 `);
 
   await program.parseAsync();
