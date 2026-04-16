@@ -256,9 +256,6 @@ importers:
       chromadb:
         specifier: ^3.0.10
         version: 3.1.0
-      hono:
-        specifier: ^4.12.12
-        version: 4.12.12
       nock:
         specifier: ^14.0.8
         version: 14.0.10
@@ -6787,7 +6784,8 @@ snapshots:
 
   help-me@5.0.0: {}
 
-  hono@4.12.12: {}
+  hono@4.12.12:
+    optional: true
 
   hookable@6.1.0: {}
 
