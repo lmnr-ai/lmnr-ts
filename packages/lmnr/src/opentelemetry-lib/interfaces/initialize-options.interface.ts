@@ -349,6 +349,20 @@ export interface InitializeOptions {
      * ```
      */
     stagehand?: any;
+    /**
+     * @example
+     * ```javascript
+     * import * as opencode from "@opencode-ai/sdk";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: {
+     *     opencode: opencode,
+     *   },
+     * });
+     * ```
+     */
+    opencode?: any;
   };
 
   /**
