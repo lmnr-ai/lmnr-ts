@@ -42,7 +42,7 @@
   "devDependencies": {
     "@lmnr-ai/client": "workspace:*",
     "@lmnr-ai/types": "workspace:*",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.4"
   },
   "peerDependencies": {
     "@lmnr-ai/lmnr": "*"
