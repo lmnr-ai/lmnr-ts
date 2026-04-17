@@ -24,6 +24,7 @@ import { initializeLogger } from "../../utils";
 import { ClaudeAgentSDKInstrumentation } from "../instrumentation/claude-agent-sdk";
 import { GoogleGenAiInstrumentation } from "../instrumentation/google-genai";
 import { KernelInstrumentation } from "../instrumentation/kernel";
+import { OpencodeInstrumentation } from "../instrumentation/opencode";
 import { InitializeOptions } from "../interfaces";
 
 const logger = initializeLogger();
@@ -240,6 +241,8 @@ const initInstrumentations = (
 
   instrumentations.push(new ClaudeAgentSDKInstrumentation());
 
+  instrumentations.push(new OpencodeInstrumentation());
+
   return instrumentations;
 };
 
@@ -437,6 +440,12 @@ const manuallyInitInstrumentations = (
     claudeAgentInstrumentation.manuallyInstrument(
       instrumentModules.claudeAgentSDK,
     );
+  }
+
+  if (instrumentModules?.opencode) {
+    const opencodeInstrumentation = new OpencodeInstrumentation();
+    instrumentations.push(opencodeInstrumentation);
+    opencodeInstrumentation.manuallyInstrument(instrumentModules.opencode);
   }
 
   return instrumentations;
