@@ -67,4 +67,4 @@ pnpm lint:fix
 
 - [Main SDK Documentation](packages/lmnr/README.md)
 - [CLI Documentation](packages/cli/README.md)
-- [Shared Laminar Documentation](https://docs.lmnr.ai)
+- [Shared Laminar Documentation](https://laminar.sh/docs)

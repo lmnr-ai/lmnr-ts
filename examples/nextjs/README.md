@@ -28,7 +28,7 @@ cd lmnr-ts/examples/nextjs
 cp .env.local.example .env.local
 ```
 
-And then fill in the `.env.local` file. Get [Laminar project API key](https://docs.lmnr.ai/tracing/introduction#2-initialize-laminar-in-your-application). Get [OpenAI API key](https://platform.openai.com/api-keys). Get [Anthropic API key](https://console.anthropic.com/settings/keys)
+And then fill in the `.env.local` file. Get [Laminar project API key](https://laminar.sh/). Get [OpenAI API key](https://platform.openai.com/api-keys). Get [Anthropic API key](https://console.anthropic.com/settings/keys)
 
 ### 4. Install the dependencies
 
@@ -130,7 +130,7 @@ In this example, Laminar span processor will make sure traces created by the def
 By default, Laminar span processor sends the data to Laminar cloud using an OTLP/grpc exporter.
 
 
-Configuring Laminar span processor to send traces to self-hosted Laminar instance. Also see [Laminar self-hosting docs](https://docs.lmnr.ai/self-hosting)
+Configuring Laminar span processor to send traces to self-hosted Laminar instance. Also see [Laminar self-hosting docs](https://laminar.sh/docs/hosting-options)
 
 ```javascript
 new LaminarSpanProcessor({
@@ -159,6 +159,6 @@ new LaminarSpanProcessor({
 
 #### [Advanced] What is a span processor and a span exporter?
 
-**Span exporter** is an OpenTelemetry object that is responsible for encoding finished spans and sending them to the backend. Exporters carry the information about the backend, such as the endpoint and port. In addition, exporters differ by type based on the encoding that a backend accepts. To learn more about the encodings, read our docs on [exporters](https://docs.lmnr.ai/tracing/otel#exporters). Default Laminar span exporter is OTLP/gRPC configured to send data to `https://api.lmnr.ai:8443`.
+**Span exporter** is an OpenTelemetry object that is responsible for encoding finished spans and sending them to the backend. Exporters carry the information about the backend, such as the endpoint and port. In addition, exporters differ by type based on the encoding that a backend accepts. To learn more about the encodings, read our docs on [exporters](https://laminar.sh/docs/tracing/otel#exporters). Default Laminar span exporter is OTLP/gRPC configured to send data to `https://api.lmnr.ai:8443`.
 
 **Span processor** is an OpenTelemetry object that is responsible for pre-processing spans before export. One span processor may have one span exporter, and span processors are responsible for calling `export` methods on exporters, when they are ready to export spans. Exporters may batch spans before exporting or sending spans as soon as they are finished. Most of the pre-processing happens in `onStart` on span processors. Laminar span processor adds Laminar specific attributes on spans.
