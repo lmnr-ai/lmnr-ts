@@ -26,9 +26,7 @@ Laminar.initialize({ projectApiKey: '<PROJECT_API_KEY>' })
 This will automatically instrument most of the LLM, Vector DB, and related
 calls with OpenTelemetry-compatible instrumentation.
 
-[Read docs](https://docs.lmnr.ai) to learn more.
-
-Auto-instrumentations are provided by [OpenLLMetry](https://github.com/traceloop/openllmetry-js).
+[Read docs](https://laminar.sh/docs) to learn more.
 
 ### Where to place Laminar.initialize()
 
@@ -126,8 +124,8 @@ You can run evaluations locally by providing executor (part of the logic used in
 
 \* If you already have the outputs of executors you want to evaluate, you can specify the executor as an identity function, that takes in `data` and returns only needed value(s) from it.
 
-[Read docs](https://docs.lmnr.ai/evaluations/introduction) to learn more about evaluations.
+[Read docs](https://laminar.sh/docs/evaluations/introduction) to learn more about evaluations.
 
 ## Client for HTTP operations
 
-Various interactions with Laminar [API](https://docs.lmnr.ai/api-reference/) are available in `LaminarClient`
+Various interactions with Laminar API are available in `LaminarClient`. [Learn more](https://laminar.sh/docs/sdk/client)

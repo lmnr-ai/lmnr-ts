@@ -7,7 +7,10 @@ import { EvaluationDataset, LaminarDataset } from "./datasets";
 import { observe } from "./decorators";
 import { Laminar } from "./laminar";
 import { InitializeOptions } from "./opentelemetry-lib/interfaces";
-import { HUMAN_EVALUATOR_OPTIONS, SPAN_TYPE } from "./opentelemetry-lib/tracing/attributes";
+import {
+  HUMAN_EVALUATOR_OPTIONS,
+  SPAN_TYPE,
+} from "./opentelemetry-lib/tracing/attributes";
 import { LaminarContextManager } from "./opentelemetry-lib/tracing/context";
 import {
   getFrontendUrl,
@@ -43,28 +46,30 @@ const getEvaluationUrl = (
   return `${url}/project/${projectId}/evaluations/${evaluationId}`;
 };
 
-const getAverageScores =
-  <D, T, O>(results: EvaluationDatapoint<D, T, O>[]): Record<string, number> => {
-    const perScoreValues: Record<string, number[]> = {};
-    for (const result of results) {
-      for (const key in result.scores) {
-        const score = result.scores[key];
-        if (perScoreValues[key] && score !== null) {
-          perScoreValues[key].push(score);
-        } else {
-          perScoreValues[key] = score !== null ? [score] : [];
-        }
+const getAverageScores = <D, T, O>(
+  results: EvaluationDatapoint<D, T, O>[],
+): Record<string, number> => {
+  const perScoreValues: Record<string, number[]> = {};
+  for (const result of results) {
+    for (const key in result.scores) {
+      const score = result.scores[key];
+      if (perScoreValues[key] && score !== null) {
+        perScoreValues[key].push(score);
+      } else {
+        perScoreValues[key] = score !== null ? [score] : [];
       }
     }
+  }
 
-    const averageScores: Record<string, number> = {};
-    for (const key in perScoreValues) {
-      averageScores[key] = perScoreValues[key].reduce((a, b) => a + b, 0)
-        / perScoreValues[key].length;
-    }
+  const averageScores: Record<string, number> = {};
+  for (const key in perScoreValues) {
+    averageScores[key] =
+      perScoreValues[key].reduce((a, b) => a + b, 0) /
+      perScoreValues[key].length;
+  }
 
-    return averageScores;
-  };
+  return averageScores;
+};
 
 /**
  * Configuration for the Evaluator
@@ -101,9 +106,9 @@ interface EvaluationConfig {
   /**
    * Object with modules to instrument. If not provided, all
    * available modules are instrumented.
-   * See {@link https://docs.lmnr.ai/tracing/automatic-instrumentation}
+   * See {@link https://laminar.sh/docs/sdk/typescript/instrumentation#instrumentmodules}
    */
-  instrumentModules?: InitializeOptions['instrumentModules'];
+  instrumentModules?: InitializeOptions["instrumentModules"];
   /**
    * If true, then the spans will not be batched.
    */
@@ -175,15 +180,19 @@ export type EvaluatorFunctionReturn = number | Record<string, number>;
  * of string keys and number values. The latter is useful for evaluating
  * multiple criteria in one go instead of running multiple evaluators.
  */
-export type EvaluatorFunction<O, T, D = any> = (output: O, target?: T, data?: D, ...args: any[]) =>
-  EvaluatorFunctionReturn | Promise<EvaluatorFunctionReturn>;
+export type EvaluatorFunction<O, T, D = any> = (
+  output: O,
+  target?: T,
+  data?: D,
+  ...args: any[]
+) => EvaluatorFunctionReturn | Promise<EvaluatorFunctionReturn>;
 
 interface EvaluationConstructorProps<D, T, O> {
   /**
    * List of data points to evaluate. `data` is the input to the executor function,
    * `target` is the input to the evaluator function.
    */
-  data: (Datapoint<D, T>[]) | EvaluationDataset<D, T>;
+  data: Datapoint<D, T>[] | EvaluationDataset<D, T>;
   /**
    * The executor function. Takes the data point + any additional arguments
    * and returns the output to evaluate.
@@ -237,11 +246,8 @@ class EvaluationReporter {
   public baseUrl: string;
   public frontendPort?: number;
 
-  constructor(
-    baseUrl?: string,
-    frontendPort?: number,
-  ) {
-    this.baseUrl = baseUrl ?? 'https://api.lmnr.ai';
+  constructor(baseUrl?: string, frontendPort?: number) {
+    this.baseUrl = baseUrl ?? "https://api.lmnr.ai";
     this.frontendPort = frontendPort;
   }
 
@@ -265,11 +271,20 @@ class EvaluationReporter {
     averageScores,
     projectId,
     evaluationId,
-  }: { averageScores: Record<string, number>, projectId: string, evaluationId: string }) {
+  }: {
+    averageScores: Record<string, number>;
+    projectId: string;
+    evaluationId: string;
+  }) {
     this.cliProgress.stop();
-    const url = getEvaluationUrl(projectId, evaluationId, this.baseUrl, this.frontendPort);
-    process.stdout.write('\n');
-    process.stdout.write('\nAverage scores:\n');
+    const url = getEvaluationUrl(
+      projectId,
+      evaluationId,
+      this.baseUrl,
+      this.frontendPort,
+    );
+    process.stdout.write("\n");
+    process.stdout.write("\nAverage scores:\n");
     for (const key in averageScores) {
       process.stdout.write(`${key}: ${averageScores[key]}\n`);
     }
@@ -282,7 +297,10 @@ export class Evaluation<D, T, O> {
   private progressReporter: EvaluationReporter;
   private data: Datapoint<D, T>[] | EvaluationDataset<D, T>;
   private executor: (data: D, ...args: any[]) => O | Promise<O>;
-  private evaluators: Record<string, EvaluatorFunction<O, T, D> | HumanEvaluator>;
+  private evaluators: Record<
+    string,
+    EvaluatorFunction<O, T, D> | HumanEvaluator
+  >;
   private groupName?: string;
   private frontendPort?: number;
   private name?: string;
@@ -295,10 +313,16 @@ export class Evaluation<D, T, O> {
   private client: LaminarClient;
 
   constructor({
-    data, executor, evaluators, groupName, name, metadata, config,
+    data,
+    executor,
+    evaluators,
+    groupName,
+    name,
+    metadata,
+    config,
   }: EvaluationConstructorProps<D, T, O>) {
     if (Object.keys(evaluators).length === 0) {
-      throw new Error('No evaluators provided');
+      throw new Error("No evaluators provided");
     }
 
     const evaluatorNameRegex = /^[\w\s-]+$/;
@@ -307,13 +331,16 @@ export class Evaluation<D, T, O> {
       if (!evaluatorNameRegex.test(key)) {
         throw new Error(
           `Invalid evaluator key: "${key}".` +
-          "Keys must only contain letters, digits, hyphens, underscores, or spaces.",
+            "Keys must only contain letters, digits, hyphens, underscores, or spaces.",
         );
       }
     }
 
     this.frontendPort = config?.frontendPort;
-    this.progressReporter = new EvaluationReporter(config?.baseUrl, config?.frontendPort);
+    this.progressReporter = new EvaluationReporter(
+      config?.baseUrl,
+      config?.frontendPort,
+    );
     this.data = data;
     this.executor = executor;
     this.evaluators = evaluators;
@@ -322,7 +349,10 @@ export class Evaluation<D, T, O> {
     this.name = name;
 
     if (config) {
-      if (config.concurrencyLimit !== undefined && config.concurrencyLimit < 1) {
+      if (
+        config.concurrencyLimit !== undefined &&
+        config.concurrencyLimit < 1
+      ) {
         logger.warn(
           `concurrencyLimit must be greater than 0. Setting to default of ${DEFAULT_CONCURRENCY}`,
         );
@@ -332,7 +362,8 @@ export class Evaluation<D, T, O> {
       }
       this.traceDisableBatch = config.traceDisableBatch ?? false;
       this.traceExportTimeoutMillis = config.traceExportTimeoutMillis;
-      this.traceExportBatchSize = config.traceExportBatchSize ?? MAX_EXPORT_BATCH_SIZE;
+      this.traceExportBatchSize =
+        config.traceExportBatchSize ?? MAX_EXPORT_BATCH_SIZE;
     }
 
     if (Laminar.initialized()) {
@@ -340,9 +371,14 @@ export class Evaluation<D, T, O> {
         baseUrl: Laminar.getHttpUrl(),
         projectApiKey: Laminar.getProjectApiKey(),
       });
-      if (config?.projectApiKey && config.projectApiKey !== Laminar.getProjectApiKey()) {
-        logger.warn('Laminar was already initialized with a different project API key. ' +
-          'Ignoring the project API key from the evaluation config.');
+      if (
+        config?.projectApiKey &&
+        config.projectApiKey !== Laminar.getProjectApiKey()
+      ) {
+        logger.warn(
+          "Laminar was already initialized with a different project API key. " +
+            "Ignoring the project API key from the evaluation config.",
+        );
       }
       return;
     }
@@ -350,18 +386,22 @@ export class Evaluation<D, T, O> {
     const key = config?.projectApiKey ?? process.env.LMNR_PROJECT_API_KEY;
     if (key === undefined) {
       throw new Error(
-        'Please initialize the Laminar object with your project API key ' +
-        'or set the LMNR_PROJECT_API_KEY environment variable',
+        "Please initialize the Laminar object with your project API key " +
+          "or set the LMNR_PROJECT_API_KEY environment variable",
       );
     }
 
-    const url = config?.baseUrl ?? process?.env?.LMNR_BASE_URL ?? 'https://api.lmnr.ai';
+    const url =
+      config?.baseUrl ?? process?.env?.LMNR_BASE_URL ?? "https://api.lmnr.ai";
     const httpUrl = config?.baseHttpUrl ?? url;
-    const httpPort = config?.httpPort ?? (
-      httpUrl.match(/:\d{1,5}$/g)
+    const httpPort =
+      config?.httpPort ??
+      (httpUrl.match(/:\d{1,5}$/g)
         ? parseInt(httpUrl.match(/:\d{1,5}$/g)![0].slice(1))
         : 443);
-    const urlWithoutSlash = httpUrl.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
+    const urlWithoutSlash = httpUrl
+      .replace(/\/$/, "")
+      .replace(/:\d{1,5}$/g, "");
     const baseHttpUrl = `${urlWithoutSlash}:${httpPort}`;
 
     this.client = new LaminarClient({
@@ -384,7 +424,7 @@ export class Evaluation<D, T, O> {
 
   public async run(): Promise<EvaluationRunResult> {
     if (this.isFinished) {
-      throw new Error('Evaluation is already finished');
+      throw new Error("Evaluation is already finished");
     }
     if (this.data instanceof LaminarDataset) {
       this.data.setClient(this.client);
@@ -402,8 +442,8 @@ export class Evaluation<D, T, O> {
         } catch (error) {
           // Backward compatibility with old Laminar API (self-hosted)
           logger.warn(
-            `Error getting dataset ${(this.data).name}: `
-            + `${error instanceof Error ? error.message : String(error)}`,
+            `Error getting dataset ${this.data.name}: ` +
+              `${error instanceof Error ? error.message : String(error)}`,
           );
         }
       }
@@ -411,7 +451,11 @@ export class Evaluation<D, T, O> {
 
     let resultDatapoints: EvaluationDatapoint<D, T, O>[];
     try {
-      const evaluation = await this.client.evals.init(this.name, this.groupName, this.metadata);
+      const evaluation = await this.client.evals.init(
+        this.name,
+        this.groupName,
+        this.metadata,
+      );
       const url = getEvaluationUrl(
         evaluation.projectId,
         evaluation.id,
@@ -445,10 +489,10 @@ export class Evaluation<D, T, O> {
       this.isFinished = true;
       return {
         averageScores: {},
-        projectId: '',
-        evaluationId: '',
-        url: '',
-        errorMessage: (e instanceof Error) ? e.message : String(e),
+        projectId: "",
+        evaluationId: "",
+        url: "",
+        errorMessage: e instanceof Error ? e.message : String(e),
       };
     }
   }
@@ -472,9 +516,11 @@ export class Evaluation<D, T, O> {
       }
     };
 
-    for (let i = 0; i < await this.getLength(); i++) {
+    for (let i = 0; i < (await this.getLength()); i++) {
       await semaphore.acquire();
-      const datapoint = Array.isArray(this.data) ? this.data[i] : await this.data.get(i);
+      const datapoint = Array.isArray(this.data)
+        ? this.data[i]
+        : await this.data.get(i);
       tasks.push(evaluateTask(datapoint, i));
     }
     const results = await Promise.all(tasks);
@@ -488,141 +534,162 @@ export class Evaluation<D, T, O> {
     datapoint: Datapoint<D, T>,
     index: number,
   ): Promise<EvaluationDatapoint<D, T, O>> {
-    return observe({ name: "evaluation", traceType: "EVALUATION" }, async () => {
-
-      trace.getSpan(LaminarContextManager.getContext())!.setAttribute(SPAN_TYPE, "EVALUATION");
-      const executorSpan = Laminar.startSpan({
-        name: "executor",
-        input: datapoint.data,
-      });
-      executorSpan.setAttribute(SPAN_TYPE, "EXECUTOR");
-      const executorSpanId = otelSpanIdToUUID(executorSpan.spanContext().spanId);
-      const datapointId = newUUID();
-      const partialDatapoint = {
-        id: datapointId,
-        data: datapoint.data,
-        target: datapoint.target,
-        metadata: datapoint.metadata,
-        traceId: otelTraceIdToUUID(
-          trace.getSpan(LaminarContextManager.getContext())!.spanContext().traceId,
-        ),
-        executorSpanId,
-        index,
-      } as EvaluationDatapoint<D, T, O>;
-
-      // Add dataset link if data is from LaminarDataset
-      if (
-        this.data instanceof LaminarDataset
-        && this.data.id && datapoint.id && datapoint.createdAt
-      ) {
-        partialDatapoint.datasetLink = {
-          datasetId: this.data.id,
-          datapointId: datapoint.id,
-          createdAt: datapoint.createdAt,
-        };
-      }
-
-      // first create the datapoint in the database and await
-      await this.client.evals.saveDatapoints({
-        evalId,
-        datapoints: [partialDatapoint],
-        groupName: this.groupName,
-      });
-
-      const output = await Laminar.withSpan(
-        executorSpan,
-        async () => {
-          const result = await this.executor(datapoint.data);
-          Laminar.setSpanOutput(result);
-          return result;
-        },
-        true,
-      );
-      const target = datapoint.target;
-
-      let scores: Record<string, number | null> = {};
-      for (const [evaluatorName, evaluator] of Object.entries(this.evaluators)) {
-        const value = await observe(
-          { name: evaluatorName },
-          async (output: O, target?: T, data?: D) => {
-            if (evaluator instanceof HumanEvaluator) {
-              const activeSpan = trace.getSpan(LaminarContextManager.getContext());
-              if (activeSpan) {
-                activeSpan.setAttribute(SPAN_TYPE, "HUMAN_EVALUATOR");
-                if (evaluator.options) {
-                  activeSpan.setAttribute(
-                    HUMAN_EVALUATOR_OPTIONS,
-                    JSON.stringify(evaluator.options),
-                  );
-                }
-              }
-              return null;
-            } else {
-              const activeSpan = trace.getSpan(LaminarContextManager.getContext());
-              if (activeSpan) {
-                activeSpan.setAttribute(SPAN_TYPE, "EVALUATOR");
-              }
-              return await evaluator(output, target, data);
-            }
-          },
-          output,
-          datapoint.target,
-          datapoint.data,
+    return observe(
+      { name: "evaluation", traceType: "EVALUATION" },
+      async () => {
+        trace
+          .getSpan(LaminarContextManager.getContext())!
+          .setAttribute(SPAN_TYPE, "EVALUATION");
+        const executorSpan = Laminar.startSpan({
+          name: "executor",
+          input: datapoint.data,
+        });
+        executorSpan.setAttribute(SPAN_TYPE, "EXECUTOR");
+        const executorSpanId = otelSpanIdToUUID(
+          executorSpan.spanContext().spanId,
         );
+        const datapointId = newUUID();
+        const partialDatapoint = {
+          id: datapointId,
+          data: datapoint.data,
+          target: datapoint.target,
+          metadata: datapoint.metadata,
+          traceId: otelTraceIdToUUID(
+            trace.getSpan(LaminarContextManager.getContext())!.spanContext()
+              .traceId,
+          ),
+          executorSpanId,
+          index,
+        } as EvaluationDatapoint<D, T, O>;
 
-        if (evaluator instanceof HumanEvaluator) {
-          scores[evaluatorName] = null;
-          continue;
+        // Add dataset link if data is from LaminarDataset
+        if (
+          this.data instanceof LaminarDataset &&
+          this.data.id &&
+          datapoint.id &&
+          datapoint.createdAt
+        ) {
+          partialDatapoint.datasetLink = {
+            datasetId: this.data.id,
+            datapointId: datapoint.id,
+            createdAt: datapoint.createdAt,
+          };
         }
 
-        if (typeof value === "number") {
-          if (isNaN(value)) {
-            throw new Error(`Evaluator ${evaluatorName} returned NaN`);
+        // first create the datapoint in the database and await
+        await this.client.evals.saveDatapoints({
+          evalId,
+          datapoints: [partialDatapoint],
+          groupName: this.groupName,
+        });
+
+        const output = await Laminar.withSpan(
+          executorSpan,
+          async () => {
+            const result = await this.executor(datapoint.data);
+            Laminar.setSpanOutput(result);
+            return result;
+          },
+          true,
+        );
+        const target = datapoint.target;
+
+        let scores: Record<string, number | null> = {};
+        for (const [evaluatorName, evaluator] of Object.entries(
+          this.evaluators,
+        )) {
+          const value = await observe(
+            { name: evaluatorName },
+            async (output: O, target?: T, data?: D) => {
+              if (evaluator instanceof HumanEvaluator) {
+                const activeSpan = trace.getSpan(
+                  LaminarContextManager.getContext(),
+                );
+                if (activeSpan) {
+                  activeSpan.setAttribute(SPAN_TYPE, "HUMAN_EVALUATOR");
+                  if (evaluator.options) {
+                    activeSpan.setAttribute(
+                      HUMAN_EVALUATOR_OPTIONS,
+                      JSON.stringify(evaluator.options),
+                    );
+                  }
+                }
+                return null;
+              } else {
+                const activeSpan = trace.getSpan(
+                  LaminarContextManager.getContext(),
+                );
+                if (activeSpan) {
+                  activeSpan.setAttribute(SPAN_TYPE, "EVALUATOR");
+                }
+                return await evaluator(output, target, data);
+              }
+            },
+            output,
+            datapoint.target,
+            datapoint.data,
+          );
+
+          if (evaluator instanceof HumanEvaluator) {
+            scores[evaluatorName] = null;
+            continue;
           }
-          scores[evaluatorName] = value;
-        } else if (value !== null) {
-          scores = { ...scores, ...value };
+
+          if (typeof value === "number") {
+            if (isNaN(value)) {
+              throw new Error(`Evaluator ${evaluatorName} returned NaN`);
+            }
+            scores[evaluatorName] = value;
+          } else if (value !== null) {
+            scores = { ...scores, ...value };
+          }
         }
-      }
 
-      const resultDatapoint = {
-        id: datapointId,
-        executorOutput: output,
-        data: datapoint.data,
-        target,
-        metadata: datapoint.metadata,
-        scores,
-        traceId: otelTraceIdToUUID(
-          trace.getSpan(LaminarContextManager.getContext())!.spanContext().traceId,
-        ),
-        executorSpanId,
-        index,
-      } as EvaluationDatapoint<D, T, O>;
+        const resultDatapoint = {
+          id: datapointId,
+          executorOutput: output,
+          data: datapoint.data,
+          target,
+          metadata: datapoint.metadata,
+          scores,
+          traceId: otelTraceIdToUUID(
+            trace.getSpan(LaminarContextManager.getContext())!.spanContext()
+              .traceId,
+          ),
+          executorSpanId,
+          index,
+        } as EvaluationDatapoint<D, T, O>;
 
-      // Add dataset link if data is from LaminarDataset
-      if (this.data instanceof LaminarDataset
-        && this.data.id && datapoint.id && datapoint.createdAt
-      ) {
-        resultDatapoint.datasetLink = {
-          datasetId: this.data.id,
-          datapointId: datapoint.id,
-          createdAt: datapoint.createdAt,
-        };
-      }
+        // Add dataset link if data is from LaminarDataset
+        if (
+          this.data instanceof LaminarDataset &&
+          this.data.id &&
+          datapoint.id &&
+          datapoint.createdAt
+        ) {
+          resultDatapoint.datasetLink = {
+            datasetId: this.data.id,
+            datapointId: datapoint.id,
+            createdAt: datapoint.createdAt,
+          };
+        }
 
-      const uploadPromise = this.client.evals.saveDatapoints({
-        evalId,
-        datapoints: [resultDatapoint],
-        groupName: this.groupName,
-      });
-      this.uploadPromises.push(uploadPromise);
+        const uploadPromise = this.client.evals.saveDatapoints({
+          evalId,
+          datapoints: [resultDatapoint],
+          groupName: this.groupName,
+        });
+        this.uploadPromises.push(uploadPromise);
 
-      return resultDatapoint;
-    });
+        return resultDatapoint;
+      },
+    );
   }
 
   private async getLength(): Promise<number> {
-    return this.data instanceof EvaluationDataset ? await this.data.size() : this.data.length;
+    return this.data instanceof EvaluationDataset
+      ? await this.data.size()
+      : this.data.length;
   }
 
   public setFrontendPort(port: number) {
@@ -650,8 +717,16 @@ export class Evaluation<D, T, O> {
  * @param props.config Optional override configurations for the evaluator.
  */
 export async function evaluate<D, T, O>({
-  data, executor, evaluators, groupName, name, metadata, config,
-}: EvaluationConstructorProps<D, T, O>): Promise<EvaluationRunResult | undefined> {
+  data,
+  executor,
+  evaluators,
+  groupName,
+  name,
+  metadata,
+  config,
+}: EvaluationConstructorProps<D, T, O>): Promise<
+  EvaluationRunResult | undefined
+> {
   const evaluation = new Evaluation<D, T, O>({
     data,
     executor,
