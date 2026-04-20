@@ -72,28 +72,26 @@ export class OpencodeInstrumentation extends InstrumentationBase {
   }
 
   private patchPromptMethod(): (original: Function) => Function {
-    return (original: Function) => {
-      return function (this: any, ...args: any[]) {
-        const options = args[0];
-        if (options?.body?.parts && Array.isArray(options.body.parts)) {
-          const serializedContext = Laminar.serializeLaminarSpanContext();
-          if (serializedContext) {
-            options.body.parts = [
-              ...options.body.parts,
-              {
-                type: "text",
-                metadata: {
-                  lmnrSpanContext: serializedContext,
-                },
-                text: "",
-                ignored: true,
-                synthetic: true,
+    return (original: Function) => function (this: any, ...args: any[]) {
+      const options = args[0];
+      if (options?.body?.parts && Array.isArray(options.body.parts)) {
+        const serializedContext = Laminar.serializeLaminarSpanContext();
+        if (serializedContext) {
+          options.body.parts = [
+            ...options.body.parts,
+            {
+              type: "text",
+              metadata: {
+                lmnrSpanContext: serializedContext,
               },
-            ];
-          }
+              text: "",
+              ignored: true,
+              synthetic: true,
+            },
+          ];
         }
-        return original.apply(this, args);
-      };
+      }
+      return original.apply(this, args);
     };
   }
 

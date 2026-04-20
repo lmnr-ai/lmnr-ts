@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.8.18",
+  "version": "0.8.19",
   "description": "TypeScript SDK for Laminar AI",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -50,7 +50,7 @@
   "homepage": "https://github.com/lmnr-ai/lmnr-ts#README",
   "dependencies": {
     "@grpc/grpc-js": "^1.14.3",
-    "@lmnr-ai/claude-code-proxy": "^0.1.19",
+    "@lmnr-ai/claude-code-proxy": "^0.1.20",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/context-async-hooks": "^1.30.1 || ^2.0.0",
     "@opentelemetry/core": "^1.30.1 || ^2.0.0",
@@ -98,7 +98,7 @@
     "@aws-sdk/client-bedrock-runtime": "^3.1019.0",
     "@azure/openai": "^2.0.0",
     "@google-cloud/vertexai": "^1.10.0",
-    "@google/genai": "^1.49.0",
+    "@google/genai": "^1.50.1",
     "@lmnr-ai/client": "workspace:*",
     "@lmnr-ai/types": "workspace:*",
     "@onkernel/sdk": "^0.18.0",

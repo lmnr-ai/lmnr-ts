@@ -76,8 +76,8 @@ importers:
         specifier: ^1.14.3
         version: 1.14.3
       '@lmnr-ai/claude-code-proxy':
-        specifier: ^0.1.19
-        version: 0.1.19
+        specifier: ^0.1.20
+        version: 0.1.20
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.0
@@ -215,8 +215,8 @@ importers:
         specifier: ^1.10.0
         version: 1.10.0
       '@google/genai':
-        specifier: ^1.49.0
-        version: 1.49.0(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.1.12))(bufferutil@4.0.9)
+        specifier: ^1.50.1
+        version: 1.50.1(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.1.12))(bufferutil@4.0.9)
       '@lmnr-ai/client':
         specifier: workspace:*
         version: link:../client
@@ -938,8 +938,8 @@ packages:
     resolution: {integrity: sha512-HqYqoivNtkq59po8m7KI0n+lWKdz4kabENncYQXZCX/hBWJfXtKAfR/2nUQsP+TwSfHKoA7zDL2RrJYIv/j3VQ==}
     engines: {node: '>=18.0.0'}
 
-  '@google/genai@1.49.0':
-    resolution: {integrity: sha512-hO69Zl0H3x+L0KL4stl1pLYgnqnwHoLqtKy6MRlNnW8TAxjqMdOUVafomKd4z1BePkzoxJWbYILny9a2Zk43VQ==}
+  '@google/genai@1.50.1':
+    resolution: {integrity: sha512-YbkX7H9+1Pt8wOt7DDREy8XSoiL6fRDzZQRyaVBarFf8MR3zHGqVdvM4cLbDXqPhxqvegZShgfxb8kw9C7YhAQ==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       '@modelcontextprotocol/sdk': ^1.25.2
@@ -998,50 +998,50 @@ packages:
   '@js-sdsl/ordered-map@4.4.2':
     resolution: {integrity: sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==}
 
-  '@lmnr-ai/claude-code-proxy-darwin-arm64@0.1.19':
-    resolution: {integrity: sha512-IhtxzywAeiB9v7LokYdJA5nc8G0T+3XIENZP7fg4aw5KXqVcmwwUbNHzwun4wO5W5jJozh4xJf3I6Klv+utEcw==}
+  '@lmnr-ai/claude-code-proxy-darwin-arm64@0.1.20':
+    resolution: {integrity: sha512-k2z6DVKuCOnj1+1cDU78FZq+y6xTbn7xkjuqAhjyKZFzn54pVC3gD4M/VQwk38KhHfztX/XlStVR73kCG4beZg==}
     engines: {node: '>=18.0.0'}
     cpu: [arm64]
     os: [darwin]
 
-  '@lmnr-ai/claude-code-proxy-darwin-x64@0.1.19':
-    resolution: {integrity: sha512-gztKdmBw84hcGpf1klMH/8DyeHvukMktIPIqdjcS6QH/+wYrAeG36ME4AFSU9i1axQgJ4rGFA8gGrbQSXwvX7Q==}
+  '@lmnr-ai/claude-code-proxy-darwin-x64@0.1.20':
+    resolution: {integrity: sha512-B3nHE5eDJr5jwaDrTxSMUeMPXOM8zogYI+Tl9evRGWTcKI4kxGzQdW+J5fj/BHwni/s2khvSaXmGcg2RR4V5/Q==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [darwin]
 
-  '@lmnr-ai/claude-code-proxy-linux-arm64-gnu@0.1.19':
-    resolution: {integrity: sha512-deZVjXnEYP5+/8WlcPuafvlz7pXBKz7tfGIk8R3onE/VBSiS/D6cOD4gMZy5IDMzGIXAvmcMU+N29TAHg6ZqiQ==}
+  '@lmnr-ai/claude-code-proxy-linux-arm64-gnu@0.1.20':
+    resolution: {integrity: sha512-KG0bbxWE87s2OrCsJpTFDYYT7u4rLJPIQUAR4afgF4aHZQDAMlvJFRhdXceyUxs9wueFSu3TLIJNzLmbOY4eOQ==}
     engines: {node: '>=18.0.0'}
     cpu: [arm64]
     os: [linux]
 
-  '@lmnr-ai/claude-code-proxy-linux-arm64-musl@0.1.19':
-    resolution: {integrity: sha512-dFwFY7nPVM6DZM2jhsKLlWtDDR1rw5ZMz0oC/FmI1YquAgatnExW4fsAxSzeMmkE/kFcaffJR+7kIJxDqzgDuA==}
+  '@lmnr-ai/claude-code-proxy-linux-arm64-musl@0.1.20':
+    resolution: {integrity: sha512-iDTtScu4tcoL9UMAZBB5F98WYc5v5mfKFLEBeNKk7Lu4bOf96GaDjV7cRkK++rPaGSE3/Hl07k9/uVu3vUeGpg==}
     engines: {node: '>=18.0.0'}
     cpu: [arm64]
     os: [linux]
 
-  '@lmnr-ai/claude-code-proxy-linux-x64-gnu@0.1.19':
-    resolution: {integrity: sha512-slbKp529z0mKFSCobemiKGrIozuvLKc0vgVYerAaCSk+cfzceCg9mHEBGrF2Wzk3Ywrde4ZiDN5t/u1I/fejQA==}
+  '@lmnr-ai/claude-code-proxy-linux-x64-gnu@0.1.20':
+    resolution: {integrity: sha512-gp8nV5vf+kRUDyY7EJ2Xa3fYW5ygInGkHk2NTU3zurKpSajONzOCahCQAU4mvZLCzuKk7N47BYtQ2qNyUqQzQA==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [linux]
 
-  '@lmnr-ai/claude-code-proxy-linux-x64-musl@0.1.19':
-    resolution: {integrity: sha512-En8yt8qT+MGc74oVrAbQzyYpvz8zZ4wMij9w55FPzSL7WcMsKk8cYrvdtIplWVGIWh0+1mnpqKmviaxVTEwpSg==}
+  '@lmnr-ai/claude-code-proxy-linux-x64-musl@0.1.20':
+    resolution: {integrity: sha512-x3JDIUHMxhcYVFB9B18iiSgu6MxVsZhgyB/yvbSRQW6YgFwME4zXE6FL839mSOcvOSIKCVu5PnzJtpz4tzeehQ==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [linux]
 
-  '@lmnr-ai/claude-code-proxy-win32-x64-msvc@0.1.19':
-    resolution: {integrity: sha512-KHzJBcDJJadInCrtGqujlflVtIYZTJUI+HuY5Dhne4mosN/nx1Z9MZP60LnvvjzAraXMC/cKCVMLjAizOJwkJA==}
+  '@lmnr-ai/claude-code-proxy-win32-x64-msvc@0.1.20':
+    resolution: {integrity: sha512-1yDJBGs32tWl/c6Bj2rP/o00Mymek5BBNH7TMu3868eHIzozUd+ikxtMBuoiUvXpP3y1COuBAUREDFHYZ2YnSg==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [win32]
 
-  '@lmnr-ai/claude-code-proxy@0.1.19':
-    resolution: {integrity: sha512-ABCCN/irh8tnEcv34AV0+w5TXPr8igpEe3drXlKAw26zNTl62LAihEN5ob/Lnm+2k/n8PqsoNNZ0Iw4502qUPg==}
+  '@lmnr-ai/claude-code-proxy@0.1.20':
+    resolution: {integrity: sha512-FEmbx9JSjJ55WSpEV50UlJYPCFisZ90JmFf86a0Yad8crdg19PIs1ajdF1QjFsOujU0p5SURbxUFgY2I5ojpCQ==}
     engines: {node: '>=18.0.0'}
 
   '@lmnr-ai/lmnr@0.8.18':
@@ -2147,8 +2147,8 @@ packages:
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
 
-  basic-ftp@5.2.2:
-    resolution: {integrity: sha512-1tDrzKsdCg70WGvbFss/ulVAxupNauGnOlgpyjKzeQxzyllBLS0CGLV7tjIXTK3ZQA9/FBEm9qyFFN1bciA6pw==}
+  basic-ftp@5.3.0:
+    resolution: {integrity: sha512-5K9eNNn7ywHPsYnFwjKgYH8Hf8B5emh7JKcPaVjjrMJFQQwGpwowEnZNEtHs7DfR7hCZsmaK3VA4HUK0YarT+w==}
     engines: {node: '>=10.0.0'}
 
   bignumber.js@9.3.1:
@@ -2745,8 +2745,8 @@ packages:
   help-me@5.0.0:
     resolution: {integrity: sha512-7xgomUX6ADmcYzFik0HzAxh/73YlKR9bmFzf51CZwR+b6YtzU2m0u49hQCqV6SvlqIqsaxovfwdvbnsw3b/zpg==}
 
-  hono@4.12.12:
-    resolution: {integrity: sha512-p1JfQMKaceuCbpJKAPKVqyqviZdS0eUxH9v82oWo1kb9xjQ5wA6iP3FNVAPDFlz5/p7d45lO+BpSk1tuSZMF4Q==}
+  hono@4.12.14:
+    resolution: {integrity: sha512-am5zfg3yu6sqn5yjKBNqhnTX7Cv+m00ox+7jbaKkrLMRJ4rAdldd1xPd/JzbBWspqaQv6RSTrgFN95EsfhC+7w==}
     engines: {node: '>=16.9.0'}
 
   hookable@6.1.0:
@@ -3264,8 +3264,8 @@ packages:
     resolution: {integrity: sha512-vGrhOavPSTz4QVNuBNdcNXePNdNMaO1xj9yBeH1ScQPjk/rhg9sSlCXPhMkFuaNNW/syTvYqsnbIJxMBfRbbag==}
     engines: {node: '>= 8'}
 
-  protobufjs@7.5.4:
-    resolution: {integrity: sha512-CvexbZtbov6jW2eXAvLukXjXUW1TzFaivC46BpWc/3BpcCysb5Vffu+B3XHMm8lVEuy2Mm4XGex8hBSg1yapPg==}
+  protobufjs@7.5.5:
+    resolution: {integrity: sha512-3wY1AxV+VBNW8Yypfd1yQY9pXnqTAN+KwQxL8iYm3/BjKYMNg4i0owhEe26PWDOMaIrzeeF98Lqd5NGz4omiIg==}
     engines: {node: '>=12.0.0'}
 
   proxy-addr@2.0.7:
@@ -4600,11 +4600,11 @@ snapshots:
       - encoding
       - supports-color
 
-  '@google/genai@1.49.0(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.1.12))(bufferutil@4.0.9)':
+  '@google/genai@1.50.1(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.1.12))(bufferutil@4.0.9)':
     dependencies:
       google-auth-library: 10.6.1
       p-retry: 4.6.2
-      protobufjs: 7.5.4
+      protobufjs: 7.5.5
       ws: 8.19.0(bufferutil@4.0.9)
     optionalDependencies:
       '@modelcontextprotocol/sdk': 1.29.0(@cfworker/json-schema@4.1.1)(zod@4.1.12)
@@ -4622,12 +4622,12 @@ snapshots:
     dependencies:
       lodash.camelcase: 4.3.0
       long: 5.3.2
-      protobufjs: 7.5.4
+      protobufjs: 7.5.5
       yargs: 17.7.2
 
-  '@hono/node-server@1.19.13(hono@4.12.12)':
+  '@hono/node-server@1.19.13(hono@4.12.14)':
     dependencies:
-      hono: 4.12.12
+      hono: 4.12.14
     optional: true
 
   '@humanfs/core@0.19.1': {}
@@ -4666,41 +4666,41 @@ snapshots:
 
   '@js-sdsl/ordered-map@4.4.2': {}
 
-  '@lmnr-ai/claude-code-proxy-darwin-arm64@0.1.19':
+  '@lmnr-ai/claude-code-proxy-darwin-arm64@0.1.20':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-darwin-x64@0.1.19':
+  '@lmnr-ai/claude-code-proxy-darwin-x64@0.1.20':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-linux-arm64-gnu@0.1.19':
+  '@lmnr-ai/claude-code-proxy-linux-arm64-gnu@0.1.20':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-linux-arm64-musl@0.1.19':
+  '@lmnr-ai/claude-code-proxy-linux-arm64-musl@0.1.20':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-linux-x64-gnu@0.1.19':
+  '@lmnr-ai/claude-code-proxy-linux-x64-gnu@0.1.20':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-linux-x64-musl@0.1.19':
+  '@lmnr-ai/claude-code-proxy-linux-x64-musl@0.1.20':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy-win32-x64-msvc@0.1.19':
+  '@lmnr-ai/claude-code-proxy-win32-x64-msvc@0.1.20':
     optional: true
 
-  '@lmnr-ai/claude-code-proxy@0.1.19':
+  '@lmnr-ai/claude-code-proxy@0.1.20':
     optionalDependencies:
-      '@lmnr-ai/claude-code-proxy-darwin-arm64': 0.1.19
-      '@lmnr-ai/claude-code-proxy-darwin-x64': 0.1.19
-      '@lmnr-ai/claude-code-proxy-linux-arm64-gnu': 0.1.19
-      '@lmnr-ai/claude-code-proxy-linux-arm64-musl': 0.1.19
-      '@lmnr-ai/claude-code-proxy-linux-x64-gnu': 0.1.19
-      '@lmnr-ai/claude-code-proxy-linux-x64-musl': 0.1.19
-      '@lmnr-ai/claude-code-proxy-win32-x64-msvc': 0.1.19
+      '@lmnr-ai/claude-code-proxy-darwin-arm64': 0.1.20
+      '@lmnr-ai/claude-code-proxy-darwin-x64': 0.1.20
+      '@lmnr-ai/claude-code-proxy-linux-arm64-gnu': 0.1.20
+      '@lmnr-ai/claude-code-proxy-linux-arm64-musl': 0.1.20
+      '@lmnr-ai/claude-code-proxy-linux-x64-gnu': 0.1.20
+      '@lmnr-ai/claude-code-proxy-linux-x64-musl': 0.1.20
+      '@lmnr-ai/claude-code-proxy-win32-x64-msvc': 0.1.20
 
   '@lmnr-ai/lmnr@0.8.18':
     dependencies:
       '@grpc/grpc-js': 1.14.3
-      '@lmnr-ai/claude-code-proxy': 0.1.19
+      '@lmnr-ai/claude-code-proxy': 0.1.20
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/context-async-hooks': 2.2.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/core': 2.2.0(@opentelemetry/api@1.9.0)
@@ -4745,7 +4745,7 @@ snapshots:
 
   '@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.1.12)':
     dependencies:
-      '@hono/node-server': 1.19.13(hono@4.12.12)
+      '@hono/node-server': 1.19.13(hono@4.12.14)
       ajv: 8.18.0
       ajv-formats: 3.0.1(ajv@8.18.0)
       content-type: 1.0.5
@@ -4755,7 +4755,7 @@ snapshots:
       eventsource-parser: 3.0.6
       express: 5.2.1
       express-rate-limit: 8.3.1(express@5.2.1)
-      hono: 4.12.12
+      hono: 4.12.14
       jose: 6.1.3
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
@@ -5037,7 +5037,7 @@ snapshots:
       '@opentelemetry/sdk-logs': 0.200.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-metrics': 2.0.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-trace-base': 2.0.0(@opentelemetry/api@1.9.0)
-      protobufjs: 7.5.4
+      protobufjs: 7.5.5
 
   '@opentelemetry/otlp-transformer@0.208.0(@opentelemetry/api@1.9.0)':
     dependencies:
@@ -5048,7 +5048,7 @@ snapshots:
       '@opentelemetry/sdk-logs': 0.208.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-metrics': 2.2.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-trace-base': 2.2.0(@opentelemetry/api@1.9.0)
-      protobufjs: 7.5.4
+      protobufjs: 7.5.5
 
   '@opentelemetry/propagator-b3@2.0.0(@opentelemetry/api@1.9.0)':
     dependencies:
@@ -6071,7 +6071,7 @@ snapshots:
 
   base64-js@1.5.1: {}
 
-  basic-ftp@5.2.2: {}
+  basic-ftp@5.3.0: {}
 
   bignumber.js@9.3.1: {}
 
@@ -6702,7 +6702,7 @@ snapshots:
 
   get-uri@6.0.5:
     dependencies:
-      basic-ftp: 5.2.2
+      basic-ftp: 5.3.0
       data-uri-to-buffer: 6.0.2
       debug: 4.4.3
     transitivePeerDependencies:
@@ -6774,7 +6774,7 @@ snapshots:
 
   help-me@5.0.0: {}
 
-  hono@4.12.12:
+  hono@4.12.14:
     optional: true
 
   hookable@6.1.0: {}
@@ -7254,7 +7254,7 @@ snapshots:
 
   propagate@2.0.1: {}
 
-  protobufjs@7.5.4:
+  protobufjs@7.5.5:
     dependencies:
       '@protobufjs/aspromise': 1.1.2
       '@protobufjs/base64': 1.1.2

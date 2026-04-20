@@ -33,19 +33,30 @@ const logger = initializeLogger();
  */
 export function instrumentClaudeAgentQuery(
   originalQuery: any, // typeof ClaudeAgentSDK.query
-): any { // typeof ClaudeAgentSDK.Query
+): any {
+  // typeof ClaudeAgentSDK.Query
   return (params: {
-    prompt: string | AsyncIterable<any>, // AsyncIterable<ClaudeAgentSDK.SDKUserMessage>
-    options?: any, // ClaudeAgentSDK.Options
+    prompt: string | AsyncIterable<any>; // AsyncIterable<ClaudeAgentSDK.SDKUserMessage>
+    options?: any; // ClaudeAgentSDK.Options
   }) => {
+    const lamninarActive =
+      Laminar.initialized() || !!process.env.LMNR_PROJECT_API_KEY;
+
+    if (!lamninarActive) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      return originalQuery(params);
+    }
+
     const span = Laminar.startSpan({
-      name: 'query',
-      spanType: 'DEFAULT',
+      name: "query",
+      spanType: "DEFAULT",
     });
 
     span.setAttribute(
       SPAN_INPUT,
-      JSON.stringify({ prompt: typeof params.prompt === 'string' ? params.prompt : '<stream>' }),
+      JSON.stringify({
+        prompt: typeof params.prompt === "string" ? params.prompt : "<stream>",
+      }),
     );
 
     const generator = async function* () {
@@ -74,7 +85,7 @@ export function instrumentClaudeAgentQuery(
 
           // Set trace context for this specific proxy instance
           await Laminar.withSpan(span, async () => {
-            logger.debug('Setting trace to proxy instance...');
+            logger.debug("Setting trace to proxy instance...");
             await setTraceToProxyInstance(proxyInstance);
           });
 
@@ -104,18 +115,24 @@ export function instrumentClaudeAgentQuery(
           }
 
           // If Foundry is enabled, update Foundry-specific env vars
-          const foundryEnabled = params.options.env.CLAUDE_CODE_USE_FOUNDRY === "1";
+          const foundryEnabled =
+            params.options.env.CLAUDE_CODE_USE_FOUNDRY === "1";
           if (foundryEnabled) {
-            params.options.env.ANTHROPIC_FOUNDRY_BASE_URL = proxyInstance.baseUrl;
+            params.options.env.ANTHROPIC_FOUNDRY_BASE_URL =
+              proxyInstance.baseUrl;
           }
 
           // If Bedrock is enabled, update Bedrock-specific env vars
-          const bedrockEnabled = params.options.env.CLAUDE_CODE_USE_BEDROCK === "1";
+          const bedrockEnabled =
+            params.options.env.CLAUDE_CODE_USE_BEDROCK === "1";
           if (bedrockEnabled) {
-            params.options.env.ANTHROPIC_BEDROCK_BASE_URL = proxyInstance.baseUrl;
+            params.options.env.ANTHROPIC_BEDROCK_BASE_URL =
+              proxyInstance.baseUrl;
           }
         } else {
-          logger.debug("No claude proxy server available. Proceeding without proxy.");
+          logger.debug(
+            "No claude proxy server available. Proceeding without proxy.",
+          );
         }
 
         // Call original and wrap the generator
@@ -149,19 +166,15 @@ export function instrumentClaudeAgentQuery(
 */
 export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
   constructor() {
-    super(
-      "@lmnr/claude-agent-instrumentation",
-      SDK_VERSION,
-      {
-        enabled: true,
-      },
-    );
+    super("@lmnr/claude-agent-instrumentation", SDK_VERSION, {
+      enabled: true,
+    });
   }
 
   protected init(): InstrumentationModuleDefinition {
     const module = new InstrumentationNodeModuleDefinition(
       "@anthropic-ai/claude-agent-sdk",
-      ['>=0.1.0'],
+      [">=0.1.0"],
       this.patch.bind(this),
       this.unpatch.bind(this),
     );
@@ -172,15 +185,14 @@ export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
   // { query?: typeof ClaudeAgentSDK.query }
   public manuallyInstrument(claudeAgentModule: { query?: any }) {
     // Only instrument the query function if provided
-    if (claudeAgentModule.query && typeof claudeAgentModule.query === 'function') {
-      this._wrap(
-        claudeAgentModule,
-        'query',
-        this.patchQuery(),
-      );
+    if (
+      claudeAgentModule.query &&
+      typeof claudeAgentModule.query === "function"
+    ) {
+      this._wrap(claudeAgentModule, "query", this.patchQuery());
     } else {
       logger.debug(
-        'query function not found in claudeAgentSDK module, skipping instrumentation',
+        "query function not found in claudeAgentSDK module, skipping instrumentation",
       );
     }
   }
@@ -191,26 +203,24 @@ export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
     return (original: Function) => instrumentClaudeAgentQuery(original as any);
   }
 
-  private patch(moduleExports: any): any { // typeof ClaudeAgentSDK
-    diag.debug('Patching @anthropic-ai/claude-agent-sdk');
+  private patch(moduleExports: any): any {
+    // typeof ClaudeAgentSDK
+    diag.debug("Patching @anthropic-ai/claude-agent-sdk");
 
     // Wrap the query function for automatic instrumentation
-    if (moduleExports.query && typeof moduleExports.query === 'function') {
-      this._wrap(
-        moduleExports,
-        'query',
-        this.patchQuery(),
-      );
+    if (moduleExports.query && typeof moduleExports.query === "function") {
+      this._wrap(moduleExports, "query", this.patchQuery());
     }
 
     return moduleExports;
   }
 
-  private unpatch(moduleExports: any): void { // typeof ClaudeAgentSDK
-    diag.debug('Unpatching @anthropic-ai/claude-agent-sdk');
+  private unpatch(moduleExports: any): void {
+    // typeof ClaudeAgentSDK
+    diag.debug("Unpatching @anthropic-ai/claude-agent-sdk");
 
     // Unwrap the query function
-    this._unwrap(moduleExports, 'query');
+    this._unwrap(moduleExports, "query");
   }
 }
 /* eslint-enable
