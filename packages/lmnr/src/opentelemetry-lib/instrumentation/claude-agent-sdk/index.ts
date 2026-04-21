@@ -39,10 +39,10 @@ export function instrumentClaudeAgentQuery(
     prompt: string | AsyncIterable<any>; // AsyncIterable<ClaudeAgentSDK.SDKUserMessage>
     options?: any; // ClaudeAgentSDK.Options
   }) => {
-    const lamninarActive =
+    const laminarActive =
       Laminar.initialized() || !!process.env.LMNR_PROJECT_API_KEY;
 
-    if (!lamninarActive) {
+    if (!laminarActive) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return originalQuery(params);
     }
