@@ -363,6 +363,24 @@ export interface InitializeOptions {
      * ```
      */
     opencode?: any;
+    /**
+     * Instrument Mastra so that its native observability spans (agent_run,
+     * model_generation, tool_call, workflow_run, ...) are exported to Laminar.
+     *
+     * Pass either the Mastra class, the default export of `@mastra/core`, or
+     * the module namespace object.
+     *
+     * @example
+     * ```javascript
+     * import * as mastraCore from "@mastra/core";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { mastra: mastraCore },
+     * });
+     * ```
+     */
+    mastra?: any;
   };
 
   /**

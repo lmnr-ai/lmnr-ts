@@ -1,0 +1,277 @@
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, describe, it } from "node:test";
+
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+
+import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import { LaminarMastraExporter } from "../src/opentelemetry-lib/instrumentation/mastra";
+import {
+  MastraSpanType,
+  MastraTracingEventType,
+} from "../src/opentelemetry-lib/instrumentation/mastra/types";
+
+// These tests avoid pulling in a real `@mastra/core` runtime — they validate that
+// the Laminar exporter correctly converts Mastra's observability events into
+// OTel ReadableSpans that carry the attributes our backend expects.
+void describe("mastra instrumentation", () => {
+  const exporter = new InMemorySpanExporter();
+
+  void beforeEach(() => {
+    _resetConfiguration();
+    initializeTracing({
+      exporter,
+      disableBatch: true,
+    });
+  });
+
+  void afterEach(() => {
+    exporter.reset();
+  });
+
+  void it("converts a Mastra AGENT_RUN span into a DEFAULT Laminar span", async () => {
+    const mastraExporter = new LaminarMastraExporter();
+    const traceId = "0123456789abcdef0123456789abcdef";
+    const spanId = "0123456789abcdef";
+    const started = new Date("2026-04-23T10:00:00.000Z");
+    const ended = new Date("2026-04-23T10:00:01.000Z");
+
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_STARTED,
+      exportedSpan: {
+        id: spanId,
+        traceId,
+        name: "agent.weatherAgent",
+        type: MastraSpanType.AGENT_RUN,
+        startTime: started,
+        isRootSpan: true,
+        isEvent: false,
+      },
+    });
+
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_ENDED,
+      exportedSpan: {
+        id: spanId,
+        traceId,
+        name: "agent.weatherAgent",
+        type: MastraSpanType.AGENT_RUN,
+        startTime: started,
+        endTime: ended,
+        input: { prompt: "What is the weather in SF?" },
+        output: { text: "Sunny and warm" },
+        isRootSpan: true,
+        isEvent: false,
+      },
+    });
+
+    const spans = exporter.getFinishedSpans();
+    assert.equal(spans.length, 1);
+    const s = spans[0];
+    assert.equal(s.name, "agent.weatherAgent");
+    assert.equal(s.attributes["lmnr.span.type"], "DEFAULT");
+    assert.deepEqual(s.attributes["lmnr.span.path"], ["agent.weatherAgent"]);
+    assert.equal(s.attributes["lmnr.span.instrumentation_source"], "javascript");
+    assert.equal(
+      s.attributes["lmnr.span.input"],
+      JSON.stringify({ prompt: "What is the weather in SF?" }),
+    );
+    assert.equal(
+      s.attributes["lmnr.span.output"],
+      JSON.stringify({ text: "Sunny and warm" }),
+    );
+  });
+
+  void it("converts MODEL_GENERATION with usage into an LLM span with gen_ai.* attrs", async () => {
+    const mastraExporter = new LaminarMastraExporter();
+    const traceId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const rootId = "1111111111111111";
+    const childId = "2222222222222222";
+    const t0 = new Date("2026-04-23T10:10:00.000Z");
+    const t1 = new Date("2026-04-23T10:10:00.500Z");
+    const t2 = new Date("2026-04-23T10:10:01.000Z");
+
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_STARTED,
+      exportedSpan: {
+        id: rootId,
+        traceId,
+        name: "agent.run",
+        type: MastraSpanType.AGENT_RUN,
+        startTime: t0,
+        isRootSpan: true,
+        isEvent: false,
+      },
+    });
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_STARTED,
+      exportedSpan: {
+        id: childId,
+        traceId,
+        name: "llm.generate",
+        type: MastraSpanType.MODEL_GENERATION,
+        startTime: t1,
+        parentSpanId: rootId,
+        isRootSpan: false,
+        isEvent: false,
+      },
+    });
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_ENDED,
+      exportedSpan: {
+        id: childId,
+        traceId,
+        name: "llm.generate",
+        type: MastraSpanType.MODEL_GENERATION,
+        startTime: t1,
+        endTime: t2,
+        parentSpanId: rootId,
+        input: { messages: [{ role: "user", content: "hi" }] },
+        output: "hello!",
+        attributes: {
+          provider: "openai.chat",
+          model: "gpt-4o-mini",
+          responseModel: "gpt-4o-mini-2024-07-18",
+          usage: {
+            inputTokens: 10,
+            outputTokens: 5,
+            inputDetails: { cacheRead: 3 },
+          },
+        },
+        isRootSpan: false,
+        isEvent: false,
+      },
+    });
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_ENDED,
+      exportedSpan: {
+        id: rootId,
+        traceId,
+        name: "agent.run",
+        type: MastraSpanType.AGENT_RUN,
+        startTime: t0,
+        endTime: t2,
+        isRootSpan: true,
+        isEvent: false,
+      },
+    });
+
+    const spans = exporter.getFinishedSpans();
+    assert.equal(spans.length, 2);
+
+    const llmSpan = spans.find((s) => s.name === "llm.generate")!;
+    assert.equal(llmSpan.attributes["lmnr.span.type"], "LLM");
+    assert.deepEqual(llmSpan.attributes["lmnr.span.path"], [
+      "agent.run",
+      "llm.generate",
+    ]);
+    assert.equal(llmSpan.attributes["gen_ai.system"], "openai");
+    assert.equal(llmSpan.attributes["gen_ai.request.model"], "gpt-4o-mini");
+    assert.equal(
+      llmSpan.attributes["gen_ai.response.model"],
+      "gpt-4o-mini-2024-07-18",
+    );
+    assert.equal(llmSpan.attributes["gen_ai.usage.input_tokens"], 10);
+    assert.equal(llmSpan.attributes["gen_ai.usage.output_tokens"], 5);
+    assert.equal(llmSpan.attributes["gen_ai.usage.cache_read_input_tokens"], 3);
+
+    // Verify the child span carries the parent's span id (hierarchy preserved).
+    const parentContext = (llmSpan as any).parentSpanContext;
+    assert.ok(parentContext);
+    assert.equal(parentContext.spanId, rootId);
+  });
+
+  void it("maps TOOL_CALL spans to Laminar TOOL type", async () => {
+    const mastraExporter = new LaminarMastraExporter();
+    const traceId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const id = "3333333333333333";
+    const t0 = new Date();
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_STARTED,
+      exportedSpan: {
+        id,
+        traceId,
+        name: "tool.weatherLookup",
+        type: MastraSpanType.TOOL_CALL,
+        startTime: t0,
+        isRootSpan: true,
+        isEvent: false,
+      },
+    });
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_ENDED,
+      exportedSpan: {
+        id,
+        traceId,
+        name: "tool.weatherLookup",
+        type: MastraSpanType.TOOL_CALL,
+        startTime: t0,
+        endTime: new Date(t0.getTime() + 50),
+        input: { location: "SF" },
+        output: { temp: 72 },
+        isRootSpan: true,
+        isEvent: false,
+      },
+    });
+    const spans = exporter.getFinishedSpans();
+    assert.equal(spans.length, 1);
+    assert.equal(spans[0].attributes["lmnr.span.type"], "TOOL");
+  });
+
+  void it("flattens metadata into association properties", async () => {
+    const mastraExporter = new LaminarMastraExporter();
+    const traceId = "cccccccccccccccccccccccccccccccc";
+    const id = "4444444444444444";
+    const t0 = new Date();
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_STARTED,
+      exportedSpan: {
+        id,
+        traceId,
+        name: "agent.run",
+        type: MastraSpanType.AGENT_RUN,
+        startTime: t0,
+        metadata: {
+          sessionId: "sess-123",
+          userId: "user-abc",
+          customField: "hello",
+        },
+        tags: ["prod", "weather"],
+        isRootSpan: true,
+        isEvent: false,
+      },
+    });
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_ENDED,
+      exportedSpan: {
+        id,
+        traceId,
+        name: "agent.run",
+        type: MastraSpanType.AGENT_RUN,
+        startTime: t0,
+        endTime: new Date(t0.getTime() + 100),
+        metadata: {
+          sessionId: "sess-123",
+          userId: "user-abc",
+          customField: "hello",
+        },
+        tags: ["prod", "weather"],
+        isRootSpan: true,
+        isEvent: false,
+      },
+    });
+
+    const spans = exporter.getFinishedSpans();
+    assert.equal(spans.length, 1);
+    const attrs = spans[0].attributes;
+    assert.equal(attrs["lmnr.association.properties.session_id"], "sess-123");
+    assert.equal(attrs["lmnr.association.properties.user_id"], "user-abc");
+    assert.equal(
+      attrs["lmnr.association.properties.metadata.customField"],
+      "hello",
+    );
+    assert.deepEqual(attrs["lmnr.association.properties.tags"], [
+      "prod",
+      "weather",
+    ]);
+  });
+});

@@ -101,6 +101,8 @@
     "@google/genai": "^1.50.1",
     "@lmnr-ai/client": "workspace:*",
     "@lmnr-ai/types": "workspace:*",
+    "@mastra/core": "^1.27.0",
+    "@mastra/observability": "^1.10.0",
     "@onkernel/sdk": "^0.18.0",
     "@opencode-ai/sdk": "^1.4.3",
     "@pinecone-database/pinecone": "^5.1.2",

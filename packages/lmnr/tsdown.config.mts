@@ -20,6 +20,8 @@ export default defineConfig({
       "playwright",
       "esbuild",
       "together-ai",
+      "@mastra/core",
+      "@mastra/observability",
     ],
     alwaysBundle: [
       "@lmnr-ai/types",
