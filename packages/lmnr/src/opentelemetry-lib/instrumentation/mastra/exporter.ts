@@ -173,9 +173,10 @@ export class LaminarMastraExporter extends getBaseExporter() {
       ? traceState.spanIdsPathById.get(parentId)
       : undefined;
     const spanPath = parentPath ? [...parentPath, span.name] : [span.name];
+    const normalizedId = otelSpanIdToUUID(normalizeSpanId(span.id));
     const spanIdsPath = parentIdsPath
-      ? [...parentIdsPath, otelSpanIdToUUID(span.id)]
-      : [otelSpanIdToUUID(span.id)];
+      ? [...parentIdsPath, normalizedId]
+      : [normalizedId];
     traceState.spanPathById.set(span.id, spanPath);
     traceState.spanIdsPathById.set(span.id, spanIdsPath);
     traceState.activeSpanIds.add(span.id);

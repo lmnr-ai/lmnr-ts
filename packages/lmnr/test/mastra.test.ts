@@ -319,6 +319,16 @@ void describe("mastra instrumentation", () => {
     assert.ok(parentCtx);
     assert.match(parentCtx.spanId, hexOnly);
     assert.equal(parentCtx.spanId.length, 16);
+
+    // spanIdsPath should derive deterministically from the dash-stripped span
+    // ids, not fall back to random UUIDs. The child's ids_path must contain
+    // the parent span's normalized id (same one emitted on the parent span).
+    const parent = spans.find((s) => s.name === "parent")!;
+    const parentIdsPath = parent.attributes["lmnr.span.ids_path"] as string[];
+    const childIdsPath = child.attributes["lmnr.span.ids_path"] as string[];
+    assert.ok(Array.isArray(parentIdsPath));
+    assert.ok(Array.isArray(childIdsPath));
+    assert.equal(childIdsPath[0], parentIdsPath[0]);
   });
 
   void it("filters out SPAN_ENDED events with isEvent=true", async () => {
