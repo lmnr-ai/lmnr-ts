@@ -504,17 +504,21 @@ const getSpanKind = (type: MastraSpanType): SpanKind => {
   }
 };
 
-const normalizeTraceId = (traceId: string): string => {
-  let id = traceId.toLowerCase();
+// Strip anything that isn't a hex digit. Mastra's own generators always emit
+// hex, but bridges (e.g. the AI-SDK bridge) or user-supplied ids can round-trip
+// through UUID-formatted strings with dashes. OTel trace/span ids must be pure
+// hex, so we defensively normalize before use.
+const toHex = (value: string): string => {
+  let id = value.toLowerCase();
   if (id.startsWith("0x")) id = id.slice(2);
-  return id.padStart(32, "0").slice(-32);
+  return id.replace(/[^0-9a-f]/g, "");
 };
 
-const normalizeSpanId = (spanId: string): string => {
-  let id = spanId.toLowerCase();
-  if (id.startsWith("0x")) id = id.slice(2);
-  return id.padStart(16, "0").slice(-16);
-};
+const normalizeTraceId = (traceId: string): string =>
+  toHex(traceId).padStart(32, "0").slice(-32);
+
+const normalizeSpanId = (spanId: string): string =>
+  toHex(spanId).padStart(16, "0").slice(-16);
 
 const normalizeProvider = (provider: string): string =>
   provider.split(".").shift()?.toLowerCase().trim() || provider.toLowerCase().trim();

@@ -245,6 +245,82 @@ void describe("mastra instrumentation", () => {
     );
   });
 
+  void it("strips dashes from UUID-formatted trace and span ids", async () => {
+    const mastraExporter = new LaminarMastraExporter();
+    const traceId = "123e4567-e89b-12d3-a456-426614174000";
+    const spanId = "abcd1234-ef56-7890";
+    const parentId = "1111aaaa-2222-bbbb";
+    const t0 = new Date();
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_STARTED,
+      exportedSpan: {
+        id: parentId,
+        traceId,
+        name: "parent",
+        type: MastraSpanType.AGENT_RUN,
+        startTime: t0,
+        isRootSpan: true,
+        isEvent: false,
+      },
+    });
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_STARTED,
+      exportedSpan: {
+        id: spanId,
+        traceId,
+        name: "child",
+        type: MastraSpanType.TOOL_CALL,
+        startTime: t0,
+        parentSpanId: parentId,
+        isRootSpan: false,
+        isEvent: false,
+      },
+    });
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_ENDED,
+      exportedSpan: {
+        id: spanId,
+        traceId,
+        name: "child",
+        type: MastraSpanType.TOOL_CALL,
+        startTime: t0,
+        endTime: new Date(t0.getTime() + 10),
+        parentSpanId: parentId,
+        isRootSpan: false,
+        isEvent: false,
+      },
+    });
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_ENDED,
+      exportedSpan: {
+        id: parentId,
+        traceId,
+        name: "parent",
+        type: MastraSpanType.AGENT_RUN,
+        startTime: t0,
+        endTime: new Date(t0.getTime() + 20),
+        isRootSpan: true,
+        isEvent: false,
+      },
+    });
+
+    const spans = exporter.getFinishedSpans();
+    assert.equal(spans.length, 2);
+    const hexOnly = /^[0-9a-f]+$/;
+    for (const s of spans) {
+      const ctx = s.spanContext();
+      assert.match(ctx.traceId, hexOnly, `traceId ${ctx.traceId} should be hex-only`);
+      assert.equal(ctx.traceId.length, 32);
+      assert.match(ctx.spanId, hexOnly, `spanId ${ctx.spanId} should be hex-only`);
+      assert.equal(ctx.spanId.length, 16);
+    }
+    const child = spans.find((s) => s.name === "child")!;
+    const parentCtx = (child as any).parentSpanContext;
+    assert.ok(parentCtx);
+    assert.match(parentCtx.spanId, hexOnly);
+    assert.equal(parentCtx.spanId.length, 16);
+  });
+
   void it("flattens metadata into association properties", async () => {
     const mastraExporter = new LaminarMastraExporter();
     const traceId = "cccccccccccccccccccccccccccccccc";
