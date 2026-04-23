@@ -321,6 +321,40 @@ void describe("mastra instrumentation", () => {
     assert.equal(parentCtx.spanId.length, 16);
   });
 
+  void it("filters out SPAN_ENDED events with isEvent=true", async () => {
+    const mastraExporter = new LaminarMastraExporter();
+    const traceId = "ddddddddddddddddddddddddddddddddd".slice(0, 32);
+    const id = "5555555555555555";
+    const t0 = new Date();
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_STARTED,
+      exportedSpan: {
+        id,
+        traceId,
+        name: "point.event",
+        type: MastraSpanType.AGENT_RUN,
+        startTime: t0,
+        isRootSpan: true,
+        isEvent: true,
+      },
+    });
+    await mastraExporter.exportTracingEvent({
+      type: MastraTracingEventType.SPAN_ENDED,
+      exportedSpan: {
+        id,
+        traceId,
+        name: "point.event",
+        type: MastraSpanType.AGENT_RUN,
+        startTime: t0,
+        endTime: t0,
+        isRootSpan: true,
+        isEvent: true,
+      },
+    });
+    const spans = exporter.getFinishedSpans();
+    assert.equal(spans.length, 0);
+  });
+
   void it("flattens metadata into association properties", async () => {
     const mastraExporter = new LaminarMastraExporter();
     const traceId = "cccccccccccccccccccccccccccccccc";

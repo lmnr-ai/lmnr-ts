@@ -152,10 +152,12 @@ export class LaminarMastraExporter extends getBaseExporter() {
   }
 
   protected async _exportTracingEvent(event: MastraTracingEvent): Promise<void> {
-    if (
-      event.type === MastraTracingEventType.SPAN_STARTED &&
-      !event.exportedSpan.isEvent
-    ) {
+    // Mastra emits SPAN_STARTED/SPAN_ENDED pairs for point-in-time events too
+    // (isEvent: true). Those aren't real spans — they're markers with no
+    // meaningful duration — so skip them to avoid polluting the trace with
+    // zero-width OTel spans.
+    if (event.exportedSpan.isEvent) return;
+    if (event.type === MastraTracingEventType.SPAN_STARTED) {
       this.handleSpanStarted(event.exportedSpan);
       return;
     }
