@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
-import { LaminarMastraExporter } from "../src/opentelemetry-lib/instrumentation/mastra";
+import {
+  LaminarMastraExporter,
+  MastraInstrumentation,
+} from "../src/opentelemetry-lib/instrumentation/mastra";
 import {
   MastraSpanType,
   MastraTracingEventType,
@@ -215,6 +218,31 @@ void describe("mastra instrumentation", () => {
     const spans = exporter.getFinishedSpans();
     assert.equal(spans.length, 1);
     assert.equal(spans[0].attributes["lmnr.span.type"], "TOOL");
+  });
+
+  void it("manuallyInstrument wraps the Mastra constructor and injects the exporter", () => {
+    class FakeMastra {
+      public receivedConfig: any;
+      constructor(config: any) {
+        this.receivedConfig = config;
+      }
+    }
+    const moduleExports: { Mastra: typeof FakeMastra } = { Mastra: FakeMastra };
+
+    const instrumentation = new MastraInstrumentation();
+    instrumentation.manuallyInstrument(moduleExports);
+
+    // Module's Mastra export should be replaced with a wrapper.
+    assert.notEqual(moduleExports.Mastra, FakeMastra);
+
+    const instance: any = new moduleExports.Mastra({ agents: {} });
+    const exporters =
+      instance.receivedConfig?.observability?.configs?.default?.exporters;
+    assert.ok(Array.isArray(exporters), "exporters should be injected");
+    assert.ok(
+      exporters.some((e: any) => e instanceof LaminarMastraExporter),
+      "LaminarMastraExporter should be present in the exporters list",
+    );
   });
 
   void it("flattens metadata into association properties", async () => {

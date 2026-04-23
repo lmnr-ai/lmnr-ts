@@ -10,6 +10,7 @@
 
 - Mastra has its own observability bus (`@mastra/core/observability`) with rich semantic span types (`agent_run`, `model_generation`, `tool_call`, `workflow_*`, etc.). The AI-SDK-based fallback produces duplicate/noisy spans — prefer the native bus by injecting `LaminarMastraExporter` into `observability.configs.default.exporters`.
 - Auto-injection patches `@mastra/core`'s `Mastra` constructor via `MastraInstrumentation`. For ESM / pre-bundled setups where the hook does not fire, users should call `withLaminar(config)` manually.
+- `manuallyInstrument(input)` must receive the module exports object (i.e. the holder of `{ Mastra }`), not the raw class — wrapping a bare class cannot replace callers' references. It reuses the same `patch` path as the require-hook, so the exporter is actually injected (setting a prototype marker alone is a no-op).
 - Preserve trace/parent hierarchy by using Mastra's own `traceId` / `parentSpanId` directly when converting to `ReadableSpan`; don't route through Laminar's `onStart` path builder — Mastra provides complete hierarchy metadata.
 
 ## Testing

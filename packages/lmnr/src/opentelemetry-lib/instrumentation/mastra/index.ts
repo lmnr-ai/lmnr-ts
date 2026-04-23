@@ -98,13 +98,13 @@ export class MastraInstrumentation extends InstrumentationBase {
 
   public manuallyInstrument(input: any): void {
     diag.debug("Manually instrumenting @mastra/core");
-    const MastraClass = this.resolveMastraClass(input);
-    if (MastraClass) {
-      this.patchMastraClass(MastraClass);
+    if (input && typeof input === "object" && this.resolveMastraClass(input)) {
+      this.patch(input);
     } else {
       logger.debug(
         "Could not find Mastra class in manual instrumentation input. " +
-          "Pass the Mastra class, the @mastra/core module, or an instance.",
+          "Pass the @mastra/core module (e.g. `require('@mastra/core')` " +
+          "or a namespace import).",
       );
     }
   }
@@ -124,19 +124,6 @@ export class MastraInstrumentation extends InstrumentationBase {
       return input;
     }
     return null;
-  }
-
-  private patchMastraClass(MastraClass: Function): void {
-    const proto = MastraClass.prototype;
-    if (proto[MASTRA_PATCHED]) {
-      return;
-    }
-    Object.defineProperty(proto, MASTRA_PATCHED, {
-      value: true,
-      enumerable: false,
-      configurable: true,
-    });
-    logger.debug("Patched Mastra prototype marker");
   }
 
   private patch(moduleExports: any): any {
