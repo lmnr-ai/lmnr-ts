@@ -62,6 +62,7 @@ type AgentsTracingModule = {
 
 export class OpenAIAgentsInstrumentation extends InstrumentationBase {
   private _processor: LaminarAgentsTraceProcessor | undefined;
+  private _wrappedPrototypes: WeakSet<object> = new WeakSet();
 
   constructor() {
     super("@lmnr/openai-agents-instrumentation", SDK_VERSION, {
@@ -121,6 +122,12 @@ export class OpenAIAgentsInstrumentation extends InstrumentationBase {
       if (!cls || !cls.prototype) {
         continue;
       }
+      // @openai/agents re-exports the model classes from @openai/agents-openai,
+      // so we may see the same prototype twice. Skip if already wrapped to
+      // avoid double-wrapping getResponse/getStreamedResponse.
+      if (this._wrappedPrototypes.has(cls.prototype)) {
+        continue;
+      }
       for (const method of MODEL_METHODS) {
         if (typeof cls.prototype[method] !== "function") {
           continue;
@@ -134,6 +141,7 @@ export class OpenAIAgentsInstrumentation extends InstrumentationBase {
           logger.debug(`Failed to wrap ${method}: ${String(e)}`);
         }
       }
+      this._wrappedPrototypes.add(cls.prototype);
     }
   }
 
@@ -145,6 +153,9 @@ export class OpenAIAgentsInstrumentation extends InstrumentationBase {
       if (!cls || !cls.prototype) {
         continue;
       }
+      if (!this._wrappedPrototypes.has(cls.prototype)) {
+        continue;
+      }
       for (const method of MODEL_METHODS) {
         try {
           this._unwrap(cls.prototype, method);
@@ -152,6 +163,7 @@ export class OpenAIAgentsInstrumentation extends InstrumentationBase {
           // ignore
         }
       }
+      this._wrappedPrototypes.delete(cls.prototype);
     }
   }
 

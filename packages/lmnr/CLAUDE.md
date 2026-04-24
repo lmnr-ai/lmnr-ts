@@ -13,6 +13,7 @@ This is the main `@lmnr-ai/lmnr` SDK package — OpenTelemetry-based tracing for
 - For manual instrumentation, expose an option key on `InitializeOptions.instrumentModules` and wire it through `manuallyInitInstrumentations`.
 - `TracingProcessor` from `@openai/agents` requires the interface methods return `Promise`. Most of our methods have no `await` — add a file-level `/* eslint-disable @typescript-eslint/require-await */` around the class rather than sprinkling `await Promise.resolve()`.
 - `@openai/agents` re-exports types and classes from `@openai/agents-core` and `@openai/agents-openai`. Import from `@openai/agents` to avoid adding `-core`/`-openai` as direct dependencies.
+- When patching prototypes registered via multiple `InstrumentationNodeModuleDefinition` entries that resolve to the same class (e.g. `@openai/agents` and `@openai/agents-openai` both expose `OpenAIResponsesModel.prototype`), guard `_wrap` with a `WeakSet` of already-wrapped prototypes — `shimmer` happily double-wraps and will run your wrapper logic twice per call.
 - `AsyncLocalStorage.run(value, fn)` restores the previous context as soon as `fn` returns — for async iterables/streams, wrap **each** `next()`/`return()`/`throw()` call in its own `.run()` so the context is visible across yields, not just at iterator creation.
 
 # Agents SDK — TS vs Python parity
