@@ -26,6 +26,10 @@ const BEDROCK_BASE_URL_ENV = "ANTHROPIC_BEDROCK_BASE_URL";
 const BEDROCK_USE_ENV = "CLAUDE_CODE_USE_BEDROCK";
 const BEDROCK_AWS_REGION_ENV = "AWS_REGION";
 
+// Vertex AI configuration constants
+const VERTEX_BASE_URL_ENV = "ANTHROPIC_VERTEX_BASE_URL";
+const VERTEX_USE_ENV = "CLAUDE_CODE_USE_VERTEX";
+
 // Track all active proxy instances for cleanup
 const activeProxyServers = new Set<any>(); // Set<ProxyServer>
 let globalShutdownRegistered = false;
@@ -74,6 +78,9 @@ const getRegionFromAwsConfig = (profile: string): string | null => {
  *      - Use ANTHROPIC_BEDROCK_BASE_URL, or
  *      - Construct from AWS_REGION env var, or
  *      - Construct by reading region from ~/.aws/config via AWS_PROFILE
+ *    - If CLAUDE_CODE_USE_VERTEX is truthy:
+ *      - Use ANTHROPIC_VERTEX_BASE_URL, or
+ *      - Construct from CLOUD_ML_REGION and ANTHROPIC_VERTEX_PROJECT_ID
  * 4. ANTHROPIC_BASE_URL - standard Anthropic API base URL
  * 5. Fall back to default (https://api.anthropic.com)
  *
@@ -151,6 +158,18 @@ export const resolveTargetUrlFromEnv = (
         "in ~/.aws/config for the active profile.",
     );
     return null;
+  }
+
+  // 3c. Check for Vertex AI
+  const vertexEnabled = isTruthyEnv(getEnvValue(VERTEX_USE_ENV));
+  if (vertexEnabled) {
+    // unlike for Foundry or Bedrock, we don't parse the project or region config, because
+    // they affect the URL path, not the base URL, so CC can handle this part internally
+    const vertexBaseUrl = getEnvValue(VERTEX_BASE_URL_ENV);
+    if (vertexBaseUrl) {
+      return vertexBaseUrl.replace(/\/$/, "");
+    }
+    return `https://aiplatform.googleapis.com/v1`;
   }
 
   // 4. Check for ANTHROPIC_BASE_URL
