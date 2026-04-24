@@ -211,7 +211,7 @@ export const normalizeMessages = (
       if (item != null && typeof item === "object" && !Array.isArray(item)) {
         messages.push(item as Record<string, any>);
       } else {
-        messages.push({ content: String(item) });
+        messages.push({ role, content: String(item) });
       }
     }
     return messages;
@@ -221,5 +221,5 @@ export const normalizeMessages = (
     return [data as Record<string, any>];
   }
 
-  return [{ content: String(data) }];
+  return [{ role, content: String(data) }];
 };
