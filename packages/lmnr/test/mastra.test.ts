@@ -84,7 +84,7 @@ void describe("mastra instrumentation", () => {
     );
   });
 
-  void it("attaches gen_ai.* attrs to MODEL_GENERATION spans", async () => {
+  void it("converts MODEL_GENERATION with usage into an LLM span with gen_ai.* attrs", async () => {
     const mastraExporter = new LaminarMastraExporter();
     const traceId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const rootId = "1111111111111111";
@@ -162,9 +162,7 @@ void describe("mastra instrumentation", () => {
     assert.equal(spans.length, 2);
 
     const llmSpan = spans.find((s) => s.name === "llm.generate")!;
-    // MODEL_GENERATION maps to DEFAULT; only MODEL_STEP (the per-API-call child)
-    // is flagged as LLM. See mapLaminarSpanType.
-    assert.equal(llmSpan.attributes["lmnr.span.type"], "DEFAULT");
+    assert.equal(llmSpan.attributes["lmnr.span.type"], "LLM");
     assert.deepEqual(llmSpan.attributes["lmnr.span.path"], [
       "agent.run",
       "llm.generate",
