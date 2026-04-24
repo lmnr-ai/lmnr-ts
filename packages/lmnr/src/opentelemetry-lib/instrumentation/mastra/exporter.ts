@@ -99,8 +99,8 @@ const loadBaseExporter = (): any => {
       async _exportTracingEvent(event: MastraTracingEvent): Promise<void> {
         void event;
       }
-      async flush(): Promise<void> {}
-      async shutdown(): Promise<void> {}
+      async flush(): Promise<void> { }
+      async shutdown(): Promise<void> { }
     };
   }
 };
@@ -212,8 +212,7 @@ export class LaminarMastraExporter extends getBaseExporter() {
       if (this.realtime) await processor.forceFlush();
     } catch (error) {
       logger.debug(
-        `[LaminarMastraExporter] Failed to export span ${span.id}: ${
-          error instanceof Error ? error.message : String(error)
+        `[LaminarMastraExporter] Failed to export span ${span.id}: ${error instanceof Error ? error.message : String(error)
         }`,
       );
     } finally {
@@ -309,8 +308,7 @@ export class LaminarMastraExporter extends getBaseExporter() {
         await processor.forceFlush();
       } catch (error) {
         logger.debug(
-          `[LaminarMastraExporter] Error flushing: ${
-            error instanceof Error ? error.message : String(error)
+          `[LaminarMastraExporter] Error flushing: ${error instanceof Error ? error.message : String(error)
           }`,
         );
       }
@@ -393,9 +391,7 @@ const buildLaminarAttributes = (
 
 const mapLaminarSpanType = (spanType: MastraSpanType): LaminarSpanType => {
   switch (spanType) {
-    case MastraSpanType.MODEL_GENERATION:
     case MastraSpanType.MODEL_STEP:
-    case MastraSpanType.MODEL_CHUNK:
       return "LLM";
     case MastraSpanType.TOOL_CALL:
     case MastraSpanType.MCP_TOOL_CALL:
@@ -431,11 +427,45 @@ const serializeForLaminar = (value: unknown): string => {
 };
 
 const getLaminarSpanInput = (span: MastraExportedSpan): unknown => {
-  if (span.type !== MastraSpanType.MODEL_GENERATION) return span.input;
-  const input = span.input;
-  if (!input || typeof input !== "object" || Array.isArray(input)) return input;
-  const maybeMessages = (input as { messages?: unknown }).messages;
-  return Array.isArray(maybeMessages) ? maybeMessages : input;
+  if (span.type === MastraSpanType.MODEL_GENERATION) {
+    const input = span.input;
+    if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+    const maybeMessages = (input as { messages?: unknown }).messages;
+    return Array.isArray(maybeMessages) ? maybeMessages : input;
+  }
+  if (span.type === MastraSpanType.MODEL_STEP) {
+    return cleanMastraNormalizedMessages(span.input);
+  }
+  return span.input;
+};
+
+/**
+ * Mastra's `extractStepInput` runs every item of the provider request body
+ * through a `normalizeMessages` helper that assumes each entry is a chat
+ * message with `role` + `content`. For OpenAI's Responses API, request bodies
+ * instead use `body.input: [...]` containing non-message items like
+ *   - `{ type: "function_call", call_id, name, arguments, id }`
+ *   - `{ type: "function_call_output", call_id, output }`
+ * Those have no `role` and no `content`, so Mastra's normalizer silently
+ * coerces them to `{ role: "user", content: "" }`. The result is a `MODEL_STEP`
+ * span input that shows spurious empty user turns after every tool round-trip.
+ *
+ * We can't recover the original tool-call payload here (Mastra already
+ * discarded it by the time the exported span reaches us), but we can drop the
+ * useless empty user placeholders so the span input at least matches the real
+ * prompt shape. Track: upstream fix in `@mastra/observability` normalizer.
+ */
+const cleanMastraNormalizedMessages = (input: unknown): unknown => {
+  if (!Array.isArray(input)) return input;
+  const filtered = input.filter((entry) => !isMastraEmptyUserArtifact(entry));
+  return filtered.length === input.length ? input : filtered;
+};
+
+const isMastraEmptyUserArtifact = (entry: unknown): boolean => {
+  if (!entry || typeof entry !== "object") return false;
+  const obj = entry as Record<string, unknown>;
+  if (Object.keys(obj).length !== 2) return false;
+  return obj.role === "user" && obj.content === "";
 };
 
 const toLaminarAttributeValue = (

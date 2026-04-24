@@ -57,6 +57,8 @@ const laminarExporterDefined = (exporters: any[]): boolean =>
     (e: any) => e && (e.name === "laminar" || e instanceof LaminarMastraExporter),
   );
 
+const LAMINAR_EXCLUDED_SPAN_TYPES = ["model_chunk"];
+
 const buildLaminarInstanceConfig = (existing?: any) => {
   const defaultCfg = (existing?.configs?.default ?? {}) as Record<string, any>;
   const exporters = Array.isArray(defaultCfg.exporters)
@@ -65,10 +67,17 @@ const buildLaminarInstanceConfig = (existing?: any) => {
   if (!laminarExporterDefined(exporters)) {
     exporters.push(new LaminarMastraExporter());
   }
+  const userExcludes: string[] = Array.isArray(defaultCfg.excludeSpanTypes)
+    ? defaultCfg.excludeSpanTypes
+    : [];
+  const excludeSpanTypes = [
+    ...new Set([...userExcludes, ...LAMINAR_EXCLUDED_SPAN_TYPES]),
+  ];
   return {
     ...defaultCfg,
     serviceName: defaultCfg.serviceName ?? "mastra-service",
     exporters,
+    excludeSpanTypes,
   };
 };
 
@@ -91,7 +100,7 @@ const ensureExporterInjected = (args: any[]): any[] => {
   if (!ObservabilityClass) {
     logger.debug(
       "@mastra/observability is not installed; Laminar Mastra " +
-        "instrumentation cannot inject its exporter.",
+      "instrumentation cannot inject its exporter.",
     );
     return args;
   }
@@ -128,8 +137,8 @@ export class MastraInstrumentation extends InstrumentationBase {
     } else {
       logger.debug(
         "Could not find Mastra class in manual instrumentation input. " +
-          "Pass the @mastra/core module (e.g. `require('@mastra/core')` " +
-          "or a namespace import).",
+        "Pass the @mastra/core module (e.g. `require('@mastra/core')` " +
+        "or a namespace import).",
       );
     }
   }
