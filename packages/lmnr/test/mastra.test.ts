@@ -220,7 +220,7 @@ void describe("mastra instrumentation", () => {
     assert.equal(spans[0].attributes["lmnr.span.type"], "TOOL");
   });
 
-  void it("manuallyInstrument wraps the Mastra constructor and injects the exporter", () => {
+  void it("manuallyInstrument wraps Mastra and injects an Observability instance", () => {
     class FakeMastra {
       public receivedConfig: any;
       constructor(config: any) {
@@ -236,13 +236,13 @@ void describe("mastra instrumentation", () => {
     assert.notEqual(moduleExports.Mastra, FakeMastra);
 
     const instance: any = new moduleExports.Mastra({ agents: {} });
-    const exporters =
-      instance.receivedConfig?.observability?.configs?.default?.exporters;
-    assert.ok(Array.isArray(exporters), "exporters should be injected");
-    assert.ok(
-      exporters.some((e: any) => e instanceof LaminarMastraExporter),
-      "LaminarMastraExporter should be present in the exporters list",
-    );
+    const observability = instance.receivedConfig?.observability;
+    // Mastra >=1.27 requires an Observability entrypoint (has
+    // `getDefaultInstance`), not a raw registry-config object.
+    assert.ok(observability, "observability should be set");
+    assert.equal(typeof observability.getDefaultInstance, "function");
+    const defaultInstance = observability.getDefaultInstance();
+    assert.ok(defaultInstance, "default observability instance should exist");
   });
 
   void it("strips dashes from UUID-formatted trace and span ids", async () => {

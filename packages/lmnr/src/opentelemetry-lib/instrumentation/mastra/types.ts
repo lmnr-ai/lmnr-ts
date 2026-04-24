@@ -41,10 +41,13 @@ export enum MastraSpanType {
   GRAPH_ACTION = "graph_action",
 }
 
+// Mastra emits these as underscored strings (`span_started`, `span_ended`) via
+// `@mastra/core`'s `TracingEventType` enum. Older docs used colon-separated
+// names (`span:started`) — if Mastra ever reverts, update here.
 export enum MastraTracingEventType {
-  SPAN_STARTED = "span:started",
-  SPAN_UPDATED = "span:updated",
-  SPAN_ENDED = "span:ended",
+  SPAN_STARTED = "span_started",
+  SPAN_UPDATED = "span_updated",
+  SPAN_ENDED = "span_ended",
 }
 
 export interface MastraUsageStats {

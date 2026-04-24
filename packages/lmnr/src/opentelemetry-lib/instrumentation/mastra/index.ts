@@ -14,7 +14,8 @@
  */
 
 /* eslint-disable @typescript-eslint/no-unsafe-function-type,
-   @typescript-eslint/no-unsafe-return */
+   @typescript-eslint/no-unsafe-return,
+   @typescript-eslint/no-require-imports */
 
 import { diag } from "@opentelemetry/api";
 import {
@@ -34,51 +35,75 @@ const logger = initializeLogger();
 // Module-level flag so tests / idempotent init can still run safely.
 const MASTRA_PATCHED = Symbol.for("lmnr.mastra.patched");
 
+let cachedObservabilityClass: any = undefined;
+const loadObservabilityClass = (): any => {
+  if (cachedObservabilityClass !== undefined) return cachedObservabilityClass;
+  try {
+    cachedObservabilityClass = require("@mastra/observability").Observability;
+  } catch {
+    cachedObservabilityClass = null;
+  }
+  return cachedObservabilityClass;
+};
+
+// Detect a Mastra `Observability` entrypoint (has `getDefaultInstance`).
+const isObservabilityEntrypoint = (value: unknown): boolean =>
+  !!value &&
+  typeof value === "object" &&
+  typeof (value as any).getDefaultInstance === "function";
+
+const laminarExporterDefined = (exporters: any[]): boolean =>
+  exporters.some(
+    (e: any) => e && (e.name === "laminar" || e instanceof LaminarMastraExporter),
+  );
+
+const buildLaminarInstanceConfig = (existing?: any) => {
+  const defaultCfg = (existing?.configs?.default ?? {}) as Record<string, any>;
+  const exporters = Array.isArray(defaultCfg.exporters)
+    ? [...defaultCfg.exporters]
+    : [];
+  if (!laminarExporterDefined(exporters)) {
+    exporters.push(new LaminarMastraExporter());
+  }
+  return {
+    ...defaultCfg,
+    serviceName: defaultCfg.serviceName ?? "mastra-service",
+    exporters,
+  };
+};
+
 const ensureExporterInjected = (args: any[]): any[] => {
   if (!args[0] || typeof args[0] !== "object") {
     args[0] = {};
   }
   const config = args[0];
-
-  // Mastra accepts either `observability: { default: true | {...}, configs: {...} }`
-  // (registry config) or a pre-built ObservabilityInstance. We mutate the
-  // registry-config form when possible and leave pre-built instances alone.
   const existing = config.observability;
 
-  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
-    // Registry config shape. Append our exporter to the default config.
-    if (!existing.configs) {
-      existing.configs = {};
-    }
-    const defaultCfg = existing.configs.default ?? {};
-    const exporters = Array.isArray(defaultCfg.exporters)
-      ? defaultCfg.exporters
-      : [];
-    const alreadyHas = exporters.some(
-      (e: any) => e && (e.name === "laminar" || e instanceof LaminarMastraExporter),
-    );
-    if (!alreadyHas) {
-      exporters.push(new LaminarMastraExporter());
-      existing.configs.default = {
-        ...defaultCfg,
-        exporters,
-      };
-    }
-  } else if (existing === undefined) {
-    // No observability config at all — add one that enables Laminar.
-    config.observability = {
-      default: { enabled: true },
-      configs: {
-        default: {
-          serviceName: "mastra-service",
-          exporters: [new LaminarMastraExporter()],
-        },
-      },
-    };
-  }
-  // If `existing` is an ObservabilityInstance (anything else), we skip — the
-  // user is taking full manual control of observability.
+  // 1. User passed a pre-built Observability instance — leave it alone; they
+  //    have taken full manual control. `withLaminar` is the documented path
+  //    for this case.
+  if (isObservabilityEntrypoint(existing)) return args;
 
+  // 2. @mastra/core >= 1.27 rejects raw registry-config objects — it checks
+  //    for `getDefaultInstance()` and only accepts an `Observability`
+  //    instance. Build one from the user's config (if any) plus our exporter.
+  const ObservabilityClass = loadObservabilityClass();
+  if (!ObservabilityClass) {
+    logger.debug(
+      "@mastra/observability is not installed; Laminar Mastra " +
+        "instrumentation cannot inject its exporter.",
+    );
+    return args;
+  }
+
+  const instanceConfig = buildLaminarInstanceConfig(existing);
+  const mergedConfigs = { ...(existing?.configs ?? {}), default: instanceConfig };
+  config.observability = new ObservabilityClass({
+    configs: mergedConfigs,
+    ...(existing?.configSelector
+      ? { configSelector: existing.configSelector }
+      : {}),
+  });
   return args;
 };
 

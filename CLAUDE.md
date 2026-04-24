@@ -12,6 +12,13 @@
 - Auto-injection patches `@mastra/core`'s `Mastra` constructor via `MastraInstrumentation`. For ESM / pre-bundled setups where the hook does not fire, users should call `withLaminar(config)` manually.
 - `manuallyInstrument(input)` must receive the module exports object (i.e. the holder of `{ Mastra }`), not the raw class — wrapping a bare class cannot replace callers' references. It reuses the same `patch` path as the require-hook, so the exporter is actually injected (setting a prototype marker alone is a no-op).
 - Preserve trace/parent hierarchy by using Mastra's own `traceId` / `parentSpanId` directly when converting to `ReadableSpan`; don't route through Laminar's `onStart` path builder — Mastra provides complete hierarchy metadata.
+- `@mastra/core` 1.27+ `TracingEventType` uses underscore-separated values (`span_started`, `span_ended`) — not the colon form (`span:started`) shown in older docs. A stale enum value silently drops every event, so `MastraTracingEventType` in `mastra/types.ts` must stay in sync.
+- `@mastra/core` 1.27+ rejects raw `{ configs: { default: {...} } }` registry-config objects on `Mastra`'s `observability` field — it expects an `Observability` instance (has `getDefaultInstance()`). Construct one via `new Observability({ configs: {...} })` loaded through `require("@mastra/observability")` so the dep stays optional.
+
+## Local verification gotchas
+
+- The shell environment in this sandbox pre-exports `LMNR_PROJECT_API_KEY` pointing at staging, which overrides any value in `/sandbox/scratch/.env` (both `--env-file=.env` and `dotenv/config` are no-ops when the var is already set). Use a dedicated `LMNR_LOCAL_PROJECT_API_KEY` for scripts that should hit the local app-server, and fall back to `LMNR_PROJECT_API_KEY` for CI.
+- App-server authenticates project API keys via `Sha3_256(raw_key)` (not SHA-256). Verify with `echo -n "$KEY" | openssl dgst -sha3-256` when debugging 401s.
 
 ## Testing
 
