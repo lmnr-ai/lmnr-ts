@@ -84,7 +84,7 @@ void describe("mastra instrumentation", () => {
     );
   });
 
-  void it("converts MODEL_GENERATION with usage into an LLM span with gen_ai.* attrs", async () => {
+  void it("attaches gen_ai.* attrs to MODEL_GENERATION spans", async () => {
     const mastraExporter = new LaminarMastraExporter();
     const traceId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const rootId = "1111111111111111";
@@ -162,7 +162,9 @@ void describe("mastra instrumentation", () => {
     assert.equal(spans.length, 2);
 
     const llmSpan = spans.find((s) => s.name === "llm.generate")!;
-    assert.equal(llmSpan.attributes["lmnr.span.type"], "LLM");
+    // MODEL_GENERATION maps to DEFAULT; only MODEL_STEP (the per-API-call child)
+    // is flagged as LLM. See mapLaminarSpanType.
+    assert.equal(llmSpan.attributes["lmnr.span.type"], "DEFAULT");
     assert.deepEqual(llmSpan.attributes["lmnr.span.path"], [
       "agent.run",
       "llm.generate",
@@ -527,4 +529,235 @@ void describe("mastra instrumentation", () => {
       "weather",
     ]);
   });
+
+  void it(
+    "normalizes AI SDK v5 tool-call / tool-result messages to OpenAI chat format",
+    async () => {
+      const mastraExporter = new LaminarMastraExporter();
+      const traceId = "dddddddddddddddddddddddddddddddd";
+      const id = "5555555555555555";
+      const t0 = new Date("2026-04-24T10:00:00.000Z");
+      const t1 = new Date("2026-04-24T10:00:01.000Z");
+
+      // Multi-step message history as Mastra produces it after one tool round-
+      // trip: user → assistant with tool_call → tool result → assistant continues.
+      const aiSdkV5Messages = [
+        { role: "user", content: [{ type: "text", text: "What's the weather in SF?" }] },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Let me check." },
+            {
+              type: "tool-call",
+              toolCallId: "call_123",
+              toolName: "weatherLookup",
+              input: { location: "SF" },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call_123",
+              toolName: "weatherLookup",
+              output: { type: "text", value: "72F and sunny" },
+            },
+          ],
+        },
+      ];
+
+      await mastraExporter.exportTracingEvent({
+        type: MastraTracingEventType.SPAN_STARTED,
+        exportedSpan: {
+          id,
+          traceId,
+          name: "llm.generate",
+          type: MastraSpanType.MODEL_GENERATION,
+          startTime: t0,
+          isRootSpan: true,
+          isEvent: false,
+        },
+      });
+      await mastraExporter.exportTracingEvent({
+        type: MastraTracingEventType.SPAN_ENDED,
+        exportedSpan: {
+          id,
+          traceId,
+          name: "llm.generate",
+          type: MastraSpanType.MODEL_GENERATION,
+          startTime: t0,
+          endTime: t1,
+          input: { messages: aiSdkV5Messages },
+          output: {
+            text: "The weather in SF is 72F and sunny.",
+            toolCalls: [],
+          },
+          attributes: { model: "gpt-4o-mini", provider: "openai.chat" },
+          isRootSpan: true,
+          isEvent: false,
+        },
+      });
+
+      const spans = exporter.getFinishedSpans();
+      assert.equal(spans.length, 1);
+      const attrs = spans[0].attributes;
+
+      const inputStr = attrs["lmnr.span.input"] as string;
+      const input = JSON.parse(inputStr);
+      assert.ok(Array.isArray(input), "input must be array of messages");
+
+      // Expect exactly 3 messages: user (collapsed to string), assistant (with tool_calls), tool.
+      assert.equal(input.length, 3);
+
+      // User message: content collapsed to plain string (OpenAI shape-friendly).
+      assert.deepEqual(input[0], {
+        role: "user",
+        content: "What's the weather in SF?",
+      });
+
+      // Assistant message: text preserved as string, tool_calls attached at top level.
+      assert.equal(input[1].role, "assistant");
+      assert.equal(input[1].content, "Let me check.");
+      assert.ok(Array.isArray(input[1].tool_calls));
+      assert.equal(input[1].tool_calls.length, 1);
+      const tc = input[1].tool_calls[0];
+      assert.equal(tc.id, "call_123");
+      assert.equal(tc.type, "function");
+      assert.equal(tc.function.name, "weatherLookup");
+      assert.equal(tc.function.arguments, JSON.stringify({ location: "SF" }));
+
+      // Tool message: split into OpenAI tool message with tool_call_id.
+      assert.equal(input[2].role, "tool");
+      assert.equal(input[2].tool_call_id, "call_123");
+      assert.equal(input[2].content, "72F and sunny");
+
+      // Output: assistant message in OpenAI format.
+      const outputStr = attrs["lmnr.span.output"] as string;
+      const output = JSON.parse(outputStr);
+      assert.ok(Array.isArray(output));
+      assert.equal(output.length, 1);
+      assert.equal(output[0].role, "assistant");
+      assert.equal(output[0].content, "The weather in SF is 72F and sunny.");
+    },
+  );
+
+  void it(
+    "normalizes tool-only assistant output (text null, tool_calls set)",
+    async () => {
+      const mastraExporter = new LaminarMastraExporter();
+      const traceId = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+      const id = "6666666666666666";
+      const t0 = new Date("2026-04-24T11:00:00.000Z");
+      const t1 = new Date(t0.getTime() + 500);
+
+      await mastraExporter.exportTracingEvent({
+        type: MastraTracingEventType.SPAN_STARTED,
+        exportedSpan: {
+          id,
+          traceId,
+          name: "llm.generate",
+          type: MastraSpanType.MODEL_GENERATION,
+          startTime: t0,
+          isRootSpan: true,
+          isEvent: false,
+        },
+      });
+      await mastraExporter.exportTracingEvent({
+        type: MastraTracingEventType.SPAN_ENDED,
+        exportedSpan: {
+          id,
+          traceId,
+          name: "llm.generate",
+          type: MastraSpanType.MODEL_GENERATION,
+          startTime: t0,
+          endTime: t1,
+          input: { messages: [{ role: "user", content: "Hi" }] },
+          output: {
+            text: "",
+            toolCalls: [
+              {
+                toolCallId: "call_xyz",
+                toolName: "getTime",
+                input: { tz: "PST" },
+              },
+            ],
+          },
+          isRootSpan: true,
+          isEvent: false,
+        },
+      });
+
+      const spans = exporter.getFinishedSpans();
+      const attrs = spans[0].attributes;
+      const output = JSON.parse(attrs["lmnr.span.output"] as string);
+      assert.equal(output.length, 1);
+      assert.equal(output[0].role, "assistant");
+      assert.equal(output[0].content, ""); // empty text stays as empty string
+      assert.equal(output[0].tool_calls.length, 1);
+      assert.equal(output[0].tool_calls[0].function.name, "getTime");
+      assert.equal(
+        output[0].tool_calls[0].function.arguments,
+        JSON.stringify({ tz: "PST" }),
+      );
+    },
+  );
+
+  void it(
+    "leaves non-AI-SDK message shapes untouched",
+    async () => {
+      const mastraExporter = new LaminarMastraExporter();
+      const traceId = "ffffffffffffffffffffffffffffffff";
+      const id = "7777777777777777";
+      const t0 = new Date();
+
+      // Already-OpenAI shape — should pass through unchanged.
+      const openAiMessages = [
+        { role: "user", content: "Hello" },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "call_1",
+              type: "function",
+              function: { name: "foo", arguments: '{"x":1}' },
+            },
+          ],
+        },
+      ];
+
+      await mastraExporter.exportTracingEvent({
+        type: MastraTracingEventType.SPAN_STARTED,
+        exportedSpan: {
+          id,
+          traceId,
+          name: "llm.generate",
+          type: MastraSpanType.MODEL_GENERATION,
+          startTime: t0,
+          isRootSpan: true,
+          isEvent: false,
+        },
+      });
+      await mastraExporter.exportTracingEvent({
+        type: MastraTracingEventType.SPAN_ENDED,
+        exportedSpan: {
+          id,
+          traceId,
+          name: "llm.generate",
+          type: MastraSpanType.MODEL_GENERATION,
+          startTime: t0,
+          endTime: new Date(t0.getTime() + 100),
+          input: { messages: openAiMessages },
+          isRootSpan: true,
+          isEvent: false,
+        },
+      });
+
+      const spans = exporter.getFinishedSpans();
+      const input = JSON.parse(spans[0].attributes["lmnr.span.input"] as string);
+      assert.deepEqual(input, openAiMessages);
+    },
+  );
 });

@@ -371,7 +371,7 @@ const buildLaminarAttributes = (
     attributes[SPAN_INPUT] = serializeForLaminar(getLaminarSpanInput(span));
   }
   if (span.output !== undefined) {
-    attributes[SPAN_OUTPUT] = serializeForLaminar(span.output);
+    attributes[SPAN_OUTPUT] = serializeForLaminar(getLaminarSpanOutput(span));
   }
 
   if (span.type === MastraSpanType.MODEL_GENERATION) {
@@ -432,12 +432,193 @@ const getLaminarSpanInput = (span: MastraExportedSpan): unknown => {
     const input = span.input;
     if (!input || typeof input !== "object" || Array.isArray(input)) return input;
     const maybeMessages = (input as { messages?: unknown }).messages;
-    return Array.isArray(maybeMessages) ? maybeMessages : input;
+    const messages = Array.isArray(maybeMessages) ? maybeMessages : undefined;
+    if (messages) {
+      const normalized = normalizeAiSdkV5Messages(messages);
+      return normalized ?? messages;
+    }
+    return input;
   }
   if (span.type === MastraSpanType.MODEL_STEP) {
-    return cleanMastraNormalizedMessages(span.input);
+    const cleaned = cleanMastraNormalizedMessages(span.input);
+    if (Array.isArray(cleaned)) {
+      const normalized = normalizeAiSdkV5Messages(cleaned);
+      return normalized ?? cleaned;
+    }
+    return cleaned;
   }
   return span.input;
+};
+
+const getLaminarSpanOutput = (span: MastraExportedSpan): unknown => {
+  if (span.type !== MastraSpanType.MODEL_GENERATION) return span.output;
+  const output = span.output;
+  if (!output || typeof output !== "object" || Array.isArray(output)) return output;
+  const obj = output as {
+    text?: unknown;
+    toolCalls?: unknown;
+    object?: unknown;
+  };
+  const assistant: Record<string, unknown> = { role: "assistant" };
+  if (typeof obj.text === "string") {
+    assistant.content = obj.text;
+  } else if (obj.object !== undefined) {
+    assistant.content =
+      typeof obj.object === "string" ? obj.object : JSON.stringify(obj.object);
+  } else {
+    assistant.content = null;
+  }
+  const toolCalls = Array.isArray(obj.toolCalls)
+    ? obj.toolCalls.map(aiSdkV5ToolCallToOpenAI).filter(Boolean)
+    : [];
+  if (toolCalls.length > 0) assistant.tool_calls = toolCalls;
+  return [assistant];
+};
+
+/**
+ * Mastra hands us assistant/tool turns in AI SDK v5 `ModelMessage` shape:
+ *   {role:'assistant', content: [{type:'text'}, {type:'tool-call', toolCallId, toolName, input}]}
+ *   {role:'tool', content: [{type:'tool-result', toolCallId, toolName, output}]}
+ *
+ * Laminar's frontend renderer selects a parser from the payload shape. The AI-SDK
+ * v5 shape matches none of the specific parsers (OpenAI, Anthropic, Gemini,
+ * LangChain, GenAI semconv), so it falls through to the generic converter, which
+ * stringifies tool-call/tool-result parts and hides tool history after the first
+ * step. Convert to OpenAI Chat Completions shape here — it's the most
+ * round-trippable format for Laminar's UI.
+ *
+ * Returns `null` if the array does not look like AI SDK v5 ModelMessages, so the
+ * caller can fall back to the raw payload.
+ */
+const normalizeAiSdkV5Messages = (messages: unknown[]): unknown[] | null => {
+  if (messages.length === 0) return null;
+  if (!messages.some(looksLikeAiSdkV5Message)) return null;
+  const out: unknown[] = [];
+  for (const m of messages) {
+    const converted = aiSdkV5MessageToOpenAI(m);
+    if (Array.isArray(converted)) {
+      for (const c of converted) out.push(c);
+    } else {
+      out.push(converted);
+    }
+  }
+  return out;
+};
+
+const looksLikeAiSdkV5Message = (msg: unknown): boolean => {
+  if (!msg || typeof msg !== "object" || Array.isArray(msg)) return false;
+  const m = msg as { role?: unknown; content?: unknown };
+  if (typeof m.role !== "string") return false;
+  if (!Array.isArray(m.content)) return false;
+  return m.content.some((part: unknown) => {
+    if (!part || typeof part !== "object") return false;
+    const t = (part as { type?: unknown }).type;
+    return t === "tool-call" || t === "tool-result" || t === "text";
+  });
+};
+
+const aiSdkV5MessageToOpenAI = (msg: unknown): unknown => {
+  if (!msg || typeof msg !== "object") return msg;
+  const m = msg as { role?: string; content?: unknown };
+  const role = m.role;
+
+  if (role === "tool" && Array.isArray(m.content)) {
+    // AI SDK v5 groups tool results into a single `role:'tool'` message; OpenAI
+    // Chat Completions requires one message per tool_call_id. Split them.
+    return m.content.map((part) => {
+      const p = part as {
+        toolCallId?: unknown;
+        toolName?: unknown;
+        output?: unknown;
+      };
+      return {
+        role: "tool",
+        tool_call_id: typeof p.toolCallId === "string" ? p.toolCallId : "",
+        ...(typeof p.toolName === "string" && p.toolName.length > 0
+          ? { name: p.toolName }
+          : {}),
+        content: aiSdkV5ToolOutputToString(p.output),
+      };
+    });
+  }
+
+  if (role === "assistant" && Array.isArray(m.content)) {
+    const textChunks: string[] = [];
+    const toolCalls: unknown[] = [];
+    for (const part of m.content) {
+      if (!part || typeof part !== "object") continue;
+      const p = part as Record<string, unknown>;
+      const t = p.type;
+      if (t === "text" && typeof p.text === "string") {
+        textChunks.push(p.text);
+      } else if (t === "tool-call") {
+        const oc = aiSdkV5ToolCallToOpenAI(p);
+        if (oc) toolCalls.push(oc);
+      }
+    }
+    const assistant: Record<string, unknown> = { role: "assistant" };
+    assistant.content = textChunks.length > 0 ? textChunks.join("") : null;
+    if (toolCalls.length > 0) assistant.tool_calls = toolCalls;
+    return assistant;
+  }
+
+  if ((role === "user" || role === "system") && Array.isArray(m.content)) {
+    // Collapse a text-only user/system message to a plain string so it renders
+    // identically to Chat Completions. Mixed content (text + images/files) stays
+    // as an array — `{type:'text', text}` and `{type:'image', image}` parts are
+    // already close to OpenAI's shape.
+    const allText = m.content.every(
+      (p) => p && typeof p === "object" && (p as { type?: unknown }).type === "text",
+    );
+    if (allText) {
+      const text = m.content
+        .map((p) => (p as { text?: unknown }).text)
+        .filter((t) => typeof t === "string")
+        .join("");
+      return { role, content: text };
+    }
+    return { role, content: m.content };
+  }
+
+  return msg;
+};
+
+const aiSdkV5ToolCallToOpenAI = (
+  part: unknown,
+): { id: string; type: "function"; function: { name: string; arguments: string } } | null => {
+  if (!part || typeof part !== "object") return null;
+  const p = part as {
+    toolCallId?: unknown;
+    toolName?: unknown;
+    input?: unknown;
+    args?: unknown;
+    type?: unknown;
+  };
+  const id = typeof p.toolCallId === "string" ? p.toolCallId : "";
+  const name = typeof p.toolName === "string" ? p.toolName : "";
+  const rawArgs = p.input !== undefined ? p.input : p.args;
+  const args =
+    typeof rawArgs === "string" ? rawArgs : rawArgs === undefined ? "" : JSON.stringify(rawArgs);
+  return {
+    id,
+    type: "function",
+    function: { name, arguments: args },
+  };
+};
+
+const aiSdkV5ToolOutputToString = (output: unknown): string => {
+  if (output === undefined || output === null) return "";
+  if (typeof output === "string") return output;
+  // AI SDK v5 tool outputs may be `{type: 'text', value: '...'}` or
+  // `{type: 'json', value: {...}}`; collapse to a plain string.
+  if (typeof output === "object" && !Array.isArray(output)) {
+    const o = output as { type?: unknown; value?: unknown };
+    if (o.type === "text" && typeof o.value === "string") return o.value;
+    if (o.value !== undefined) {
+      return typeof o.value === "string" ? o.value : serializeForLaminar(o.value);
+    }
+  }
+  return serializeForLaminar(output);
 };
 
 /**
