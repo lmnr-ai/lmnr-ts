@@ -226,6 +226,9 @@ importers:
       '@onkernel/sdk':
         specifier: ^0.18.0
         version: 0.18.0
+      '@openai/agents':
+        specifier: ^0.8.5
+        version: 0.8.5(@cfworker/json-schema@4.1.1)(bufferutil@4.0.9)(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)
       '@opencode-ai/sdk':
         specifier: ^1.4.3
         version: 1.4.3
@@ -1083,6 +1086,29 @@ packages:
   '@open-draft/until@2.1.0':
     resolution: {integrity: sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg==}
 
+  '@openai/agents-core@0.8.5':
+    resolution: {integrity: sha512-qs9mmN+D+UmqEZo3qrvhhIIXIOgSvJPic0v4a+ruq+eYgcQMk3PY8lLcsdQwJit6zf2Wyfv1q2cX5m3jzWZpKw==}
+    peerDependencies:
+      zod: ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
+
+  '@openai/agents-openai@0.8.5':
+    resolution: {integrity: sha512-cGYmyiVy8ecgf2Vch0L/ekeNo3xuZsuWnRsxyv+w9ai9dgxUifdEQ6G3dtsjMLtmXVHRVGoO7mVBr+tKcilntw==}
+    peerDependencies:
+      zod: ^4.0.0
+
+  '@openai/agents-realtime@0.8.5':
+    resolution: {integrity: sha512-JqKVsR33OvKtTxRp5Ylhw8WfNvJ49ZIhlhMZlSVKqwR2Ks6JuxqFJ0zM9p7JIbTQDSlAZnmnZJv1qlItaildiQ==}
+    peerDependencies:
+      zod: ^4.0.0
+
+  '@openai/agents@0.8.5':
+    resolution: {integrity: sha512-OFA7XVV1qXE8lzatvQj080KdSArt8utBExFXRfD5B/R7KT0D+AVaKwg6nLoW3Gxb30vRkIUQf+MaW/Wz+gO3Yg==}
+    peerDependencies:
+      zod: ^4.0.0
+
   '@opencode-ai/sdk@1.4.3':
     resolution: {integrity: sha512-X0CAVbwoGAjTY2iecpWkx2B+GAa2jSaQKYpJ+xILopeF/OGKZUN15mjqci+L7cEuwLHV5wk3x2TStUOVCa5p0A==}
 
@@ -1881,6 +1907,9 @@ packages:
 
   '@types/uuid@10.0.0':
     resolution: {integrity: sha512-7gqG38EyHgyP1S+7+xomFtL+ZNHcKv6DwNaCZmJmo1vgMugyF3TCnXVg4t1uk89mLNwnLtnY3TpOpCOyp1/xHQ==}
+
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
   '@types/yauzl@2.10.3':
     resolution: {integrity: sha512-oJoftv0LSuaDZE3Le4DbKX+KS9G36NzOeSap90UIK0yMA/NhKJhqlSGtNDORNRaIbQfzjXDrQa0ytJ6mNRGz/Q==}
@@ -4789,6 +4818,57 @@ snapshots:
 
   '@open-draft/until@2.1.0': {}
 
+  '@openai/agents-core@0.8.5(@cfworker/json-schema@4.1.1)(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)':
+    dependencies:
+      debug: 4.4.3
+      openai: 6.33.0(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)
+    optionalDependencies:
+      '@modelcontextprotocol/sdk': 1.29.0(@cfworker/json-schema@4.1.1)(zod@4.1.12)
+      zod: 4.1.12
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - supports-color
+      - ws
+
+  '@openai/agents-openai@0.8.5(@cfworker/json-schema@4.1.1)(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)':
+    dependencies:
+      '@openai/agents-core': 0.8.5(@cfworker/json-schema@4.1.1)(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)
+      debug: 4.4.3
+      openai: 6.33.0(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)
+      zod: 4.1.12
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - supports-color
+      - ws
+
+  '@openai/agents-realtime@0.8.5(@cfworker/json-schema@4.1.1)(bufferutil@4.0.9)(zod@4.1.12)':
+    dependencies:
+      '@openai/agents-core': 0.8.5(@cfworker/json-schema@4.1.1)(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)
+      '@types/ws': 8.18.1
+      debug: 4.4.3
+      ws: 8.19.0(bufferutil@4.0.9)
+      zod: 4.1.12
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+
+  '@openai/agents@0.8.5(@cfworker/json-schema@4.1.1)(bufferutil@4.0.9)(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)':
+    dependencies:
+      '@openai/agents-core': 0.8.5(@cfworker/json-schema@4.1.1)(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)
+      '@openai/agents-openai': 0.8.5(@cfworker/json-schema@4.1.1)(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)
+      '@openai/agents-realtime': 0.8.5(@cfworker/json-schema@4.1.1)(bufferutil@4.0.9)(zod@4.1.12)
+      debug: 4.4.3
+      openai: 6.33.0(ws@8.19.0(bufferutil@4.0.9))(zod@4.1.12)
+      zod: 4.1.12
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+
   '@opencode-ai/sdk@1.4.3':
     dependencies:
       cross-spawn: 7.0.6
@@ -5748,6 +5828,10 @@ snapshots:
   '@types/shimmer@1.2.0': {}
 
   '@types/uuid@10.0.0': {}
+
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 24.12.0
 
   '@types/yauzl@2.10.3':
     dependencies:
