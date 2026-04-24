@@ -209,12 +209,14 @@ const applyUsage = (lmnrSpan: Span, usage: any): void => {
     );
   }
 
-  let cachedInputTokens = 0;
+  let cachedInputTokens: number | undefined;
   let reasoningOutputTokens: number | undefined;
 
   if (inputTokensDetails) {
     const d = toDict(inputTokensDetails);
-    cachedInputTokens = Number(d.cached_tokens ?? 0);
+    if (d.cached_tokens !== undefined && d.cached_tokens !== null) {
+      cachedInputTokens = Number(d.cached_tokens);
+    }
   }
   if (outputTokensDetails) {
     const d = toDict(outputTokensDetails);
@@ -225,13 +227,13 @@ const applyUsage = (lmnrSpan: Span, usage: any): void => {
   if (inputTokens !== undefined && inputTokens !== null) {
     lmnrSpan.setAttribute(LaminarAttributes.INPUT_TOKEN_COUNT, Number(inputTokens));
   }
-  if (cachedInputTokens) {
+  if (cachedInputTokens !== undefined) {
     lmnrSpan.setAttribute("gen_ai.usage.cache_read_input_tokens", cachedInputTokens);
   }
   if (outputTokens !== undefined && outputTokens !== null) {
     lmnrSpan.setAttribute(LaminarAttributes.OUTPUT_TOKEN_COUNT, Number(outputTokens));
   }
-  if (reasoningOutputTokens) {
+  if (reasoningOutputTokens !== undefined) {
     lmnrSpan.setAttribute("gen_ai.usage.reasoning_output_tokens", reasoningOutputTokens);
   }
   if (totalTokens !== undefined && totalTokens !== null) {
