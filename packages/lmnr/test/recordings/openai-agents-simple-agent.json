@@ -1,0 +1,45 @@
+[
+  {
+    "scope": "https://api.openai.com:443",
+    "method": "POST",
+    "path": "/v1/responses",
+    "status": 200,
+    "response": {
+      "id": "resp_test_simple_agent",
+      "object": "response",
+      "created_at": 1734123456,
+      "model": "gpt-4o-mini",
+      "output": [
+        {
+          "type": "message",
+          "id": "msg_1",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "2+2 = 4"
+            }
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 25,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 8,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 33
+      },
+      "parallel_tool_calls": true,
+      "tool_choice": "auto",
+      "tools": [],
+      "status": "completed"
+    },
+    "rawHeaders": {
+      "content-type": "application/json"
+    }
+  }
+]

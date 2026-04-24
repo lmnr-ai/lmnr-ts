@@ -363,6 +363,20 @@ export interface InitializeOptions {
      * ```
      */
     opencode?: any;
+    /**
+     * @example
+     * ```javascript
+     * import * as agents from "@openai/agents";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: {
+     *     openAIAgents: agents,
+     *   },
+     * });
+     * ```
+     */
+    openAIAgents?: any;
   };
 
   /**
