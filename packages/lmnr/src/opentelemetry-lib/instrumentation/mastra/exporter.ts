@@ -391,6 +391,7 @@ const buildLaminarAttributes = (
 
 const mapLaminarSpanType = (spanType: MastraSpanType): LaminarSpanType => {
   switch (spanType) {
+    case MastraSpanType.MODEL_GENERATION:
     case MastraSpanType.MODEL_STEP:
       return "LLM";
     case MastraSpanType.TOOL_CALL:
