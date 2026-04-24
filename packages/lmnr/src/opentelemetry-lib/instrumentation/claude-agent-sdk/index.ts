@@ -129,6 +129,14 @@ export function instrumentClaudeAgentQuery(
             params.options.env.ANTHROPIC_BEDROCK_BASE_URL =
               proxyInstance.baseUrl;
           }
+
+          // If Vertex AI is enabled, update Vertex-specific env vars
+          const vertexEnabled =
+            params.options.env.CLAUDE_CODE_USE_VERTEX === "1";
+          if (vertexEnabled) {
+            params.options.env.ANTHROPIC_VERTEX_BASE_URL =
+              proxyInstance.baseUrl;
+          }
         } else {
           logger.debug(
             "No claude proxy server available. Proceeding without proxy.",
