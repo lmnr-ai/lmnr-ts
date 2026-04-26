@@ -5,9 +5,7 @@ import {
   SpanStatusCode,
   TraceFlags,
 } from "@opentelemetry/api";
-import {
-  OTLPTraceExporter as ExporterHttp,
-} from "@opentelemetry/exporter-trace-otlp-proto";
+import { OTLPTraceExporter as ExporterHttp } from "@opentelemetry/exporter-trace-otlp-proto";
 import {
   BatchSpanProcessor,
   ReadableSpan,
@@ -40,7 +38,7 @@ import {
   SPAN_TYPE,
   USER_ID,
 } from "../../tracing/attributes";
-import { createResource } from "../../tracing/compat";
+import { createResource, makeSpanOtelV2Compatible } from "../../tracing/compat";
 
 const logger = initializeLogger();
 
@@ -178,7 +176,8 @@ const computeDuration = (start: Date, end?: Date): HrTime => {
 };
 
 const normalizeProvider = (provider: string): string =>
-  provider.split(".").shift()?.toLowerCase().trim() || provider.toLowerCase().trim();
+  provider.split(".").shift()?.toLowerCase().trim() ||
+  provider.toLowerCase().trim();
 
 // `model_step` is Laminar's atomic LLM call. `model_generation` wraps the
 // whole agent-to-LLM flow (which may include multiple steps + tool calls),
@@ -209,7 +208,11 @@ const toAttributeValue = (
   value: unknown,
 ): AttrPrimitive | AttrPrimitive[] | undefined => {
   if (value === undefined || value === null) return undefined;
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
     return value;
   }
   if (Array.isArray(value)) {
@@ -236,9 +239,7 @@ const extractMessages = (input: unknown): unknown[] | undefined => {
 // `{type: "text", text: "..."}` — or the odd AI-SDK-internal shape where
 // tool calls appear as empty user messages. Strip provider-specific extras
 // and pass through structured parts, dropping empty placeholder content.
-const normalizeContent = (
-  content: unknown,
-): string | AISdkContentPart[] => {
+const normalizeContent = (content: unknown): string | AISdkContentPart[] => {
   if (content == null) return "";
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -253,8 +254,12 @@ const normalizeContent = (
       } else if (type === "tool-call" || type === "tool_call") {
         parts.push({
           type: "tool-call",
-          toolCallId: (obj.toolCallId as string | undefined) ?? (obj.id as string | undefined),
-          toolName: (obj.toolName as string | undefined) ?? (obj.name as string | undefined),
+          toolCallId:
+            (obj.toolCallId as string | undefined) ??
+            (obj.id as string | undefined),
+          toolName:
+            (obj.toolName as string | undefined) ??
+            (obj.name as string | undefined),
           input: obj.input ?? obj.args ?? obj.arguments,
         });
       } else if (type === "tool-result" || type === "tool_result") {
@@ -308,7 +313,8 @@ const normalizeInputMessages = (raw: unknown[]): AISdkMessage[] => {
     ) {
       continue;
     }
-    const tool_call_id = typeof obj.tool_call_id === "string" ? obj.tool_call_id : undefined;
+    const tool_call_id =
+      typeof obj.tool_call_id === "string" ? obj.tool_call_id : undefined;
     out.push({ role, content, tool_call_id });
   }
   return out;
@@ -328,8 +334,12 @@ const buildAssistantMessageFromStepOutput = (
       if (!tc) continue;
       parts.push({
         type: "tool-call",
-        toolCallId: (tc.toolCallId as string | undefined) ?? (tc.id as string | undefined),
-        toolName: (tc.toolName as string | undefined) ?? (tc.name as string | undefined),
+        toolCallId:
+          (tc.toolCallId as string | undefined) ??
+          (tc.id as string | undefined),
+        toolName:
+          (tc.toolName as string | undefined) ??
+          (tc.name as string | undefined),
         input: tc.input ?? tc.args ?? tc.arguments,
       });
     }
@@ -352,7 +362,8 @@ const formatUsage = (usage?: MastraUsageStats): Record<string, number> => {
     out[LaminarAttributes.TOTAL_TOKEN_COUNT] = total;
   }
   if (typeof usage.inputDetails?.cacheWrite === "number") {
-    out["gen_ai.usage.cache_creation_input_tokens"] = usage.inputDetails.cacheWrite;
+    out["gen_ai.usage.cache_creation_input_tokens"] =
+      usage.inputDetails.cacheWrite;
   }
   if (typeof usage.inputDetails?.cacheRead === "number") {
     out["gen_ai.usage.cache_read_input_tokens"] = usage.inputDetails.cacheRead;
@@ -401,8 +412,10 @@ export class MastraExporter {
   private isSetup = false;
 
   private readonly traceMap: Map<string, TraceState> = new Map();
-  private readonly generationStateById: Map<string, GenerationState> = new Map();
-  private readonly generationAttrsById: Map<string, Record<string, unknown>> = new Map();
+  private readonly generationStateById: Map<string, GenerationState> =
+    new Map();
+  private readonly generationAttrsById: Map<string, Record<string, unknown>> =
+    new Map();
   private readonly generationIdByStepId: Map<string, string> = new Map();
   // Remember step index per step span so tool_call children can look up which
   // step they belong to (fan-in by arrival order).
@@ -501,8 +514,12 @@ export class MastraExporter {
     const traceState = this.getOrCreateTraceState(span.traceId);
     const parentId = span.parentSpanId;
 
-    const parentPath = parentId ? traceState.spanPathById.get(parentId) : undefined;
-    const parentIdsPath = parentId ? traceState.spanIdsPathById.get(parentId) : undefined;
+    const parentPath = parentId
+      ? traceState.spanPathById.get(parentId)
+      : undefined;
+    const parentIdsPath = parentId
+      ? traceState.spanIdsPathById.get(parentId)
+      : undefined;
 
     const spanPath = parentPath ? [...parentPath, span.name] : [span.name];
     const spanIdsPath = parentIdsPath
@@ -518,9 +535,14 @@ export class MastraExporter {
     } else if (span.type === "model_step" && parentId) {
       this.generationIdByStepId.set(span.id, parentId);
       const stepIndex =
-        typeof span.attributes?.stepIndex === "number" ? span.attributes.stepIndex : 0;
+        typeof span.attributes?.stepIndex === "number"
+          ? span.attributes.stepIndex
+          : 0;
       this.stepIndexBySpanId.set(span.id, stepIndex);
-    } else if ((span.type === "tool_call" || span.type === "mcp_tool_call") && parentId) {
+    } else if (
+      (span.type === "tool_call" || span.type === "mcp_tool_call") &&
+      parentId
+    ) {
       // Parent is a MODEL_STEP → this tool_call belongs to that step.
       const stepIndex = this.stepIndexBySpanId.get(parentId);
       const generationId = this.generationIdByStepId.get(parentId);
@@ -545,8 +567,12 @@ export class MastraExporter {
     // mid-trace or a re-entrant span_ended without a matching span_started).
     if (!traceState.spanPathById.has(span.id)) {
       const parentId = span.parentSpanId;
-      const parentPath = parentId ? traceState.spanPathById.get(parentId) : undefined;
-      const parentIdsPath = parentId ? traceState.spanIdsPathById.get(parentId) : undefined;
+      const parentPath = parentId
+        ? traceState.spanPathById.get(parentId)
+        : undefined;
+      const parentIdsPath = parentId
+        ? traceState.spanIdsPathById.get(parentId)
+        : undefined;
       const spanPath = parentPath ? [...parentPath, span.name] : [span.name];
       const spanIdsPath = parentIdsPath
         ? [...parentIdsPath, otelSpanIdToUUID(span.id)]
@@ -555,7 +581,10 @@ export class MastraExporter {
       traceState.spanIdsPathById.set(span.id, spanIdsPath);
     }
 
-    if (span.type === "model_generation" && !this.generationStateById.has(span.id)) {
+    if (
+      span.type === "model_generation" &&
+      !this.generationStateById.has(span.id)
+    ) {
       this.initGenerationState(span);
     }
     if (
@@ -617,7 +646,9 @@ export class MastraExporter {
       if (!gen) return;
       const stepIndex =
         this.stepIndexBySpanId.get(span.id) ??
-        (typeof span.attributes?.stepIndex === "number" ? span.attributes.stepIndex : 0);
+        (typeof span.attributes?.stepIndex === "number"
+          ? span.attributes.stepIndex
+          : 0);
       this.stepIndexBySpanId.set(span.id, stepIndex);
 
       // Pair the declared `toolCalls` with tool_call children by arrival order.
@@ -636,7 +667,8 @@ export class MastraExporter {
         const child = children[i];
         if (!child) continue;
         const toolCallId =
-          (dec?.toolCallId as string | undefined) ?? (dec?.id as string | undefined);
+          (dec?.toolCallId as string | undefined) ??
+          (dec?.id as string | undefined);
         if (!toolCallId) continue;
         const toolName =
           (dec?.toolName as string | undefined) ??
@@ -667,7 +699,8 @@ export class MastraExporter {
       const gen = this.generationStateById.get(generationId);
       if (!gen) return;
       const stepIndex =
-        gen.toolCallSpanIdToStepIndex.get(span.id) ?? this.stepIndexBySpanId.get(parentId);
+        gen.toolCallSpanIdToStepIndex.get(span.id) ??
+        this.stepIndexBySpanId.get(parentId);
       if (stepIndex === undefined) return;
       const list = gen.toolCallChildrenByStepIndex.get(stepIndex) ?? [];
       list.push({
@@ -711,9 +744,9 @@ export class MastraExporter {
     this.processor = this.config.disableBatch
       ? new SimpleSpanProcessor(this.otlpExporter)
       : new BatchSpanProcessor(this.otlpExporter, {
-        maxExportBatchSize: this.config.batchSize,
-        exportTimeoutMillis: this.config.timeoutMillis,
-      });
+          maxExportBatchSize: this.config.batchSize,
+          exportTimeoutMillis: this.config.timeoutMillis,
+        });
     this.isSetup = true;
   }
 
@@ -735,11 +768,11 @@ export class MastraExporter {
     };
     const parentSpanContext: SpanContext | undefined = span.parentSpanId
       ? {
-        traceId,
-        spanId: normalizeSpanId(span.parentSpanId),
-        traceFlags: TraceFlags.SAMPLED,
-        isRemote: false,
-      }
+          traceId,
+          spanId: normalizeSpanId(span.parentSpanId),
+          traceFlags: TraceFlags.SAMPLED,
+          isRemote: false,
+        }
       : undefined;
 
     const attributes = this.buildLaminarAttributes(span, traceState);
@@ -752,13 +785,15 @@ export class MastraExporter {
         attributes: {
           "exception.message": span.errorInfo.message,
           "exception.type": span.errorInfo.name ?? "Error",
-          ...(span.errorInfo.stack ? { "exception.stacktrace": span.errorInfo.stack } : {}),
+          ...(span.errorInfo.stack
+            ? { "exception.stacktrace": span.errorInfo.stack }
+            : {}),
         },
         time: startTime,
       });
     }
 
-    return {
+    const readable = {
       name: span.name,
       kind: SpanKind.INTERNAL,
       spanContext: () => spanContext,
@@ -777,6 +812,10 @@ export class MastraExporter {
       droppedEventsCount: 0,
       droppedLinksCount: 0,
     } as unknown as ReadableSpan;
+    // Populate v1 aliases (parentSpanId / instrumentationLibrary) so spans
+    // constructed here work under OTel SDK v1 processors/exporters too.
+    makeSpanOtelV2Compatible(readable);
+    return readable;
   }
 
   private buildLaminarAttributes(
@@ -850,8 +889,11 @@ export class MastraExporter {
     span: MastraExportedSpan,
     attributes: Record<string, any>,
   ): void {
-    const generationId = this.generationIdByStepId.get(span.id) ?? span.parentSpanId;
-    const gen = generationId ? this.generationStateById.get(generationId) : undefined;
+    const generationId =
+      this.generationIdByStepId.get(span.id) ?? span.parentSpanId;
+    const gen = generationId
+      ? this.generationStateById.get(generationId)
+      : undefined;
     const generationAttrs = generationId
       ? this.generationAttrsById.get(generationId)
       : undefined;
@@ -864,12 +906,16 @@ export class MastraExporter {
     const provider = generationAttrs?.provider as string | undefined;
     const model = generationAttrs?.model as string | undefined;
     const responseModel = generationAttrs?.responseModel as string | undefined;
-    if (provider) attributes[LaminarAttributes.PROVIDER] = normalizeProvider(provider);
+    if (provider)
+      attributes[LaminarAttributes.PROVIDER] = normalizeProvider(provider);
     if (model) attributes[LaminarAttributes.REQUEST_MODEL] = model;
-    if (responseModel) attributes[LaminarAttributes.RESPONSE_MODEL] = responseModel;
+    if (responseModel)
+      attributes[LaminarAttributes.RESPONSE_MODEL] = responseModel;
     else if (model) attributes[LaminarAttributes.RESPONSE_MODEL] = model;
 
-    const usage = (stepAttrs.usage ?? generationAttrs?.usage) as MastraUsageStats | undefined;
+    const usage = (stepAttrs.usage ?? generationAttrs?.usage) as
+      | MastraUsageStats
+      | undefined;
     Object.assign(attributes, formatUsage(usage));
 
     if (typeof stepAttrs.finishReason === "string") {
@@ -900,7 +946,9 @@ export class MastraExporter {
         attributes["ai.response.text"] = outObj.text;
       }
       if (Array.isArray(outObj.toolCalls) && outObj.toolCalls.length > 0) {
-        const normalized = (outObj.toolCalls as Array<Record<string, unknown>>).map((tc) => ({
+        const normalized = (
+          outObj.toolCalls as Array<Record<string, unknown>>
+        ).map((tc) => ({
           toolCallType: tc.toolCallType ?? "function",
           toolCallId: tc.toolCallId ?? tc.id,
           toolName: tc.toolName ?? tc.name,

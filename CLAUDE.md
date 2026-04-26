@@ -38,6 +38,7 @@ Laminar ships its own `MastraExporter` (implements `ObservabilityExporter` from 
 - **`TOOL_CALL` children end BEFORE their parent `MODEL_STEP` ends.** Pair them at *step-end time* against the declared `output.toolCalls` by arrival order — do NOT try to pair them when the tool span ends (declared toolCalls are not available yet).
 - Tool-result messages are emitted as `{role:"tool", tool_call_id, content:[{type:"tool-result", toolCallId, toolName, output}]}` — this matches what Laminar's backend (`app-server/src/language_model/chat_message.rs`) expects via `InstrumentationChatMessageAISDKToolCall`/`ToolResult`.
 - Exporter internals use narrow local interfaces instead of importing `@mastra/core` types, so there is no peer dep on Mastra.
+- Any code that manually constructs a `ReadableSpan` (e.g. framework-exporter bridges that synthesize spans from non-OTel sources) MUST call `makeSpanOtelV2Compatible` from `../../tracing/compat` on the result — without it, setting only v2 fields (`parentSpanContext`, `instrumentationScope`) breaks users on OTel SDK v1 (parent-child links and scope info are dropped, traces render flat).
 
 ## Mastra Integration — Host App Requirements
 
