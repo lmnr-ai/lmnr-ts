@@ -792,7 +792,7 @@ export class MastraExporter {
             ? { "exception.stacktrace": span.errorInfo.stack }
             : {}),
         },
-        time: startTime,
+        time: endTime,
       });
     }
 
