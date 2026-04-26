@@ -176,7 +176,11 @@ const dateToHrTime = (date: Date): HrTime => {
 
 const computeDuration = (start: Date, end?: Date): HrTime => {
   if (!end) return [0, 0];
-  const diffMs = end.getTime() - start.getTime();
+  // Clamp to 0 on negative diffs: duration is semantically non-negative, and
+  // OTel's HrTime contract requires a non-negative nanosecond component that
+  // Math.floor + `%` don't preserve when diffMs < 0 (clock skew, reordered
+  // Mastra timestamps).
+  const diffMs = Math.max(0, end.getTime() - start.getTime());
   return [Math.floor(diffMs / 1e3), (diffMs % 1e3) * 1e6];
 };
 
