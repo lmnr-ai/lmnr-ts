@@ -399,6 +399,12 @@ const extractToolCallId = (span: MastraExportedSpan): string | undefined => {
   return undefined;
 };
 
+// Mastra names tool spans like `tool: 'myToolId'`. Strip that prefix + quotes
+// so both the TOOL span's `ai.toolCall.name` and the tool-result message's
+// `toolName` agree on the raw tool id.
+const cleanMastraToolName = (name: string | undefined): string | undefined =>
+  name?.replace(/^tool:\s*'?|'?$/g, "");
+
 const formatUsage = (usage?: MastraUsageStats): Record<string, number> => {
   if (!usage) return {};
   const out: Record<string, number> = {};
@@ -812,7 +818,7 @@ export class MastraExporter {
       const list = gen.toolCallChildrenByStepIndex.get(stepIndex) ?? [];
       list.push({
         toolCallId: extractToolCallId(span),
-        toolName: span.name?.replace(/^tool:\s*'?|'?$/g, "") || "tool",
+        toolName: cleanMastraToolName(span.name) || "tool",
         input: span.input,
         output: span.output,
       });
@@ -1135,7 +1141,7 @@ export class MastraExporter {
     const toolAttrs = (span.attributes ?? {}) as Record<string, any>;
     // Strip the `tool: 'x'` prefix Mastra prepends so the displayed name is
     // just the tool id.
-    const cleanedName = span.name?.replace(/^tool:\s*'?|'?$/g, "") || span.name;
+    const cleanedName = cleanMastraToolName(span.name) || span.name;
     if (cleanedName) attributes["ai.toolCall.name"] = cleanedName;
     if (typeof toolAttrs.toolType === "string") {
       attributes["ai.toolCall.type"] = toolAttrs.toolType;
