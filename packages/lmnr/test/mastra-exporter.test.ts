@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 
 import { context, trace } from "@opentelemetry/api";
+import { type ExportResult,ExportResultCode } from "@opentelemetry/core";
 import {
+  BatchSpanProcessor,
   InMemorySpanExporter,
   ReadableSpan,
   SimpleSpanProcessor,
@@ -389,4 +391,87 @@ void describe("MastraExporter — OTel context linking", () => {
     );
     assert.strictEqual(getParentSpanId(spans[0]), undefined);
   });
+
+  void it(
+    "shutdown() drains in-flight span_ended handlers before stopping the processor",
+    async () => {
+      // Use a real BatchSpanProcessor paired with a *non-wiping* in-memory
+      // exporter: the stock `InMemorySpanExporter.shutdown()` clears its own
+      // buffer, which would also hide a correctly-exported span. This fake
+      // keeps everything it receives until the test reads it, so the only
+      // reason length can be 0 is that `onEnd` was dropped by the processor
+      // after `shutdown()` flipped its `_shutdownOnce.isCalled` flag.
+      const captured: ReadableSpan[] = [];
+      const fakeExporter: SpanExporter = {
+        export: (spans: ReadableSpan[], resultCallback: (r: ExportResult) => void) => {
+          captured.push(...spans);
+          resultCallback({ code: ExportResultCode.SUCCESS });
+        },
+        shutdown: async () => {
+          // Intentionally does NOT wipe `captured` — we assert on it after.
+        },
+      };
+      const batch = new BatchSpanProcessor(fakeExporter);
+      const mastra = new MastraExporter({
+        apiKey: "test-key",
+        baseUrl: "http://127.0.0.1",
+        disableBatch: false,
+        realtime: false,
+      });
+      mastra.init({ config: { serviceName: "test" } });
+      const privateMastra = mastra as unknown as {
+        processor?: SimpleSpanProcessor | BatchSpanProcessor;
+        otlpExporter?: SpanExporter;
+        isSetup: boolean;
+        doExportTracingEvent(event: unknown): Promise<void>;
+      };
+      privateMastra.processor = batch;
+      privateMastra.otlpExporter = fakeExporter;
+      privateMastra.isSetup = true;
+
+      // Inject real async work INTO handleSpanEnded: wrap the internal
+      // `doExportTracingEvent` so there's an await *before* processor.onEnd
+      // gets invoked. This faithfully reproduces the user's bug — in their
+      // workload the handler has genuine async hops (tool-call chains,
+      // generation-state normalization, etc.) and `mastra.shutdown()` races
+      // ahead of the final `span_ended` before its `processor.onEnd` runs.
+      // Without this hop, everything inside `handleSpanEnded` runs
+      // synchronously before the outer `await mastra.shutdown()` line even
+      // starts, and there's no race to reproduce.
+      const original = privateMastra.doExportTracingEvent.bind(mastra);
+      privateMastra.doExportTracingEvent = async (event) => {
+        await new Promise<void>((r) => setTimeout(r, 10));
+        await original(event);
+      };
+
+      await mastra.exportTracingEvent({
+        type: "span_started",
+        exportedSpan: makeMastraSpan({
+          id: "f000000000000001",
+          traceId: "ffffffffffffffffffffffffffffffff",
+          parentSpanId: undefined,
+          type: "agent_run",
+        }),
+      });
+
+      // Fire-and-forget — mimics how observabilityBus.emit() schedules it.
+      void mastra.exportTracingEvent({
+        type: "span_ended",
+        exportedSpan: makeMastraSpan({
+          id: "f000000000000001",
+          traceId: "ffffffffffffffffffffffffffffffff",
+          parentSpanId: undefined,
+          type: "agent_run",
+        }),
+      });
+
+      await mastra.shutdown();
+
+      assert.strictEqual(
+        captured.length,
+        1,
+        "shutdown must await in-flight span_ended before stopping processor",
+      );
+    },
+  );
 });
