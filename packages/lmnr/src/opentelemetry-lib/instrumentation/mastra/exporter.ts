@@ -27,7 +27,10 @@ import {
   TraceFlags,
 } from "@opentelemetry/api";
 import type { InstrumentationScope } from "@opentelemetry/core";
-import { type Resource, resourceFromAttributes } from "@opentelemetry/resources";
+import {
+  type Resource,
+  resourceFromAttributes,
+} from "@opentelemetry/resources";
 import type { ReadableSpan, TimedEvent } from "@opentelemetry/sdk-trace-base";
 import {
   ATTR_SERVICE_NAME,
@@ -67,15 +70,65 @@ const GEN_AI_REQUEST_MODEL = "gen_ai.request.model";
 const GEN_AI_RESPONSE_MODEL = "gen_ai.response.model";
 const GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens";
 const GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens";
-const GEN_AI_CACHE_WRITE_INPUT_TOKENS = "gen_ai.usage.cache_creation_input_tokens";
+const GEN_AI_CACHE_WRITE_INPUT_TOKENS =
+  "gen_ai.usage.cache_creation_input_tokens";
 const GEN_AI_CACHE_READ_INPUT_TOKENS = "gen_ai.usage.cache_read_input_tokens";
 
 type LaminarSpanType = "DEFAULT" | "LLM" | "TOOL";
+
+type CompletedStep = {
+  stepIndex: number;
+  assistant: OpenAIAssistantTurn;
+};
+
+type OpenAIAssistantTurn = {
+  role: "assistant";
+  content: string | null;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+  }>;
+};
+
+type CompletedToolCall = {
+  stepIndex: number; // The step that REQUESTED this tool call (so we interleave after it)
+  message: {
+    role: "tool";
+    tool_call_id: string;
+    name?: string;
+    content: string;
+  };
+};
+
+type ModelGenerationState = {
+  // Messages from the MODEL_GENERATION span input (initial conversation)
+  initialMessages: unknown[] | null;
+  // Tracks the next step index expected (0, 1, 2, ...) based on SPAN_ENDED order
+  nextStepIndex: number;
+  // Assistant turns recovered from each completed MODEL_STEP's output
+  steps: CompletedStep[];
+  // Tool outputs recovered from TOOL_CALL spans, tagged with the step that produced them
+  toolOutputs: CompletedToolCall[];
+};
 
 type TraceState = {
   spanPathById: Map<string, string[]>;
   spanIdsPathById: Map<string, string[]>;
   activeSpanIds: Set<string>;
+  // Per-MODEL_GENERATION state used to reconstruct the full multi-step
+  // conversation history (since Mastra's own step input is destroyed by
+  // `@mastra/observability`'s `normalizeMessages` for OpenAI Responses API).
+  modelGenerations: Map<string, ModelGenerationState>;
+  // Ancestor MODEL_GENERATION id for any descendant span. Populated on
+  // SPAN_STARTED so later children can find the right ModelGenerationState.
+  modelGenerationAncestor: Map<string, string>;
+  // Completed TOOL_CALL outputs grouped by their parent MODEL_STEP span id, in
+  // the order their TOOL_CALL spans ended. Consumed when the MODEL_STEP ends.
+  toolOutputsByStep: Map<string, unknown[]>;
+  // Type of each started span, so we can identify whether a parent span is a
+  // MODEL_STEP without introspecting external state.
+  spanTypeById: Map<string, MastraSpanType>;
 };
 
 const logger = initializeLogger();
@@ -99,8 +152,8 @@ const loadBaseExporter = (): any => {
       async _exportTracingEvent(event: MastraTracingEvent): Promise<void> {
         void event;
       }
-      async flush(): Promise<void> { }
-      async shutdown(): Promise<void> { }
+      async flush(): Promise<void> {}
+      async shutdown(): Promise<void> {}
     };
   }
 };
@@ -151,7 +204,9 @@ export class LaminarMastraExporter extends getBaseExporter() {
     this.scope = { name: "lmnr.mastra", version: SDK_VERSION };
   }
 
-  protected async _exportTracingEvent(event: MastraTracingEvent): Promise<void> {
+  protected async _exportTracingEvent(
+    event: MastraTracingEvent,
+  ): Promise<void> {
     // Mastra emits SPAN_STARTED/SPAN_ENDED pairs for point-in-time events too
     // (isEvent: true). Those aren't real spans — they're markers with no
     // meaningful duration — so skip them to avoid polluting the trace with
@@ -168,7 +223,9 @@ export class LaminarMastraExporter extends getBaseExporter() {
   private handleSpanStarted(span: MastraExportedSpan): void {
     const traceState = this.getOrCreateTraceState(span.traceId);
     const parentId = span.parentSpanId;
-    const parentPath = parentId ? traceState.spanPathById.get(parentId) : undefined;
+    const parentPath = parentId
+      ? traceState.spanPathById.get(parentId)
+      : undefined;
     const parentIdsPath = parentId
       ? traceState.spanIdsPathById.get(parentId)
       : undefined;
@@ -180,6 +237,36 @@ export class LaminarMastraExporter extends getBaseExporter() {
     traceState.spanPathById.set(span.id, spanPath);
     traceState.spanIdsPathById.set(span.id, spanIdsPath);
     traceState.activeSpanIds.add(span.id);
+    traceState.spanTypeById.set(span.id, span.type);
+
+    this.updateModelGenerationAncestor(span, traceState);
+    if (span.type === MastraSpanType.MODEL_GENERATION) {
+      traceState.modelGenerations.set(span.id, {
+        initialMessages: extractInitialMessages(span.input),
+        nextStepIndex: 0,
+        steps: [],
+        toolOutputs: [],
+      });
+    }
+    if (span.type === MastraSpanType.MODEL_STEP) {
+      traceState.toolOutputsByStep.set(span.id, []);
+    }
+  }
+
+  private updateModelGenerationAncestor(
+    span: MastraExportedSpan,
+    traceState: TraceState,
+  ): void {
+    if (span.type === MastraSpanType.MODEL_GENERATION) {
+      traceState.modelGenerationAncestor.set(span.id, span.id);
+      return;
+    }
+    const parentId = span.parentSpanId;
+    if (!parentId) return;
+    const parentAncestor = traceState.modelGenerationAncestor.get(parentId);
+    if (parentAncestor) {
+      traceState.modelGenerationAncestor.set(span.id, parentAncestor);
+    }
   }
 
   private async handleSpanEnded(span: MastraExportedSpan): Promise<void> {
@@ -194,7 +281,9 @@ export class LaminarMastraExporter extends getBaseExporter() {
 
     if (!traceState.spanPathById.has(span.id)) {
       const parentId = span.parentSpanId;
-      const parentPath = parentId ? traceState.spanPathById.get(parentId) : undefined;
+      const parentPath = parentId
+        ? traceState.spanPathById.get(parentId)
+        : undefined;
       const parentIdsPath = parentId
         ? traceState.spanIdsPathById.get(parentId)
         : undefined;
@@ -206,21 +295,130 @@ export class LaminarMastraExporter extends getBaseExporter() {
       traceState.spanIdsPathById.set(span.id, spanIdsPath);
     }
 
+    // Tool call output must be recorded BEFORE we build the ReadableSpan so
+    // subsequent MODEL_STEP spans (processed next) can see it. MODEL_STEP
+    // output is recorded AFTER building, so its own input doesn't include its
+    // own output in the reconstructed history.
+    if (
+      span.type === MastraSpanType.TOOL_CALL ||
+      span.type === MastraSpanType.MCP_TOOL_CALL
+    ) {
+      this.recordToolCallCompletion(span, traceState);
+    }
+    // On MODEL_STEP end, pair its output.toolCalls[] with the child TOOL_CALL
+    // outputs (captured in order above) and attribute them to THIS step. Must
+    // happen before recordModelStepCompletion so tool outputs are labeled with
+    // the current step index.
+    if (span.type === MastraSpanType.MODEL_STEP) {
+      this.pairModelStepToolCalls(span, traceState);
+    }
+
     try {
       const readable = this.convertSpanToOtel(span, traceState);
       processor.onEnd(readable as any);
       if (this.realtime) await processor.forceFlush();
     } catch (error) {
       logger.debug(
-        `[LaminarMastraExporter] Failed to export span ${span.id}: ${error instanceof Error ? error.message : String(error)
+        `[LaminarMastraExporter] Failed to export span ${span.id}: ${
+          error instanceof Error ? error.message : String(error)
         }`,
       );
     } finally {
+      if (span.type === MastraSpanType.MODEL_STEP) {
+        this.recordModelStepCompletion(span, traceState);
+        traceState.toolOutputsByStep.delete(span.id);
+      }
+      if (span.type === MastraSpanType.MODEL_GENERATION) {
+        traceState.modelGenerations.delete(span.id);
+      }
       traceState.activeSpanIds.delete(span.id);
+      traceState.modelGenerationAncestor.delete(span.id);
+      traceState.spanTypeById.delete(span.id);
       if (traceState.activeSpanIds.size === 0) {
         this.traceMap.delete(span.traceId);
       }
     }
+  }
+
+  /**
+   * TOOL_CALL spans end BEFORE their parent MODEL_STEP ends. We collect their
+   * outputs keyed by the parent MODEL_STEP id; the MODEL_STEP-end handler then
+   * pairs them with `output.toolCalls[]` (which carries `toolCallId`) to emit
+   * OpenAI-shape `{role:"tool", tool_call_id, name, content}` messages.
+   *
+   * TOOL_CALL spans in Mastra's Responses API flow do NOT carry a toolCallId
+   * themselves — they only expose raw input/output, so positional correlation
+   * with the parent MODEL_STEP's output.toolCalls list is the only reliable
+   * way to reconstruct the ID.
+   */
+  private recordToolCallCompletion(
+    span: MastraExportedSpan,
+    traceState: TraceState,
+  ): void {
+    if (!span.parentSpanId) return;
+    const parentType = traceState.spanTypeById.get(span.parentSpanId);
+    if (parentType !== MastraSpanType.MODEL_STEP) return;
+    const bucket = traceState.toolOutputsByStep.get(span.parentSpanId);
+    if (!bucket) return;
+    bucket.push(span.output);
+  }
+
+  private pairModelStepToolCalls(
+    span: MastraExportedSpan,
+    traceState: TraceState,
+  ): void {
+    const mgId = traceState.modelGenerationAncestor.get(span.id);
+    if (!mgId) return;
+    const mgState = traceState.modelGenerations.get(mgId);
+    if (!mgState) return;
+    const toolOutputs = traceState.toolOutputsByStep.get(span.id) ?? [];
+    if (toolOutputs.length === 0) return;
+    const output = span.output;
+    const toolCalls =
+      output && typeof output === "object" && !Array.isArray(output)
+        ? (output as { toolCalls?: unknown }).toolCalls
+        : undefined;
+    const toolCallsArr = Array.isArray(toolCalls) ? toolCalls : [];
+    for (let i = 0; i < toolOutputs.length; i++) {
+      const tc = toolCallsArr[i] as
+        | { toolCallId?: unknown; toolName?: unknown }
+        | undefined;
+      const id =
+        tc && typeof tc.toolCallId === "string" && tc.toolCallId.length > 0
+          ? tc.toolCallId
+          : "";
+      const name =
+        tc && typeof tc.toolName === "string" ? tc.toolName : undefined;
+      mgState.toolOutputs.push({
+        stepIndex: mgState.nextStepIndex,
+        message: {
+          role: "tool",
+          tool_call_id: id,
+          ...(name ? { name } : {}),
+          content: stringifyToolResult(toolOutputs[i]),
+        },
+      });
+    }
+  }
+
+  private recordModelStepCompletion(
+    span: MastraExportedSpan,
+    traceState: TraceState,
+  ): void {
+    const mgId = traceState.modelGenerationAncestor.get(span.id);
+    if (!mgId) return;
+    const mgState = traceState.modelGenerations.get(mgId);
+    if (!mgState) return;
+    const assistant = modelStepOutputToAssistantTurn(span.output);
+    if (!assistant) {
+      mgState.nextStepIndex++;
+      return;
+    }
+    mgState.steps.push({
+      stepIndex: mgState.nextStepIndex,
+      assistant,
+    });
+    mgState.nextStepIndex++;
   }
 
   private getOrCreateTraceState(traceId: string): TraceState {
@@ -230,6 +428,10 @@ export class LaminarMastraExporter extends getBaseExporter() {
       spanPathById: new Map(),
       spanIdsPathById: new Map(),
       activeSpanIds: new Set(),
+      modelGenerations: new Map(),
+      modelGenerationAncestor: new Map(),
+      toolOutputsByStep: new Map(),
+      spanTypeById: new Map(),
     };
     this.traceMap.set(traceId, created);
     return created;
@@ -267,11 +469,11 @@ export class LaminarMastraExporter extends getBaseExporter() {
     };
     const parentSpanContext = span.parentSpanId
       ? {
-        traceId,
-        spanId: normalizeSpanId(span.parentSpanId),
-        traceFlags: TraceFlags.SAMPLED,
-        isRemote: false,
-      }
+          traceId,
+          spanId: normalizeSpanId(span.parentSpanId),
+          traceFlags: TraceFlags.SAMPLED,
+          isRemote: false,
+        }
       : undefined;
     const attributes = buildLaminarAttributes(span, traceState);
     const links: Link[] = [];
@@ -308,7 +510,8 @@ export class LaminarMastraExporter extends getBaseExporter() {
         await processor.forceFlush();
       } catch (error) {
         logger.debug(
-          `[LaminarMastraExporter] Error flushing: ${error instanceof Error ? error.message : String(error)
+          `[LaminarMastraExporter] Error flushing: ${
+            error instanceof Error ? error.message : String(error)
           }`,
         );
       }
@@ -368,14 +571,17 @@ const buildLaminarAttributes = (
   }
 
   if (span.input !== undefined) {
-    attributes[SPAN_INPUT] = serializeForLaminar(getLaminarSpanInput(span));
+    attributes[SPAN_INPUT] = serializeForLaminar(
+      getLaminarSpanInput(span, traceState),
+    );
   }
   if (span.output !== undefined) {
     attributes[SPAN_OUTPUT] = serializeForLaminar(getLaminarSpanOutput(span));
   }
 
   if (span.type === MastraSpanType.MODEL_GENERATION) {
-    const modelAttrs = (span.attributes ?? {}) as MastraModelGenerationAttributes;
+    const modelAttrs = (span.attributes ??
+      {}) as MastraModelGenerationAttributes;
     if (modelAttrs.provider) {
       attributes[GEN_AI_SYSTEM] = normalizeProvider(modelAttrs.provider);
     }
@@ -405,7 +611,8 @@ const mapLaminarSpanType = (spanType: MastraSpanType): LaminarSpanType => {
 const formatLaminarUsage = (usage?: MastraUsageStats): Attributes => {
   if (!usage) return {};
   const out: Attributes = {};
-  if (usage.inputTokens !== undefined) out[GEN_AI_USAGE_INPUT_TOKENS] = usage.inputTokens;
+  if (usage.inputTokens !== undefined)
+    out[GEN_AI_USAGE_INPUT_TOKENS] = usage.inputTokens;
   if (usage.outputTokens !== undefined) {
     out[GEN_AI_USAGE_OUTPUT_TOKENS] = usage.outputTokens;
   }
@@ -427,10 +634,14 @@ const serializeForLaminar = (value: unknown): string => {
   }
 };
 
-const getLaminarSpanInput = (span: MastraExportedSpan): unknown => {
+const getLaminarSpanInput = (
+  span: MastraExportedSpan,
+  traceState: TraceState,
+): unknown => {
   if (span.type === MastraSpanType.MODEL_GENERATION) {
     const input = span.input;
-    if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+    if (!input || typeof input !== "object" || Array.isArray(input))
+      return input;
     const maybeMessages = (input as { messages?: unknown }).messages;
     const messages = Array.isArray(maybeMessages) ? maybeMessages : undefined;
     if (messages) {
@@ -440,6 +651,8 @@ const getLaminarSpanInput = (span: MastraExportedSpan): unknown => {
     return input;
   }
   if (span.type === MastraSpanType.MODEL_STEP) {
+    const reconstructed = reconstructModelStepInput(span, traceState);
+    if (reconstructed) return reconstructed;
     const cleaned = cleanMastraNormalizedMessages(span.input);
     if (Array.isArray(cleaned)) {
       const normalized = normalizeAiSdkV5Messages(cleaned);
@@ -450,10 +663,111 @@ const getLaminarSpanInput = (span: MastraExportedSpan): unknown => {
   return span.input;
 };
 
+/**
+ * Rebuild the MODEL_STEP input from sibling span state rather than trusting
+ * Mastra's stored `span.input`. Mastra's `@mastra/observability` runs
+ * provider request bodies through `normalizeMessages`, which collapses any
+ * non-`{role,content}` entry (OpenAI Responses API `function_call` /
+ * `function_call_output` items) into `{role:"user", content:""}` — losing the
+ * tool-call payload entirely.
+ *
+ * Reconstruction uses:
+ *   - `initialMessages`   (from MODEL_GENERATION input — prompt + history)
+ *   - `steps[].assistant` (from each prior MODEL_STEP's output — tool requests)
+ *   - `toolOutputs`       (from TOOL_CALL span outputs — tool results)
+ *
+ * Steps/toolOutputs earlier than this step's index are interleaved in order:
+ *   initial… → assistant(step0) → tool(step0 results) → assistant(step1) → …
+ */
+const reconstructModelStepInput = (
+  span: MastraExportedSpan,
+  traceState: TraceState,
+): unknown[] | null => {
+  const mgId = traceState.modelGenerationAncestor.get(span.id);
+  if (!mgId) return null;
+  const mgState = traceState.modelGenerations.get(mgId);
+  if (!mgState) return null;
+  const thisStepIndex = mgState.nextStepIndex; // not yet recorded — this is its slot
+  const initial = mgState.initialMessages ?? [];
+  const normalizedInitial = Array.isArray(initial)
+    ? (normalizeAiSdkV5Messages(initial) ?? initial)
+    : [];
+  // First step: just the initial messages. No tool history to weave in.
+  if (thisStepIndex === 0) {
+    return normalizedInitial.length > 0 ? normalizedInitial : null;
+  }
+  const out: unknown[] = [...normalizedInitial];
+  for (let i = 0; i < thisStepIndex; i++) {
+    const step = mgState.steps.find((s) => s.stepIndex === i);
+    if (step) out.push(step.assistant);
+    const toolsForStep = mgState.toolOutputs.filter((t) => t.stepIndex === i);
+    for (const t of toolsForStep) out.push(t.message);
+  }
+  return out;
+};
+
+const extractInitialMessages = (input: unknown): unknown[] | null => {
+  if (!input) return null;
+  if (Array.isArray(input)) return input;
+  if (typeof input !== "object") return null;
+  const maybeMessages = (input as { messages?: unknown }).messages;
+  return Array.isArray(maybeMessages) ? maybeMessages : null;
+};
+
+/**
+ * Convert a MODEL_STEP's `output` (AI SDK shape — `{text, toolCalls, object, …}`)
+ * into an OpenAI-compatible assistant turn.
+ *
+ * Returns `null` if the output doesn't look like a model generation result —
+ * then the step is treated as having no reconstructed assistant turn.
+ */
+const modelStepOutputToAssistantTurn = (
+  output: unknown,
+): OpenAIAssistantTurn | null => {
+  if (!output || typeof output !== "object" || Array.isArray(output))
+    return null;
+  const obj = output as {
+    text?: unknown;
+    toolCalls?: unknown;
+    object?: unknown;
+  };
+  const turn: OpenAIAssistantTurn = { role: "assistant", content: null };
+  if (typeof obj.text === "string" && obj.text.length > 0) {
+    turn.content = obj.text;
+  } else if (obj.object !== undefined) {
+    turn.content =
+      typeof obj.object === "string" ? obj.object : JSON.stringify(obj.object);
+  }
+  const toolCalls = Array.isArray(obj.toolCalls)
+    ? obj.toolCalls
+        .map(aiSdkV5ToolCallToOpenAI)
+        .filter(
+          (c): c is NonNullable<ReturnType<typeof aiSdkV5ToolCallToOpenAI>> =>
+            c !== null,
+        )
+    : [];
+  if (toolCalls.length > 0) turn.tool_calls = toolCalls;
+  // Only emit an assistant turn if there's something to show.
+  if (turn.content === null && !turn.tool_calls) return null;
+  return turn;
+};
+
+const stringifyToolResult = (output: unknown): string => {
+  if (output === undefined || output === null) return "";
+  if (typeof output === "string") return output;
+  if (typeof output === "object" && !Array.isArray(output)) {
+    const o = output as { type?: unknown; value?: unknown; text?: unknown };
+    if (o.type === "text" && typeof o.value === "string") return o.value;
+    if (typeof o.text === "string") return o.text;
+  }
+  return serializeForLaminar(output);
+};
+
 const getLaminarSpanOutput = (span: MastraExportedSpan): unknown => {
   if (span.type !== MastraSpanType.MODEL_GENERATION) return span.output;
   const output = span.output;
-  if (!output || typeof output !== "object" || Array.isArray(output)) return output;
+  if (!output || typeof output !== "object" || Array.isArray(output))
+    return output;
   const obj = output as {
     text?: unknown;
     toolCalls?: unknown;
@@ -568,7 +882,8 @@ const aiSdkV5MessageToOpenAI = (msg: unknown): unknown => {
     // as an array — `{type:'text', text}` and `{type:'image', image}` parts are
     // already close to OpenAI's shape.
     const allText = m.content.every(
-      (p) => p && typeof p === "object" && (p as { type?: unknown }).type === "text",
+      (p) =>
+        p && typeof p === "object" && (p as { type?: unknown }).type === "text",
     );
     if (allText) {
       const text = m.content
@@ -585,7 +900,11 @@ const aiSdkV5MessageToOpenAI = (msg: unknown): unknown => {
 
 const aiSdkV5ToolCallToOpenAI = (
   part: unknown,
-): { id: string; type: "function"; function: { name: string; arguments: string } } | null => {
+): {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+} | null => {
   if (!part || typeof part !== "object") return null;
   const p = part as {
     toolCallId?: unknown;
@@ -598,7 +917,11 @@ const aiSdkV5ToolCallToOpenAI = (
   const name = typeof p.toolName === "string" ? p.toolName : "";
   const rawArgs = p.input !== undefined ? p.input : p.args;
   const args =
-    typeof rawArgs === "string" ? rawArgs : rawArgs === undefined ? "" : JSON.stringify(rawArgs);
+    typeof rawArgs === "string"
+      ? rawArgs
+      : rawArgs === undefined
+        ? ""
+        : JSON.stringify(rawArgs);
   return {
     id,
     type: "function",
@@ -615,7 +938,9 @@ const aiSdkV5ToolOutputToString = (output: unknown): string => {
     const o = output as { type?: unknown; value?: unknown };
     if (o.type === "text" && typeof o.value === "string") return o.value;
     if (o.value !== undefined) {
-      return typeof o.value === "string" ? o.value : serializeForLaminar(o.value);
+      return typeof o.value === "string"
+        ? o.value
+        : serializeForLaminar(o.value);
     }
   }
   return serializeForLaminar(output);
@@ -736,4 +1061,5 @@ const normalizeSpanId = (spanId: string): string =>
   toHex(spanId).padStart(16, "0").slice(-16);
 
 const normalizeProvider = (provider: string): string =>
-  provider.split(".").shift()?.toLowerCase().trim() || provider.toLowerCase().trim();
+  provider.split(".").shift()?.toLowerCase().trim() ||
+  provider.toLowerCase().trim();

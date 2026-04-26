@@ -18,6 +18,7 @@
 - MODEL_GENERATION output from Mastra is `{text, toolCalls, object, reasoning, …}`, not a chat message. For Laminar rendering, wrap it as a single `{role:'assistant', content, tool_calls}` array (`getLaminarSpanOutput`).
 - MODEL_GENERATION and MODEL_STEP both map to Laminar `LLM` span type; MODEL_CHUNK is excluded at the Mastra config layer via `excludeSpanTypes: ["model_chunk"]`.
 - `@mastra/observability`'s `normalizeMessages` coerces OpenAI Responses API `body.input` items (`function_call` / `function_call_output` — no `role`/`content`) into `{role:'user', content:''}` artifacts. `cleanMastraNormalizedMessages` strips those before Laminar sees them.
+- MODEL_STEP input arrives already destroyed by the normalizer above — the original `function_call`/`function_call_output` payloads are gone. The exporter **reconstructs** step N's input from sibling span state in the same trace: `MODEL_GENERATION.input.messages` (initial) + each prior `MODEL_STEP.output.toolCalls` (assistant turns) + their child `TOOL_CALL` outputs (tool results). Correlation: `TOOL_CALL` spans in Mastra's Responses flow carry NO `toolCallId` — they sit under their requesting `MODEL_STEP` and must be paired by ordinal position with the parent step's `output.toolCalls[i].toolCallId`. Ordering invariant (end events): for each step, child `TOOL_CALL`s end first, then the `MODEL_STEP` ends, so tool outputs are collected in `toolOutputsByStep[stepId]` on TOOL_CALL end and paired with `output.toolCalls[]` on MODEL_STEP end.
 
 ## Local verification gotchas
 
