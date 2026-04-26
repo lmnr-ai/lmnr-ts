@@ -643,52 +643,54 @@ export class MastraExporter {
     if (!this.processor) return;
 
     const traceState = this.getOrCreateTraceState(span.traceId);
-    // Backfill path info when SPAN_STARTED was missed (e.g. exporter registered
-    // mid-trace or a re-entrant span_ended without a matching span_started).
-    if (!traceState.spanPathById.has(span.id)) {
-      const parentId = span.parentSpanId;
-      const parentPath = parentId
-        ? traceState.spanPathById.get(parentId)
-        : traceState.otelParentSpanPath;
-      const parentIdsPath = parentId
-        ? traceState.spanIdsPathById.get(parentId)
-        : traceState.otelParentSpanIdsPath;
-      const spanPath = parentPath ? [...parentPath, span.name] : [span.name];
-      const spanIdsPath = parentIdsPath
-        ? [...parentIdsPath, otelSpanIdToUUID(span.id)]
-        : [otelSpanIdToUUID(span.id)];
-      traceState.spanPathById.set(span.id, spanPath);
-      traceState.spanIdsPathById.set(span.id, spanIdsPath);
-    }
-
-    if (span.type === "model_generation") {
-      const existing = this.generationStateById.get(span.id);
-      if (!existing) {
-        this.initGenerationState(span);
-      } else if (existing.baseMessages.length === 0) {
-        // span_started may have carried an empty/incomplete input; refresh
-        // baseMessages from span_ended's (usually richer) input so LLM
-        // children don't render with a truncated prompt history.
-        const rawMessages = extractMessages(span.input);
-        if (rawMessages) {
-          const refreshed = normalizeInputMessages(rawMessages);
-          if (refreshed.length > 0) existing.baseMessages = refreshed;
-        }
-      }
-    }
-    if (
-      span.type === "model_step" &&
-      !this.generationIdByStepId.has(span.id) &&
-      span.parentSpanId
-    ) {
-      this.generationIdByStepId.set(span.id, span.parentSpanId);
-    }
-
-    // Record state transitions BEFORE converting, since the conversion reads
-    // the accumulated history.
-    this.updateGenerationStateOnSpanEnd(span);
 
     try {
+      // Backfill path info when SPAN_STARTED was missed (e.g. exporter
+      // registered mid-trace or a re-entrant span_ended without a matching
+      // span_started). Inside the try so a throw here still runs cleanup.
+      if (!traceState.spanPathById.has(span.id)) {
+        const parentId = span.parentSpanId;
+        const parentPath = parentId
+          ? traceState.spanPathById.get(parentId)
+          : traceState.otelParentSpanPath;
+        const parentIdsPath = parentId
+          ? traceState.spanIdsPathById.get(parentId)
+          : traceState.otelParentSpanIdsPath;
+        const spanPath = parentPath ? [...parentPath, span.name] : [span.name];
+        const spanIdsPath = parentIdsPath
+          ? [...parentIdsPath, otelSpanIdToUUID(span.id)]
+          : [otelSpanIdToUUID(span.id)];
+        traceState.spanPathById.set(span.id, spanPath);
+        traceState.spanIdsPathById.set(span.id, spanIdsPath);
+      }
+
+      if (span.type === "model_generation") {
+        const existing = this.generationStateById.get(span.id);
+        if (!existing) {
+          this.initGenerationState(span);
+        } else if (existing.baseMessages.length === 0) {
+          // span_started may have carried an empty/incomplete input; refresh
+          // baseMessages from span_ended's (usually richer) input so LLM
+          // children don't render with a truncated prompt history.
+          const rawMessages = extractMessages(span.input);
+          if (rawMessages) {
+            const refreshed = normalizeInputMessages(rawMessages);
+            if (refreshed.length > 0) existing.baseMessages = refreshed;
+          }
+        }
+      }
+      if (
+        span.type === "model_step" &&
+        !this.generationIdByStepId.has(span.id) &&
+        span.parentSpanId
+      ) {
+        this.generationIdByStepId.set(span.id, span.parentSpanId);
+      }
+
+      // Record state transitions BEFORE converting, since the conversion reads
+      // the accumulated history.
+      this.updateGenerationStateOnSpanEnd(span);
+
       const readable = this.convertSpanToOtel(span, traceState);
       this.processor.onEnd(readable);
       if (this.config.realtime) {
