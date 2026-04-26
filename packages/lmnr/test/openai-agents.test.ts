@@ -523,6 +523,66 @@ void describe("LaminarAgentsTraceProcessor", () => {
     const spans = exporter.getFinishedSpans();
     assert.ok(spans.length >= 2);
   });
+
+  void it("concurrent traces keep their spans isolated", async () => {
+    const processor = new LaminarAgentsTraceProcessor();
+    processor.start();
+
+    const traceA = fakeTrace({ traceId: "trace_A", name: "trace-A" });
+    const traceB = fakeTrace({ traceId: "trace_B", name: "trace-B" });
+
+    // Start both traces up-front so their root spans live on the shared
+    // global stack at the same time.
+    await processor.onTraceStart(traceA);
+    await processor.onTraceStart(traceB);
+
+    const childA = fakeSpan({
+      traceId: "trace_A",
+      spanId: "span_A_child",
+      name: null,
+      spanData: { type: "function", name: "tool_A", input: "a", output: "a" },
+    });
+    const childB = fakeSpan({
+      traceId: "trace_B",
+      spanId: "span_B_child",
+      name: null,
+      spanData: { type: "function", name: "tool_B", input: "b", output: "b" },
+    });
+
+    // Interleave starts from trace A and trace B — if child spans used the
+    // process-global context, childB could end up under traceA's root.
+    await processor.onSpanStart(childA);
+    await processor.onSpanStart(childB);
+    await processor.onSpanEnd(childA);
+    await processor.onSpanEnd(childB);
+
+    await processor.onTraceEnd(traceA);
+    await processor.onTraceEnd(traceB);
+    await Laminar.flush();
+
+    const spans = exporter.getFinishedSpans();
+    const toolA = spans.find((s) => s.name === "tool_A");
+    const toolB = spans.find((s) => s.name === "tool_B");
+    const rootA = spans.find((s) => s.name === "trace-A");
+    const rootB = spans.find((s) => s.name === "trace-B");
+
+    assert.ok(toolA && toolB && rootA && rootB);
+    assert.strictEqual(
+      toolA.spanContext().traceId,
+      rootA.spanContext().traceId,
+      "tool_A should live in trace A",
+    );
+    assert.strictEqual(
+      toolB.spanContext().traceId,
+      rootB.spanContext().traceId,
+      "tool_B should live in trace B",
+    );
+    assert.notStrictEqual(
+      rootA.spanContext().traceId,
+      rootB.spanContext().traceId,
+      "traces A and B should have distinct OTel trace ids",
+    );
+  });
 });
 
 void describe("openai-agents end-to-end via nock", () => {

@@ -5,13 +5,12 @@ import type {
   TracingProcessor,
 } from "@openai/agents";
 import {
-  type Context as OtelContext,
+  ROOT_CONTEXT,
   type Span as OtelSpan,
 } from "@opentelemetry/api";
 
 import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
-import { LaminarContextManager } from "../../tracing/context";
 import { LaminarSpan } from "../../tracing/span";
 import {
   DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY,
@@ -124,24 +123,50 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
         }
       }
 
+      // Resolve the parent Laminar span explicitly via the agents SDK's
+      // parentId (or falling back to the trace's root span). Relying on
+      // LaminarContextManager.getContext() would consult a process-global
+      // stack, which is unsafe when multiple agent runs execute concurrently.
+      if (parentSpanContext === undefined) {
+        const parentId = span.parentId;
+        const parentEntry = parentId != null
+          ? state.spans.get(parentId)
+          : undefined;
+        const parentLmnrSpan = parentEntry !== undefined
+          ? parentEntry.lmnrSpan
+          : state.rootSpan;
+        if (parentLmnrSpan !== undefined) {
+          try {
+            const ctx = (parentLmnrSpan as LaminarSpan)
+              .getLaminarSpanContext?.();
+            if (ctx) {
+              parentSpanContext = JSON.stringify(ctx);
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+
       const spanType = mapSpanType(spanData);
       const name = spanName(span, spanData);
 
       // Mark the context so any future OpenAI Responses API instrumentation
       // (on the TS side) knows to skip — the agents run already records a
-      // matching span for this underlying HTTP call. We start from the Laminar
-      // context (which falls back to the globally-active trace root when the
-      // current async task has no parent) rather than `otelContext.active()`,
-      // so cross-async parent chaining works.
-      const ctx: OtelContext = LaminarContextManager.getContext()
-        .setValue(DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY, true);
+      // matching span for this underlying HTTP call. Start from ROOT_CONTEXT
+      // (not getContext()) so the per-trace parent we resolved above — rather
+      // than whatever happens to be globally active on the shared stack —
+      // determines hierarchy. This keeps concurrent traces isolated.
+      const ctx = ROOT_CONTEXT.setValue(
+        DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY,
+        true,
+      );
 
       lmnrSpan = Laminar.startActiveSpan({
         name,
         spanType,
         parentSpanContext,
         context: ctx,
-        global: true,
       });
 
       const key = span.spanId;
@@ -299,12 +324,12 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
     }
 
     // Generic name; onTraceStart will update it to the actual trace name.
-    // Mark the root as globally active so all child spans — which may be
-    // created from unrelated async tasks in the @openai/agents runtime —
-    // inherit it as their parent.
+    // Start from ROOT_CONTEXT so the root span of a concurrently-running
+    // agent trace cannot become a child of another trace's currently-active
+    // span on the shared async context.
     const rootSpan = Laminar.startActiveSpan({
       name: "agents.trace",
-      global: true,
+      context: ROOT_CONTEXT,
     });
     const state: TraceState = {
       rootSpan,
