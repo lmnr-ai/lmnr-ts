@@ -3,6 +3,7 @@ import {
   SpanContext,
   SpanKind,
   SpanStatusCode,
+  trace,
   TraceFlags,
 } from "@opentelemetry/api";
 import { OTLPTraceExporter as ExporterHttp } from "@opentelemetry/exporter-trace-otlp-proto";
@@ -104,12 +105,30 @@ export interface MastraExporterOptions {
   batchSize?: number;
   /** Trace export timeout (ms). */
   timeoutMillis?: number;
+  /**
+   * When true (default), reparent Mastra traces under the caller's active
+   * OpenTelemetry span if one exists. This lets `observe()`-wrapped code that
+   * calls a Mastra agent produce a single unified trace instead of two
+   * disconnected ones (user's OTel trace + Mastra's own trace).
+   *
+   * Mastra does not propagate OTel context into its event bus, so without
+   * this we'd emit under Mastra's self-assigned trace id with no parent.
+   * Set to false to preserve Mastra's original trace id even when nested
+   * inside `observe()`.
+   */
+  linkToActiveContext?: boolean;
 }
 
 interface TraceState {
   spanPathById: Map<string, string[]>;
   spanIdsPathById: Map<string, string[]>;
   activeSpanIds: Set<string>;
+  // When the first event for this Mastra trace arrived inside an active OTel
+  // span (e.g. a user's `observe()` wrapper), we rewrite outgoing spans onto
+  // that OTel trace so the whole thing renders as a single trace. Stored
+  // once, at first-event time, and reused for every span in the trace.
+  otelTraceId?: string;
+  otelRootParentSpanId?: string;
 }
 
 interface ToolCallChild {
@@ -427,6 +446,7 @@ export class MastraExporter {
     disableBatch: boolean;
     batchSize: number;
     timeoutMillis: number;
+    linkToActiveContext: boolean;
   } | null;
 
   private processor?: SpanProcessor;
@@ -475,6 +495,7 @@ export class MastraExporter {
       disableBatch: options.disableBatch ?? false,
       batchSize: options.batchSize ?? 512,
       timeoutMillis: options.timeoutMillis ?? 30000,
+      linkToActiveContext: options.linkToActiveContext ?? true,
     };
   }
 
@@ -777,6 +798,20 @@ export class MastraExporter {
       spanIdsPathById: new Map(),
       activeSpanIds: new Set(),
     };
+    // Capture the caller's active OTel span synchronously, at the moment the
+    // first event for this Mastra trace arrives — Mastra invokes exporter
+    // handlers within the originating async context (see
+    // `@mastra/observability` routeToHandler), so the user's `observe()`
+    // span is still active here. Any later reads would be outside that
+    // context (Mastra's event bus schedules handlers).
+    if (this.config?.linkToActiveContext) {
+      const activeSpan = trace.getActiveSpan();
+      const ctx = activeSpan?.spanContext();
+      if (ctx && ctx.traceId && ctx.spanId) {
+        created.otelTraceId = normalizeTraceId(ctx.traceId);
+        created.otelRootParentSpanId = normalizeSpanId(ctx.spanId);
+      }
+    }
     this.traceMap.set(traceId, created);
     return created;
   }
@@ -801,9 +836,9 @@ export class MastraExporter {
     this.processor = this.config.disableBatch
       ? new SimpleSpanProcessor(this.otlpExporter)
       : new BatchSpanProcessor(this.otlpExporter, {
-          maxExportBatchSize: this.config.batchSize,
-          exportTimeoutMillis: this.config.timeoutMillis,
-        });
+        maxExportBatchSize: this.config.batchSize,
+        exportTimeoutMillis: this.config.timeoutMillis,
+      });
     this.isSetup = true;
   }
 
@@ -811,7 +846,11 @@ export class MastraExporter {
     span: MastraExportedSpan,
     traceState: TraceState,
   ): ReadableSpan {
-    const traceId = normalizeTraceId(span.traceId);
+    // Prefer the OTel trace id captured at first-event time so Mastra spans
+    // nest under the user's active `observe()` span instead of landing in
+    // their own disconnected trace. Falls back to Mastra's own trace id when
+    // there was no active OTel context or linking is disabled.
+    const traceId = traceState.otelTraceId ?? normalizeTraceId(span.traceId);
     const spanId = normalizeSpanId(span.id);
     const startTime = dateToHrTime(span.startTime);
     const endTime = span.endTime ? dateToHrTime(span.endTime) : startTime;
@@ -823,13 +862,20 @@ export class MastraExporter {
       traceFlags: TraceFlags.SAMPLED,
       isRemote: false,
     };
-    const parentSpanContext: SpanContext | undefined = span.parentSpanId
+    // Reparent: Mastra-root spans (no parentSpanId) adopt the captured OTel
+    // parent; everything else keeps its Mastra parent id verbatim, which is
+    // still valid under the rewritten traceId since every descendant points
+    // at a Mastra span id that we also rewrite onto the same OTel trace.
+    const parentSpanIdNormalized = span.parentSpanId
+      ? normalizeSpanId(span.parentSpanId)
+      : traceState.otelRootParentSpanId;
+    const parentSpanContext: SpanContext | undefined = parentSpanIdNormalized
       ? {
-          traceId,
-          spanId: normalizeSpanId(span.parentSpanId),
-          traceFlags: TraceFlags.SAMPLED,
-          isRemote: false,
-        }
+        traceId,
+        spanId: parentSpanIdNormalized,
+        traceFlags: TraceFlags.SAMPLED,
+        isRemote: false,
+      }
       : undefined;
 
     const attributes = this.buildLaminarAttributes(span, traceState);
