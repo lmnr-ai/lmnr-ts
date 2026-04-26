@@ -403,7 +403,7 @@ const extractToolCallId = (span: MastraExportedSpan): string | undefined => {
 // so both the TOOL span's `ai.toolCall.name` and the tool-result message's
 // `toolName` agree on the raw tool id.
 const cleanMastraToolName = (name: string | undefined): string | undefined =>
-  name?.replace(/^tool:\s*'?|'?$/g, "");
+  name?.replace(/^tool:\s*'?(.*?)'?$/, "$1");
 
 const formatUsage = (usage?: MastraUsageStats): Record<string, number> => {
   if (!usage) return {};
