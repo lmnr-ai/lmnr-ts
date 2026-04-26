@@ -525,9 +525,17 @@ export class MastraExporter {
     if (span.isEvent) return;
 
     // Always remember generation attributes so children can resolve them
-    // regardless of event ordering.
+    // regardless of event ordering. Merge (not overwrite) so a span_updated
+    // event carrying only a delta (e.g. just `usage`) can't clobber keys
+    // set earlier at span_started (e.g. `provider`, `model`). MODEL_STEP
+    // children end before MODEL_GENERATION's span_ended restores the full
+    // set, so applyLlmAttributes would otherwise read a partial snapshot.
     if (span.type === "model_generation" && span.attributes) {
-      this.generationAttrsById.set(span.id, span.attributes);
+      const existing = this.generationAttrsById.get(span.id);
+      this.generationAttrsById.set(
+        span.id,
+        existing ? { ...existing, ...span.attributes } : span.attributes,
+      );
     }
 
     if (event.type === "span_started") {
