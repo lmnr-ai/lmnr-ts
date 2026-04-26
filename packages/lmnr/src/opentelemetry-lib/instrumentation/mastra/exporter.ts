@@ -723,8 +723,8 @@ export class MastraExporter {
       // Pair the declared `toolCalls` with tool_call children. Prefer id-based
       // pairing when children carry a toolCallId (parallel tool execution can
       // finish out of declaration order, so array-index pairing would
-      // mis-attribute outputs). Fall back to arrival-order pairing when ids
-      // aren't available on the child spans.
+      // mis-attribute outputs). Fall back to arrival-order pairing among
+      // unclaimed children when ids aren't available on the child spans.
       const output = span.output as Record<string, unknown> | undefined;
       const declaredToolCalls = Array.isArray(output?.toolCalls)
         ? (output.toolCalls as Array<Record<string, unknown>>)
@@ -734,19 +734,27 @@ export class MastraExporter {
       for (const c of children) {
         if (c.toolCallId) childrenById.set(c.toolCallId, c);
       }
+      // Track already-paired children so the arrival-order fallback can't
+      // re-pick a child that was already claimed by an id-based match.
+      const consumed = new Set<ToolCallChild>();
 
       const turnMessages: AISdkMessage[] = [];
       const assistantMsg = buildAssistantMessageFromStepOutput(output);
       if (assistantMsg) turnMessages.push(assistantMsg);
 
-      for (let i = 0; i < declaredToolCalls.length; i++) {
-        const dec = declaredToolCalls[i];
+      for (const dec of declaredToolCalls) {
         const toolCallId =
           (dec?.toolCallId as string | undefined) ??
           (dec?.id as string | undefined);
         if (!toolCallId) continue;
-        const child = childrenById.get(toolCallId) ?? children[i];
+        let child = childrenById.get(toolCallId);
+        if (child && consumed.has(child)) child = undefined;
+        if (!child) {
+          // Fallback: first unconsumed child in arrival order.
+          child = children.find((c) => !consumed.has(c));
+        }
         if (!child) continue;
+        consumed.add(child);
         const toolName =
           (dec?.toolName as string | undefined) ??
           (dec?.name as string | undefined) ??
