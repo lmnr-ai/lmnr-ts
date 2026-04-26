@@ -285,10 +285,10 @@ const normalizeContent = (content: unknown): string | AISdkContentPart[] => {
 const normalizeInputMessages = (raw: unknown[]): AISdkMessage[] => {
   const out: AISdkMessage[] = [];
   for (const m of raw) {
-    if (m == null) {
-      out.push({ role: "user", content: "" });
-      continue;
-    }
+    // Drop null/undefined items — same rationale as the empty-user-message
+    // filter below (no signal, and they'd otherwise leak through as empty
+    // user messages in `ai.prompt.messages`).
+    if (m == null) continue;
     if (typeof m === "string") {
       out.push({ role: "user", content: m });
       continue;
