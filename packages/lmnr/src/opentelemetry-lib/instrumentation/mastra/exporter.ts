@@ -497,13 +497,19 @@ export class MastraExporter {
     if (!this.config) return;
 
     const span = event.exportedSpan;
+    // Point-in-time event spans have no start/end pair and don't map cleanly
+    // onto our span-tree model — drop them regardless of phase. The guard must
+    // cover span_ended too: otherwise an isEvent span arriving on that phase
+    // slips through to handleSpanEnded and gets exported as a real span.
+    if (span.isEvent) return;
+
     // Always remember generation attributes so children can resolve them
     // regardless of event ordering.
     if (span.type === "model_generation" && span.attributes) {
       this.generationAttrsById.set(span.id, span.attributes);
     }
 
-    if (event.type === "span_started" && !span.isEvent) {
+    if (event.type === "span_started") {
       this.handleSpanStarted(span);
       return;
     }
