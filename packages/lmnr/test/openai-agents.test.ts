@@ -30,10 +30,10 @@ import {
 import {
   LaminarAgentsTraceProcessor,
 } from "../src/opentelemetry-lib/instrumentation/openai-agents/processor";
-import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
 import {
   applySpanData,
 } from "../src/opentelemetry-lib/instrumentation/openai-agents/span-data";
+import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
 import { decompressRecordingResponse } from "./utils";
 
 const captureAttrs = () => {

@@ -4,10 +4,7 @@ import type {
   Trace,
   TracingProcessor,
 } from "@openai/agents";
-import {
-  ROOT_CONTEXT,
-  type Span as OtelSpan,
-} from "@opentelemetry/api";
+import { ROOT_CONTEXT, type Span as OtelSpan } from "@opentelemetry/api";
 
 import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
@@ -129,16 +126,15 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
       // stack, which is unsafe when multiple agent runs execute concurrently.
       if (parentSpanContext === undefined) {
         const parentId = span.parentId;
-        const parentEntry = parentId != null
-          ? state.spans.get(parentId)
-          : undefined;
-        const parentLmnrSpan = parentEntry !== undefined
-          ? parentEntry.lmnrSpan
-          : state.rootSpan;
+        const parentEntry =
+          parentId != null ? state.spans.get(parentId) : undefined;
+        const parentLmnrSpan =
+          parentEntry !== undefined ? parentEntry.lmnrSpan : state.rootSpan;
         if (parentLmnrSpan !== undefined) {
           try {
-            const ctx = (parentLmnrSpan as LaminarSpan)
-              .getLaminarSpanContext?.();
+            const ctx = (
+              parentLmnrSpan as LaminarSpan
+            ).getLaminarSpanContext?.();
             if (ctx) {
               parentSpanContext = JSON.stringify(ctx);
             }
@@ -236,17 +232,19 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
           const toAgent = nameFromSpanData((spanData as any)?.to_agent);
           if (toAgent) {
             const parentId = span.parentId;
-            const parentEntry = parentId != null
-              ? state.spans.get(parentId)
-              : undefined;
-            const parentLmnrSpan = parentEntry !== undefined
-              ? parentEntry.lmnrSpan
-              : state.rootSpan;
+            const parentEntry =
+              parentId != null ? state.spans.get(parentId) : undefined;
+            const parentLmnrSpan =
+              parentEntry !== undefined ? parentEntry.lmnrSpan : state.rootSpan;
             if (parentLmnrSpan !== undefined) {
-              const handoffCtx = (parentLmnrSpan as LaminarSpan)
-                .getLaminarSpanContext?.();
+              const handoffCtx = (
+                parentLmnrSpan as LaminarSpan
+              ).getLaminarSpanContext?.();
               if (handoffCtx) {
-                state.pendingHandoffCtxs.set(toAgent, JSON.stringify(handoffCtx));
+                state.pendingHandoffCtxs.set(
+                  toAgent,
+                  JSON.stringify(handoffCtx),
+                );
               }
             }
           }
