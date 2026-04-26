@@ -7,6 +7,7 @@ import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import {
   Laminar,
   LaminarAttributes,
+  type LaminarSpanContext,
   observe,
   TracingLevel,
   withTracingLevel,
@@ -14,6 +15,7 @@ import {
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 import { clearSpanProcessor } from "../src/opentelemetry-lib/tracing";
 import { getParentSpanId } from "../src/opentelemetry-lib/tracing/compat";
+import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
 import { otelSpanIdToUUID } from "../src/utils";
 
 void describe("tracing", () => {
@@ -234,6 +236,37 @@ void describe("tracing", () => {
 
     assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
     assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+  });
+
+  void it("does not leak ALS context entries when parentSpanContext is used", () => {
+    // Regression: _startSpan previously called pushContext on the
+    // parent-span wrapper context in addition to the activated-span push, but
+    // LaminarSpan.end() only ever calls popContext once. Repeated start/end
+    // pairs that reference a still-live parent via parentSpanContext (as the
+    // agents TracingProcessor does for each child span) therefore grew the
+    // ALS context stack unboundedly — the wrapper context looks "valid" to
+    // popContext's filter because the parent's spanId is still in
+    // _activeSpans, so the leaked entry is never cleaned up. We assert the
+    // stack returns to its baseline depth across many child spans.
+    const parent = Laminar.startActiveSpan({ name: "parent" });
+    const baselineStackDepth = LaminarContextManager.getContextStack().length;
+    const parentCtx = (parent as unknown as {
+      getLaminarSpanContext(): LaminarSpanContext;
+    }).getLaminarSpanContext();
+
+    for (let i = 0; i < 5; i++) {
+      const child = Laminar.startActiveSpan({
+        name: `child-${i}`,
+        parentSpanContext: parentCtx,
+      });
+      child.end();
+    }
+
+    assert.strictEqual(
+      LaminarContextManager.getContextStack().length,
+      baselineStackDepth,
+    );
+    parent.end();
   });
 
   void it("sets the session id in observe", () => {

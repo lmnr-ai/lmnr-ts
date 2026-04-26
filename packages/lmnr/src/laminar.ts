@@ -693,7 +693,6 @@ export class Laminar {
 
         const spanContext = tryToOtelSpanContext(laminarContext);
         entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
-        LaminarContextManager.pushContext(entityContext);
       } catch (e) {
         logger.warn("Failed to parse parent span context: " +
           (e instanceof Error ? e.message : String(e)),
