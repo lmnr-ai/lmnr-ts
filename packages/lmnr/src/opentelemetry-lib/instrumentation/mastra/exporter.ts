@@ -500,6 +500,9 @@ export class MastraExporter {
     try {
       await this.processor?.shutdown();
     } finally {
+      this.processor = undefined;
+      this.otlpExporter = undefined;
+      this.isSetup = false;
       this.traceMap.clear();
       this.generationStateById.clear();
       this.generationAttrsById.clear();
