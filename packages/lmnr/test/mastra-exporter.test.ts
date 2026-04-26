@@ -12,6 +12,10 @@ import {
 import { observe } from "../src";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 import { MastraExporter } from "../src/opentelemetry-lib/instrumentation/mastra/exporter";
+import {
+  SPAN_IDS_PATH,
+  SPAN_PATH,
+} from "../src/opentelemetry-lib/tracing/attributes";
 import { getParentSpanId } from "../src/opentelemetry-lib/tracing/compat";
 
 // Minimal Mastra span shape — matches the narrow interface inside exporter.ts.
@@ -223,6 +227,137 @@ void describe("MastraExporter — OTel context linking", () => {
     );
     assert.strictEqual(getParentSpanId(spans[0]), undefined);
   });
+
+  void it(
+    "prepends the outer observe() span path/ids_path to Mastra spans",
+    async () => {
+      const { mastra, inMemory } = makeTestExporter();
+
+      let outerSpanPath: string[] | undefined;
+      let outerIdsPath: string[] | undefined;
+
+      await observe({ name: "outer" }, async () => {
+        const active = trace.getActiveSpan() as unknown as {
+          attributes?: Record<string, unknown>;
+        };
+        outerSpanPath = active.attributes?.[SPAN_PATH] as string[] | undefined;
+        outerIdsPath = active.attributes?.[SPAN_IDS_PATH] as
+          | string[]
+          | undefined;
+
+        await mastra.exportTracingEvent({
+          type: "span_started",
+          exportedSpan: makeMastraSpan({
+            id: "aaaaaaaaaaaaaaa1",
+            traceId: "dddddddddddddddddddddddddddddddd",
+            parentSpanId: undefined,
+            name: "agent run",
+            type: "agent_run",
+          }),
+        });
+        await mastra.exportTracingEvent({
+          type: "span_started",
+          exportedSpan: makeMastraSpan({
+            id: "aaaaaaaaaaaaaaa2",
+            traceId: "dddddddddddddddddddddddddddddddd",
+            parentSpanId: "aaaaaaaaaaaaaaa1",
+            name: "llm: 'gpt-4o'",
+            type: "model_generation",
+          }),
+        });
+        await mastra.exportTracingEvent({
+          type: "span_ended",
+          exportedSpan: makeMastraSpan({
+            id: "aaaaaaaaaaaaaaa2",
+            traceId: "dddddddddddddddddddddddddddddddd",
+            parentSpanId: "aaaaaaaaaaaaaaa1",
+            name: "llm: 'gpt-4o'",
+            type: "model_generation",
+          }),
+        });
+        await mastra.exportTracingEvent({
+          type: "span_ended",
+          exportedSpan: makeMastraSpan({
+            id: "aaaaaaaaaaaaaaa1",
+            traceId: "dddddddddddddddddddddddddddddddd",
+            parentSpanId: undefined,
+            name: "agent run",
+            type: "agent_run",
+          }),
+        });
+      });
+
+      assert.ok(outerSpanPath, "outer span must expose SPAN_PATH attribute");
+      assert.ok(outerIdsPath, "outer span must expose SPAN_IDS_PATH attribute");
+
+      const spans = inMemory.getFinishedSpans();
+      assert.strictEqual(spans.length, 2);
+
+      const root = spans.find((s) => s.name === "agent run")!;
+      const child = spans.find((s) => s.name === "llm: 'gpt-4o'")!;
+
+      const rootPath = root.attributes[SPAN_PATH] as string[];
+      const rootIds = root.attributes[SPAN_IDS_PATH] as string[];
+      const childPath = child.attributes[SPAN_PATH] as string[];
+      const childIds = child.attributes[SPAN_IDS_PATH] as string[];
+
+      // Root Mastra span's path/ids_path start with the outer span's.
+      assert.deepStrictEqual(rootPath.slice(0, outerSpanPath.length), outerSpanPath);
+      assert.deepStrictEqual(rootIds.slice(0, outerIdsPath.length), outerIdsPath);
+      assert.strictEqual(rootPath[rootPath.length - 1], "agent run");
+
+      // Descendants inherit the prepended prefix automatically.
+      assert.deepStrictEqual(
+        childPath.slice(0, outerSpanPath.length),
+        outerSpanPath,
+      );
+      assert.deepStrictEqual(
+        childIds.slice(0, outerIdsPath.length),
+        outerIdsPath,
+      );
+      assert.strictEqual(childPath[childPath.length - 1], "llm: 'gpt-4o'");
+      // The child's full path must equal outer prefix + root + itself.
+      assert.strictEqual(childPath.length, outerSpanPath.length + 2);
+      assert.strictEqual(childIds.length, outerIdsPath.length + 2);
+    },
+  );
+
+  void it(
+    "does not prepend outer path when linkToActiveContext is false",
+    async () => {
+      const { mastra, inMemory } = makeTestExporter({ linkToActiveContext: false });
+
+      await observe({ name: "outer" }, async () => {
+        await mastra.exportTracingEvent({
+          type: "span_started",
+          exportedSpan: makeMastraSpan({
+            id: "bbbbbbbbbbbbbbb1",
+            traceId: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            parentSpanId: undefined,
+            name: "agent run",
+            type: "agent_run",
+          }),
+        });
+        await mastra.exportTracingEvent({
+          type: "span_ended",
+          exportedSpan: makeMastraSpan({
+            id: "bbbbbbbbbbbbbbb1",
+            traceId: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            parentSpanId: undefined,
+            name: "agent run",
+            type: "agent_run",
+          }),
+        });
+      });
+
+      const spans = inMemory.getFinishedSpans();
+      assert.strictEqual(spans.length, 1);
+      const path = spans[0].attributes[SPAN_PATH] as string[];
+      const ids = spans[0].attributes[SPAN_IDS_PATH] as string[];
+      assert.deepStrictEqual(path, ["agent run"]);
+      assert.strictEqual(ids.length, 1);
+    },
+  );
 
   void it("keeps the original trace id when no observe() is active", async () => {
     const { mastra, inMemory } = makeTestExporter();

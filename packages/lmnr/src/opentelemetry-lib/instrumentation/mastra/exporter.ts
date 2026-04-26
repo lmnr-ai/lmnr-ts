@@ -129,6 +129,14 @@ interface TraceState {
   // once, at first-event time, and reused for every span in the trace.
   otelTraceId?: string;
   otelRootParentSpanId?: string;
+  // Outer span's SPAN_PATH / SPAN_IDS_PATH, captured from the active
+  // LaminarSpan's attributes at first-event time. Prepended to every Mastra
+  // span's path so Laminar's UI (which builds its hierarchy from
+  // `lmnr.span.ids_path`, NOT OTel parent-span relationships) renders the
+  // Mastra subtree nested under the outer `observe()` span rather than as a
+  // sibling on the same trace.
+  otelParentSpanPath?: string[];
+  otelParentSpanIdsPath?: string[];
 }
 
 interface ToolCallChild {
@@ -582,12 +590,16 @@ export class MastraExporter {
     const traceState = this.getOrCreateTraceState(span.traceId);
     const parentId = span.parentSpanId;
 
+    // For Mastra roots (no Mastra parent) we seed from the captured outer
+    // observe() path so Laminar's UI nests the subtree underneath. For
+    // Mastra descendants we use the parent Mastra span's stored path, which
+    // already has the outer path prepended.
     const parentPath = parentId
       ? traceState.spanPathById.get(parentId)
-      : undefined;
+      : traceState.otelParentSpanPath;
     const parentIdsPath = parentId
       ? traceState.spanIdsPathById.get(parentId)
-      : undefined;
+      : traceState.otelParentSpanIdsPath;
 
     const spanPath = parentPath ? [...parentPath, span.name] : [span.name];
     const spanIdsPath = parentIdsPath
@@ -637,10 +649,10 @@ export class MastraExporter {
       const parentId = span.parentSpanId;
       const parentPath = parentId
         ? traceState.spanPathById.get(parentId)
-        : undefined;
+        : traceState.otelParentSpanPath;
       const parentIdsPath = parentId
         ? traceState.spanIdsPathById.get(parentId)
-        : undefined;
+        : traceState.otelParentSpanIdsPath;
       const spanPath = parentPath ? [...parentPath, span.name] : [span.name];
       const spanIdsPath = parentIdsPath
         ? [...parentIdsPath, otelSpanIdToUUID(span.id)]
@@ -826,6 +838,25 @@ export class MastraExporter {
       if (ctx && ctx.traceId && ctx.spanId) {
         created.otelTraceId = normalizeTraceId(ctx.traceId);
         created.otelRootParentSpanId = normalizeSpanId(ctx.spanId);
+        // Also capture SPAN_PATH / SPAN_IDS_PATH so we can prepend them to
+        // every Mastra span's path. Laminar's backend/UI threads the span
+        // tree on `lmnr.span.ids_path` — sharing the traceId alone isn't
+        // enough to make the Mastra subtree render under `observe()`.
+        const attrs = (activeSpan as unknown as { attributes?: Record<string, unknown> })
+          .attributes;
+        if (attrs) {
+          const parentPath = attrs[SPAN_PATH];
+          if (Array.isArray(parentPath) && parentPath.every((p) => typeof p === "string")) {
+            created.otelParentSpanPath = parentPath;
+          }
+          const parentIdsPath = attrs[SPAN_IDS_PATH];
+          if (
+            Array.isArray(parentIdsPath) &&
+            parentIdsPath.every((p) => typeof p === "string")
+          ) {
+            created.otelParentSpanIdsPath = parentIdsPath;
+          }
+        }
       }
     }
     this.traceMap.set(traceId, created);
