@@ -668,6 +668,12 @@ export class MastraExporter {
           : [otelSpanIdToUUID(span.id)];
         traceState.spanPathById.set(span.id, spanPath);
         traceState.spanIdsPathById.set(span.id, spanIdsPath);
+        // Mirror handleSpanStarted: register the span as active so the
+        // finally block's `activeSpanIds.delete` is balanced. Without this,
+        // `activeSpanIds.size === 0` could already be true on entry and the
+        // trace state (including captured OTel context and accumulated
+        // path info for later children) would be dropped prematurely.
+        traceState.activeSpanIds.add(span.id);
       }
 
       if (span.type === "model_generation") {
