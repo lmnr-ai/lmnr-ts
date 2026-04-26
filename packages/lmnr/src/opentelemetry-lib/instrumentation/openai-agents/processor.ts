@@ -162,7 +162,13 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
         true,
       );
 
-      lmnrSpan = Laminar.startActiveSpan({
+      // Use startSpan (not startActiveSpan) so we don't push onto the ALS
+      // context stack. We resolve parents explicitly via parentSpanContext,
+      // so ALS activation adds nothing — and pushing would corrupt the stack
+      // for unrelated instrumentation sharing the same async frame: spans
+      // can end out of LIFO order, and popContext blindly drops the last
+      // entry, which may belong to a different still-active span.
+      lmnrSpan = Laminar.startSpan({
         name,
         spanType,
         parentSpanContext,
@@ -326,8 +332,10 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
     // Generic name; onTraceStart will update it to the actual trace name.
     // Start from ROOT_CONTEXT so the root span of a concurrently-running
     // agent trace cannot become a child of another trace's currently-active
-    // span on the shared async context.
-    const rootSpan = Laminar.startActiveSpan({
+    // span on the shared async context. Use startSpan (not startActiveSpan)
+    // so the processor never touches the ALS context stack — see the child
+    // span call-site for the rationale.
+    const rootSpan = Laminar.startSpan({
       name: "agents.trace",
       context: ROOT_CONTEXT,
     });

@@ -30,6 +30,7 @@ import {
 import {
   LaminarAgentsTraceProcessor,
 } from "../src/opentelemetry-lib/instrumentation/openai-agents/processor";
+import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
 import {
   applySpanData,
 } from "../src/opentelemetry-lib/instrumentation/openai-agents/span-data";
@@ -581,6 +582,48 @@ void describe("LaminarAgentsTraceProcessor", () => {
       rootA.spanContext().traceId,
       rootB.spanContext().traceId,
       "traces A and B should have distinct OTel trace ids",
+    );
+  });
+
+  void it("does not push onto the ALS context stack", async () => {
+    // Regression: the processor resolves parents explicitly via
+    // parentSpanContext, so it must not activate spans onto the shared ALS
+    // context stack. If it did, spans ending out of LIFO order would cause
+    // popContext to remove entries belonging to unrelated, still-active
+    // spans — corrupting the stack for non-agents instrumentation sharing
+    // the same async frame.
+    const processor = new LaminarAgentsTraceProcessor();
+    processor.start();
+
+    const baselineStack = LaminarContextManager.getContextStack().length;
+
+    const fakeTraceObj = fakeTrace({ traceId: "trace_noals", name: "t" });
+    await processor.onTraceStart(fakeTraceObj);
+    assert.strictEqual(
+      LaminarContextManager.getContextStack().length,
+      baselineStack,
+      "onTraceStart must not push onto ALS stack",
+    );
+
+    const childSpan = fakeSpan({
+      traceId: "trace_noals",
+      spanId: "span_noals_child",
+      name: null,
+      spanData: { type: "function", name: "tool", input: "x", output: "x" },
+    });
+    await processor.onSpanStart(childSpan);
+    assert.strictEqual(
+      LaminarContextManager.getContextStack().length,
+      baselineStack,
+      "onSpanStart must not push onto ALS stack",
+    );
+
+    await processor.onSpanEnd(childSpan);
+    await processor.onTraceEnd(fakeTraceObj);
+    assert.strictEqual(
+      LaminarContextManager.getContextStack().length,
+      baselineStack,
+      "processor must leave ALS stack unchanged after ending trace",
     );
   });
 });
