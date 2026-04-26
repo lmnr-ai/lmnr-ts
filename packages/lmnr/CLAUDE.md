@@ -8,6 +8,10 @@ This is the main `@lmnr-ai/lmnr` SDK package — OpenTelemetry-based tracing for
 # TypeScript / Build
 - `tsc --noEmit` runs with `module: NodeNext` from the repo root `tsconfig.json`. `import.meta.url` in test files triggers TS1470 — use `__dirname` instead (tsx handles both ESM and CJS). Dynamic `await import("../src/...")` of local TS files triggers TS2834 ("needs explicit file extensions") — prefer static imports at the top of the test file for local modules.
 
+# Context / startActiveSpan
+- `Laminar.startActiveSpan` activates the span on `LaminarContextManager`'s AsyncLocalStorage stack. Sibling / unrelated async tasks (i.e. callbacks that run outside the returned promise's chain — `setImmediate`, separate timers, independent processor callbacks, etc.) do NOT inherit the activated span — they live in a different ALS frame. For spans that must parent across detached async callbacks, pass `global: true`: the span is pushed onto a process-global stack that `getContext()` falls back to when the ALS stack is empty. The span is popped from that stack automatically in `LaminarSpan.end()`. Use sparingly — it is roughly analogous to Python's `context.attach(...)` / `start_as_current_span` global activation.
+- If you pass `context: ...` into `startSpan` / `startActiveSpan` it replaces the usual `LaminarContextManager.getContext()` base — so if you need the global fallback, build your context on top of `LaminarContextManager.getContext()` rather than on `otelContext.active()`.
+
 # OpenTelemetry Instrumentations
 - Instrumentations live under `src/opentelemetry-lib/instrumentation/<name>/` and are registered in `src/opentelemetry-lib/tracing/instrumentations.ts` (both auto-registration path and the `manuallyInitInstrumentations` path — keep the two in sync).
 - For manual instrumentation, expose an option key on `InitializeOptions.instrumentModules` and wire it through `manuallyInitInstrumentations`.

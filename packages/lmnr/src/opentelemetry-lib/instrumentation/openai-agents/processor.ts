@@ -6,12 +6,12 @@ import type {
 } from "@openai/agents";
 import {
   type Context as OtelContext,
-  context as otelContext,
   type Span as OtelSpan,
 } from "@opentelemetry/api";
 
 import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
+import { LaminarContextManager } from "../../tracing/context";
 import { LaminarSpan } from "../../tracing/span";
 import {
   DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY,
@@ -129,9 +129,11 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
 
       // Mark the context so any future OpenAI Responses API instrumentation
       // (on the TS side) knows to skip — the agents run already records a
-      // matching span for this underlying HTTP call.
-      const ctx: OtelContext = otelContext
-        .active()
+      // matching span for this underlying HTTP call. We start from the Laminar
+      // context (which falls back to the globally-active trace root when the
+      // current async task has no parent) rather than `otelContext.active()`,
+      // so cross-async parent chaining works.
+      const ctx: OtelContext = LaminarContextManager.getContext()
         .setValue(DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY, true);
 
       lmnrSpan = Laminar.startActiveSpan({
@@ -139,6 +141,7 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
         spanType,
         parentSpanContext,
         context: ctx,
+        global: true,
       });
 
       const key = span.spanId;
@@ -296,8 +299,12 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
     }
 
     // Generic name; onTraceStart will update it to the actual trace name.
+    // Mark the root as globally active so all child spans — which may be
+    // created from unrelated async tasks in the @openai/agents runtime —
+    // inherit it as their parent.
     const rootSpan = Laminar.startActiveSpan({
       name: "agents.trace",
+      global: true,
     });
     const state: TraceState = {
       rootSpan,

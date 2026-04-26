@@ -599,6 +599,7 @@ export class Laminar {
     sessionId,
     metadata,
     startTime,
+    global,
   }: {
     name: string,
     input?: any,
@@ -610,6 +611,17 @@ export class Laminar {
     sessionId?: string,
     metadata?: Record<string, any>,
     startTime?: TimeInput,
+    /**
+     * When true, the span is registered on a process-global context stack so
+     * that any subsequent `startSpan` / `startActiveSpan` call (including from
+     * unrelated async tasks) uses it as the parent. Use this for spans that
+     * span multiple disconnected async callbacks — e.g. the root span of an
+     * OpenAI Agents trace, where child spans are created from independent
+     * `TracingProcessor` callbacks that do not share an async context.
+     * Defaults to false; the span still activates within the current async
+     * context as usual.
+     */
+    global?: boolean,
   }): Span {
     return this._startSpan({
       name,
@@ -623,6 +635,7 @@ export class Laminar {
       metadata,
       activated: true,
       startTime,
+      global,
     });
   }
 
@@ -638,6 +651,7 @@ export class Laminar {
     metadata,
     activated,
     startTime,
+    global,
   }: {
     name: string,
     input?: any,
@@ -650,6 +664,7 @@ export class Laminar {
     metadata?: Record<string, any>,
     activated?: boolean,
     startTime?: TimeInput,
+    global?: boolean,
   }): Span {
     let entityContext = context ?? LaminarContextManager.getContext();
 
@@ -744,6 +759,10 @@ export class Laminar {
       );
       entityContext = trace.setSpan(entityContext, span);
       LaminarContextManager.pushContext(entityContext);
+      if (global) {
+        LaminarContextManager.pushGlobalContext(entityContext);
+        span.setGlobalActiveContext(entityContext);
+      }
     }
     return span;
   }

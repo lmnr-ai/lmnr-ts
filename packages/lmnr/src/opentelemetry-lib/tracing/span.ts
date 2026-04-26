@@ -3,6 +3,7 @@ import { LaminarSpanContext, TraceType, TracingLevel } from "@lmnr-ai/types";
 import {
   Attributes,
   AttributeValue,
+  type Context,
   Exception,
   HrTime,
   Link,
@@ -45,6 +46,11 @@ export class LaminarSpan implements Span, ReadableSpan {
   private _span: SdkSpan;
   // Whether the span is started by Laminar.startActiveSpan()
   private _activated: boolean;
+  // When set, the span was pushed onto the process-global context stack via
+  // `Laminar.startActiveSpan({ global: true })`. We remember the exact Context
+  // reference so `end()` can pop the matching entry, even if spans end out of
+  // order.
+  private _globalActiveContext?: Context;
 
   constructor(span: Span, activated?: boolean) {
     if (span instanceof LaminarSpan) {
@@ -153,7 +159,15 @@ export class LaminarSpan implements Span, ReadableSpan {
     if (this._activated) {
       LaminarContextManager.popContext();
     }
+    if (this._globalActiveContext !== undefined) {
+      LaminarContextManager.popGlobalContext(this._globalActiveContext);
+      this._globalActiveContext = undefined;
+    }
     return this._span.end(endTime);
+  }
+
+  public setGlobalActiveContext(context: Context): void {
+    this._globalActiveContext = context;
   }
 
   public set activated(activated: boolean) {

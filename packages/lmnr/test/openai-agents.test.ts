@@ -619,5 +619,26 @@ void describe("openai-agents end-to-end via nock", () => {
         { type: "input_text", text: "You are a helpful assistant." },
       ],
     });
+
+    // Every non-root span produced by the agents run should be parented under
+    // some other span in the same trace — i.e. the tree should have exactly
+    // one root. This catches regressions where spans from unrelated async
+    // callbacks end up flattened at the trace root.
+    const traceId = responseSpan.spanContext().traceId;
+    const sameTrace = spans.filter((s) => s.spanContext().traceId === traceId);
+    const getParent = (s: typeof spans[number]): string | undefined => {
+      const anyS = s as any;
+      return (anyS.parentSpanId ?? anyS.parentSpanContext?.spanId) as
+        | string
+        | undefined;
+    };
+    const roots = sameTrace.filter((s) => !getParent(s));
+    assert.strictEqual(
+      roots.length,
+      1,
+      `expected a single root span in trace, got ${roots.length}: ` +
+        sameTrace.map((s) => `${s.name}(parent=${getParent(s) ?? "none"})`)
+          .join(", "),
+    );
   });
 });
