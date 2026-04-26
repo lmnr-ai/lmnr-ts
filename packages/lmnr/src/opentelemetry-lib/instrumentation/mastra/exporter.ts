@@ -113,6 +113,11 @@ interface TraceState {
 }
 
 interface ToolCallChild {
+  // Tool-call identifier extracted from the tool_call span (attributes/input)
+  // when available. Used to pair results with the step's declared toolCalls
+  // by id — necessary when tools execute in parallel and finish out of
+  // declaration order. Falls back to arrival-order pairing when absent.
+  toolCallId?: string;
   toolName: string;
   input: unknown;
   output: unknown;
@@ -346,6 +351,21 @@ const buildAssistantMessageFromStepOutput = (
   }
   if (parts.length === 0) return null;
   return { role: "assistant", content: parts };
+};
+
+// Pull the tool-call id from a tool_call span. Mastra typically surfaces it
+// via `attributes.toolCallId`, but some builds attach it to the input payload
+// instead — check both so we can pair by id regardless.
+const extractToolCallId = (span: MastraExportedSpan): string | undefined => {
+  const attrs = span.attributes;
+  if (attrs && typeof attrs.toolCallId === "string") return attrs.toolCallId;
+  const input = span.input;
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    const asObj = input as Record<string, unknown>;
+    if (typeof asObj.toolCallId === "string") return asObj.toolCallId;
+    if (typeof asObj.id === "string") return asObj.id;
+  }
+  return undefined;
 };
 
 const formatUsage = (usage?: MastraUsageStats): Record<string, number> => {
@@ -669,12 +689,20 @@ export class MastraExporter {
           : 0);
       this.stepIndexBySpanId.set(span.id, stepIndex);
 
-      // Pair the declared `toolCalls` with tool_call children by arrival order.
+      // Pair the declared `toolCalls` with tool_call children. Prefer id-based
+      // pairing when children carry a toolCallId (parallel tool execution can
+      // finish out of declaration order, so array-index pairing would
+      // mis-attribute outputs). Fall back to arrival-order pairing when ids
+      // aren't available on the child spans.
       const output = span.output as Record<string, unknown> | undefined;
       const declaredToolCalls = Array.isArray(output?.toolCalls)
         ? (output.toolCalls as Array<Record<string, unknown>>)
         : [];
       const children = gen.toolCallChildrenByStepIndex.get(stepIndex) ?? [];
+      const childrenById = new Map<string, ToolCallChild>();
+      for (const c of children) {
+        if (c.toolCallId) childrenById.set(c.toolCallId, c);
+      }
 
       const turnMessages: AISdkMessage[] = [];
       const assistantMsg = buildAssistantMessageFromStepOutput(output);
@@ -682,12 +710,12 @@ export class MastraExporter {
 
       for (let i = 0; i < declaredToolCalls.length; i++) {
         const dec = declaredToolCalls[i];
-        const child = children[i];
-        if (!child) continue;
         const toolCallId =
           (dec?.toolCallId as string | undefined) ??
           (dec?.id as string | undefined);
         if (!toolCallId) continue;
+        const child = childrenById.get(toolCallId) ?? children[i];
+        if (!child) continue;
         const toolName =
           (dec?.toolName as string | undefined) ??
           (dec?.name as string | undefined) ??
@@ -722,6 +750,7 @@ export class MastraExporter {
       if (stepIndex === undefined) return;
       const list = gen.toolCallChildrenByStepIndex.get(stepIndex) ?? [];
       list.push({
+        toolCallId: extractToolCallId(span),
         toolName: span.name?.replace(/^tool:\s*'?|'?$/g, "") || "tool",
         input: span.input,
         output: span.output,
