@@ -590,11 +590,20 @@ export class MastraExporter {
       traceState.spanIdsPathById.set(span.id, spanIdsPath);
     }
 
-    if (
-      span.type === "model_generation" &&
-      !this.generationStateById.has(span.id)
-    ) {
-      this.initGenerationState(span);
+    if (span.type === "model_generation") {
+      const existing = this.generationStateById.get(span.id);
+      if (!existing) {
+        this.initGenerationState(span);
+      } else if (existing.baseMessages.length === 0) {
+        // span_started may have carried an empty/incomplete input; refresh
+        // baseMessages from span_ended's (usually richer) input so LLM
+        // children don't render with a truncated prompt history.
+        const rawMessages = extractMessages(span.input);
+        if (rawMessages) {
+          const refreshed = normalizeInputMessages(rawMessages);
+          if (refreshed.length > 0) existing.baseMessages = refreshed;
+        }
+      }
     }
     if (
       span.type === "model_step" &&
