@@ -466,6 +466,12 @@ export class MastraExporter {
   }
 
   async exportTracingEvent(event: MastraTracingEvent): Promise<void> {
+    // Fully short-circuit when the exporter is misconfigured (no API key).
+    // Without this guard, handleSpanStarted and generationAttrsById would
+    // accumulate state indefinitely while handleSpanEnded's early-return
+    // skips the cleanup block that reclaims it.
+    if (!this.config) return;
+
     const span = event.exportedSpan;
     // Always remember generation attributes so children can resolve them
     // regardless of event ordering.
