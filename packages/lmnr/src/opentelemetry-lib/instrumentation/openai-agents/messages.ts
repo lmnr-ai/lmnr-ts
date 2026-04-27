@@ -1,12 +1,12 @@
 import type { Span } from "@opentelemetry/api";
 
 import { initializeLogger } from "../../../utils";
-import { LaminarAttributes, SPAN_INPUT, SPAN_OUTPUT } from "../../tracing/attributes";
 import {
-  getFirstNotNull,
-  modelAsDict,
-  normalizeMessages,
-} from "./helpers";
+  LaminarAttributes,
+  SPAN_INPUT,
+  SPAN_OUTPUT,
+} from "../../tracing/attributes";
+import { getFirstNotNull, modelAsDict, normalizeMessages } from "./helpers";
 
 const logger = initializeLogger();
 
@@ -36,7 +36,9 @@ export const setGenAiInputMessages = (
   if (!hasInput && !systemInstructions) {
     return;
   }
-  const messages: Record<string, any>[] = hasInput ? normalizeMessages(inputData) : [];
+  const messages: Record<string, any>[] = hasInput
+    ? normalizeMessages(inputData)
+    : [];
   if (systemInstructions) {
     messages.unshift({
       role: "system",
@@ -48,7 +50,10 @@ export const setGenAiInputMessages = (
   }
 };
 
-export const setGenAiOutputMessages = (lmnrSpan: Span, outputData: any): void => {
+export const setGenAiOutputMessages = (
+  lmnrSpan: Span,
+  outputData: any,
+): void => {
   if (outputData === undefined || outputData === null) {
     return;
   }
@@ -93,7 +98,10 @@ export const setGenAiOutputMessagesFromResponse = (
 // Tool definitions
 // ---------------------------------------------------------------------------
 
-export const setToolDefinitionsFromResponse = (lmnrSpan: Span, response: any): void => {
+export const setToolDefinitionsFromResponse = (
+  lmnrSpan: Span,
+  response: any,
+): void => {
   const tools = response?.tools;
   if (!tools || !Array.isArray(tools)) {
     return;
@@ -140,7 +148,10 @@ export const setToolDefinitionsFromResponse = (lmnrSpan: Span, response: any): v
 // LLM attributes (model, usage, response_id)
 // ---------------------------------------------------------------------------
 
-export const applyLlmAttributes = (lmnrSpan: Span, data: Record<string, any>): void => {
+export const applyLlmAttributes = (
+  lmnrSpan: Span,
+  data: Record<string, any>,
+): void => {
   if (!data) {
     return;
   }
@@ -171,7 +182,12 @@ const applyUsage = (lmnrSpan: Span, usage: any): void => {
     return;
   }
 
-  const inputTokens = getFirstNotNull(usage, "input_tokens", "prompt_tokens", "input");
+  const inputTokens = getFirstNotNull(
+    usage,
+    "input_tokens",
+    "prompt_tokens",
+    "input",
+  );
   const outputTokens = getFirstNotNull(
     usage,
     "output_tokens",
@@ -193,30 +209,52 @@ const applyUsage = (lmnrSpan: Span, usage: any): void => {
   let cachedInputTokens: number | undefined;
   let reasoningOutputTokens: number | undefined;
 
-  if (inputTokensDetails?.cached_tokens !== undefined && inputTokensDetails?.cached_tokens !== null) {
+  if (
+    inputTokensDetails?.cached_tokens !== undefined &&
+    inputTokensDetails?.cached_tokens !== null
+  ) {
     cachedInputTokens = Number(inputTokensDetails.cached_tokens);
   }
-  if (outputTokensDetails?.reasoning_tokens !== undefined &&
-    outputTokensDetails?.reasoning_tokens !== null) {
+  if (
+    outputTokensDetails?.reasoning_tokens !== undefined &&
+    outputTokensDetails?.reasoning_tokens !== null
+  ) {
     reasoningOutputTokens = Number(outputTokensDetails.reasoning_tokens);
   }
   if (inputTokens !== undefined && inputTokens !== null) {
-    lmnrSpan.setAttribute(LaminarAttributes.INPUT_TOKEN_COUNT, Number(inputTokens));
+    lmnrSpan.setAttribute(
+      LaminarAttributes.INPUT_TOKEN_COUNT,
+      Number(inputTokens),
+    );
   }
   if (cachedInputTokens !== undefined) {
-    lmnrSpan.setAttribute("gen_ai.usage.cache_read_input_tokens", cachedInputTokens);
+    lmnrSpan.setAttribute(
+      "gen_ai.usage.cache_read_input_tokens",
+      cachedInputTokens,
+    );
   }
   if (outputTokens !== undefined && outputTokens !== null) {
-    lmnrSpan.setAttribute(LaminarAttributes.OUTPUT_TOKEN_COUNT, Number(outputTokens));
+    lmnrSpan.setAttribute(
+      LaminarAttributes.OUTPUT_TOKEN_COUNT,
+      Number(outputTokens),
+    );
   }
   if (reasoningOutputTokens !== undefined) {
-    lmnrSpan.setAttribute("gen_ai.usage.reasoning_output_tokens", reasoningOutputTokens);
+    lmnrSpan.setAttribute(
+      "gen_ai.usage.reasoning_output_tokens",
+      reasoningOutputTokens,
+    );
   }
   if (totalTokens !== undefined && totalTokens !== null) {
-    lmnrSpan.setAttribute(LaminarAttributes.TOTAL_TOKEN_COUNT, Number(totalTokens));
+    lmnrSpan.setAttribute(
+      LaminarAttributes.TOTAL_TOKEN_COUNT,
+      Number(totalTokens),
+    );
   } else if (
-    inputTokens !== undefined && inputTokens !== null &&
-    outputTokens !== undefined && outputTokens !== null
+    inputTokens !== undefined &&
+    inputTokens !== null &&
+    outputTokens !== undefined &&
+    outputTokens !== null
   ) {
     lmnrSpan.setAttribute(
       LaminarAttributes.TOTAL_TOKEN_COUNT,
