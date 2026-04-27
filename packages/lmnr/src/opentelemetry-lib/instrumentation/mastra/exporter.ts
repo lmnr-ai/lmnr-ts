@@ -478,14 +478,6 @@ export class MastraExporter {
   // Remember step index per step span so tool_call children can look up which
   // step they belong to (fan-in by arrival order).
   private readonly stepIndexBySpanId: Map<string, number> = new Map();
-  // Pending `handleSpanEnded` promises. Mastra's ObservabilityBus invokes
-  // `exportTracingEvent` as fire-and-forget (it tracks the promise on its own
-  // bus), so when a caller awaits `this.shutdown()` directly — bypassing
-  // `observability.shutdown()` — in-flight `span_ended` handlers for the
-  // last root span may still be running. Without draining them first, the
-  // BatchSpanProcessor gets shut down before `onEnd()` is called and the
-  // span is silently dropped. Self-cleaning via `.finally()`.
-  private readonly pendingEvents: Set<Promise<void>> = new Set();
 
   constructor(options: MastraExporterOptions = {}) {
     const apiKey = options.apiKey ?? process.env.LMNR_PROJECT_API_KEY;
@@ -533,62 +525,6 @@ export class MastraExporter {
   }
 
   async exportTracingEvent(event: MastraTracingEvent): Promise<void> {
-    const promise = this.doExportTracingEvent(event);
-    this.pendingEvents.add(promise);
-    promise.finally(() => this.pendingEvents.delete(promise)).catch(() => {
-      // swallow — doExportTracingEvent already logs its own errors.
-    });
-    await promise;
-  }
-
-  async onTracingEvent(event: MastraTracingEvent): Promise<void> {
-    await this.exportTracingEvent(event);
-  }
-
-  async flush(): Promise<void> {
-    await this.drainPendingEvents();
-    if (!this.processor) return;
-    try {
-      await this.processor.forceFlush();
-    } catch (err) {
-      logger.error(
-        `[MastraExporter] forceFlush failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
-
-  async shutdown(): Promise<void> {
-    try {
-      // Must drain BEFORE shutting down the processor: Mastra's
-      // ObservabilityBus invokes `exportTracingEvent` as fire-and-forget, so
-      // a bare `await exporter.shutdown()` (bypassing
-      // `observability.shutdown()` which calls our flush()) can race past an
-      // in-flight `handleSpanEnded` for the last root span.
-      await this.drainPendingEvents();
-      await this.processor?.shutdown();
-    } finally {
-      this.processor = undefined;
-      this.otlpExporter = undefined;
-      this.isSetup = false;
-      this.traceMap.clear();
-      this.generationStateById.clear();
-      this.generationAttrsById.clear();
-      this.generationIdByStepId.clear();
-      this.stepIndexBySpanId.clear();
-    }
-  }
-
-  private async drainPendingEvents(): Promise<void> {
-    // Loop in case handlers enqueue more work (we don't today, but it's
-    // cheap insurance and matches Mastra's own flush loop shape).
-    let iterations = 0;
-    while (this.pendingEvents.size > 0 && iterations < 16) {
-      await Promise.allSettled([...this.pendingEvents]);
-      iterations++;
-    }
-  }
-
-  private async doExportTracingEvent(event: MastraTracingEvent): Promise<void> {
     // Fully short-circuit when the exporter is misconfigured (no API key).
     // Without this guard, handleSpanStarted and generationAttrsById would
     // accumulate state indefinitely while handleSpanEnded's early-return
@@ -622,6 +558,36 @@ export class MastraExporter {
     }
     if (event.type !== "span_ended") return;
     await this.handleSpanEnded(span);
+  }
+
+  async onTracingEvent(event: MastraTracingEvent): Promise<void> {
+    await this.exportTracingEvent(event);
+  }
+
+  async flush(): Promise<void> {
+    if (!this.processor) return;
+    try {
+      await this.processor.forceFlush();
+    } catch (err) {
+      logger.error(
+        `[MastraExporter] forceFlush failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  async shutdown(): Promise<void> {
+    try {
+      await this.processor?.shutdown();
+    } finally {
+      this.processor = undefined;
+      this.otlpExporter = undefined;
+      this.isSetup = false;
+      this.traceMap.clear();
+      this.generationStateById.clear();
+      this.generationAttrsById.clear();
+      this.generationIdByStepId.clear();
+      this.stepIndexBySpanId.clear();
+    }
   }
 
   private handleSpanStarted(span: MastraExportedSpan): void {
