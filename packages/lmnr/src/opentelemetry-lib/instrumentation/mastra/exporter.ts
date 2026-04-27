@@ -238,9 +238,15 @@ export class MastraExporter {
     // set, so applyLlmAttributes would otherwise read a partial snapshot.
     if (span.type === "model_generation" && span.attributes) {
       const existing = this.generationAttrsById.get(span.id);
+      // Always spread into a fresh object (even on first insert): Mastra
+      // owns `span.attributes` and could reuse or mutate it between events,
+      // which would silently corrupt the stored snapshot children read at
+      // `applyLlmAttributes` time.
       this.generationAttrsById.set(
         span.id,
-        existing ? { ...existing, ...span.attributes } : span.attributes,
+        existing
+          ? { ...existing, ...span.attributes }
+          : { ...span.attributes },
       );
     }
 
