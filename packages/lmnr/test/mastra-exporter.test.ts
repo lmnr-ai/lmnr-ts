@@ -638,4 +638,158 @@ void describe("MastraExporter — OTel context linking", () => {
     assert.strictEqual(step.attributes["gen_ai.output.messages"], undefined);
     assert.strictEqual(step.attributes["ai.response.text"], "hi back");
   });
+
+  void it(
+    "emits gen_ai.usage.reasoning_tokens from usage.outputDetails.reasoning",
+    async () => {
+      const { mastra, inMemory } = makeTestExporter();
+      const traceId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+      await mastra.exportTracingEvent({
+        type: "span_started",
+        exportedSpan: makeMastraSpan({
+          id: "gen4gen4gen4gen4",
+          traceId,
+          parentSpanId: undefined,
+          name: "llm: 'o1'",
+          type: "model_generation",
+          attributes: { model: "o1", provider: "openai.chat" },
+        }),
+      });
+      await mastra.exportTracingEvent({
+        type: "span_started",
+        exportedSpan: makeMastraSpan({
+          id: "step4step4step400",
+          traceId,
+          parentSpanId: "gen4gen4gen4gen4",
+          name: "step 'llm call'",
+          type: "model_step",
+          attributes: { stepIndex: 0 },
+        }),
+      });
+      await mastra.exportTracingEvent({
+        type: "span_ended",
+        exportedSpan: makeMastraSpan({
+          id: "step4step4step400",
+          traceId,
+          parentSpanId: "gen4gen4gen4gen4",
+          name: "step 'llm call'",
+          type: "model_step",
+          attributes: {
+            stepIndex: 0,
+            usage: {
+              inputTokens: 100,
+              // Mastra contract: outputTokens already includes reasoning
+              outputTokens: 250,
+              outputDetails: { reasoning: 200 },
+              inputDetails: { cacheRead: 40, cacheWrite: 10 },
+            },
+          },
+          output: { text: "thought a lot" },
+        }),
+      });
+      await mastra.exportTracingEvent({
+        type: "span_ended",
+        exportedSpan: makeMastraSpan({
+          id: "gen4gen4gen4gen4",
+          traceId,
+          parentSpanId: undefined,
+          name: "llm: 'o1'",
+          type: "model_generation",
+          attributes: { model: "o1", provider: "openai.chat" },
+        }),
+      });
+
+      const spans = inMemory.getFinishedSpans();
+      const step = spans.find(
+        (s) => s.attributes["lmnr.span.type"] === "LLM",
+      );
+      assert.ok(step, "LLM step span not found");
+      assert.strictEqual(step.attributes["gen_ai.usage.input_tokens"], 100);
+      assert.strictEqual(step.attributes["gen_ai.usage.output_tokens"], 250);
+      assert.strictEqual(step.attributes["llm.usage.total_tokens"], 350);
+      assert.strictEqual(
+        step.attributes["gen_ai.usage.reasoning_tokens"],
+        200,
+        "reasoning tokens must be surfaced as a standalone metric",
+      );
+      assert.strictEqual(
+        step.attributes["gen_ai.usage.cache_read_input_tokens"],
+        40,
+      );
+      assert.strictEqual(
+        step.attributes["gen_ai.usage.cache_creation_input_tokens"],
+        10,
+      );
+    },
+  );
+
+  void it(
+    "omits gen_ai.usage.reasoning_tokens when usage has no outputDetails.reasoning",
+    async () => {
+      const { mastra, inMemory } = makeTestExporter();
+      const traceId = "cccccccccccccccccccccccccccccccc";
+
+      await mastra.exportTracingEvent({
+        type: "span_started",
+        exportedSpan: makeMastraSpan({
+          id: "gen5gen5gen5gen5",
+          traceId,
+          parentSpanId: undefined,
+          name: "llm: 'gpt-4o'",
+          type: "model_generation",
+          attributes: { model: "gpt-4o", provider: "openai.chat" },
+        }),
+      });
+      await mastra.exportTracingEvent({
+        type: "span_started",
+        exportedSpan: makeMastraSpan({
+          id: "step5step5step500",
+          traceId,
+          parentSpanId: "gen5gen5gen5gen5",
+          name: "step 'llm call'",
+          type: "model_step",
+          attributes: { stepIndex: 0 },
+        }),
+      });
+      await mastra.exportTracingEvent({
+        type: "span_ended",
+        exportedSpan: makeMastraSpan({
+          id: "step5step5step500",
+          traceId,
+          parentSpanId: "gen5gen5gen5gen5",
+          name: "step 'llm call'",
+          type: "model_step",
+          attributes: {
+            stepIndex: 0,
+            usage: { inputTokens: 50, outputTokens: 75 },
+          },
+          output: { text: "ok" },
+        }),
+      });
+      await mastra.exportTracingEvent({
+        type: "span_ended",
+        exportedSpan: makeMastraSpan({
+          id: "gen5gen5gen5gen5",
+          traceId,
+          parentSpanId: undefined,
+          name: "llm: 'gpt-4o'",
+          type: "model_generation",
+          attributes: { model: "gpt-4o", provider: "openai.chat" },
+        }),
+      });
+
+      const spans = inMemory.getFinishedSpans();
+      const step = spans.find(
+        (s) => s.attributes["lmnr.span.type"] === "LLM",
+      );
+      assert.ok(step);
+      assert.strictEqual(step.attributes["gen_ai.usage.input_tokens"], 50);
+      assert.strictEqual(step.attributes["gen_ai.usage.output_tokens"], 75);
+      assert.strictEqual(
+        step.attributes["gen_ai.usage.reasoning_tokens"],
+        undefined,
+      );
+    },
+  );
 });

@@ -54,6 +54,9 @@ interface MastraUsageStats {
     cacheRead?: number;
     cacheWrite?: number;
   };
+  outputDetails?: {
+    reasoning?: number;
+  };
 }
 
 interface MastraSpanErrorInfo {
@@ -443,6 +446,9 @@ const formatUsage = (usage?: MastraUsageStats): Record<string, number> => {
   }
   if (typeof usage.inputDetails?.cacheRead === "number") {
     out["gen_ai.usage.cache_read_input_tokens"] = usage.inputDetails.cacheRead;
+  }
+  if (typeof usage.outputDetails?.reasoning === "number") {
+    out["gen_ai.usage.reasoning_tokens"] = usage.outputDetails.reasoning;
   }
   return out;
 };
