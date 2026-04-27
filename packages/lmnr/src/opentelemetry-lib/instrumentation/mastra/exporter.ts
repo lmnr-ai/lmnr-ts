@@ -296,6 +296,9 @@ const normalizeContent = (content: unknown): string | AISdkContentPart[] => {
       if (type === "text") {
         const text = typeof obj.text === "string" ? obj.text : "";
         if (text.length > 0) parts.push({ type: "text", text });
+      } else if (type === "reasoning") {
+        const text = typeof obj.text === "string" ? obj.text : "";
+        if (text.length > 0) parts.push({ type: "reasoning", text });
       } else if (type === "tool-call" || type === "tool_call") {
         parts.push({
           type: "tool-call",
@@ -500,7 +503,7 @@ export class MastraExporter {
     if (!apiKey) {
       logger.warn(
         "[MastraExporter] LMNR_PROJECT_API_KEY is not set and no apiKey " +
-          "was passed — exporter will drop all spans.",
+        "was passed — exporter will drop all spans.",
       );
       this.config = null;
       return;
@@ -736,8 +739,7 @@ export class MastraExporter {
       }
     } catch (err) {
       logger.error(
-        `[MastraExporter] failed to export span ${span.id}: ${
-          err instanceof Error ? err.message : String(err)
+        `[MastraExporter] failed to export span ${span.id}: ${err instanceof Error ? err.message : String(err)
         }`,
       );
     } finally {
@@ -1189,15 +1191,15 @@ export class MastraExporter {
             toolCallId: tc.toolCallId ?? tc.id,
             toolName: tc.toolName ?? tc.name,
             args:
-                typeof tc.args === "string"
-                  ? tc.args
-                  : tc.args !== undefined
-                    ? JSON.stringify(tc.args)
-                    : tc.input !== undefined
-                      ? typeof tc.input === "string"
-                        ? tc.input
-                        : JSON.stringify(tc.input)
-                      : undefined,
+              typeof tc.args === "string"
+                ? tc.args
+                : tc.args !== undefined
+                  ? JSON.stringify(tc.args)
+                  : tc.input !== undefined
+                    ? typeof tc.input === "string"
+                      ? tc.input
+                      : JSON.stringify(tc.input)
+                    : undefined,
           }))
           : [];
       if (normalizedToolCalls.length > 0) {
