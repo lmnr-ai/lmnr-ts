@@ -55,20 +55,20 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
     // Nothing to do - we don't run an export loop.
   }
 
-  async onTraceStart(trace: Trace): Promise<void> {
+  async onTraceStart(agentsTrace: Trace): Promise<void> {
     if (this.disabled) {
       return;
     }
-    const traceId = trace.traceId;
+    const traceId = agentsTrace.traceId;
     if (!traceId) {
       return;
     }
     try {
-      const state = this.getOrCreateTrace(trace);
+      const state = this.getOrCreateTrace(agentsTrace);
 
       // Update root span name to the actual trace name (it defaults to
       // "agents.trace" at creation time; see getOrCreateTrace).
-      const traceName = trace.name;
+      const traceName = agentsTrace.name;
       if (traceName && state.rootSpan !== undefined) {
         try {
           state.rootSpan.updateName(traceName);
@@ -76,17 +76,17 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
           // ignore
         }
       }
-      this.applyTraceMetadata(state.rootSpan, trace);
+      this.applyTraceMetadata(state.rootSpan, agentsTrace);
     } catch (e) {
       logger.debug(`Error in onTraceStart: ${String(e)}`);
     }
   }
 
-  async onTraceEnd(trace: Trace): Promise<void> {
+  async onTraceEnd(agentsTrace: Trace): Promise<void> {
     if (this.disabled) {
       return;
     }
-    const traceId = trace.traceId;
+    const traceId = agentsTrace.traceId;
     if (!traceId) {
       return;
     }
@@ -386,22 +386,22 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
 
   private applyTraceMetadata(
     rootSpan: OtelSpan | undefined,
-    trace: Trace,
+    agentsTrace: Trace,
   ): void {
     if (rootSpan === undefined) {
       return;
     }
     const metadata: Record<string, any> = {};
-    const traceMetadata = trace.metadata;
+    const traceMetadata = agentsTrace.metadata;
     if (traceMetadata !== undefined && traceMetadata !== null) {
       Object.assign(metadata, traceMetadata);
     }
-    const groupId = trace.groupId;
+    const groupId = agentsTrace.groupId;
     if (groupId) {
       metadata["openai.agents.group_id"] = groupId;
     }
-    if (trace.name) {
-      metadata["openai.agents.trace_name"] = trace.name;
+    if (agentsTrace.name) {
+      metadata["openai.agents.trace_name"] = agentsTrace.name;
     }
     if (Object.keys(metadata).length > 0) {
       try {
