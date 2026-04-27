@@ -163,6 +163,18 @@ interface GenerationState {
   toolCallChildrenByStepIndex: Map<number, ToolCallChild[]>;
   // Lookup: tool_call span id → step index, set when the child span starts.
   toolCallSpanIdToStepIndex: Map<string, number>;
+  // Buffered MODEL_STEP spans, held back from emission until the parent
+  // MODEL_GENERATION ends — at that point the generation's
+  // `output.steps[i].reasoningText` becomes available and we can inject
+  // per-step reasoning into the step's assistant message. Mastra does NOT
+  // populate reasoning on `MODEL_STEP.output` / `attributes` directly; it
+  // only surfaces in the aggregated `MODEL_GENERATION.output.steps[]`
+  // assembled from its stream's `#bufferedSteps`.
+  pendingStepSpans: MastraExportedSpan[];
+  // Per-step reasoning text (thinking) pulled from
+  // `generation.output.steps[stepIndex].reasoningText` at generation-end
+  // time. Consumed when the buffered step spans are flushed.
+  reasoningTextByStepIndex: Map<number, string>;
 }
 
 interface AISdkContentPart {
@@ -382,6 +394,34 @@ const buildAssistantMessageFromStepOutput = (
   }
   if (parts.length === 0) return null;
   return { role: "assistant", content: parts };
+};
+
+// Prepend a reasoning content part (AI SDK format: `{type: "reasoning", text}`)
+// onto the assistant message's content — so a downstream step's
+// `ai.prompt.messages` shows the prior step's thinking. The part must come
+// before text/tool-calls to mirror the order Mastra's stream produced.
+const addReasoningToAssistantMessage = (
+  message: AISdkMessage | null,
+  reasoningText: string | undefined,
+): AISdkMessage | null => {
+  if (!reasoningText) return message;
+  if (!message) {
+    return {
+      role: "assistant",
+      content: [{ type: "reasoning", text: reasoningText }],
+    };
+  }
+  const parts: AISdkContentPart[] = [
+    { type: "reasoning", text: reasoningText },
+  ];
+  if (typeof message.content === "string") {
+    if (message.content.length > 0) {
+      parts.push({ type: "text", text: message.content });
+    }
+  } else {
+    parts.push(...message.content);
+  }
+  return { ...message, content: parts };
 };
 
 // Pull the tool-call id from a tool_call span. Mastra typically surfaces it
@@ -703,8 +743,34 @@ export class MastraExporter {
       // the accumulated history.
       this.updateGenerationStateOnSpanEnd(span);
 
+      // MODEL_STEP spans are held back until the parent MODEL_GENERATION ends
+      // so we can inject per-step reasoning text (only surfaced on
+      // `generation.output.steps[i].reasoningText`, never on the step span
+      // itself). The generation's span_ended branch below flushes them.
+      if (span.type === "model_step") {
+        const generationId = this.generationIdByStepId.get(span.id);
+        const gen = generationId
+          ? this.generationStateById.get(generationId)
+          : undefined;
+        if (gen) {
+          gen.pendingStepSpans.push(span);
+          return;
+        }
+        // No parent generation state (shouldn't normally happen) — fall
+        // through to the immediate-emit path so the span isn't lost.
+      }
+
+      if (span.type === "model_generation") {
+        this.captureReasoningTextByStep(span);
+      }
+
       const readable = this.convertSpanToOtel(span, traceState);
       this.processor.onEnd(readable);
+
+      if (span.type === "model_generation") {
+        this.flushPendingStepSpans(span, traceState);
+      }
+
       if (this.config.realtime) {
         await this.processor.forceFlush();
       }
@@ -720,14 +786,83 @@ export class MastraExporter {
         this.traceMap.delete(span.traceId);
       }
       if (span.type === "model_generation") {
+        // Clean up per-step maps for every step that belonged to this
+        // generation — step spans are buffered and flushed above, so their
+        // cleanup has to live here rather than in the step's own finally
+        // (which would run before the deferred flush reads them).
+        const gen = this.generationStateById.get(span.id);
+        if (gen) {
+          for (const stepSpan of gen.pendingStepSpans) {
+            this.generationIdByStepId.delete(stepSpan.id);
+            this.stepIndexBySpanId.delete(stepSpan.id);
+          }
+        }
         this.generationStateById.delete(span.id);
         this.generationAttrsById.delete(span.id);
       }
-      if (span.type === "model_step") {
-        this.generationIdByStepId.delete(span.id);
-        this.stepIndexBySpanId.delete(span.id);
+    }
+  }
+
+  // Pull `reasoningText` out of a MODEL_GENERATION's ended output and index it
+  // by stepIndex. Mastra assembles `output.steps[]` from its stream buffer, so
+  // each entry's position matches the step's declared stepIndex.
+  //
+  // Also patches turn messages retroactively so a later step's
+  // `ai.prompt.messages` shows the previous step's thinking. Turn messages
+  // were built at step-end time (before reasoning was known); it's safe to
+  // mutate them here because every step-span emission is deferred until
+  // after this method runs.
+  private captureReasoningTextByStep(span: MastraExportedSpan): void {
+    const gen = this.generationStateById.get(span.id);
+    if (!gen) return;
+    const out = span.output;
+    if (!out || typeof out !== "object") return;
+    const steps = (out as Record<string, unknown>).steps;
+    if (!Array.isArray(steps)) return;
+    steps.forEach((step, index) => {
+      if (!step || typeof step !== "object") return;
+      const reasoningText = (step as Record<string, unknown>).reasoningText;
+      if (typeof reasoningText !== "string" || reasoningText.length === 0) {
+        return;
+      }
+      gen.reasoningTextByStepIndex.set(index, reasoningText);
+
+      // Prepend reasoning to the cached assistant turn message so follow-up
+      // steps' rendered prompt shows it.
+      const turn = gen.turnsByStepIndex.get(index);
+      if (!turn || turn.length === 0) return;
+      const assistantIdx = turn.findIndex((m) => m.role === "assistant");
+      if (assistantIdx === -1) return;
+      const patched = addReasoningToAssistantMessage(
+        turn[assistantIdx],
+        reasoningText,
+      );
+      if (patched) turn[assistantIdx] = patched;
+    });
+  }
+
+  // Flush buffered MODEL_STEP spans after the parent MODEL_GENERATION has
+  // ended — at that point `reasoningTextByStepIndex` is populated and the
+  // step's assistant message can surface thinking content.
+  private flushPendingStepSpans(
+    generationSpan: MastraExportedSpan,
+    traceState: TraceState,
+  ): void {
+    const gen = this.generationStateById.get(generationSpan.id);
+    if (!gen || !this.processor) return;
+    for (const stepSpan of gen.pendingStepSpans) {
+      try {
+        const readable = this.convertSpanToOtel(stepSpan, traceState);
+        this.processor.onEnd(readable);
+      } catch (err) {
+        logger.error(
+          `[MastraExporter] failed to emit buffered step span ${stepSpan.id}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
       }
     }
+    gen.pendingStepSpans = [];
   }
 
   private initGenerationState(span: MastraExportedSpan): void {
@@ -738,6 +873,8 @@ export class MastraExporter {
       turnsByStepIndex: new Map(),
       toolCallChildrenByStepIndex: new Map(),
       toolCallSpanIdToStepIndex: new Map(),
+      pendingStepSpans: [],
+      reasoningTextByStepIndex: new Map(),
     });
   }
 
@@ -856,11 +993,15 @@ export class MastraExporter {
         // every Mastra span's path. Laminar's backend/UI threads the span
         // tree on `lmnr.span.ids_path` — sharing the traceId alone isn't
         // enough to make the Mastra subtree render under `observe()`.
-        const attrs = (activeSpan as unknown as { attributes?: Record<string, unknown> })
-          .attributes;
+        const attrs = (
+          activeSpan as unknown as { attributes?: Record<string, unknown> }
+        ).attributes;
         if (attrs) {
           const parentPath = attrs[SPAN_PATH];
-          if (Array.isArray(parentPath) && parentPath.every((p) => typeof p === "string")) {
+          if (
+            Array.isArray(parentPath) &&
+            parentPath.every((p) => typeof p === "string")
+          ) {
             created.otelParentSpanPath = parentPath;
           }
           const parentIdsPath = attrs[SPAN_IDS_PATH];
@@ -1103,16 +1244,23 @@ export class MastraExporter {
       attributes[SPAN_INPUT] = serializeJSON(span.input);
     }
 
+    const reasoningText = gen?.reasoningTextByStepIndex.get(stepIndex);
+
     const out = span.output;
     if (out && typeof out === "object") {
       const outObj = out as Record<string, unknown>;
-      if (typeof outObj.text === "string" && outObj.text.length > 0) {
-        attributes["ai.response.text"] = outObj.text;
-      }
-      if (Array.isArray(outObj.toolCalls) && outObj.toolCalls.length > 0) {
-        const normalized = (
-          outObj.toolCalls as Array<Record<string, unknown>>
-        ).map((tc) => ({
+      const text =
+        typeof outObj.text === "string" && outObj.text.length > 0
+          ? outObj.text
+          : undefined;
+      if (text) attributes["ai.response.text"] = text;
+
+      const toolCalls = Array.isArray(outObj.toolCalls)
+        ? (outObj.toolCalls as Array<Record<string, unknown>>)
+        : [];
+      let normalizedToolCalls: Array<Record<string, unknown>> | undefined;
+      if (toolCalls.length > 0) {
+        normalizedToolCalls = toolCalls.map((tc) => ({
           toolCallType: tc.toolCallType ?? "function",
           toolCallId: tc.toolCallId ?? tc.id,
           toolName: tc.toolName ?? tc.name,
@@ -1127,7 +1275,44 @@ export class MastraExporter {
                     : JSON.stringify(tc.input)
                   : undefined,
         }));
-        attributes["ai.response.toolCalls"] = JSON.stringify(normalized);
+        attributes["ai.response.toolCalls"] =
+          JSON.stringify(normalizedToolCalls);
+      }
+
+      // When the step has reasoning (thinking) content, emit the output in
+      // OTel GenAI semconv format on `gen_ai.output.messages`. Laminar's
+      // backend preserves that attribute as-is on `self.output`, and the
+      // frontend's GenAI parser (`lib/spans/types/gen-ai.ts`) converts
+      // `thinking` parts into `reasoning` ModelMessage parts — which the
+      // generic renderer surfaces with a distinct "Thinking" block. This
+      // attribute wins over `ai.response.text` / `ai.response.toolCalls` on
+      // the output, which is the desired behavior when reasoning exists.
+      if (reasoningText) {
+        const parts: Array<Record<string, unknown>> = [
+          { type: "thinking", content: reasoningText },
+        ];
+        if (text) parts.push({ type: "text", content: text });
+        if (normalizedToolCalls) {
+          for (const tc of normalizedToolCalls) {
+            let args: unknown = tc.args;
+            if (typeof args === "string") {
+              try {
+                args = JSON.parse(args);
+              } catch {
+                // Leave args as a string — GenAI schema allows `unknown`.
+              }
+            }
+            parts.push({
+              type: "tool_call",
+              id: tc.toolCallId,
+              name: tc.toolName,
+              arguments: args,
+            });
+          }
+        }
+        attributes["gen_ai.output.messages"] = serializeJSON([
+          { role: "assistant", parts },
+        ]);
       }
     } else if (out !== undefined) {
       attributes[SPAN_OUTPUT] = serializeJSON(out);
