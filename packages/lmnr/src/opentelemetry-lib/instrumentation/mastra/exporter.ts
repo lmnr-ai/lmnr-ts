@@ -767,10 +767,6 @@ export class MastraExporter {
       const readable = this.convertSpanToOtel(span, traceState);
       this.processor.onEnd(readable);
 
-      if (span.type === "model_generation") {
-        this.flushPendingStepSpans(span, traceState);
-      }
-
       if (this.config.realtime) {
         await this.processor.forceFlush();
       }
@@ -781,6 +777,16 @@ export class MastraExporter {
         }`,
       );
     } finally {
+      // Always flush buffered step spans before tearing down generation state.
+      // Running this in `finally` (not inside `try`) guarantees the buffered
+      // steps emit even if the generation's own conversion threw — otherwise
+      // the cleanup below would drop them with no trace of their existence.
+      // Worst case when captureReasoningTextByStep threw: steps emit without
+      // reasoning text, which is far better than being silently lost.
+      if (span.type === "model_generation") {
+        this.flushPendingStepSpans(span, traceState);
+      }
+
       traceState.activeSpanIds.delete(span.id);
       if (traceState.activeSpanIds.size === 0) {
         this.traceMap.delete(span.traceId);
