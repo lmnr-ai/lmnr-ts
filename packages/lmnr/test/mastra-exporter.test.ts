@@ -393,290 +393,249 @@ void describe("MastraExporter — OTel context linking", () => {
   });
 
   void it(
-    "surfaces per-step reasoningText via gen_ai.output.messages and " +
-      "threads it into the next step's prompt",
+    "accumulates reasoning from MODEL_CHUNK children onto the step's " +
+      "gen_ai.output.messages and cached assistant turn",
     async () => {
       const { mastra, inMemory } = makeTestExporter();
+      const traceId = "88888888888888888888888888888888";
 
-      // Two-step generation: step 0 thinks + calls a tool, step 1 thinks +
-      // answers. reasoningText lives only on the parent generation's
-      // `output.steps[i].reasoningText`, never on the step span itself.
-      const generationId = "9999999999999991";
-      const step0Id = "9999999999999992";
-      const step1Id = "9999999999999993";
-      const toolId = "9999999999999994";
-      const traceId = "99999999999999999999999999999991";
-
-      const startGeneration = () =>
-        mastra.exportTracingEvent({
-          type: "span_started",
-          exportedSpan: makeMastraSpan({
-            id: generationId,
-            traceId,
-            parentSpanId: undefined,
-            type: "model_generation",
-            name: "agent run",
-            input: {
-              messages: [{ role: "user", content: "hello" }],
-            },
-            attributes: {
-              provider: "openai",
-              model: "gpt-5",
-            },
-          }),
-        });
-
-      const startStep = (id: string, stepIndex: number, name: string) =>
-        mastra.exportTracingEvent({
-          type: "span_started",
-          exportedSpan: makeMastraSpan({
-            id,
-            traceId,
-            parentSpanId: generationId,
-            type: "model_step",
-            name,
-            attributes: { stepIndex },
-          }),
-        });
-
-      const endStep = (
-        id: string,
-        stepIndex: number,
-        name: string,
-        output: Record<string, unknown>,
-      ) =>
-        mastra.exportTracingEvent({
-          type: "span_ended",
-          exportedSpan: makeMastraSpan({
-            id,
-            traceId,
-            parentSpanId: generationId,
-            type: "model_step",
-            name,
-            attributes: { stepIndex },
-            output,
-          }),
-        });
-
-      await startGeneration();
-      await startStep(step0Id, 0, "llm: 'gpt-5' step 0");
-
-      // Tool call child of step 0 — ends before the step itself does.
+      // Generation root
       await mastra.exportTracingEvent({
         type: "span_started",
         exportedSpan: makeMastraSpan({
-          id: toolId,
-          traceId,
-          parentSpanId: step0Id,
-          type: "tool_call",
-          name: "tool: 'lookup'",
-          attributes: { toolCallId: "call_1" },
-        }),
-      });
-      await mastra.exportTracingEvent({
-        type: "span_ended",
-        exportedSpan: makeMastraSpan({
-          id: toolId,
-          traceId,
-          parentSpanId: step0Id,
-          type: "tool_call",
-          name: "tool: 'lookup'",
-          attributes: { toolCallId: "call_1" },
-          input: { toolCallId: "call_1" },
-          output: "result!",
-        }),
-      });
-
-      await endStep(step0Id, 0, "llm: 'gpt-5' step 0", {
-        text: "",
-        toolCalls: [
-          {
-            toolCallId: "call_1",
-            toolName: "lookup",
-            args: { q: "x" },
-          },
-        ],
-      });
-
-      await startStep(step1Id, 1, "llm: 'gpt-5' step 1");
-      await endStep(step1Id, 1, "llm: 'gpt-5' step 1", {
-        text: "final answer",
-        toolCalls: [],
-      });
-
-      // Before the generation ends, nothing should be emitted for the step
-      // spans — they're buffered.
-      assert.strictEqual(
-        inMemory.getFinishedSpans().filter((s) => s.name.startsWith("llm:"))
-          .length,
-        0,
-        "step spans must not flush before the generation ends",
-      );
-
-      await mastra.exportTracingEvent({
-        type: "span_ended",
-        exportedSpan: makeMastraSpan({
-          id: generationId,
+          id: "gen1gen1gen1gen1",
           traceId,
           parentSpanId: undefined,
+          name: "llm: 'gpt-5'",
           type: "model_generation",
-          name: "agent run",
+          attributes: { model: "gpt-5", provider: "openai.chat" },
           input: {
-            messages: [{ role: "user", content: "hello" }],
+            messages: [{ role: "user", content: "riddle me this" }],
           },
-          output: {
-            text: "final answer",
-            steps: [
-              {
-                text: "",
-                reasoningText: "Clarifying the meaning of hello…",
-              },
-              {
-                text: "final answer",
-                reasoningText: "Composing the final response…",
-              },
-            ],
-          },
+        }),
+      });
+
+      // Step 0
+      await mastra.exportTracingEvent({
+        type: "span_started",
+        exportedSpan: makeMastraSpan({
+          id: "step000000000001",
+          traceId,
+          parentSpanId: "gen1gen1gen1gen1",
+          name: "step 'llm call'",
+          type: "model_step",
+          attributes: { stepIndex: 0 },
+        }),
+      });
+      // Two reasoning chunks for step 0, simulating reasoning-start/end
+      // firing twice inside a single step.
+      await mastra.exportTracingEvent({
+        type: "span_ended",
+        exportedSpan: makeMastraSpan({
+          id: "chunkreasoning01",
+          traceId,
+          parentSpanId: "step000000000001",
+          name: "chunk: 'reasoning'",
+          type: "model_chunk",
+          attributes: { chunkType: "reasoning", sequenceNumber: 0 },
+          output: { text: "**Thinking hard**\n" },
+        }),
+      });
+      await mastra.exportTracingEvent({
+        type: "span_ended",
+        exportedSpan: makeMastraSpan({
+          id: "chunkreasoning02",
+          traceId,
+          parentSpanId: "step000000000001",
+          name: "chunk: 'reasoning'",
+          type: "model_chunk",
+          attributes: { chunkType: "reasoning", sequenceNumber: 1 },
+          output: { text: "still thinking." },
+        }),
+      });
+      await mastra.exportTracingEvent({
+        type: "span_ended",
+        exportedSpan: makeMastraSpan({
+          id: "step000000000001",
+          traceId,
+          parentSpanId: "gen1gen1gen1gen1",
+          name: "step 'llm call'",
+          type: "model_step",
+          attributes: { stepIndex: 0 },
+          output: { text: "final answer: 9" },
+        }),
+      });
+
+      // Step 1 — no reasoning chunks; just to verify downstream step's prompt
+      // includes step 0's reasoning as an assistant reasoning part.
+      await mastra.exportTracingEvent({
+        type: "span_started",
+        exportedSpan: makeMastraSpan({
+          id: "step000000000002",
+          traceId,
+          parentSpanId: "gen1gen1gen1gen1",
+          name: "step 'llm call'",
+          type: "model_step",
+          attributes: { stepIndex: 1 },
+        }),
+      });
+      await mastra.exportTracingEvent({
+        type: "span_ended",
+        exportedSpan: makeMastraSpan({
+          id: "step000000000002",
+          traceId,
+          parentSpanId: "gen1gen1gen1gen1",
+          name: "step 'llm call'",
+          type: "model_step",
+          attributes: { stepIndex: 1 },
+          output: { text: "follow-up" },
+        }),
+      });
+
+      await mastra.exportTracingEvent({
+        type: "span_ended",
+        exportedSpan: makeMastraSpan({
+          id: "gen1gen1gen1gen1",
+          traceId,
+          parentSpanId: undefined,
+          name: "llm: 'gpt-5'",
+          type: "model_generation",
+          attributes: { model: "gpt-5", provider: "openai.chat" },
         }),
       });
 
       const spans = inMemory.getFinishedSpans();
-      const step0 = spans.find((s) => s.name === "llm: 'gpt-5' step 0");
-      const step1 = spans.find((s) => s.name === "llm: 'gpt-5' step 1");
-      assert.ok(step0, "step 0 span should be emitted");
-      assert.ok(step1, "step 1 span should be emitted");
-
-      // Step 0's output should surface reasoning in GenAI semconv format.
-      const step0Output = step0.attributes["gen_ai.output.messages"] as string;
+      // No chunk spans should be emitted.
       assert.ok(
-        step0Output,
-        "step 0 should expose gen_ai.output.messages when it has reasoning",
-      );
-      const step0Messages = JSON.parse(step0Output);
-      assert.strictEqual(step0Messages[0].role, "assistant");
-      const step0Parts = step0Messages[0].parts as Array<{
-        type: string;
-        content?: string;
-        name?: string;
-        id?: string;
-      }>;
-      const step0Thinking = step0Parts.find((p) => p.type === "thinking");
-      assert.ok(step0Thinking, "thinking part expected");
-      assert.strictEqual(
-        step0Thinking?.content,
-        "Clarifying the meaning of hello…",
-      );
-      const step0ToolCall = step0Parts.find((p) => p.type === "tool_call");
-      assert.ok(step0ToolCall, "tool_call part expected");
-      assert.strictEqual(step0ToolCall?.name, "lookup");
-
-      // Step 1's output surfaces its own reasoning + text.
-      const step1Output = step1.attributes["gen_ai.output.messages"] as string;
-      const step1Messages = JSON.parse(step1Output);
-      const step1Parts = step1Messages[0].parts as Array<{
-        type: string;
-        content?: string;
-      }>;
-      assert.strictEqual(
-        step1Parts.find((p) => p.type === "thinking")?.content,
-        "Composing the final response…",
-      );
-      assert.strictEqual(
-        step1Parts.find((p) => p.type === "text")?.content,
-        "final answer",
+        !spans.some((s) => s.name.startsWith("chunk: ")),
+        "MODEL_CHUNK spans must not be emitted as OTel spans",
       );
 
-      // Step 1's `ai.prompt.messages` must include step 0's reasoning as a
-      // `reasoning` content part on the prior assistant turn, so the rendered
-      // prompt history shows the prior thinking.
-      const step1Prompt = step1.attributes["ai.prompt.messages"] as string;
-      const promptMessages = JSON.parse(step1Prompt) as Array<{
+      const step0 = spans.find(
+        (s) =>
+          s.attributes["lmnr.span.type"] === "LLM" &&
+          (s.attributes["ai.response.text"] as string) === "final answer: 9",
+      );
+      const step1 = spans.find(
+        (s) =>
+          s.attributes["lmnr.span.type"] === "LLM" &&
+          (s.attributes["ai.response.text"] as string) === "follow-up",
+      );
+      assert.ok(step0, "step 0 LLM span not found");
+      assert.ok(step1, "step 1 LLM span not found");
+
+      // Step 0 carries `gen_ai.output.messages` with a thinking part built
+      // from the concatenated chunk texts.
+      const step0GenAi = step0.attributes["gen_ai.output.messages"];
+      assert.ok(
+        typeof step0GenAi === "string",
+        "gen_ai.output.messages missing on step 0",
+      );
+      const step0Parsed = JSON.parse(step0GenAi) as Array<{
         role: string;
-        content: string | Array<{ type: string; text?: string }>;
+        parts: Array<{ type: string; content?: string }>;
       }>;
-      const assistantTurn = promptMessages.find((m) => m.role === "assistant");
-      assert.ok(
-        assistantTurn,
-        "step 1 prompt should contain an assistant turn",
-      );
-      const assistantParts = assistantTurn.content as Array<{
-        type: string;
-        text?: string;
-      }>;
-      const priorReasoning = assistantParts.find((p) => p.type === "reasoning");
-      assert.ok(priorReasoning, "prior assistant turn should carry reasoning");
+      assert.strictEqual(step0Parsed[0].role, "assistant");
+      const thinking = step0Parsed[0].parts.find((p) => p.type === "thinking");
+      assert.ok(thinking, "thinking part missing");
       assert.strictEqual(
-        priorReasoning?.text,
-        "Clarifying the meaning of hello…",
+        thinking.content,
+        "**Thinking hard**\nstill thinking.",
+        "thinking content should be the concatenation of both reasoning chunks",
+      );
+
+      // Step 1 has no reasoning → no gen_ai.output.messages.
+      assert.strictEqual(
+        step1.attributes["gen_ai.output.messages"],
+        undefined,
+        "step 1 has no reasoning so gen_ai.output.messages must be absent",
+      );
+
+      // Step 1's `ai.prompt.messages` should include step 0's turn with a
+      // reasoning content part on the assistant message.
+      const step1Prompt = step1.attributes["ai.prompt.messages"];
+      assert.ok(
+        typeof step1Prompt === "string",
+        "ai.prompt.messages missing on step 1",
+      );
+      const step1Msgs = JSON.parse(step1Prompt) as Array<{
+        role: string;
+        content: unknown;
+      }>;
+      const assistantTurn = step1Msgs.find((m) => m.role === "assistant");
+      assert.ok(assistantTurn, "assistant turn missing from step 1 prompt");
+      assert.ok(
+        Array.isArray(assistantTurn.content),
+        "assistant content should be parts",
+      );
+      const reasoningPart = (
+        assistantTurn.content as Array<{ type: string; text?: string }>
+      ).find((p) => p.type === "reasoning");
+      assert.ok(
+        reasoningPart,
+        "reasoning part missing on step 0 assistant turn",
+      );
+      assert.strictEqual(
+        reasoningPart.text,
+        "**Thinking hard**\nstill thinking.",
       );
     },
   );
 
-  void it("omits gen_ai.output.messages when a step has no reasoning", async () => {
+  void it("omits gen_ai.output.messages when a step produced no reasoning chunks", async () => {
     const { mastra, inMemory } = makeTestExporter();
-
-    const generationId = "8888888888888881";
-    const stepId = "8888888888888882";
-    const traceId = "88888888888888888888888888888881";
+    const traceId = "99999999999999999999999999999999";
 
     await mastra.exportTracingEvent({
       type: "span_started",
       exportedSpan: makeMastraSpan({
-        id: generationId,
+        id: "gen2gen2gen2gen2",
         traceId,
         parentSpanId: undefined,
+        name: "llm: 'gpt-4o'",
         type: "model_generation",
-        name: "agent run",
-        input: { messages: [{ role: "user", content: "hi" }] },
-        attributes: { provider: "openai", model: "gpt-4o-mini" },
+        attributes: { model: "gpt-4o", provider: "openai.chat" },
       }),
     });
     await mastra.exportTracingEvent({
       type: "span_started",
       exportedSpan: makeMastraSpan({
-        id: stepId,
+        id: "step000000000003",
         traceId,
-        parentSpanId: generationId,
+        parentSpanId: "gen2gen2gen2gen2",
+        name: "step 'llm call'",
         type: "model_step",
-        name: "llm: 'gpt-4o-mini'",
         attributes: { stepIndex: 0 },
       }),
     });
     await mastra.exportTracingEvent({
       type: "span_ended",
       exportedSpan: makeMastraSpan({
-        id: stepId,
+        id: "step000000000003",
         traceId,
-        parentSpanId: generationId,
+        parentSpanId: "gen2gen2gen2gen2",
+        name: "step 'llm call'",
         type: "model_step",
-        name: "llm: 'gpt-4o-mini'",
         attributes: { stepIndex: 0 },
-        output: { text: "hi back", toolCalls: [] },
+        output: { text: "hi back" },
       }),
     });
     await mastra.exportTracingEvent({
       type: "span_ended",
       exportedSpan: makeMastraSpan({
-        id: generationId,
+        id: "gen2gen2gen2gen2",
         traceId,
         parentSpanId: undefined,
+        name: "llm: 'gpt-4o'",
         type: "model_generation",
-        name: "agent run",
-        input: { messages: [{ role: "user", content: "hi" }] },
-        output: {
-          text: "hi back",
-          steps: [{ text: "hi back", reasoningText: undefined }],
-        },
+        attributes: { model: "gpt-4o", provider: "openai.chat" },
       }),
     });
 
     const spans = inMemory.getFinishedSpans();
-    const step = spans.find((s) => s.name === "llm: 'gpt-4o-mini'")!;
-    assert.strictEqual(
-      step.attributes["gen_ai.output.messages"],
-      undefined,
-      "no reasoning → no GenAI output override",
-    );
+    const step = spans.find((s) => s.attributes["lmnr.span.type"] === "LLM");
+    assert.ok(step);
+    assert.strictEqual(step.attributes["gen_ai.output.messages"], undefined);
     assert.strictEqual(step.attributes["ai.response.text"], "hi back");
   });
 });
