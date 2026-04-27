@@ -506,8 +506,13 @@ export class MastraExporter {
         const toolCallId =
           (dec?.toolCallId as string | undefined) ??
           (dec?.id as string | undefined);
-        if (!toolCallId) continue;
-        let child = childrenById.get(toolCallId);
+        // Don't skip declarations with a missing id: `buildAssistantMessage
+        // FromStepOutput` still emitted a `tool-call` part for this
+        // declaration, so we must emit a matching tool-result or subsequent
+        // steps will see a broken history (assistant calls a tool, no
+        // result follows). Fall through to arrival-order pairing in that
+        // case, using whatever id the child span carries (may be undefined).
+        let child = toolCallId ? childrenById.get(toolCallId) : undefined;
         if (child && consumed.has(child)) child = undefined;
         if (!child) {
           // Fallback: first unconsumed child in arrival order.
@@ -515,17 +520,18 @@ export class MastraExporter {
         }
         if (!child) continue;
         consumed.add(child);
+        const resolvedToolCallId = toolCallId ?? child.toolCallId;
         const toolName =
           (dec?.toolName as string | undefined) ??
           (dec?.name as string | undefined) ??
           child.toolName;
         turnMessages.push({
           role: "tool",
-          tool_call_id: toolCallId,
+          tool_call_id: resolvedToolCallId,
           content: [
             {
               type: "tool-result",
-              toolCallId,
+              toolCallId: resolvedToolCallId,
               toolName,
               output: child.output,
             },
