@@ -1,1 +1,2 @@
-export { MastraExporter, type MastraExporterOptions } from "./exporter";
+export { MastraExporter } from "./exporter";
+export type { MastraExporterOptions } from "./types";

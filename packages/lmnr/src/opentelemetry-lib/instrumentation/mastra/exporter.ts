@@ -1,5 +1,4 @@
 import {
-  HrTime,
   SpanContext,
   SpanKind,
   SpanStatusCode,
@@ -40,87 +39,33 @@ import {
   USER_ID,
 } from "../../tracing/attributes";
 import { createResource, makeSpanOtelV2Compatible } from "../../tracing/compat";
+import {
+  AISdkMessage,
+  MastraExportedSpan,
+  MastraExporterOptions,
+  MastraTracingEvent,
+  MastraUsageStats,
+} from "./types";
+import {
+  buildAssistantMessageFromStepOutput,
+  cleanMastraToolName,
+  computeDuration,
+  dateToHrTime,
+  extractMessages,
+  extractToolCallId,
+  formatUsage,
+  mapLaminarSpanType,
+  normalizeInputMessages,
+  normalizeProvider,
+  normalizeSpanId,
+  normalizeTraceId,
+  serializeJSON,
+  stringifyArgs,
+  stripTrailingSlash,
+  toAttributeValue,
+} from "./utils";
 
 const logger = initializeLogger();
-
-type LaminarSpanType = "LLM" | "TOOL" | "DEFAULT";
-
-// Narrow structural types for Mastra's observability contract. Declared
-// locally to avoid a hard runtime/peer dep on @mastra/core.
-interface MastraUsageStats {
-  inputTokens?: number;
-  outputTokens?: number;
-  inputDetails?: {
-    cacheRead?: number;
-    cacheWrite?: number;
-  };
-  outputDetails?: {
-    reasoning?: number;
-  };
-}
-
-interface MastraSpanErrorInfo {
-  message: string;
-  name?: string;
-  stack?: string;
-  details?: Record<string, unknown>;
-}
-
-interface MastraExportedSpan {
-  id: string;
-  traceId: string;
-  parentSpanId?: string;
-  name: string;
-  type: string;
-  startTime: Date;
-  endTime?: Date;
-  attributes?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
-  tags?: string[];
-  input?: unknown;
-  output?: unknown;
-  errorInfo?: MastraSpanErrorInfo;
-  isEvent: boolean;
-  isRootSpan: boolean;
-}
-
-interface MastraTracingEvent {
-  type: "span_started" | "span_updated" | "span_ended";
-  exportedSpan: MastraExportedSpan;
-}
-
-export interface MastraExporterOptions {
-  /** Laminar base URL. Defaults to LMNR_BASE_URL env var or https://api.lmnr.ai. */
-  baseUrl?: string;
-  /** Laminar project API key. Defaults to LMNR_PROJECT_API_KEY. */
-  apiKey?: string;
-  /** HTTP port of the Laminar API. Defaults to 443. */
-  httpPort?: number;
-  /** Full OTLP HTTP endpoint override (including /v1/traces). */
-  endpoint?: string;
-  /** Extra request headers. */
-  headers?: Record<string, string>;
-  /** Disable batching (uses SimpleSpanProcessor). */
-  disableBatch?: boolean;
-  /** Flush immediately after every span end. */
-  realtime?: boolean;
-  /** Maximum batch size. */
-  batchSize?: number;
-  /** Trace export timeout (ms). */
-  timeoutMillis?: number;
-  /**
-   * When true (default), reparent Mastra traces under the caller's active
-   * OpenTelemetry span if one exists. This lets `observe()`-wrapped code that
-   * calls a Mastra agent produce a single unified trace instead of two
-   * disconnected ones (user's OTel trace + Mastra's own trace).
-   *
-   * Mastra does not propagate OTel context into its event bus, so without
-   * this we'd emit under Mastra's self-assigned trace id with no parent.
-   * Set to false to preserve Mastra's original trace id even when nested
-   * inside `observe()`.
-   */
-  linkToActiveContext?: boolean;
-}
 
 interface TraceState {
   spanPathById: Map<string, string[]>;
@@ -174,212 +119,6 @@ interface GenerationState {
   // thinking tokens on the step's LLM span.
   reasoningTextByStepIndex: Map<number, string>;
 }
-
-interface AISdkContentPart {
-  type: string;
-  text?: string;
-  toolCallId?: string;
-  toolName?: string;
-  input?: unknown;
-  output?: unknown;
-}
-
-interface AISdkMessage {
-  role: string;
-  content: string | AISdkContentPart[];
-  tool_call_id?: string;
-}
-
-const stripTrailingSlash = (url: string): string => url.replace(/\/+$/, "");
-
-const normalizeTraceId = (traceId: string): string => {
-  let id = traceId.toLowerCase();
-  if (id.startsWith("0x")) id = id.slice(2);
-  return id.padStart(32, "0").slice(-32);
-};
-
-const normalizeSpanId = (spanId: string): string => {
-  let id = spanId.toLowerCase();
-  if (id.startsWith("0x")) id = id.slice(2);
-  return id.padStart(16, "0").slice(-16);
-};
-
-const dateToHrTime = (date: Date): HrTime => {
-  const ms = date.getTime();
-  const seconds = Math.floor(ms / 1e3);
-  const nanoseconds = (ms % 1e3) * 1e6;
-  return [seconds, nanoseconds];
-};
-
-const computeDuration = (start: Date, end?: Date): HrTime => {
-  if (!end) return [0, 0];
-  // Clamp to 0 on negative diffs: duration is semantically non-negative, and
-  // OTel's HrTime contract requires a non-negative nanosecond component that
-  // Math.floor + `%` don't preserve when diffMs < 0 (clock skew, reordered
-  // Mastra timestamps).
-  const diffMs = Math.max(0, end.getTime() - start.getTime());
-  return [Math.floor(diffMs / 1e3), (diffMs % 1e3) * 1e6];
-};
-
-const normalizeProvider = (provider: string): string =>
-  provider.split(".").shift()?.toLowerCase().trim() ||
-  provider.toLowerCase().trim();
-
-// `model_step` is Laminar's atomic LLM call. `model_generation` wraps the
-// whole agent-to-LLM flow (which may include multiple steps + tool calls),
-// so it stays DEFAULT.
-const mapLaminarSpanType = (spanType: string): LaminarSpanType => {
-  switch (spanType) {
-    case "model_step":
-      return "LLM";
-    case "tool_call":
-    case "mcp_tool_call":
-      return "TOOL";
-    default:
-      return "DEFAULT";
-  }
-};
-
-const serializeJSON = (value: unknown): string => {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return "[unserializable]";
-  }
-};
-
-type AttrPrimitive = string | number | boolean;
-const toAttributeValue = (
-  value: unknown,
-): AttrPrimitive | AttrPrimitive[] | undefined => {
-  if (value === undefined || value === null) return undefined;
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    if (value.every((v) => typeof v === "string")) return value;
-    if (value.every((v) => typeof v === "number")) return value;
-    if (value.every((v) => typeof v === "boolean")) return value;
-  }
-  return serializeJSON(value);
-};
-
-const extractMessages = (input: unknown): unknown[] | undefined => {
-  if (!input) return undefined;
-  if (Array.isArray(input)) return input as unknown[];
-  if (typeof input === "object") {
-    const asObj = input as Record<string, unknown>;
-    if (Array.isArray(asObj.messages)) return asObj.messages as unknown[];
-    if (Array.isArray(asObj.prompt)) return asObj.prompt as unknown[];
-    if (Array.isArray(asObj.input)) return asObj.input as unknown[];
-  }
-  return undefined;
-};
-
-// `MODEL_GENERATION.input` is the messages array the user passed into
-// `agent.generate(...)`, forwarded by Mastra to the AI SDK unchanged. It's
-// already in AI SDK shape by construction — the AI SDK would have rejected
-// it before observability fired otherwise. Just coerce non-object items to
-// a string user message so `ai.prompt.messages` always serializes as a
-// well-formed message list.
-const normalizeInputMessages = (raw: unknown[]): AISdkMessage[] => {
-  const out: AISdkMessage[] = [];
-  for (const m of raw) {
-    if (m == null) continue;
-    if (typeof m === "object") {
-      out.push(m as AISdkMessage);
-      continue;
-    }
-    out.push({
-      role: "user",
-      content: typeof m === "string" ? m : serializeJSON(m),
-    });
-  }
-  return out;
-};
-
-const buildAssistantMessageFromStepOutput = (
-  output: unknown,
-  reasoningText?: string,
-): AISdkMessage | null => {
-  if (!output || typeof output !== "object") return null;
-  const outObj = output as Record<string, unknown>;
-  const parts: AISdkContentPart[] = [];
-  // Reasoning first, mirroring the order the model produced: thinking →
-  // answer → tool-calls. AI SDK content-part shape for reasoning is
-  // `{type: "reasoning", text}`.
-  if (typeof reasoningText === "string" && reasoningText.length > 0) {
-    parts.push({ type: "reasoning", text: reasoningText });
-  }
-  if (typeof outObj.text === "string" && outObj.text.length > 0) {
-    parts.push({ type: "text", text: outObj.text });
-  }
-  if (Array.isArray(outObj.toolCalls)) {
-    for (const tc of outObj.toolCalls as Array<Record<string, unknown>>) {
-      if (!tc) continue;
-      parts.push({
-        type: "tool-call",
-        toolCallId: tc.toolCallId as string | undefined,
-        toolName: tc.toolName as string | undefined,
-        // `args` is the legacy AI SDK v4 name, `input` is v5+; keep both
-        // until we drop v4 support.
-        input: tc.input ?? tc.args,
-      });
-    }
-  }
-  if (parts.length === 0) return null;
-  return { role: "assistant", content: parts };
-};
-
-const extractToolCallId = (span: MastraExportedSpan): string | undefined => {
-  const v = span.attributes?.toolCallId;
-  return typeof v === "string" ? v : undefined;
-};
-
-// Mastra names tool spans like `tool: 'myToolId'`. Strip that prefix + quotes
-// so both the TOOL span's `ai.toolCall.name` and the tool-result message's
-// `toolName` agree on the raw tool id.
-const cleanMastraToolName = (name: string | undefined): string | undefined =>
-  name?.replace(/^tool:\s*'?(.*?)'?$/, "$1");
-
-// Tool-call args are sometimes a string (already-serialized JSON), sometimes
-// an object — stringify the latter so `ai.response.toolCalls` is always a
-// JSON-string at the AI SDK boundary.
-const stringifyArgs = (raw: unknown): string | undefined => {
-  if (raw === undefined) return undefined;
-  return typeof raw === "string" ? raw : JSON.stringify(raw);
-};
-
-const formatUsage = (usage?: MastraUsageStats): Record<string, number> => {
-  if (!usage) return {};
-  const out: Record<string, number> = {};
-  if (typeof usage.inputTokens === "number") {
-    out[LaminarAttributes.INPUT_TOKEN_COUNT] = usage.inputTokens;
-  }
-  if (typeof usage.outputTokens === "number") {
-    out[LaminarAttributes.OUTPUT_TOKEN_COUNT] = usage.outputTokens;
-  }
-  const total = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
-  if (total > 0) {
-    out[LaminarAttributes.TOTAL_TOKEN_COUNT] = total;
-  }
-  if (typeof usage.inputDetails?.cacheWrite === "number") {
-    out["gen_ai.usage.cache_creation_input_tokens"] =
-      usage.inputDetails.cacheWrite;
-  }
-  if (typeof usage.inputDetails?.cacheRead === "number") {
-    out["gen_ai.usage.cache_read_input_tokens"] = usage.inputDetails.cacheRead;
-  }
-  if (typeof usage.outputDetails?.reasoning === "number") {
-    out["gen_ai.usage.reasoning_tokens"] = usage.outputDetails.reasoning;
-  }
-  return out;
-};
 
 /**
  * Bridges Mastra's ObservabilityExporter contract to Laminar's OTLP ingestion.
