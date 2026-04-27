@@ -868,7 +868,11 @@ export class MastraExporter {
         );
       }
     }
-    gen.pendingStepSpans = [];
+    // Do NOT clear `gen.pendingStepSpans` here — the caller's `finally` block
+    // iterates it to remove per-step entries from `generationIdByStepId` /
+    // `stepIndexBySpanId`. Clearing would cause those lookup maps to leak
+    // entries indefinitely. The whole `gen` state is dropped from
+    // `generationStateById` right after, so the array becomes unreachable.
   }
 
   private initGenerationState(span: MastraExportedSpan): void {
