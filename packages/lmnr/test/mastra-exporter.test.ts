@@ -9,7 +9,7 @@ import {
   type SpanExporter,
 } from "@opentelemetry/sdk-trace-base";
 
-import { observe } from "../src";
+import { Laminar, observe } from "../src";
 import {
   _resetConfiguration,
   initializeTracing,
@@ -195,6 +195,52 @@ void describe("MastraExporter — OTel context linking", () => {
     // Child's parent must still resolve to the root's span id (in normalized
     // 16-char lowercase hex form emitted by the exporter).
     assert.strictEqual(getParentSpanId(child), root.spanContext().spanId);
+  });
+
+  void it("reparents Mastra spans under a Laminar.startActiveSpan() span", async () => {
+    // `Laminar.startActiveSpan()` activates the span on Laminar's own
+    // AsyncLocalStorage, NOT on OTel's standard context manager. The exporter
+    // must consult `LaminarContextManager.getContext()` first so manually
+    // started spans get the same reparenting treatment as `observe()` ones.
+    const { mastra, inMemory } = makeTestExporter();
+
+    const outer = Laminar.startActiveSpan({ name: "manual outer" });
+    const outerCtx = outer.spanContext();
+    try {
+      await mastra.exportTracingEvent({
+        type: "span_started",
+        exportedSpan: makeMastraSpan({
+          id: "4444444444444444",
+          traceId: "cccccccccccccccccccccccccccccccc",
+          parentSpanId: undefined,
+          type: "agent_run",
+        }),
+      });
+      await mastra.exportTracingEvent({
+        type: "span_ended",
+        exportedSpan: makeMastraSpan({
+          id: "4444444444444444",
+          traceId: "cccccccccccccccccccccccccccccccc",
+          parentSpanId: undefined,
+          type: "agent_run",
+        }),
+      });
+    } finally {
+      outer.end();
+    }
+
+    const spans = inMemory.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(
+      spans[0].spanContext().traceId,
+      outerCtx.traceId,
+      "Mastra span should adopt the manual outer span's trace id",
+    );
+    assert.strictEqual(
+      getParentSpanId(spans[0]),
+      outerCtx.spanId,
+      "Mastra root should be parented to the manual outer span",
+    );
   });
 
   void it("does not reparent when linkToActiveContext is false", async () => {

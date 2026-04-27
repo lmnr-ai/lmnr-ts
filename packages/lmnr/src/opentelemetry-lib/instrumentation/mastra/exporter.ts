@@ -39,6 +39,7 @@ import {
   USER_ID,
 } from "../../tracing/attributes";
 import { createResource, makeSpanOtelV2Compatible } from "../../tracing/compat";
+import { LaminarContextManager } from "../../tracing/context";
 import {
   AISdkMessage,
   MastraExportedSpan,
@@ -578,14 +579,24 @@ export class MastraExporter {
       spanIdsPathById: new Map(),
       activeSpanIds: new Set(),
     };
-    // Capture the caller's active OTel span synchronously, at the moment the
+    // Capture the caller's active span synchronously, at the moment the
     // first event for this Mastra trace arrives — Mastra invokes exporter
     // handlers within the originating async context (see
-    // `@mastra/observability` routeToHandler), so the user's `observe()`
+    // `@mastra/observability` routeToHandler), so the caller's wrapper
     // span is still active here. Any later reads would be outside that
     // context (Mastra's event bus schedules handlers).
+    //
+    // Two stacks to consult, in order:
+    //  1. Laminar's own context manager — the only place spans started via
+    //     `Laminar.startActiveSpan()` are tracked. That helper writes onto
+    //     a separate AsyncLocalStorage instance and never touches OTel's
+    //     standard context, so step (2) alone wouldn't see them.
+    //  2. OTel's standard active span — set by `observe()` via
+    //     `context.with(...)` and by any other OTel-aware instrumentation.
     if (this.config?.linkToActiveContext) {
-      const activeSpan = trace.getActiveSpan();
+      const activeSpan =
+        trace.getSpan(LaminarContextManager.getContext()) ??
+        trace.getActiveSpan();
       const ctx = activeSpan?.spanContext();
       if (ctx && ctx.traceId && ctx.spanId) {
         created.otelTraceId = normalizeTraceId(ctx.traceId);

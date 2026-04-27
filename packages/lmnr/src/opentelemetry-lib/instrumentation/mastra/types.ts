@@ -31,8 +31,8 @@ export interface MastraExportedSpan {
   type: string;
   startTime: Date;
   endTime?: Date;
-  attributes?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
+  attributes?: Record<string, any>;
+  metadata?: Record<string, any>;
   tags?: string[];
   input?: unknown;
   output?: unknown;
