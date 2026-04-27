@@ -745,7 +745,8 @@ export class MastraExporter {
       }
     } catch (err) {
       logger.error(
-        `[MastraExporter] failed to export span ${span.id}: ${err instanceof Error ? err.message : String(err)
+        `[MastraExporter] failed to export span ${span.id}: ${
+          err instanceof Error ? err.message : String(err)
         }`,
       );
     } finally {
