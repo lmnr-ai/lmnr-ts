@@ -164,8 +164,6 @@ interface GenerationState {
   // before their parent MODEL_STEP ends) so we can pair them by arrival
   // order with the step's declared `toolCalls` when the step itself ends.
   toolCallChildrenByStepIndex: Map<number, ToolCallChild[]>;
-  // Lookup: tool_call span id → step index, set when the child span starts.
-  toolCallSpanIdToStepIndex: Map<string, number>;
   // Accumulated reasoning text per step, built up from MODEL_CHUNK children
   // with `chunkType: "reasoning"`. Mastra drops reasoning from
   // `MODEL_STEP.output`/`attributes` entirely (see `#endStepSpan` in
@@ -283,90 +281,24 @@ const extractMessages = (input: unknown): unknown[] | undefined => {
   return undefined;
 };
 
-// Mastra's content can be a string, or an array of parts like
-// `{type: "text", text: "..."}` — or the odd AI-SDK-internal shape where
-// tool calls appear as empty user messages. Strip provider-specific extras
-// and pass through structured parts, dropping empty placeholder content.
-const normalizeContent = (content: unknown): string | AISdkContentPart[] => {
-  if (content == null) return "";
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    const parts: AISdkContentPart[] = [];
-    for (const p of content) {
-      if (!p || typeof p !== "object") continue;
-      const obj = p as Record<string, unknown>;
-      const type = typeof obj.type === "string" ? obj.type : "text";
-      if (type === "text") {
-        const text = typeof obj.text === "string" ? obj.text : "";
-        if (text.length > 0) parts.push({ type: "text", text });
-      } else if (type === "reasoning") {
-        const text = typeof obj.text === "string" ? obj.text : "";
-        if (text.length > 0) parts.push({ type: "reasoning", text });
-      } else if (type === "tool-call" || type === "tool_call") {
-        parts.push({
-          type: "tool-call",
-          toolCallId:
-            (obj.toolCallId as string | undefined) ??
-            (obj.id as string | undefined),
-          toolName:
-            (obj.toolName as string | undefined) ??
-            (obj.name as string | undefined),
-          input: obj.input ?? obj.args ?? obj.arguments,
-        });
-      } else if (type === "tool-result" || type === "tool_result") {
-        parts.push({
-          type: "tool-result",
-          toolCallId: obj.toolCallId as string | undefined,
-          toolName: obj.toolName as string | undefined,
-          output: obj.output ?? obj.result,
-        });
-      } else {
-        // Unknown part — preserve serialized text so we don't silently drop it.
-        const serialized = serializeJSON(p);
-        if (serialized !== "{}" && serialized !== "null") {
-          parts.push({ type: "text", text: serialized });
-        }
-      }
-    }
-    return parts;
-  }
-  return serializeJSON(content);
-};
-
+// `MODEL_GENERATION.input` is the messages array the user passed into
+// `agent.generate(...)`, forwarded by Mastra to the AI SDK unchanged. It's
+// already in AI SDK shape by construction — the AI SDK would have rejected
+// it before observability fired otherwise. Just coerce non-object items to
+// a string user message so `ai.prompt.messages` always serializes as a
+// well-formed message list.
 const normalizeInputMessages = (raw: unknown[]): AISdkMessage[] => {
   const out: AISdkMessage[] = [];
   for (const m of raw) {
-    // Drop null/undefined items — same rationale as the empty-user-message
-    // filter below (no signal, and they'd otherwise leak through as empty
-    // user messages in `ai.prompt.messages`).
     if (m == null) continue;
-    if (typeof m === "string") {
-      out.push({ role: "user", content: m });
+    if (typeof m === "object") {
+      out.push(m as AISdkMessage);
       continue;
     }
-    if (typeof m === "number" || typeof m === "boolean") {
-      out.push({ role: "user", content: String(m) });
-      continue;
-    }
-    if (typeof m !== "object") {
-      out.push({ role: "user", content: serializeJSON(m) });
-      continue;
-    }
-    const obj = m as Record<string, unknown>;
-    const role = typeof obj.role === "string" ? obj.role : "user";
-    const content = normalizeContent(obj.content);
-    // Drop empty user-message placeholders Mastra emits between steps — they
-    // carry no signal (tool results appear as separate tool-role messages).
-    if (
-      role === "user" &&
-      ((typeof content === "string" && content.length === 0) ||
-        (Array.isArray(content) && content.length === 0))
-    ) {
-      continue;
-    }
-    const tool_call_id =
-      typeof obj.tool_call_id === "string" ? obj.tool_call_id : undefined;
-    out.push({ role, content, tool_call_id });
+    out.push({
+      role: "user",
+      content: typeof m === "string" ? m : serializeJSON(m),
+    });
   }
   return out;
 };
@@ -392,13 +324,11 @@ const buildAssistantMessageFromStepOutput = (
       if (!tc) continue;
       parts.push({
         type: "tool-call",
-        toolCallId:
-          (tc.toolCallId as string | undefined) ??
-          (tc.id as string | undefined),
-        toolName:
-          (tc.toolName as string | undefined) ??
-          (tc.name as string | undefined),
-        input: tc.input ?? tc.args ?? tc.arguments,
+        toolCallId: tc.toolCallId as string | undefined,
+        toolName: tc.toolName as string | undefined,
+        // `args` is the legacy AI SDK v4 name, `input` is v5+; keep both
+        // until we drop v4 support.
+        input: tc.input ?? tc.args,
       });
     }
   }
@@ -406,19 +336,9 @@ const buildAssistantMessageFromStepOutput = (
   return { role: "assistant", content: parts };
 };
 
-// Pull the tool-call id from a tool_call span. Mastra typically surfaces it
-// via `attributes.toolCallId`, but some builds attach it to the input payload
-// instead — check both so we can pair by id regardless.
 const extractToolCallId = (span: MastraExportedSpan): string | undefined => {
-  const attrs = span.attributes;
-  if (attrs && typeof attrs.toolCallId === "string") return attrs.toolCallId;
-  const input = span.input;
-  if (input && typeof input === "object" && !Array.isArray(input)) {
-    const asObj = input as Record<string, unknown>;
-    if (typeof asObj.toolCallId === "string") return asObj.toolCallId;
-    if (typeof asObj.id === "string") return asObj.id;
-  }
-  return undefined;
+  const v = span.attributes?.toolCallId;
+  return typeof v === "string" ? v : undefined;
 };
 
 // Mastra names tool spans like `tool: 'myToolId'`. Strip that prefix + quotes
@@ -426,6 +346,14 @@ const extractToolCallId = (span: MastraExportedSpan): string | undefined => {
 // `toolName` agree on the raw tool id.
 const cleanMastraToolName = (name: string | undefined): string | undefined =>
   name?.replace(/^tool:\s*'?(.*?)'?$/, "$1");
+
+// Tool-call args are sometimes a string (already-serialized JSON), sometimes
+// an object — stringify the latter so `ai.response.toolCalls` is always a
+// JSON-string at the AI SDK boundary.
+const stringifyArgs = (raw: unknown): string | undefined => {
+  if (raw === undefined) return undefined;
+  return typeof raw === "string" ? raw : JSON.stringify(raw);
+};
 
 const formatUsage = (usage?: MastraUsageStats): Record<string, number> => {
   if (!usage) return {};
@@ -650,19 +578,6 @@ export class MastraExporter {
           ? span.attributes.stepIndex
           : 0;
       this.stepIndexBySpanId.set(span.id, stepIndex);
-    } else if (
-      (span.type === "tool_call" || span.type === "mcp_tool_call") &&
-      parentId
-    ) {
-      // Parent is a MODEL_STEP → this tool_call belongs to that step.
-      const stepIndex = this.stepIndexBySpanId.get(parentId);
-      const generationId = this.generationIdByStepId.get(parentId);
-      if (stepIndex !== undefined && generationId !== undefined) {
-        const gen = this.generationStateById.get(generationId);
-        if (gen) {
-          gen.toolCallSpanIdToStepIndex.set(span.id, stepIndex);
-        }
-      }
     }
   }
 
@@ -711,20 +626,16 @@ export class MastraExporter {
         traceState.activeSpanIds.add(span.id);
       }
 
-      if (span.type === "model_generation") {
-        const existing = this.generationStateById.get(span.id);
-        if (!existing) {
-          this.initGenerationState(span);
-        } else if (existing.baseMessages.length === 0) {
-          // span_started may have carried an empty/incomplete input; refresh
-          // baseMessages from span_ended's (usually richer) input so LLM
-          // children don't render with a truncated prompt history.
-          const rawMessages = extractMessages(span.input);
-          if (rawMessages) {
-            const refreshed = normalizeInputMessages(rawMessages);
-            if (refreshed.length > 0) existing.baseMessages = refreshed;
-          }
-        }
+      if (
+        span.type === "model_generation" &&
+        !this.generationStateById.has(span.id)
+      ) {
+        // Defensive: only fires if we somehow missed `span_started`. There's
+        // no point refreshing `baseMessages` here even when `span.input` is
+        // richer than what `span_started` carried — every MODEL_STEP child
+        // has already ended and serialized its prompt by the time the parent
+        // generation ends, so nothing downstream would read the new value.
+        this.initGenerationState(span);
       }
       if (
         span.type === "model_step" &&
@@ -772,7 +683,6 @@ export class MastraExporter {
       baseMessages,
       turnsByStepIndex: new Map(),
       toolCallChildrenByStepIndex: new Map(),
-      toolCallSpanIdToStepIndex: new Map(),
       reasoningTextByStepIndex: new Map(),
     });
   }
@@ -887,16 +797,16 @@ export class MastraExporter {
       gen.turnsByStepIndex.set(stepIndex, turnMessages);
     } else if (span.type === "tool_call" || span.type === "mcp_tool_call") {
       // Record the tool_call child under its step so the step-end handler
-      // can pair it with the declared toolCalls.
+      // can pair it with the declared toolCalls. Tool spans always end
+      // before their parent MODEL_STEP ends, so the parent's stepIndex is
+      // still in `stepIndexBySpanId` here.
       const parentId = span.parentSpanId;
       if (!parentId) return;
       const generationId = this.generationIdByStepId.get(parentId);
       if (!generationId) return;
       const gen = this.generationStateById.get(generationId);
       if (!gen) return;
-      const stepIndex =
-        gen.toolCallSpanIdToStepIndex.get(span.id) ??
-        this.stepIndexBySpanId.get(parentId);
+      const stepIndex = this.stepIndexBySpanId.get(parentId);
       if (stepIndex === undefined) return;
       const list = gen.toolCallChildrenByStepIndex.get(stepIndex) ?? [];
       list.push({
@@ -1195,18 +1105,9 @@ export class MastraExporter {
         Array.isArray(outObj.toolCalls) && outObj.toolCalls.length > 0
           ? (outObj.toolCalls as Array<Record<string, unknown>>).map((tc) => ({
             toolCallType: tc.toolCallType ?? "function",
-            toolCallId: tc.toolCallId ?? tc.id,
-            toolName: tc.toolName ?? tc.name,
-            args:
-              typeof tc.args === "string"
-                ? tc.args
-                : tc.args !== undefined
-                  ? JSON.stringify(tc.args)
-                  : tc.input !== undefined
-                    ? typeof tc.input === "string"
-                      ? tc.input
-                      : JSON.stringify(tc.input)
-                    : undefined,
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            args: stringifyArgs(tc.args ?? tc.input),
           }))
           : [];
       if (normalizedToolCalls.length > 0) {
