@@ -766,10 +766,6 @@ export class MastraExporter {
 
       const readable = this.convertSpanToOtel(span, traceState);
       this.processor.onEnd(readable);
-
-      if (this.config.realtime) {
-        await this.processor.forceFlush();
-      }
     } catch (err) {
       logger.error(
         `[MastraExporter] failed to export span ${span.id}: ${
@@ -805,6 +801,22 @@ export class MastraExporter {
         }
         this.generationStateById.delete(span.id);
         this.generationAttrsById.delete(span.id);
+      }
+
+      // Realtime forceFlush runs LAST so it also flushes buffered MODEL_STEP
+      // spans pushed into the processor by `flushPendingStepSpans` above.
+      // Placing it inside `try` (before step flush) would leave step spans
+      // sitting in the BatchSpanProcessor queue until the next batch tick.
+      if (this.config.realtime && this.processor) {
+        try {
+          await this.processor.forceFlush();
+        } catch (err) {
+          logger.error(
+            `[MastraExporter] realtime forceFlush failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
       }
     }
   }
