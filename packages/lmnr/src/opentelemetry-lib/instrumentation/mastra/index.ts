@@ -750,11 +750,18 @@ const dateToHrTime = (date: Date | string): HrTime => {
 };
 
 const hrTimeDelta = (start: HrTime, end: HrTime): HrTime => {
-  const totalStartNs = start[0] * 1e9 + start[1];
-  const totalEndNs = end[0] * 1e9 + end[1];
-  const diff = Math.max(0, totalEndNs - totalStartNs);
-  const seconds = Math.floor(diff / 1e9);
-  const nanoseconds = diff % 1e9;
+  // Subtract component-wise with borrow handling. Do NOT collapse to a single
+  // nanosecond total — `start[0] * 1e9` overflows Number.MAX_SAFE_INTEGER for
+  // current Unix timestamps and loses precision.
+  let seconds = end[0] - start[0];
+  let nanoseconds = end[1] - start[1];
+  if (nanoseconds < 0) {
+    seconds -= 1;
+    nanoseconds += 1e9;
+  }
+  if (seconds < 0) {
+    return [0, 0];
+  }
   return [seconds, nanoseconds];
 };
 

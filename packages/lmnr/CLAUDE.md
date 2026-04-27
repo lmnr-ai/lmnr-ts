@@ -12,6 +12,7 @@ This is the main Laminar SDK for TypeScript/Node.js. It provides the Laminar cli
 - When integrating with a library that ships its own tracing (like Mastra), prefer implementing an exporter that transforms into OTel `ReadableSpan` and forwards through `LaminarSpanExporter`. Do NOT add the third-party SDK as a hard dep — declare it as an optional peer and duplicate the structural types locally so consumers who don't use that library aren't forced to install it.
 - Span path tracking (`lmnr.span.path` / `lmnr.span.ids_path`) must be built on SPAN_STARTED and finalized on SPAN_ENDED. Clean up trace state when `activeSpanIds` becomes empty to avoid memory leaks for long-running processes.
 - For OTel v1/v2 compat on emitted `ReadableSpan` objects, set BOTH `parentSpanId` + `parentSpanContext`, AND `instrumentationLibrary` + `instrumentationScope`. Different downstream processors read different fields depending on the installed `@opentelemetry/sdk-trace-base` version.
+- When computing `HrTime` deltas, subtract `[seconds, nanoseconds]` component-wise with borrow handling. Do NOT collapse to total nanoseconds via `s * 1e9 + ns` — current Unix second values (~1.7e9) overflow `Number.MAX_SAFE_INTEGER` once multiplied by 1e9, causing precision loss in the resulting duration.
 
 ## Mastra exporter specifics
 - Mastra `SpanType` enum values serialize as snake_case strings (`'model_step'`, not `'MODEL_STEP'`).
