@@ -137,22 +137,12 @@ export const nameFromSpanData = (agent: any): string => {
   return "";
 };
 
-export const getFirstNotNull = (d: Record<string, any>, ...keys: string[]): any => {
-  for (const key of keys) {
-    const v = d?.[key];
-    if (v !== undefined && v !== null) {
-      return v;
-    }
-  }
-  return undefined;
-};
-
-export const getAttrNotNull = (obj: any, ...attrs: string[]): any => {
-  if (obj == null) {
+export const getFirstNotNull = (d: any, ...keys: string[]): any => {
+  if (d == null) {
     return undefined;
   }
-  for (const attr of attrs) {
-    const v = obj[attr];
+  for (const key of keys) {
+    const v = d[key];
     if (v !== undefined && v !== null) {
       return v;
     }

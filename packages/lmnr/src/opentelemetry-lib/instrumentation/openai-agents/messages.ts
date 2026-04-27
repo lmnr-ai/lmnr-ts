@@ -3,7 +3,6 @@ import type { Span } from "@opentelemetry/api";
 import { initializeLogger } from "../../../utils";
 import { LaminarAttributes, SPAN_INPUT, SPAN_OUTPUT } from "../../tracing/attributes";
 import {
-  getAttrNotNull,
   getFirstNotNull,
   modelAsDict,
   normalizeMessages,
@@ -172,41 +171,24 @@ const applyUsage = (lmnrSpan: Span, usage: any): void => {
     return;
   }
 
-  let inputTokens: any;
-  let outputTokens: any;
-  let totalTokens: any;
-  let inputTokensDetails: any;
-  let outputTokensDetails: any;
-
-  if (typeof usage === "object" && !Array.isArray(usage) && usage.constructor === Object) {
-    inputTokens = getFirstNotNull(usage, "input_tokens", "prompt_tokens", "input");
-    outputTokens = getFirstNotNull(usage, "output_tokens", "completion_tokens", "output");
-    totalTokens = getFirstNotNull(usage, "total_tokens", "total");
-    inputTokensDetails = getFirstNotNull(
-      usage,
-      "input_tokens_details",
-      "prompt_tokens_details",
-    );
-    outputTokensDetails = getFirstNotNull(
-      usage,
-      "output_tokens_details",
-      "completion_tokens_details",
-    );
-  } else {
-    inputTokens = getAttrNotNull(usage, "input_tokens", "prompt_tokens");
-    outputTokens = getAttrNotNull(usage, "output_tokens", "completion_tokens");
-    totalTokens = getAttrNotNull(usage, "total_tokens");
-    inputTokensDetails = getAttrNotNull(
-      usage,
-      "input_tokens_details",
-      "prompt_tokens_details",
-    );
-    outputTokensDetails = getAttrNotNull(
-      usage,
-      "output_tokens_details",
-      "completion_tokens_details",
-    );
-  }
+  const inputTokens = getFirstNotNull(usage, "input_tokens", "prompt_tokens", "input");
+  const outputTokens = getFirstNotNull(
+    usage,
+    "output_tokens",
+    "completion_tokens",
+    "output",
+  );
+  const totalTokens = getFirstNotNull(usage, "total_tokens", "total");
+  const inputTokensDetails = getFirstNotNull(
+    usage,
+    "input_tokens_details",
+    "prompt_tokens_details",
+  );
+  const outputTokensDetails = getFirstNotNull(
+    usage,
+    "output_tokens_details",
+    "completion_tokens_details",
+  );
 
   let cachedInputTokens: number | undefined;
   let reasoningOutputTokens: number | undefined;
