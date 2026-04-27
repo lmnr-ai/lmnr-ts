@@ -758,6 +758,12 @@ export class MastraExporter {
         }
         // No parent generation state (shouldn't normally happen) — fall
         // through to the immediate-emit path so the span isn't lost.
+        // Clean up the step's own lookup entries here: the generation's
+        // finally only iterates `pendingStepSpans`, so orphan steps would
+        // otherwise leak `generationIdByStepId` / `stepIndexBySpanId`
+        // entries indefinitely.
+        this.generationIdByStepId.delete(span.id);
+        this.stepIndexBySpanId.delete(span.id);
       }
 
       if (span.type === "model_generation") {
