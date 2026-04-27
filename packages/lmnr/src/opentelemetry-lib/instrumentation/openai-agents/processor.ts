@@ -4,10 +4,11 @@ import type {
   Trace,
   TracingProcessor,
 } from "@openai/agents";
-import { ROOT_CONTEXT, type Span as OtelSpan } from "@opentelemetry/api";
+import { type Context, ROOT_CONTEXT, type Span as OtelSpan, trace } from "@opentelemetry/api";
 
 import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
+import { LaminarContextManager } from "../../tracing/context";
 import { LaminarSpan } from "../../tracing/span";
 import {
   DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY,
@@ -23,6 +24,14 @@ const logger = initializeLogger();
 interface SpanEntry {
   lmnrSpan: OtelSpan;
   agentsSpan: AgentsSpan<SpanData>;
+  // Context reference that was pushed onto the Laminar ALS stack when this
+  // span started, so nested Laminar instrumentations (google-genai, etc.)
+  // running inside the agents callback pick this span up as their parent.
+  // `onSpanEnd` removes this exact reference via
+  // `LaminarContextManager.removeContext` — using the reference (not a LIFO
+  // pop) keeps the stack consistent when agent spans end out of order with
+  // respect to other activated spans sharing the same async frame.
+  activationContext?: Context;
 }
 
 interface TraceState {
@@ -159,11 +168,9 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
       );
 
       // Use startSpan (not startActiveSpan) so we don't push onto the ALS
-      // context stack. We resolve parents explicitly via parentSpanContext,
-      // so ALS activation adds nothing — and pushing would corrupt the stack
-      // for unrelated instrumentation sharing the same async frame: spans
-      // can end out of LIFO order, and popContext blindly drops the last
-      // entry, which may belong to a different still-active span.
+      // stack via Laminar's built-in activation path — that path uses
+      // `popContext` (blunt LIFO) on `end()`, which corrupts the stack when
+      // agent spans end out of order with respect to other activated spans.
       lmnrSpan = Laminar.startSpan({
         name,
         spanType,
@@ -181,7 +188,22 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
         }
         return;
       }
-      state.spans.set(key, { lmnrSpan, agentsSpan: span });
+
+      // Register the new span on the Laminar ALS stack so nested Laminar
+      // instrumentation (google-genai, etc.) that runs inside the agent /
+      // tool callback picks it up as parent via `getContext()`. We push the
+      // context reference here and remove that exact reference in onSpanEnd
+      // — never relying on LIFO order — so concurrent or out-of-order agent
+      // span ends cannot corrupt the stack for unrelated activations sharing
+      // the same async frame.
+      let activationContext: Context | undefined;
+      try {
+        activationContext = trace.setSpan(ctx, lmnrSpan);
+        LaminarContextManager.pushContext(activationContext);
+      } catch {
+        activationContext = undefined;
+      }
+      state.spans.set(key, { lmnrSpan, agentsSpan: span, activationContext });
     } catch (e) {
       logger.debug(`Error in onSpanStart: ${String(e)}`);
       if (lmnrSpan !== undefined) {
@@ -253,6 +275,14 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
         }
       }
 
+      if (entry.activationContext !== undefined) {
+        try {
+          LaminarContextManager.removeContext(entry.activationContext);
+        } catch {
+          // ignore
+        }
+      }
+
       try {
         entry.lmnrSpan.end();
       } catch {
@@ -301,6 +331,13 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
         applySpanError(entry.lmnrSpan, entry.agentsSpan);
       } catch {
         // ignore
+      }
+      if (entry.activationContext !== undefined) {
+        try {
+          LaminarContextManager.removeContext(entry.activationContext);
+        } catch {
+          // ignore
+        }
       }
       try {
         entry.lmnrSpan.end();

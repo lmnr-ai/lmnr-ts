@@ -121,6 +121,26 @@ export class LaminarContextManager {
     this._globalActiveContexts.push(context);
   }
 
+  // Remove a specific context reference from the ALS stack. Unlike
+  // `popContext`, this does not assume LIFO order — it locates the most
+  // recent entry `=== context` and splices it out. Used by callers (e.g. the
+  // OpenAI Agents processor) that activate spans so nested instrumentation
+  // inherits them, but whose spans can end in arbitrary order with respect to
+  // other activated spans on the same async frame.
+  public static removeContext(context: Context) {
+    const contexts = this.getContextStack();
+    if (contexts.length === 0) {
+      return;
+    }
+    for (let i = contexts.length - 1; i >= 0; i--) {
+      if (contexts[i] === context) {
+        const newContexts = contexts.slice(0, i).concat(contexts.slice(i + 1));
+        this._asyncLocalStorage.enterWith(newContexts);
+        return;
+      }
+    }
+  }
+
   public static popGlobalContext(context?: Context) {
     if (context !== undefined) {
       // Remove the specific context entry (most recent occurrence) to keep

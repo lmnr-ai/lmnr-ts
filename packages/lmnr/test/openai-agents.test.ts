@@ -493,6 +493,62 @@ void describe("LaminarAgentsTraceProcessor", () => {
     assert.strictEqual(toolSpanExported.name, "get_weather");
   });
 
+  void it(
+    "nested Laminar.startSpan inherits the active agents span as parent",
+    async () => {
+      // Regression for the case where another Laminar instrumentation
+      // (google-genai, anthropic, etc.) creates a span from inside an
+      // @openai/agents tool / agent callback: the nested span must be
+      // parented to the agents span, not become a root span in a separate
+      // trace. The processor makes this work by activating each agents span
+      // on Laminar's ALS context stack for the duration of the span.
+      const processor = new LaminarAgentsTraceProcessor();
+      processor.start();
+
+      const t = fakeTrace({ traceId: "trace_nested_parent", name: "t" });
+      await processor.onTraceStart(t);
+
+      const agentsSpan = fakeSpan({
+        traceId: "trace_nested_parent",
+        spanId: "span_parent",
+        name: null,
+        spanData: {
+          type: "function",
+          name: "tool_outer",
+          input: "x",
+          output: "y",
+        },
+      });
+      await processor.onSpanStart(agentsSpan);
+
+      // Simulate a nested Laminar-instrumented call.
+      const nested = Laminar.startSpan({ name: "nested.llm", spanType: "LLM" });
+      nested.end();
+
+      await processor.onSpanEnd(agentsSpan);
+      await processor.onTraceEnd(t);
+      await Laminar.flush();
+
+      const spans = exporter.getFinishedSpans();
+      const nestedSpan = spans.find((s) => s.name === "nested.llm");
+      const toolSpan = spans.find((s) => s.name === "tool_outer");
+      assert.ok(nestedSpan && toolSpan, "expected both spans exported");
+      assert.strictEqual(
+        nestedSpan.spanContext().traceId,
+        toolSpan.spanContext().traceId,
+        "nested span must share the agents trace id",
+      );
+      const nestedParent =
+        (nestedSpan as any).parentSpanContext?.spanId
+        ?? (nestedSpan as any).parentSpanId;
+      assert.strictEqual(
+        nestedParent,
+        toolSpan.spanContext().spanId,
+        "nested span must be parented to the active agents span",
+      );
+    },
+  );
+
   void it("idempotent onTraceEnd", async () => {
     const processor = new LaminarAgentsTraceProcessor();
     processor.start();
@@ -585,47 +641,106 @@ void describe("LaminarAgentsTraceProcessor", () => {
     );
   });
 
-  void it("does not push onto the ALS context stack", async () => {
-    // Regression: the processor resolves parents explicitly via
-    // parentSpanContext, so it must not activate spans onto the shared ALS
-    // context stack. If it did, spans ending out of LIFO order would cause
-    // popContext to remove entries belonging to unrelated, still-active
-    // spans — corrupting the stack for non-agents instrumentation sharing
-    // the same async frame.
-    const processor = new LaminarAgentsTraceProcessor();
-    processor.start();
+  void it(
+    "pushes onto ALS during a span's lifetime and removes cleanly on end",
+    async () => {
+      // The processor activates each agents span on the Laminar ALS stack so
+      // that nested Laminar instrumentation (google-genai, etc.) running
+      // inside tool / agent callbacks inherits the agents span as parent.
+      // It must remove the entry by reference on onSpanEnd so that
+      // out-of-order ends cannot corrupt entries belonging to unrelated
+      // still-active spans on the same async frame.
+      const processor = new LaminarAgentsTraceProcessor();
+      processor.start();
 
-    const baselineStack = LaminarContextManager.getContextStack().length;
+      const baselineStack = LaminarContextManager.getContextStack().length;
 
-    const fakeTraceObj = fakeTrace({ traceId: "trace_noals", name: "t" });
-    await processor.onTraceStart(fakeTraceObj);
-    assert.strictEqual(
-      LaminarContextManager.getContextStack().length,
-      baselineStack,
-      "onTraceStart must not push onto ALS stack",
-    );
+      const fakeTraceObj = fakeTrace({ traceId: "trace_als", name: "t" });
+      await processor.onTraceStart(fakeTraceObj);
 
-    const childSpan = fakeSpan({
-      traceId: "trace_noals",
-      spanId: "span_noals_child",
-      name: null,
-      spanData: { type: "function", name: "tool", input: "x", output: "x" },
-    });
-    await processor.onSpanStart(childSpan);
-    assert.strictEqual(
-      LaminarContextManager.getContextStack().length,
-      baselineStack,
-      "onSpanStart must not push onto ALS stack",
-    );
+      const childSpan = fakeSpan({
+        traceId: "trace_als",
+        spanId: "span_als_child",
+        name: null,
+        spanData: { type: "function", name: "tool", input: "x", output: "x" },
+      });
+      await processor.onSpanStart(childSpan);
+      assert.strictEqual(
+        LaminarContextManager.getContextStack().length,
+        baselineStack + 1,
+        "onSpanStart must push the agents span onto ALS so nested "
+          + "instrumentation inherits it",
+      );
 
-    await processor.onSpanEnd(childSpan);
-    await processor.onTraceEnd(fakeTraceObj);
-    assert.strictEqual(
-      LaminarContextManager.getContextStack().length,
-      baselineStack,
-      "processor must leave ALS stack unchanged after ending trace",
-    );
-  });
+      await processor.onSpanEnd(childSpan);
+      assert.strictEqual(
+        LaminarContextManager.getContextStack().length,
+        baselineStack,
+        "onSpanEnd must remove the activation entry",
+      );
+
+      await processor.onTraceEnd(fakeTraceObj);
+      assert.strictEqual(
+        LaminarContextManager.getContextStack().length,
+        baselineStack,
+        "processor must leave ALS stack unchanged after ending trace",
+      );
+    },
+  );
+
+  void it(
+    "removes activation entries by reference, surviving out-of-order ends",
+    async () => {
+      // Interleave starts/ends from two agent spans: if removal were a blind
+      // LIFO pop, ending the *older* span first would drop the newer span's
+      // entry. `removeContext` finds the exact reference instead.
+      const processor = new LaminarAgentsTraceProcessor();
+      processor.start();
+
+      const fakeTraceObj = fakeTrace({ traceId: "trace_interleave", name: "t" });
+      await processor.onTraceStart(fakeTraceObj);
+
+      const baselineStack = LaminarContextManager.getContextStack().length;
+
+      const spanA = fakeSpan({
+        traceId: "trace_interleave",
+        spanId: "span_A",
+        name: null,
+        spanData: { type: "function", name: "tool_A", input: "a", output: "a" },
+      });
+      const spanB = fakeSpan({
+        traceId: "trace_interleave",
+        spanId: "span_B",
+        name: null,
+        spanData: { type: "function", name: "tool_B", input: "b", output: "b" },
+      });
+
+      await processor.onSpanStart(spanA);
+      await processor.onSpanStart(spanB);
+      assert.strictEqual(
+        LaminarContextManager.getContextStack().length,
+        baselineStack + 2,
+        "both span activations must be on the stack",
+      );
+
+      // Out-of-LIFO end: close A before B.
+      await processor.onSpanEnd(spanA);
+      assert.strictEqual(
+        LaminarContextManager.getContextStack().length,
+        baselineStack + 1,
+        "ending A first must remove A's entry, leaving B's in place",
+      );
+
+      await processor.onSpanEnd(spanB);
+      assert.strictEqual(
+        LaminarContextManager.getContextStack().length,
+        baselineStack,
+        "ending B must clean up the remaining entry",
+      );
+
+      await processor.onTraceEnd(fakeTraceObj);
+    },
+  );
 });
 
 void describe("openai-agents end-to-end via nock", () => {
