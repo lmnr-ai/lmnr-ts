@@ -753,12 +753,12 @@ void describe("openai-agents end-to-end via nock", () => {
     nock.cleanAll();
     // The agents SDK retries the request across multiple turns; allow each
     // cassette entry to satisfy any number of matching requests.
-    recordings.forEach((recording: nock.Definition) => {
+    recordings.forEach((recording: nock.Definition & { rawHeaders?: any }) => {
       const response = decompressRecordingResponse(recording);
       nock(recording.scope)
         .persist()
         .intercept(recording.path, recording.method ?? "POST")
-        .reply(recording.status, response, recording.headers);
+        .reply(recording.status, response, recording.rawHeaders ?? recording.headers);
     });
   };
 
