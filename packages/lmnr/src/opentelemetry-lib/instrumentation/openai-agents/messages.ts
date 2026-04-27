@@ -7,7 +7,6 @@ import {
   getFirstNotNull,
   modelAsDict,
   normalizeMessages,
-  toDict,
 } from "./helpers";
 
 const logger = initializeLogger();
@@ -212,17 +211,12 @@ const applyUsage = (lmnrSpan: Span, usage: any): void => {
   let cachedInputTokens: number | undefined;
   let reasoningOutputTokens: number | undefined;
 
-  if (inputTokensDetails) {
-    const d = toDict(inputTokensDetails);
-    if (d.cached_tokens !== undefined && d.cached_tokens !== null) {
-      cachedInputTokens = Number(d.cached_tokens);
-    }
+  if (inputTokensDetails?.cached_tokens !== undefined && inputTokensDetails?.cached_tokens !== null) {
+    cachedInputTokens = Number(inputTokensDetails.cached_tokens);
   }
-  if (outputTokensDetails) {
-    const d = toDict(outputTokensDetails);
-    if (d.reasoning_tokens !== undefined && d.reasoning_tokens !== null) {
-      reasoningOutputTokens = Number(d.reasoning_tokens);
-    }
+  if (outputTokensDetails?.reasoning_tokens !== undefined &&
+    outputTokensDetails?.reasoning_tokens !== null) {
+    reasoningOutputTokens = Number(outputTokensDetails.reasoning_tokens);
   }
   if (inputTokens !== undefined && inputTokens !== null) {
     lmnrSpan.setAttribute(LaminarAttributes.INPUT_TOKEN_COUNT, Number(inputTokens));

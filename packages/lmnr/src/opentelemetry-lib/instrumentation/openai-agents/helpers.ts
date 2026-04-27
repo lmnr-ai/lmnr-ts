@@ -1,10 +1,6 @@
 import { createContextKey } from "@opentelemetry/api";
 import { AsyncLocalStorage } from "async_hooks";
 
-import { initializeLogger } from "../../../utils";
-
-const logger = initializeLogger();
-
 // Laminar context key used to tell the OpenAI Responses API instrumentation
 // (once we add one to the TS SDK) that the current call is already being
 // tracked by the OpenAI Agents trace processor, so it should skip creating
@@ -176,21 +172,6 @@ export const modelAsDict = (obj: any): Record<string, any> | undefined => {
   }
   // Plain object
   return obj as Record<string, any>;
-};
-
-export const toDict = (obj: any): Record<string, any> => {
-  if (obj == null) {
-    return {};
-  }
-  if (typeof obj === "object" && !Array.isArray(obj)) {
-    return obj as Record<string, any>;
-  }
-  try {
-    return { ...(obj as object) } as Record<string, any>;
-  } catch (e) {
-    logger.debug(`Error converting to dict: ${String(obj)}, error: ${String(e)}`);
-    return {};
-  }
 };
 
 export const normalizeMessages = (
