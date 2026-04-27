@@ -51,10 +51,6 @@ When adding/modifying integration tests for Mastra:
 - Use `await observability.shutdown()` to flush — there is no `.flush()` method on `Observability`.
 - AI SDK v6 (Mastra 1.28's dep) changes two things: tool `execute` is `(inputData) => ...` (not `({ context })`), and `maxSteps` is removed — use `stopWhen: ({ steps }) => (steps?.length ?? 0) >= N`.
 
-## Local End-to-End Testing Against Laminar
-
-The staging sandbox project for this workspace is `0cce3ee3-d6bb-437d-a2fa-bbfd72a935e2`. The API key in env `LMNR_LOCAL_PROJECT_API_KEY` targets it. Trace URL: `http://localhost:3000/project/0cce3ee3-d6bb-437d-a2fa-bbfd72a935e2/traces/<traceId>`. For local login, `FORCE_EMAIL_AUTH=true` in the frontend's `.env.local` accepts any email — the sandbox owner is `agent@lmnr.ai`.
-
 ## Coding Style
 
 - Prefer arrow functions: `const foo = async (...) => { ... }` over named `function foo()`.
