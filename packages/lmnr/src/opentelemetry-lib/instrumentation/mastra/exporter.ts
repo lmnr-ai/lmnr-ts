@@ -1,25 +1,13 @@
 import {
+  Context,
+  context as contextApi,
+  Span,
   SpanContext,
   SpanKind,
   SpanStatusCode,
   trace,
   TraceFlags,
 } from "@opentelemetry/api";
-import { OTLPTraceExporter as ExporterHttp } from "@opentelemetry/exporter-trace-otlp-proto";
-import {
-  BatchSpanProcessor,
-  ReadableSpan,
-  SimpleSpanProcessor,
-  SpanProcessor,
-  TimedEvent,
-} from "@opentelemetry/sdk-trace-base";
-import {
-  ATTR_SERVICE_NAME,
-  ATTR_SERVICE_VERSION,
-  ATTR_TELEMETRY_SDK_LANGUAGE,
-  ATTR_TELEMETRY_SDK_NAME,
-  ATTR_TELEMETRY_SDK_VERSION,
-} from "@opentelemetry/semantic-conventions";
 
 import { version as SDK_VERSION } from "../../../../package.json";
 import {
@@ -43,8 +31,8 @@ import {
   SPAN_TYPE,
   USER_ID,
 } from "../../tracing/attributes";
-import { createResource, makeSpanOtelV2Compatible } from "../../tracing/compat";
 import { LaminarContextManager } from "../../tracing/context";
+import { getSpanProcessor, getTracerProvider } from "../../tracing/index";
 import {
   AISdkMessage,
   MastraExportedSpan,
@@ -56,7 +44,6 @@ import {
 import {
   buildAssistantMessageFromStepOutput,
   cleanMastraToolName,
-  computeDuration,
   dateToHrTime,
   extractMessages,
   extractToolCallId,
@@ -66,7 +53,6 @@ import {
   normalizeProvider,
   serializeJSON,
   stringifyArgs,
-  stripTrailingSlash,
   toAttributeValue,
 } from "./utils";
 
@@ -150,21 +136,9 @@ export class MastraExporter {
   public readonly name = "laminar";
 
   private readonly config: {
-    apiKey: string;
-    endpoint: string;
-    headers: Record<string, string>;
     realtime: boolean;
-    disableBatch: boolean;
-    batchSize: number;
-    timeoutMillis: number;
     linkToActiveContext: boolean;
-  } | null;
-
-  private processor?: SpanProcessor;
-  private otlpExporter?: ExporterHttp;
-  private resource?: unknown;
-  private readonly scope = { name: "@lmnr-ai/lmnr", version: SDK_VERSION };
-  private isSetup = false;
+  };
 
   private readonly traceMap: Map<string, TraceState> = new Map();
   private readonly generationStateById: Map<string, GenerationState> =
@@ -175,59 +149,30 @@ export class MastraExporter {
   // Remember step index per step span so tool_call children can look up which
   // step they belong to (fan-in by arrival order).
   private readonly stepIndexBySpanId: Map<string, number> = new Map();
+  // Live OTel spans created via `tracer.startSpan` at span_started time, held
+  // until span_ended. Lookups by Mastra span id let us:
+  //   - apply attributes / status / exception on the live span at end-time;
+  //   - resolve a Mastra child's parent context to the *mutated* live span,
+  //     so the SDK threads parent linkage with our Mastra-derived ids.
+  private readonly liveOtelSpanByMastraId: Map<string, Span> = new Map();
+
+  private warnedNotInitialized = false;
 
   constructor(options: MastraExporterOptions = {}) {
-    const apiKey = options.apiKey ?? process.env.LMNR_PROJECT_API_KEY;
-    if (!apiKey) {
-      logger.warn(
-        "[MastraExporter] LMNR_PROJECT_API_KEY is not set and no apiKey " +
-        "was passed — exporter will drop all spans.",
-      );
-      this.config = null;
-      return;
-    }
-
-    const baseUrl = stripTrailingSlash(
-      options.baseUrl ?? process.env.LMNR_BASE_URL ?? "https://api.lmnr.ai",
-    );
-    const port = options.httpPort ?? 443;
-    const defaultEndpoint = /:\d+$/.test(baseUrl)
-      ? `${baseUrl}/v1/traces`
-      : `${baseUrl}:${port}/v1/traces`;
-
     this.config = {
-      apiKey,
-      endpoint: options.endpoint ?? defaultEndpoint,
-      headers: {
-        ...(options.headers ?? {}),
-        Authorization: `Bearer ${apiKey}`,
-      },
       realtime: options.realtime ?? false,
-      disableBatch: options.disableBatch ?? false,
-      batchSize: options.batchSize ?? 512,
-      timeoutMillis: options.timeoutMillis ?? 30000,
       linkToActiveContext: options.linkToActiveContext ?? true,
     };
   }
 
-  init(options?: { config?: { serviceName?: string } }): void {
-    const serviceName = options?.config?.serviceName ?? "mastra-service";
-    this.resource = createResource({
-      [ATTR_SERVICE_NAME]: serviceName,
-      [ATTR_SERVICE_VERSION]: SDK_VERSION,
-      [ATTR_TELEMETRY_SDK_NAME]: "@lmnr-ai/lmnr",
-      [ATTR_TELEMETRY_SDK_VERSION]: SDK_VERSION,
-      [ATTR_TELEMETRY_SDK_LANGUAGE]: "nodejs",
-    });
-  }
+  // Mastra calls `init({ config: { serviceName } })` on registration. We rely
+  // on Laminar's tracer provider (set by `Laminar.initialize()`) for span
+  // creation and export, so this is a no-op kept only for API compatibility
+  // with Mastra's exporter contract.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  init(_options?: unknown): void {}
 
   async exportTracingEvent(event: MastraTracingEvent): Promise<void> {
-    // Fully short-circuit when the exporter is misconfigured (no API key).
-    // Without this guard, handleSpanStarted and generationAttrsById would
-    // accumulate state indefinitely while handleSpanEnded's early-return
-    // skips the cleanup block that reclaims it.
-    if (!this.config) return;
-
     const span = event.exportedSpan;
     // Point-in-time event spans have no start/end pair and don't map cleanly
     // onto our span-tree model — drop them regardless of phase. The guard must
@@ -268,9 +213,12 @@ export class MastraExporter {
   }
 
   async flush(): Promise<void> {
-    if (!this.processor) return;
+    // Flush Laminar's span processor — the only pipeline our spans flow
+    // through. No-op when Laminar isn't initialized.
+    const processor = getSpanProcessor();
+    if (!processor) return;
     try {
-      await this.processor.forceFlush();
+      await processor.forceFlush();
     } catch (err) {
       logger.error(
         `[MastraExporter] forceFlush failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -278,19 +226,16 @@ export class MastraExporter {
     }
   }
 
-  async shutdown(): Promise<void> {
-    try {
-      await this.processor?.shutdown();
-    } finally {
-      this.processor = undefined;
-      this.otlpExporter = undefined;
-      this.isSetup = false;
-      this.traceMap.clear();
-      this.generationStateById.clear();
-      this.generationAttrsById.clear();
-      this.generationIdByStepId.clear();
-      this.stepIndexBySpanId.clear();
-    }
+  shutdown(): Promise<void> {
+    // Don't tear down Laminar's pipeline here — it may still be needed by
+    // other instrumentations. Just drop our per-trace bookkeeping.
+    this.traceMap.clear();
+    this.generationStateById.clear();
+    this.generationAttrsById.clear();
+    this.generationIdByStepId.clear();
+    this.stepIndexBySpanId.clear();
+    this.liveOtelSpanByMastraId.clear();
+    return Promise.resolve();
   }
 
   private handleSpanStarted(span: MastraExportedSpan): void {
@@ -312,6 +257,8 @@ export class MastraExporter {
           : 0;
       this.stepIndexBySpanId.set(span.id, stepIndex);
     }
+
+    this.startOtelSpan(span, traceState);
   }
 
   // Build `spanPath` / `spanIdsPath` for a Mastra span and store them on the
@@ -348,7 +295,6 @@ export class MastraExporter {
   }
 
   private async handleSpanEnded(span: MastraExportedSpan): Promise<void> {
-    if (!this.config) return;
     if (span.type === MastraSpanType.MODEL_CHUNK) {
       // MODEL_CHUNK spans are streaming noise as far as trace output goes
       // (dropped below), but reasoning chunks carry the thinking text for
@@ -361,34 +307,22 @@ export class MastraExporter {
       return;
     }
 
-    this.setupIfNeeded();
-    if (!this.processor) return;
-
     const traceState = this.getOrCreateTraceState(span.traceId);
 
     try {
-      // Backfill path info when SPAN_STARTED was missed (e.g. exporter
-      // registered mid-trace or a re-entrant span_ended without a matching
-      // span_started). Inside the try so a throw here still runs cleanup.
+      // Backfill path/state when SPAN_STARTED was missed (e.g. exporter
+      // registered mid-trace, the global SDK was unrecording at start time).
+      // Inside the try so a throw here still runs cleanup.
       if (!traceState.spanPathById.has(span.id)) {
         this.recordSpanPath(span, traceState);
         // Mirror handleSpanStarted: register the span as active so the
-        // finally block's `activeSpanIds.delete` is balanced. Without this,
-        // `activeSpanIds.size === 0` could already be true on entry and the
-        // trace state (including captured OTel context and accumulated
-        // path info for later children) would be dropped prematurely.
+        // finally block's `activeSpanIds.delete` is balanced.
         traceState.activeSpanIds.add(span.id);
       }
-
       if (
         span.type === MastraSpanType.MODEL_GENERATION &&
         !this.generationStateById.has(span.id)
       ) {
-        // Defensive: only fires if we somehow missed `span_started`. There's
-        // no point refreshing `baseMessages` here even when `span.input` is
-        // richer than what `span_started` carried — every MODEL_STEP child
-        // has already ended and serialized its prompt by the time the parent
-        // generation ends, so nothing downstream would read the new value.
         this.initGenerationState(span);
       }
       if (
@@ -398,15 +332,49 @@ export class MastraExporter {
       ) {
         this.generationIdByStepId.set(span.id, span.parentSpanId);
       }
+      if (!this.liveOtelSpanByMastraId.has(span.id)) {
+        // Span_ended without a prior span_started, or the SDK was a
+        // NonRecording proxy at start time and we couldn't keep a live
+        // reference. Create the live span now (zero-duration if Mastra
+        // didn't carry startTime).
+        this.startOtelSpan(span, traceState);
+      }
 
-      // Record state transitions BEFORE converting, since the conversion reads
-      // the accumulated history.
+      // Record state transitions BEFORE applying attrs; LLM attribute
+      // construction reads the accumulated step turn history.
       this.updateGenerationStateOnSpanEnd(span);
 
-      const readable = this.convertSpanToOtel(span, traceState);
-      this.processor.onEnd(readable);
+      const otelSpan = this.liveOtelSpanByMastraId.get(span.id);
+      if (!otelSpan) {
+        // `Laminar.initialize()` wasn't called, so the tracer was a noop
+        // and `startOtelSpan` couldn't keep a recording span. Skip silently
+        // — `startOtelSpan` already logged a one-time warning.
+        return;
+      }
+
+      this.applyEndAttributes(span, otelSpan, traceState);
+
+      if (span.errorInfo) {
+        otelSpan.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: span.errorInfo.message,
+        });
+        otelSpan.recordException({
+          name: span.errorInfo.name ?? "Error",
+          message: span.errorInfo.message,
+          stack: span.errorInfo.stack,
+        });
+      }
+
+      const endTime = span.endTime
+        ? dateToHrTime(span.endTime)
+        : dateToHrTime(span.startTime);
+      otelSpan.end(endTime);
+
+      // `Span.end()` synchronously fanned out to every processor on
+      // Laminar's tracer provider. No manual onEnd push needed.
       if (this.config.realtime) {
-        await this.processor.forceFlush();
+        await getSpanProcessor()?.forceFlush();
       }
     } catch (err) {
       logger.error(
@@ -427,6 +395,7 @@ export class MastraExporter {
         this.generationIdByStepId.delete(span.id);
         this.stepIndexBySpanId.delete(span.id);
       }
+      this.liveOtelSpanByMastraId.delete(span.id);
     }
   }
 
@@ -635,109 +604,141 @@ export class MastraExporter {
     return created;
   }
 
-  private setupIfNeeded(): void {
-    if (this.isSetup || !this.config) return;
-    if (!this.resource) {
-      this.resource = createResource({
-        [ATTR_SERVICE_NAME]: "mastra-service",
-        [ATTR_SERVICE_VERSION]: SDK_VERSION,
-        [ATTR_TELEMETRY_SDK_NAME]: "@lmnr-ai/lmnr",
-        [ATTR_TELEMETRY_SDK_VERSION]: SDK_VERSION,
-        [ATTR_TELEMETRY_SDK_LANGUAGE]: "nodejs",
-      });
-    }
-
-    this.otlpExporter = new ExporterHttp({
-      url: this.config.endpoint,
-      headers: this.config.headers,
-      timeoutMillis: this.config.timeoutMillis,
-    });
-    this.processor = this.config.disableBatch
-      ? new SimpleSpanProcessor(this.otlpExporter)
-      : new BatchSpanProcessor(this.otlpExporter, {
-        maxExportBatchSize: this.config.batchSize,
-        exportTimeoutMillis: this.config.timeoutMillis,
-      });
-    this.isSetup = true;
-  }
-
-  private convertSpanToOtel(
+  // Create a real OTel span via Laminar's tracer, then mutate its ids /
+  // parent references so they line up with Mastra's. We use a real span (not
+  // a manually-constructed ReadableSpan) so the registered LaminarSpanProcessor
+  // sees it on `onStart` and can attach association properties from the
+  // active context.
+  private startOtelSpan(
     span: MastraExportedSpan,
     traceState: TraceState,
-  ): ReadableSpan {
-    // Prefer the OTel trace id captured at first-event time so Mastra spans
-    // nest under the user's active `observe()` span instead of landing in
-    // their own disconnected trace. Falls back to Mastra's own trace id when
-    // there was no active OTel context or linking is disabled.
-    const traceId = traceState.otelTraceId ?? normalizeOtelTraceId(span.traceId);
-    const spanId = normalizeOtelSpanId(span.id);
-    const startTime = dateToHrTime(span.startTime);
-    const endTime = span.endTime ? dateToHrTime(span.endTime) : startTime;
-    const duration = computeDuration(span.startTime, span.endTime);
+  ): void {
+    // `Laminar.initialize()` is expected to have set up the tracer provider.
+    // If it wasn't called, `getTracerProvider()` falls back to the global
+    // OTel API which is a NoopTracerProvider, and `tracer.startSpan` will
+    // return a NonRecordingSpan — caught below.
+    const tracer = getTracerProvider().getTracer(
+      "@lmnr-ai/lmnr",
+      SDK_VERSION,
+    );
+    const parentCtx = this.buildParentContext(span, traceState);
 
-    const spanContext: SpanContext = {
-      traceId,
-      spanId,
-      traceFlags: TraceFlags.SAMPLED,
-      isRemote: false,
-    };
-    // Reparent: Mastra-root spans (no parentSpanId) adopt the captured OTel
-    // parent; everything else keeps its Mastra parent id verbatim, which is
-    // still valid under the rewritten traceId since every descendant points
-    // at a Mastra span id that we also rewrite onto the same OTel trace.
+    const otelSpan = tracer.startSpan(
+      span.name,
+      {
+        startTime: dateToHrTime(span.startTime),
+        kind: SpanKind.INTERNAL,
+      },
+      parentCtx,
+    );
+
+    if (!otelSpan.isRecording()) {
+      this.warnNotInitializedOnce();
+      return;
+    }
+
+    // Stamp Mastra-derived ids over the SDK's auto-generated ones. Mutates
+    // the SpanContext object the SDK holds internally — `spanContext()`
+    // returns the same reference each call.
+    const mastraSpanId = normalizeOtelSpanId(span.id);
+    const mastraTraceId =
+      traceState.otelTraceId ?? normalizeOtelTraceId(span.traceId);
+    Object.assign(otelSpan.spanContext(), {
+      traceId: mastraTraceId,
+      spanId: mastraSpanId,
+    });
+
+    // Patch parent references. We set both `parentSpanContext` (SDK v2) and
+    // `parentSpanId` (SDK v1 alias) so this works across SDK versions.
     const parentSpanIdNormalized = span.parentSpanId
       ? normalizeOtelSpanId(span.parentSpanId)
       : traceState.otelRootParentSpanId;
-    const parentSpanContext: SpanContext | undefined = parentSpanIdNormalized
-      ? {
-        traceId,
+    if (parentSpanIdNormalized) {
+      const parentSpanContext: SpanContext = {
+        traceId: mastraTraceId,
         spanId: parentSpanIdNormalized,
         traceFlags: TraceFlags.SAMPLED,
         isRemote: false,
-      }
-      : undefined;
-
-    const attributes = this.buildLaminarAttributes(span, traceState);
-    const events: TimedEvent[] = [];
-    let status: ReadableSpan["status"] = { code: SpanStatusCode.OK };
-    if (span.errorInfo) {
-      status = { code: SpanStatusCode.ERROR, message: span.errorInfo.message };
-      events.push({
-        name: "exception",
-        attributes: {
-          "exception.message": span.errorInfo.message,
-          "exception.type": span.errorInfo.name ?? "Error",
-          ...(span.errorInfo.stack
-            ? { "exception.stacktrace": span.errorInfo.stack }
-            : {}),
-        },
-        time: endTime,
+      };
+      Object.assign(otelSpan, {
+        parentSpanId: parentSpanIdNormalized,
+        parentSpanContext,
+      });
+    } else {
+      // Mastra root with no captured outer span — clear whatever parent the
+      // SDK inferred from `parentCtx` so the exported span reads as a root.
+      Object.assign(otelSpan, {
+        parentSpanId: undefined,
+        parentSpanContext: undefined,
       });
     }
 
-    const readable = {
-      name: span.name,
-      kind: SpanKind.INTERNAL,
-      spanContext: () => spanContext,
-      parentSpanContext,
-      startTime,
-      endTime,
-      status,
-      attributes,
-      links: [],
-      events,
-      duration,
-      ended: true,
-      resource: this.resource,
-      instrumentationScope: this.scope,
-      droppedAttributesCount: 0,
-      droppedEventsCount: 0,
-      droppedLinksCount: 0,
-    } as unknown as ReadableSpan;
-    // Populate v1 aliases (parentSpanId / instrumentationLibrary) so spans
-    // constructed here work under OTel SDK v1 processors/exporters too.
-    makeSpanOtelV2Compatible(readable);
-    return readable;
+    // Globally-registered processors (e.g. LaminarSpanProcessor) wrote
+    // `lmnr.span.path` / `lmnr.span.ids_path` during their `onStart` hook
+    // using the SDK's auto-generated span id — overwrite with our
+    // Mastra-derived versions so Laminar's UI nests the subtree correctly.
+    const spanPath = traceState.spanPathById.get(span.id);
+    const spanIdsPath = traceState.spanIdsPathById.get(span.id);
+    if (spanPath) otelSpan.setAttribute(SPAN_PATH, spanPath);
+    if (spanIdsPath) otelSpan.setAttribute(SPAN_IDS_PATH, spanIdsPath);
+
+    this.liveOtelSpanByMastraId.set(span.id, otelSpan);
+  }
+
+  private warnNotInitializedOnce(): void {
+    if (this.warnedNotInitialized) return;
+    this.warnedNotInitialized = true;
+    logger.warn(
+      "[MastraExporter] Laminar tracer is not initialized — Mastra spans " +
+        "will be dropped. Call `Laminar.initialize({ projectApiKey: ... })` " +
+        "before constructing `MastraExporter`.",
+    );
+  }
+
+  // Pick the OTel context whose active span will become the new Mastra
+  // span's parent. Resolution order:
+  //   1. Mastra child? Use the *live* (mutated) parent span we already
+  //      created — its spanContext exposes the Mastra-derived parent ids.
+  //   2. Mastra root? Use the outer `observe()` / `Laminar.startActiveSpan()`
+  //      span captured at first-event time (if linking is enabled).
+  //   3. Otherwise the bare context (Laminar's first, OTel's as fallback).
+  private buildParentContext(
+    span: MastraExportedSpan,
+    traceState: TraceState,
+  ): Context {
+    const baseCtx =
+      LaminarContextManager.getContext() ?? contextApi.active();
+
+    if (span.parentSpanId) {
+      const parentLive = this.liveOtelSpanByMastraId.get(span.parentSpanId);
+      if (parentLive) return trace.setSpan(baseCtx, parentLive);
+    }
+
+    if (traceState.otelTraceId && traceState.otelRootParentSpanId) {
+      const wrapped = trace.wrapSpanContext({
+        traceId: traceState.otelTraceId,
+        spanId: traceState.otelRootParentSpanId,
+        traceFlags: TraceFlags.SAMPLED,
+        isRemote: false,
+      });
+      return trace.setSpan(baseCtx, wrapped);
+    }
+
+    return baseCtx;
+  }
+
+  private applyEndAttributes(
+    span: MastraExportedSpan,
+    otelSpan: Span,
+    traceState: TraceState,
+  ): void {
+    const attributes = this.buildLaminarAttributes(span, traceState);
+    // Path attrs were already written in `startOtelSpan`. Skip them on the
+    // bulk re-apply both to avoid pointless setAttribute churn and to keep
+    // the path values stable if some upstream processor mutated them.
+    delete attributes[SPAN_PATH];
+    delete attributes[SPAN_IDS_PATH];
+    otelSpan.setAttributes(attributes);
   }
 
   private buildLaminarAttributes(

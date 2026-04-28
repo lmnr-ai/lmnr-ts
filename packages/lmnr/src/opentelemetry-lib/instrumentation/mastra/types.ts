@@ -65,24 +65,12 @@ export interface MastraTracingEvent {
 }
 
 export interface MastraExporterOptions {
-  /** Laminar base URL. Defaults to LMNR_BASE_URL env var or https://api.lmnr.ai. */
-  baseUrl?: string;
-  /** Laminar project API key. Defaults to LMNR_PROJECT_API_KEY. */
-  apiKey?: string;
-  /** HTTP port of the Laminar API. Defaults to 443. */
-  httpPort?: number;
-  /** Full OTLP HTTP endpoint override (including /v1/traces). */
-  endpoint?: string;
-  /** Extra request headers. */
-  headers?: Record<string, string>;
-  /** Disable batching (uses SimpleSpanProcessor). */
-  disableBatch?: boolean;
-  /** Flush immediately after every span end. */
+  /**
+   * Flush the underlying span processor after every span end. Useful for
+   * short-lived processes that exit before the batch processor would drain
+   * on its own.
+   */
   realtime?: boolean;
-  /** Maximum batch size. */
-  batchSize?: number;
-  /** Trace export timeout (ms). */
-  timeoutMillis?: number;
   /**
    * When true (default), reparent Mastra traces under the caller's active
    * OpenTelemetry span if one exists. This lets `observe()`-wrapped code that

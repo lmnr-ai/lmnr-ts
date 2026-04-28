@@ -2,12 +2,7 @@ import assert from "node:assert/strict";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 
 import { context, trace } from "@opentelemetry/api";
-import {
-  InMemorySpanExporter,
-  ReadableSpan,
-  SimpleSpanProcessor,
-  type SpanExporter,
-} from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
 import { Laminar, observe } from "../src";
 import {
@@ -35,50 +30,42 @@ const makeMastraSpan = (overrides: Record<string, unknown>) => ({
 });
 
 /**
- * Build a `MastraExporter` whose internal OTLP exporter is swapped for an
- * in-memory one, so we can assert what spans it emits without any network.
+ * Tests share the in-memory exporter with the outer `observe()` /
+ * `Laminar.startActiveSpan()` wrapper spans they create. Strip those so the
+ * assertions only see the spans the Mastra exporter produced.
  */
-const makeTestExporter = (opts: { linkToActiveContext?: boolean } = {}) => {
-  const inMemory = new InMemorySpanExporter();
-  const mastra = new MastraExporter({
-    apiKey: "test-key",
-    baseUrl: "http://127.0.0.1",
-    disableBatch: true,
-    realtime: true,
-    linkToActiveContext: opts.linkToActiveContext,
-  });
-  mastra.init({ config: { serviceName: "test" } });
-  // Replace the internal processor with one pointed at our in-memory exporter
-  // as soon as the exporter finishes its first lazy setup.
-  const privateMastra = mastra as unknown as {
-    processor?: {
-      onEnd(span: ReadableSpan): void;
-      forceFlush(): Promise<void>;
-      shutdown(): Promise<void>;
-    };
-    otlpExporter?: SpanExporter;
-    isSetup: boolean;
-  };
-  privateMastra.processor = new SimpleSpanProcessor(inMemory);
-  privateMastra.otlpExporter = inMemory;
-  privateMastra.isSetup = true;
-  return { mastra, inMemory };
-};
+const onlyMastraSpans = (exporter: InMemorySpanExporter) =>
+  exporter
+    .getFinishedSpans()
+    .filter((s) => s.name !== "outer" && s.name !== "manual outer");
 
 void describe("MastraExporter — OTel context linking", () => {
-  const initExporter = new InMemorySpanExporter();
+  // Each test reinitializes Laminar against a fresh in-memory exporter so
+  // `MastraExporter` (which now relies entirely on Laminar's tracer provider)
+  // routes every Mastra span through this exporter.
+  let initExporter: InMemorySpanExporter;
+
+  /** Build a MastraExporter wired into the current Laminar tracer provider. */
+  const makeTestExporter = (opts: { linkToActiveContext?: boolean } = {}) => {
+    const mastra = new MastraExporter({
+      realtime: true,
+      linkToActiveContext: opts.linkToActiveContext,
+    });
+    mastra.init({ config: { serviceName: "test" } });
+    return { mastra, inMemory: initExporter };
+  };
 
   void beforeEach(() => {
     _resetConfiguration();
+    initExporter = new InMemorySpanExporter();
     initializeTracing({ exporter: initExporter, disableBatch: true });
   });
 
-  void afterEach(() => {
-    initExporter.reset();
+  void afterEach(async () => {
+    await initExporter.shutdown();
   });
 
-  void after(async () => {
-    await initExporter.shutdown();
+  void after(() => {
     trace.disable();
     context.disable();
   });
@@ -117,7 +104,7 @@ void describe("MastraExporter — OTel context linking", () => {
       });
     });
 
-    const spans = inMemory.getFinishedSpans();
+    const spans = onlyMastraSpans(inMemory);
     assert.strictEqual(spans.length, 1, "expected exactly one Mastra span");
     const s = spans[0];
     assert.strictEqual(
@@ -183,7 +170,7 @@ void describe("MastraExporter — OTel context linking", () => {
       });
     });
 
-    const spans = inMemory.getFinishedSpans();
+    const spans = onlyMastraSpans(inMemory);
     assert.strictEqual(spans.length, 2);
     const traceIds = [...new Set(spans.map((s) => s.spanContext().traceId))];
     assert.strictEqual(traceIds.length, 1, "all Mastra spans share one trace");
@@ -229,7 +216,7 @@ void describe("MastraExporter — OTel context linking", () => {
       outer.end();
     }
 
-    const spans = inMemory.getFinishedSpans();
+    const spans = onlyMastraSpans(inMemory);
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(
       spans[0].spanContext().traceId,
@@ -269,7 +256,7 @@ void describe("MastraExporter — OTel context linking", () => {
       });
     });
 
-    const spans = inMemory.getFinishedSpans();
+    const spans = onlyMastraSpans(inMemory);
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(
       spans[0].spanContext().traceId,
@@ -337,7 +324,7 @@ void describe("MastraExporter — OTel context linking", () => {
     assert.ok(outerSpanPath, "outer span must expose SPAN_PATH attribute");
     assert.ok(outerIdsPath, "outer span must expose SPAN_IDS_PATH attribute");
 
-    const spans = inMemory.getFinishedSpans();
+    const spans = onlyMastraSpans(inMemory);
     assert.strictEqual(spans.length, 2);
 
     const root = spans.find((s) => s.name === "agent run")!;
@@ -399,7 +386,7 @@ void describe("MastraExporter — OTel context linking", () => {
       });
     });
 
-    const spans = inMemory.getFinishedSpans();
+    const spans = onlyMastraSpans(inMemory);
     assert.strictEqual(spans.length, 1);
     const path = spans[0].attributes[SPAN_PATH] as string[];
     const ids = spans[0].attributes[SPAN_IDS_PATH] as string[];
@@ -429,7 +416,7 @@ void describe("MastraExporter — OTel context linking", () => {
       }),
     });
 
-    const spans = inMemory.getFinishedSpans();
+    const spans = onlyMastraSpans(inMemory);
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(
       spans[0].spanContext().traceId,
@@ -550,7 +537,7 @@ void describe("MastraExporter — OTel context linking", () => {
         }),
       });
 
-      const spans = inMemory.getFinishedSpans();
+      const spans = onlyMastraSpans(inMemory);
       // No chunk spans should be emitted.
       assert.ok(
         !spans.some((s) => s.name.startsWith("chunk: ")),
@@ -684,7 +671,7 @@ void describe("MastraExporter — OTel context linking", () => {
       }),
     });
 
-    const spans = inMemory.getFinishedSpans();
+    const spans = onlyMastraSpans(inMemory);
     const step = spans.find((s) => s.attributes["lmnr.span.type"] === "LLM");
     assert.ok(step);
     assert.strictEqual(step.attributes["gen_ai.output.messages"], undefined);
@@ -752,7 +739,7 @@ void describe("MastraExporter — OTel context linking", () => {
         }),
       });
 
-      const spans = inMemory.getFinishedSpans();
+      const spans = onlyMastraSpans(inMemory);
       const step = spans.find(
         (s) => s.attributes["lmnr.span.type"] === "LLM",
       );
@@ -831,7 +818,7 @@ void describe("MastraExporter — OTel context linking", () => {
         }),
       });
 
-      const spans = inMemory.getFinishedSpans();
+      const spans = onlyMastraSpans(inMemory);
       const step = spans.find(
         (s) => s.attributes["lmnr.span.type"] === "LLM",
       );
