@@ -38,6 +38,41 @@ import {
   @typescript-eslint/no-unsafe-return,
   @typescript-eslint/no-misused-promises
 */
+
+/**
+ * Guarded _wrap: only wraps `target[methodName]` if it exists as a function.
+ * Prevents the "Cannot wrap non-existent method" warning from
+ * InstrumentationBase._wrap when a handler/method was renamed or removed
+ * in the upstream library (e.g. Stagehand v2 vs v3 differences).
+ */
+const safeWrap = (
+  instrumentation: any,
+  target: any,
+  methodName: string,
+  wrapper: (original: any) => any,
+): boolean => {
+  if (!target) return false;
+  if (typeof target[methodName] !== 'function') return false;
+  instrumentation._wrap(target, methodName, wrapper);
+  return true;
+};
+
+/**
+ * Guarded _unwrap counterpart to safeWrap. Only unwraps when the target method
+ * exists AND was previously wrapped via shimmer (has the `__original` marker).
+ */
+const safeUnwrap = (
+  instrumentation: any,
+  target: any,
+  methodName: string,
+): void => {
+  if (!target) return;
+  const current = target[methodName];
+  if (typeof current !== 'function') return;
+  if (!current.__original) return;
+  instrumentation._unwrap(target, methodName);
+};
+
 export class StagehandInstrumentation extends InstrumentationBase {
   private stagehandInstanceToSessionId: WeakMap<object, StringUUID> = new WeakMap();
   private globalLLMClientOptions: WeakMap<
@@ -147,30 +182,38 @@ export class StagehandInstrumentation extends InstrumentationBase {
 
   private unpatch(moduleExports: any, moduleVersion?: string) {
     diag.debug(`unpatching stagehand ${moduleVersion}`);
-    this._unwrap(moduleExports, 'Stagehand');
+    safeUnwrap(this, moduleExports, 'Stagehand');
 
     if (moduleExports.Stagehand && moduleExports.Stagehand.prototype) {
-      this._unwrap(moduleExports.Stagehand.prototype, 'init');
-      this._unwrap(moduleExports.Stagehand.prototype, 'close');
-      this._unwrap(moduleExports.Stagehand.prototype, 'act');
-      this._unwrap(moduleExports.Stagehand.prototype, 'extract');
-      this._unwrap(moduleExports.Stagehand.prototype, 'observe');
+      const prototype = moduleExports.Stagehand.prototype;
+      safeUnwrap(this, prototype, 'init');
+      safeUnwrap(this, prototype, 'close');
+      safeUnwrap(this, prototype, 'act');
+      safeUnwrap(this, prototype, 'extract');
+      safeUnwrap(this, prototype, 'observe');
+      safeUnwrap(this, prototype, 'agent');
 
       // Try to unwrap handler methods if they exist on the prototype
-      const prototype = moduleExports.Stagehand.prototype;
       if (prototype.actHandler) {
-        this._unwrap(prototype.actHandler, 'act');
-        this._unwrap(prototype.actHandler, 'actFromObserveResult');
+        safeUnwrap(this, prototype.actHandler, 'act');
+        safeUnwrap(this, prototype.actHandler, 'actFromObserveResult');
       }
       if (prototype.extractHandler) {
-        this._unwrap(prototype.extractHandler, 'extract');
+        safeUnwrap(this, prototype.extractHandler, 'extract');
       }
       if (prototype.observeHandler) {
-        this._unwrap(prototype.observeHandler, 'observe');
+        safeUnwrap(this, prototype.observeHandler, 'observe');
       }
       // Try to unwrap LLM client if it exists
       if (prototype.llmClient) {
-        this._unwrap(prototype.llmClient, 'createChatCompletion');
+        safeUnwrap(this, prototype.llmClient, 'createChatCompletion');
+      }
+      // Try to unwrap API client (BROWSERBASE remote mode) if it exists
+      if (prototype.apiClient) {
+        safeUnwrap(this, prototype.apiClient, 'act');
+        safeUnwrap(this, prototype.apiClient, 'extract');
+        safeUnwrap(this, prototype.apiClient, 'observe');
+        safeUnwrap(this, prototype.apiClient, 'agentExecute');
       }
     }
 
@@ -241,25 +284,32 @@ export class StagehandInstrumentation extends InstrumentationBase {
       const result = await original.bind(this).apply(this);
 
       // After init, wrap the global methods on the stagehand instance
-      instrumentation._wrap(
+      safeWrap(
+        instrumentation,
         this,
         'act',
         instrumentation.patchStagehandGlobalMethod('act', sessionId, parentSpan),
       );
 
-      instrumentation._wrap(
+      safeWrap(
+        instrumentation,
         this,
         'extract',
         instrumentation.patchStagehandGlobalMethod('extract', sessionId, parentSpan),
       );
 
-      instrumentation._wrap(
+      safeWrap(
+        instrumentation,
         this,
         'observe',
         instrumentation.patchStagehandGlobalMethod('observe', sessionId, parentSpan),
       );
 
-      // Wrap handler methods if they exist
+      // Wrap handler methods if they exist. In BROWSERBASE remote mode
+      // (env: "BROWSERBASE" with server-side API enabled), Stagehand routes
+      // act/extract/observe through `this.apiClient` instead of these local
+      // handlers, so these handlers' methods may not be invoked — but we still
+      // wrap them defensively for local/experimental modes.
       if (this.actHandler) {
         instrumentation.patchActHandler(this.actHandler);
       }
@@ -272,21 +322,37 @@ export class StagehandInstrumentation extends InstrumentationBase {
         instrumentation.patchObserveHandler(this.observeHandler);
       }
 
-      // Wrap LLM client if it exists
+      // Wrap LLM client if it exists. Note: in BROWSERBASE remote mode the
+      // LLM calls happen server-side on the Stagehand API, so this wrapper
+      // never fires. Remote LLM spans are surfaced by wrapping `apiClient`
+      // below instead.
       if (this.llmClient) {
         instrumentation.globalLLMClientOptions.set(this.llmClient, {
           provider: this.llmClient.type,
           model: this.llmClient.modelName,
         });
-        instrumentation._wrap(
+        safeWrap(
+          instrumentation,
           this.llmClient,
           'createChatCompletion',
           instrumentation.patchStagehandLLMClientCreateChatCompletion(),
         );
       }
 
+      // In BROWSERBASE remote mode Stagehand creates an internal
+      // `apiClient` that performs act/extract/observe/agentExecute calls
+      // on the Stagehand server. Wrap those methods so we still emit
+      // stagehand.* spans (with LLM usage propagated where available)
+      // even when the local handlers and local llmClient are bypassed.
+      if (this.apiClient) {
+        instrumentation.patchStagehandApiClient(
+          this.apiClient, sessionId, parentSpan, this,
+        );
+      }
+
       // Wrap agent method if it exists
-      instrumentation._wrap(
+      safeWrap(
+        instrumentation,
         this,
         'agent',
         instrumentation.patchStagehandAgentInitializer(sessionId, parentSpan),
@@ -538,15 +604,14 @@ export class StagehandInstrumentation extends InstrumentationBase {
   }
 
   private patchActHandler(actHandler: any) {
-    // Patch the main act method on the handler
-    this._wrap(
-      actHandler,
-      'act',
-      this.patchActHandlerAct(),
-    );
+    // Patch the main act method on the handler (guarded because the
+    // upstream handler shape may change across Stagehand versions).
+    safeWrap(this, actHandler, 'act', this.patchActHandlerAct());
 
-    // Patch actFromObserveResult
-    this._wrap(
+    // Patch actFromObserveResult (v2 only; v3 moved this to
+    // `takeDeterministicAction`, so guard to avoid wrapping non-existent methods)
+    safeWrap(
+      this,
       actHandler,
       'actFromObserveResult',
       this.patchActHandlerActFromObserveResult(),
@@ -591,11 +656,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
 
   private patchExtractHandler(extractHandler: any) {
     // Patch the main extract method on the handler
-    this._wrap(
-      extractHandler,
-      'extract',
-      this.patchExtractHandlerExtract(),
-    );
+    safeWrap(this, extractHandler, 'extract', this.patchExtractHandlerExtract());
   }
 
   private patchExtractHandlerExtract() {
@@ -630,11 +691,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
 
   private patchObserveHandler(observeHandler: any) {
     // Patch the main observe method on the handler
-    this._wrap(
-      observeHandler,
-      'observe',
-      this.patchObserveHandlerObserve(),
-    );
+    safeWrap(this, observeHandler, 'observe', this.patchObserveHandlerObserve());
   }
 
   private patchObserveHandlerObserve() {
@@ -673,13 +730,15 @@ export class StagehandInstrumentation extends InstrumentationBase {
   }
 
   private patchStagehandAgent(agent: any, sessionId: StringUUID, parentSpan: Span) {
-    this._wrap(
+    safeWrap(
+      this,
       agent,
       'execute',
       this.patchStagehandAgentExecute(sessionId, parentSpan),
     );
 
-    // Wrap additional agent methods
+    // Wrap additional agent methods (already no-ops when the method is missing
+    // via wrapAgentMethod's own guard)
     this.wrapAgentMethod(
       agent, 'captureScreenshot', parentSpan, { spanType: "TOOL", ignoreOutput: true },
     );
@@ -786,9 +845,8 @@ export class StagehandInstrumentation extends InstrumentationBase {
       ignoreOutput?: boolean;
     },
   ) {
-    if (typeof agent[methodName] !== 'function') return;
-
-    this._wrap(
+    safeWrap(
+      this,
       agent,
       methodName,
       (original: (...args: any[]) => Promise<any>) =>
@@ -827,9 +885,8 @@ export class StagehandInstrumentation extends InstrumentationBase {
     ];
 
     for (const methodName of pageMethods) {
-      if (typeof page[methodName] !== 'function') continue;
-
-      this._wrap(
+      safeWrap(
+        this,
         page,
         methodName,
         (original: (...args: any[]) => Promise<any>) =>
@@ -849,6 +906,136 @@ export class StagehandInstrumentation extends InstrumentationBase {
           },
       );
     }
+  }
+
+  /**
+   * In BROWSERBASE remote mode Stagehand's top-level `act`/`extract`/`observe`/
+   * agent `execute` are routed through an internal `StagehandAPIClient` which
+   * makes HTTP calls to the Stagehand Cloud API. The local `llmClient` and the
+   * local `actHandler`/`extractHandler`/`observeHandler` are therefore never
+   * invoked and our existing wrappers do not fire.
+   *
+   * Wrap the apiClient methods directly so we still emit child spans for the
+   * LLM-backed calls and surface token usage from the response where available.
+   */
+  private patchStagehandApiClient(
+    apiClient: any,
+    _sessionId: StringUUID,
+    parentSpan: Span,
+    stagehandInstance: any,
+  ) {
+    const instrumentation = this;
+
+    // Used when we need to populate the inner LLM span attributes for remote calls.
+    const baseProvider = stagehandInstance?.llmClient?.type as string | undefined;
+    const baseModel = stagehandInstance?.llmClient?.modelName as string | undefined;
+
+    const wrapApiMethod = (
+      methodName: 'act' | 'extract' | 'observe' | 'agentExecute',
+    ) => {
+      safeWrap(
+        instrumentation,
+        apiClient,
+        methodName,
+        (original: (...args: any[]) => Promise<any>) =>
+          async function method(this: any, ...args: any[]) {
+            const currentSpan = trace.getSpan(LaminarContextManager.getContext())
+              ?? trace.getActiveSpan();
+
+            const input = nameArgsOrCopy(args);
+
+            // Span name mirrors the local-mode span naming so the UI
+            // treatment is identical regardless of env.
+            const spanName = methodName === 'agentExecute'
+              ? 'stagehand.apiClient.agentExecute'
+              : `stagehand.apiClient.${methodName}`;
+
+            return await Laminar.withSpan(
+              currentSpan ?? parentSpan,
+              async () => await laminarObserve(
+                {
+                  name: spanName,
+                  input,
+                  spanType: "LLM",
+                  ignoreInput: true,
+                  ignoreOutput: true,
+                },
+                async () => {
+                  const span = trace.getSpan(LaminarContextManager.getContext())
+                    ?? trace.getActiveSpan();
+                  span?.setAttribute(TRACE_HAS_BROWSER_SESSION, true);
+
+                  // Best-effort provider/model attribution. Stagehand's
+                  // remote API does not echo these back in the SSE stream,
+                  // so fall back to the model configured on the instance.
+                  if (baseProvider) {
+                    span?.setAttribute("gen_ai.system", baseProvider);
+                  }
+                  if (baseModel) {
+                    span?.setAttribute("gen_ai.request.model", baseModel);
+                  }
+
+                  // Capture the user-facing instruction as the LLM prompt
+                  // when available so traces are not empty.
+                  try {
+                    const firstArg = args[0];
+                    const instruction = typeof firstArg === 'string'
+                      ? firstArg
+                      : (firstArg?.input ?? firstArg?.instruction);
+                    if (typeof instruction === 'string' && instruction.length > 0) {
+                      span?.setAttributes({
+                        'gen_ai.prompt.0.role': 'user',
+                        'gen_ai.prompt.0.content': instruction,
+                      });
+                    }
+                  } catch {
+                    // best-effort; do not break the call if attribute extraction fails
+                  }
+
+                  const result = await original.bind(this).apply(this, args);
+
+                  // Surface usage if the remote returned it (agentExecute does).
+                  try {
+                    const usage = result?.usage;
+                    if (usage) {
+                      const inputTokens = usage.input_tokens
+                        ?? usage.prompt_tokens ?? 0;
+                      const outputTokens = usage.output_tokens
+                        ?? usage.completion_tokens ?? 0;
+                      span?.setAttributes({
+                        'gen_ai.usage.input_tokens': inputTokens,
+                        'gen_ai.usage.output_tokens': outputTokens,
+                        'llm.usage.total_tokens': inputTokens + outputTokens,
+                      });
+                    }
+                    // For agentExecute, surface the assistant message.
+                    if (methodName === 'agentExecute') {
+                      const message = result?.message;
+                      if (message) {
+                        span?.setAttributes({
+                          'gen_ai.completion.0.role': 'assistant',
+                          'gen_ai.completion.0.content': typeof message === 'string'
+                            ? message
+                            : JSON.stringify(message),
+                        });
+                      }
+                    }
+                  } catch {
+                    // best-effort
+                  }
+
+                  return result;
+                },
+              ),
+            );
+          },
+      );
+    };
+
+    wrapApiMethod('act');
+    wrapApiMethod('extract');
+    wrapApiMethod('observe');
+    wrapApiMethod('agentExecute');
   }
 }
 /* eslint-enable
