@@ -503,14 +503,7 @@ export class MastraExporter {
       const consumed = new Set<ToolCallChild>();
 
       const turnMessages: AISdkMessage[] = [];
-      // Inject reasoning accumulated from MODEL_CHUNK children onto the
-      // assistant turn so later steps' `ai.prompt.messages` include prior
-      // thinking as a `{type: "reasoning", text}` content part. Does
-      // nothing when there were no reasoning chunks for this step.
-      const assistantMsg = buildAssistantMessageFromStepOutput(
-        output,
-        gen.reasoningTextByStepIndex.get(stepIndex),
-      );
+      const assistantMsg = buildAssistantMessageFromStepOutput(output);
       if (assistantMsg) turnMessages.push(assistantMsg);
 
       for (const dec of declaredToolCalls) {
@@ -819,7 +812,7 @@ export class MastraExporter {
       ? this.generationAttrsById.get(generationId)
       : undefined;
 
-    const stepAttrs = (span.attributes ?? {}) as Record<string, any>;
+    const stepAttrs = span.attributes ?? {};
     const stepIndex =
       this.stepIndexBySpanId.get(span.id) ??
       (typeof stepAttrs.stepIndex === "number" ? stepAttrs.stepIndex : 0);
@@ -927,7 +920,7 @@ export class MastraExporter {
     if (span.output !== undefined) {
       attributes[SPAN_OUTPUT] = serializeJSON(span.output);
     }
-    const toolAttrs = (span.attributes ?? {}) as Record<string, any>;
+    const toolAttrs = span.attributes ?? {};
     // Strip the `tool: 'x'` prefix Mastra prepends so the displayed name is
     // just the tool id.
     const cleanedName = cleanMastraToolName(span.name) || span.name;

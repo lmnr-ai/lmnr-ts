@@ -440,7 +440,7 @@ void describe("MastraExporter — OTel context linking", () => {
 
   void it(
     "accumulates reasoning from MODEL_CHUNK children onto the step's " +
-      "gen_ai.output.messages and cached assistant turn",
+      "gen_ai.output.messages without echoing it into the next step's prompt",
     async () => {
       const { mastra, inMemory } = makeTestExporter();
       const traceId = "88888888888888888888888888888888";
@@ -512,8 +512,8 @@ void describe("MastraExporter — OTel context linking", () => {
         }),
       });
 
-      // Step 1 — no reasoning chunks; just to verify downstream step's prompt
-      // includes step 0's reasoning as an assistant reasoning part.
+      // Step 1 — no reasoning chunks; used to verify downstream step's prompt
+      // does NOT contain step 0's reasoning text on the cached assistant turn.
       await mastra.exportTracingEvent({
         type: "span_started",
         exportedSpan: makeMastraSpan({
@@ -597,8 +597,12 @@ void describe("MastraExporter — OTel context linking", () => {
         "step 1 has no reasoning so gen_ai.output.messages must be absent",
       );
 
-      // Step 1's `ai.prompt.messages` should include step 0's turn with a
-      // reasoning content part on the assistant message.
+      // Step 1's `ai.prompt.messages` must NOT contain a reasoning content
+      // part on step 0's cached assistant turn. The actual LLM call for
+      // step 1 doesn't receive reasoning text in any common provider
+      // (OpenAI tracks it via `previous_response_id`, Anthropic preserves a
+      // signed `thinking` block, Gemini manages it server-side), so echoing
+      // the plain text here would misrepresent what was sent.
       const step1Prompt = step1.attributes["ai.prompt.messages"];
       assert.ok(
         typeof step1Prompt === "string",
@@ -617,14 +621,16 @@ void describe("MastraExporter — OTel context linking", () => {
       const reasoningPart = (
         assistantTurn.content as Array<{ type: string; text?: string }>
       ).find((p) => p.type === "reasoning");
-      assert.ok(
-        reasoningPart,
-        "reasoning part missing on step 0 assistant turn",
-      );
       assert.strictEqual(
-        reasoningPart.text,
-        "**Thinking hard**\nstill thinking.",
+        reasoningPart,
+        undefined,
+        "reasoning text must not leak into the next step's prompt history",
       );
+      // The assistant message text from step 0 should still be present.
+      const textPart = (
+        assistantTurn.content as Array<{ type: string; text?: string }>
+      ).find((p) => p.type === "text");
+      assert.ok(textPart, "assistant text part missing from step 0 turn");
     },
   );
 

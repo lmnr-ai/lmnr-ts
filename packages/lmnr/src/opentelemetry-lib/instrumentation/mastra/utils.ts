@@ -123,19 +123,15 @@ export const normalizeInputMessages = (raw: unknown[]): AISdkMessage[] => {
   return out;
 };
 
+// Synthesizes the assistant turn cached on the surrounding MODEL_GENERATION
+// and replayed in the next step's `ai.prompt.messages`. Reasoning text is
+// intentionally omitted — providers don't re-send it in subsequent turns.
 export const buildAssistantMessageFromStepOutput = (
   output: unknown,
-  reasoningText?: string,
 ): AISdkMessage | null => {
   if (!output || typeof output !== "object") return null;
   const outObj = output as Record<string, unknown>;
   const parts: AISdkContentPart[] = [];
-  // Reasoning first, mirroring the order the model produced: thinking →
-  // answer → tool-calls. AI SDK content-part shape for reasoning is
-  // `{type: "reasoning", text}`.
-  if (typeof reasoningText === "string" && reasoningText.length > 0) {
-    parts.push({ type: "reasoning", text: reasoningText });
-  }
   if (typeof outObj.text === "string" && outObj.text.length > 0) {
     parts.push({ type: "text", text: outObj.text });
   }
