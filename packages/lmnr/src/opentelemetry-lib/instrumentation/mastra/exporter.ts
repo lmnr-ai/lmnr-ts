@@ -22,7 +22,12 @@ import {
 } from "@opentelemetry/semantic-conventions";
 
 import { version as SDK_VERSION } from "../../../../package.json";
-import { initializeLogger, otelSpanIdToUUID } from "../../../utils";
+import {
+  initializeLogger,
+  normalizeOtelSpanId,
+  normalizeOtelTraceId,
+  otelSpanIdToUUID,
+} from "../../../utils";
 import { getLangVersion } from "../../../version";
 import {
   ASSOCIATION_PROPERTIES,
@@ -58,8 +63,6 @@ import {
   mapLaminarSpanType,
   normalizeInputMessages,
   normalizeProvider,
-  normalizeSpanId,
-  normalizeTraceId,
   serializeJSON,
   stringifyArgs,
   stripTrailingSlash,
@@ -329,11 +332,11 @@ export class MastraExporter {
 
     // Derive the UUID from the normalized (16-hex-char) span id so this
     // path entry agrees with what `convertSpanToOtel` produces via
-    // `normalizeSpanId` → OTel span id. Mastra occasionally emits span ids
+    // `normalizeOtelSpanId` → OTel span id. Mastra occasionally emits span ids
     // longer than 16 hex chars; passing the raw value here would truncate
     // differently from the exported id and Laminar's UI (which threads
     // nesting on `lmnr.span.ids_path`) would render the Mastra subtree flat.
-    const spanUuid = otelSpanIdToUUID(normalizeSpanId(span.id));
+    const spanUuid = otelSpanIdToUUID(normalizeOtelSpanId(span.id));
     const spanPath = parentPath ? [...parentPath, span.name] : [span.name];
     const spanIdsPath = parentIdsPath
       ? [...parentIdsPath, spanUuid]
@@ -596,8 +599,8 @@ export class MastraExporter {
         trace.getActiveSpan();
       const ctx = activeSpan?.spanContext();
       if (ctx && ctx.traceId && ctx.spanId) {
-        created.otelTraceId = normalizeTraceId(ctx.traceId);
-        created.otelRootParentSpanId = normalizeSpanId(ctx.spanId);
+        created.otelTraceId = normalizeOtelTraceId(ctx.traceId);
+        created.otelRootParentSpanId = normalizeOtelSpanId(ctx.spanId);
         // Also capture SPAN_PATH / SPAN_IDS_PATH so we can prepend them to
         // every Mastra span's path. Laminar's backend/UI threads the span
         // tree on `lmnr.span.ids_path` — sharing the traceId alone isn't
@@ -661,8 +664,8 @@ export class MastraExporter {
     // nest under the user's active `observe()` span instead of landing in
     // their own disconnected trace. Falls back to Mastra's own trace id when
     // there was no active OTel context or linking is disabled.
-    const traceId = traceState.otelTraceId ?? normalizeTraceId(span.traceId);
-    const spanId = normalizeSpanId(span.id);
+    const traceId = traceState.otelTraceId ?? normalizeOtelTraceId(span.traceId);
+    const spanId = normalizeOtelSpanId(span.id);
     const startTime = dateToHrTime(span.startTime);
     const endTime = span.endTime ? dateToHrTime(span.endTime) : startTime;
     const duration = computeDuration(span.startTime, span.endTime);
@@ -678,7 +681,7 @@ export class MastraExporter {
     // still valid under the rewritten traceId since every descendant points
     // at a Mastra span id that we also rewrite onto the same OTel trace.
     const parentSpanIdNormalized = span.parentSpanId
-      ? normalizeSpanId(span.parentSpanId)
+      ? normalizeOtelSpanId(span.parentSpanId)
       : traceState.otelRootParentSpanId;
     const parentSpanContext: SpanContext | undefined = parentSpanIdNormalized
       ? {

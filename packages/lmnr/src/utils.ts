@@ -47,6 +47,29 @@ export const newUUID = (): StringUUID => {
   }
 };
 
+// Coerce a hex trace id to the 32-char raw form an OTel `SpanContext`
+// requires. Unlike `otelTraceIdToUUID`, this returns plain hex (no dashes)
+// and truncates (`slice(-32)`) rather than producing invalid output for
+// longer-than-32-char inputs — callers passing ids from upstream frameworks
+// (e.g. Mastra) that occasionally emit non-canonical ids rely on that
+// truncation to stay within OTel's spec.
+export const normalizeOtelTraceId = (traceId: string): string => {
+  let id = traceId.toLowerCase();
+  if (id.startsWith('0x')) {
+    id = id.slice(2);
+  }
+  return id.padStart(32, '0').slice(-32);
+};
+
+// Raw-hex counterpart of `normalizeOtelTraceId` for 16-char span ids.
+export const normalizeOtelSpanId = (spanId: string): string => {
+  let id = spanId.toLowerCase();
+  if (id.startsWith('0x')) {
+    id = id.slice(2);
+  }
+  return id.padStart(16, '0').slice(-16);
+};
+
 export const otelSpanIdToUUID = (spanId: string): string => {
   let id = spanId.toLowerCase();
   if (id.startsWith('0x')) {

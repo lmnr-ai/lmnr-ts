@@ -12,18 +12,6 @@ import {
 export const stripTrailingSlash = (url: string): string =>
   url.replace(/\/+$/, "");
 
-export const normalizeTraceId = (traceId: string): string => {
-  let id = traceId.toLowerCase();
-  if (id.startsWith("0x")) id = id.slice(2);
-  return id.padStart(32, "0").slice(-32);
-};
-
-export const normalizeSpanId = (spanId: string): string => {
-  let id = spanId.toLowerCase();
-  if (id.startsWith("0x")) id = id.slice(2);
-  return id.padStart(16, "0").slice(-16);
-};
-
 export const dateToHrTime = (date: Date): HrTime => {
   const ms = date.getTime();
   const seconds = Math.floor(ms / 1e3);
