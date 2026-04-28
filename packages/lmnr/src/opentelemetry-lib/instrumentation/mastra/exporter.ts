@@ -637,6 +637,14 @@ export class MastraExporter {
       return;
     }
 
+    // Capture the SDK-allocated span id before we overwrite it.
+    // `LaminarSpanProcessor.onStart` already fired synchronously inside
+    // `tracer.startSpan` and keyed its `_spanIdToPath` / `_spanIdLists`
+    // entries under this id — without dropping them below, `onEnd` (which
+    // reads the post-mutation Mastra id) would delete nothing and both maps
+    // would grow unboundedly.
+    const sdkAllocatedSpanId = otelSpan.spanContext().spanId;
+
     // Stamp Mastra-derived ids over the SDK's auto-generated ones. Mutates
     // the SpanContext object the SDK holds internally — `spanContext()`
     // returns the same reference each call.
@@ -647,6 +655,13 @@ export class MastraExporter {
       traceId: mastraTraceId,
       spanId: mastraSpanId,
     });
+
+    // Drop the orphaned path entry the processor cached under the original
+    // SDK-allocated id. Safe no-op if the id happened to match the Mastra id
+    // (unlikely but possible).
+    if (sdkAllocatedSpanId !== mastraSpanId) {
+      getSpanProcessor()?.dropPathInfo(sdkAllocatedSpanId);
+    }
 
     // Patch parent references. We set both `parentSpanContext` (SDK v2) and
     // `parentSpanId` (SDK v1 alias) so this works across SDK versions.
