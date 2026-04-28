@@ -10,9 +10,6 @@ import {
   MastraUsageStats,
 } from "./types";
 
-export const stripTrailingSlash = (url: string): string =>
-  url.replace(/\/+$/, "");
-
 export const dateToHrTime = (date: Date): HrTime => {
   const ms = date.getTime();
   const seconds = Math.floor(ms / 1e3);
