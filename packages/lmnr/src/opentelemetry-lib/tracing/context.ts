@@ -205,6 +205,7 @@ export class LaminarContextManager {
     const traceType = properties.traceType;
     const metadata = properties.metadata;
     const tracingLevel = properties.tracingLevel;
+    const evaluationId = properties.evaluationId;
     entityContext = entityContext.setValue(ASSOCIATION_PROPERTIES_KEY, {
       userId,
       sessionId,
@@ -212,6 +213,7 @@ export class LaminarContextManager {
       metadata,
       tracingLevel,
       rolloutSessionId,
+      evaluationId,
     });
     return entityContext;
   }
@@ -231,6 +233,7 @@ export class LaminarContextManager {
     traceType?: TraceType;
     tracingLevel?: TracingLevel;
     metadata?: Record<string, any>;
+    evaluationId?: string;
   } {
     const entityContext = this.getContext();
     return entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};

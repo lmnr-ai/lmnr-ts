@@ -21,6 +21,7 @@ import { getLangVersion } from "../../version";
 import {
   ASSOCIATION_PROPERTIES,
   ASSOCIATION_PROPERTIES_OVERRIDES,
+  EVALUATION_ID,
   PARENT_SPAN_IDS_PATH,
   PARENT_SPAN_PATH,
   ROLLOUT_SESSION_ID,
@@ -240,6 +241,8 @@ export class LaminarSpanProcessor implements SpanProcessor {
           span.setAttribute(TRACE_TYPE, value);
         } else if (key === "tracingLevel") {
           span.setAttribute("lmnr.internal.tracing_level", value);
+        } else if (key === "evaluationId") {
+          span.setAttribute(EVALUATION_ID, value);
         } else {
           span.setAttribute(`${ASSOCIATION_PROPERTIES}.${key}`, value);
         }

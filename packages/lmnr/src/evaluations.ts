@@ -11,7 +11,14 @@ import {
   HUMAN_EVALUATOR_OPTIONS,
   SPAN_TYPE,
 } from "./opentelemetry-lib/tracing/attributes";
-import { LaminarContextManager } from "./opentelemetry-lib/tracing/context";
+import {
+  ASSOCIATION_PROPERTIES_KEY,
+  LaminarContextManager,
+} from "./opentelemetry-lib/tracing/context";
+// `evaluationId` is treated as a first-class association property (just like
+// `userId` / `sessionId`): the processor stamps it as
+// `lmnr.association.properties.evaluation_id` on every span produced under
+// the active context.
 import {
   getFrontendUrl,
   initializeLogger,
@@ -500,33 +507,49 @@ export class Evaluation<D, T, O> {
   public async evaluateInBatches(
     evalId: StringUUID,
   ): Promise<EvaluationDatapoint<D, T, O>[]> {
-    const semaphore = new Semaphore(this.concurrencyLimit);
-    const tasks: Promise<any>[] = [];
+    const baseContext = LaminarContextManager.getContext();
+    const currentAssociationProperties = (baseContext.getValue(
+      ASSOCIATION_PROPERTIES_KEY,
+    ) ?? {}) as Record<string, any>;
+    const entityContext = baseContext.setValue(ASSOCIATION_PROPERTIES_KEY, {
+      ...currentAssociationProperties,
+      evaluationId: evalId,
+    });
 
-    const evaluateTask = async (
-      datapoint: Datapoint<D, T>,
-      index: number,
-    ): Promise<[number, EvaluationDatapoint<D, T, O>]> => {
-      try {
-        const result = await this.evaluateDatapoint(evalId, datapoint, index);
-        this.progressReporter.update(1);
-        return [index, result];
-      } finally {
-        semaphore.release();
+    return LaminarContextManager.runWithIsolatedContext<
+      Promise<EvaluationDatapoint<D, T, O>[]>
+    >([entityContext], async () => {
+      const semaphore = new Semaphore(this.concurrencyLimit);
+      const tasks: Promise<[number, EvaluationDatapoint<D, T, O>]>[] = [];
+
+      const evaluateTask = async (
+        datapoint: Datapoint<D, T>,
+        index: number,
+      ): Promise<[number, EvaluationDatapoint<D, T, O>]> => {
+        try {
+          const result = await this.evaluateDatapoint(
+            evalId,
+            datapoint,
+            index,
+          );
+          this.progressReporter.update(1);
+          return [index, result];
+        } finally {
+          semaphore.release();
+        }
+      };
+
+      for (let i = 0; i < (await this.getLength()); i++) {
+        await semaphore.acquire();
+        const datapoint = Array.isArray(this.data)
+          ? this.data[i]
+          : await this.data.get(i);
+        tasks.push(evaluateTask(datapoint, i));
       }
-    };
+      const results = await Promise.all(tasks);
 
-    for (let i = 0; i < (await this.getLength()); i++) {
-      await semaphore.acquire();
-      const datapoint = Array.isArray(this.data)
-        ? this.data[i]
-        : await this.data.get(i);
-      tasks.push(evaluateTask(datapoint, i));
-    }
-    const results = await Promise.all(tasks);
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return results.sort((a, b) => a[0] - b[0]).map(([, result]) => result);
+      return results.sort((a, b) => a[0] - b[0]).map(([, result]) => result);
+    });
   }
 
   private async evaluateDatapoint(

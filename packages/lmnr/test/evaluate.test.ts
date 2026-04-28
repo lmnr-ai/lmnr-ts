@@ -103,6 +103,15 @@ void describe("evaluate", () => {
     assert.strictEqual(evaluationSpan?.name, "evaluation");
     assert.strictEqual(executorSpan?.name, "executor");
     assert.deepStrictEqual(evaluatorSpans.map((span) => span.name).sort(), ["test", "test2"]);
+
+    // Every span produced under the evaluation should carry the evaluation id
+    for (const span of spans) {
+      assert.strictEqual(
+        span.attributes['lmnr.association.properties.evaluation_id'],
+        mockEvalId,
+        `span "${span.name}" missing evaluation_id association property`,
+      );
+    }
   });
 
   void it("parallel evaluation exports an evaluation, executor, and evaluator spans", async () => {

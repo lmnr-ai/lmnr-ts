@@ -30,6 +30,7 @@ import {
 } from './opentelemetry-lib/tracing';
 import {
   ASSOCIATION_PROPERTIES,
+  EVALUATION_ID,
   LaminarAttributes,
   PARENT_SPAN_IDS_PATH,
   PARENT_SPAN_PATH,
@@ -712,6 +713,7 @@ export class Laminar {
       ?? ctxAssociationProperties.traceType;
     const tracingLevelValue = parentTracingLevel
       ?? ctxAssociationProperties.tracingLevel;
+    const evaluationIdValue = ctxAssociationProperties.evaluationId;
     const ctxMetadata = ctxAssociationProperties.metadata;
 
     const userIdProperties = userIdValue ? { [USER_ID]: userIdValue } : {};
@@ -719,6 +721,9 @@ export class Laminar {
     const traceTypeProperties = traceTypeValue ? { [TRACE_TYPE]: traceTypeValue } : {};
     const tracingLevelProperties = tracingLevelValue
       ? { [`${ASSOCIATION_PROPERTIES}.tracing_level`]: tracingLevelValue }
+      : {};
+    const evaluationIdProperties = evaluationIdValue
+      ? { [EVALUATION_ID]: evaluationIdValue }
       : {};
 
     const mergedMetadata = {
@@ -737,6 +742,7 @@ export class Laminar {
       ...metadataProperties,
       ...traceTypeProperties,
       ...tracingLevelProperties,
+      ...evaluationIdProperties,
       ...(parentPath ? { [PARENT_SPAN_PATH]: parentPath } : {}),
       ...(parentIdsPath ? { [PARENT_SPAN_IDS_PATH]: parentIdsPath } : {}),
     };

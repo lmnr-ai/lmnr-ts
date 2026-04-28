@@ -25,6 +25,7 @@ import {
 } from "../../utils";
 import {
   ASSOCIATION_PROPERTIES,
+  EVALUATION_ID,
   ROLLOUT_SESSION_ID,
   SESSION_ID,
   SPAN_IDS_PATH,
@@ -314,6 +315,7 @@ export class LaminarSpan implements Span, ReadableSpan {
     rolloutSessionId?: string;
     traceType?: TraceType;
     tracingLevel?: TracingLevel;
+    evaluationId?: string;
   } {
     if (!this._span.attributes) {
       logger.warn(
@@ -350,6 +352,7 @@ export class LaminarSpan implements Span, ReadableSpan {
       properties.rolloutSessionId = this._span.attributes[ROLLOUT_SESSION_ID] as string
         ?? undefined;
       properties.traceType = this._span.attributes[TRACE_TYPE] as TraceType ?? undefined;
+      properties.evaluationId = this._span.attributes[EVALUATION_ID] as string ?? undefined;
       return {
         metadata,
         ...properties,
