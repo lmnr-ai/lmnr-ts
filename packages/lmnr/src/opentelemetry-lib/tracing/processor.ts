@@ -299,6 +299,17 @@ export class LaminarSpanProcessor implements SpanProcessor {
     this._spanIdLists.set(parentSpanId, spanIdsPath);
   }
 
+  /**
+   * Drop cached path entries for a given span id. For exporters that stamp
+   * their own span id over the SDK-allocated one after `startSpan` has fired
+   * `onStart` — without this, `onEnd` reads the mutated id and its delete is
+   * a no-op, so the original entry leaks one pair of map entries per span.
+   */
+  dropPathInfo(spanId: string): void {
+    this._spanIdToPath.delete(spanId);
+    this._spanIdLists.delete(spanId);
+  }
+
   clear() {
     this._spanIdToPath.clear();
     this._spanIdLists.clear();
