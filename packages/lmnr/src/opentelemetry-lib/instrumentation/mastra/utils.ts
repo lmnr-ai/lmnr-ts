@@ -163,12 +163,15 @@ export const extractToolCallId = (
   return typeof v === "string" ? v : undefined;
 };
 
-// Mastra names tool spans like `tool: 'myToolId'`. Strip that prefix + quotes
-// so both the TOOL span's `ai.toolCall.name` and the tool-result message's
+// Mastra names tool spans like `tool: 'myToolId'` or, for MCP tools,
+// `mcp_tool: 'toolId' on 'serverName'` (see @mastra/core buildSpanName).
+// Strip that prefix + quotes (and the trailing ` on '<server>'` for MCP) so
+// both the TOOL span's `ai.toolCall.name` and the tool-result message's
 // `toolName` agree on the raw tool id.
 export const cleanMastraToolName = (
   name: string | undefined,
-): string | undefined => name?.replace(/^tool:\s*'?(.*?)'?$/, "$1");
+): string | undefined =>
+  name?.replace(/^(?:mcp_tool|tool):\s*'?(.*?)'?(?:\s+on\s+'[^']*')?$/, "$1");
 
 // Tool-call args are sometimes a string (already-serialized JSON), sometimes
 // an object — stringify the latter so `ai.response.toolCalls` is always a
