@@ -514,12 +514,13 @@ export class MastraExporter {
         const toolCallId =
           (dec?.toolCallId as string | undefined) ??
           (dec?.id as string | undefined);
-        // Don't skip declarations with a missing id: `buildAssistantMessage
-        // FromStepOutput` still emitted a `tool-call` part for this
-        // declaration, so we must emit a matching tool-result or subsequent
-        // steps will see a broken history (assistant calls a tool, no
-        // result follows). Fall through to arrival-order pairing in that
-        // case, using whatever id the child span carries (may be undefined).
+        // Don't skip declarations with a missing id:
+        // `buildAssistantMessageFromStepOutput` still emitted a `tool-call`
+        // part for this declaration, so we must emit a matching tool-result
+        // or subsequent steps will see a broken history (assistant calls a
+        // tool, no result follows). Fall through to arrival-order pairing in
+        // that case, using whatever id the child span carries (may be
+        // undefined).
         let child = toolCallId ? childrenById.get(toolCallId) : undefined;
         if (child && consumed.has(child)) child = undefined;
         if (!child) {
