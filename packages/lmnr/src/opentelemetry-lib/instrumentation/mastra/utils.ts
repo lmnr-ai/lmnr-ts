@@ -6,6 +6,7 @@ import {
   AISdkMessage,
   LaminarSpanType,
   MastraExportedSpan,
+  MastraSpanType,
   MastraUsageStats,
 } from "./types";
 
@@ -38,10 +39,10 @@ export const normalizeProvider = (provider: string): string =>
 // so it stays DEFAULT.
 export const mapLaminarSpanType = (spanType: string): LaminarSpanType => {
   switch (spanType) {
-    case "model_step":
+    case MastraSpanType.MODEL_STEP:
       return "LLM";
-    case "tool_call":
-    case "mcp_tool_call":
+    case MastraSpanType.TOOL_CALL:
+    case MastraSpanType.MCP_TOOL_CALL:
       return "TOOL";
     default:
       return "DEFAULT";

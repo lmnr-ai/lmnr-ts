@@ -49,6 +49,7 @@ import {
   AISdkMessage,
   MastraExportedSpan,
   MastraExporterOptions,
+  MastraSpanType,
   MastraTracingEvent,
   MastraUsageStats,
 } from "./types";
@@ -240,7 +241,7 @@ export class MastraExporter {
     // set earlier at span_started (e.g. `provider`, `model`). MODEL_STEP
     // children end before MODEL_GENERATION's span_ended restores the full
     // set, so applyLlmAttributes would otherwise read a partial snapshot.
-    if (span.type === "model_generation" && span.attributes) {
+    if (span.type === MastraSpanType.MODEL_GENERATION && span.attributes) {
       const existing = this.generationAttrsById.get(span.id);
       // Always spread into a fresh object (even on first insert): Mastra
       // owns `span.attributes` and could reuse or mutate it between events,
@@ -293,7 +294,7 @@ export class MastraExporter {
   }
 
   private handleSpanStarted(span: MastraExportedSpan): void {
-    if (span.type === "model_chunk") return;
+    if (span.type === MastraSpanType.MODEL_CHUNK) return;
 
     const traceState = this.getOrCreateTraceState(span.traceId);
     const parentId = span.parentSpanId;
@@ -301,9 +302,9 @@ export class MastraExporter {
     this.recordSpanPath(span, traceState);
     traceState.activeSpanIds.add(span.id);
 
-    if (span.type === "model_generation") {
+    if (span.type === MastraSpanType.MODEL_GENERATION) {
       this.initGenerationState(span);
-    } else if (span.type === "model_step" && parentId) {
+    } else if (span.type === MastraSpanType.MODEL_STEP && parentId) {
       this.generationIdByStepId.set(span.id, parentId);
       const stepIndex =
         typeof span.attributes?.stepIndex === "number"
@@ -348,7 +349,7 @@ export class MastraExporter {
 
   private async handleSpanEnded(span: MastraExportedSpan): Promise<void> {
     if (!this.config) return;
-    if (span.type === "model_chunk") {
+    if (span.type === MastraSpanType.MODEL_CHUNK) {
       // MODEL_CHUNK spans are streaming noise as far as trace output goes
       // (dropped below), but reasoning chunks carry the thinking text for
       // their parent MODEL_STEP — accumulate before dropping. Mastra emits
@@ -380,7 +381,7 @@ export class MastraExporter {
       }
 
       if (
-        span.type === "model_generation" &&
+        span.type === MastraSpanType.MODEL_GENERATION &&
         !this.generationStateById.has(span.id)
       ) {
         // Defensive: only fires if we somehow missed `span_started`. There's
@@ -391,7 +392,7 @@ export class MastraExporter {
         this.initGenerationState(span);
       }
       if (
-        span.type === "model_step" &&
+        span.type === MastraSpanType.MODEL_STEP &&
         !this.generationIdByStepId.has(span.id) &&
         span.parentSpanId
       ) {
@@ -418,11 +419,11 @@ export class MastraExporter {
       if (traceState.activeSpanIds.size === 0) {
         this.traceMap.delete(span.traceId);
       }
-      if (span.type === "model_generation") {
+      if (span.type === MastraSpanType.MODEL_GENERATION) {
         this.generationStateById.delete(span.id);
         this.generationAttrsById.delete(span.id);
       }
-      if (span.type === "model_step") {
+      if (span.type === MastraSpanType.MODEL_STEP) {
         this.generationIdByStepId.delete(span.id);
         this.stepIndexBySpanId.delete(span.id);
       }
@@ -475,7 +476,7 @@ export class MastraExporter {
   }
 
   private updateGenerationStateOnSpanEnd(span: MastraExportedSpan): void {
-    if (span.type === "model_step") {
+    if (span.type === MastraSpanType.MODEL_STEP) {
       const generationId = this.generationIdByStepId.get(span.id);
       if (!generationId) return;
       const gen = this.generationStateById.get(generationId);
@@ -547,7 +548,10 @@ export class MastraExporter {
       }
 
       gen.turnsByStepIndex.set(stepIndex, turnMessages);
-    } else if (span.type === "tool_call" || span.type === "mcp_tool_call") {
+    } else if (
+      span.type === MastraSpanType.TOOL_CALL ||
+      span.type === MastraSpanType.MCP_TOOL_CALL
+    ) {
       // Record the tool_call child under its step so the step-end handler
       // can pair it with the declared toolCalls. Tool spans always end
       // before their parent MODEL_STEP ends, so the parent's stepIndex is
