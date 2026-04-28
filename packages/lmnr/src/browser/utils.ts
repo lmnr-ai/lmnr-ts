@@ -6,7 +6,7 @@ import { LaminarClient } from "..";
 import { initializeLogger } from "../utils";
 import { RECORDER } from "./recorder";
 
-export const LMNR_SEND_EVENTS_FUNCTION_NAME = 'lmnrSendEvents';
+export const LMNR_SEND_EVENTS_FUNCTION_NAME = "lmnrSendEvents";
 
 const logger = initializeLogger();
 
@@ -33,13 +33,12 @@ interface LmnrWindow extends Window {
  * as the value, or the arguments as is.
  */
 export const nameArgsOrCopy = (args: any[], name: string = "instruction") => {
-  if (args.length === 1 && typeof args[0] === 'string') {
+  if (args.length === 1 && typeof args[0] === "string") {
     return { [name]: args[0] };
   }
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return [...args];
 };
-
 
 export interface EventChunk {
   batchId: string;
@@ -51,19 +50,22 @@ export interface EventChunk {
 
 export const takeFullSnapshot = async (
   page: PlaywrightPage | PuppeteerPage,
-): Promise<boolean> => await (page as PlaywrightPage).evaluate(() => {
-  if ((window as unknown as LmnrWindow).lmnrRrweb) {
-    try {
-      (window as unknown as LmnrWindow).lmnrRrweb.record.takeFullSnapshot();
-      return true;
-    } catch (error) {
-      logger.error("Error taking full snapshot: " +
-        `${error instanceof Error ? error.message : String(error)}`);
-      return false;
+): Promise<boolean> =>
+  await (page as PlaywrightPage).evaluate(() => {
+    if ((window as unknown as LmnrWindow).lmnrRrweb) {
+      try {
+        (window as unknown as LmnrWindow).lmnrRrweb.record.takeFullSnapshot();
+        return true;
+      } catch (error) {
+        logger.error(
+          "Error taking full snapshot: " +
+            `${error instanceof Error ? error.message : String(error)}`,
+        );
+        return false;
+      }
     }
-  }
-  return false;
-});
+    return false;
+  });
 
 export const injectSessionRecorder = async (
   page: PlaywrightPage | PuppeteerPage,
@@ -77,10 +79,14 @@ export const injectSessionRecorder = async (
       try {
         return await script();
       } catch (error) {
-        logger.error("Operation " + script.name + " failed: " +
-          `${error instanceof Error ? error.message : String(error)}`);
+        logger.error(
+          "Operation " +
+            script.name +
+            " failed: " +
+            `${error instanceof Error ? error.message : String(error)}`,
+        );
       }
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
   };
 
@@ -91,12 +97,14 @@ export const injectSessionRecorder = async (
 
   let isRrwebPresent = false;
   try {
-    isRrwebPresent = await castedPage.evaluate(() =>
-      typeof (window as unknown as LmnrWindow).lmnrRrweb !== 'undefined',
+    isRrwebPresent = await castedPage.evaluate(
+      () => typeof (window as unknown as LmnrWindow).lmnrRrweb !== "undefined",
     );
   } catch (error) {
-    logger.debug("ailed to check if session recorder is loaded: " +
-      `${error instanceof Error ? error.message : String(error)}`);
+    logger.debug(
+      "ailed to check if session recorder is loaded: " +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 
   // Load rrweb and set up recording
@@ -112,12 +120,13 @@ export const injectSessionRecorder = async (
     try {
       await castedPage.evaluate(injectScript, sessionRecordingOptions);
     } catch (error) {
-      logger.debug("Failed to inject session recorder: " +
-        `${error instanceof Error ? error.message : String(error)}`);
+      logger.debug(
+        "Failed to inject session recorder: " +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 };
-
 
 // Removes the heavy client prop and the apiKey to avoid security issues
 export const cleanStagehandLLMClient = (llmClient: object): object =>
@@ -136,16 +145,15 @@ export const cleanStagehandLLMClient = (llmClient: object): object =>
       ),
   );
 
-
 // Stagehand uses zod 3.x or 4.x, so we need to support both versions via duck-typing
 export const prettyPrintZodSchema = (schema: any, indent = 2): string => {
   // Use duck-typing instead of instanceof to support both Zod v3 and v4
   const def = schema?._def;
-  if (!def || def.typeName !== 'ZodObject') {
-    throw new Error('Not a Zod object schema');
+  if (!def || def.typeName !== "ZodObject") {
+    throw new Error("Not a Zod object schema");
   }
 
-  const indentString = ' '.repeat(indent);
+  const indentString = " ".repeat(indent);
 
   const shape = schema.shape;
   const entries = Object.entries(shape);
@@ -154,103 +162,105 @@ export const prettyPrintZodSchema = (schema: any, indent = 2): string => {
     // Base type detection function using duck-typing
     const getBaseType = (val: any): string => {
       const valDef = val?._def;
-      if (!valDef) return 'z.unknown()';
+      if (!valDef) return "z.unknown()";
 
       const typeName = valDef.typeName;
 
-      if (typeName === 'ZodString') {
-        return 'z.string()';
+      if (typeName === "ZodString") {
+        return "z.string()";
       }
-      if (typeName === 'ZodNumber') {
-        return 'z.number()';
+      if (typeName === "ZodNumber") {
+        return "z.number()";
       }
-      if (typeName === 'ZodBoolean') {
-        return 'z.boolean()';
+      if (typeName === "ZodBoolean") {
+        return "z.boolean()";
       }
-      if (typeName === 'ZodArray') {
+      if (typeName === "ZodArray") {
         const elementType = valDef.type;
-        if (elementType?._def?.typeName === 'ZodObject') {
+        if (elementType?._def?.typeName === "ZodObject") {
           return `z.array(${prettyPrintZodSchema(elementType)})`;
         } else {
           return `z.array(${getBaseType(elementType)})`;
         }
       }
-      if (typeName === 'ZodObject') {
+      if (typeName === "ZodObject") {
         return prettyPrintZodSchema(val);
       }
-      if (typeName === 'ZodEnum') {
+      if (typeName === "ZodEnum") {
         const enumValues = valDef.values;
         if (Array.isArray(enumValues)) {
-          return `z.enum([${enumValues.map(v => `'${v}'`).join(', ')}])`;
+          return `z.enum([${enumValues.map((v) => `'${v}'`).join(", ")}])`;
         }
-        return 'z.enum([...])';
+        return "z.enum([...])";
       }
-      if (typeName === 'ZodLiteral') {
+      if (typeName === "ZodLiteral") {
         const literalValue = valDef.value;
-        if (typeof literalValue === 'string') {
+        if (typeof literalValue === "string") {
           return `z.literal('${literalValue}')`;
         }
         return `z.literal(${literalValue})`;
       }
-      if (typeName === 'ZodUnion') {
+      if (typeName === "ZodUnion") {
         const options = valDef.options;
         if (Array.isArray(options)) {
-          return `z.union([${options.map(getBaseType).join(', ')}])`;
+          return `z.union([${options.map(getBaseType).join(", ")}])`;
         }
-        return 'z.union([...])';
+        return "z.union([...])";
       }
-      if (typeName === 'ZodDate') {
-        return 'z.date()';
+      if (typeName === "ZodDate") {
+        return "z.date()";
       }
-      if (typeName === 'ZodRecord') {
+      if (typeName === "ZodRecord") {
         const keyType = valDef.keyType;
         const valueType = valDef.valueType;
 
-        let keyTypeStr = 'z.string()';
-        if (keyType && keyType._def?.typeName !== 'ZodString') {
+        let keyTypeStr = "z.string()";
+        if (keyType && keyType._def?.typeName !== "ZodString") {
           keyTypeStr = getBaseType(keyType);
         }
 
-        let valueTypeStr = 'z.any()';
+        let valueTypeStr = "z.any()";
         if (valueType) {
           valueTypeStr = getBaseType(valueType);
         }
 
         return `z.record(${keyTypeStr}, ${valueTypeStr})`;
       }
-      if (typeName === 'ZodMap') {
+      if (typeName === "ZodMap") {
         const keyType = valDef.keyType;
         const valueType = valDef.valueType;
 
-        let keyTypeStr = 'z.any()';
+        let keyTypeStr = "z.any()";
         if (keyType) {
           keyTypeStr = getBaseType(keyType);
         }
 
-        let valueTypeStr = 'z.any()';
+        let valueTypeStr = "z.any()";
         if (valueType) {
           valueTypeStr = getBaseType(valueType);
         }
 
         return `z.map(${keyTypeStr}, ${valueTypeStr})`;
       }
-      if (typeName === 'ZodTuple') {
+      if (typeName === "ZodTuple") {
         const items = valDef.items;
 
         if (Array.isArray(items)) {
-          const itemsTypeStr = items.map(item => getBaseType(item)).join(', ');
+          const itemsTypeStr = items
+            .map((item) => getBaseType(item))
+            .join(", ");
           return `z.tuple([${itemsTypeStr}])`;
         }
-        return 'z.tuple([])';
+        return "z.tuple([])";
       }
-      if (typeName === 'ZodNullable') {
+      if (typeName === "ZodNullable") {
         return `${getBaseType(valDef.innerType)}.nullable()`;
       }
-      if (typeName === 'ZodOptional') {
+      if (typeName === "ZodOptional") {
         return `${getBaseType(valDef.innerType)}.optional()`;
       }
       // Add more type checks as needed
-      return 'z.any()';
+      return "z.any()";
     };
 
     // Check for modifiers and description
@@ -259,21 +269,21 @@ export const prettyPrintZodSchema = (schema: any, indent = 2): string => {
       let currentVal = val;
 
       // Check for .nullable() modifier using duck-typing
-      if (currentVal?._def?.typeName === 'ZodNullable') {
+      if (currentVal?._def?.typeName === "ZodNullable") {
         result = `${getBaseType(currentVal._def.innerType)}.nullable()`;
         currentVal = currentVal._def.innerType;
       }
 
       // Check for .optional() modifier using duck-typing
-      if (currentVal?._def?.typeName === 'ZodOptional') {
-        if (!result.endsWith('.nullable()')) {
+      if (currentVal?._def?.typeName === "ZodOptional") {
+        if (!result.endsWith(".nullable()")) {
           result = `${getBaseType(currentVal._def.innerType)}.optional()`;
         }
       }
 
       // Check for description
       const description = val?._def?.description;
-      if (typeof description === 'string') {
+      if (typeof description === "string") {
         result += `.describe('${description.replace(/'/g, "\\'")}')`;
       }
 
@@ -286,9 +296,8 @@ export const prettyPrintZodSchema = (schema: any, indent = 2): string => {
     return `${indentString}${key}: ${finalType},`;
   });
 
-  return `z.object({\n${reconstructed.join('\n')}\n})`;
+  return `z.object({\n${reconstructed.join("\n")}\n})`;
 };
-
 
 // copied from https://github.com/browserbase/stagehand/blob/main/lib/llm/LLMProvider.ts#L62
 const modelToProviderMap: Record<string, string> = {
@@ -369,15 +378,18 @@ export const injectScript = (
 
   // Define a wrapper function that handles stringification based on the parameter
   const sendEvent = stringifyCallbackArgs
-    ? (chunk: any) => (window as unknown as LmnrWindow).lmnrSendEvents(JSON.stringify(chunk))
+    ? (chunk: any) =>
+      (window as unknown as LmnrWindow).lmnrSendEvents(JSON.stringify(chunk))
     : (chunk: any) => (window as unknown as LmnrWindow).lmnrSendEvents(chunk);
 
   // Gzip compress a string using CompressionStream API (main thread, no workers)
-  const gzipCompress = async (str: string): Promise<Uint8Array<ArrayBuffer>> => {
+  const gzipCompress = async (
+    str: string,
+  ): Promise<Uint8Array<ArrayBuffer>> => {
     const encoder = new TextEncoder();
     const inputBytes = encoder.encode(str);
 
-    const cs = new CompressionStream('gzip');
+    const cs = new CompressionStream("gzip");
     const writer = cs.writable.getWriter();
     const reader = cs.readable.getReader();
 
@@ -406,13 +418,15 @@ export const injectScript = (
   };
 
   // Convert a Uint8Array to base64 string
-  const bufferToBase64 = async (buffer: Uint8Array<ArrayBuffer>): Promise<string> => {
+  const bufferToBase64 = async (
+    buffer: Uint8Array<ArrayBuffer>,
+  ): Promise<string> => {
     const base64url = await new Promise<string>((r) => {
       const reader = new FileReader();
       reader.onload = () => r(reader.result as string);
       reader.readAsDataURL(new Blob([buffer]));
     });
-    return base64url.slice(base64url.indexOf(',') + 1);
+    return base64url.slice(base64url.indexOf(",") + 1);
   };
 
   // Create chunks from a string with metadata
@@ -438,7 +452,9 @@ export const injectScript = (
     if ((window as unknown as LmnrWindow).lmnrRrwebEventsBatch.length === 0) {
       return;
     }
-    if (typeof (window as unknown as LmnrWindow).lmnrSendEvents !== 'function') {
+    if (
+      typeof (window as unknown as LmnrWindow).lmnrSendEvents !== "function"
+    ) {
       return;
     }
     // Prevent overlapping sends - if previous send is still in progress,
@@ -464,7 +480,7 @@ export const injectScript = (
             data: base64Data,
           });
         } catch (e) {
-          console.error('Failed to compress event:', e);
+          console.error("Failed to compress event:", e);
         }
       }
 
@@ -486,7 +502,7 @@ export const injectScript = (
         }
       }
     } catch (error) {
-      console.error('Failed to send events:', error);
+      console.error("Failed to send events:", error);
     } finally {
       (window as unknown as LmnrWindow).lmnrSendInProgress = false;
     }
@@ -498,7 +514,7 @@ export const injectScript = (
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     setInterval(sendBatchIfReady, BATCH_TIMEOUT);
 
-    (window as unknown as LmnrWindow).lmnrRrweb.record({
+    const recordOptions = {
       emit(event: any) {
         // Synchronous emit - just push to batch, no async processing.
         // Compression happens later in sendBatchIfReady.
@@ -516,23 +532,30 @@ export const injectScript = (
         email: sessionRecordingOptions?.maskInputOptions?.email || false,
         tel: sessionRecordingOptions?.maskInputOptions?.tel || false,
       },
-    });
+    };
+
+    (window as unknown as LmnrWindow).lmnrRrweb.record(recordOptions);
 
     // Heartbeat events to indicate the session is still alive
-    setInterval(
-      () => {
-        (window as unknown as LmnrWindow).lmnrRrweb.record.addCustomEvent('heartbeat', {
-          title: document.title,
-          url: document.URL,
-        });
-      },
-      HEARTBEAT_INTERVAL,
-    );
+    setInterval(() => {
+      try {
+        (window as unknown as LmnrWindow).lmnrRrweb.record.addCustomEvent(
+          "heartbeat",
+          {
+            title: document.title,
+            url: document.URL,
+          },
+        );
+      } catch {
+        // Sometimes due to race conditions with raw CDP events, recorder may
+        // not be initialized at this point, so we re-initialized here
+        (window as unknown as LmnrWindow).lmnrRrweb.record(recordOptions);
+      }
+    }, HEARTBEAT_INTERVAL);
 
     (window as unknown as LmnrWindow).lmnrStartedRecordingEvents = true;
   }
 };
-
 
 // Buffer for storing incomplete chunk batches
 export interface ChunkBuffer {
@@ -588,10 +611,14 @@ export async function sendEvents(
       // Send to server
       if (events && events.length > 0) {
         // Fire and forget - don't await to avoid blocking
-        await client.browserEvents.send({ sessionId, traceId, events }).catch((error) => {
-          logger.debug("Failed to send events: " +
-            `${error instanceof Error ? error.message : String(error)}`);
-        });
+        await client.browserEvents
+          .send({ sessionId, traceId, events })
+          .catch((error) => {
+            logger.debug(
+              "Failed to send events: " +
+                `${error instanceof Error ? error.message : String(error)}`,
+            );
+          });
       }
 
       // Clean up buffer
@@ -613,7 +640,9 @@ export async function sendEvents(
       chunkBuffers.delete(bid);
     }
   } catch (error) {
-    logger.debug("Could not send events: " +
-      `${error instanceof Error ? error.message : String(error)}`);
+    logger.debug(
+      "Could not send events: " +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
