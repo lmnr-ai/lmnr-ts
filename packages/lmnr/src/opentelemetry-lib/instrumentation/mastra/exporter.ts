@@ -295,10 +295,31 @@ export class MastraExporter {
     const traceState = this.getOrCreateTraceState(span.traceId);
     const parentId = span.parentSpanId;
 
-    // For Mastra roots (no Mastra parent) we seed from the captured outer
-    // observe() path so Laminar's UI nests the subtree underneath. For
-    // Mastra descendants we use the parent Mastra span's stored path, which
-    // already has the outer path prepended.
+    this.recordSpanPath(span, traceState);
+    traceState.activeSpanIds.add(span.id);
+
+    if (span.type === "model_generation") {
+      this.initGenerationState(span);
+    } else if (span.type === "model_step" && parentId) {
+      this.generationIdByStepId.set(span.id, parentId);
+      const stepIndex =
+        typeof span.attributes?.stepIndex === "number"
+          ? span.attributes.stepIndex
+          : 0;
+      this.stepIndexBySpanId.set(span.id, stepIndex);
+    }
+  }
+
+  // Build `spanPath` / `spanIdsPath` for a Mastra span and store them on the
+  // trace state. For Mastra roots we seed from the captured outer observe()
+  // path so Laminar's UI nests the subtree underneath; for Mastra descendants
+  // we reuse the parent Mastra span's stored path (already has the outer
+  // path prepended).
+  private recordSpanPath(
+    span: MastraExportedSpan,
+    traceState: TraceState,
+  ): void {
+    const parentId = span.parentSpanId;
     const parentPath = parentId
       ? traceState.spanPathById.get(parentId)
       : traceState.otelParentSpanPath;
@@ -313,18 +334,6 @@ export class MastraExporter {
 
     traceState.spanPathById.set(span.id, spanPath);
     traceState.spanIdsPathById.set(span.id, spanIdsPath);
-    traceState.activeSpanIds.add(span.id);
-
-    if (span.type === "model_generation") {
-      this.initGenerationState(span);
-    } else if (span.type === "model_step" && parentId) {
-      this.generationIdByStepId.set(span.id, parentId);
-      const stepIndex =
-        typeof span.attributes?.stepIndex === "number"
-          ? span.attributes.stepIndex
-          : 0;
-      this.stepIndexBySpanId.set(span.id, stepIndex);
-    }
   }
 
   private async handleSpanEnded(span: MastraExportedSpan): Promise<void> {
@@ -351,19 +360,7 @@ export class MastraExporter {
       // registered mid-trace or a re-entrant span_ended without a matching
       // span_started). Inside the try so a throw here still runs cleanup.
       if (!traceState.spanPathById.has(span.id)) {
-        const parentId = span.parentSpanId;
-        const parentPath = parentId
-          ? traceState.spanPathById.get(parentId)
-          : traceState.otelParentSpanPath;
-        const parentIdsPath = parentId
-          ? traceState.spanIdsPathById.get(parentId)
-          : traceState.otelParentSpanIdsPath;
-        const spanPath = parentPath ? [...parentPath, span.name] : [span.name];
-        const spanIdsPath = parentIdsPath
-          ? [...parentIdsPath, otelSpanIdToUUID(span.id)]
-          : [otelSpanIdToUUID(span.id)];
-        traceState.spanPathById.set(span.id, spanPath);
-        traceState.spanIdsPathById.set(span.id, spanIdsPath);
+        this.recordSpanPath(span, traceState);
         // Mirror handleSpanStarted: register the span as active so the
         // finally block's `activeSpanIds.delete` is balanced. Without this,
         // `activeSpanIds.size === 0` could already be true on entry and the
