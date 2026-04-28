@@ -26,58 +26,63 @@ export class LaminarContextManager {
   // LaminarSpan adds and removes itself to and from this registry in start()
   // and end() methods respectively.
   private static _activeSpans: Set<string> = new Set();
+  // Process-global stack of contexts marked globally active via
+  // `Laminar.startActiveSpan({ global: true })`. Unlike the AsyncLocalStorage
+  // stack, this one is visible from any async task in the process. We use it
+  // as the fallback parent when the ALS stack is empty. Spans push onto this
+  // stack when started globally and pop in `LaminarSpan.end()`.
+  private static _globalActiveContexts: Context[] = [];
 
   private constructor() {
     throw new Error("LaminarContextManager is a static class and cannot be instantiated");
   }
 
-  public static getContext(): Context {
-    const contexts = this.getContextStack();
+  private static isValidContext(context: Context): boolean {
+    const span = trace.getSpan(context);
+    if (!span) {
+      return true;
+    }
+    if (!span.isRecording() && span.spanContext().isRemote) {
+      return true;
+    }
+    if (!(span instanceof LaminarSpan)) {
+      return true;
+    }
+    if (!span.isActivated) {
+      return true;
+    }
+    try {
+      return this._activeSpans.has(span.spanContext().spanId);
+    } catch {
+      return true;
+    }
+  }
 
-    // Walk through contexts from most recent to oldest
-    // We're doing it this way because we want to return the most recent context
-    // that has an active span
-    // This is primarily for the cases when span is started in one async context
-    // and ended in another
+  private static findLatestValidContext(contexts: Context[]): Context | undefined {
+    // Walk through contexts from most recent to oldest and return the most
+    // recent one that is still valid (has a live activated span, or has no
+    // span at all).
     for (let i = contexts.length - 1; i >= 0; i--) {
-      const context = contexts[i];
-      const span = trace.getSpan(context);
-
-      if (!span) {
-        // No span in this context, it's valid
-        return context;
-      }
-
-      if (!span.isRecording() && span.spanContext().isRemote) {
-        // Span is remote and not recording, it's valid
-        return context;
-      }
-
-      if (!(span instanceof LaminarSpan)) {
-        // Span is not a Laminar span, it's valid
-        return context;
-      }
-
-      if (!span.isActivated) {
-        // Span is not activated by Laminar.startActiveSpan(), it's valid
-        return context;
-      }
-
-      // Check if the span in this context has been ended
-      try {
-        const isActive = this._activeSpans.has(span.spanContext().spanId);
-        if (isActive) {
-          // Span is still active, use this context
-          return context;
-        }
-        // Span has been ended, continue to parent context
-      } catch {
-        // If we can't check the span, assume it's valid
-        return context;
+      if (this.isValidContext(contexts[i])) {
+        return contexts[i];
       }
     }
+    return undefined;
+  }
 
-    // No valid context found, return ROOT_CONTEXT
+  public static getContext(): Context {
+    // Prefer the per-async context stack so local control flow wins over any
+    // globally-registered span. Fall back to the global stack so spans started
+    // via `startActiveSpan({ global: true })` act as parents for descendants
+    // that run in unrelated async tasks.
+    const asyncContext = this.findLatestValidContext(this.getContextStack());
+    if (asyncContext !== undefined) {
+      return asyncContext;
+    }
+    const globalContext = this.findLatestValidContext(this._globalActiveContexts);
+    if (globalContext !== undefined) {
+      return globalContext;
+    }
     return ROOT_CONTEXT;
   }
 
@@ -112,8 +117,50 @@ export class LaminarContextManager {
     }
   }
 
+  public static pushGlobalContext(context: Context) {
+    this._globalActiveContexts.push(context);
+  }
+
+  // Remove a specific context reference from the ALS stack. Unlike
+  // `popContext`, this does not assume LIFO order — it locates the most
+  // recent entry `=== context` and splices it out. Used by callers (e.g. the
+  // OpenAI Agents processor) that activate spans so nested instrumentation
+  // inherits them, but whose spans can end in arbitrary order with respect to
+  // other activated spans on the same async frame.
+  public static removeContext(context: Context) {
+    const contexts = this.getContextStack();
+    if (contexts.length === 0) {
+      return;
+    }
+    for (let i = contexts.length - 1; i >= 0; i--) {
+      if (contexts[i] === context) {
+        const newContexts = contexts.slice(0, i).concat(contexts.slice(i + 1));
+        this._asyncLocalStorage.enterWith(newContexts);
+        return;
+      }
+    }
+  }
+
+  public static popGlobalContext(context?: Context) {
+    if (context !== undefined) {
+      // Remove the specific context entry (most recent occurrence) to keep
+      // the stack consistent when spans end out of order across async tasks.
+      for (let i = this._globalActiveContexts.length - 1; i >= 0; i--) {
+        if (this._globalActiveContexts[i] === context) {
+          this._globalActiveContexts.splice(i, 1);
+          return;
+        }
+      }
+      return;
+    }
+    if (this._globalActiveContexts.length > 0) {
+      this._globalActiveContexts.pop();
+    }
+  }
+
   public static clearContexts() {
     this._asyncLocalStorage.enterWith([]);
+    this._globalActiveContexts = [];
   }
 
   public static clearActiveSpans() {

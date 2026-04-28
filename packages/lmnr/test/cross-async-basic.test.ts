@@ -89,6 +89,60 @@ void describe('Cross-Async Span Management - Basic Tests', () => {
 
       assert.notStrictEqual(spanAResult!.spanContext().traceId, spanBResult!.spanContext().traceId);
     });
+
+  void it('startActiveSpan({ global: true }) parents spans created in unrelated async tasks',
+    async () => {
+      // Without `global`, a span created in a sibling async task would not see
+      // the outer as its parent (the outer lives in a different ALS frame).
+      // With `global: true`, the outer is registered on a process-global stack
+      // and becomes the fallback parent until it ends.
+      const outer = Laminar.startActiveSpan({ name: 'outer-global', global: true });
+
+      // Run the child creation on a completely detached async task to avoid
+      // ALS inheritance.
+      const run = () => new Promise<Span>((resolve) => {
+        setImmediate(() => {
+          const child = Laminar.startActiveSpan({ name: 'child' });
+          resolve(child);
+        });
+      });
+      const child = await run();
+      child.end();
+      outer.end();
+
+      const spans = exporter.getFinishedSpans();
+      const outerResult = spans.find(s => s.name === 'outer-global');
+      const childResult = spans.find(s => s.name === 'child');
+      assert.ok(outerResult && childResult);
+      assert.strictEqual(
+        outerResult.spanContext().traceId,
+        childResult.spanContext().traceId,
+        'expected child to inherit outer trace id via global stack',
+      );
+      assert.strictEqual(getParentSpanId(childResult), outerResult.spanContext().spanId);
+    });
+
+  void it('global span does not leak: spans created after it ends have no parent',
+    async () => {
+      const outer = Laminar.startActiveSpan({ name: 'outer-expired', global: true });
+      outer.end();
+
+      // The outer span has ended; its entry must be purged so a subsequent
+      // detached span does NOT see it as a parent.
+      const detached = await new Promise<Span>((resolve) => {
+        setImmediate(() => resolve(Laminar.startActiveSpan({ name: 'detached' })));
+      });
+      detached.end();
+
+      const spans = exporter.getFinishedSpans();
+      const outerResult = spans.find(s => s.name === 'outer-expired');
+      const detachedResult = spans.find(s => s.name === 'detached');
+      assert.ok(outerResult && detachedResult);
+      assert.notStrictEqual(
+        outerResult.spanContext().traceId,
+        detachedResult.spanContext().traceId,
+      );
+    });
 });
 
 void describe('Cross-Async Span Management - Promises inherit context', () => {
