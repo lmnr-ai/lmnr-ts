@@ -175,10 +175,18 @@ export const cleanMastraToolName = (
 
 // Tool-call args are sometimes a string (already-serialized JSON), sometimes
 // an object — stringify the latter so `ai.response.toolCalls` is always a
-// JSON-string at the AI SDK boundary.
+// JSON-string at the AI SDK boundary. Mirror `serializeJSON`'s guard so
+// unserializable inputs (BigInt, circular refs) degrade the arg payload
+// rather than bubbling up and causing the caller's outer catch to drop the
+// whole LLM span.
 export const stringifyArgs = (raw: unknown): string | undefined => {
   if (raw === undefined) return undefined;
-  return typeof raw === "string" ? raw : JSON.stringify(raw);
+  if (typeof raw === "string") return raw;
+  try {
+    return JSON.stringify(raw);
+  } catch {
+    return "[unserializable]";
+  }
 };
 
 export const formatUsage = (
