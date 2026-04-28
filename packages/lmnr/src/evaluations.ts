@@ -15,10 +15,6 @@ import {
   ASSOCIATION_PROPERTIES_KEY,
   LaminarContextManager,
 } from "./opentelemetry-lib/tracing/context";
-// `evaluationId` is treated as a first-class association property (just like
-// `userId` / `sessionId`): the processor stamps it as
-// `lmnr.association.properties.evaluation_id` on every span produced under
-// the active context.
 import {
   getFrontendUrl,
   initializeLogger,
