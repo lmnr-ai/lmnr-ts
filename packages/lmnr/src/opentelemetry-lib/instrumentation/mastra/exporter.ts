@@ -327,10 +327,17 @@ export class MastraExporter {
       ? traceState.spanIdsPathById.get(parentId)
       : traceState.otelParentSpanIdsPath;
 
+    // Derive the UUID from the normalized (16-hex-char) span id so this
+    // path entry agrees with what `convertSpanToOtel` produces via
+    // `normalizeSpanId` → OTel span id. Mastra occasionally emits span ids
+    // longer than 16 hex chars; passing the raw value here would truncate
+    // differently from the exported id and Laminar's UI (which threads
+    // nesting on `lmnr.span.ids_path`) would render the Mastra subtree flat.
+    const spanUuid = otelSpanIdToUUID(normalizeSpanId(span.id));
     const spanPath = parentPath ? [...parentPath, span.name] : [span.name];
     const spanIdsPath = parentIdsPath
-      ? [...parentIdsPath, otelSpanIdToUUID(span.id)]
-      : [otelSpanIdToUUID(span.id)];
+      ? [...parentIdsPath, spanUuid]
+      : [spanUuid];
 
     traceState.spanPathById.set(span.id, spanPath);
     traceState.spanIdsPathById.set(span.id, spanIdsPath);
