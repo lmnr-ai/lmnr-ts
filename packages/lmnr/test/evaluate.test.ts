@@ -107,9 +107,9 @@ void describe("evaluate", () => {
     // Every span produced under the evaluation should carry the evaluation id
     for (const span of spans) {
       assert.strictEqual(
-        span.attributes['lmnr.association.properties.evaluation_id'],
+        span.attributes['lmnr.association.properties.metadata.evaluation_id'],
         mockEvalId,
-        `span "${span.name}" missing evaluation_id association property`,
+        `span "${span.name}" missing evaluation_id metadata association property`,
       );
     }
   });
