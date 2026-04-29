@@ -32,6 +32,7 @@ This is the main `@lmnr-ai/lmnr` SDK package — OpenTelemetry-based tracing for
 - The **Task subagent** surfaces as a normal `tool_call` message with `name: "task"`. No special-case branching needed in the instrumentation — the standard child-TOOL-span handler captures its input (prompt/description/subagentType/model) and its output (conversationSteps array with thinking, assistantMessage, nested toolCall entries) verbatim.
 - Child tool spans are parented via `parentSpanContext: JSON.stringify(state.parentLaminar.getLaminarSpanContext())` so the LLM parent's `lmnr.span.ids_path` propagates — **do not** start them with `startActiveSpan` / ALS, because tool calls can overlap and complete out of order within a single run.
 - End the parent span from whichever control path the caller exercises: `run.stream()` drain, `run.wait()` resolve, or `run.cancel()`. Use a single `endParent()` helper guarded by a `parentEnded` flag — otherwise whichever path fires second will no-op but can leave child TOOL spans orphaned if the ordering differs.
+- In patched async generators that wrap a stream, call `endParent()` in a `finally` block — NOT only in the `catch`. A successful `for await` drain exits via normal return, bypassing any catch-only cleanup, and leaves the parent span unended. Mirror `google-genai/utils.ts` (`try { for await ... } catch { record } finally { span.end() }`).
 
 # Laminar.initialize — local dev gotcha
 

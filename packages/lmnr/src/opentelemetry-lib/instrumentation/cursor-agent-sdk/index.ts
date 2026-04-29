@@ -643,8 +643,9 @@ const wrapSend = (
           } catch {
             // ignore
           }
-          endParent();
           throw e;
+        } finally {
+          endParent();
         }
       })() as unknown as typeof run.stream;
 
