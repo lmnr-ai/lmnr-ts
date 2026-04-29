@@ -198,8 +198,9 @@ type RunState = {
 
 const recordParentOutputsAndEnd = (state: RunState, result?: RunResult) => {
   try {
-    if (state.runId) {
-      state.parent.setAttribute("cursor.run.id", state.runId);
+    const runId = result?.id ?? state.runId;
+    if (runId) {
+      state.parent.setAttribute("cursor.run.id", runId);
     }
     state.parent.setAttribute("cursor.agent.id", state.agentId);
     if (state.model) {
@@ -569,6 +570,7 @@ const wrapSend = (
     let run: Run;
     try {
       run = await originalSend.call(this, message, patchedOptions);
+      if (run?.id) state.runId = run.id;
     } catch (e) {
       try {
         parent.recordException(e as Error);
