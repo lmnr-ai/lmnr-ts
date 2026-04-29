@@ -509,7 +509,10 @@ export class Evaluation<D, T, O> {
     ) ?? {}) as Record<string, any>;
     const entityContext = baseContext.setValue(ASSOCIATION_PROPERTIES_KEY, {
       ...currentAssociationProperties,
-      evaluationId: evalId,
+      metadata: {
+        ...(currentAssociationProperties.metadata ?? {}),
+        evaluation_id: evalId,
+      },
     });
 
     return LaminarContextManager.runWithIsolatedContext<
