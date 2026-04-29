@@ -6,5 +6,7 @@ export default defineConfig({
   dts: true,
   sourcemap: true,
   clean: true,
-  external: ["@lmnr-ai/types"],
+  deps: {
+    neverBundle: ["@lmnr-ai/types"],
+  },
 });
