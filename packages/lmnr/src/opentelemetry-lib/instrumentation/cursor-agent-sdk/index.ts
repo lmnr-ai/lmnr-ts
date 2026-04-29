@@ -200,7 +200,6 @@ type RunState = {
   usage?: TurnUsage;
   finishStatus?: string;
   toolSpans: Map<string, ToolSpanEntry>;
-  taskMessages: Array<{ status?: string; text?: string }>;
 };
 
 const recordParentOutputsAndEnd = (state: RunState, result?: RunResult) => {
@@ -467,9 +466,6 @@ const handleSdkMessage = (state: RunState, msg: SDKMessage) => {
     case "status":
       state.finishStatus = msg.status;
       return;
-    case "task":
-      state.taskMessages.push({ status: msg.status, text: msg.text });
-      return;
     default:
       return;
   }
@@ -558,7 +554,6 @@ const wrapSend = (
       thinkingChunks: [],
       toolUses: [],
       toolSpans: new Map(),
-      taskMessages: [],
     };
 
     // Wrap onDelta to also tap into usage events while forwarding to the
