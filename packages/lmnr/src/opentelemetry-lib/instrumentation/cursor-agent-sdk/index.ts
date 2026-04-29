@@ -174,12 +174,6 @@ const GEN_AI_SYSTEM = "cursor";
 const isLaminarActive = () =>
   Laminar.initialized() || !!process.env.LMNR_PROJECT_API_KEY;
 
-type ToolSpanEntry = {
-  span: Span;
-  laminarSpan: LaminarSpan;
-  startedAt: number;
-};
-
 type RunState = {
   parent: Span;
   parentLaminar: LaminarSpan;
@@ -199,7 +193,7 @@ type RunState = {
   }>;
   usage?: TurnUsage;
   finishStatus?: string;
-  toolSpans: Map<string, ToolSpanEntry>;
+  toolSpans: Map<string, Span>;
 };
 
 const recordParentOutputsAndEnd = (state: RunState, result?: RunResult) => {
@@ -317,10 +311,10 @@ const recordParentOutputsAndEnd = (state: RunState, result?: RunResult) => {
 };
 
 const closeOrphanToolSpans = (state: RunState) => {
-  for (const [, entry] of state.toolSpans) {
+  for (const [, span] of state.toolSpans) {
     try {
-      entry.span.setAttribute("cursor.tool_call.status", "incomplete");
-      entry.span.end();
+      span.setAttribute("cursor.tool_call.status", "incomplete");
+      span.end();
     } catch {
       // ignore
     }
@@ -334,7 +328,6 @@ const handleToolCallMessage = (state: RunState, msg: SDKToolUseMessage) => {
   if (msg.status === "running" && !existing) {
     // Start a child TOOL span parented to the run's parent span.
     let toolSpan: Span | undefined;
-    let laminarToolSpan: LaminarSpan | undefined;
     try {
       const parentCtx = state.parentLaminar.getLaminarSpanContext();
       toolSpan = Laminar.startSpan({
@@ -343,7 +336,6 @@ const handleToolCallMessage = (state: RunState, msg: SDKToolUseMessage) => {
         parentSpanContext: JSON.stringify(parentCtx),
         input: msg.args,
       });
-      laminarToolSpan = toolSpan instanceof LaminarSpan ? toolSpan : undefined;
     } catch (e) {
       logger.debug("cursor-agent-sdk: failed to start tool span: " + String(e));
     }
@@ -358,11 +350,7 @@ const handleToolCallMessage = (state: RunState, msg: SDKToolUseMessage) => {
       } catch {
         // ignore
       }
-      state.toolSpans.set(msg.call_id, {
-        span: toolSpan,
-        laminarSpan: laminarToolSpan ?? (toolSpan as LaminarSpan),
-        startedAt: Date.now(),
-      });
+      state.toolSpans.set(msg.call_id, toolSpan);
     }
 
     state.toolUses.push({
@@ -376,19 +364,17 @@ const handleToolCallMessage = (state: RunState, msg: SDKToolUseMessage) => {
   }
 
   if (msg.status === "completed" || msg.status === "error") {
-    const entry =
-      state.toolSpans.get(msg.call_id) ??
-      (existing as ToolSpanEntry | undefined);
-    if (entry) {
+    const toolSpan = state.toolSpans.get(msg.call_id) ?? existing;
+    if (toolSpan) {
       try {
-        entry.span.setAttribute("cursor.tool_call.status", msg.status);
+        toolSpan.setAttribute("cursor.tool_call.status", msg.status);
         if (msg.truncated?.result) {
-          entry.span.setAttribute("cursor.tool_call.result_truncated", true);
+          toolSpan.setAttribute("cursor.tool_call.result_truncated", true);
         }
         if (msg.result !== undefined) {
-          entry.span.setAttribute(SPAN_OUTPUT, safeStringify(msg.result));
+          toolSpan.setAttribute(SPAN_OUTPUT, safeStringify(msg.result));
         }
-        entry.span.end();
+        toolSpan.end();
       } catch {
         // ignore
       }
