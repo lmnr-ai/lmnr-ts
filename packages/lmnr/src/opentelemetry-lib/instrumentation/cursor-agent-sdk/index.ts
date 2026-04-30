@@ -186,6 +186,26 @@ const GEN_AI_SYSTEM = "cursor";
 const isLaminarActive = () =>
   Laminar.initialized() || !!process.env.LMNR_PROJECT_API_KEY;
 
+// GC-triggered fallback: if the caller discards the Run without ever invoking
+// stream() / wait() / cancel() (e.g. early return, exception in caller code,
+// or `await agent.send(...)` used purely for its side effect of kicking off
+// the run), the parent span would leak. We register each Run with a
+// FinalizationRegistry whose callback ends the parent. The held value is an
+// `endParent` closure — it MUST NOT close over the Run itself (that would
+// pin the object and prevent GC from ever firing). `endParent` is idempotent
+// via `parentEnded`, so this is a no-op when any of the three paths already
+// closed the span.
+const runFinalizationRegistry =
+  typeof FinalizationRegistry !== "undefined"
+    ? new FinalizationRegistry<() => void>((cleanup) => {
+        try {
+          cleanup();
+        } catch {
+          // ignore
+        }
+      })
+    : undefined;
+
 type ToolSpanEntry = {
   span: Span;
   laminarSpan: LaminarSpan;
@@ -1176,6 +1196,11 @@ const wrapSend = (
         }
       };
     }
+
+    // GC fallback for the "caller discards the Run" case — see registry decl.
+    // Pass `endParent` directly (no closure over `run`) so the registry holds
+    // nothing that keeps the Run alive.
+    runFinalizationRegistry?.register(run, endParent);
 
     return run;
   };
