@@ -637,7 +637,7 @@ const wrapSend = (
           } catch {
             // ignore
           }
-          state.finishStatus = "error";
+          state.finishStatus = "ERROR";
           throw e;
         } finally {
           endParent();
@@ -657,7 +657,7 @@ const wrapSend = (
         } catch {
           // ignore
         }
-        state.finishStatus = "error";
+        state.finishStatus = "ERROR";
         endParent();
         throw e;
       }
@@ -670,7 +670,7 @@ const wrapSend = (
         try {
           await originalCancel();
         } finally {
-          state.finishStatus = "cancelled";
+          state.finishStatus = "CANCELLED";
           endParent();
         }
       };
@@ -777,7 +777,7 @@ const wrapAgentNamespace = (agentNamespace: AgentNamespace): void => {
       } catch (e) {
         try {
           parent.recordException(e as Error);
-          parent.setAttribute("gen_ai.response.finish_reason", "error");
+          parent.setAttribute("gen_ai.response.finish_reason", "ERROR");
         } catch {
           // ignore
         }
