@@ -1076,12 +1076,28 @@ const wrapSend = (
       }
     };
 
+    // Memoize originalWait so both the stream's finally block and the caller's
+    // own run.wait() share a single underlying promise. This is what lets the
+    // stream drain path end the parent WITH the authoritative RunResult (its
+    // usage / durationMs / result.status are the only source of run-wide input
+    // tokens per the cloud-runtime docs) instead of ending empty-handed and
+    // leaving wait()'s endParent(result) as a no-op.
+    const originalWait = run.wait.bind(run);
+    let waitPromise: Promise<RunResult> | null = null;
+    const waitOnce = () => {
+      waitPromise ??= originalWait();
+      return waitPromise;
+    };
+
     // Wrap run.stream so we observe every message. Cursor SDK exposes both
     // stream() and wait() — callers may use either or both. If wait() is not
-    // called, we still need to close the parent when the stream drains.
+    // called, we still need to close the parent when the stream drains, AND
+    // we still want the RunResult's authoritative usage/result/status on the
+    // outer span — so resolve waitOnce() inside the finally before ending.
     const originalStream = run.stream.bind(run);
     run.stream = (() =>
       async function* patchedStream() {
+        let drainError: unknown = undefined;
         try {
           for await (const message of originalStream()) {
             try {
@@ -1094,6 +1110,7 @@ const wrapSend = (
             yield message;
           }
         } catch (e) {
+          drainError = e;
           try {
             parent.recordException(e as Error);
           } catch {
@@ -1102,15 +1119,27 @@ const wrapSend = (
           state.finishStatus = "ERROR";
           throw e;
         } finally {
-          endParent();
+          if (!parentEnded) {
+            if (drainError !== undefined) {
+              endParent();
+            } else {
+              try {
+                const result = await waitOnce();
+                applyResolvedModel(state, result?.model?.id ?? state.model);
+                endParent(result);
+              } catch {
+                // originalWait failed — still end the parent so the span closes.
+                endParent();
+              }
+            }
+          }
         }
       })() as unknown as typeof run.stream;
 
     // Wrap run.wait so we close the parent span with the final result.
-    const originalWait = run.wait.bind(run);
     run.wait = async () => {
       try {
-        const result = await originalWait();
+        const result = await waitOnce();
         // Final authoritative model id — covers the case where Run.model was
         // not set but RunResult.model is (some cloud flows only populate it
         // after the run finishes).

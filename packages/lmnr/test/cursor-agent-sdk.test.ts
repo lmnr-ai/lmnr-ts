@@ -227,6 +227,13 @@ void describe("cursor-agent-sdk instrumentation", () => {
       3,
       `expected 3 children of parent, got ${children.length}: [${children.map((c) => c.name).join(", ")}]`,
     );
+
+    // RunResult.usage must be applied even when the caller drains stream()
+    // BEFORE calling wait() — the stream's finally path awaits the same
+    // wait() promise so the authoritative totals reach the outer span.
+    assert.equal(parent.attributes["cursor.usage.input_tokens"], 10);
+    assert.equal(parent.attributes["cursor.usage.output_tokens"], 20);
+    assert.equal(parent.attributes["cursor.run.status"], "finished");
   });
 
   void it("expands task tool into nested LLM + TOOL subagent spans", async () => {
