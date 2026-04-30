@@ -646,12 +646,22 @@ const expandTaskSubagent = (
       }
     };
 
+    // The LLM may declare multiple parallel tool calls in a single response,
+    // so consecutive `toolCall` steps all belong on the SAME turn's declared
+    // list. We only close the turn when a subsequent thinking/assistant step
+    // starts a new LLM response.
+    let lastStepWasToolCall = false;
+
     for (const step of steps) {
       if (!step || typeof step !== "object") continue;
       const s = step as Record<string, unknown>;
       const type = typeof s.type === "string" ? s.type : "";
 
       if (type === "thinking") {
+        if (lastStepWasToolCall && turn) {
+          closeTurn(turn);
+          turn = null;
+        }
         turn ??= openTurn();
         const text =
           typeof s.thinkingText === "string"
@@ -660,7 +670,12 @@ const expandTaskSubagent = (
               ? s.text
               : "";
         if (text) turn.thinking.push(text);
+        lastStepWasToolCall = false;
       } else if (type === "assistantMessage" || type === "assistant") {
+        if (lastStepWasToolCall && turn) {
+          closeTurn(turn);
+          turn = null;
+        }
         turn ??= openTurn();
         const text =
           typeof s.assistantText === "string"
@@ -669,9 +684,12 @@ const expandTaskSubagent = (
               ? s.text
               : "";
         if (text) turn.assistant.push(text);
+        lastStepWasToolCall = false;
       } else if (type === "toolCall") {
-        // A toolCall closes the in-flight turn (the assistant declared it),
-        // then emits as a sibling TOOL span.
+        // Record the declared tool_call on the current turn (if one is open)
+        // and emit the TOOL span as a sibling. Do NOT close the turn here —
+        // parallel tool_calls from the same LLM response arrive as consecutive
+        // steps and must all land on the same turn's declared list.
         if (turn) {
           turn.declared.push({
             call_id:
@@ -683,10 +701,9 @@ const expandTaskSubagent = (
             name: typeof s.name === "string" ? s.name : "tool_call",
             args: s.args,
           });
-          closeTurn(turn);
-          turn = null;
         }
         emitToolSpan(s);
+        lastStepWasToolCall = true;
       }
     }
     if (turn) closeTurn(turn);
