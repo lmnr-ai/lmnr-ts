@@ -12,8 +12,11 @@ import {
   _resetConfiguration,
   initializeTracing,
 } from "../src/opentelemetry-lib/configuration";
-import { CursorAgentSDKInstrumentation } from "../src/opentelemetry-lib/instrumentation/cursor-agent-sdk";
+import { CursorAgentSDKInstrumentation }
+  from "../src/opentelemetry-lib/instrumentation/cursor-agent-sdk";
 import { SPAN_TYPE } from "../src/opentelemetry-lib/tracing/attributes";
+
+/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/require-await */
 
 // Build a fake @cursor/sdk module whose Agent.create returns a SDKAgent with
 // a mocked send() that hands back a Run whose stream() emits a scripted
@@ -27,7 +30,7 @@ type ScriptedEvent =
   | { kind: "message"; message: any }
   | { kind: "update"; update: any };
 
-const buildMockModule = (script: ScriptedEvent[]) => {
+const buildMockModule = (script: ScriptedEvent[]): any => {
   const make = (agentId: string) => ({
     agentId,
     model: { id: "composer-2" },
@@ -71,7 +74,7 @@ const buildMockModule = (script: ScriptedEvent[]) => {
       }),
       archive: async (_agentId: string, _opts?: unknown) => {},
     },
-  } as any;
+  };
 };
 
 const spanByName = (spans: ReadableSpan[], name: string): ReadableSpan => {
@@ -80,7 +83,7 @@ const spanByName = (spans: ReadableSpan[], name: string): ReadableSpan => {
     s,
     `span '${name}' missing; got [${spans.map((x) => x.name).join(", ")}]`,
   );
-  return s!;
+  return s;
 };
 
 const childrenOf = (spans: ReadableSpan[], parentSpanId: string) =>
@@ -108,7 +111,7 @@ void describe("cursor-agent-sdk instrumentation", () => {
     context.disable();
   });
 
-  void it("emits TOOL spans as siblings of LLM turn spans under the outer DEFAULT span", async () => {
+  void it("emits TOOL spans as siblings of LLM turn spans under outer DEFAULT", async () => {
     // Scripted run:
     //   step-started(0) -> assistant text -> tool_call running ls -> tool_call completed ls ->
     //   step-completed(0, duration=42) -> step-started(1) -> assistant text ->
@@ -179,7 +182,7 @@ void describe("cursor-agent-sdk instrumentation", () => {
     const agent = await cursor.Agent.create({ apiKey: "fake" });
     const run = await agent.send("prompt");
     // Drain the stream fully.
-    for await (const _ of run.stream()) {
+    for await (const _msg of run.stream()) {
       // noop
     }
     await run.wait();
@@ -207,7 +210,7 @@ void describe("cursor-agent-sdk instrumentation", () => {
     assert.equal(
       toolSpan.parentSpanContext?.spanId,
       parent.spanContext().spanId,
-      "tool span must be a SIBLING of LLM turn (child of cursor.agent.send), not a child of the LLM turn",
+      "tool span must be a SIBLING of LLM turn (child of cursor.agent.send)",
     );
     assert.notEqual(
       toolSpan.parentSpanContext?.spanId,
@@ -225,7 +228,8 @@ void describe("cursor-agent-sdk instrumentation", () => {
     assert.equal(
       children.length,
       3,
-      `expected 3 children of parent, got ${children.length}: [${children.map((c) => c.name).join(", ")}]`,
+      `expected 3 children of parent, got ${children.length}: ` +
+        `[${children.map((c) => c.name).join(", ")}]`,
     );
 
     // RunResult.usage must be applied even when the caller drains stream()
@@ -315,7 +319,7 @@ void describe("cursor-agent-sdk instrumentation", () => {
 
     const agent = await cursor.Agent.create({ apiKey: "fake" });
     const run = await agent.send("please delegate");
-    for await (const _ of run.stream()) {
+    for await (const _msg of run.stream()) {
       // noop
     }
     await run.wait();
@@ -349,7 +353,7 @@ void describe("cursor-agent-sdk instrumentation", () => {
       "task.llm.turn.1 must be nested under the task tool span",
     );
     assert.equal(
-      subTool!.parentSpanContext?.spanId,
+      subTool.parentSpanContext?.spanId,
       taskSpan.spanContext().spanId,
       "subagent tool span must be nested under the task tool span",
     );
@@ -358,11 +362,11 @@ void describe("cursor-agent-sdk instrumentation", () => {
     assert.equal(taskSpan.attributes[SPAN_TYPE], "TOOL");
     assert.equal(subTurn0.attributes[SPAN_TYPE], "LLM");
     assert.equal(subTurn1.attributes[SPAN_TYPE], "LLM");
-    assert.equal(subTool!.attributes[SPAN_TYPE], "TOOL");
+    assert.equal(subTool.attributes[SPAN_TYPE], "TOOL");
 
     // Subagent marker attribute on nested turns/tools.
     assert.equal(subTurn0.attributes["cursor.subagent"], true);
-    assert.equal(subTool!.attributes["cursor.subagent"], true);
+    assert.equal(subTool.attributes["cursor.subagent"], true);
   });
 
   void it("prefers RunResult.usage over accumulated deltas to avoid double-count", async () => {

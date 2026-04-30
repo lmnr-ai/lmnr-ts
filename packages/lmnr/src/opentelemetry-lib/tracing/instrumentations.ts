@@ -87,16 +87,16 @@ export const initializeLaminarInstrumentations = (
 
   return options?.instrumentModules !== undefined
     ? manuallyInitInstrumentations(
-        client,
-        options.instrumentModules,
-        options.suppressContentTracing,
-        options.sessionRecordingOptions,
-      )
+      client,
+      options.instrumentModules,
+      options.suppressContentTracing,
+      options.sessionRecordingOptions,
+    )
     : initInstrumentations(
-        client,
-        options.suppressContentTracing,
-        options.sessionRecordingOptions,
-      );
+      client,
+      options.suppressContentTracing,
+      options.sessionRecordingOptions,
+    );
 };
 
 /**
