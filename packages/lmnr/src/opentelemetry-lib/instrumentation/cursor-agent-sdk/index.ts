@@ -519,21 +519,192 @@ const closeOrphanToolSpans = (state: RunState) => {
   state.toolSpans.clear();
 };
 
+// When a tool_call.name === "task", Cursor spawns a subagent that executes
+// its own thinking / assistant / toolCall steps server-side and returns them
+// as a `conversationSteps` array on the tool's result. We expand those steps
+// into proper child spans so the tree renders:
+//   task (TOOL span)
+//     ├─ task.llm.turn.0  (LLM — subagent turn 0: thinking + text + declared tool_calls)
+//     ├─ <tool_name>       (TOOL — invoked by the subagent)
+//     ├─ task.llm.turn.1  (LLM — subagent turn 1)
+//     └─ …
+// Each step carries {type: "thinking"|"assistant"|"toolCall", ...}; turn
+// boundaries are inferred by grouping consecutive thinking+assistant steps
+// then the toolCalls that follow them. Cursor does not expose subagent-level
+// token usage in the conversationSteps payload.
+const expandTaskSubagent = (
+  parentSpan: LaminarSpan,
+  agentId: string,
+  result: unknown,
+) => {
+  try {
+    if (!result || typeof result !== "object") return;
+    const steps = (result as { conversationSteps?: unknown }).conversationSteps;
+    if (!Array.isArray(steps) || steps.length === 0) return;
+
+    const parentCtx = JSON.stringify(parentSpan.getLaminarSpanContext());
+
+    type SubTurn = {
+      span: Span;
+      laminarSpan: LaminarSpan;
+      thinking: string[];
+      assistant: string[];
+      declared: Array<{ call_id: string; name: string; args?: unknown }>;
+    };
+
+    let turn: SubTurn | null = null;
+    let turnIndex = 0;
+
+    const openTurn = (): SubTurn => {
+      const span = Laminar.startSpan({
+        name: `task.llm.turn.${turnIndex}`,
+        spanType: "LLM",
+        parentSpanContext: parentCtx,
+      });
+      try {
+        span.setAttribute(LaminarAttributes.PROVIDER, GEN_AI_SYSTEM);
+        span.setAttribute("cursor.turn.index", turnIndex);
+        span.setAttribute("cursor.agent.id", agentId);
+        span.setAttribute("cursor.subagent", true);
+      } catch {
+        // ignore
+      }
+      const t: SubTurn = {
+        span,
+        laminarSpan: span as LaminarSpan,
+        thinking: [],
+        assistant: [],
+        declared: [],
+      };
+      turnIndex += 1;
+      return t;
+    };
+
+    const closeTurn = (t: SubTurn) => {
+      try {
+        const parts: Array<Record<string, unknown>> = [];
+        if (t.thinking.length > 0) {
+          parts.push({ type: "thinking", content: t.thinking.join("") });
+        }
+        const assistant = t.assistant.join("");
+        if (assistant.length > 0)
+          parts.push({ type: "text", content: assistant });
+        for (const tc of t.declared) {
+          parts.push({
+            type: "tool_call",
+            id: tc.call_id,
+            name: tc.name,
+            arguments: tc.args,
+          });
+        }
+        if (parts.length > 0) {
+          t.span.setAttribute(
+            "gen_ai.output.messages",
+            JSON.stringify([{ role: "assistant", parts }]),
+          );
+        }
+        const outputObj: Record<string, unknown> = {};
+        if (t.thinking.length > 0) outputObj.thinking = t.thinking.join("");
+        if (assistant.length > 0) outputObj.text = assistant;
+        if (t.declared.length > 0) outputObj.tool_calls = t.declared;
+        if (Object.keys(outputObj).length > 0) {
+          t.span.setAttribute(SPAN_OUTPUT, JSON.stringify(outputObj));
+        }
+      } catch {
+        // ignore
+      }
+      try {
+        t.span.end();
+      } catch {
+        // ignore
+      }
+    };
+
+    const emitToolSpan = (tc: Record<string, unknown>) => {
+      try {
+        const name = typeof tc.name === "string" ? tc.name : "tool_call";
+        const callId = typeof tc.call_id === "string" ? tc.call_id : undefined;
+        const span = Laminar.startSpan({
+          name,
+          spanType: "TOOL",
+          parentSpanContext: parentCtx,
+          input: tc.args,
+        });
+        if (callId) span.setAttribute("cursor.tool_call.id", callId);
+        span.setAttribute("cursor.tool_call.name", name);
+        span.setAttribute("cursor.subagent", true);
+        const status = typeof tc.status === "string" ? tc.status : "completed";
+        span.setAttribute("cursor.tool_call.status", status);
+        if (tc.result !== undefined) {
+          span.setAttribute(SPAN_OUTPUT, safeStringify(tc.result));
+        }
+        span.end();
+      } catch (e) {
+        logger.debug(
+          "cursor-agent-sdk: failed to emit subagent tool span: " + String(e),
+        );
+      }
+    };
+
+    for (const step of steps) {
+      if (!step || typeof step !== "object") continue;
+      const s = step as Record<string, unknown>;
+      const type = typeof s.type === "string" ? s.type : "";
+
+      if (type === "thinking") {
+        turn ??= openTurn();
+        const text =
+          typeof s.thinkingText === "string"
+            ? s.thinkingText
+            : typeof s.text === "string"
+              ? s.text
+              : "";
+        if (text) turn.thinking.push(text);
+      } else if (type === "assistantMessage" || type === "assistant") {
+        turn ??= openTurn();
+        const text =
+          typeof s.assistantText === "string"
+            ? s.assistantText
+            : typeof s.text === "string"
+              ? s.text
+              : "";
+        if (text) turn.assistant.push(text);
+      } else if (type === "toolCall") {
+        // A toolCall closes the in-flight turn (the assistant declared it),
+        // then emits as a sibling TOOL span.
+        if (turn) {
+          turn.declared.push({
+            call_id:
+              typeof s.call_id === "string"
+                ? s.call_id
+                : typeof s.id === "string"
+                  ? s.id
+                  : "",
+            name: typeof s.name === "string" ? s.name : "tool_call",
+            args: s.args,
+          });
+          closeTurn(turn);
+          turn = null;
+        }
+        emitToolSpan(s);
+      }
+    }
+    if (turn) closeTurn(turn);
+  } catch (e) {
+    logger.debug(
+      "cursor-agent-sdk: failed to expand task subagent steps: " + String(e),
+    );
+  }
+};
+
 const handleToolCallMessage = (state: RunState, msg: SDKToolUseMessage) => {
   const existing = state.toolSpans.get(msg.call_id);
 
   if (msg.status === "running" && !existing) {
-    // A tool call was declared by the assistant in the current turn; close
-    // the current LLM turn span (if any) BEFORE starting the tool span so the
-    // timeline shows: llm.turn → tool_call → (next llm.turn).
-    // Use `undefined` usage here — the turn's actual usage will arrive via
-    // the `turn-ended` interaction-update, but by then the turn span is
-    // already ended, so we attach usage retroactively in `handleInteractionUpdate`.
-    // To support that, we instead keep the turn OPEN through tool calls and
-    // only close on `turn-ended`. Tool spans parent to the outer DEFAULT so
-    // they are still siblings-ish in the tree view.
-
-    // Capture the declared tool_use on the current turn's output messages.
+    // Capture the declared tool_use on the current turn's output messages
+    // (so the LLM span's gen_ai.output.messages shows what it produced),
+    // but parent the TOOL span itself on the OUTER DEFAULT span — tool calls
+    // are siblings of LLM turns in the run timeline, not children of them.
     if (state.currentTurn) {
       state.currentTurn.toolUses.push({
         call_id: msg.call_id,
@@ -543,15 +714,10 @@ const handleToolCallMessage = (state: RunState, msg: SDKToolUseMessage) => {
       });
     }
 
-    // Start a child TOOL span parented to the current LLM turn span (the
-    // turn that declared the tool_use). If we somehow have no current turn,
-    // fall back to the outer DEFAULT span as parent.
     let toolSpan: Span | undefined;
     let laminarToolSpan: LaminarSpan | undefined;
     try {
-      const parentLaminarSpan =
-        state.currentTurn?.laminarSpan ?? state.parentLaminar;
-      const parentCtx = parentLaminarSpan.getLaminarSpanContext();
+      const parentCtx = state.parentLaminar.getLaminarSpanContext();
       toolSpan = Laminar.startSpan({
         name: msg.name || "tool_call",
         spanType: "TOOL",
@@ -601,6 +767,13 @@ const handleToolCallMessage = (state: RunState, msg: SDKToolUseMessage) => {
         if (msg.result !== undefined) {
           entry.span.setAttribute(SPAN_OUTPUT, safeStringify(msg.result));
         }
+        // If this is the `task` subagent tool, expand its conversationSteps
+        // into nested LLM turn / TOOL spans under it BEFORE ending the span —
+        // children must start while the parent is still open for their
+        // parentSpanContext to resolve to a live span.
+        if (msg.name === "task" && msg.status === "completed") {
+          expandTaskSubagent(entry.laminarSpan, state.agentId, msg.result);
+        }
         entry.span.end();
       } catch {
         // ignore
@@ -610,9 +783,7 @@ const handleToolCallMessage = (state: RunState, msg: SDKToolUseMessage) => {
       // No start seen (shouldn't happen per SDK docs); create and close a
       // TOOL span synchronously so we still capture the call.
       try {
-        const parentLaminarSpan =
-          state.currentTurn?.laminarSpan ?? state.parentLaminar;
-        const parentCtx = parentLaminarSpan.getLaminarSpanContext();
+        const parentCtx = state.parentLaminar.getLaminarSpanContext();
         const span = Laminar.startSpan({
           name: msg.name || "tool_call",
           spanType: "TOOL",
@@ -624,6 +795,9 @@ const handleToolCallMessage = (state: RunState, msg: SDKToolUseMessage) => {
         span.setAttribute("cursor.tool_call.status", msg.status);
         if (msg.result !== undefined) {
           span.setAttribute(SPAN_OUTPUT, safeStringify(msg.result));
+        }
+        if (msg.name === "task" && msg.status === "completed") {
+          expandTaskSubagent(span as LaminarSpan, state.agentId, msg.result);
         }
         span.end();
       } catch (e) {
@@ -1091,14 +1265,20 @@ const wrapAgentNamespace = (agentNamespace: AgentNamespace): void => {
  *   cursor.agent.send         (DEFAULT — whole run, prompt in / result out)
  *   ├─ cursor.llm.turn.0      (LLM — turn 0: thinking + text + declared tool_calls,
  *   │                           per-turn token usage + model)
- *   ├─ <tool_name>            (TOOL — invoked after turn 0 finished)
+ *   ├─ <tool_name>            (TOOL — invoked after turn 0, sibling of the LLM span)
  *   ├─ cursor.llm.turn.1      (LLM — turn 1 continuation after the tool result)
- *   ├─ <tool_name>            (TOOL)
+ *   ├─ task                   (TOOL — Task subagent call with nested children:)
+ *   │   ├─ task.llm.turn.0    (LLM — subagent turn 0)
+ *   │   ├─ <tool_name>        (TOOL — invoked by the subagent)
+ *   │   └─ …
  *   └─ …
  *
- * Turn boundaries are inferred from `turn-ended` InteractionUpdate events,
- * which also carry per-turn token usage. Tool span lifecycle comes from the
- * `tool_call` SDKMessage with status running/completed/error.
+ * Turn boundaries come from `step-started` / `step-completed` InteractionUpdate
+ * events. Per-turn output tokens come from `token-delta`. Tool span lifecycle
+ * comes from the `tool_call` SDKMessage with status running/completed/error.
+ * Tool spans are siblings of LLM turns (parented to the outer DEFAULT), not
+ * children — the LLM turn captures what the assistant declared, the TOOL span
+ * captures the actual invocation + result.
  *
  * Cursor's SDK talks ConnectRPC to `api2.cursor.sh` — the actual LLM call
  * happens server-side, so raw provider request/response is not available to
