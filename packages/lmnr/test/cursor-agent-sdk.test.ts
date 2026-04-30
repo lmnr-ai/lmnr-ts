@@ -399,10 +399,16 @@ void describe("cursor-agent-sdk instrumentation", () => {
 
     const spans = exporter.getFinishedSpans();
     const parent = spanByName(spans, "cursor.agent.send");
+    const turn0 = spanByName(spans, "cursor.llm.turn.0");
     // RunResult.usage.outputTokens=20 must win over the 40 we'd get from
     // token-delta (20) + turn-ended (20) accumulated locally.
     assert.equal(parent.attributes["cursor.usage.output_tokens"], 20);
     assert.equal(parent.attributes["cursor.usage.input_tokens"], 10);
+    // `turn-ended` fires BEFORE `step-completed` in this script. Without the
+    // sawStepBoundary guard, the defensive turn-ended flush would null
+    // currentTurn before step-completed could stamp stepDurationMs. Assert
+    // that step-completed's authoritative 10ms made it onto the turn span.
+    assert.equal(turn0.attributes["cursor.turn.duration_ms"], 10);
   });
 
   void it("ends parent span via GC fallback when Run is discarded without consume", async () => {

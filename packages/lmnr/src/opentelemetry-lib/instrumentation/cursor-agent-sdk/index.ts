@@ -257,6 +257,13 @@ type RunState = {
   // Per-turn state — current active LLM turn span (if any).
   currentTurn: LlmTurnState | null;
   turnCount: number;
+  // True once we've observed at least one step-started or step-completed
+  // event. Cursor v1.0.10 uses those as the authoritative turn boundary;
+  // older SDKs only emit `turn-ended`. We use this flag to suppress the
+  // defensive `turn-ended` close when step-events are in play — otherwise
+  // `turn-ended` would null `currentTurn` BEFORE `step-completed` fires,
+  // and the authoritative `stepDurationMs` would silently get dropped.
+  sawStepBoundary: boolean;
 };
 
 const safeStringify = (v: unknown): string => {
@@ -930,12 +937,14 @@ const handleInteractionUpdate = (
     case "step-started": {
       // Each `step` corresponds to one LLM call/turn. Close the previous turn
       // (in case we didn't see a matching step-completed) and open a new one.
+      state.sawStepBoundary = true;
       const stepId = (update as { stepId?: number | string }).stepId;
       if (state.currentTurn) closeLlmTurn(state);
       openLlmTurnIfNeeded(state, stepId);
       return;
     }
     case "step-completed": {
+      state.sawStepBoundary = true;
       const stepDurationMs = (update as { stepDurationMs?: number })
         .stepDurationMs;
       closeLlmTurn(state, { durationMs: stepDurationMs });
@@ -970,8 +979,11 @@ const handleInteractionUpdate = (
             (state.totalUsage.cacheWrite ?? 0) + (turnUsage.cacheWrite ?? 0),
         };
       }
-      // Defensive flush: some older SDK versions never emit step-completed.
-      if (state.currentTurn) closeLlmTurn(state);
+      // Defensive flush only for legacy SDKs that never emit step-completed.
+      // When step boundaries ARE in play, closing here would null currentTurn
+      // before the authoritative `step-completed` handler can apply
+      // `stepDurationMs` — silently dropping the turn duration.
+      if (!state.sawStepBoundary && state.currentTurn) closeLlmTurn(state);
       return;
     }
     default:
@@ -1035,6 +1047,7 @@ const wrapSend = (
       toolSpans: new Map(),
       currentTurn: null,
       turnCount: 0,
+      sawStepBoundary: false,
     };
 
     // Wrap onDelta to also tap into turn-ended / usage events while forwarding
