@@ -336,6 +336,18 @@ export interface InitializeOptions {
     /**
      * @example
      * ```javascript
+     * import * as cursor from "@cursor/sdk";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { cursorAgentSDK: cursor },
+     * });
+     * ```
+     */
+    cursorAgentSDK?: any;
+    /**
+     * @example
+     * ```javascript
      * import Stagehand from "@browserbasehq/stagehand";
      * import { OpenAI } from "openai";
      * import Laminar from "@lmnr-ai/lmnr";

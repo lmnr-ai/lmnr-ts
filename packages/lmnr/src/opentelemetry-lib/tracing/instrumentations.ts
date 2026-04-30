@@ -22,6 +22,7 @@ import { StagehandV2Instrumentation } from "../../browser/stagehand/v2";
 import { StagehandInstrumentation as StagehandV3Instrumentation } from "../../browser/stagehand/v3";
 import { initializeLogger } from "../../utils";
 import { ClaudeAgentSDKInstrumentation } from "../instrumentation/claude-agent-sdk";
+import { CursorAgentSDKInstrumentation } from "../instrumentation/cursor-agent-sdk";
 import { GoogleGenAiInstrumentation } from "../instrumentation/google-genai";
 import { KernelInstrumentation } from "../instrumentation/kernel";
 import { OpenAIAgentsInstrumentation } from "../instrumentation/openai-agents";
@@ -242,6 +243,8 @@ const initInstrumentations = (
 
   instrumentations.push(new ClaudeAgentSDKInstrumentation());
 
+  instrumentations.push(new CursorAgentSDKInstrumentation());
+
   instrumentations.push(new OpencodeInstrumentation());
 
   instrumentations.push(new OpenAIAgentsInstrumentation());
@@ -289,9 +292,7 @@ const manuallyInitInstrumentations = (
       traceContent: !suppressContentTracing,
     });
     instrumentations.push(anthropicInstrumentation);
-    anthropicInstrumentation.manuallyInstrument(
-      instrumentModules.anthropic,
-    );
+    anthropicInstrumentation.manuallyInstrument(instrumentModules.anthropic);
   }
 
   if (instrumentModules?.azureOpenAI) {
@@ -381,9 +382,7 @@ const manuallyInitInstrumentations = (
       traceContent: !suppressContentTracing,
     });
     instrumentations.push(togetherInstrumentation);
-    togetherInstrumentation.manuallyInstrument(
-      instrumentModules.together,
-    );
+    togetherInstrumentation.manuallyInstrument(instrumentModules.together);
   }
 
   if (instrumentModules?.playwright && client) {
@@ -449,6 +448,14 @@ const manuallyInitInstrumentations = (
     const opencodeInstrumentation = new OpencodeInstrumentation();
     instrumentations.push(opencodeInstrumentation);
     opencodeInstrumentation.manuallyInstrument(instrumentModules.opencode);
+  }
+
+  if (instrumentModules?.cursorAgentSDK) {
+    const cursorAgentInstrumentation = new CursorAgentSDKInstrumentation();
+    instrumentations.push(cursorAgentInstrumentation);
+    cursorAgentInstrumentation.manuallyInstrument(
+      instrumentModules.cursorAgentSDK,
+    );
   }
 
   if (instrumentModules?.openAIAgents) {
