@@ -626,6 +626,7 @@ const wrapSend = (
           } catch {
             // ignore
           }
+          state.finishStatus = "error";
           throw e;
         } finally {
           endParent();
@@ -645,6 +646,7 @@ const wrapSend = (
         } catch {
           // ignore
         }
+        state.finishStatus = "error";
         endParent();
         throw e;
       }
