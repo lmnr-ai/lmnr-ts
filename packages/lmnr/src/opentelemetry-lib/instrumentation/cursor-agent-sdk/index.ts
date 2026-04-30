@@ -467,7 +467,7 @@ const handleInteractionUpdate = (
     case "turn-ended": {
       const maybeUsage = (update as { usage?: TurnUsage }).usage;
       if (maybeUsage) {
-        state.usage = {
+        const next: TurnUsage = {
           inputTokens:
             (state.usage?.inputTokens ?? 0) + (maybeUsage.inputTokens ?? 0),
           outputTokens:
@@ -477,6 +477,17 @@ const handleInteractionUpdate = (
           cacheWrite:
             (state.usage?.cacheWrite ?? 0) + (maybeUsage.cacheWrite ?? 0),
         };
+        // Only accumulate totalTokens when at least one turn reports it;
+        // otherwise leave undefined so recordParentOutputsAndEnd falls back
+        // to input+output instead of a misleading 0.
+        if (
+          typeof maybeUsage.totalTokens === "number" ||
+          typeof state.usage?.totalTokens === "number"
+        ) {
+          next.totalTokens =
+            (state.usage?.totalTokens ?? 0) + (maybeUsage.totalTokens ?? 0);
+        }
+        state.usage = next;
       }
       return;
     }
