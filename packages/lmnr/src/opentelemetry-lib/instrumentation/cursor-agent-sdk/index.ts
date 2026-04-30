@@ -431,30 +431,36 @@ const recordParentOutputsAndEnd = (state: RunState, result?: RunResult) => {
     }
     state.parent.setAttribute("cursor.run.turn_count", state.turnCount);
 
-    // Aggregate usage across turns (plus final result.usage if provided).
-    const agg: TurnUsage = {
-      inputTokens: state.totalUsage.inputTokens ?? 0,
-      outputTokens: state.totalUsage.outputTokens ?? 0,
-      cacheRead: state.totalUsage.cacheRead ?? 0,
-      cacheWrite: state.totalUsage.cacheWrite ?? 0,
+    // Aggregate usage. RunResult.usage is a run-wide total computed server-side
+    // and is the authoritative source when present — the per-turn deltas we
+    // accumulate (from token-delta + turn-ended) can double-count on older
+    // SDKs that emit BOTH incremental deltas AND a final turn-ended total. So
+    // prefer each RunResult.usage field when it's a positive number; only fall
+    // back to the accumulated value when the authoritative field is missing.
+    const pickUsage = (authoritative?: number, accumulated?: number) => {
+      if (typeof authoritative === "number" && authoritative > 0) {
+        return authoritative;
+      }
+      return accumulated ?? 0;
     };
-    if (result?.usage) {
-      // Prefer the final result.usage as the authoritative total if it is
-      // larger than what we accumulated (e.g. we missed a turn-ended delta).
-      agg.inputTokens = Math.max(
-        agg.inputTokens ?? 0,
-        result.usage.inputTokens ?? 0,
-      );
-      agg.outputTokens = Math.max(
-        agg.outputTokens ?? 0,
-        result.usage.outputTokens ?? 0,
-      );
-      agg.cacheRead = Math.max(agg.cacheRead ?? 0, result.usage.cacheRead ?? 0);
-      agg.cacheWrite = Math.max(
-        agg.cacheWrite ?? 0,
-        result.usage.cacheWrite ?? 0,
-      );
-    }
+    const agg: TurnUsage = {
+      inputTokens: pickUsage(
+        result?.usage?.inputTokens,
+        state.totalUsage.inputTokens,
+      ),
+      outputTokens: pickUsage(
+        result?.usage?.outputTokens,
+        state.totalUsage.outputTokens,
+      ),
+      cacheRead: pickUsage(
+        result?.usage?.cacheRead,
+        state.totalUsage.cacheRead,
+      ),
+      cacheWrite: pickUsage(
+        result?.usage?.cacheWrite,
+        state.totalUsage.cacheWrite,
+      ),
+    };
     if ((agg.inputTokens ?? 0) > 0) {
       state.parent.setAttribute("cursor.usage.input_tokens", agg.inputTokens!);
     }

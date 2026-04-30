@@ -364,4 +364,40 @@ void describe("cursor-agent-sdk instrumentation", () => {
     assert.equal(subTurn0.attributes["cursor.subagent"], true);
     assert.equal(subTool!.attributes["cursor.subagent"], true);
   });
+
+  void it("prefers RunResult.usage over accumulated deltas to avoid double-count", async () => {
+    // Older SDKs may emit BOTH token-delta AND a turn-ended with usage — if we
+    // summed both into state.totalUsage and then Math.max'd against the final
+    // RunResult.usage, we'd double-count. RunResult.usage is authoritative.
+    const script: ScriptedEvent[] = [
+      { kind: "update", update: { type: "step-started", stepId: 0 } },
+      { kind: "update", update: { type: "token-delta", tokens: 20 } },
+      {
+        kind: "update",
+        update: { type: "turn-ended", usage: { outputTokens: 20 } },
+      },
+      {
+        kind: "update",
+        update: { type: "step-completed", stepId: 0, stepDurationMs: 10 },
+      },
+    ];
+
+    const cursor = buildMockModule(script);
+    const instr = new CursorAgentSDKInstrumentation();
+    instr.manuallyInstrument(cursor);
+
+    const agent = await cursor.Agent.create({ apiKey: "fake" });
+    const run = await agent.send("x");
+    for await (const _ of run.stream()) {
+      // noop
+    }
+    await run.wait();
+
+    const spans = exporter.getFinishedSpans();
+    const parent = spanByName(spans, "cursor.agent.send");
+    // RunResult.usage.outputTokens=20 must win over the 40 we'd get from
+    // token-delta (20) + turn-ended (20) accumulated locally.
+    assert.equal(parent.attributes["cursor.usage.output_tokens"], 20);
+    assert.equal(parent.attributes["cursor.usage.input_tokens"], 10);
+  });
 });
