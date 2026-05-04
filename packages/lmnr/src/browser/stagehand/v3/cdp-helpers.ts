@@ -25,6 +25,31 @@ export function shouldSkipUrl(url: string): boolean {
 }
 
 /**
+ * Send a CDP command to the given page. Works across Stagehand 3.0.x and 3.1.x+.
+ *
+ * `page.sendCDP` was added in Stagehand 3.1.0. On 3.0.x we fall back to
+ * `getSessionForFrame(mainFrameId()).send(...)` (both methods are public on
+ * the 3.0.x Page; `mainSession` is not).
+ */
+export async function sendCDP<T = unknown>(
+  page: StagehandV3Page,
+  method: string,
+  params?: object,
+): Promise<T> {
+  if (typeof page.sendCDP === "function") {
+    return await page.sendCDP<T>(method, params);
+  }
+  if (typeof page.getSessionForFrame === "function") {
+    const session = page.getSessionForFrame(page.mainFrameId());
+    return await session.send<T>(method, params);
+  }
+  throw new Error(
+    "Stagehand page does not expose sendCDP or getSessionForFrame; " +
+    "unable to send CDP commands",
+  );
+}
+
+/**
  * Create an isolated world for a page and return the execution context ID
  */
 export async function getOrCreateIsolatedWorld(
@@ -33,7 +58,7 @@ export async function getOrCreateIsolatedWorld(
   try {
     // Get the frame tree to find the main frame
     const frameTreeResult = await Promise.race([
-      page.sendCDP<{ frameTree: FrameTree }>("Page.getFrameTree"),
+      sendCDP<{ frameTree: FrameTree }>(page, "Page.getFrameTree"),
       new Promise<null>((_, reject) =>
         setTimeout(() => reject(new Error("Timeout getting frame tree")), CDP_OPERATION_TIMEOUT_MS),
       ),
@@ -45,7 +70,7 @@ export async function getOrCreateIsolatedWorld(
 
     // Create isolated world
     const isolatedWorldResult = await Promise.race([
-      page.sendCDP<{ executionContextId: number }>("Page.createIsolatedWorld", {
+      sendCDP<{ executionContextId: number }>(page, "Page.createIsolatedWorld", {
         frameId,
         worldName: "laminar-recorder",
       }),
@@ -78,7 +103,7 @@ export async function isRecorderPresent(
 ): Promise<boolean> {
   try {
     const result = await Promise.race([
-      page.sendCDP<RuntimeEvaluateResult>("Runtime.evaluate", {
+      sendCDP<RuntimeEvaluateResult>(page, "Runtime.evaluate", {
         expression: "typeof window.lmnrRrweb !== 'undefined'",
         contextId,
         returnByValue: true,
@@ -145,7 +170,7 @@ export async function injectRecorderViaCDP(
 
     // Inject rrweb base
     try {
-      await page.sendCDP("Runtime.evaluate", {
+      await sendCDP(page, "Runtime.evaluate", {
         expression: RECORDER,
         contextId,
       });
@@ -161,7 +186,7 @@ export async function injectRecorderViaCDP(
     const optionsJson = JSON.stringify(sessionRecordingOptions ?? {});
     const injectExpression = `(${injectScript.toString()})(${optionsJson}, true);`;
     try {
-      await page.sendCDP("Runtime.evaluate", {
+      await sendCDP(page, "Runtime.evaluate", {
         expression: injectExpression,
         contextId,
       });
@@ -174,7 +199,7 @@ export async function injectRecorderViaCDP(
     // Add binding globally (not scoped to execution context)
     // The Runtime.bindingCalled event will include the executionContextId
     try {
-      await page.sendCDP("Runtime.addBinding", {
+      await sendCDP(page, "Runtime.addBinding", {
         name: "lmnrSendEvents",
       });
       logger.debug(`Added binding 'lmnrSendEvents' for page ${frameId}, context ${contextId}`);

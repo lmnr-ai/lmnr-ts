@@ -21,6 +21,10 @@ This is the main `@lmnr-ai/lmnr` SDK package — OpenTelemetry-based tracing for
 - When patching prototypes registered via multiple `InstrumentationNodeModuleDefinition` entries that resolve to the same class (e.g. `@openai/agents` and `@openai/agents-openai` both expose `OpenAIResponsesModel.prototype`), guard `_wrap` with a `WeakSet` of already-wrapped prototypes — `shimmer` happily double-wraps and will run your wrapper logic twice per call.
 - `AsyncLocalStorage.run(value, fn)` restores the previous context as soon as `fn` returns — for async iterables/streams, wrap **each** `next()`/`return()`/`throw()` call in its own `.run()` so the context is visible across yields, not just at iterator creation.
 
+# Stagehand v3 Instrumentation (`src/browser/stagehand/v3/`)
+- `page.sendCDP(method, params)` was only added in `@browserbasehq/stagehand` **3.1.0**. On 3.0.x, Page's `mainSession` is private and there is no `sendCDP`, so CDP calls must go through `page.getSessionForFrame(page.mainFrameId()).send(method, params)` (both methods are public on the 3.0.x Page). Use the `sendCDP(page, method, params)` helper in `cdp-helpers.ts` — it probes `page.sendCDP` first, falls back to `getSessionForFrame`, and throws if neither exists. Without this fallback, recording injection silently fails on 3.0.x with `page.sendCDP is not a function` and no rrweb events reach the backend even though spans still flow.
+- The `@lmnr/browserbase-stagehand-instrumentation` instrumentation declares `['>=3.0.0']` as the supported range, so both 3.0.x and 3.1.x+ must keep working — test any CDP-touching change against both.
+
 # Agents SDK — TS vs Python parity
 - TS `ModelRequest` puts `systemInstructions` as a top-level field (not inside a kwargs bag like Python). The Python wrapper extracts it from `kwargs`; the TS wrapper reads `request.systemInstructions`.
 - TS agents span_data uses private fields `_response` and `_input` (not `response` / `input`). The Python handlers read the public field names — when porting, check both.
