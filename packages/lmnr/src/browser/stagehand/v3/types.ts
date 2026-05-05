@@ -26,10 +26,22 @@ export interface RuntimeEvaluateResult {
 }
 
 /**
- * Interface for Stagehand V3 Page that exposes sendCDP
+ * Minimal CDP session interface (matches Stagehand's `CDPSessionLike`).
+ */
+export interface CDPSessionLike {
+  send<R = unknown>(method: string, params?: object): Promise<R>;
+  on<P = unknown>(event: string, handler: (params: P) => void): void;
+  off<P = unknown>(event: string, handler: (params: P) => void): void;
+}
+
+/**
+ * Interface for Stagehand V3 Page that exposes sendCDP.
+ * `sendCDP` was added in Stagehand 3.1.0. For 3.0.x, callers should fall back
+ * to `getSessionForFrame(mainFrameId()).send(...)`.
  */
 export interface StagehandV3Page {
-  sendCDP<T = unknown>(method: string, params?: object): Promise<T>;
+  sendCDP?<T = unknown>(method: string, params?: object): Promise<T>;
+  getSessionForFrame?(frameId: string): CDPSessionLike;
   url(): string;
   mainFrameId(): string;
   targetId(): string;
