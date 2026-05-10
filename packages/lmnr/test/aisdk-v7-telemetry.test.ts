@@ -605,4 +605,43 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.equal(op.status.code, 2); // SpanStatusCode.ERROR
     assert.equal(op.attributes["ai.response.finishReason"], "error");
   });
+
+  void it("applies cache_creation_input_tokens and cache_read_input_tokens from v6+ inputTokenDetails", () => {
+    const tel = new LaminarTelemetry();
+    const callId = "call-cache";
+
+    tel.onStart(mkStartEvent(callId));
+    tel.onStepStart(mkStepStartEvent(callId, 0));
+    tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+    tel.onLanguageModelCallEnd(
+      mkLlmCallEnd(callId, {
+        usage: {
+          inputTokens: 100,
+          outputTokens: 20,
+          totalTokens: 120,
+          inputTokenDetails: {
+            noCacheTokens: 40,
+            cacheReadTokens: 30,
+            cacheWriteTokens: 30,
+          },
+          outputTokenDetails: {
+            textTokens: 15,
+            reasoningTokens: 5,
+          },
+        },
+      }),
+    );
+    tel.onStepFinish(mkStepEnd(callId, 0));
+    tel.onFinish(mkFinish(callId));
+
+    const spans = exporter.getFinishedSpans();
+    const llm = spans.find((s) => s.name.startsWith("ai.llm "));
+    assert.ok(llm);
+    assert.equal(llm.attributes["gen_ai.usage.cache_read_input_tokens"], 30);
+    assert.equal(
+      llm.attributes["gen_ai.usage.cache_creation_input_tokens"],
+      30,
+    );
+    assert.equal(llm.attributes["gen_ai.usage.reasoning_tokens"], 5);
+  });
 });

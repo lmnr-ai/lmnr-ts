@@ -119,10 +119,20 @@ const applyUsage = (attributes: Record<string, any>, usage: any): void => {
   }
   if (typeof usage.reasoningTokens === "number") {
     attributes["gen_ai.usage.reasoning_tokens"] = usage.reasoningTokens;
+  } else if (typeof usage.outputTokenDetails?.reasoningTokens === "number") {
+    attributes["gen_ai.usage.reasoning_tokens"] =
+      usage.outputTokenDetails.reasoningTokens;
   }
   if (typeof usage.cachedInputTokens === "number") {
     attributes["gen_ai.usage.cache_read_input_tokens"] =
       usage.cachedInputTokens;
+  } else if (typeof usage.inputTokenDetails?.cacheReadTokens === "number") {
+    attributes["gen_ai.usage.cache_read_input_tokens"] =
+      usage.inputTokenDetails.cacheReadTokens;
+  }
+  if (typeof usage.inputTokenDetails?.cacheWriteTokens === "number") {
+    attributes["gen_ai.usage.cache_creation_input_tokens"] =
+      usage.inputTokenDetails.cacheWriteTokens;
   }
 };
 
