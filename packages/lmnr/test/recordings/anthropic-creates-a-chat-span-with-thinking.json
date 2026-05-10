@@ -1,0 +1,55 @@
+[
+  {
+    "scope": "https://api.anthropic.com:443",
+    "method": "POST",
+    "path": "/v1/messages",
+    "body": {
+      "max_tokens": 2048,
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "How many times does the letter 'r' appear in the word strawberry?"
+            }
+          ]
+        }
+      ],
+      "model": "claude-3-7-sonnet-20250219",
+      "thinking": {
+        "type": "enabled",
+        "budget_tokens": 1024
+      }
+    },
+    "status": 200,
+    "response": {
+      "id": "msg_08Thinking",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-3-7-sonnet-20250219",
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "Let me count the letter 'r' in 'strawberry':\ns-t-r-a-w-b-e-r-r-y\nThere are 3 r's."
+        },
+        {
+          "type": "text",
+          "text": "The letter 'r' appears 3 times in the word 'strawberry'."
+        }
+      ],
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 30,
+        "output_tokens": 80,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+      }
+    },
+    "rawHeaders": {
+      "content-type": "application/json"
+    },
+    "responseIsBinary": false
+  }
+]

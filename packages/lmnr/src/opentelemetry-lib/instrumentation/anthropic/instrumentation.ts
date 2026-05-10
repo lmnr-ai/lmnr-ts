@@ -1,146 +1,132 @@
-/*
- * Copyright Traceloop
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 import {
   context,
   trace,
-  Span,
-  Attributes,
+  type Span,
   SpanKind,
   SpanStatusCode,
 } from "@opentelemetry/api";
 import {
   InstrumentationBase,
-  InstrumentationModuleDefinition,
+  type InstrumentationConfig,
+  type InstrumentationModuleDefinition,
   InstrumentationNodeModuleDefinition,
   safeExecuteInTheMiddle,
 } from "@opentelemetry/instrumentation";
-import {
-  ATTR_GEN_AI_COMPLETION,
-  ATTR_GEN_AI_PROMPT,
-  ATTR_GEN_AI_REQUEST_MAX_TOKENS,
-  ATTR_GEN_AI_REQUEST_MODEL,
-  ATTR_GEN_AI_REQUEST_TEMPERATURE,
-  ATTR_GEN_AI_REQUEST_TOP_P,
-  ATTR_GEN_AI_RESPONSE_MODEL,
-  ATTR_GEN_AI_SYSTEM,
-  ATTR_GEN_AI_USAGE_COMPLETION_TOKENS,
-  ATTR_GEN_AI_USAGE_PROMPT_TOKENS,
-} from "@opentelemetry/semantic-conventions/incubating";
 import type * as anthropic from "@anthropic-ai/sdk";
-import type {
-  CompletionCreateParamsNonStreaming,
-  CompletionCreateParamsStreaming,
-  Completion,
-} from "@anthropic-ai/sdk/resources/completions";
-import type {
-  MessageCreateParamsNonStreaming,
-  MessageCreateParamsStreaming,
-  Message,
-  MessageStreamEvent,
-} from "@anthropic-ai/sdk/resources/messages";
-import type { MessageCreateParamsNonStreaming as BetaMessageCreateParamsNonStreaming } from "@anthropic-ai/sdk/resources/beta/messages";
+import type { Completion } from "@anthropic-ai/sdk/resources/completions";
+import type { MessageStreamEvent } from "@anthropic-ai/sdk/resources/messages";
 import type { Stream } from "@anthropic-ai/sdk/streaming";
-import type { APIPromise, BaseAnthropic } from "@anthropic-ai/sdk";
 import { version } from "../../../../package.json";
+import {
+  modelAsDict,
+  setInputAttributes,
+  setResponseAttributes,
+  setStreamingResponseAttributes,
+} from "./span-utils";
+import { processResponseItem, createCompleteResponse } from "./streaming";
+
+interface AnthropicInstrumentationConfig extends InstrumentationConfig {
+  traceContent?: boolean;
+}
 
 export class AnthropicInstrumentation extends InstrumentationBase {
-  declare protected _config: {};
+  private traceContent: boolean;
 
-  constructor(config: {} = {}) {
-    super("@traceloop/instrumentation-anthropic", version, config);
+  constructor(config: AnthropicInstrumentationConfig = {}) {
+    super("@lmnr/anthropic-instrumentation", version, config);
+    this.traceContent = config.traceContent ?? true;
   }
 
-  public override setConfig(config: {} = {}) {
+  public override setConfig(config: AnthropicInstrumentationConfig = {}) {
     super.setConfig(config);
+    this.traceContent = config.traceContent ?? true;
   }
 
   public manuallyInstrument(module: typeof anthropic) {
-    this._diag.debug(`Patching @anthropic-ai/sdk manually`);
-    console.log(`Patching @anthropic-ai/sdk manually`);
+    this._diag.debug("Patching @anthropic-ai/sdk manually");
+
+    // Resolve the Anthropic class. When the user passes the default export
+    // (e.g. `import Anthropic from '@anthropic-ai/sdk'`), the class IS the module.
+    // When they pass the namespace (e.g. `import * as anthropic from '...'`),
+    // the class is at module.Anthropic.
+    const AnthropicClass = resolveAnthropicClass(module);
 
     try {
       this._wrap(
-        module.Anthropic.Completions.prototype,
+        AnthropicClass.Completions.prototype,
         "create",
-        this.patchAnthropic("completion", module),
+        this.patchAnthropic("completion"),
       );
-    } catch (error) {
-      console.warn(error);
+    } catch {
+      // Completions may not exist in all SDK versions
     }
     try {
       this._wrap(
-        module.Anthropic.Messages.prototype,
+        AnthropicClass.Messages.prototype,
         "create",
-        this.patchAnthropic("chat", module),
+        this.patchAnthropic("chat"),
       );
-    } catch (error) {
-      console.warn(error);
+    } catch {
+      // Messages should always exist but wrap safely
     }
     try {
       this._wrap(
-        module.Anthropic.Beta.Messages.prototype,
+        AnthropicClass.Beta.Messages.prototype,
         "create",
-        this.patchAnthropic("chat", module),
+        this.patchAnthropic("chat"),
       );
-    } catch (error) {
-      console.warn(error);
+    } catch {
+      // Beta may not exist
     }
+    // Note: `messages.parse` (anthropic-ai/sdk >= 0.60) is a thin wrapper that
+    // internally calls `this.create(params, options)` and then parses the
+    // response via the `output_config.format.parse` helper, so the create wrap
+    // above already captures parse calls (including the `output_config` kwarg
+    // that carries the structured-output schema). Wrapping parse directly
+    // would produce a duplicate nested span on every parse call.
   }
 
   protected init(): InstrumentationModuleDefinition {
-    const module = new InstrumentationNodeModuleDefinition(
+    return new InstrumentationNodeModuleDefinition(
       "@anthropic-ai/sdk",
       [">=0.9.1"],
       this.patch.bind(this),
       this.unpatch.bind(this),
     );
-    return module;
   }
 
   private patch(moduleExports: typeof anthropic, moduleVersion?: string) {
     this._diag.debug(`Patching @anthropic-ai/sdk@${moduleVersion}`);
-    console.log(`Patching @anthropic-ai/sdk@${moduleVersion}`);
 
     try {
       this._wrap(
         moduleExports.Anthropic.Completions.prototype,
         "create",
-        this.patchAnthropic("completion", moduleExports),
+        this.patchAnthropic("completion"),
       );
-    } catch (error) {
-      console.warn(error);
+    } catch {
+      // Completions may not exist
     }
     try {
       this._wrap(
         moduleExports.Anthropic.Messages.prototype,
         "create",
-        this.patchAnthropic("chat", moduleExports),
+        this.patchAnthropic("chat"),
       );
-    } catch (error) {
-      console.warn(error);
+    } catch {
+      // Messages should always exist
     }
     try {
       this._wrap(
         moduleExports.Anthropic.Beta.Messages.prototype,
         "create",
-        this.patchAnthropic("chat", moduleExports),
+        this.patchAnthropic("chat"),
       );
-    } catch (error) {
-      console.warn(error);
+    } catch {
+      // Beta may not exist
     }
+    // See manuallyInstrument: `messages.parse` delegates to `create`, so the
+    // create wrap also captures parse calls.
     return moduleExports;
   }
 
@@ -152,54 +138,50 @@ export class AnthropicInstrumentation extends InstrumentationBase {
 
     try {
       this._unwrap(moduleExports.Anthropic.Completions.prototype, "create");
-    } catch (e) {
-      console.error(e);
+    } catch {
+      /* may not exist */
     }
     try {
       this._unwrap(moduleExports.Anthropic.Messages.prototype, "create");
-    } catch (e) {
-      console.error(e);
+    } catch {
+      /* may not exist */
     }
     try {
       this._unwrap(moduleExports.Anthropic.Beta.Messages.prototype, "create");
-    } catch (e) {
-      console.error(e);
+    } catch {
+      /* may not exist */
     }
   }
 
-  private patchAnthropic(
-    type: "chat" | "completion",
-    moduleExports: typeof anthropic,
-  ) {
+  private patchAnthropic(type: "chat" | "completion") {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const plugin = this;
-    // eslint-disable-next-line
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     return (original: Function) => {
       return function method(this: any, ...args: unknown[]) {
-        console.log("calling patched function");
-        const span =
-          type === "chat"
-            ? plugin.startSpan({
-                type,
-                params: args[0] as MessageCreateParamsNonStreaming & {
-                  extraAttributes?: Record<string, any>;
-                },
-              })
-            : plugin.startSpan({
-                type,
-                params: args[0] as CompletionCreateParamsNonStreaming & {
-                  extraAttributes?: Record<string, any>;
-                },
-              });
+        const params = (args[0] ?? {}) as Record<string, any>;
+        const spanName =
+          type === "chat" ? "anthropic.chat" : "anthropic.completion";
+
+        const span = plugin.tracer.startSpan(spanName, {
+          kind: SpanKind.CLIENT,
+          attributes: {
+            "gen_ai.system": "anthropic",
+          },
+        });
+
+        try {
+          setInputAttributes(span, params, plugin.traceContent);
+        } catch (e) {
+          plugin._diag.debug(
+            `Error setting input attributes: ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
 
         const execContext = trace.setSpan(context.active(), span);
         const execPromise = safeExecuteInTheMiddle(
           () => {
             return context.with(execContext, () => {
-              if ((args?.[0] as any)?.extraAttributes) {
-                delete (args[0] as any).extraAttributes;
-              }
-              console.log(trace.getActiveSpan()?.spanContext().spanId);
               return original.apply(this, args);
             });
           },
@@ -210,16 +192,10 @@ export class AnthropicInstrumentation extends InstrumentationBase {
           },
         );
 
-        if (
-          (
-            args[0] as
-              | MessageCreateParamsStreaming
-              | CompletionCreateParamsStreaming
-          ).stream
-        ) {
+        if (params.stream) {
           return context.bind(
             execContext,
-            plugin._streamingWrapPromise(this._client, moduleExports, {
+            plugin._streamingWrapPromise({
               span,
               type,
               promise: execPromise,
@@ -227,348 +203,168 @@ export class AnthropicInstrumentation extends InstrumentationBase {
           );
         }
 
-        const wrappedPromise = plugin._wrapPromise(type, span, execPromise);
-
+        const wrappedPromise = plugin._wrapPromise(span, execPromise);
         return context.bind(execContext, wrappedPromise as any);
       };
     };
   }
 
-  private startSpan({
+  private _streamingWrapPromise({
+    span,
     type,
-    params,
-  }:
-    | {
-        type: "chat";
-        params: MessageCreateParamsNonStreaming & {
-          extraAttributes?: Record<string, any>;
-        };
-      }
-    | {
-        type: "completion";
-        params: CompletionCreateParamsNonStreaming & {
-          extraAttributes?: Record<string, any>;
-        };
-      }): Span {
-    const attributes: Attributes = {
-      [ATTR_GEN_AI_SYSTEM]: "Anthropic",
-      "gen_ai.request.type": type,
-    };
+    promise,
+  }: {
+    span: Span;
+    type: "chat" | "completion";
+    promise: Promise<Stream<MessageStreamEvent>> | Promise<Stream<Completion>>;
+  }) {
+    const plugin = this;
 
-    try {
-      attributes[ATTR_GEN_AI_REQUEST_MODEL] = params.model;
-      attributes[ATTR_GEN_AI_REQUEST_TEMPERATURE] = params.temperature;
-      attributes[ATTR_GEN_AI_REQUEST_TOP_P] = params.top_p;
-      attributes["gen_ai.request.top_k"] = params.top_k;
-
-      // Handle thinking parameters (for beta messages)
-      const betaParams = params as BetaMessageCreateParamsNonStreaming;
-      if (betaParams.thinking && betaParams.thinking.type === "enabled") {
-        attributes["llm.request.thinking.type"] = betaParams.thinking.type;
-        attributes["llm.request.thinking.budget_tokens"] =
-          betaParams.thinking.budget_tokens;
-      }
-
-      if (type === "completion") {
-        attributes[ATTR_GEN_AI_REQUEST_MAX_TOKENS] =
-          params.max_tokens_to_sample;
-      } else {
-        attributes[ATTR_GEN_AI_REQUEST_MAX_TOKENS] = params.max_tokens;
-      }
-
-      if (
-        params.extraAttributes !== undefined &&
-        typeof params.extraAttributes === "object"
-      ) {
-        Object.keys(params.extraAttributes).forEach((key: string) => {
-          attributes[key] = params.extraAttributes![key];
-        });
-      }
-
-      if (this._shouldSendPrompts()) {
-        if (type === "chat") {
-          let promptIndex = 0;
-
-          // If a system prompt is provided, it should always be first
-          if ("system" in params && params.system !== undefined) {
-            attributes[`${ATTR_GEN_AI_PROMPT}.0.role`] = "system";
-            attributes[`${ATTR_GEN_AI_PROMPT}.0.content`] =
-              typeof params.system === "string"
-                ? params.system
-                : JSON.stringify(params.system);
-            promptIndex += 1;
-          }
-
-          params.messages.forEach((message, index) => {
-            const currentIndex = index + promptIndex;
-            attributes[`${ATTR_GEN_AI_PROMPT}.${currentIndex}.role`] =
-              message.role;
-            if (typeof message.content === "string") {
-              attributes[`${ATTR_GEN_AI_PROMPT}.${currentIndex}.content`] =
-                (message.content as string) || "";
-            } else {
-              attributes[`${ATTR_GEN_AI_PROMPT}.${currentIndex}.content`] =
-                JSON.stringify(message.content);
-            }
-          });
-        } else {
-          attributes[`${ATTR_GEN_AI_PROMPT}.0.role`] = "user";
-          attributes[`${ATTR_GEN_AI_PROMPT}.0.content`] = params.prompt;
-        }
-      }
-    } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
-      this._diag.debug(errorMsg);
-    }
-
-    return this.tracer.startSpan(`anthropic.${type}`, {
-      kind: SpanKind.CLIENT,
-      attributes,
-    });
-  }
-
-  private _streamingWrapPromise(
-    client: BaseAnthropic,
-    moduleExports: typeof anthropic,
-    {
-      span,
-      type,
-      promise,
-    }:
-      | {
-          span: Span;
-          type: "chat";
-          promise: APIPromise<Stream<MessageStreamEvent>>;
-        }
-      | {
-          span: Span;
-          type: "completion";
-          promise: APIPromise<Stream<Completion>>;
-        },
-  ) {
     async function* iterateStream(
-      this: AnthropicInstrumentation,
       stream: Stream<MessageStreamEvent> | Stream<Completion>,
     ) {
       try {
         if (type === "chat") {
-          const result: Message = {
-            id: "0",
-            type: "message",
-            model: "",
-            role: "assistant",
-            stop_reason: null,
-            stop_sequence: null,
-            usage: {
-              input_tokens: 0,
-              output_tokens: 0,
-              cache_creation_input_tokens: null,
-              cache_read_input_tokens: null,
-              server_tool_use: null,
-              service_tier: null,
-            },
-            content: [],
-          };
+          const completeResponse = createCompleteResponse();
 
           for await (const chunk of stream) {
             yield chunk;
-
-            try {
-              switch (chunk.type) {
-                case "message_start":
-                  result.id = chunk.message.id;
-                  result.model = chunk.message.model;
-                  Object.assign(result.usage, chunk.message.usage);
-                  break;
-                case "message_delta":
-                  if (chunk.usage) {
-                    Object.assign(result.usage, chunk.usage);
-                  }
-                  break;
-                case "content_block_start":
-                  if (result.content.length <= chunk.index) {
-                    result.content.push({ ...chunk.content_block });
-                  }
-                  break;
-
-                case "content_block_delta":
-                  if (chunk.index < result.content.length) {
-                    const current = result.content[chunk.index];
-                    if (
-                      current.type === "text" &&
-                      chunk.delta.type === "text_delta"
-                    ) {
-                      result.content[chunk.index] = {
-                        type: "text",
-                        text: current.text + chunk.delta.text,
-                        citations: current.citations,
-                      };
-                    }
-                  }
-                  break;
-              }
-            } catch (e) {
-              const errorMsg = e instanceof Error ? e.message : String(e);
-              this._diag.debug(errorMsg);
-            }
+            processResponseItem(chunk, completeResponse);
           }
 
-          this._endSpan({ span, type, result });
+          try {
+            setStreamingResponseAttributes(
+              span,
+              completeResponse,
+              plugin.traceContent,
+            );
+            span.setStatus({ code: SpanStatusCode.OK });
+          } catch (e) {
+            plugin._diag.debug(
+              `Error setting streaming response attributes: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+          span.end();
         } else {
-          const result: Completion = {
-            id: "0",
-            type: "completion",
-            model: "",
-            completion: "",
-            stop_reason: null,
-          };
+          // Completion streaming (legacy)
+          let completionText = "";
+          let completionModel = "";
+          let completionId = "";
+
           for await (const chunk of stream as Stream<Completion>) {
             yield chunk;
 
             try {
-              result.id = chunk.id;
-              result.model = chunk.model;
-
-              if (chunk.stop_reason) {
-                result.stop_reason = chunk.stop_reason;
-              }
-              if (chunk.model) {
-                result.model = chunk.model;
-              }
-              if (chunk.completion) {
-                result.completion += chunk.completion;
-              }
-            } catch (e) {
-              const errorMsg = e instanceof Error ? e.message : String(e);
-              this._diag.debug(errorMsg);
+              completionId = chunk.id;
+              if (chunk.model) completionModel = chunk.model;
+              if (chunk.completion) completionText += chunk.completion;
+            } catch {
+              // ignore
             }
           }
 
-          this._endSpan({ span, type, result });
+          try {
+            const responseData = {
+              id: completionId,
+              model: completionModel,
+              completion: completionText,
+              role: "assistant",
+            };
+            setResponseAttributes(span, responseData, plugin.traceContent);
+            span.setStatus({ code: SpanStatusCode.OK });
+          } catch (e) {
+            plugin._diag.debug(
+              `Error setting completion response attributes: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+          span.end();
         }
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: errorMsg,
+          message: error instanceof Error ? error.message : String(error),
         });
-        span.recordException(errorMsg);
+        span.recordException(error instanceof Error ? error : String(error));
         span.end();
         throw error;
       }
     }
 
-    return new moduleExports.APIPromise(
-      client,
-      (promise as any).responsePromise,
-      async (client, props) => {
-        const realStream = await (promise as any).parseResponse(client, props);
-
-        // take the incoming stream, iterate it using our instrumented function, and wrap it in a new stream to keep the rich object type the same
+    // Wrap the promise: when it resolves to a Stream, replace the stream's
+    // async iterator with our instrumented one that collects span attributes.
+    return (promise as Promise<any>)
+      .then((realStream: any) => {
+        // Use the Stream constructor to create a new stream with the same
+        // controller and client, but with our instrumented iterator.
         return new realStream.constructor(
-          () => iterateStream.call(this, realStream),
+          () => iterateStream(realStream),
           realStream.controller,
         );
-      },
-    ) as
-      | APIPromise<Stream<MessageStreamEvent>>
-      | APIPromise<Stream<Completion>>;
-  }
-
-  private _wrapPromise<T>(
-    type: "chat" | "completion",
-    span: Span,
-    promise: Promise<T>,
-  ): Promise<T> {
-    return promise
-      .then((result) => {
-        if (type === "chat") {
-          this._endSpan({
-            type,
-            span,
-            result: result as Message,
-          });
-        } else {
-          this._endSpan({
-            type,
-            span,
-            result: result as Completion,
-          });
-        }
-
-        return result;
       })
-      .catch((error: Error) => {
+      .catch((error: unknown) => {
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: error.message,
+          message: error instanceof Error ? error.message : String(error),
         });
-        span.recordException(error);
+        span.recordException(error instanceof Error ? error : String(error));
         span.end();
-
         throw error;
       });
   }
 
-  private _endSpan({
-    span,
-    type,
-    result,
-  }:
-    | { span: Span; type: "chat"; result: Message }
-    | {
-        span: Span;
-        type: "completion";
-        result: Completion;
-      }) {
-    try {
-      span.setAttribute(ATTR_GEN_AI_RESPONSE_MODEL, result.model);
-      if (type === "chat" && result.usage) {
-        span.setAttribute(
-          "llm.usage.total_tokens",
-          result.usage?.input_tokens + result.usage?.output_tokens,
-        );
-        span.setAttribute(
-          ATTR_GEN_AI_USAGE_COMPLETION_TOKENS,
-          result.usage?.output_tokens,
-        );
-        span.setAttribute(
-          ATTR_GEN_AI_USAGE_PROMPT_TOKENS,
-          result.usage?.input_tokens,
-        );
-      }
-
-      if (result.stop_reason) {
-        span.setAttribute(
-          `${ATTR_GEN_AI_COMPLETION}.0.finish_reason`,
-          result.stop_reason,
-        );
-      }
-
-      if (this._shouldSendPrompts()) {
-        if (type === "chat") {
-          span.setAttribute(`${ATTR_GEN_AI_COMPLETION}.0.role`, "assistant");
-          span.setAttribute(
-            `${ATTR_GEN_AI_COMPLETION}.0.content`,
-            JSON.stringify(result.content),
-          );
-        } else {
-          span.setAttribute(`${ATTR_GEN_AI_COMPLETION}.0.role`, "assistant");
-          span.setAttribute(
-            `${ATTR_GEN_AI_COMPLETION}.0.content`,
-            result.completion,
+  private _wrapPromise<T>(span: Span, promise: Promise<T>): Promise<T> {
+    return promise
+      .then((result) => {
+        try {
+          const responseData = modelAsDict(result);
+          setResponseAttributes(span, responseData, this.traceContent);
+          span.setStatus({ code: SpanStatusCode.OK });
+        } catch (e) {
+          this._diag.debug(
+            `Error setting response attributes: ${e instanceof Error ? e.message : String(e)}`,
           );
         }
-      }
-    } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
-      this._diag.debug(errorMsg);
-    }
-
-    span.end();
-  }
-
-  private _shouldSendPrompts() {
-    return true;
+        span.end();
+        return result;
+      })
+      .catch((error: unknown) => {
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        span.recordException(error instanceof Error ? error : String(error));
+        span.end();
+        throw error;
+      });
   }
 }
+
+/**
+ * Resolve the Anthropic class from either a default export or namespace import.
+ * - Default export: `import Anthropic from '@anthropic-ai/sdk'` → module itself is the class
+ * - Namespace: `import * as anthropic from '...'` → module.Anthropic is the class
+ */
+const resolveAnthropicClass = (module: any): any => {
+  // Check if the module itself has Messages/Completions (default export)
+  if (typeof module === "function" && module.Messages) {
+    return module;
+  }
+  // Namespace import
+  if (
+    module.Anthropic &&
+    typeof module.Anthropic === "function" &&
+    module.Anthropic.Messages
+  ) {
+    return module.Anthropic;
+  }
+  // Fallback: check default export
+  if (
+    module.default &&
+    typeof module.default === "function" &&
+    module.default.Messages
+  ) {
+    return module.default;
+  }
+  // If nothing works, just return module.Anthropic and hope for the best (original behavior)
+  return module.Anthropic ?? module;
+};

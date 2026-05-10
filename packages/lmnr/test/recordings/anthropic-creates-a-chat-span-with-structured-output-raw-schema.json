@@ -1,0 +1,32 @@
+[
+  {
+    "scope": "https://api.anthropic.com:443",
+    "method": "POST",
+    "path": "/v1/messages",
+    "status": 200,
+    "response": {
+      "id": "msg_01StructRaw000000000000001",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-sonnet-4-5-20250929",
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"joke\": \"Why did the developer go broke? Because he used up all his cache.\", \"rating\": 7}"
+        }
+      ],
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 42,
+        "output_tokens": 28,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "service_tier": "standard"
+      }
+    },
+    "rawHeaders": {
+      "content-type": "application/json"
+    }
+  }
+]
