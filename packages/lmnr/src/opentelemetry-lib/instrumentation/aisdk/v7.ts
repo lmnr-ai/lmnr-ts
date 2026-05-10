@@ -607,9 +607,11 @@ export class LaminarTelemetry {
     if (typeof event.provider === "string") {
       const provider = normalizeProvider(event.provider);
       if (provider) span.setAttribute(LaminarAttributes.PROVIDER, provider);
+      span.setAttribute("ai.model.provider", event.provider);
     }
     if (typeof event.modelId === "string") {
       span.setAttribute(LaminarAttributes.REQUEST_MODEL, event.modelId);
+      span.setAttribute("ai.model.id", event.modelId);
     }
     this.llmByKey.set(stepKey(callId, 0), { span, textDeltas: [] });
   };
@@ -625,6 +627,22 @@ export class LaminarTelemetry {
         event.finishReason,
       );
       llm.span.setAttribute("ai.response.finishReason", event.finishReason);
+    }
+    // GenerateObjectStepEndEvent.response carries { id, modelId, ... } — mirror
+    // onLanguageModelCallEnd by emitting gen_ai.response.model +
+    // gen_ai.response.id so model-routing / cost dashboards see the actual
+    // response model for object-gen calls too.
+    const response = event?.response;
+    if (response && typeof response === "object") {
+      if (typeof response.modelId === "string") {
+        llm.span.setAttribute(
+          LaminarAttributes.RESPONSE_MODEL,
+          response.modelId,
+        );
+      }
+      if (typeof response.id === "string") {
+        llm.span.setAttribute("gen_ai.response.id", response.id);
+      }
     }
     const attrs: Record<string, any> = {};
     applyUsage(attrs, event.usage);

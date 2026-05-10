@@ -865,4 +865,67 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
       .map((s) => s);
     assert.ok(operationIds.length === 2);
   });
+
+  void it("emits minimum-set attributes on generateObject LLM span", () => {
+    // generateObject / streamObject produce a single LLM span via
+    // onObjectStepStart / onObjectStepFinish. The backend uses
+    // gen_ai.request.model (REQUEST_MODEL) + gen_ai.response.model
+    // (RESPONSE_MODEL) for model-routing and cost analytics; object-gen
+    // spans must carry both, matching onLanguageModelCallEnd parity.
+    const tel = new LaminarTelemetry();
+    const callId = "call-object";
+
+    tel.onStart(mkStartEvent(callId, { operationId: "ai.generateObject" }));
+    tel.onObjectStepStart({
+      callId,
+      stepNumber: 0,
+      provider: "openai",
+      modelId: "gpt-4.1-nano",
+      providerOptions: undefined,
+      headers: undefined,
+      promptMessages: [{ role: "user", content: "hi" }],
+    });
+    tel.onObjectStepFinish({
+      callId,
+      stepNumber: 0,
+      provider: "openai",
+      modelId: "gpt-4.1-nano",
+      finishReason: "stop",
+      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      objectText: '{"x":1}',
+      msToFirstChunk: undefined,
+      reasoning: undefined,
+      warnings: undefined,
+      request: {},
+      response: {
+        id: "resp-object-1",
+        timestamp: new Date(),
+        modelId: "gpt-4.1-nano-2024-07-18",
+      },
+      providerMetadata: undefined,
+    });
+    tel.onFinish(mkFinish(callId));
+
+    const spans = exporter.getFinishedSpans();
+    const llm = spans.find((s) => s.name.startsWith("ai.llm "));
+    assert.ok(llm, "object-gen llm span missing");
+    // Request-side (set in onObjectStepStart)
+    assert.equal(
+      llm.attributes["gen_ai.request.model"],
+      "gpt-4.1-nano",
+      "REQUEST_MODEL missing on object-gen llm span",
+    );
+    assert.equal(llm.attributes["ai.model.id"], "gpt-4.1-nano");
+    assert.equal(llm.attributes["ai.model.provider"], "openai");
+    // Response-side (set in onObjectStepFinish from event.response)
+    assert.equal(
+      llm.attributes["gen_ai.response.model"],
+      "gpt-4.1-nano-2024-07-18",
+      "RESPONSE_MODEL missing on object-gen llm span",
+    );
+    assert.equal(llm.attributes["gen_ai.response.id"], "resp-object-1");
+    // Usage + finish reason still flow through
+    assert.equal(llm.attributes["gen_ai.response.finish_reason"], "stop");
+    assert.equal(llm.attributes["ai.response.text"], '{"x":1}');
+  });
 });
