@@ -31,6 +31,7 @@ import * as diagnosticsChannel from "node:diagnostics_channel";
 import {
   type Context,
   context as contextApi,
+  type HrTime,
   type Span,
   SpanKind,
   SpanStatusCode,
@@ -864,8 +865,8 @@ export class LaminarTelemetry {
       op.span.setStatus({ code: SpanStatusCode.OK });
     }
 
-    this.endOrphanChildSpansForCallId(callId);
-    op.span.end();
+    const latestChildEnd = this.endOrphanChildSpansForCallId(callId);
+    op.span.end(latestChildEnd);
     this.operationByCallId.delete(callId);
     this.activeStreamStepByCallId.delete(callId);
   };
@@ -919,8 +920,8 @@ export class LaminarTelemetry {
     // leak if `onError` is terminal (no subsequent `onFinish`). If `onFinish`
     // does fire afterwards, its `operationByCallId.get(callId)` returns
     // undefined and it early-returns.
-    this.endOrphanChildSpansForCallId(targetCallId);
-    targetOp.span.end();
+    const latestChildEnd = this.endOrphanChildSpansForCallId(targetCallId);
+    targetOp.span.end(latestChildEnd);
     this.operationByCallId.delete(targetCallId);
     this.activeStreamStepByCallId.delete(targetCallId);
   };
@@ -950,29 +951,78 @@ export class LaminarTelemetry {
    * Sweep order is llm + tool (leaves under step) → step. Tool spans are
    * children of step spans (see `onToolExecutionStart` where
    * `parentCtx = step?.ctx ?? op.ctx`), so step must end AFTER tool.
+   *
+   * Returns the latest endTime observed across ended children, or undefined
+   * if no child was ended. Callers use this to clamp the operation span's
+   * endTime so it is guaranteed ≥ every child's endTime — the default
+   * `span.end()` reads a fresh hrtime each call, and four rapid synchronous
+   * ends can land within the same sub-microsecond tick where the hrtime
+   * source is not strictly monotonic across consecutive readings, making the
+   * resulting ordering flaky.
    */
-  private endOrphanChildSpansForCallId(callId: string): void {
+  private endOrphanChildSpansForCallId(callId: string): HrTime | undefined {
     const prefix = `${callId}:`;
+    let latest: HrTime | undefined;
+    const bump = (endTime: HrTime | undefined): void => {
+      if (!endTime) return;
+      if (!latest || compareHrTime(endTime, latest) > 0) latest = endTime;
+    };
     for (const [key, llm] of this.llmByKey) {
       if (key.startsWith(prefix)) {
         llm.span.end();
-        this.llmByKey.delete(key);
+        bump(readSpanEndTime(llm.span));
       }
     }
-    for (const [toolCallId, tool] of this.toolByCallId) {
+    for (const tool of this.toolByCallId.values()) {
       if (tool.callId === callId) {
         tool.span.end();
-        this.toolByCallId.delete(toolCallId);
+        bump(readSpanEndTime(tool.span));
       }
     }
+    // Steps are ancestors of the already-ended llm / tool spans — clamp each
+    // step's endTime to be ≥ the latest child endTime observed so far, so the
+    // "step ends after its tool/llm children" invariant holds deterministically
+    // even when the underlying hrtime source has sub-microsecond collisions
+    // across the rapid synchronous `end()` chain.
     for (const [key, step] of this.stepByKey) {
       if (key.startsWith(prefix)) {
-        step.span.end();
-        this.stepByKey.delete(key);
+        step.span.end(latest);
+        bump(readSpanEndTime(step.span));
       }
     }
+    // Clean up maps only after all ends have fired, so we don't lose the span
+    // references we use to read endTime.
+    for (const key of this.llmByKey.keys()) {
+      if (key.startsWith(prefix)) this.llmByKey.delete(key);
+    }
+    for (const [toolCallId, tool] of this.toolByCallId) {
+      if (tool.callId === callId) this.toolByCallId.delete(toolCallId);
+    }
+    for (const key of this.stepByKey.keys()) {
+      if (key.startsWith(prefix)) this.stepByKey.delete(key);
+    }
+    return latest;
   }
 }
+
+const compareHrTime = (a: HrTime, b: HrTime): number => {
+  if (a[0] !== b[0]) return a[0] - b[0];
+  return a[1] - b[1];
+};
+
+// LaminarSpan wraps an SDK Span and copies `endTime` in its constructor (before
+// `end()` was called), so reading it from the wrapper yields the stale
+// `[0, 0]` snapshot. The underlying `_span` (an SDK span) mutates its own
+// `endTime` on `end()`, which is what we need. Probe both fields defensively
+// so exotic Span implementations still degrade gracefully.
+const readSpanEndTime = (span: Span): HrTime | undefined => {
+  const inner = (span as unknown as { _span?: { endTime?: HrTime } })._span;
+  const innerEnd = inner?.endTime;
+  if (innerEnd && (innerEnd[0] !== 0 || innerEnd[1] !== 0)) return innerEnd;
+  const outerEnd = (span as unknown as { endTime?: HrTime }).endTime;
+  if (outerEnd && (outerEnd[0] !== 0 || outerEnd[1] !== 0)) return outerEnd;
+  return undefined;
+};
 
 /**
  * Returns a Laminar `Telemetry` integration instance. Pass it to
