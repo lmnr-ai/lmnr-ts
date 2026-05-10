@@ -301,12 +301,12 @@ export class AnthropicInstrumentation extends InstrumentationBase {
           realStream.controller,
         );
       })
-      .catch((error: Error) => {
+      .catch((error: unknown) => {
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: error.message,
+          message: error instanceof Error ? error.message : String(error),
         });
-        span.recordException(error);
+        span.recordException(error instanceof Error ? error : String(error));
         span.end();
         throw error;
       });
@@ -327,12 +327,12 @@ export class AnthropicInstrumentation extends InstrumentationBase {
         span.end();
         return result;
       })
-      .catch((error: Error) => {
+      .catch((error: unknown) => {
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: error.message,
+          message: error instanceof Error ? error.message : String(error),
         });
-        span.recordException(error);
+        span.recordException(error instanceof Error ? error : String(error));
         span.end();
         throw error;
       });
