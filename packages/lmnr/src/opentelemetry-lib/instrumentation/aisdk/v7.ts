@@ -498,16 +498,17 @@ export class LaminarTelemetry {
     }
     if (chunk.type !== "text-delta") return;
     if (typeof chunk.text !== "string" || chunk.text.length === 0) return;
-    // With multiple concurrent streams the active set can hold more than one
-    // entry; route to the most recently latched step (LIFO) — chunks within
-    // a single microtask tick always belong to the most recent firstChunk.
-    if (this.activeStreamStepByCallId.size === 0) return;
-    let callId = "";
-    let stepNumber = 0;
-    for (const [cid, sn] of this.activeStreamStepByCallId) {
-      callId = cid;
-      stepNumber = sn;
-    }
+    // Content chunks carry no callId. When exactly one stream is active we
+    // can route the delta unambiguously; with 2+ concurrent streams sharing
+    // the same LaminarTelemetry instance the owner is ambiguous and naive
+    // LIFO would misattribute A's chunks to B after B's firstChunk. In that
+    // case skip accumulation — the buffered-deltas path is only a fallback
+    // for when onLanguageModelCallEnd doesn't fire; on the normal path we
+    // read text from `event.content` which is correctly scoped per call.
+    if (this.activeStreamStepByCallId.size !== 1) return;
+    const [callId, stepNumber] = this.activeStreamStepByCallId
+      .entries()
+      .next().value!;
     const llm = this.llmByKey.get(stepKey(callId, stepNumber));
     if (!llm) return;
     llm.textDeltas.push(chunk.text);

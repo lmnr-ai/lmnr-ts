@@ -797,4 +797,72 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     // "hello" comes from onLanguageModelCallEnd, NOT from the ghost delta.
     assert.equal(llm.attributes["ai.response.text"], "hello");
   });
+
+  void it("does not misattribute text-delta chunks across concurrent streams", () => {
+    // Two concurrent streamText calls share the same LaminarTelemetry
+    // instance. Content chunks carry no callId, so after B's firstChunk
+    // fires while A is still active, a naive LIFO pick would push A's
+    // subsequent deltas into B's buffer. The integration must instead
+    // decline to attribute deltas while the owner is ambiguous.
+    const tel = new LaminarTelemetry();
+    const callA = "call-concurrent-a";
+    const callB = "call-concurrent-b";
+
+    tel.onStart(mkStartEvent(callA, { operationId: "ai.streamText" }));
+    tel.onStart(mkStartEvent(callB, { operationId: "ai.streamText" }));
+    tel.onStepStart(mkStepStartEvent(callA, 0));
+    tel.onStepStart(mkStepStartEvent(callB, 0));
+    tel.onLanguageModelCallStart(mkLlmCallStart(callA));
+    tel.onLanguageModelCallStart(mkLlmCallStart(callB));
+
+    // A starts streaming first, then emits a content delta while only A
+    // is active — this one is unambiguous and MUST be attributed to A.
+    tel.onChunk({
+      chunk: { type: "ai.stream.firstChunk", callId: callA, stepNumber: 0 },
+    });
+    tel.onChunk({ chunk: { type: "text-delta", id: "d", text: "A-only" } });
+
+    // B also starts streaming. Both streams are now active.
+    tel.onChunk({
+      chunk: { type: "ai.stream.firstChunk", callId: callB, stepNumber: 0 },
+    });
+    // This delta's owner is ambiguous (could belong to either A or B)
+    // — a naive LIFO would incorrectly push it onto B's buffer.
+    tel.onChunk({
+      chunk: { type: "text-delta", id: "d", text: "ambiguous" },
+    });
+    tel.onChunk({
+      chunk: { type: "ai.stream.finish", callId: callA, stepNumber: 0 },
+    });
+    // After A finishes, only B is active — this delta is unambiguously B's.
+    tel.onChunk({ chunk: { type: "text-delta", id: "d", text: "B-only" } });
+    tel.onChunk({
+      chunk: { type: "ai.stream.finish", callId: callB, stepNumber: 0 },
+    });
+
+    // Close out via onStepFinish fallback so buffered deltas get flushed.
+    tel.onStepFinish(mkStepEnd(callA, 0, { content: [], text: "" }));
+    tel.onStepFinish(mkStepEnd(callB, 0, { content: [], text: "" }));
+    tel.onFinish(mkFinish(callA));
+    tel.onFinish(mkFinish(callB));
+
+    const spans = exporter.getFinishedSpans();
+    const llmSpans = spans.filter((s) => s.name.startsWith("ai.llm "));
+    assert.equal(llmSpans.length, 2);
+    // The ambiguous delta must NOT appear on either span's buffered text.
+    for (const s of llmSpans) {
+      const text = s.attributes["ai.response.text"];
+      if (typeof text === "string") {
+        assert.ok(
+          !text.includes("ambiguous"),
+          `ambiguous delta misattributed: ${text}`,
+        );
+      }
+    }
+    // Unambiguous deltas were still attributed correctly.
+    const operationIds = spans
+      .filter((s) => s.attributes["ai.operation"] === "ai.streamText")
+      .map((s) => s);
+    assert.ok(operationIds.length === 2);
+  });
 });
