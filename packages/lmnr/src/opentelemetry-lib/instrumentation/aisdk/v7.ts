@@ -579,7 +579,14 @@ export class LaminarTelemetry {
   };
 
   // ------------------------------------------------------------------
-  // object-generation (deprecated callbacks — but still fire)
+  // object-generation (generateObject / streamObject)
+  //
+  // These callbacks fire ONLY from generateObject / streamObject (which call
+  // model.doGenerate / doStream directly) — they do NOT overlap with
+  // onLanguageModelCall* (which fire only from generateText / streamText via
+  // stream-language-model-call.ts). So keying the LLM span under
+  // stepKey(callId, 0) is safe — there is no onLanguageModelCallStart/End pair
+  // for the same callId that would collide on the same map entry.
   // ------------------------------------------------------------------
 
   onObjectStepStart = (event: any): void => {
