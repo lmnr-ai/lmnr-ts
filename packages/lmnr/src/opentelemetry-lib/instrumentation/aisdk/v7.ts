@@ -90,16 +90,17 @@ const serializeJSON = (value: unknown): string => {
   }
 };
 
-const normalizeProvider = (provider: string | undefined): string | undefined => {
+const normalizeProvider = (
+  provider: string | undefined,
+): string | undefined => {
   if (!provider) return undefined;
   const head = provider.split(".").shift();
-  return (head?.toLowerCase().trim() || provider.toLowerCase().trim()) || undefined;
+  return (
+    head?.toLowerCase().trim() || provider.toLowerCase().trim() || undefined
+  );
 };
 
-const applyUsage = (
-  attributes: Record<string, any>,
-  usage: any,
-): void => {
+const applyUsage = (attributes: Record<string, any>, usage: any): void => {
   if (!usage || typeof usage !== "object") return;
   if (typeof usage.inputTokens === "number") {
     attributes[LaminarAttributes.INPUT_TOKEN_COUNT] = usage.inputTokens;
@@ -120,16 +121,18 @@ const applyUsage = (
     attributes["gen_ai.usage.reasoning_tokens"] = usage.reasoningTokens;
   }
   if (typeof usage.cachedInputTokens === "number") {
-    attributes["gen_ai.usage.cache_read_input_tokens"] = usage.cachedInputTokens;
+    attributes["gen_ai.usage.cache_read_input_tokens"] =
+      usage.cachedInputTokens;
   }
 };
 
 // Convert a StandardizedPrompt-shaped object (`system` + `messages`) to an
 // array of `ModelMessage`-like entries. Laminar's backend parses
 // `ai.prompt.messages` as an array of AI SDK messages.
-const standardizedPromptToMessages = (
-  event: { system?: any; messages?: any[] },
-): any[] => {
+const standardizedPromptToMessages = (event: {
+  system?: any;
+  messages?: any[];
+}): any[] => {
   const messages: any[] = [];
   const sys = event.system;
   if (typeof sys === "string" && sys.length > 0) {
@@ -168,9 +171,7 @@ const extractTextFromContent = (content: any[] | undefined): string => {
 const extractReasoningFromContent = (content: any[] | undefined): string => {
   if (!Array.isArray(content)) return "";
   return content
-    .filter(
-      (p) => p && p.type === "reasoning" && typeof p.text === "string",
-    )
+    .filter((p) => p && p.type === "reasoning" && typeof p.text === "string")
     .map((p) => p.text as string)
     .join("");
 };
@@ -383,9 +384,6 @@ export class LaminarTelemetry {
     if (typeof event.responseId === "string") {
       span.setAttribute("gen_ai.response.id", event.responseId);
     }
-    applyUsage(span as unknown as Record<string, any>, event.usage);
-    // Re-emit usage as actual attributes (since Span#setAttribute is the
-    // correct API, the above cast was for the helper signature).
     const usageAttrs: Record<string, any> = {};
     applyUsage(usageAttrs, event.usage);
     for (const [k, v] of Object.entries(usageAttrs)) {
@@ -500,7 +498,10 @@ export class LaminarTelemetry {
       if (v !== undefined) step.span.setAttribute(k, v);
     }
     if (typeof event.finishReason === "string") {
-      step.span.setAttribute("gen_ai.response.finish_reason", event.finishReason);
+      step.span.setAttribute(
+        "gen_ai.response.finish_reason",
+        event.finishReason,
+      );
       step.span.setAttribute("ai.response.finishReason", event.finishReason);
     }
     if (this.recordOutputs) {
@@ -561,7 +562,10 @@ export class LaminarTelemetry {
     const llm = this.llmByKey.get(stepKey(callId, 0));
     if (!llm) return;
     if (typeof event.finishReason === "string") {
-      llm.span.setAttribute("gen_ai.response.finish_reason", event.finishReason);
+      llm.span.setAttribute(
+        "gen_ai.response.finish_reason",
+        event.finishReason,
+      );
       llm.span.setAttribute("ai.response.finishReason", event.finishReason);
     }
     const attrs: Record<string, any> = {};
@@ -745,7 +749,10 @@ export class LaminarTelemetry {
         );
       }
       if (typeof event.finishReason === "string") {
-        op.span.setAttribute("gen_ai.response.finish_reason", event.finishReason);
+        op.span.setAttribute(
+          "gen_ai.response.finish_reason",
+          event.finishReason,
+        );
         op.span.setAttribute("ai.response.finishReason", event.finishReason);
       }
       const totalUsage = event.totalUsage ?? event.usage;
@@ -799,9 +806,7 @@ export class LaminarTelemetry {
     const err =
       event instanceof Error
         ? event
-        : new Error(
-          typeof event === "string" ? event : serializeJSON(event),
-        );
+        : new Error(typeof event === "string" ? event : serializeJSON(event));
     for (const op of this.operationByCallId.values()) {
       op.span.recordException(err);
       op.span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
@@ -885,7 +890,8 @@ export const enableLaminarTelemetryDebug = (
   const channel = diagnosticsChannel.channel(
     AI_SDK_TELEMETRY_DIAGNOSTIC_CHANNEL,
   );
-  const handler = (message: unknown) => log(message as { type: string; event: unknown });
+  const handler = (message: unknown) =>
+    log(message as { type: string; event: unknown });
   channel.subscribe(handler);
   return () => channel.unsubscribe(handler);
 };
