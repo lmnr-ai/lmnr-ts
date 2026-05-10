@@ -883,8 +883,8 @@ export class LaminarTelemetry {
       rawError instanceof Error
         ? rawError
         : new Error(
-            typeof rawError === "string" ? rawError : serializeJSON(rawError),
-          );
+          typeof rawError === "string" ? rawError : serializeJSON(rawError),
+        );
     const eventCallId: string | undefined =
       event && typeof event === "object" && typeof event.callId === "string"
         ? event.callId

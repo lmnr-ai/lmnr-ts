@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 
-import { context, trace } from "@opentelemetry/api";
+import { context, SpanStatusCode, trace } from "@opentelemetry/api";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
 import { Laminar } from "../src/laminar";
@@ -552,12 +552,13 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     tel.onFinish(mkFinish("call-B"));
     const after = exporter.getFinishedSpans();
     const b = after.find(
-      (s) => s.name === "ai.generateText" && s.status.code !== 2,
+      (s) =>
+        s.name === "ai.generateText" && s.status.code !== SpanStatusCode.ERROR,
     );
     assert.ok(b, "unrelated concurrent op must finish OK");
   });
 
-  void it("onError does not flag unrelated ops when callId is missing and multiple are in flight", () => {
+  void it("onError doesn't flag other ops when no callId and multiple in-flight", () => {
     const tel = new LaminarTelemetry();
     tel.onStart(mkStartEvent("call-X"));
     tel.onStart(mkStartEvent("call-Y"));
@@ -699,7 +700,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.equal(op.attributes["ai.response.finishReason"], "error");
   });
 
-  void it("applies cache_creation_input_tokens and cache_read_input_tokens from v6+ inputTokenDetails", () => {
+  void it("applies cache write and read tokens from v6+ inputTokenDetails", () => {
     const tel = new LaminarTelemetry();
     const callId = "call-cache";
 
