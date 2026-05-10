@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { errorMessage } from "@lmnr-ai/types";
 import { Command } from "commander";
 
 import { version } from "../../package.json";
@@ -195,7 +196,7 @@ async function cli() {
 }
 
 cli().catch((err) => {
-  logger.error(err instanceof Error ? err.message : err);
+  logger.error(errorMessage(err));
   throw err;
 });
 

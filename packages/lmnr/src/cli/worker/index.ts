@@ -1,3 +1,4 @@
+import { errorMessage } from '@lmnr-ai/types';
 import * as readline from 'readline';
 
 import { Laminar } from '../../laminar';
@@ -183,7 +184,7 @@ const main = () => {
         process.exit(0);
       } catch (error: any) {
         await workerLogger.error(
-          `Error in worker: ${error instanceof Error ? error.message : error}`,
+          `Error in worker: ${errorMessage(error)}`,
         );
 
         if (Laminar.initialized()) {
@@ -192,7 +193,7 @@ const main = () => {
 
         await sendMessage({
           type: 'error',
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage(error),
           stack: error instanceof Error ? error.stack : undefined,
         });
         process.exit(1);
@@ -200,7 +201,7 @@ const main = () => {
     } catch (error: any) {
       await sendMessage({
         type: 'error',
-        error: `Failed to parse config: ${error instanceof Error ? error.message : error}`,
+        error: `Failed to parse config: ${errorMessage(error)}`,
       });
       process.exit(1);
     }
@@ -223,7 +224,7 @@ const handleShutdown = () => {
   if (Laminar.initialized()) {
     Laminar.shutdown().catch((error: any) => {
       workerLogger.error(
-        `Error during Laminar shutdown: ${error instanceof Error ? error.message : error}`,
+        `Error during Laminar shutdown: ${errorMessage(error)}`,
       ).catch(() => { });
     }).finally(() => {
       process.exit(0);
@@ -243,7 +244,7 @@ try {
 } catch (error: any) {
   void sendMessage({
     type: 'error',
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMessage(error),
     stack: error instanceof Error ? error.stack : undefined,
   }).then(() => process.exit(1));
 }

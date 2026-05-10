@@ -1,4 +1,4 @@
-import { type SessionRecordingOptions, type StringUUID } from "@lmnr-ai/types";
+import { errorMessage, type SessionRecordingOptions, type StringUUID } from "@lmnr-ai/types";
 
 import { EventChunk, sendEvents } from "../../utils";
 import { injectRecorderViaCDP, shouldSkipUrl } from "./cdp-helpers";
@@ -39,8 +39,7 @@ export function createBindingHandler(
               fallbackInfo.traceId,
             );
           } catch (error) {
-            logger.debug("Failed to parse binding payload: " +
-              `${error instanceof Error ? error.message : String(error)}`);
+            logger.debug("Failed to parse binding payload: " + errorMessage(error));
           }
         }
       }
@@ -57,8 +56,7 @@ export function createBindingHandler(
         sessionInfo.traceId,
       );
     } catch (error) {
-      logger.debug("Failed to handle binding event: " +
-        `${error instanceof Error ? error.message : String(error)}`);
+      logger.debug("Failed to handle binding event: " + errorMessage(error));
     }
   };
 }
@@ -92,13 +90,11 @@ export function createTargetCreatedHandler(
           }
         } catch (error) {
           // Page might have been closed or CDP session lost, continue with next page
-          logger.debug("Error injecting recorder into new page: " +
-            `${error instanceof Error ? error.message : String(error)}`);
+          logger.debug("Error injecting recorder into new page: " + errorMessage(error));
         }
       }
     } catch (error) {
-      logger.debug("Error handling target created event: " +
-        `${error instanceof Error ? error.message : String(error)}`);
+      logger.debug("Error handling target created event: " + errorMessage(error));
     }
   };
 }
@@ -135,8 +131,7 @@ export function createTargetInfoChangedHandler(
         }
       }
     } catch (error) {
-      logger.debug("Error handling target info change: " +
-        `${error instanceof Error ? error.message : String(error)}`);
+      logger.debug("Error handling target info change: " + errorMessage(error));
     }
   };
 }

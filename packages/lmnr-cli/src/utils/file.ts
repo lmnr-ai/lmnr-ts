@@ -1,4 +1,4 @@
-import { Datapoint } from '@lmnr-ai/types';
+import { Datapoint, errorMessage } from '@lmnr-ai/types';
 import csv from 'csv-parser';
 import { asString, generateCsv, mkConfig } from 'export-to-csv';
 import { createReadStream } from 'fs';
@@ -55,7 +55,7 @@ export const collectFiles = async (
     } catch (error) {
       logger.warn(
         `Path does not exist or is not accessible: ${filepath}. `
-        + `Error: ${error instanceof Error ? error.message : String(error)}`,
+        + `Error: ${errorMessage(error)}`,
       );
     }
   }
@@ -91,7 +91,7 @@ const tryParseJson = (content: string): any => {
     return JSON.parse(content);
   } catch (error) {
     logger.debug(
-      `Error parsing JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `Error parsing JSON: ${errorMessage(error)}`,
     );
     return content;
   }
@@ -172,7 +172,7 @@ export const loadFromPaths = async <D = any, T = any>(
       logger.info(`Read ${data.length} record(s) from ${file}`);
     } catch (error) {
       logger.error(
-        `Error reading file ${file}: ${error instanceof Error ? error.message : String(error)}`,
+        `Error reading file ${file}: ${errorMessage(error)}`,
       );
       throw error;
     }

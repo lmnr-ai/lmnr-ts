@@ -1,4 +1,4 @@
-import { type SessionRecordingOptions, type StringUUID } from "@lmnr-ai/types";
+import { errorMessage, type SessionRecordingOptions, type StringUUID } from "@lmnr-ai/types";
 import { Page as PlaywrightPage } from "playwright";
 import { Page as PuppeteerPage } from "puppeteer";
 
@@ -58,8 +58,7 @@ export const takeFullSnapshot = async (
         return true;
       } catch (error) {
         logger.error(
-          "Error taking full snapshot: " +
-            `${error instanceof Error ? error.message : String(error)}`,
+          "Error taking full snapshot: " + errorMessage(error),
         );
         return false;
       }
@@ -80,10 +79,7 @@ export const injectSessionRecorder = async (
         return await script();
       } catch (error) {
         logger.error(
-          "Operation " +
-            script.name +
-            " failed: " +
-            `${error instanceof Error ? error.message : String(error)}`,
+          "Operation " + script.name + " failed: " + errorMessage(error),
         );
       }
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -102,8 +98,7 @@ export const injectSessionRecorder = async (
     );
   } catch (error) {
     logger.debug(
-      "ailed to check if session recorder is loaded: " +
-        `${error instanceof Error ? error.message : String(error)}`,
+      "ailed to check if session recorder is loaded: " + errorMessage(error),
     );
   }
 
@@ -121,8 +116,7 @@ export const injectSessionRecorder = async (
       await castedPage.evaluate(injectScript, sessionRecordingOptions);
     } catch (error) {
       logger.debug(
-        "Failed to inject session recorder: " +
-          `${error instanceof Error ? error.message : String(error)}`,
+        "Failed to inject session recorder: " + errorMessage(error),
       );
     }
   }
@@ -615,8 +609,7 @@ export async function sendEvents(
           .send({ sessionId, traceId, events })
           .catch((error) => {
             logger.debug(
-              "Failed to send events: " +
-                `${error instanceof Error ? error.message : String(error)}`,
+              "Failed to send events: " + errorMessage(error),
             );
           });
       }
@@ -641,8 +634,7 @@ export async function sendEvents(
     }
   } catch (error) {
     logger.debug(
-      "Could not send events: " +
-        `${error instanceof Error ? error.message : String(error)}`,
+      "Could not send events: " + errorMessage(error),
     );
   }
 }

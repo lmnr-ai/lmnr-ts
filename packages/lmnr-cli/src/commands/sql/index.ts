@@ -1,4 +1,5 @@
 import { LaminarClient } from "@lmnr-ai/client";
+import { errorMessage } from "@lmnr-ai/types";
 
 import { initializeLogger } from "../../utils/logger";
 import { outputJson, outputJsonError } from "../../utils/output";
@@ -45,7 +46,7 @@ export const handleSqlQuery = async (
     console.log(`\n${rows.length} row(s)\n`);
   } catch (error) {
     if (options.json) outputJsonError(error);
-    logger.error(`Query failed: ${error instanceof Error ? error.message : String(error)}`);
+    logger.error(`Query failed: ${errorMessage(error)}`);
     process.exit(1);
   }
 };

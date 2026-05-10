@@ -1,6 +1,7 @@
 import { LaminarClient } from "@lmnr-ai/client";
 import {
   type CachedSpan,
+  errorMessage,
   type RolloutHandshakeEvent,
   type RolloutParam,
   type RolloutRunEvent,
@@ -251,7 +252,7 @@ const handleRunEvent = async (
       });
     } catch (error: any) {
       logger.error(
-        `Error setting debugger session status: ${error instanceof Error ? error.message : error}`,
+        `Error setting debugger session status: ${errorMessage(error)}`,
       );
     }
 
@@ -269,12 +270,12 @@ const handleRunEvent = async (
       });
     } catch (error: any) {
       logger.error(
-        `Error setting debugger session status: ${error instanceof Error ? error.message : error}`,
+        `Error setting debugger session status: ${errorMessage(error)}`,
       );
     }
   } catch (error: any) {
     logger.error(
-      `Error handling run event: ${error instanceof Error ? error.message : error}`,
+      `Error handling run event: ${errorMessage(error)}`,
     );
     if (error instanceof Error && error.stack) {
       logger.error(error.stack);
@@ -286,7 +287,7 @@ const handleRunEvent = async (
       });
     } catch (error: any) {
       logger.error(
-        `Error setting debugger session status: ${error instanceof Error ? error.message : error}`,
+        `Error setting debugger session status: ${errorMessage(error)}`,
       );
     }
   }
@@ -359,8 +360,7 @@ export async function runDev(
     }
   } catch (error) {
     logger.error(
-      "Failed to discover entrypoint functions: " +
-      (error instanceof Error ? error.message : String(error)),
+      "Failed to discover entrypoint functions: " + errorMessage(error),
     );
     cacheServer.close();
     throw error;
@@ -490,8 +490,7 @@ export async function runDev(
                 reloadScheduled = false;
               } catch (error: any) {
                 logger.error(
-                  "Failed to update function metadata: " +
-                  (error instanceof Error ? error.message : String(error)),
+                  "Failed to update function metadata: " + errorMessage(error),
                 );
                 if (error instanceof Error && error.stack) {
                   logger.debug(`Stack trace: ${error.stack}`);
@@ -526,8 +525,7 @@ export async function runDev(
           );
         } catch (error) {
           logger.error(
-            "Unhandled error in run event handler: " +
-            (error instanceof Error ? error.message : String(error)),
+            "Unhandled error in run event handler: " + errorMessage(error),
           );
         } finally {
           // Clear the promise so the next run can proceed
@@ -607,7 +605,7 @@ export async function runDev(
       logger.debug("Closing file watcher...");
       watcher.close().catch((error: any) => {
         logger.error(
-          `Failed to close file watcher: ${error instanceof Error ? error.message : error}`,
+          `Failed to close file watcher: ${errorMessage(error)}`,
         );
       });
 
@@ -630,7 +628,7 @@ export async function runDev(
         })
         .catch((error: any) => {
           logger.warn(
-            `Failed to delete debugger session: ${error instanceof Error ? error.message : error}`,
+            `Failed to delete debugger session: ${errorMessage(error)}`,
           );
           process.exit(1);
         });
@@ -647,8 +645,7 @@ export async function runDev(
     await sseClient.connectAndListen();
   } catch (error) {
     logger.error(
-      "Failed to start dev command: " +
-      (error instanceof Error ? error.message : String(error)),
+      "Failed to start dev command: " + errorMessage(error),
     );
 
     // Try to delete the debugger session before exiting

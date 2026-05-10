@@ -1,3 +1,4 @@
+import { errorMessage } from '@lmnr-ai/types';
 import * as path from 'path';
 
 export interface WorkerCommand {
@@ -92,7 +93,7 @@ export function getWorkerCommand(
       throw new Error(
         'Failed to resolve TypeScript/JavaScript worker from @lmnr-ai/lmnr package. ' +
         'Make sure @lmnr-ai/lmnr is installed. ' +
-        `Error: ${error instanceof Error ? error.message : String(error)}`,
+        `Error: ${errorMessage(error)}`,
       );
     }
   }

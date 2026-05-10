@@ -1,4 +1,5 @@
 import {
+  errorMessage,
   type LaminarSpanContext,
   type SessionRecordingOptions,
   type SpanType,
@@ -275,8 +276,7 @@ export class Laminar {
       logger.debug("Initialized Laminar parent context from LMNR_SPAN_CONTEXT.");
     } catch (e) {
       logger.warn(
-        "LMNR_SPAN_CONTEXT is set but could not be used: " +
-        (e instanceof Error ? e.message : String(e)),
+        "LMNR_SPAN_CONTEXT is set but could not be used: " + errorMessage(e),
       );
     }
   }
@@ -692,9 +692,7 @@ export class Laminar {
         const spanContext = tryToOtelSpanContext(laminarContext);
         entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
       } catch (e) {
-        logger.warn("Failed to parse parent span context: " +
-          (e instanceof Error ? e.message : String(e)),
-        );
+        logger.warn("Failed to parse parent span context: " + errorMessage(e));
       }
     }
     const tagProperties = tags

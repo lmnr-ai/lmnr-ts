@@ -1,5 +1,5 @@
 import { LaminarClient } from "@lmnr-ai/client";
-import { type StringUUID } from "@lmnr-ai/types";
+import { errorMessage, type StringUUID } from "@lmnr-ai/types";
 
 import { Datapoint } from "../evaluations";
 import { initializeLogger } from "../utils";
@@ -98,7 +98,7 @@ export const handleDatasetsList = async (
     console.log(`\nTotal: ${datasets.length} dataset(s)\n`);
   } catch (error) {
     logger.error(
-      `Failed to list datasets: ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to list datasets: ${errorMessage(error)}`,
     );
   }
 };
@@ -149,7 +149,7 @@ export const handleDatasetsPush = async (
     logger.info(`Pushed ${data.length} data points to dataset ${options.name || options.id}`);
   } catch (error) {
     logger.error(
-      `Failed to push dataset: ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to push dataset: ${errorMessage(error)}`,
     );
   }
 };
@@ -203,7 +203,7 @@ export const handleDatasetsPull = async (
     }
   } catch (error) {
     logger.error(
-      `Failed to pull dataset: ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to pull dataset: ${errorMessage(error)}`,
     );
   }
 };
@@ -248,7 +248,7 @@ export const handleDatasetsCreate = async (
     logger.info(`Successfully pushed ${data.length} data points to dataset '${name}'`);
   } catch (error) {
     logger.error(
-      `Failed to create dataset: ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to create dataset: ${errorMessage(error)}`,
     );
     return;
   }
@@ -274,8 +274,7 @@ export const handleDatasetsCreate = async (
     );
   } catch (error) {
     logger.error(
-      "Failed to pull dataset after creation: "
-      + `${error instanceof Error ? error.message : String(error)}`,
+      "Failed to pull dataset after creation: " + errorMessage(error),
     );
   }
 };

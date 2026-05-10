@@ -1,4 +1,10 @@
-import { LaminarSpanContext, RolloutParam, TraceType, TracingLevel } from '@lmnr-ai/types';
+import {
+  errorMessage,
+  LaminarSpanContext,
+  RolloutParam,
+  TraceType,
+  TracingLevel,
+} from '@lmnr-ai/types';
 import { AttributeValue } from "@opentelemetry/api";
 
 import { observeBase } from './opentelemetry-lib';
@@ -382,9 +388,7 @@ const buildContextProperties = (
       parentSessionId = laminarContext.sessionId;
       parentRolloutSessionId = laminarContext.rolloutSessionId;
     } catch (e) {
-      logger.warn("Failed to parse parent span context: " +
-        (e instanceof Error ? e.message : String(e)),
-      );
+      logger.warn("Failed to parse parent span context: " + errorMessage(e));
     }
   }
 
@@ -474,9 +478,7 @@ const buildSpanAttributes = (
         spanAttributes[PARENT_SPAN_IDS_PATH] = laminarContext.spanIdsPath;
       }
     } catch (e) {
-      logger.warn("Failed to parse parent span context for span attributes: " +
-        (e instanceof Error ? e.message : String(e)),
-      );
+      logger.warn("Failed to parse parent span context for span attributes: " + errorMessage(e));
     }
   }
 

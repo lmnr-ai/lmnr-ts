@@ -1,3 +1,4 @@
+import { errorMessage } from "@lmnr-ai/types";
 import { trace } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import * as fs from "fs";
@@ -297,7 +298,7 @@ const registerGlobalProxyShutdown = () => {
           proxyServer.stopServer();
         } catch (e) {
           logger.debug(
-            `Failed to stop proxy: ${e instanceof Error ? e.message : String(e)}`,
+            `Failed to stop proxy: ${errorMessage(e)}`,
           );
         }
       }
@@ -380,13 +381,13 @@ export const createProxyInstance = async ({
       };
     } catch (e) {
       logger.warn(
-        `Unable to start cc-proxy: ${e instanceof Error ? e.message : String(e)}`,
+        `Unable to start cc-proxy: ${errorMessage(e)}`,
       );
       return null;
     }
   } catch (e) {
     logger.warn(
-      `Failed to create proxy instance: ${e instanceof Error ? e.message : String(e)}`,
+      `Failed to create proxy instance: ${errorMessage(e)}`,
     );
     return null;
   }
@@ -406,7 +407,7 @@ export const stopProxyInstance = (instance: ProxyInstance | null): void => {
     activeProxyServers.delete(instance.server);
   } catch (e) {
     logger.debug(
-      `Failed to stop proxy instance: ${e instanceof Error ? e.message : String(e)}`,
+      `Failed to stop proxy instance: ${errorMessage(e)}`,
     );
   }
 };
@@ -424,7 +425,7 @@ export const forceReleaseProxy = (): void => {
       proxyServer.stopServer();
     } catch (e) {
       logger.debug(
-        `Failed to stop proxy: ${e instanceof Error ? e.message : String(e)}`,
+        `Failed to stop proxy: ${errorMessage(e)}`,
       );
     }
   }
@@ -516,8 +517,7 @@ export const setTraceToProxyInstance = async (
     logger.debug(`Set trace context to proxy on port ${instance.port}`);
   } catch (e: any) {
     logger.debug(
-      `Unable to set trace context to proxy on port ${instance.port}: ` +
-        (e instanceof Error ? e.message : String(e)),
+      `Unable to set trace context to proxy on port ${instance.port}: ` + errorMessage(e),
     );
   }
 };

@@ -1,5 +1,5 @@
 import { LaminarClient } from "@lmnr-ai/client";
-import { type SessionRecordingOptions } from "@lmnr-ai/types";
+import { errorMessage, type SessionRecordingOptions } from "@lmnr-ai/types";
 import { diag, type Span, trace } from "@opentelemetry/api";
 import {
   InstrumentationBase,
@@ -480,8 +480,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
         } catch (error) {
           // Page might have been closed or CDP session lost, continue with next page
           logger.debug(
-            "Error injecting recorder into page: " +
-              `${error instanceof Error ? error.message : String(error)}`,
+            "Error injecting recorder into page: " + errorMessage(error),
           );
         }
       }
@@ -490,8 +489,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
       );
     } catch (error) {
       logger.debug(
-        "Error accessing pages for recorder injection: " +
-          `${error instanceof Error ? error.message : String(error)}`,
+        "Error accessing pages for recorder injection: " + errorMessage(error),
       );
     }
   }
@@ -544,8 +542,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
           );
         } catch (error) {
           logger.debug(
-            "Error removing target created handler: " +
-              `${error instanceof Error ? error.message : String(error)}`,
+            "Error removing target created handler: " + errorMessage(error),
           );
         }
       }
@@ -559,8 +556,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
           );
         } catch (error) {
           logger.debug(
-            "Error removing target info changed handler: " +
-              `${error instanceof Error ? error.message : String(error)}`,
+            "Error removing target info changed handler: " + errorMessage(error),
           );
         }
       }

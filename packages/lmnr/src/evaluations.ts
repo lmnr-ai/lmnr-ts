@@ -1,5 +1,5 @@
 import { LaminarClient } from "@lmnr-ai/client";
-import { EvaluationDatapoint } from "@lmnr-ai/types";
+import { errorMessage, EvaluationDatapoint } from "@lmnr-ai/types";
 import { trace } from "@opentelemetry/api";
 import * as cliProgress from "cli-progress";
 
@@ -445,8 +445,7 @@ export class Evaluation<D, T, O> {
         } catch (error) {
           // Backward compatibility with old Laminar API (self-hosted)
           logger.warn(
-            `Error getting dataset ${this.data.name}: ` +
-              `${error instanceof Error ? error.message : String(error)}`,
+            `Error getting dataset ${this.data.name}: ` + errorMessage(error),
           );
         }
       }
@@ -495,7 +494,7 @@ export class Evaluation<D, T, O> {
         projectId: "",
         evaluationId: "",
         url: "",
-        errorMessage: e instanceof Error ? e.message : String(e),
+        errorMessage: errorMessage(e),
       };
     }
   }
