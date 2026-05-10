@@ -1,7 +1,12 @@
 /** Utility functions for setting span attributes on Anthropic instrumentation spans. */
 
 import type { Span } from "@opentelemetry/api";
-import type { CompleteStreamingResponse, InputMessage, OutputMessage } from "./types";
+
+import type {
+  CompleteStreamingResponse,
+  InputMessage,
+  OutputMessage,
+} from "./types";
 
 /**
  * Set a span attribute only if the value is non-null/undefined and non-empty.
@@ -52,7 +57,9 @@ export const modelAsDict = (model: unknown): Record<string, unknown> => {
  * Build input messages list from request kwargs, matching Python's format.
  * Produces `gen_ai.input.messages` attribute value.
  */
-export const buildInputMessages = (params: Record<string, any>): InputMessage[] => {
+export const buildInputMessages = (
+  params: Record<string, any>,
+): InputMessage[] => {
   const messages: InputMessage[] = [];
 
   if (params.prompt !== undefined) {
@@ -83,6 +90,32 @@ export const buildInputMessages = (params: Record<string, any>): InputMessage[] 
 };
 
 /**
+ * Extract the JSON schema from Anthropic `output_config` kwargs.
+ *
+ * Both `messages.create` and `messages.parse` accept
+ * `output_config={format: {type: "json_schema", schema: {...}}}`. The
+ * `zodOutputFormat` and `jsonSchemaOutputFormat` helpers produce exactly
+ * this shape. Returns the serialized JSON schema, or null if none is
+ * present or cannot be serialized.
+ */
+export const extractStructuredOutputSchema = (
+  params: Record<string, any>,
+): string | null => {
+  const outputConfig = params.output_config;
+  if (outputConfig && typeof outputConfig === "object") {
+    const fmt = outputConfig.format;
+    if (fmt && typeof fmt === "object" && fmt.schema !== undefined) {
+      try {
+        return JSON.stringify(fmt.schema);
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+};
+
+/**
  * Set input attributes on a span from request params.
  */
 export const setInputAttributes = (
@@ -91,24 +124,53 @@ export const setInputAttributes = (
   traceContent: boolean,
 ): void => {
   setSpanAttribute(span, "gen_ai.request.model", params.model);
-  setSpanAttribute(span, "gen_ai.request.max_tokens", params.max_tokens ?? params.max_tokens_to_sample);
+  setSpanAttribute(
+    span,
+    "gen_ai.request.max_tokens",
+    params.max_tokens ?? params.max_tokens_to_sample,
+  );
   setSpanAttribute(span, "gen_ai.request.temperature", params.temperature);
   setSpanAttribute(span, "gen_ai.request.top_p", params.top_p);
   setSpanAttribute(span, "gen_ai.request.top_k", params.top_k);
-  setSpanAttribute(span, "gen_ai.request.frequency_penalty", params.frequency_penalty);
-  setSpanAttribute(span, "gen_ai.request.presence_penalty", params.presence_penalty);
+  setSpanAttribute(
+    span,
+    "gen_ai.request.frequency_penalty",
+    params.frequency_penalty,
+  );
+  setSpanAttribute(
+    span,
+    "gen_ai.request.presence_penalty",
+    params.presence_penalty,
+  );
   setSpanAttribute(span, "llm.is_streaming", params.stream);
   setSpanAttribute(span, "anthropic.request.service_tier", params.service_tier);
 
   if (traceContent) {
     const inputMessages = buildInputMessages(params);
     if (inputMessages.length > 0) {
-      setSpanAttribute(span, "gen_ai.input.messages", JSON.stringify(inputMessages));
+      setSpanAttribute(
+        span,
+        "gen_ai.input.messages",
+        JSON.stringify(inputMessages),
+      );
     }
 
     if (params.tools) {
-      setSpanAttribute(span, "gen_ai.tool.definitions", JSON.stringify(params.tools));
+      setSpanAttribute(
+        span,
+        "gen_ai.tool.definitions",
+        JSON.stringify(params.tools),
+      );
     }
+  }
+
+  const schemaJson = extractStructuredOutputSchema(params);
+  if (schemaJson !== null) {
+    setSpanAttribute(
+      span,
+      "gen_ai.request.structured_output_schema",
+      schemaJson,
+    );
   }
 };
 
@@ -116,7 +178,9 @@ export const setInputAttributes = (
  * Build the output messages list from a non-streaming Anthropic response.
  * Returns a list with a single message dict matching Python's format.
  */
-export const buildOutputFromResponse = (response: Record<string, any>): OutputMessage[] => {
+export const buildOutputFromResponse = (
+  response: Record<string, any>,
+): OutputMessage[] => {
   const result: OutputMessage = {
     role: response.role ?? "assistant",
     content: [],
@@ -154,8 +218,8 @@ export const setResponseAttributes = (
 
   const usage = response.usage;
   if (usage) {
-    const promptTokens = (usage.input_tokens ?? 0);
-    const outputTokens = (usage.output_tokens ?? 0);
+    const promptTokens = usage.input_tokens ?? 0;
+    const outputTokens = usage.output_tokens ?? 0;
     const cacheReadTokens = usage.cache_read_input_tokens ?? 0;
     const cacheCreationTokens = usage.cache_creation_input_tokens ?? 0;
 
@@ -163,11 +227,23 @@ export const setResponseAttributes = (
     setSpanAttribute(span, "gen_ai.usage.input_tokens", inputTokens);
     setSpanAttribute(span, "gen_ai.usage.output_tokens", outputTokens);
 
-    setSpanAttribute(span, "gen_ai.usage.cache_read_input_tokens", cacheReadTokens);
-    setSpanAttribute(span, "gen_ai.usage.cache_creation_input_tokens", cacheCreationTokens);
+    setSpanAttribute(
+      span,
+      "gen_ai.usage.cache_read_input_tokens",
+      cacheReadTokens,
+    );
+    setSpanAttribute(
+      span,
+      "gen_ai.usage.cache_creation_input_tokens",
+      cacheCreationTokens,
+    );
 
     if (usage.service_tier) {
-      setSpanAttribute(span, "anthropic.response.service_tier", usage.service_tier);
+      setSpanAttribute(
+        span,
+        "anthropic.response.service_tier",
+        usage.service_tier,
+      );
     }
   }
 
@@ -246,7 +322,11 @@ export const setStreamingResponseAttributes = (
 ): void => {
   setSpanAttribute(span, "gen_ai.response.id", completeResponse.id);
   setSpanAttribute(span, "gen_ai.response.model", completeResponse.model);
-  setSpanAttribute(span, "anthropic.response.service_tier", completeResponse.service_tier);
+  setSpanAttribute(
+    span,
+    "anthropic.response.service_tier",
+    completeResponse.service_tier,
+  );
 
   const usage = completeResponse.usage;
   if (usage) {
@@ -259,8 +339,16 @@ export const setStreamingResponseAttributes = (
 
     setSpanAttribute(span, "gen_ai.usage.input_tokens", inputTokens);
     setSpanAttribute(span, "gen_ai.usage.output_tokens", completionTokens);
-    setSpanAttribute(span, "gen_ai.usage.cache_read_input_tokens", cacheReadTokens);
-    setSpanAttribute(span, "gen_ai.usage.cache_creation_input_tokens", cacheCreationTokens);
+    setSpanAttribute(
+      span,
+      "gen_ai.usage.cache_read_input_tokens",
+      cacheReadTokens,
+    );
+    setSpanAttribute(
+      span,
+      "gen_ai.usage.cache_creation_input_tokens",
+      cacheCreationTokens,
+    );
   }
 
   if (traceContent && completeResponse.events.length > 0) {

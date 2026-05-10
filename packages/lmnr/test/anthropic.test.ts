@@ -4,10 +4,15 @@ import path from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import Anthropic from "@anthropic-ai/sdk";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { z } from "zod";
 
-import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import {
+  _resetConfiguration,
+  initializeTracing,
+} from "../src/opentelemetry-lib/configuration";
 
 interface MockRecording {
   path: string;
@@ -60,16 +65,28 @@ const TOOLS: Anthropic.Tool[] = [
 const createMockFetch = (recordings: MockRecording[]) => {
   const pendingMocks = [...recordings];
 
-  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as Request).url;
+  return async (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
     const method = init?.method || "GET";
 
     for (let i = 0; i < pendingMocks.length; i++) {
       const mock = pendingMocks[i];
-      if (url.includes(mock.path) && method.toUpperCase() === mock.method.toUpperCase()) {
+      if (
+        url.includes(mock.path) &&
+        method.toUpperCase() === mock.method.toUpperCase()
+      ) {
         pendingMocks.splice(i, 1);
 
-        const contentType = mock.rawHeaders?.["content-type"] ?? "application/json";
+        const contentType =
+          mock.rawHeaders?.["content-type"] ?? "application/json";
         const isSSE = contentType === "text/event-stream";
 
         let body: string;
@@ -94,15 +111,18 @@ const createMockFetch = (recordings: MockRecording[]) => {
       }
     }
 
-    throw new Error(`No mock found for ${method} ${url}. Pending mocks: ${pendingMocks.map((m) => `${m.method} ${m.path}`).join(", ")}`);
+    throw new Error(
+      `No mock found for ${method} ${url}. Pending mocks: ${pendingMocks.map((m) => `${m.method} ${m.path}`).join(", ")}`,
+    );
   };
 };
 
 void describe("anthropic instrumentation", () => {
   const exporter = new InMemorySpanExporter();
-  const dirname = typeof __dirname !== "undefined"
-    ? __dirname
-    : path.dirname(fileURLToPath(import.meta.url));
+  const dirname =
+    typeof __dirname !== "undefined"
+      ? __dirname
+      : path.dirname(fileURLToPath(import.meta.url));
   const recordingsDir = path.join(dirname, "recordings");
 
   const getRecordingFile = (testName: string) => {
@@ -113,9 +133,14 @@ void describe("anthropic instrumentation", () => {
   // We need to keep a mutable fetch reference so we can swap it per test.
   // The client is created once with a wrapper that delegates to whatever
   // the current mock fetch is.
-  let currentMockFetch: ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) | null = null;
+  let currentMockFetch:
+    | ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>)
+    | null = null;
 
-  const delegatingFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const delegatingFetch = async (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> => {
     if (currentMockFetch) {
       return currentMockFetch(input, init);
     }
@@ -509,8 +534,7 @@ void describe("anthropic instrumentation", () => {
     assert.strictEqual(outputMessages[0].role, "assistant");
     assert.ok(
       outputMessages[0].content.some(
-        (block: any) =>
-          block.type === "text" && block.text === responseContent,
+        (block: any) => block.type === "text" && block.text === responseContent,
       ),
     );
 
@@ -569,15 +593,9 @@ void describe("anthropic instrumentation", () => {
 
     assert.ok(textBlocks.length >= 1);
     assert.ok(toolBlocks.length >= 2);
-    assert.strictEqual(
-      toolBlocks[0].id,
-      "toolu_014x5X91kx3fvdhpLvwXZWE2",
-    );
+    assert.strictEqual(toolBlocks[0].id, "toolu_014x5X91kx3fvdhpLvwXZWE2");
     assert.strictEqual(toolBlocks[0].name, "get_weather");
-    assert.strictEqual(
-      toolBlocks[1].id,
-      "toolu_0121kXsENLvoDZ72LCuAnCCz",
-    );
+    assert.strictEqual(toolBlocks[1].id, "toolu_0121kXsENLvoDZ72LCuAnCCz");
     assert.strictEqual(toolBlocks[1].name, "get_time");
   });
 
@@ -647,5 +665,71 @@ void describe("anthropic instrumentation", () => {
     assert.strictEqual(thinkingBlocks[0].thinking, thinking);
     assert.ok(textBlocks.length >= 1);
     assert.strictEqual(textBlocks[0].text, text);
+  });
+
+  // --- Structured output tests ---
+
+  void it("creates a chat span with structured output raw schema", async () => {
+    const schema = {
+      type: "object",
+      properties: {
+        joke: { type: "string" },
+        rating: { type: "integer" },
+      },
+      required: ["joke", "rating"],
+      additionalProperties: false,
+    };
+
+    await client.messages.create({
+      model: "claude-sonnet-4-5-20250929",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: "Tell me a programming joke with a rating from 1 to 10.",
+        },
+      ],
+      output_config: {
+        format: {
+          type: "json_schema",
+          schema,
+        },
+      },
+    } as any);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "anthropic.chat");
+
+    const attr = spans[0].attributes["gen_ai.request.structured_output_schema"];
+    assert.ok(attr, "structured_output_schema attribute should be set");
+    const parsed = JSON.parse(attr as string);
+    assert.deepStrictEqual(parsed, schema);
+  });
+
+  void it("creates a parse span with zod schema", async () => {
+    const zodSchema = z.object({
+      answer: z.number(),
+    });
+
+    await client.messages.parse({
+      model: "claude-sonnet-4-5-20250929",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: "What is 2+2?" }],
+      output_config: {
+        format: zodOutputFormat(zodSchema),
+      },
+    });
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "anthropic.chat");
+
+    const attr = spans[0].attributes["gen_ai.request.structured_output_schema"];
+    assert.ok(attr, "structured_output_schema attribute should be set");
+    const parsed = JSON.parse(attr as string);
+    assert.strictEqual(parsed.type, "object");
+    assert.ok(parsed.properties?.answer);
+    assert.deepStrictEqual(parsed.required, ["answer"]);
   });
 });

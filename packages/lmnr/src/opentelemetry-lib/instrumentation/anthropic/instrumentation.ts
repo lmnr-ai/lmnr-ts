@@ -14,9 +14,7 @@ import {
 } from "@opentelemetry/instrumentation";
 import type * as anthropic from "@anthropic-ai/sdk";
 import type { Completion } from "@anthropic-ai/sdk/resources/completions";
-import type {
-  MessageStreamEvent,
-} from "@anthropic-ai/sdk/resources/messages";
+import type { MessageStreamEvent } from "@anthropic-ai/sdk/resources/messages";
 import type { Stream } from "@anthropic-ai/sdk/streaming";
 import { version } from "../../../../package.json";
 import {
@@ -80,6 +78,12 @@ export class AnthropicInstrumentation extends InstrumentationBase {
     } catch {
       // Beta may not exist
     }
+    // Note: `messages.parse` (anthropic-ai/sdk >= 0.60) is a thin wrapper that
+    // internally calls `this.create(params, options)` and then parses the
+    // response via the `output_config.format.parse` helper, so the create wrap
+    // above already captures parse calls (including the `output_config` kwarg
+    // that carries the structured-output schema). Wrapping parse directly
+    // would produce a duplicate nested span on every parse call.
   }
 
   protected init(): InstrumentationModuleDefinition {
@@ -121,6 +125,8 @@ export class AnthropicInstrumentation extends InstrumentationBase {
     } catch {
       // Beta may not exist
     }
+    // See manuallyInstrument: `messages.parse` delegates to `create`, so the
+    // create wrap also captures parse calls.
     return moduleExports;
   }
 
@@ -132,25 +138,30 @@ export class AnthropicInstrumentation extends InstrumentationBase {
 
     try {
       this._unwrap(moduleExports.Anthropic.Completions.prototype, "create");
-    } catch { /* may not exist */ }
+    } catch {
+      /* may not exist */
+    }
     try {
       this._unwrap(moduleExports.Anthropic.Messages.prototype, "create");
-    } catch { /* may not exist */ }
+    } catch {
+      /* may not exist */
+    }
     try {
       this._unwrap(moduleExports.Anthropic.Beta.Messages.prototype, "create");
-    } catch { /* may not exist */ }
+    } catch {
+      /* may not exist */
+    }
   }
 
-  private patchAnthropic(
-    type: "chat" | "completion",
-  ) {
+  private patchAnthropic(type: "chat" | "completion") {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const plugin = this;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     return (original: Function) => {
       return function method(this: any, ...args: unknown[]) {
         const params = (args[0] ?? {}) as Record<string, any>;
-        const spanName = type === "chat" ? "anthropic.chat" : "anthropic.completion";
+        const spanName =
+          type === "chat" ? "anthropic.chat" : "anthropic.completion";
 
         const span = plugin.tracer.startSpan(spanName, {
           kind: SpanKind.CLIENT,
@@ -198,17 +209,15 @@ export class AnthropicInstrumentation extends InstrumentationBase {
     };
   }
 
-  private _streamingWrapPromise(
-    {
-      span,
-      type,
-      promise,
-    }: {
-      span: Span;
-      type: "chat" | "completion";
-      promise: Promise<Stream<MessageStreamEvent>> | Promise<Stream<Completion>>;
-    },
-  ) {
+  private _streamingWrapPromise({
+    span,
+    type,
+    promise,
+  }: {
+    span: Span;
+    type: "chat" | "completion";
+    promise: Promise<Stream<MessageStreamEvent>> | Promise<Stream<Completion>>;
+  }) {
     const plugin = this;
 
     async function* iterateStream(
@@ -303,10 +312,7 @@ export class AnthropicInstrumentation extends InstrumentationBase {
       });
   }
 
-  private _wrapPromise<T>(
-    span: Span,
-    promise: Promise<T>,
-  ): Promise<T> {
+  private _wrapPromise<T>(span: Span, promise: Promise<T>): Promise<T> {
     return promise
       .then((result) => {
         try {
@@ -344,14 +350,21 @@ const resolveAnthropicClass = (module: any): any => {
     return module;
   }
   // Namespace import
-  if (module.Anthropic && typeof module.Anthropic === "function" && module.Anthropic.Messages) {
+  if (
+    module.Anthropic &&
+    typeof module.Anthropic === "function" &&
+    module.Anthropic.Messages
+  ) {
     return module.Anthropic;
   }
   // Fallback: check default export
-  if (module.default && typeof module.default === "function" && module.default.Messages) {
+  if (
+    module.default &&
+    typeof module.default === "function" &&
+    module.default.Messages
+  ) {
     return module.default;
   }
   // If nothing works, just return module.Anthropic and hope for the best (original behavior)
   return module.Anthropic ?? module;
 };
-
