@@ -98,7 +98,7 @@ export const injectSessionRecorder = async (
     );
   } catch (error) {
     logger.debug(
-      "ailed to check if session recorder is loaded: " + errorMessage(error),
+      "Failed to check if session recorder is loaded: " + errorMessage(error),
     );
   }
 
