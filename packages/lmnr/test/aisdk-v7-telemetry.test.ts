@@ -17,6 +17,7 @@ import {
 } from "../src/opentelemetry-lib/instrumentation/aisdk/v7";
 import {
   SPAN_INPUT,
+  SPAN_OUTPUT,
   SPAN_TYPE,
 } from "../src/opentelemetry-lib/tracing/attributes";
 
@@ -771,6 +772,9 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     const llm = spans.find((s) => s.name.startsWith("ai.llm "));
     assert.ok(llm, "llm span missing");
     assert.equal(llm.attributes["ai.response.text"], "hello");
+    // Laminar's backend reads SPAN_OUTPUT to render the span output panel —
+    // the streaming fallback must mirror onLanguageModelCallEnd's behavior.
+    assert.equal(llm.attributes[SPAN_OUTPUT], "hello");
   });
 
   void it("drops text-delta chunks that arrive without a preceding firstChunk marker", () => {

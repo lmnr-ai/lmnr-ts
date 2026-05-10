@@ -526,9 +526,15 @@ export class LaminarTelemetry {
     const llm = this.llmByKey.get(key);
     if (llm) {
       // Flush any buffered stream deltas as the text output if we haven't
-      // already set one via onLanguageModelCallEnd.
+      // already set one via onLanguageModelCallEnd. Mirror that path's
+      // attribute writes (ai.response.text + SPAN_OUTPUT) — Laminar's backend
+      // reads SPAN_OUTPUT (`lmnr.span.output`) to render the span's output
+      // panel, so setting only ai.response.text would leave the LLM span
+      // visually empty.
       if (this.recordOutputs && llm.textDeltas.length > 0) {
-        llm.span.setAttribute("ai.response.text", llm.textDeltas.join(""));
+        const bufferedText = llm.textDeltas.join("");
+        llm.span.setAttribute("ai.response.text", bufferedText);
+        llm.span.setAttribute(SPAN_OUTPUT, bufferedText);
       }
       llm.span.end();
       this.llmByKey.delete(key);
