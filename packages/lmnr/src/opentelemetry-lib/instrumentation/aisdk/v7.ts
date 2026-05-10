@@ -828,16 +828,22 @@ export class LaminarTelemetry {
     // Write final output content onto the operation span.
     if (this.recordOutputs) {
       // Text generation: final text.
-      if (typeof event.text === "string" && event.text.length > 0) {
+      const hasText =
+        typeof event.text === "string" && event.text.length > 0;
+      if (hasText) {
         op.span.setAttribute("ai.response.text", event.text);
         op.span.setAttribute(SPAN_OUTPUT, event.text);
       }
       const normalizedToolCalls = normalizeToolCalls(event.toolCalls);
       if (normalizedToolCalls.length > 0) {
-        op.span.setAttribute(
-          "ai.response.toolCalls",
-          serializeJSON(normalizedToolCalls),
-        );
+        const serialized = serializeJSON(normalizedToolCalls);
+        op.span.setAttribute("ai.response.toolCalls", serialized);
+        // Fall back to serialized tool calls for SPAN_OUTPUT when text is
+        // empty — mirrors `onLanguageModelCallEnd` so tool-call-only
+        // operation spans (single-step tool use) render in the Laminar UI.
+        if (!hasText) {
+          op.span.setAttribute(SPAN_OUTPUT, serialized);
+        }
       }
 
       // Embed: final embedding(s).

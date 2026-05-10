@@ -687,6 +687,35 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     );
   });
 
+  void it("onFinish falls back SPAN_OUTPUT to tool calls when text is empty", () => {
+    const tel = new LaminarTelemetry();
+    const callId = "call-tool-only";
+    tel.onStart(mkStartEvent(callId));
+    tel.onFinish(
+      mkFinish(callId, {
+        text: "",
+        content: [],
+        toolCalls: [
+          { toolCallId: "tc-1", toolName: "lookup", input: { q: "x" } },
+        ],
+        finishReason: "tool-calls",
+      }),
+    );
+
+    const spans = exporter.getFinishedSpans();
+    const op = spans.find((s) => s.name === "ai.generateText");
+    assert.ok(op);
+    const serialized = op.attributes[SPAN_OUTPUT];
+    assert.ok(
+      typeof serialized === "string" && serialized.includes("lookup"),
+      "operation span SPAN_OUTPUT should fall back to serialized tool calls",
+    );
+    assert.ok(
+      typeof op.attributes["ai.response.toolCalls"] === "string",
+      "ai.response.toolCalls should still be set on the op span",
+    );
+  });
+
   void it("onFinish honors finishReason === 'error' and marks the op ERROR", () => {
     const tel = new LaminarTelemetry();
     const callId = "call-finish-error";
