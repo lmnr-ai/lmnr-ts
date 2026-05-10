@@ -592,4 +592,17 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
       "ai.step 0",
     ]);
   });
+
+  void it("onFinish honors finishReason === 'error' and marks the op ERROR", () => {
+    const tel = new LaminarTelemetry();
+    const callId = "call-finish-error";
+    tel.onStart(mkStartEvent(callId));
+    tel.onFinish(mkFinish(callId, { finishReason: "error" }));
+
+    const spans = exporter.getFinishedSpans();
+    const op = spans.find((s) => s.name === "ai.generateText");
+    assert.ok(op);
+    assert.equal(op.status.code, 2); // SpanStatusCode.ERROR
+    assert.equal(op.attributes["ai.response.finishReason"], "error");
+  });
 });

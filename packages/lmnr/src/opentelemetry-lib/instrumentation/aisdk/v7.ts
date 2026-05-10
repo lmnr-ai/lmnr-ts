@@ -780,7 +780,13 @@ export class LaminarTelemetry {
       }
     }
 
-    op.span.setStatus({ code: SpanStatusCode.OK });
+    // v7 FinishReason includes `"error"` — if the SDK surfaces the failure
+    // via onFinish (rather than onError), honor it instead of stamping OK.
+    if (event.finishReason === "error") {
+      op.span.setStatus({ code: SpanStatusCode.ERROR });
+    } else {
+      op.span.setStatus({ code: SpanStatusCode.OK });
+    }
     op.span.end();
     this.operationByCallId.delete(callId);
 
