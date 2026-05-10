@@ -734,9 +734,23 @@ export class LaminarTelemetry {
     const op = this.operationByCallId.get(callId);
     if (!op) return;
 
-    // Write final output onto the operation span.
+    // Metadata (finish reason, aggregated token usage) is recorded regardless
+    // of recordOutputs — it's not user-content and is what analytics / cost
+    // dashboards read off the top-level span.
+    if (typeof event.finishReason === "string") {
+      op.span.setAttribute("gen_ai.response.finish_reason", event.finishReason);
+      op.span.setAttribute("ai.response.finishReason", event.finishReason);
+    }
+    const totalUsage = event.totalUsage ?? event.usage;
+    const usageAttrs: Record<string, any> = {};
+    applyUsage(usageAttrs, totalUsage);
+    for (const [k, v] of Object.entries(usageAttrs)) {
+      if (v !== undefined) op.span.setAttribute(k, v);
+    }
+
+    // Write final output content onto the operation span.
     if (this.recordOutputs) {
-      // Text generation: final text + aggregated usage + finish reason.
+      // Text generation: final text.
       if (typeof event.text === "string" && event.text.length > 0) {
         op.span.setAttribute("ai.response.text", event.text);
         op.span.setAttribute(SPAN_OUTPUT, event.text);
@@ -747,19 +761,6 @@ export class LaminarTelemetry {
           "ai.response.toolCalls",
           serializeJSON(normalizedToolCalls),
         );
-      }
-      if (typeof event.finishReason === "string") {
-        op.span.setAttribute(
-          "gen_ai.response.finish_reason",
-          event.finishReason,
-        );
-        op.span.setAttribute("ai.response.finishReason", event.finishReason);
-      }
-      const totalUsage = event.totalUsage ?? event.usage;
-      const attrs: Record<string, any> = {};
-      applyUsage(attrs, totalUsage);
-      for (const [k, v] of Object.entries(attrs)) {
-        if (v !== undefined) op.span.setAttribute(k, v);
       }
 
       // Embed: final embedding(s).
