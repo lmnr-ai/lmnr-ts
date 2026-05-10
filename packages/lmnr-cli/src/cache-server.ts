@@ -2,6 +2,7 @@ import {
   CachedSpan,
   CacheMetadata,
   CacheServerResponse,
+  errorMessage,
 } from '@lmnr-ai/types';
 import * as http from 'http';
 
@@ -52,7 +53,7 @@ function parseBody(req: http.IncomingMessage): Promise<any> {
       try {
         resolve(body ? JSON.parse(body) : {});
       } catch (err) {
-        reject(new Error(`Invalid JSON: ${err instanceof Error ? err.message : String(err)}`));
+        reject(new Error(`Invalid JSON: ${errorMessage(err)}`));
       }
     });
 
@@ -127,7 +128,7 @@ export async function startCacheServer(
         } catch (err) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(
-            { error: err instanceof Error ? err.message : String(err) },
+            { error: errorMessage(err) },
           ));
         }
         return;

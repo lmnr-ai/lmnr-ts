@@ -1,4 +1,4 @@
-import { LaminarSpanContext, TraceType, TracingLevel } from "@lmnr-ai/types";
+import { errorMessage, LaminarSpanContext, TraceType, TracingLevel } from "@lmnr-ai/types";
 import { AttributeValue, context, type Span, trace } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
 
@@ -99,9 +99,7 @@ export function observeBase<
       const spanContext = tryToOtelSpanContext(laminarContext);
       entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
     } catch (e) {
-      logger.warn("Failed to parse parent span context: " +
-        (e instanceof Error ? e.message : String(e)),
-      );
+      logger.warn("Failed to parse parent span context: " + errorMessage(e));
     }
   }
 
@@ -115,9 +113,7 @@ export function observeBase<
       );
     }
   } catch (e) {
-    logger.warn("Failed to set context properties: " +
-      (e instanceof Error ? e.message : String(e)),
-    );
+    logger.warn("Failed to set context properties: " + errorMessage(e));
   }
 
   return context.with(entityContext, () =>
@@ -155,8 +151,7 @@ export function observeBase<
               );
             }
           } catch (error) {
-            logger.warn("Failed to serialize input: " +
-              `${error instanceof Error ? error.message : String(error)}`);
+            logger.warn("Failed to serialize input: " + errorMessage(error));
           }
         }
 
@@ -168,8 +163,7 @@ export function observeBase<
             span.recordException(error as Error);
             span.end();
           } catch (error) {
-            logger.warn("Failed to record exception and end span: " +
-              `${error instanceof Error ? error.message : String(error)}`);
+            logger.warn("Failed to record exception and end span: " + errorMessage(error));
           }
           throw error;
         }
@@ -181,8 +175,7 @@ export function observeBase<
             try {
               streamInfo = getStream(resolvedRes);
             } catch (error) {
-              logger.warn("Failed to get stream info: " +
-                `${error instanceof Error ? error.message : String(error)}`);
+              logger.warn("Failed to get stream info: " + errorMessage(error));
             }
             if (streamInfo.type !== null) {
               return handleStreamResult(
@@ -203,14 +196,12 @@ export function observeBase<
                 );
               }
             } catch (error) {
-              logger.warn("Failed to serialize async output: " +
-                `${error instanceof Error ? error.message : String(error)}`);
+              logger.warn("Failed to serialize async output: " + errorMessage(error));
             } finally {
               try {
                 span.end();
               } catch (error) {
-                logger.warn("Failed to end span: " +
-                  `${error instanceof Error ? error.message : String(error)}`);
+                logger.warn("Failed to end span: " + errorMessage(error));
               }
             }
 
@@ -222,8 +213,7 @@ export function observeBase<
                 span.recordException(error as Error);
                 span.end();
               } catch (error) {
-                logger.warn("Failed to record exception and end span: " +
-                  `${error instanceof Error ? error.message : String(error)}`);
+                logger.warn("Failed to record exception and end span: " + errorMessage(error));
               }
               throw error;
             }) as ReturnType<F>;
@@ -234,8 +224,7 @@ export function observeBase<
         try {
           streamInfo = getStream(res);
         } catch (error) {
-          logger.warn("Failed to get stream info: " +
-            `${error instanceof Error ? error.message : String(error)}`);
+          logger.warn("Failed to get stream info: " + errorMessage(error));
         }
         if (streamInfo.type !== null) {
           return handleStreamResult(
@@ -250,14 +239,12 @@ export function observeBase<
             );
           }
         } catch (error) {
-          logger.warn("Failed to serialize output: " +
-            `${error instanceof Error ? error.message : String(error)}`);
+          logger.warn("Failed to serialize output: " + errorMessage(error));
         } finally {
           try {
             span.end();
           } catch (error) {
-            logger.warn("Failed to end span: " +
-              `${error instanceof Error ? error.message : String(error)}`);
+            logger.warn("Failed to end span: " + errorMessage(error));
           }
         }
 

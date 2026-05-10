@@ -1,3 +1,4 @@
+import { errorMessage } from "@lmnr-ai/types";
 import {
   Context,
   context as contextApi,
@@ -221,7 +222,7 @@ export class MastraExporter {
       await processor.forceFlush();
     } catch (err) {
       logger.error(
-        `[MastraExporter] forceFlush failed: ${err instanceof Error ? err.message : String(err)}`,
+        `[MastraExporter] forceFlush failed: ${errorMessage(err)}`,
       );
     }
   }
@@ -378,9 +379,7 @@ export class MastraExporter {
       }
     } catch (err) {
       logger.error(
-        `[MastraExporter] failed to export span ${span.id}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        `[MastraExporter] failed to export span ${span.id}: ${errorMessage(err)}`,
       );
     } finally {
       traceState.activeSpanIds.delete(span.id);

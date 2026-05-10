@@ -1,3 +1,4 @@
+import { errorMessage } from "@lmnr-ai/types";
 import type { Span } from "@opentelemetry/api";
 
 import { initializeLogger } from "../../utils";
@@ -77,8 +78,7 @@ export const consumeStreamResult = async (result: unknown): Promise<unknown> => 
         await streamInfo.result.text;
       }
     } catch (error) {
-      logger.warn("Error consuming AI SDK result stream: " +
-        `${error instanceof Error ? error.message : String(error)}`);
+      logger.warn("Error consuming AI SDK result stream: " + errorMessage(error));
     }
     return result;
   }
@@ -98,8 +98,7 @@ export const consumeStreamResult = async (result: unknown): Promise<unknown> => 
         reader.releaseLock();
       }
     } catch (error) {
-      logger.warn("Error consuming ReadableStream: " +
-        `${error instanceof Error ? error.message : String(error)}`);
+      logger.warn("Error consuming ReadableStream: " + errorMessage(error));
     }
     return { type: 'stream', chunks };
   }
@@ -112,8 +111,7 @@ export const consumeStreamResult = async (result: unknown): Promise<unknown> => 
         chunks.push(chunk);
       }
     } catch (error) {
-      logger.warn("Error consuming AsyncIterable: " +
-        `${error instanceof Error ? error.message : String(error)}`);
+      logger.warn("Error consuming AsyncIterable: " + errorMessage(error));
     }
     return { type: 'async-iterable', chunks };
   }
@@ -123,13 +121,11 @@ export const consumeStreamResult = async (result: unknown): Promise<unknown> => 
     try {
       const { chunks, error } = await consumeResponse(streamInfo.response);
       if (error) {
-        logger.warn("Error consuming Response: " +
-          `${error instanceof Error ? error.message : String(error)}`);
+        logger.warn("Error consuming Response: " + errorMessage(error));
       }
       return { type: 'response', chunks };
     } catch (error) {
-      logger.warn("Error consuming Response: " +
-        `${error instanceof Error ? error.message : String(error)}`);
+      logger.warn("Error consuming Response: " + errorMessage(error));
       return result;
     }
   }
@@ -174,8 +170,7 @@ export const handleStreamResult = <T>(
           try {
             span.setAttribute(SPAN_OUTPUT, serialize(partialOutput));
           } catch (error) {
-            logger.warn("Failed to serialize AI SDK stream output: " +
-              `${error instanceof Error ? error.message : String(error)}`);
+            logger.warn("Failed to serialize AI SDK stream output: " + errorMessage(error));
           }
         }
       } catch (error) {
@@ -184,8 +179,7 @@ export const handleStreamResult = <T>(
           try {
             span.setAttribute(SPAN_OUTPUT, serialize(partialOutput));
           } catch (serError) {
-            logger.warn("Failed to serialize partial AI SDK output: " +
-              `${serError instanceof Error ? serError.message : String(serError)}`);
+            logger.warn("Failed to serialize partial AI SDK output: " + errorMessage(serError));
           }
         }
         span.recordException(error as Error);
@@ -212,8 +206,7 @@ export const handleStreamResult = <T>(
             const output = { type: 'stream', chunks };
             span.setAttribute(SPAN_OUTPUT, serialize(output));
           } catch (serError) {
-            logger.warn("Failed to serialize stream output: " +
-              `${serError instanceof Error ? serError.message : String(serError)}`);
+            logger.warn("Failed to serialize stream output: " + errorMessage(serError));
           }
         }
 
@@ -243,8 +236,7 @@ export const handleStreamResult = <T>(
             const output = { type: 'async-iterable', chunks };
             span.setAttribute(SPAN_OUTPUT, serialize(output));
           } catch (serError) {
-            logger.warn("Failed to serialize async iterable output: " +
-              `${serError instanceof Error ? serError.message : String(serError)}`);
+            logger.warn("Failed to serialize async iterable output: " + errorMessage(serError));
           }
         }
 
@@ -292,8 +284,7 @@ export const handleStreamResult = <T>(
             const output = { type: 'response', chunks };
             span.setAttribute(SPAN_OUTPUT, serialize(output));
           } catch (serError) {
-            logger.warn("Failed to serialize response output: " +
-              `${serError instanceof Error ? serError.message : String(serError)}`);
+            logger.warn("Failed to serialize response output: " + errorMessage(serError));
           }
         }
 

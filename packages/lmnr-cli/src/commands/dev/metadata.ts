@@ -1,4 +1,4 @@
-import type { RolloutParam } from '@lmnr-ai/types';
+import { errorMessage, type RolloutParam } from '@lmnr-ai/types';
 import * as path from 'path';
 
 import { initializeLogger } from '../../utils/logger';
@@ -109,7 +109,7 @@ const discoverTypeScriptMetadata = async (
   } catch (error) {
     logger.warn(
       'Failed to extract TypeScript metadata, falling back to runtime parsing: ' +
-      (error instanceof Error ? error.message : String(error)),
+      errorMessage(error),
     );
   }
 
@@ -347,10 +347,10 @@ const discoverPythonMetadata = async (
       params: response.params || [],
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`Error while loading Python file/module: ${errorMessage}`);
-    if (errorMessage.toLowerCase().includes('command not found') ||
-      errorMessage.includes('spawn lmnr ENOENT')) {
+    const msg = errorMessage(error);
+    logger.error(`Error while loading Python file/module: ${msg}`);
+    if (msg.toLowerCase().includes('command not found') ||
+      msg.includes('spawn lmnr ENOENT')) {
       logger.info(
         "HINT: Make sure latest version of `lmnr` python package is installed. " +
         "`pip install --upgrade lmnr`, or if you are running this command from a virtual " +

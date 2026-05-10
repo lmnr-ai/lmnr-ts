@@ -1,5 +1,6 @@
 import { type LanguageModelV3Message, type LanguageModelV3Prompt } from "@ai-sdk/provider";
 import { type LanguageModelV2Message, type LanguageModelV2Prompt } from "@ai-sdk/provider-v2";
+import { errorMessage } from "@lmnr-ai/types";
 import { type DataContent } from "ai";
 
 // Mirrors https://github.com/vercel/ai/blob/main/packages/ai/src/telemetry/stringify-for-telemetry.ts
@@ -118,7 +119,7 @@ export const consumeAISDKResult = async (result: any): Promise<any> => {
     try {
       output[key] = await promise;
     } catch (error) {
-      errors.push({ field: key, error: error instanceof Error ? error.message : String(error) });
+      errors.push({ field: key, error: errorMessage(error) });
     }
   };
 

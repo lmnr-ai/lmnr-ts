@@ -57,8 +57,9 @@ When adding/modifying integration tests for Mastra:
 
 - Prefer arrow functions: `const foo = async (...) => { ... }` over named `function foo()`.
 - Rely on pre-commit hooks; don't run project-wide type-checks manually.
+- Use `errorMessage(err)` from `@lmnr-ai/types` for stringifying unknown error values. `@lmnr-ai/types/utils.ts` is the canonical home for small shared runtime helpers that all packages can depend on (it already has a runtime build, not just types).
 
-## Formatting
+## Formatting / Lint
 
-- NEVER run `pnpm format:write` or `prettier --write .`.
-- Only format files you changed: `prettier --write <file1> <file2>`.
+- No project-wide `prettier` binary is installed; "format" is enforced through eslint (`@stylistic/*` rules). Use `pnpm -r lint:fix` (or `pnpm --filter <pkg> lint:fix`) instead of `prettier --write`.
+- Max line length is 100 chars (`@stylistic/max-len`). Long destructured `import` lines will fail lint — break them across multiple lines.

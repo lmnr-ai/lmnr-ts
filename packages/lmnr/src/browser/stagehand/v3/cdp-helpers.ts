@@ -1,4 +1,4 @@
-import { SessionRecordingOptions } from "@lmnr-ai/types";
+import { errorMessage, SessionRecordingOptions } from "@lmnr-ai/types";
 
 import { RECORDER } from "../../recorder";
 import { injectScript } from "../../utils";
@@ -88,8 +88,7 @@ export async function getOrCreateIsolatedWorld(
       frameId,
     };
   } catch (error) {
-    logger.debug("Failed to create isolated world: " +
-      `${error instanceof Error ? error.message : String(error)}`);
+    logger.debug("Failed to create isolated world: " + errorMessage(error));
     return null;
   }
 }
@@ -116,8 +115,7 @@ export async function isRecorderPresent(
     if (!result) return true; // On timeout, assume present to avoid double injection
     return result.result?.value === true;
   } catch (error) {
-    logger.debug("Failed to check if recorder is present: " +
-      `${error instanceof Error ? error.message : String(error)}`);
+    logger.debug("Failed to check if recorder is present: " + errorMessage(error));
     return true; // On error, assume present to be safe
   }
 }
@@ -138,8 +136,7 @@ export async function injectRecorderViaCDP(
     try {
       url = page.url();
     } catch (error) {
-      logger.debug("Failed to get page URL, page might be closed: " +
-        `${error instanceof Error ? error.message : String(error)}`);
+      logger.debug("Failed to get page URL, page might be closed: " + errorMessage(error));
       return null;
     }
 
@@ -175,8 +172,7 @@ export async function injectRecorderViaCDP(
         contextId,
       });
     } catch (error) {
-      logger.debug("Failed to inject rrweb: " +
-        `${error instanceof Error ? error.message : String(error)}`);
+      logger.debug("Failed to inject rrweb: " + errorMessage(error));
       return null;
     }
 
@@ -191,8 +187,7 @@ export async function injectRecorderViaCDP(
         contextId,
       });
     } catch (error) {
-      logger.debug("Failed to inject recording setup: " +
-        `${error instanceof Error ? error.message : String(error)}`);
+      logger.debug("Failed to inject recording setup: " + errorMessage(error));
       return null;
     }
 
@@ -205,8 +200,7 @@ export async function injectRecorderViaCDP(
       logger.debug(`Added binding 'lmnrSendEvents' for page ${frameId}, context ${contextId}`);
     } catch (error) {
       // Binding might already exist, that's ok
-      logger.debug("Binding may already exist: " +
-        `${error instanceof Error ? error.message : String(error)}`);
+      logger.debug("Binding may already exist: " + errorMessage(error));
     }
 
     // Set up binding handler on this page using the internal Stagehand CDP session
@@ -244,16 +238,15 @@ export async function injectRecorderViaCDP(
                 }
               } catch (error) {
                 // Session might be closed, continue with next session
-                logger.debug(`Failed to set up binding handler on session ${sessionId}: ` +
-                  `${error instanceof Error ? error.message : String(error)}`);
+                logger.debug(`Failed to set up binding handler on session ${sessionId}: `
+                  + errorMessage(error));
               }
             }
           }
           state.pageSessionHandlers.set(pageTargetId, bindingHandler);
         }
       } catch (error) {
-        logger.debug("Failed to set up binding handler: " +
-          `${error instanceof Error ? error.message : String(error)}`);
+        logger.debug("Failed to set up binding handler: " + errorMessage(error));
       }
     }
 
@@ -272,8 +265,7 @@ export async function injectRecorderViaCDP(
     logger.debug(`Successfully injected recorder into page ${frameId}`);
     return contextId;
   } catch (error) {
-    logger.debug("Error injecting recorder: " +
-      `${error instanceof Error ? error.message : String(error)}`);
+    logger.debug("Error injecting recorder: " + errorMessage(error));
     return null;
   }
 }

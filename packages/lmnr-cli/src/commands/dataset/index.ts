@@ -1,5 +1,5 @@
 import { LaminarClient } from "@lmnr-ai/client";
-import { Datapoint, type StringUUID } from "@lmnr-ai/types";
+import { Datapoint, errorMessage, type StringUUID } from "@lmnr-ai/types";
 
 import { loadFromPaths, printToConsole, writeToFile } from "../../utils/file";
 import { initializeLogger } from "../../utils/logger";
@@ -97,7 +97,7 @@ export const handleDatasetsList = async (
   } catch (error) {
     if (options.json) outputJsonError(error);
     logger.error(
-      `Failed to list datasets: ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to list datasets: ${errorMessage(error)}`,
     );
     process.exit(1);
   }
@@ -160,7 +160,7 @@ export const handleDatasetsPush = async (
   } catch (error) {
     if (options.json) outputJsonError(error);
     logger.error(
-      `Failed to push dataset: ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to push dataset: ${errorMessage(error)}`,
     );
     process.exit(1);
   }
@@ -226,7 +226,7 @@ export const handleDatasetsPull = async (
   } catch (error) {
     if (options.json) outputJsonError(error);
     logger.error(
-      `Failed to pull dataset: ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to pull dataset: ${errorMessage(error)}`,
     );
     process.exit(1);
   }
@@ -274,7 +274,7 @@ export const handleDatasetsCreate = async (
   } catch (error) {
     if (options.json) outputJsonError(error);
     logger.error(
-      `Failed to create dataset: ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to create dataset: ${errorMessage(error)}`,
     );
     process.exit(1);
   }
@@ -305,8 +305,7 @@ export const handleDatasetsCreate = async (
   } catch (error) {
     if (options.json) outputJsonError(error);
     logger.error(
-      "Failed to pull dataset after creation: "
-      + `${error instanceof Error ? error.message : String(error)}`,
+      "Failed to pull dataset after creation: " + errorMessage(error),
     );
     process.exit(1);
   }

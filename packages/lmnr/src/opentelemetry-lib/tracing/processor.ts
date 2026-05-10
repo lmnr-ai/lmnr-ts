@@ -1,5 +1,5 @@
 import { LaminarClient } from "@lmnr-ai/client";
-import { SpanType } from "@lmnr-ai/types";
+import { errorMessage, SpanType } from "@lmnr-ai/types";
 import { AttributeValue, Context, context } from "@opentelemetry/api";
 import {
   BatchSpanProcessor,
@@ -266,7 +266,7 @@ export class LaminarSpanProcessor implements SpanProcessor {
         })
         .catch((error: any) => {
           this.logger.debug(
-            `Failed to send span update: ${error instanceof Error ? error.message : String(error)}`,
+            `Failed to send span update: ${errorMessage(error)}`,
           );
         });
     }

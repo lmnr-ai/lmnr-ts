@@ -1,5 +1,5 @@
 import { LaminarClient } from '@lmnr-ai/client';
-import { SessionRecordingOptions } from '@lmnr-ai/types';
+import { errorMessage, SessionRecordingOptions } from '@lmnr-ai/types';
 import { diag, type Span, trace } from '@opentelemetry/api';
 import {
   InstrumentationBase,
@@ -248,8 +248,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
       try {
         await injectSessionRecorder(page, this._sessionRecordingOptions);
       } catch (error) {
-        logger.error("Error in onLoad handler: " +
-          `${error instanceof Error ? error.message : String(error)}`);
+        logger.error("Error in onLoad handler: " + errorMessage(error));
       }
     });
 
@@ -261,8 +260,8 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
         await sendEvents(chunk, this._client, chunkBuffers, sessionId, traceId);
       });
     } catch (error) {
-      logger.debug("Could not expose function " + LMNR_SEND_EVENTS_FUNCTION_NAME + ": " +
-        `${error instanceof Error ? error.message : String(error)}`);
+      logger.debug("Could not expose function " + LMNR_SEND_EVENTS_FUNCTION_NAME + ": "
+        + errorMessage(error));
     }
   }
 }

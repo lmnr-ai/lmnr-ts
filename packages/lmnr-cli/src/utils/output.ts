@@ -1,3 +1,5 @@
+import { errorMessage } from '@lmnr-ai/types';
+
 /**
  * Write structured JSON to stdout. Use this for machine-readable output
  * when --json is set.
@@ -12,7 +14,7 @@ export function outputJson(data: unknown): void {
  */
 export function outputJsonError(error: unknown, exitCode: number = 1): never {
   console.log(JSON.stringify({
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMessage(error),
   }));
   process.exit(exitCode);
 }

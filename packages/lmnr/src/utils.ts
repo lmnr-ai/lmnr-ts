@@ -1,4 +1,4 @@
-import { LaminarSpanContext, TraceType, TracingLevel } from '@lmnr-ai/types';
+import { errorMessage, LaminarSpanContext, TraceType, TracingLevel } from '@lmnr-ai/types';
 import { AttributeValue, SpanContext, TraceFlags } from '@opentelemetry/api';
 import { config } from 'dotenv';
 import * as path from "path";
@@ -181,7 +181,7 @@ export const tryToOtelSpanContext = (
     } catch (e) {
       throw new Error(`Failed to parse span context ${spanContext}. ` +
         'The string must be a json representation of a LaminarSpanContext.'
-        + `Error: ${e instanceof Error ? e.message : String(e)}`);
+        + `Error: ${errorMessage(e)}`);
     }
   } else if (isRecord(spanContext)) {
     // This covers the `LaminarSpanContext` case too.
@@ -235,7 +235,7 @@ export const deserializeLaminarSpanContext = (
       return deserializeLaminarSpanContext(record);
     } catch (e) {
       throw new Error(
-        `Failed to parse LaminarSpanContext: ${e instanceof Error ? e.message : String(e)}`,
+        `Failed to parse LaminarSpanContext: ${errorMessage(e)}`,
       );
     }
   }

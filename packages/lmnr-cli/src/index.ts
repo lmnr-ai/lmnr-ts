@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { errorMessage } from "@lmnr-ai/types";
 import { Command } from "commander";
 
 import { version } from "../package.json";
@@ -297,6 +298,6 @@ For more information about the Laminar platfrom:
 }
 
 main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
+  console.error(errorMessage(err));
   process.exit(1);
 });
