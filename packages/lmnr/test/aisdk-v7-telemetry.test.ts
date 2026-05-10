@@ -580,8 +580,14 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     tel.onStart(mkStartEvent(callId));
     tel.onStepStart(mkStepStartEvent(callId, 0));
     tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+    tel.onToolExecutionStart({
+      callId,
+      toolCall: { toolCallId: "tc-leak", toolName: "broken", input: {} },
+      messages: [],
+      toolContext: undefined,
+    });
     // Provider emits onError without onLanguageModelCallEnd / onStepFinish /
-    // onFinish. Without cleanup those spans would leak forever.
+    // onFinish / onToolExecutionEnd. Without cleanup those spans would leak.
     tel.onError({ callId, error: new Error("mid-stream") });
 
     const spans = exporter.getFinishedSpans();
@@ -590,7 +596,29 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
       "ai.generateText",
       "ai.llm openai:gpt-4.1-nano",
       "ai.step 0",
+      "ai.tool broken",
     ]);
+  });
+
+  void it("onFinish closes orphaned tool spans for the callId", () => {
+    const tel = new LaminarTelemetry();
+    const callId = "call-tool-orphan";
+    tel.onStart(mkStartEvent(callId));
+    tel.onStepStart(mkStepStartEvent(callId, 0));
+    tel.onToolExecutionStart({
+      callId,
+      toolCall: { toolCallId: "tc-orphan", toolName: "lookup", input: {} },
+      messages: [],
+      toolContext: undefined,
+    });
+    // Provider never emits onToolExecutionEnd — onFinish must still close
+    // the tool span so it doesn't leak in the tracing backend or the map.
+    tel.onFinish(mkFinish(callId));
+
+    const spans = exporter.getFinishedSpans();
+    const names = spans.map((s) => s.name).sort();
+    assert.ok(names.includes("ai.tool lookup"));
+    assert.ok(names.includes("ai.generateText"));
   });
 
   void it("onFinish honors finishReason === 'error' and marks the op ERROR", () => {

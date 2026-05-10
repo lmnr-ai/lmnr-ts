@@ -76,6 +76,7 @@ interface LlmState {
 interface ToolState {
   span: Span;
   ctx: Context;
+  callId: string;
 }
 
 const stepKey = (callId: string, stepNumber: number) =>
@@ -624,7 +625,7 @@ export class LaminarTelemetry {
       span.setAttribute("ai.toolCall.args", serialized);
       span.setAttribute(SPAN_INPUT, serialized);
     }
-    this.toolByCallId.set(toolCallId, { span, ctx: spanCtx });
+    this.toolByCallId.set(toolCallId, { span, ctx: spanCtx, callId });
   };
 
   onToolExecutionEnd = (event: any): void => {
@@ -815,6 +816,12 @@ export class LaminarTelemetry {
         this.stepByKey.delete(key);
       }
     }
+    for (const [toolCallId, tool] of this.toolByCallId) {
+      if (tool.callId === callId) {
+        tool.span.end();
+        this.toolByCallId.delete(toolCallId);
+      }
+    }
   };
 
   onError = (event: any): void => {
@@ -877,6 +884,12 @@ export class LaminarTelemetry {
       if (key.startsWith(prefix)) {
         step.span.end();
         this.stepByKey.delete(key);
+      }
+    }
+    for (const [toolCallId, tool] of this.toolByCallId) {
+      if (tool.callId === targetCallId) {
+        tool.span.end();
+        this.toolByCallId.delete(toolCallId);
       }
     }
     targetOp.span.end();
