@@ -24,7 +24,10 @@ import {
 // to test our Telemetry class; only the shapes. This mirrors how v7 would
 // drive the integration in the real call path.
 
-const mkStartEvent = (callId: string, overrides: Record<string, unknown> = {}) => ({
+const mkStartEvent = (
+  callId: string,
+  overrides: Record<string, unknown> = {},
+) => ({
   callId,
   operationId: "ai.generateText",
   provider: "openai",
@@ -66,7 +69,10 @@ const mkStepStartEvent = (
   ...overrides,
 });
 
-const mkLlmCallStart = (callId: string, overrides: Record<string, unknown> = {}) => ({
+const mkLlmCallStart = (
+  callId: string,
+  overrides: Record<string, unknown> = {},
+) => ({
   callId,
   provider: "openai",
   modelId: "gpt-4.1-nano",
@@ -76,7 +82,10 @@ const mkLlmCallStart = (callId: string, overrides: Record<string, unknown> = {})
   ...overrides,
 });
 
-const mkLlmCallEnd = (callId: string, overrides: Record<string, unknown> = {}) => ({
+const mkLlmCallEnd = (
+  callId: string,
+  overrides: Record<string, unknown> = {},
+) => ({
   callId,
   provider: "openai",
   modelId: "gpt-4.1-nano",
@@ -275,12 +284,8 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
 
     const op = spans.find((s) => s.name === "ai.generateText");
     assert.ok(op);
-    const step0 = spans.find(
-      (s) => s.name === "ai.step 0",
-    );
-    const step1 = spans.find(
-      (s) => s.name === "ai.step 1",
-    );
+    const step0 = spans.find((s) => s.name === "ai.step 0");
+    const step1 = spans.find((s) => s.name === "ai.step 1");
     assert.ok(step0 && step1);
 
     const tool = spans.find((s) => s.name === "ai.tool lookup");
@@ -360,9 +365,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     tel.onStepFinish(
       mkStepEnd(outerCallId, 0, {
         text: "",
-        toolCalls: [
-          { toolCallId: "tc-x", toolName: "subagent", input: {} },
-        ],
+        toolCalls: [{ toolCallId: "tc-x", toolName: "subagent", input: {} }],
         finishReason: "tool-calls",
       }),
     );
@@ -374,13 +377,10 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     const outerTool = spans.find((s) => s.name === "ai.tool subagent");
     assert.ok(outerTool);
 
-    const innerOpCandidates = spans.filter(
-      (s) => s.name === "ai.generateText",
-    );
+    const innerOpCandidates = spans.filter((s) => s.name === "ai.generateText");
     assert.equal(innerOpCandidates.length, 2);
     const innerOp = innerOpCandidates.find(
-      (s) =>
-        s.parentSpanContext?.spanId === outerTool.spanContext().spanId,
+      (s) => s.parentSpanContext?.spanId === outerTool.spanContext().spanId,
     );
     assert.ok(
       innerOp,
@@ -507,7 +507,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
 
   void it(
     "wrapAISDK injects the v7 integration into call args when " +
-    "registerTelemetry is present",
+      "registerTelemetry is present",
     async () => {
       const observed: unknown[] = [];
       const fakeAI = {
@@ -518,8 +518,9 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
         },
       } as unknown as Parameters<typeof wrapAISDK>[0];
       const wrapped = wrapAISDK(fakeAI);
-      await (wrapped as unknown as { generateText: (o: unknown) => Promise<unknown> })
-        .generateText({ prompt: "hi" });
+      await (
+        wrapped as unknown as { generateText: (o: unknown) => Promise<unknown> }
+      ).generateText({ prompt: "hi" });
       const firstCall = observed[0] as {
         telemetry?: { integrations?: unknown[] };
       };
@@ -532,4 +533,63 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
       );
     },
   );
+
+  void it("onError scopes error to the callId on the event", () => {
+    const tel = new LaminarTelemetry();
+    tel.onStart(mkStartEvent("call-A"));
+    tel.onStart(mkStartEvent("call-B"));
+
+    tel.onError({ callId: "call-A", error: new Error("A broke") });
+
+    const spans = exporter.getFinishedSpans();
+    assert.equal(spans.length, 1, "only the errored op span should have ended");
+    assert.equal(spans[0].name, "ai.generateText");
+    assert.equal(spans[0].status.code, 2); // SpanStatusCode.ERROR
+    assert.equal(spans[0].status.message, "A broke");
+
+    // call-B must still be open and unaffected — onFinish will close it.
+    tel.onFinish(mkFinish("call-B"));
+    const after = exporter.getFinishedSpans();
+    const b = after.find(
+      (s) => s.name === "ai.generateText" && s.status.code !== 2,
+    );
+    assert.ok(b, "unrelated concurrent op must finish OK");
+  });
+
+  void it("onError does not flag unrelated ops when callId is missing and multiple are in flight", () => {
+    const tel = new LaminarTelemetry();
+    tel.onStart(mkStartEvent("call-X"));
+    tel.onStart(mkStartEvent("call-Y"));
+
+    tel.onError(new Error("ambiguous"));
+
+    // No spans should have ended yet — we refused to guess which op failed.
+    assert.equal(exporter.getFinishedSpans().length, 0);
+
+    tel.onFinish(mkFinish("call-X"));
+    tel.onFinish(mkFinish("call-Y"));
+    const ended = exporter.getFinishedSpans();
+    for (const s of ended) {
+      assert.notEqual(s.status.code, 2, "no op should be marked errored");
+    }
+  });
+
+  void it("onError closes step/llm/tool child spans for the errored callId", () => {
+    const tel = new LaminarTelemetry();
+    const callId = "call-leaky";
+    tel.onStart(mkStartEvent(callId));
+    tel.onStepStart(mkStepStartEvent(callId, 0));
+    tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+    // Provider emits onError without onLanguageModelCallEnd / onStepFinish /
+    // onFinish. Without cleanup those spans would leak forever.
+    tel.onError({ callId, error: new Error("mid-stream") });
+
+    const spans = exporter.getFinishedSpans();
+    const names = spans.map((s) => s.name).sort();
+    assert.deepEqual(names, [
+      "ai.generateText",
+      "ai.llm openai:gpt-4.1-nano",
+      "ai.step 0",
+    ]);
+  });
 });

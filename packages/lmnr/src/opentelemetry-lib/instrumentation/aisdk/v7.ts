@@ -801,17 +801,70 @@ export class LaminarTelemetry {
     }
   };
 
-  onError = (event: unknown): void => {
-    // `onError` doesn't carry a callId, so surface the error on whichever
-    // operation spans are still open.
+  onError = (event: any): void => {
+    // v7 passes either a structured `{ callId?, error }` payload or a raw
+    // error value. Try to scope the error to a single operation — blindly
+    // flagging every in-flight op would mark unrelated concurrent
+    // generateText / streamText calls as errored.
+    const rawError =
+      event && typeof event === "object" && "error" in event
+        ? event.error
+        : event;
     const err =
-      event instanceof Error
-        ? event
-        : new Error(typeof event === "string" ? event : serializeJSON(event));
-    for (const op of this.operationByCallId.values()) {
-      op.span.recordException(err);
-      op.span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
+      rawError instanceof Error
+        ? rawError
+        : new Error(
+            typeof rawError === "string" ? rawError : serializeJSON(rawError),
+          );
+    const eventCallId: string | undefined =
+      event && typeof event === "object" && typeof event.callId === "string"
+        ? event.callId
+        : undefined;
+
+    // Resolve the target operation:
+    //  - explicit callId  → that one (if still open)
+    //  - single in-flight → that one
+    //  - otherwise        → skip; do NOT flag unrelated concurrent ops.
+    let targetCallId: string | undefined;
+    let targetOp: OperationState | undefined;
+    if (eventCallId) {
+      const op = this.operationByCallId.get(eventCallId);
+      if (op) {
+        targetCallId = eventCallId;
+        targetOp = op;
+      }
+    } else if (this.operationByCallId.size === 1) {
+      const [k, op] = this.operationByCallId.entries().next().value!;
+      targetCallId = k;
+      targetOp = op;
     }
+    if (!targetOp || !targetCallId) return;
+
+    targetOp.span.recordException(err);
+    targetOp.span.setStatus({
+      code: SpanStatusCode.ERROR,
+      message: err.message,
+    });
+
+    // End child spans + the operation span tied to this callId so we don't
+    // leak if `onError` is terminal (no subsequent `onFinish`). If `onFinish`
+    // does fire afterwards, its `operationByCallId.get(callId)` returns
+    // undefined and it early-returns.
+    const prefix = `${targetCallId}:`;
+    for (const [key, llm] of this.llmByKey) {
+      if (key.startsWith(prefix)) {
+        llm.span.end();
+        this.llmByKey.delete(key);
+      }
+    }
+    for (const [key, step] of this.stepByKey) {
+      if (key.startsWith(prefix)) {
+        step.span.end();
+        this.stepByKey.delete(key);
+      }
+    }
+    targetOp.span.end();
+    this.operationByCallId.delete(targetCallId);
   };
 
   // ------------------------------------------------------------------
