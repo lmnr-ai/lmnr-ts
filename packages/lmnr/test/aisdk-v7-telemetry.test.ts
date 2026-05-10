@@ -652,6 +652,37 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
         `${child.name} ended after parent operation`,
       );
     }
+    // Tool spans are children of step spans — step must end AFTER tool.
+    assert.ok(
+      toHr(tool.endTime) <= toHr(step.endTime),
+      "tool span ended after parent step span",
+    );
+  });
+
+  void it("onError ends orphan tool spans before their parent step span", () => {
+    const tel = new LaminarTelemetry();
+    const callId = "call-error-order";
+    tel.onStart(mkStartEvent(callId));
+    tel.onStepStart(mkStepStartEvent(callId, 0));
+    tel.onToolExecutionStart({
+      callId,
+      toolCall: { toolCallId: "tc-err-order", toolName: "lookup", input: {} },
+      messages: [],
+      toolContext: undefined,
+    });
+    // Provider crashed mid-tool-execution; onError must end tool BEFORE step.
+    tel.onError({ callId, error: new Error("boom") });
+
+    const spans = exporter.getFinishedSpans();
+    const step = spans.find((s) => s.name === "ai.step 0");
+    const tool = spans.find((s) => s.name === "ai.tool lookup");
+    assert.ok(step && tool);
+
+    const toHr = (t: [number, number]) => t[0] * 1e9 + t[1];
+    assert.ok(
+      toHr(tool.endTime) <= toHr(step.endTime),
+      "tool span ended after parent step span on error path",
+    );
   });
 
   void it("onFinish honors finishReason === 'error' and marks the op ERROR", () => {
