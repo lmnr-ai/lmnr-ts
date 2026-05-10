@@ -838,32 +838,7 @@ export class LaminarTelemetry {
       op.span.setStatus({ code: SpanStatusCode.OK });
     }
 
-    // Close any still-open child spans BEFORE the parent — a degenerate
-    // provider that skipped lang-model-call-end / step-finish / tool-end
-    // would otherwise leave the children with a later end timestamp than
-    // the operation, breaking trace hierarchy semantics.
-    // Order: llm + tool (leaves under step) → step → op. Tool spans are
-    // children of step spans (see onToolExecutionStart), so step must end
-    // AFTER tool.
-    for (const [key, llm] of this.llmByKey) {
-      if (key.startsWith(`${callId}:`)) {
-        llm.span.end();
-        this.llmByKey.delete(key);
-      }
-    }
-    for (const [toolCallId, tool] of this.toolByCallId) {
-      if (tool.callId === callId) {
-        tool.span.end();
-        this.toolByCallId.delete(toolCallId);
-      }
-    }
-    for (const [key, step] of this.stepByKey) {
-      if (key.startsWith(`${callId}:`)) {
-        step.span.end();
-        this.stepByKey.delete(key);
-      }
-    }
-
+    this.endOrphanChildSpansForCallId(callId);
     op.span.end();
     this.operationByCallId.delete(callId);
     this.activeStreamStepByCallId.delete(callId);
@@ -918,28 +893,7 @@ export class LaminarTelemetry {
     // leak if `onError` is terminal (no subsequent `onFinish`). If `onFinish`
     // does fire afterwards, its `operationByCallId.get(callId)` returns
     // undefined and it early-returns.
-    // Order: llm + tool (leaves under step) → step → op. Tool spans are
-    // children of step spans (see onToolExecutionStart), so step must end
-    // AFTER tool.
-    const prefix = `${targetCallId}:`;
-    for (const [key, llm] of this.llmByKey) {
-      if (key.startsWith(prefix)) {
-        llm.span.end();
-        this.llmByKey.delete(key);
-      }
-    }
-    for (const [toolCallId, tool] of this.toolByCallId) {
-      if (tool.callId === targetCallId) {
-        tool.span.end();
-        this.toolByCallId.delete(toolCallId);
-      }
-    }
-    for (const [key, step] of this.stepByKey) {
-      if (key.startsWith(prefix)) {
-        step.span.end();
-        this.stepByKey.delete(key);
-      }
-    }
+    this.endOrphanChildSpansForCallId(targetCallId);
     targetOp.span.end();
     this.operationByCallId.delete(targetCallId);
     this.activeStreamStepByCallId.delete(targetCallId);
@@ -958,6 +912,39 @@ export class LaminarTelemetry {
       if (!best || step.stepNumber > best.stepNumber) best = step;
     }
     return best;
+  }
+
+  /**
+   * End any still-open child spans owned by `callId` so the parent operation
+   * span always has the latest endTime in its subtree — a degenerate provider
+   * that skipped lang-model-call-end / step-finish / tool-end would otherwise
+   * leave children ending after the operation and break trace hierarchy
+   * semantics. Callers MUST invoke this BEFORE ending the operation span.
+   *
+   * Sweep order is llm + tool (leaves under step) → step. Tool spans are
+   * children of step spans (see `onToolExecutionStart` where
+   * `parentCtx = step?.ctx ?? op.ctx`), so step must end AFTER tool.
+   */
+  private endOrphanChildSpansForCallId(callId: string): void {
+    const prefix = `${callId}:`;
+    for (const [key, llm] of this.llmByKey) {
+      if (key.startsWith(prefix)) {
+        llm.span.end();
+        this.llmByKey.delete(key);
+      }
+    }
+    for (const [toolCallId, tool] of this.toolByCallId) {
+      if (tool.callId === callId) {
+        tool.span.end();
+        this.toolByCallId.delete(toolCallId);
+      }
+    }
+    for (const [key, step] of this.stepByKey) {
+      if (key.startsWith(prefix)) {
+        step.span.end();
+        this.stepByKey.delete(key);
+      }
+    }
   }
 }
 
