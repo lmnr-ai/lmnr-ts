@@ -15,6 +15,14 @@ export {
 export { Laminar } from './laminar';
 export { LaminarSpanProcessor } from './opentelemetry-lib/';
 export { wrapAISDK, wrapLanguageModel } from './opentelemetry-lib/instrumentation/aisdk';
+export {
+  AI_SDK_TELEMETRY_DIAGNOSTIC_CHANNEL,
+  enableLaminarTelemetryDebug,
+  LaminarTelemetry,
+  laminarTelemetry,
+  type LaminarTelemetryOptions,
+  registerLaminarTelemetry,
+} from './opentelemetry-lib/instrumentation/aisdk/v7';
 export { instrumentClaudeAgentQuery } from './opentelemetry-lib/instrumentation/claude-agent-sdk';
 export {
   MastraExporter,
