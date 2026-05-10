@@ -798,12 +798,11 @@ export class LaminarTelemetry {
     } else {
       op.span.setStatus({ code: SpanStatusCode.OK });
     }
-    op.span.end();
-    this.operationByCallId.delete(callId);
 
-    // In case some LLM / step / tool spans are still open (defensive — e.g.
-    // a degenerate provider that never emitted lang-model-call-end), close
-    // everything that belongs to this callId.
+    // Close any still-open child spans BEFORE the parent — a degenerate
+    // provider that skipped lang-model-call-end / step-finish / tool-end
+    // would otherwise leave the children with a later end timestamp than
+    // the operation, breaking trace hierarchy semantics.
     for (const [key, llm] of this.llmByKey) {
       if (key.startsWith(`${callId}:`)) {
         llm.span.end();
@@ -822,6 +821,9 @@ export class LaminarTelemetry {
         this.toolByCallId.delete(toolCallId);
       }
     }
+
+    op.span.end();
+    this.operationByCallId.delete(callId);
   };
 
   onError = (event: any): void => {

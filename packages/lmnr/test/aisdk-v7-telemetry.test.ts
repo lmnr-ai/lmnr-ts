@@ -621,6 +621,39 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.ok(names.includes("ai.generateText"));
   });
 
+  void it("onFinish ends orphan children before the parent operation span", () => {
+    const tel = new LaminarTelemetry();
+    const callId = "call-order";
+    tel.onStart(mkStartEvent(callId));
+    tel.onStepStart(mkStepStartEvent(callId, 0));
+    tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+    tel.onToolExecutionStart({
+      callId,
+      toolCall: { toolCallId: "tc-order", toolName: "lookup", input: {} },
+      messages: [],
+      toolContext: undefined,
+    });
+    // Provider skipped every per-child end callback. onFinish must end
+    // children BEFORE the parent so the parent's endTime is the latest.
+    tel.onFinish(mkFinish(callId));
+
+    const spans = exporter.getFinishedSpans();
+    const op = spans.find((s) => s.name === "ai.generateText");
+    const step = spans.find((s) => s.name === "ai.step 0");
+    const llm = spans.find((s) => s.name.startsWith("ai.llm "));
+    const tool = spans.find((s) => s.name === "ai.tool lookup");
+    assert.ok(op && step && llm && tool);
+
+    const toHr = (t: [number, number]) => t[0] * 1e9 + t[1];
+    const opEnd = toHr(op.endTime);
+    for (const child of [step, llm, tool]) {
+      assert.ok(
+        toHr(child.endTime) <= opEnd,
+        `${child.name} ended after parent operation`,
+      );
+    }
+  });
+
   void it("onFinish honors finishReason === 'error' and marks the op ERROR", () => {
     const tel = new LaminarTelemetry();
     const callId = "call-finish-error";
