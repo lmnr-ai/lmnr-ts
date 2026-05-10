@@ -736,4 +736,61 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     );
     assert.equal(llm.attributes["gen_ai.usage.reasoning_tokens"], 5);
   });
+
+  void it("accumulates streaming text-delta chunks via firstChunk/finish lifecycle markers", () => {
+    const tel = new LaminarTelemetry();
+    const callId = "call-stream";
+
+    tel.onStart(mkStartEvent(callId, { operationId: "ai.streamText" }));
+    tel.onStepStart(mkStepStartEvent(callId, 0));
+    tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+    // Lifecycle marker: stream is now yielding deltas for this step.
+    tel.onChunk({
+      chunk: { type: "ai.stream.firstChunk", callId, stepNumber: 0 },
+    });
+    // Content chunks carry no callId / stepNumber — the integration must
+    // route them via the latched active stream instead of requiring those
+    // fields on the chunk itself.
+    tel.onChunk({ chunk: { type: "text-delta", id: "d1", text: "he" } });
+    tel.onChunk({ chunk: { type: "text-delta", id: "d1", text: "llo" } });
+    tel.onChunk({
+      chunk: { type: "ai.stream.finish", callId, stepNumber: 0 },
+    });
+
+    // Omit onLanguageModelCallEnd so onStepFinish has to flush the
+    // buffered deltas — exercises the actual streaming path.
+    tel.onStepFinish(
+      mkStepEnd(callId, 0, {
+        content: [],
+        text: "",
+      }),
+    );
+    tel.onFinish(mkFinish(callId));
+
+    const spans = exporter.getFinishedSpans();
+    const llm = spans.find((s) => s.name.startsWith("ai.llm "));
+    assert.ok(llm, "llm span missing");
+    assert.equal(llm.attributes["ai.response.text"], "hello");
+  });
+
+  void it("drops text-delta chunks that arrive without a preceding firstChunk marker", () => {
+    const tel = new LaminarTelemetry();
+    const callId = "call-stream-no-marker";
+
+    tel.onStart(mkStartEvent(callId, { operationId: "ai.streamText" }));
+    tel.onStepStart(mkStepStartEvent(callId, 0));
+    tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+    // No firstChunk → no active stream → deltas must be dropped (we do NOT
+    // want to mis-attribute to an arbitrary open LLM span).
+    tel.onChunk({ chunk: { type: "text-delta", id: "d1", text: "ghost" } });
+    tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
+    tel.onStepFinish(mkStepEnd(callId, 0));
+    tel.onFinish(mkFinish(callId));
+
+    const spans = exporter.getFinishedSpans();
+    const llm = spans.find((s) => s.name.startsWith("ai.llm "));
+    assert.ok(llm);
+    // "hello" comes from onLanguageModelCallEnd, NOT from the ghost delta.
+    assert.equal(llm.attributes["ai.response.text"], "hello");
+  });
 });

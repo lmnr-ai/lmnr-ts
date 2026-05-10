@@ -218,6 +218,11 @@ export class LaminarTelemetry {
   private readonly llmByKey = new Map<string, LlmState>();
   // Tool spans keyed by toolCallId (AI SDK guarantees uniqueness per run).
   private readonly toolByCallId = new Map<string, ToolState>();
+  // Active streaming step per callId, set by `ai.stream.firstChunk` and
+  // cleared by `ai.stream.finish`. Used to route `text-delta` chunks to the
+  // right LLM span — individual text-delta chunks don't carry callId or
+  // stepNumber themselves.
+  private readonly activeStreamStepByCallId = new Map<string, number>();
 
   constructor(options: LaminarTelemetryOptions = {}) {
     this.recordInputs = options.recordInputs ?? true;
@@ -469,15 +474,43 @@ export class LaminarTelemetry {
   onChunk = (event: any): void => {
     const chunk = event?.chunk;
     if (!chunk || typeof chunk !== "object") return;
-    const callId: string | undefined = chunk.callId;
-    const stepNumber: number | undefined = chunk.stepNumber;
-    if (!callId || typeof stepNumber !== "number") return;
+    // Only the lifecycle markers `ai.stream.firstChunk` / `ai.stream.finish`
+    // carry `callId` + `stepNumber`; regular content chunks (`text-delta`,
+    // `tool-call`, etc.) do not — they are plain `TextStreamPart` objects.
+    // See AI SDK source `packages/ai/src/generate-text/stream-text.ts` for
+    // the publish points. We therefore latch the active streaming step when
+    // `firstChunk` fires and route subsequent text-delta chunks to it until
+    // `finish` arrives.
+    if (chunk.type === "ai.stream.firstChunk") {
+      if (
+        typeof chunk.callId === "string" &&
+        typeof chunk.stepNumber === "number"
+      ) {
+        this.activeStreamStepByCallId.set(chunk.callId, chunk.stepNumber);
+      }
+      return;
+    }
+    if (chunk.type === "ai.stream.finish") {
+      if (typeof chunk.callId === "string") {
+        this.activeStreamStepByCallId.delete(chunk.callId);
+      }
+      return;
+    }
     if (chunk.type !== "text-delta") return;
+    if (typeof chunk.text !== "string" || chunk.text.length === 0) return;
+    // With multiple concurrent streams the active set can hold more than one
+    // entry; route to the most recently latched step (LIFO) — chunks within
+    // a single microtask tick always belong to the most recent firstChunk.
+    if (this.activeStreamStepByCallId.size === 0) return;
+    let callId = "";
+    let stepNumber = 0;
+    for (const [cid, sn] of this.activeStreamStepByCallId) {
+      callId = cid;
+      stepNumber = sn;
+    }
     const llm = this.llmByKey.get(stepKey(callId, stepNumber));
     if (!llm) return;
-    if (typeof chunk.text === "string") {
-      llm.textDeltas.push(chunk.text);
-    }
+    llm.textDeltas.push(chunk.text);
   };
 
   onStepFinish = (event: any): void => {
@@ -827,6 +860,7 @@ export class LaminarTelemetry {
 
     op.span.end();
     this.operationByCallId.delete(callId);
+    this.activeStreamStepByCallId.delete(callId);
   };
 
   onError = (event: any): void => {
@@ -902,6 +936,7 @@ export class LaminarTelemetry {
     }
     targetOp.span.end();
     this.operationByCallId.delete(targetCallId);
+    this.activeStreamStepByCallId.delete(targetCallId);
   };
 
   // ------------------------------------------------------------------
