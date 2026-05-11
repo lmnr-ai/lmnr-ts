@@ -4,8 +4,8 @@ import path from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { GoogleGenAI } from "@google/genai";
 import * as genaiNamespace from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { context, SpanStatusCode } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";

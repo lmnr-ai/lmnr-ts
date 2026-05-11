@@ -1,4 +1,3 @@
-
 import { LaminarSpanContext, TraceType, TracingLevel } from "@lmnr-ai/types";
 import {
   Attributes,
@@ -14,7 +13,11 @@ import {
   TimeInput,
 } from "@opentelemetry/api";
 import { type InstrumentationScope } from "@opentelemetry/core";
-import { ReadableSpan, type Span as SdkSpan, TimedEvent } from "@opentelemetry/sdk-trace-base";
+import {
+  ReadableSpan,
+  type Span as SdkSpan,
+  TimedEvent,
+} from "@opentelemetry/sdk-trace-base";
 
 import {
   initializeLogger,
@@ -68,21 +71,21 @@ export class LaminarSpan implements Span, ReadableSpan {
       this._span = span as SdkSpan;
     }
 
-    this.name = (this._span as unknown as SdkSpan).name;
-    this.kind = (this._span as unknown as SdkSpan).kind;
-    this.startTime = (this._span as unknown as SdkSpan).startTime;
-    this.endTime = (this._span as unknown as SdkSpan).endTime;
-    this.status = (this._span as unknown as SdkSpan).status;
-    this.attributes = (this._span as unknown as SdkSpan).attributes;
-    this.links = (this._span as unknown as SdkSpan).links;
-    this.events = (this._span as unknown as SdkSpan).events;
-    this.duration = (this._span as unknown as SdkSpan).duration;
-    this.ended = (this._span as unknown as SdkSpan).ended;
-    this.resource = (this._span as unknown as SdkSpan).resource;
+    this.name = this._span.name;
+    this.kind = this._span.kind;
+    this.startTime = this._span.startTime;
+    this.endTime = this._span.endTime;
+    this.status = this._span.status;
+    this.attributes = this._span.attributes;
+    this.links = this._span.links;
+    this.events = this._span.events;
+    this.duration = this._span.duration;
+    this.ended = this._span.ended;
+    this.resource = this._span.resource;
     this.instrumentationLibrary = (this._span as any).instrumentationLibrary;
-    this.droppedAttributesCount = (this._span as unknown as SdkSpan).droppedAttributesCount;
-    this.droppedEventsCount = (this._span as unknown as SdkSpan).droppedEventsCount;
-    this.droppedLinksCount = (this._span as unknown as SdkSpan).droppedLinksCount;
+    this.droppedAttributesCount = this._span.droppedAttributesCount;
+    this.droppedEventsCount = this._span.droppedEventsCount;
+    this.droppedLinksCount = this._span.droppedLinksCount;
     this.makeOtelV2Compatible();
     LaminarContextManager.addActiveSpan(this.spanContext().spanId);
   }
@@ -203,17 +206,22 @@ export class LaminarSpan implements Span, ReadableSpan {
   }
 
   public setInput(input: any): void {
-    const finalInput = typeof input === 'string' ? input : JSON.stringify(input);
+    const finalInput =
+      typeof input === "string" ? input : JSON.stringify(input);
     this._span.setAttribute(SPAN_INPUT, finalInput);
   }
 
   public setOutput(output: any): void {
-    const finalOutput = typeof output === 'string' ? output : JSON.stringify(output);
+    const finalOutput =
+      typeof output === "string" ? output : JSON.stringify(output);
     this._span.setAttribute(SPAN_OUTPUT, finalOutput);
   }
 
   public setTags(tags: string[]): void {
-    this._span.setAttribute(`${ASSOCIATION_PROPERTIES}.tags`, Array.from(new Set(tags)));
+    this._span.setAttribute(
+      `${ASSOCIATION_PROPERTIES}.tags`,
+      Array.from(new Set(tags)),
+    );
   }
 
   public addTags(tags: string[]): void {
@@ -238,9 +246,10 @@ export class LaminarSpan implements Span, ReadableSpan {
       sessionId = this._span.attributes[SESSION_ID] as string;
       rolloutSessionId = this._span.attributes[ROLLOUT_SESSION_ID] as string;
       traceType = this._span.attributes[TRACE_TYPE] as TraceType;
-      tracingLevel = this._span.attributes[
-        `${ASSOCIATION_PROPERTIES}.tracing_level`
-      ] as TracingLevel ?? TracingLevel.ALL;
+      tracingLevel =
+        (this._span.attributes[
+          `${ASSOCIATION_PROPERTIES}.tracing_level`
+        ] as TracingLevel) ?? TracingLevel.ALL;
       for (const [key, rawValue] of Object.entries(this._span.attributes)) {
         if (key.startsWith(`${ASSOCIATION_PROPERTIES}.metadata.`)) {
           let value = rawValue!;
@@ -249,13 +258,14 @@ export class LaminarSpan implements Span, ReadableSpan {
           } catch {
             // Ignore
           }
-          metadata[key.replace(`${ASSOCIATION_PROPERTIES}.metadata.`, '')] = value;
+          metadata[key.replace(`${ASSOCIATION_PROPERTIES}.metadata.`, "")] =
+            value;
         }
       }
     } else {
       logger.warn(
         "Attributes object is not available. Most likely the span is not a LaminarSpan " +
-        "and not an OpenTelemetry default SDK Span. Span path and ids path will be empty.",
+          "and not an OpenTelemetry default SDK Span. Span path and ids path will be empty.",
       );
     }
 
@@ -274,21 +284,17 @@ export class LaminarSpan implements Span, ReadableSpan {
     };
   }
 
-  public spanId(
-    format: 'otel' | 'uuid' = 'otel',
-  ): string {
+  public spanId(format: "otel" | "uuid" = "otel"): string {
     const spanId = this._span.spanContext().spanId;
-    if (format === 'otel') {
+    if (format === "otel") {
       return spanId;
     }
     return otelSpanIdToUUID(spanId);
   }
 
-  public traceId(
-    format: 'otel' | 'uuid' = 'otel',
-  ): string {
+  public traceId(format: "otel" | "uuid" = "otel"): string {
     const traceId = this._span.spanContext().traceId;
-    if (format === 'otel') {
+    if (format === "otel") {
       return traceId;
     }
     return otelTraceIdToUUID(traceId);
@@ -298,13 +304,16 @@ export class LaminarSpan implements Span, ReadableSpan {
     if (!this._span.attributes) {
       logger.warn(
         "[LaminarSpan.tags] WARNING. Current span does not have attributes object. " +
-        "Possibly, the span was created with a custom OTel SDK. Returning an empty list. " +
-        "Help: OpenTelemetry API does not guarantee reading attributes from a span, but OTel " +
-        "SDK allows it by default. Laminar SDK allows to read attributes too.",
+          "Possibly, the span was created with a custom OTel SDK. Returning an empty list. " +
+          "Help: OpenTelemetry API does not guarantee reading attributes from a span, but OTel " +
+          "SDK allows it by default. Laminar SDK allows to read attributes too.",
       );
       return [];
     }
-    return this._span.attributes[`${ASSOCIATION_PROPERTIES}.tags`] as string[] ?? [];
+    return (
+      (this._span.attributes[`${ASSOCIATION_PROPERTIES}.tags`] as string[]) ??
+      []
+    );
   }
 
   public get laminarAssociationProperties(): {
@@ -318,9 +327,10 @@ export class LaminarSpan implements Span, ReadableSpan {
     if (!this._span.attributes) {
       logger.warn(
         "[LaminarSpan.laminarAssociationProperties] WARNING. Current span does not have " +
-        "attributes object. Possibly, the span was created with a custom OTel SDK. Returning an " +
-        "empty object. Help: OpenTelemetry API does not guarantee reading attributes from a " +
-        "span, but OTel SDK allows it by default. Laminar SDK allows to read attributes too.",
+          "attributes object. Possibly, the span was created with a custom OTel SDK. Returning " +
+          "an " +
+          "empty object. Help: OpenTelemetry API does not guarantee reading attributes from a " +
+          "span, but OTel SDK allows it by default. Laminar SDK allows to read attributes too.",
       );
       return {};
     }
@@ -333,7 +343,10 @@ export class LaminarSpan implements Span, ReadableSpan {
         }
         let value = rawValue!;
         if (key.startsWith(`${ASSOCIATION_PROPERTIES}.metadata.`)) {
-          const metaKey = key.replace(`${ASSOCIATION_PROPERTIES}.metadata.`, '');
+          const metaKey = key.replace(
+            `${ASSOCIATION_PROPERTIES}.metadata.`,
+            "",
+          );
           try {
             value = JSON.parse(value as string);
           } catch {
@@ -342,14 +355,18 @@ export class LaminarSpan implements Span, ReadableSpan {
           metadata[metaKey] = value;
         }
       }
-      properties.tracingLevel = this._span.attributes[
-        `${ASSOCIATION_PROPERTIES}.tracing_level`
-      ] as TracingLevel ?? TracingLevel.ALL;
-      properties.userId = this._span.attributes[USER_ID] as string ?? undefined;
-      properties.sessionId = this._span.attributes[SESSION_ID] as string ?? undefined;
-      properties.rolloutSessionId = this._span.attributes[ROLLOUT_SESSION_ID] as string
-        ?? undefined;
-      properties.traceType = this._span.attributes[TRACE_TYPE] as TraceType ?? undefined;
+      properties.tracingLevel =
+        (this._span.attributes[
+          `${ASSOCIATION_PROPERTIES}.tracing_level`
+        ] as TracingLevel) ?? TracingLevel.ALL;
+      properties.userId =
+        (this._span.attributes[USER_ID] as string) ?? undefined;
+      properties.sessionId =
+        (this._span.attributes[SESSION_ID] as string) ?? undefined;
+      properties.rolloutSessionId =
+        (this._span.attributes[ROLLOUT_SESSION_ID] as string) ?? undefined;
+      properties.traceType =
+        (this._span.attributes[TRACE_TYPE] as TraceType) ?? undefined;
       return {
         metadata,
         ...properties,
@@ -368,7 +385,7 @@ export class LaminarSpan implements Span, ReadableSpan {
   }
 
   public get instrumentationScope(): InstrumentationScope {
-    return (this._span as any).instrumentationLibrary as unknown as InstrumentationScope;
+    return (this._span as any).instrumentationLibrary as InstrumentationScope;
   }
 
   public get parentSpanContext(): SpanContext | undefined {
@@ -385,7 +402,7 @@ export class LaminarSpan implements Span, ReadableSpan {
   }
 
   public getParentSpanId(): string | undefined {
-    return getParentSpanId(this._span as unknown as SdkSpan);
+    return getParentSpanId(this._span);
   }
 
   public get isActivated(): boolean {

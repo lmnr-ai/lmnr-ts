@@ -137,7 +137,7 @@ describe('handleDatasetsPush', () => {
   });
 
   it('outputs JSON on success in json mode', async () => {
-    mockedLoadFromPaths.mockResolvedValue([{ data: { x: 1 } }] as any);
+    mockedLoadFromPaths.mockResolvedValue([{ data: { x: 1 } }]);
     mockPush.mockResolvedValue({ datasetId: 'ds-123' });
 
     await handleDatasetsPush(['./data'], { ...baseOpts, name: 'test', json: true });
@@ -148,7 +148,7 @@ describe('handleDatasetsPush', () => {
   });
 
   it('logs success in human mode', async () => {
-    mockedLoadFromPaths.mockResolvedValue([{ data: { x: 1 } }] as any);
+    mockedLoadFromPaths.mockResolvedValue([{ data: { x: 1 } }]);
     mockPush.mockResolvedValue({ datasetId: 'ds-123' });
 
     await handleDatasetsPush(['./data'], { ...baseOpts, name: 'test' });
@@ -158,7 +158,7 @@ describe('handleDatasetsPush', () => {
   });
 
   it('outputs JSON error on API failure in json mode', async () => {
-    mockedLoadFromPaths.mockResolvedValue([{ data: { x: 1 } }] as any);
+    mockedLoadFromPaths.mockResolvedValue([{ data: { x: 1 } }]);
     mockPush.mockRejectedValue(new Error('server error'));
 
     await expect(
@@ -243,7 +243,7 @@ describe('handleDatasetsCreate', () => {
   });
 
   it('pushes, pulls, writes file, and outputs JSON in json mode', async () => {
-    mockedLoadFromPaths.mockResolvedValue([{ data: { x: 1 } }] as any);
+    mockedLoadFromPaths.mockResolvedValue([{ data: { x: 1 } }]);
     mockPush.mockResolvedValue({ datasetId: 'ds-123' });
     const items = [{ data: { x: 1 }, id: 'dp-1' }];
     mockPull.mockResolvedValue({ items, totalCount: 1 });
@@ -263,7 +263,7 @@ describe('handleDatasetsCreate', () => {
   });
 
   it('outputs JSON error when push fails in json mode', async () => {
-    mockedLoadFromPaths.mockResolvedValue([{ data: { x: 1 } }] as any);
+    mockedLoadFromPaths.mockResolvedValue([{ data: { x: 1 } }]);
     mockPush.mockRejectedValue(new Error('push failed'));
 
     await expect(
@@ -279,7 +279,7 @@ describe('handleDatasetsCreate', () => {
   });
 
   it('outputs JSON error when pull fails in json mode', async () => {
-    mockedLoadFromPaths.mockResolvedValue([{ data: { x: 1 } }] as any);
+    mockedLoadFromPaths.mockResolvedValue([{ data: { x: 1 } }]);
     mockPush.mockResolvedValue({ datasetId: 'ds-123' });
     mockPull.mockRejectedValue(new Error('pull failed'));
 
