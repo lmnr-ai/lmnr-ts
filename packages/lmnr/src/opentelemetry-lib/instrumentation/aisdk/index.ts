@@ -5,16 +5,16 @@ import type * as AI from "ai";
 import { getTracer } from "../../tracing";
 import { LaminarLanguageModelV2 } from "./v2";
 import { LaminarLanguageModelV3 } from "./v3";
-import { laminarTelemetry } from "./v7";
+import { laminarTelemetry } from "./v7-integration";
 
 const AI_FUNCTIONS = [
-  'generateText',
-  'generateObject',
-  'streamText',
-  'streamObject',
-  'embed',
-  'embedMany',
-  'rerank',
+  "generateText",
+  "generateObject",
+  "streamText",
+  "streamObject",
+  "embed",
+  "embedMany",
+  "rerank",
 ];
 
 /**
@@ -23,7 +23,7 @@ const AI_FUNCTIONS = [
  * falls back to the older `experimental_telemetry: { tracer }` path.
  */
 const isAISDKv7 = (ai: typeof AI): boolean =>
-  typeof (ai as any).registerTelemetry === 'function';
+  typeof (ai as any).registerTelemetry === "function";
 
 export const wrapAISDK = (ai: typeof AI): typeof AI => {
   const wrapped: Record<string, any> = {};
@@ -33,10 +33,10 @@ export const wrapAISDK = (ai: typeof AI): typeof AI => {
   const v7Integration = v7 ? laminarTelemetry() : undefined;
 
   Object.entries(ai).forEach(([key, value]) => {
-    if (typeof value === 'function' && AI_FUNCTIONS.includes(key)) {
+    if (typeof value === "function" && AI_FUNCTIONS.includes(key)) {
       const originalFn = value as (...args: any[]) => any;
       wrapped[key] = (...args: any[]) => {
-        if (args[0] && typeof args[0] === 'object') {
+        if (args[0] && typeof args[0] === "object") {
           if (v7) {
             const userTelemetry =
               args[0].telemetry ?? args[0].experimental_telemetry ?? {};
@@ -79,12 +79,16 @@ export const wrapAISDK = (ai: typeof AI): typeof AI => {
   return wrapped as typeof AI;
 };
 
-export function wrapLanguageModel(languageModel: LanguageModelV3): LanguageModelV3;
-export function wrapLanguageModel(languageModel: LanguageModelV2): LanguageModelV2;
+export function wrapLanguageModel(
+  languageModel: LanguageModelV3,
+): LanguageModelV3;
+export function wrapLanguageModel(
+  languageModel: LanguageModelV2,
+): LanguageModelV2;
 export function wrapLanguageModel(
   languageModel: LanguageModelV2 | LanguageModelV3,
 ): LanguageModelV2 | LanguageModelV3 {
-  if (languageModel.specificationVersion === 'v3') {
+  if (languageModel.specificationVersion === "v3") {
     return new LaminarLanguageModelV3(languageModel);
   }
   return new LaminarLanguageModelV2(languageModel);

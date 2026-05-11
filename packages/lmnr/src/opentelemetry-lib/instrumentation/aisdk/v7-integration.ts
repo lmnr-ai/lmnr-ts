@@ -237,11 +237,10 @@ export class LaminarTelemetry {
   onStart = (event: any): void => {
     const callId: string | undefined = event?.callId;
     if (!callId) return;
-    const operationId: string = event?.operationId ?? "ai.unknown";
     const parentCtx = LaminarContextManager.getContext();
     const tracer = getTracer();
     const span = tracer.startSpan(
-      operationId,
+      event.operationId ?? "unknown",
       { kind: SpanKind.CLIENT },
       parentCtx,
     );
@@ -265,11 +264,10 @@ export class LaminarTelemetry {
 
     // Classify embed / embedMany / rerank as LLM spans directly, since there
     // are no step or llm-call child spans for these.
-    const opKind = operationId;
     const isEmbedOrRerank =
-      opKind === "ai.embed" ||
-      opKind === "ai.embedMany" ||
-      opKind === "ai.rerank";
+      event.operationId === "ai.embed" ||
+      event.operationId === "ai.embedMany" ||
+      event.operationId === "ai.rerank";
     if (isEmbedOrRerank) {
       span.setAttribute(SPAN_TYPE, "LLM");
     }
@@ -828,8 +826,7 @@ export class LaminarTelemetry {
     // Write final output content onto the operation span.
     if (this.recordOutputs) {
       // Text generation: final text.
-      const hasText =
-        typeof event.text === "string" && event.text.length > 0;
+      const hasText = typeof event.text === "string" && event.text.length > 0;
       if (hasText) {
         op.span.setAttribute("ai.response.text", event.text);
         op.span.setAttribute(SPAN_OUTPUT, event.text);

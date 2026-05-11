@@ -14,7 +14,7 @@ import {
   LaminarTelemetry,
   laminarTelemetry,
   registerLaminarTelemetry,
-} from "../src/opentelemetry-lib/instrumentation/aisdk/v7";
+} from "../src/opentelemetry-lib/instrumentation/aisdk/v7-integration";
 import {
   SPAN_INPUT,
   SPAN_OUTPUT,
