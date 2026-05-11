@@ -1,5 +1,5 @@
 packages:
   - "packages/*"
 allowBuilds:
-  '@google/genai': set this to true or false
-  puppeteer: set this to true or false
+  "@google/genai": false
+  puppeteer: false
