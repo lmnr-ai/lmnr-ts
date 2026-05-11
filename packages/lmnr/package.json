@@ -116,6 +116,7 @@
     "chromadb": "^3.0.10",
     "nock": "^14.0.8",
     "openai": "^6.33.0",
+    "playwright": "^1.59.1",
     "puppeteer": "^24.43.0",
     "puppeteer-core": "^24.43.0",
     "undici-types": "^8.0.2"

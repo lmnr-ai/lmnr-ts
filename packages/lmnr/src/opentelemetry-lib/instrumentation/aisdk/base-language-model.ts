@@ -372,7 +372,7 @@ export abstract class BaseLaminarLanguageModel {
 
     const modifiedOptions = {
       ...options,
-    } as LanguageModelV2CallOptions | LanguageModelV3CallOptions;
+    };
 
     // Apply system override
     const systemOverride = this.normalizeSystemOverride(pathOverride.system);

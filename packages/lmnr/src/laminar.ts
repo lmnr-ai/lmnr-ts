@@ -5,7 +5,7 @@ import {
   type SpanType,
   type TraceType,
   TracingLevel,
-} from '@lmnr-ai/types';
+} from "@lmnr-ai/types";
 import {
   AttributeValue,
   Context,
@@ -14,21 +14,25 @@ import {
   type Span,
   TimeInput,
   trace,
-} from '@opentelemetry/api';
-import { SpanProcessor } from '@opentelemetry/sdk-trace-base';
+} from "@opentelemetry/api";
+import { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 
-import { InitializeOptions, initializeTracing, LaminarSpanProcessor } from './opentelemetry-lib';
-import { _resetConfiguration } from './opentelemetry-lib/configuration';
+import {
+  InitializeOptions,
+  initializeTracing,
+  LaminarSpanProcessor,
+} from "./opentelemetry-lib";
+import { _resetConfiguration } from "./opentelemetry-lib/configuration";
 import {
   forceReleaseProxy as forceReleaseClaudeProxy,
   instrumentClaudeAgentQuery,
-} from './opentelemetry-lib/instrumentation/claude-agent-sdk';
+} from "./opentelemetry-lib/instrumentation/claude-agent-sdk";
 import {
   forceFlush,
   getSpanProcessor,
   getTracer,
   patchModules,
-} from './opentelemetry-lib/tracing';
+} from "./opentelemetry-lib/tracing";
 import {
   ASSOCIATION_PROPERTIES,
   LaminarAttributes,
@@ -38,9 +42,9 @@ import {
   SPAN_TYPE,
   TRACE_TYPE,
   USER_ID,
-} from './opentelemetry-lib/tracing/attributes';
-import { LaminarContextManager } from './opentelemetry-lib/tracing/context';
-import { LaminarSpan } from './opentelemetry-lib/tracing/span';
+} from "./opentelemetry-lib/tracing/attributes";
+import { LaminarContextManager } from "./opentelemetry-lib/tracing/context";
+import { LaminarSpan } from "./opentelemetry-lib/tracing/span";
 import {
   deserializeLaminarSpanContext,
   initializeLogger,
@@ -49,7 +53,7 @@ import {
   type StringUUID,
   tryToOtelSpanContext,
   validateTracingConfig,
-} from './utils';
+} from "./utils";
 
 loadEnv();
 
@@ -74,7 +78,7 @@ interface LaminarInitializeProps {
 }
 
 type LaminarAttributesProp = Record<
-  typeof LaminarAttributes[keyof typeof LaminarAttributes],
+  (typeof LaminarAttributes)[keyof typeof LaminarAttributes],
   AttributeValue
 >;
 
@@ -165,7 +169,9 @@ export class Laminar {
     spanProcessor,
   }: LaminarInitializeProps = {}) {
     if (this.isInitialized) {
-      logger.warn("Laminar has already been initialized. Skipping initialization.");
+      logger.warn(
+        "Laminar has already been initialized. Skipping initialization.",
+      );
       return;
     }
     const key = projectApiKey ?? process?.env?.LMNR_PROJECT_API_KEY;
@@ -173,12 +179,12 @@ export class Laminar {
     // Validate that either API key or OTEL configuration is present
     validateTracingConfig(key);
 
-    this.projectApiKey = key ?? '';
+    this.projectApiKey = key ?? "";
     let url = baseUrl ?? process?.env?.LMNR_BASE_URL;
 
     // Only set default URL if we have an API key (traditional Laminar setup)
     if (key && !url) {
-      url = 'https://api.lmnr.ai';
+      url = "https://api.lmnr.ai";
     }
 
     const httpUrl = baseHttpUrl ?? url;
@@ -187,14 +193,14 @@ export class Laminar {
     if (httpUrl) {
       if (!port) {
         const m = httpUrl.match(/:\d{1,5}$/g);
-        port = m
-          ? parseInt(m[0].slice(1))
-          : 443;
+        port = m ? parseInt(m[0].slice(1)) : 443;
       }
-      const httpUrlWithoutSlash = httpUrl.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
+      const httpUrlWithoutSlash = httpUrl
+        .replace(/\/$/, "")
+        .replace(/:\d{1,5}$/g, "");
       this.baseHttpUrl = `${httpUrlWithoutSlash}:${port}`;
     } else {
-      this.baseHttpUrl = '';
+      this.baseHttpUrl = "";
     }
 
     this.globalMetadata = metadata ?? {};
@@ -209,8 +215,10 @@ export class Laminar {
     }
     this.isInitialized = true;
 
-    const urlWithoutSlash = url?.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
-    const httpUrlWithoutSlash = httpUrl?.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
+    const urlWithoutSlash = url?.replace(/\/$/, "").replace(/:\d{1,5}$/g, "");
+    const httpUrlWithoutSlash = httpUrl
+      ?.replace(/\/$/, "")
+      .replace(/:\d{1,5}$/g, "");
 
     initializeTracing({
       baseUrl: urlWithoutSlash,
@@ -253,10 +261,11 @@ export class Laminar {
 
       // Set parent path info in the span processor
       const processor = getSpanProcessor();
-      if (processor
-        && processor instanceof LaminarSpanProcessor
-        && laminarContext.spanPath
-        && laminarContext.spanIdsPath
+      if (
+        processor &&
+        processor instanceof LaminarSpanProcessor &&
+        laminarContext.spanPath &&
+        laminarContext.spanIdsPath
       ) {
         processor.setParentPathInfo(
           otelSpanContext.spanId,
@@ -270,10 +279,15 @@ export class Laminar {
         LaminarContextManager.getContext(),
         trace.wrapSpanContext(otelSpanContext),
       );
-      const ctx = LaminarContextManager.setRawAssociationProperties(laminarContext, baseContext);
+      const ctx = LaminarContextManager.setRawAssociationProperties(
+        laminarContext,
+        baseContext,
+      );
       LaminarContextManager.pushContext(ctx);
 
-      logger.debug("Initialized Laminar parent context from LMNR_SPAN_CONTEXT.");
+      logger.debug(
+        "Initialized Laminar parent context from LMNR_SPAN_CONTEXT.",
+      );
     } catch (e) {
       logger.warn(
         "LMNR_SPAN_CONTEXT is set but could not be used: " + errorMessage(e),
@@ -293,7 +307,9 @@ export class Laminar {
    */
   public static patch(modules: InitializeOptions["instrumentModules"]) {
     if (!this.isInitialized) {
-      logger.warn("Laminar must be initialized before patching modules. Skipping patch.");
+      logger.warn(
+        "Laminar must be initialized before patching modules. Skipping patch.",
+      );
       return;
     }
     if (!modules || Object.keys(modules).length === 0) {
@@ -333,11 +349,11 @@ export class Laminar {
     sessionId,
     userId,
   }: {
-    name: string,
-    attributes?: Record<string, AttributeValue>,
-    timestamp?: TimeInput,
-    sessionId?: string,
-    userId?: string,
+    name: string;
+    attributes?: Record<string, AttributeValue>;
+    timestamp?: TimeInput;
+    sessionId?: string;
+    userId?: string;
   }) {
     if (!Laminar.initialized()) {
       return;
@@ -361,12 +377,14 @@ export class Laminar {
     currentSpan.addEvent(name, allAttributes, timestamp);
   }
 
-  public static getCurrentSpan(
-    context?: Context,
-  ): LaminarSpan | undefined {
-    const currentSpan = trace.getSpan(context ?? LaminarContextManager.getContext())
-      ?? trace.getActiveSpan();
-    if (currentSpan === undefined || !isSpanContextValid(currentSpan.spanContext())) {
+  public static getCurrentSpan(context?: Context): LaminarSpan | undefined {
+    const currentSpan =
+      trace.getSpan(context ?? LaminarContextManager.getContext()) ??
+      trace.getActiveSpan();
+    if (
+      currentSpan === undefined ||
+      !isSpanContextValid(currentSpan.spanContext())
+    ) {
       return undefined;
     }
     if (currentSpan instanceof LaminarSpan) {
@@ -393,9 +411,7 @@ export class Laminar {
    *   })
    * }, userMessage);
    */
-  public static setSpanAttributes(
-    attributes: LaminarAttributesProp,
-  ) {
+  public static setSpanAttributes(attributes: LaminarAttributesProp) {
     const currentSpan = Laminar.getCurrentSpan();
     if (currentSpan) {
       for (const [key, value] of Object.entries(attributes)) {
@@ -415,42 +431,48 @@ export class Laminar {
     }
     const currentSpan = Laminar.getCurrentSpan();
     if (currentSpan) {
-      (currentSpan).setOutput(output);
+      currentSpan.setOutput(output);
     }
   }
 
   public static setTraceMetadata(metadata: Record<string, any>) {
     const currentSpan = Laminar.getCurrentSpan();
     if (currentSpan) {
-      (currentSpan).setTraceMetadata(metadata);
+      currentSpan.setTraceMetadata(metadata);
     }
   }
 
   public static setTraceSessionId(sessionId: string) {
     const currentSpan = Laminar.getCurrentSpan();
     if (currentSpan) {
-      (currentSpan).setTraceSessionId(sessionId);
+      currentSpan.setTraceSessionId(sessionId);
     }
   }
 
   public static setTraceUserId(userId: string) {
     const currentSpan = Laminar.getCurrentSpan();
     if (currentSpan) {
-      (currentSpan).setTraceUserId(userId);
+      currentSpan.setTraceUserId(userId);
     }
   }
 
   public static setSpanTags(tags: string[]) {
     const currentSpan = Laminar.getCurrentSpan();
-    if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
-      (currentSpan).setTags(tags);
+    if (
+      currentSpan !== undefined &&
+      isSpanContextValid(currentSpan.spanContext())
+    ) {
+      currentSpan.setTags(tags);
     }
   }
 
   public static addSpanTags(tags: string[]) {
     const currentSpan = Laminar.getCurrentSpan();
-    if (currentSpan !== undefined && isSpanContextValid(currentSpan.spanContext())) {
-      (currentSpan).addTags(tags);
+    if (
+      currentSpan !== undefined &&
+      isSpanContextValid(currentSpan.spanContext())
+    ) {
+      currentSpan.addTags(tags);
     }
   }
 
@@ -512,16 +534,16 @@ export class Laminar {
     metadata,
     startTime,
   }: {
-    name: string,
-    input?: any,
-    spanType?: SpanType,
-    context?: Context,
-    parentSpanContext?: string | LaminarSpanContext,
-    tags?: string[],
-    userId?: string,
-    sessionId?: string,
-    metadata?: Record<string, any>,
-    startTime?: TimeInput,
+    name: string;
+    input?: any;
+    spanType?: SpanType;
+    context?: Context;
+    parentSpanContext?: string | LaminarSpanContext;
+    tags?: string[];
+    userId?: string;
+    sessionId?: string;
+    metadata?: Record<string, any>;
+    startTime?: TimeInput;
   }): Span {
     return this._startSpan({
       name,
@@ -609,17 +631,17 @@ export class Laminar {
     startTime,
     global,
   }: {
-    name: string,
-    input?: any,
-    spanType?: SpanType,
-    context?: Context,
-    parentSpanContext?: string | LaminarSpanContext,
-    tags?: string[],
-    userId?: string,
-    sessionId?: string,
-    metadata?: Record<string, any>,
-    startTime?: TimeInput,
-    global?: boolean,
+    name: string;
+    input?: any;
+    spanType?: SpanType;
+    context?: Context;
+    parentSpanContext?: string | LaminarSpanContext;
+    tags?: string[];
+    userId?: string;
+    sessionId?: string;
+    metadata?: Record<string, any>;
+    startTime?: TimeInput;
+    global?: boolean;
   }): Span {
     return this._startSpan({
       name,
@@ -651,18 +673,18 @@ export class Laminar {
     startTime,
     global,
   }: {
-    name: string,
-    input?: any,
-    spanType?: SpanType,
-    context?: Context,
-    parentSpanContext?: string | LaminarSpanContext,
-    tags?: string[],
-    userId?: string,
-    sessionId?: string,
-    metadata?: Record<string, any>,
-    activated?: boolean,
-    startTime?: TimeInput,
-    global?: boolean,
+    name: string;
+    input?: any;
+    spanType?: SpanType;
+    context?: Context;
+    parentSpanContext?: string | LaminarSpanContext;
+    tags?: string[];
+    userId?: string;
+    sessionId?: string;
+    metadata?: Record<string, any>;
+    activated?: boolean;
+    startTime?: TimeInput;
+    global?: boolean;
   }): Span {
     let entityContext = context ?? LaminarContextManager.getContext();
 
@@ -677,9 +699,10 @@ export class Laminar {
 
     if (parentSpanContext) {
       try {
-        const laminarContext = typeof parentSpanContext === 'string'
-          ? deserializeLaminarSpanContext(parentSpanContext)
-          : parentSpanContext;
+        const laminarContext =
+          typeof parentSpanContext === "string"
+            ? deserializeLaminarSpanContext(parentSpanContext)
+            : parentSpanContext;
 
         parentPath = laminarContext.spanPath;
         parentIdsPath = laminarContext.spanIdsPath;
@@ -690,7 +713,10 @@ export class Laminar {
         parentSessionId = laminarContext.sessionId;
 
         const spanContext = tryToOtelSpanContext(laminarContext);
-        entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
+        entityContext = trace.setSpan(
+          entityContext,
+          trace.wrapSpanContext(spanContext),
+        );
       } catch (e) {
         logger.warn("Failed to parse parent span context: " + errorMessage(e));
       }
@@ -698,23 +724,27 @@ export class Laminar {
     const tagProperties = tags
       ? { [`${ASSOCIATION_PROPERTIES}.tags`]: Array.from(new Set(tags)) }
       : {};
-    const ctxAssociationProperties = LaminarContextManager.getAssociationProperties();
-    const userIdValue = userId
-      ?? parentUserId
-      ?? ctxAssociationProperties.userId;
-    const sessionIdValue = sessionId
-      ?? parentSessionId
-      ?? ctxAssociationProperties.sessionId;
-    const traceTypeValue = parentTraceType
-      ?? ((spanType as string) === 'EVALUATION' ? 'EVALUATION' : undefined)
-      ?? ctxAssociationProperties.traceType;
-    const tracingLevelValue = parentTracingLevel
-      ?? ctxAssociationProperties.tracingLevel;
+    const ctxAssociationProperties =
+      LaminarContextManager.getAssociationProperties();
+    const userIdValue =
+      userId ?? parentUserId ?? ctxAssociationProperties.userId;
+    const sessionIdValue =
+      sessionId ?? parentSessionId ?? ctxAssociationProperties.sessionId;
+    const traceTypeValue =
+      parentTraceType ??
+      ((spanType as string) === "EVALUATION" ? "EVALUATION" : undefined) ??
+      ctxAssociationProperties.traceType;
+    const tracingLevelValue =
+      parentTracingLevel ?? ctxAssociationProperties.tracingLevel;
     const ctxMetadata = ctxAssociationProperties.metadata;
 
     const userIdProperties = userIdValue ? { [USER_ID]: userIdValue } : {};
-    const sessionIdProperties = sessionIdValue ? { [SESSION_ID]: sessionIdValue } : {};
-    const traceTypeProperties = traceTypeValue ? { [TRACE_TYPE]: traceTypeValue } : {};
+    const sessionIdProperties = sessionIdValue
+      ? { [SESSION_ID]: sessionIdValue }
+      : {};
+    const traceTypeProperties = traceTypeValue
+      ? { [TRACE_TYPE]: traceTypeValue }
+      : {};
     const tracingLevelProperties = tracingLevelValue
       ? { [`${ASSOCIATION_PROPERTIES}.tracing_level`]: tracingLevelValue }
       : {};
@@ -728,7 +758,7 @@ export class Laminar {
 
     const metadataProperties = metadataToAttributes(mergedMetadata);
     const attributes = {
-      [SPAN_TYPE]: spanType ?? 'DEFAULT',
+      [SPAN_TYPE]: spanType ?? "DEFAULT",
       ...tagProperties,
       ...userIdProperties,
       ...sessionIdProperties,
@@ -778,40 +808,38 @@ export class Laminar {
   public static withSpan<T>(span: Span, fn: () => T, endOnExit?: boolean): T {
     const ctx = LaminarContextManager.getContext();
     const laminarSpan = new LaminarSpan(span);
-    const ctxWithAssociationProperties = LaminarContextManager.setAssociationProperties(
-      laminarSpan,
-      ctx,
-    );
+    const ctxWithAssociationProperties =
+      LaminarContextManager.setAssociationProperties(laminarSpan, ctx);
     const context = trace.setSpan(ctxWithAssociationProperties, span);
-    return contextApi.with(context, () => LaminarContextManager.runWithIsolatedContext(
-      [context],
-      () => {
+    return contextApi.with(context, () =>
+      LaminarContextManager.runWithIsolatedContext([context], () => {
         try {
           const result = fn();
           if (result instanceof Promise) {
-            return result.catch((err) => {
-              span.recordException(err as Error);
-              throw err;
-            }).finally(() => {
-              if (endOnExit !== undefined && endOnExit) {
-                span.end();
-              }
-            }) as T;
+            return result
+              .catch((err) => {
+                span.recordException(err as Error);
+                throw err;
+              })
+              .finally(() => {
+                if (endOnExit !== undefined && endOnExit) {
+                  span.end();
+                }
+              }) as T;
           }
           if (endOnExit !== undefined && endOnExit) {
             span.end();
           }
           return result;
-        }
-        catch (error) {
+        } catch (error) {
           span.recordException(error as Error);
           if (endOnExit !== undefined && endOnExit) {
             span.end();
           }
           throw error;
         }
-      },
-    ));
+      }),
+    );
   }
 
   public static serializeLaminarSpanContext(span?: Span): string | null {
@@ -820,11 +848,14 @@ export class Laminar {
       return null;
     }
     return JSON.stringify(laminarSpanContext);
-  };
+  }
 
   public static getLaminarSpanContext(span?: Span): LaminarSpanContext | null {
     let currentSpan = span ?? Laminar.getCurrentSpan();
-    if (currentSpan === undefined || !isSpanContextValid(currentSpan.spanContext())) {
+    if (
+      currentSpan === undefined ||
+      !isSpanContextValid(currentSpan.spanContext())
+    ) {
       return null;
     }
     if (!(currentSpan instanceof LaminarSpan)) {
@@ -898,6 +929,7 @@ export class Laminar {
    */
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   public static wrapClaudeAgentQuery<T extends Function>(originalQuery: T): T {
-    return instrumentClaudeAgentQuery(originalQuery as any) as unknown as T;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return instrumentClaudeAgentQuery(originalQuery as any);
   }
 }

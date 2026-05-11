@@ -79,7 +79,7 @@ export async function buildFile(
 ): Promise<string> {
   const result = await esbuild.build({
     bundle: true,
-    platform: "node" as esbuild.Platform,
+    platform: "node",
     entryPoints: [filePath],
     outfile: `tmp_out_${filePath}.js`,
     write: false,

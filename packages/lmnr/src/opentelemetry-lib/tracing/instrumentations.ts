@@ -298,7 +298,7 @@ const manuallyInitInstrumentations = (
     const azureOpenAIInstrumentation = new AzureOpenAIInstrumentation({
       traceContent: !suppressContentTracing,
     });
-    instrumentations.push(azureOpenAIInstrumentation as Instrumentation);
+    instrumentations.push(azureOpenAIInstrumentation);
     azureOpenAIInstrumentation.manuallyInstrument(
       instrumentModules.azureOpenAI,
     );
@@ -342,7 +342,7 @@ const manuallyInitInstrumentations = (
 
   if (instrumentModules?.pinecone) {
     const instrumentation = new PineconeInstrumentation();
-    instrumentations.push(instrumentation as Instrumentation);
+    instrumentations.push(instrumentation);
     instrumentation.manuallyInstrument(instrumentModules.pinecone);
   }
 
