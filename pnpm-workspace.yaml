@@ -2,4 +2,7 @@ packages:
   - "packages/*"
 allowBuilds:
   "@google/genai": false
+  bufferutil: false
+  esbuild: false
+  protobufjs: false
   puppeteer: false

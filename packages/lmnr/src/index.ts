@@ -1,29 +1,43 @@
-export { EvaluationDataset as Dataset, LaminarDataset } from './datasets';
+export { EvaluationDataset as Dataset, LaminarDataset } from "./datasets";
 export {
   observe,
   observeDecorator,
   observeExperimentalDecorator,
   withTracingLevel,
-} from './decorators';
+} from "./decorators";
 export {
   type Datapoint,
   evaluate,
   type EvaluatorFunction,
   type EvaluatorFunctionReturn,
   HumanEvaluator,
-} from './evaluations';
-export { Laminar } from './laminar';
-export { LaminarSpanProcessor } from './opentelemetry-lib/';
-export { wrapAISDK, wrapLanguageModel } from './opentelemetry-lib/instrumentation/aisdk';
-export { instrumentClaudeAgentQuery } from './opentelemetry-lib/instrumentation/claude-agent-sdk';
+} from "./evaluations";
+export { Laminar } from "./laminar";
+export { LaminarSpanProcessor } from "./opentelemetry-lib/";
+export {
+  wrapAISDK,
+  wrapLanguageModel,
+} from "./opentelemetry-lib/instrumentation/aisdk";
+export {
+  AI_SDK_TELEMETRY_DIAGNOSTIC_CHANNEL,
+  enableLaminarTelemetryDebug,
+  LaminarTelemetry,
+  laminarTelemetry,
+  type LaminarTelemetryOptions,
+  registerLaminarTelemetry,
+} from "./opentelemetry-lib/instrumentation/aisdk/v7-integration";
+export { instrumentClaudeAgentQuery } from "./opentelemetry-lib/instrumentation/claude-agent-sdk";
 export {
   MastraExporter,
   type MastraExporterOptions,
-} from './opentelemetry-lib/instrumentation/mastra';
-export { LaminarAttributes } from './opentelemetry-lib/tracing/attributes';
-export { getTracer, getTracerProvider } from './opentelemetry-lib/tracing/index';
-export { initializeLaminarInstrumentations } from './opentelemetry-lib/tracing/instrumentations';
-export { LaminarClient } from '@lmnr-ai/client';
+} from "./opentelemetry-lib/instrumentation/mastra";
+export { LaminarAttributes } from "./opentelemetry-lib/tracing/attributes";
+export {
+  getTracer,
+  getTracerProvider,
+} from "./opentelemetry-lib/tracing/index";
+export { initializeLaminarInstrumentations } from "./opentelemetry-lib/tracing/instrumentations";
+export { LaminarClient } from "@lmnr-ai/client";
 export {
   type Dataset as DatasetType,
   type EvaluationDatapoint,
@@ -34,5 +48,5 @@ export {
   type PushDatapointsResponse,
   type SessionRecordingOptions,
   TracingLevel,
-} from '@lmnr-ai/types';
-export { type Span } from '@opentelemetry/api';
+} from "@lmnr-ai/types";
+export { type Span } from "@opentelemetry/api";
