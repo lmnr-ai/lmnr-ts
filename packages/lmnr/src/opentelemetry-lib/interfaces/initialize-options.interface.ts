@@ -1,6 +1,5 @@
 import type * as bedrock from "@aws-sdk/client-bedrock-runtime";
 import type * as azure from "@azure/openai";
-import type * as vertexAI from "@google-cloud/vertexai";
 import type { SessionRecordingOptions } from "@lmnr-ai/types";
 import { SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import type * as pinecone from "@pinecone-database/pinecone";
@@ -150,7 +149,7 @@ export interface InitializeOptions {
      * });
      * ```
      */
-    google_vertexai?: typeof vertexAI;
+    google_vertexai?: any;
     /**
      * @example
      * ```javascript
