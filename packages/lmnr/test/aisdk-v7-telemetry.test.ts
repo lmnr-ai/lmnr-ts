@@ -11,9 +11,9 @@ import {
 } from "../src/opentelemetry-lib/configuration";
 import { wrapAISDK } from "../src/opentelemetry-lib/instrumentation/aisdk";
 import {
-  LaminarTelemetry,
-  laminarTelemetry,
-  registerLaminarTelemetry,
+  aiSdkTelemetry,
+  LaminarAiSdkTelemetry,
+  registerAiSdkTelemetry,
 } from "../src/opentelemetry-lib/instrumentation/aisdk/v7-integration";
 import {
   SPAN_INPUT,
@@ -159,7 +159,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("creates operation → step → llm span tree for generateText", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callId = "call-1";
 
     tel.onStart(mkStartEvent(callId));
@@ -213,7 +213,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("makes tool spans flat siblings of llm under the step", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callId = "call-2";
 
     tel.onStart(mkStartEvent(callId));
@@ -311,7 +311,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("propagates tool span as parent for nested generateText (sub-agent)", async () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const outerCallId = "outer-1";
     const innerCallId = "inner-1";
 
@@ -390,7 +390,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("records tool-error status when toolOutput is tool-error", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callId = "call-err";
 
     tel.onStart(mkStartEvent(callId));
@@ -420,7 +420,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("creates a single LLM span for embed", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callId = "embed-1";
 
     tel.onStart({
@@ -456,7 +456,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("records reasoning text via gen_ai.output.messages", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callId = "call-think";
 
     tel.onStart(mkStartEvent(callId));
@@ -487,16 +487,16 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("factory helpers create independent integrations", () => {
-    const a = laminarTelemetry();
-    const b = laminarTelemetry();
+    const a = aiSdkTelemetry();
+    const b = aiSdkTelemetry();
     assert.notEqual(a, b);
-    assert.ok(a instanceof LaminarTelemetry);
+    assert.ok(a instanceof LaminarAiSdkTelemetry);
   });
 
   void it("registerLaminarTelemetry appends to globalThis.AI_SDK_TELEMETRY_INTEGRATIONS", () => {
     const g = globalThis as { AI_SDK_TELEMETRY_INTEGRATIONS?: unknown[] };
     const before = g.AI_SDK_TELEMETRY_INTEGRATIONS?.length ?? 0;
-    const integration = registerLaminarTelemetry();
+    const integration = registerAiSdkTelemetry();
     assert.ok(Array.isArray(g.AI_SDK_TELEMETRY_INTEGRATIONS));
     assert.equal(g.AI_SDK_TELEMETRY_INTEGRATIONS.length, before + 1);
     assert.ok(g.AI_SDK_TELEMETRY_INTEGRATIONS.includes(integration));
@@ -529,14 +529,14 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
       assert.ok(Array.isArray(firstCall.telemetry.integrations));
       assert.ok(
         firstCall.telemetry.integrations.some(
-          (i) => i instanceof LaminarTelemetry,
+          (i) => i instanceof LaminarAiSdkTelemetry,
         ),
       );
     },
   );
 
   void it("onError scopes error to the callId on the event", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     tel.onStart(mkStartEvent("call-A"));
     tel.onStart(mkStartEvent("call-B"));
 
@@ -559,7 +559,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("onError doesn't flag other ops when no callId and multiple in-flight", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     tel.onStart(mkStartEvent("call-X"));
     tel.onStart(mkStartEvent("call-Y"));
 
@@ -577,7 +577,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("onError closes step/llm/tool child spans for the errored callId", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callId = "call-leaky";
     tel.onStart(mkStartEvent(callId));
     tel.onStepStart(mkStepStartEvent(callId, 0));
@@ -603,7 +603,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("onFinish closes orphaned tool spans for the callId", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callId = "call-tool-orphan";
     tel.onStart(mkStartEvent(callId));
     tel.onStepStart(mkStepStartEvent(callId, 0));
@@ -624,7 +624,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("onFinish ends orphan children before the parent operation span", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callId = "call-order";
     tel.onStart(mkStartEvent(callId));
     tel.onStepStart(mkStepStartEvent(callId, 0));
@@ -662,7 +662,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("onError ends orphan tool spans before their parent step span", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callId = "call-error-order";
     tel.onStart(mkStartEvent(callId));
     tel.onStepStart(mkStepStartEvent(callId, 0));
@@ -688,7 +688,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("onFinish falls back SPAN_OUTPUT to tool calls when text is empty", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callId = "call-tool-only";
     tel.onStart(mkStartEvent(callId));
     tel.onFinish(
@@ -717,7 +717,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("onFinish honors finishReason === 'error' and marks the op ERROR", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callId = "call-finish-error";
     tel.onStart(mkStartEvent(callId));
     tel.onFinish(mkFinish(callId, { finishReason: "error" }));
@@ -730,7 +730,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("applies cache write and read tokens from v6+ inputTokenDetails", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callId = "call-cache";
 
     tel.onStart(mkStartEvent(callId));
@@ -769,7 +769,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("accumulates streaming text-delta chunks via firstChunk/finish lifecycle markers", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callId = "call-stream";
 
     tel.onStart(mkStartEvent(callId, { operationId: "ai.streamText" }));
@@ -808,7 +808,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("drops text-delta chunks that arrive without a preceding firstChunk marker", () => {
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callId = "call-stream-no-marker";
 
     tel.onStart(mkStartEvent(callId, { operationId: "ai.streamText" }));
@@ -834,7 +834,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     // fires while A is still active, a naive LIFO pick would push A's
     // subsequent deltas into B's buffer. The integration must instead
     // decline to attribute deltas while the owner is ambiguous.
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callA = "call-concurrent-a";
     const callB = "call-concurrent-b";
 
@@ -902,7 +902,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     // gen_ai.request.model (REQUEST_MODEL) + gen_ai.response.model
     // (RESPONSE_MODEL) for model-routing and cost analytics; object-gen
     // spans must carry both, matching onLanguageModelCallEnd parity.
-    const tel = new LaminarTelemetry();
+    const tel = new LaminarAiSdkTelemetry();
     const callId = "call-object";
 
     tel.onStart(mkStartEvent(callId, { operationId: "ai.generateObject" }));

@@ -5,7 +5,7 @@ import type * as AI from "ai";
 import { getTracer } from "../../tracing";
 import { LaminarLanguageModelV2 } from "./v2";
 import { LaminarLanguageModelV3 } from "./v3";
-import { laminarTelemetry } from "./v7-integration";
+import { aiSdkTelemetry } from "./v7-integration/index";
 
 const AI_FUNCTIONS = [
   "generateText",
@@ -30,7 +30,7 @@ export const wrapAISDK = (ai: typeof AI): typeof AI => {
   const v7 = isAISDKv7(ai);
   // Create one integration per wrap() call so registrations are stable
   // across calls within the same process but distinct across test runs.
-  const v7Integration = v7 ? laminarTelemetry() : undefined;
+  const v7Integration = v7 ? aiSdkTelemetry() : undefined;
 
   Object.entries(ai).forEach(([key, value]) => {
     if (typeof value === "function" && AI_FUNCTIONS.includes(key)) {
