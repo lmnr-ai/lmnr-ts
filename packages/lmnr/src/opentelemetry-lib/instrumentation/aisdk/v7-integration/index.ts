@@ -29,23 +29,39 @@
 import * as diagnosticsChannel from "node:diagnostics_channel";
 
 import {
-  type Context,
   context as contextApi,
   type HrTime,
-  type Span,
   SpanKind,
   SpanStatusCode,
   trace,
 } from "@opentelemetry/api";
 
-import { getTracer } from "../../tracing";
+import { getTracer } from "../../../tracing";
 import {
   LaminarAttributes,
   SPAN_INPUT,
   SPAN_OUTPUT,
   SPAN_TYPE,
-} from "../../tracing/attributes";
-import { LaminarContextManager } from "../../tracing/context";
+} from "../../../tracing/attributes";
+import { LaminarContextManager } from "../../../tracing/context";
+import {
+  type LlmState,
+  type OperationState,
+  stepKey,
+  type StepState,
+  type ToolState,
+} from "./types";
+import {
+  applyUsage,
+  compareHrTime,
+  extractReasoningFromContent,
+  extractTextFromContent,
+  normalizeProvider,
+  normalizeToolCalls,
+  readSpanEndTime,
+  serializeJSON,
+  standardizedPromptToMessages,
+} from "./utils";
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 
@@ -55,140 +71,7 @@ import { LaminarContextManager } from "../../tracing/context";
  */
 export const AI_SDK_TELEMETRY_DIAGNOSTIC_CHANNEL = "aisdk:telemetry";
 
-interface OperationState {
-  span: Span;
-  ctx: Context;
-  operationId?: string;
-  provider?: string;
-  modelId?: string;
-}
-
-interface StepState {
-  span: Span;
-  ctx: Context;
-  stepNumber: number;
-}
-
-interface LlmState {
-  span: Span;
-  textDeltas: string[];
-}
-
-interface ToolState {
-  span: Span;
-  ctx: Context;
-  callId: string;
-}
-
-const stepKey = (callId: string, stepNumber: number) =>
-  `${callId}:${stepNumber}`;
-
-const serializeJSON = (value: unknown): string => {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return "[unserializable]";
-  }
-};
-
-const normalizeProvider = (
-  provider: string | undefined,
-): string | undefined => {
-  if (!provider) return undefined;
-  const head = provider.split(".").shift();
-  return (
-    head?.toLowerCase().trim() || provider.toLowerCase().trim() || undefined
-  );
-};
-
-const applyUsage = (attributes: Record<string, any>, usage: any): void => {
-  if (!usage || typeof usage !== "object") return;
-  if (typeof usage.inputTokens === "number") {
-    attributes[LaminarAttributes.INPUT_TOKEN_COUNT] = usage.inputTokens;
-  }
-  if (typeof usage.outputTokens === "number") {
-    attributes[LaminarAttributes.OUTPUT_TOKEN_COUNT] = usage.outputTokens;
-  }
-  if (typeof usage.totalTokens === "number") {
-    attributes[LaminarAttributes.TOTAL_TOKEN_COUNT] = usage.totalTokens;
-  } else if (
-    typeof usage.inputTokens === "number" ||
-    typeof usage.outputTokens === "number"
-  ) {
-    attributes[LaminarAttributes.TOTAL_TOKEN_COUNT] =
-      (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
-  }
-  if (typeof usage.reasoningTokens === "number") {
-    attributes["gen_ai.usage.reasoning_tokens"] = usage.reasoningTokens;
-  } else if (typeof usage.outputTokenDetails?.reasoningTokens === "number") {
-    attributes["gen_ai.usage.reasoning_tokens"] =
-      usage.outputTokenDetails.reasoningTokens;
-  }
-  if (typeof usage.cachedInputTokens === "number") {
-    attributes["gen_ai.usage.cache_read_input_tokens"] =
-      usage.cachedInputTokens;
-  } else if (typeof usage.inputTokenDetails?.cacheReadTokens === "number") {
-    attributes["gen_ai.usage.cache_read_input_tokens"] =
-      usage.inputTokenDetails.cacheReadTokens;
-  }
-  if (typeof usage.inputTokenDetails?.cacheWriteTokens === "number") {
-    attributes["gen_ai.usage.cache_creation_input_tokens"] =
-      usage.inputTokenDetails.cacheWriteTokens;
-  }
-};
-
-// Convert a StandardizedPrompt-shaped object (`system` + `messages`) to an
-// array of `ModelMessage`-like entries. Laminar's backend parses
-// `ai.prompt.messages` as an array of AI SDK messages.
-const standardizedPromptToMessages = (event: {
-  system?: any;
-  messages?: any[];
-}): any[] => {
-  const messages: any[] = [];
-  const sys = event.system;
-  if (typeof sys === "string" && sys.length > 0) {
-    messages.push({ role: "system", content: sys });
-  } else if (Array.isArray(sys)) {
-    for (const m of sys) messages.push(m);
-  } else if (sys && typeof sys === "object") {
-    messages.push(sys);
-  }
-  if (Array.isArray(event.messages)) {
-    for (const m of event.messages) messages.push(m);
-  }
-  return messages;
-};
-
-// Build a concise `ai.response.toolCalls`-shaped array from v7 `toolCalls`.
-const normalizeToolCalls = (toolCalls: any[] | undefined): any[] => {
-  if (!Array.isArray(toolCalls)) return [];
-  return toolCalls.map((tc) => ({
-    toolCallType: "function",
-    toolCallId: tc?.toolCallId,
-    toolName: tc?.toolName,
-    args:
-      typeof tc?.input === "string" ? tc.input : serializeJSON(tc?.input ?? {}),
-  }));
-};
-
-const extractTextFromContent = (content: any[] | undefined): string => {
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((p) => p && p.type === "text" && typeof p.text === "string")
-    .map((p) => p.text as string)
-    .join("");
-};
-
-const extractReasoningFromContent = (content: any[] | undefined): string => {
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((p) => p && p.type === "reasoning" && typeof p.text === "string")
-    .map((p) => p.text as string)
-    .join("");
-};
-
-export interface LaminarTelemetryOptions {
+export interface LaminarAiSdkTelemetryOptions {
   /**
    * When true, record prompt messages and response content on spans.
    * Defaults to true.
@@ -205,7 +88,7 @@ export interface LaminarTelemetryOptions {
  * `Telemetry` interface from `ai` so users can pick up the integration even
  * when they are on a narrower `ai` version that doesn't export it yet.
  */
-export class LaminarTelemetry {
+export class LaminarAiSdkTelemetry {
   private readonly recordInputs: boolean;
   private readonly recordOutputs: boolean;
 
@@ -225,7 +108,7 @@ export class LaminarTelemetry {
   // stepNumber themselves.
   private readonly activeStreamStepByCallId = new Map<string, number>();
 
-  constructor(options: LaminarTelemetryOptions = {}) {
+  constructor(options: LaminarAiSdkTelemetryOptions = {}) {
     this.recordInputs = options.recordInputs ?? true;
     this.recordOutputs = options.recordOutputs ?? true;
   }
@@ -414,25 +297,28 @@ export class LaminarTelemetry {
       const toolCallsRaw = content
         ? content.filter((p: any) => p && p.type === "tool-call")
         : [];
-      const normalizedToolCalls = normalizeToolCalls(toolCallsRaw);
+      const normalizedToolCallsList = normalizeToolCalls(toolCallsRaw);
 
       if (text.length > 0) {
         span.setAttribute("ai.response.text", text);
         span.setAttribute(SPAN_OUTPUT, text);
       }
-      if (normalizedToolCalls.length > 0) {
+      if (normalizedToolCallsList.length > 0) {
         span.setAttribute(
           "ai.response.toolCalls",
-          serializeJSON(normalizedToolCalls),
+          serializeJSON(normalizedToolCallsList),
         );
         if (text.length === 0) {
-          span.setAttribute(SPAN_OUTPUT, serializeJSON(normalizedToolCalls));
+          span.setAttribute(
+            SPAN_OUTPUT,
+            serializeJSON(normalizedToolCallsList),
+          );
         }
       }
 
       // OTel GenAI semconv `gen_ai.output.messages` — rendered by the Laminar
       // UI with a Thinking label when `type: "thinking"` is present.
-      if (reasoningText.length > 0 || normalizedToolCalls.length > 0) {
+      if (reasoningText.length > 0 || normalizedToolCallsList.length > 0) {
         const parts: any[] = [];
         if (reasoningText.length > 0) {
           parts.push({ type: "thinking", content: reasoningText });
@@ -440,7 +326,7 @@ export class LaminarTelemetry {
         if (text.length > 0) {
           parts.push({ type: "text", content: text });
         }
-        for (const tc of normalizedToolCalls) {
+        for (const tc of normalizedToolCallsList) {
           let argsObj: unknown = tc.args;
           if (typeof argsObj === "string") {
             try {
@@ -560,12 +446,12 @@ export class LaminarTelemetry {
         outputPayload.text = event.text;
         step.span.setAttribute("ai.response.text", event.text);
       }
-      const normalizedToolCalls = normalizeToolCalls(event.toolCalls);
-      if (normalizedToolCalls.length > 0) {
-        outputPayload.toolCalls = normalizedToolCalls;
+      const normalizedToolCallsList = normalizeToolCalls(event.toolCalls);
+      if (normalizedToolCallsList.length > 0) {
+        outputPayload.toolCalls = normalizedToolCallsList;
         step.span.setAttribute(
           "ai.response.toolCalls",
-          serializeJSON(normalizedToolCalls),
+          serializeJSON(normalizedToolCallsList),
         );
       }
       if (Object.keys(outputPayload).length > 0) {
@@ -831,9 +717,9 @@ export class LaminarTelemetry {
         op.span.setAttribute("ai.response.text", event.text);
         op.span.setAttribute(SPAN_OUTPUT, event.text);
       }
-      const normalizedToolCalls = normalizeToolCalls(event.toolCalls);
-      if (normalizedToolCalls.length > 0) {
-        const serialized = serializeJSON(normalizedToolCalls);
+      const normalizedToolCallsList = normalizeToolCalls(event.toolCalls);
+      if (normalizedToolCallsList.length > 0) {
+        const serialized = serializeJSON(normalizedToolCallsList);
         op.span.setAttribute("ai.response.toolCalls", serialized);
         // Fall back to serialized tool calls for SPAN_OUTPUT when text is
         // empty — mirrors `onLanguageModelCallEnd` so tool-call-only
@@ -1008,25 +894,6 @@ export class LaminarTelemetry {
   }
 }
 
-const compareHrTime = (a: HrTime, b: HrTime): number => {
-  if (a[0] !== b[0]) return a[0] - b[0];
-  return a[1] - b[1];
-};
-
-// LaminarSpan wraps an SDK Span and copies `endTime` in its constructor (before
-// `end()` was called), so reading it from the wrapper yields the stale
-// `[0, 0]` snapshot. The underlying `_span` (an SDK span) mutates its own
-// `endTime` on `end()`, which is what we need. Probe both fields defensively
-// so exotic Span implementations still degrade gracefully.
-const readSpanEndTime = (span: Span): HrTime | undefined => {
-  const inner = (span as unknown as { _span?: { endTime?: HrTime } })._span;
-  const innerEnd = inner?.endTime;
-  if (innerEnd && (innerEnd[0] !== 0 || innerEnd[1] !== 0)) return innerEnd;
-  const outerEnd = (span as unknown as { endTime?: HrTime }).endTime;
-  if (outerEnd && (outerEnd[0] !== 0 || outerEnd[1] !== 0)) return outerEnd;
-  return undefined;
-};
-
 /**
  * Returns a Laminar `Telemetry` integration instance. Pass it to
  * `experimental_telemetry.integrations` on any AI SDK v7 generate/stream/
@@ -1047,9 +914,9 @@ const readSpanEndTime = (span: Span): HrTime | undefined => {
  * });
  * ```
  */
-export const laminarTelemetry = (
-  options?: LaminarTelemetryOptions,
-): LaminarTelemetry => new LaminarTelemetry(options);
+export const aiSdkTelemetry = (
+  options?: LaminarAiSdkTelemetryOptions,
+): LaminarAiSdkTelemetry => new LaminarAiSdkTelemetry(options);
 
 /**
  * Registers a Laminar `Telemetry` integration as a global receiver for every
@@ -1060,10 +927,10 @@ export const laminarTelemetry = (
  * of `ai` — callers often want to register telemetry before the first
  * provider call and must not pay the cost of eagerly loading the AI SDK.
  */
-export const registerLaminarTelemetry = (
-  options?: LaminarTelemetryOptions,
-): LaminarTelemetry => {
-  const integration = new LaminarTelemetry(options);
+export const registerAiSdkTelemetry = (
+  options?: LaminarAiSdkTelemetryOptions,
+): LaminarAiSdkTelemetry => {
+  const integration = new LaminarAiSdkTelemetry(options);
   const g = globalThis as unknown as {
     AI_SDK_TELEMETRY_INTEGRATIONS?: unknown[];
   };
@@ -1081,7 +948,7 @@ export const registerLaminarTelemetry = (
  *
  * Returns an unsubscribe function.
  */
-export const enableLaminarTelemetryDebug = (
+export const enableAiSdkTelemetryDebug = (
   log: (entry: { type: string; event: unknown }) => void = (e) =>
     console.log("[aisdk:telemetry]", e.type, e.event),
 ): (() => void) => {

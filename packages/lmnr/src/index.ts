@@ -20,12 +20,12 @@ export {
 } from "./opentelemetry-lib/instrumentation/aisdk";
 export {
   AI_SDK_TELEMETRY_DIAGNOSTIC_CHANNEL,
-  enableLaminarTelemetryDebug,
-  LaminarTelemetry,
-  laminarTelemetry,
-  type LaminarTelemetryOptions,
-  registerLaminarTelemetry,
-} from "./opentelemetry-lib/instrumentation/aisdk/v7-integration";
+  aiSdkTelemetry,
+  enableAiSdkTelemetryDebug,
+  LaminarAiSdkTelemetry,
+  type LaminarAiSdkTelemetryOptions,
+  registerAiSdkTelemetry,
+} from "./opentelemetry-lib/instrumentation/aisdk/v7-integration/index";
 export { instrumentClaudeAgentQuery } from "./opentelemetry-lib/instrumentation/claude-agent-sdk";
 export {
   MastraExporter,
