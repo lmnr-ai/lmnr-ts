@@ -390,6 +390,28 @@ void describe("Braintrust bridge", () => {
     assert.strictEqual(spans.length, 1);
   });
 
+  void it("idempotent install preserves options from the first call", () => {
+    const SpanImpl = makeFakeSpanImpl();
+
+    // First install disables linkToActiveContext — root BT spans must NOT
+    // reparent onto the outer observe() span.
+    installBraintrustBridge({ SpanImpl }, { linkToActiveContext: false });
+    // Second install with the opposite setting must be a no-op, NOT flip
+    // the active configuration.
+    installBraintrustBridge({ SpanImpl }, { linkToActiveContext: true });
+
+    observe({ name: "outer" }, () => {
+      const span = new SpanImpl({ name: "traced_fn", type: "function" });
+      span.log({ input: "hi", output: "bye" });
+      span.end();
+    });
+
+    const spans = onlyBraintrustSpans(exporter);
+    assert.strictEqual(spans.length, 1);
+    // No parent — the first install's `linkToActiveContext: false` held.
+    assert.strictEqual(getParentSpanId(spans[0]), undefined);
+  });
+
   void it("surfaces metadata as association properties on non-LLM spans", () => {
     const SpanImpl = makeFakeSpanImpl();
     installBraintrustBridge({ SpanImpl });

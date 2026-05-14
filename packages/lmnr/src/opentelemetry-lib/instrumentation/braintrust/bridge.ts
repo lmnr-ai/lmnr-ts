@@ -140,11 +140,6 @@ export const installBraintrustBridge = (
   },
   options: BraintrustBridgeOptions = {},
 ): void => {
-  bridgeOptions = {
-    realtime: options.realtime ?? false,
-    linkToActiveContext: options.linkToActiveContext ?? true,
-  };
-
   const SpanImpl = resolveSpanImpl(ctx);
   if (!SpanImpl) {
     logger.warn(
@@ -157,6 +152,13 @@ export const installBraintrustBridge = (
 
 
   if (SpanImpl.prototype[PATCHED_KEY]) return;
+
+  // Only latch options on the first successful install — repeat calls are
+  // no-ops and must not silently mutate the already-active configuration.
+  bridgeOptions = {
+    realtime: options.realtime ?? false,
+    linkToActiveContext: options.linkToActiveContext ?? true,
+  };
 
   SpanImpl.prototype[PATCHED_KEY] = true;
 
