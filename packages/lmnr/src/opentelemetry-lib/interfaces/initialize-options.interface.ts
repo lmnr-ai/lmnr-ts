@@ -1,5 +1,4 @@
 import type * as bedrock from "@aws-sdk/client-bedrock-runtime";
-import type * as azure from "@azure/openai";
 import type { SessionRecordingOptions } from "@lmnr-ai/types";
 import { SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import type * as pinecone from "@pinecone-database/pinecone";
@@ -103,6 +102,8 @@ export interface InitializeOptions {
      */
     anthropic?: any;
     /**
+     * @deprecated Azure OpenAI instrumentation is no longer supported.
+     * This is a no-op and will be removed.
      * @example
      * ```javascript
      * import azureOpenAI from "@azure/openai";
@@ -113,7 +114,7 @@ export interface InitializeOptions {
      * });
      * ```
      */
-    azureOpenAI?: typeof azure;
+    azureOpenAI?: any;
     /**
      * @example
      * ```javascript
