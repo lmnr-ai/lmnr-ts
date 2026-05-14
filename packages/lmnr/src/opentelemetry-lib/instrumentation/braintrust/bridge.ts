@@ -50,7 +50,7 @@ import {
   inputMessagesToGenAI,
   mapBraintrustSpanType,
   mergeLogPartial,
-  outputChoicesToGenAI,
+  outputMessagesToGenAI,
   readStringArrayAttribute,
   serializeJSON,
   toAttributeValue,
@@ -589,7 +589,7 @@ const applyLlmAttributes = (
 
   if (accumulated.output !== undefined) {
     attrs[SPAN_OUTPUT] = serializeJSON(accumulated.output);
-    const genaiOutput = outputChoicesToGenAI(accumulated.output);
+    const genaiOutput = outputMessagesToGenAI(accumulated.output);
     if (genaiOutput.length > 0) {
       attrs["gen_ai.output.messages"] = JSON.stringify(genaiOutput);
     }

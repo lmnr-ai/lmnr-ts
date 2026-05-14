@@ -280,12 +280,36 @@ const parseJsonOrRaw = (value: unknown): unknown => {
   }
 };
 
+// Pass through an already-GenAI-shaped message `{role, parts, finish_reason?}`.
+// We only keep parts whose `type` is a string so the backend parser doesn't
+// choke on opaque shapes.
+const passThroughGenAIMessage = (
+  m: Record<string, unknown>,
+): GenAIMessage | null => {
+  if (!Array.isArray(m.parts)) return null;
+  const role = typeof m.role === "string" ? m.role : "user";
+  const parts = m.parts.filter(
+    (p): p is GenAIPart =>
+      !!p &&
+      typeof p === "object" &&
+      typeof (p as Record<string, unknown>).type === "string",
+  );
+  const msg: GenAIMessage = { role, parts };
+  if (typeof m.finish_reason === "string") msg.finish_reason = m.finish_reason;
+  return msg;
+};
+
 // Convert a single Braintrust-shaped OpenAI ChatCompletion message (including
 // tool-result messages: `{role: "tool", tool_call_id, content}`) into a GenAI
-// semconv `{role, parts}` entry. Returns null if the input isn't object-shaped.
+// semconv `{role, parts}` entry. If the message is already in `{role, parts}`
+// shape, pass it through as-is. Returns null if the input isn't object-shaped.
 const chatMessageToGenAI = (msg: unknown): GenAIMessage | null => {
   if (!msg || typeof msg !== "object") return null;
   const m = msg as Record<string, unknown>;
+
+  // Already-GenAI-shaped: pass through without re-wrapping.
+  if (Array.isArray(m.parts)) return passThroughGenAIMessage(m);
+
   const role = typeof m.role === "string" ? m.role : "user";
   const parts: GenAIPart[] = [];
 
@@ -348,22 +372,40 @@ export const inputMessagesToGenAI = (input: unknown): GenAIMessage[] => {
   return out;
 };
 
-// Braintrust's OpenAI plugin logs `output = result.choices` — an array of
-// `{index, message: {role, content, tool_calls}, finish_reason}`. Collapse the
-// choices into the assistant-side GenAI messages array; most plugins only have
-// one choice, but we preserve all of them for parity.
-export const outputChoicesToGenAI = (output: unknown): GenAIMessage[] => {
+// Convert a Braintrust LLM output payload into GenAI `{role, parts}` messages.
+// Accepts any of:
+//   1. Already-GenAI-shaped array: `[{role, parts, finish_reason?}, ...]`
+//      (e.g. a user emitting output directly in OTel GenAI semconv shape).
+//   2. OpenAI ChatCompletion `result.choices` — what Braintrust's OpenAI
+//      plugin logs: `[{index, message: {role, content, tool_calls}, finish_reason}]`.
+//   3. A chat-message array: `[{role, content, tool_calls?}, ...]` (e.g.
+//      Anthropic / AI SDK plugins that log messages directly).
+// Element shape is detected per-entry so mixed arrays still round-trip.
+export const outputMessagesToGenAI = (output: unknown): GenAIMessage[] => {
   if (!Array.isArray(output)) return [];
   const out: GenAIMessage[] = [];
-  for (const choice of output) {
-    if (!choice || typeof choice !== "object") continue;
-    const c = choice as Record<string, unknown>;
-    const converted = chatMessageToGenAI(c.message);
-    if (!converted) continue;
-    if (typeof c.finish_reason === "string") {
-      converted.finish_reason = c.finish_reason;
+  for (const item of output) {
+    if (!item || typeof item !== "object") continue;
+    const obj = item as Record<string, unknown>;
+    // OpenAI-choice shape: unwrap `message` and carry `finish_reason` onto it.
+    if (
+      obj.message &&
+      typeof obj.message === "object" &&
+      !Array.isArray(obj.parts) &&
+      typeof obj.role !== "string"
+    ) {
+      const converted = chatMessageToGenAI(obj.message);
+      if (!converted) continue;
+      if (typeof obj.finish_reason === "string") {
+        converted.finish_reason = obj.finish_reason;
+      }
+      out.push(converted);
+      continue;
     }
-    out.push(converted);
+    // Plain message — either already-GenAI `{role, parts}` or chat
+    // `{role, content, tool_calls?}`. `chatMessageToGenAI` handles both.
+    const converted = chatMessageToGenAI(obj);
+    if (converted) out.push(converted);
   }
   return out;
 };

@@ -274,6 +274,47 @@ void describe("Braintrust bridge", () => {
     assert.deepStrictEqual(toolCallPart.arguments, { city: "NYC" });
   });
 
+  void it("passes through output already in {role, parts} GenAI shape", () => {
+    const SpanImpl = makeFakeSpanImpl();
+    installBraintrustBridge({ SpanImpl });
+
+    // User / plugin already emits output in GenAI semconv — we should not
+    // re-wrap the parts, just thread them through verbatim.
+    const span = new SpanImpl({ name: "Chat Completion", type: "llm" });
+    span.log({
+      input: [{ role: "user", content: "hi" }],
+      metadata: { provider: "openai", model: "gpt-4o-mini" },
+    });
+    span.log({
+      output: [
+        {
+          role: "assistant",
+          parts: [
+            { type: "thinking", content: "pondering..." },
+            { type: "text", content: "hello!" },
+          ],
+          finish_reason: "stop",
+        },
+      ],
+    });
+    span.end();
+
+    const spans = onlyBraintrustSpans(exporter);
+    const output = JSON.parse(
+      spans[0].attributes["gen_ai.output.messages"] as string,
+    );
+    assert.deepStrictEqual(output, [
+      {
+        role: "assistant",
+        parts: [
+          { type: "thinking", content: "pondering..." },
+          { type: "text", content: "hello!" },
+        ],
+        finish_reason: "stop",
+      },
+    ]);
+  });
+
   void it("maps type='tool' to TOOL span with ai.toolCall.name", () => {
     const SpanImpl = makeFakeSpanImpl();
     installBraintrustBridge({ SpanImpl });
