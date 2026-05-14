@@ -234,14 +234,13 @@ const handleLogInternal = (
   if (args.event) mergeLogPartial(event, args.event);
   if (args.internalData) mergeLogPartial(event, args.internalData);
 
-  // End detection: Braintrust's `SpanImpl.end(...)` calls
-  // `logInternal({ internalData: { metrics: { end } } })`. A user call to
-  // `span.log({ metrics: { end: ... } })` would also match, but that's
-  // semantically equivalent — the span is logically ending.
+  // End detection: Braintrust's `SpanImpl.end(...)` sends the end marker
+  // via `internalData.metrics.end`. A user call to
+  // `span.log({ metrics: { end: ... } })` instead routes through
+  // `args.event.metrics.end`. Read from the merged `event` above so either
+  // path finalizes the companion span.
   const endTime =
-    typeof args.internalData?.metrics?.end === "number"
-      ? (args.internalData.metrics.end)
-      : undefined;
+    typeof event.metrics?.end === "number" ? event.metrics.end : undefined;
 
   if (!existing) {
     // First event for this SpanImpl — this is the constructor-driven

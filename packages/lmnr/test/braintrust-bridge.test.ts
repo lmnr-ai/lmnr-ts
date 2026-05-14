@@ -439,6 +439,20 @@ void describe("Braintrust bridge", () => {
     );
   });
 
+  void it("finalizes on an event-side metrics.end marker", () => {
+    const SpanImpl = makeFakeSpanImpl();
+    installBraintrustBridge({ SpanImpl });
+
+    const span = new SpanImpl({ name: "traced_fn", type: "function" });
+    // User-style end marker — Braintrust routes span.log payloads through
+    // args.event (NOT args.internalData), so the bridge must still finalize.
+    span.log({ output: "ok", metrics: { end: Date.now() / 1000 } });
+
+    const spans = onlyBraintrustSpans(exporter);
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].attributes[SPAN_OUTPUT], "ok");
+  });
+
   void it("deep-merges event + internalData when both carry metadata", () => {
     const SpanImpl = makeFakeSpanImpl();
     installBraintrustBridge({ SpanImpl });
