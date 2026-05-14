@@ -24,6 +24,10 @@ import {
 } from "./opentelemetry-lib";
 import { _resetConfiguration } from "./opentelemetry-lib/configuration";
 import {
+  type BraintrustBridgeOptions,
+  installBraintrustBridge,
+} from "./opentelemetry-lib/instrumentation/braintrust";
+import {
   forceReleaseProxy as forceReleaseClaudeProxy,
   instrumentClaudeAgentQuery,
 } from "./opentelemetry-lib/instrumentation/claude-agent-sdk";
@@ -931,5 +935,43 @@ export class Laminar {
   public static wrapClaudeAgentQuery<T extends Function>(originalQuery: T): T {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return instrumentClaudeAgentQuery(originalQuery as any);
+  }
+
+  /**
+   * Bridge the Braintrust TS SDK into Laminar's OTel pipeline: every span
+   * Braintrust creates — manual (`logger.traced`, `span.startSpan`), auto
+   * (`wrapOpenAI`, `wrapAISDK`, `wrapAnthropic`), or from an eval — will also
+   * flow to Laminar as an OTel span. Braintrust continues logging to
+   * Braintrust unchanged; this is purely additive.
+   *
+   * Pass the `SpanImpl` class exported by `braintrust` so the bridge has a
+   * handle to patch — we avoid a peer dep on `braintrust` by accepting it
+   * here. Safe to call multiple times; the patch installs once.
+   *
+   * @example
+   * ```typescript
+   * import { initLogger, SpanImpl, wrapOpenAI } from "braintrust";
+   * import { Laminar } from "@lmnr-ai/lmnr";
+   * import OpenAI from "openai";
+   *
+   * initLogger({ projectName: "my-proj", apiKey: "bt-…" });
+   * Laminar.initialize({ projectApiKey: "lmnr-…" });
+   * Laminar.wrapBraintrust({ SpanImpl });
+   *
+   * const client = wrapOpenAI(new OpenAI());
+   * await client.chat.completions.create({ model: "gpt-4o-mini", messages });
+   * // Spans now appear in BOTH Braintrust and Laminar.
+   * ```
+   */
+  public static wrapBraintrust(
+    ctx: {
+
+      SpanImpl?: any;
+
+      braintrust?: any;
+    },
+    options?: BraintrustBridgeOptions,
+  ): void {
+    installBraintrustBridge(ctx, options);
   }
 }
