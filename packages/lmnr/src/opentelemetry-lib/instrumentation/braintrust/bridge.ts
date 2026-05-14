@@ -70,9 +70,13 @@ const PATCHED_KEY = Symbol.for("lmnr.braintrust.bridge.patched");
 // Per-SpanImpl-instance companion OTel span + accumulated log data.
 const COMPANION_KEY = Symbol.for("lmnr.braintrust.bridge.companion");
 
-let bridgeOptions: Required<BraintrustBridgeOptions> = {
+const DEFAULT_BRIDGE_OPTIONS: Required<BraintrustBridgeOptions> = {
   realtime: false,
   linkToActiveContext: true,
+};
+
+let bridgeOptions: Required<BraintrustBridgeOptions> = {
+  ...DEFAULT_BRIDGE_OPTIONS,
 };
 
 // Resolved at install time so every bridged span can record which third-party
@@ -168,6 +172,7 @@ export const _resetBraintrustBridgeForTests = (): void => {
   rootStateByRootSpanId.clear();
   warnedNotInitialized = false;
   braintrustSdkVersion = undefined;
+  bridgeOptions = { ...DEFAULT_BRIDGE_OPTIONS };
 };
 
 // ────────────────────────────────────────────────────────────────────────
