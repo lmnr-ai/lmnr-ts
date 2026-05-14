@@ -1,4 +1,5 @@
 import { HrTime, Span } from "@opentelemetry/api";
+import { createRequire } from "module";
 
 import { normalizeOtelSpanId, normalizeOtelTraceId } from "../../../utils";
 import { LaminarAttributes } from "../../tracing/attributes";
@@ -10,6 +11,57 @@ import {
 } from "./types";
 
 export { serializeJSON, toAttributeValue };
+
+// Best-effort resolve the braintrust SDK version so every bridged span can
+// record it under `lmnr.span.bridge.version`. Order of preference:
+//   1. A `version` / `VERSION` string on the caller-supplied context — e.g.
+//      the braintrust module itself (they don't export one today, but may
+//      one day), or a property stamped on `SpanImpl` by the caller.
+//   2. The `braintrust/package.json` read via `createRequire` so we work
+//      regardless of ESM/CJS and without adding a peer dep.
+// Returns `undefined` when every probe fails (edge runtimes, tree-shaken
+// builds, or braintrust not on disk) — the attribute is then simply omitted.
+export const resolveBraintrustSdkVersion = (
+  ctx: {
+    SpanImpl?: unknown;
+    braintrust?: unknown;
+  },
+): string | undefined => {
+  const fromCtx = readVersionField(ctx.braintrust) ?? readVersionField(ctx.SpanImpl);
+  if (fromCtx) return fromCtx;
+
+  try {
+    // Compiled for both CJS (`__filename` defined) and ESM (`import.meta.url`
+    // defined) via the same dual-probe pattern `getDirname()` uses.
+    const resolveFrom =
+      typeof __filename !== "undefined"
+        ? __filename
+        : typeof import.meta?.url !== "undefined"
+          ? import.meta.url
+          : undefined;
+    if (!resolveFrom) return undefined;
+    const req = createRequire(resolveFrom);
+
+    const pkg = req("braintrust/package.json") as { version?: unknown };
+    if (typeof pkg?.version === "string" && pkg.version.length > 0) {
+      return pkg.version;
+    }
+  } catch {
+    // braintrust not installed, edge runtime without a resolver, or
+    // `package.json` not in the export map — fall through.
+  }
+  return undefined;
+};
+
+const readVersionField = (obj: unknown): string | undefined => {
+  if (!obj || (typeof obj !== "object" && typeof obj !== "function")) {
+    return undefined;
+  }
+  const rec = obj as Record<string, unknown>;
+  if (typeof rec.version === "string" && rec.version.length > 0) return rec.version;
+  if (typeof rec.VERSION === "string" && rec.VERSION.length > 0) return rec.VERSION;
+  return undefined;
+};
 
 // Braintrust represents timestamps as fractional unix seconds (see
 // `getCurrentUnixTimestamp` in braintrust/dist/index.mjs — `Date.now() / 1000`).

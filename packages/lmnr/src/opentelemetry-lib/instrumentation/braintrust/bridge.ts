@@ -23,6 +23,8 @@ import {
   ASSOCIATION_PROPERTIES,
   LaminarAttributes,
   SESSION_ID,
+  SPAN_BRIDGE_NAME,
+  SPAN_BRIDGE_VERSION,
   SPAN_IDS_PATH,
   SPAN_INPUT,
   SPAN_INSTRUMENTATION_SOURCE,
@@ -52,6 +54,7 @@ import {
   mergeLogPartial,
   outputMessagesToGenAI,
   readStringArrayAttribute,
+  resolveBraintrustSdkVersion,
   serializeJSON,
   toAttributeValue,
   unixSecondsToHrTime,
@@ -71,6 +74,12 @@ let bridgeOptions: Required<BraintrustBridgeOptions> = {
   realtime: false,
   linkToActiveContext: true,
 };
+
+// Resolved at install time so every bridged span can record which third-party
+// SDK produced the original span (plus that SDK's exact version). Kept at
+// module level so both `createCompanion` and `applyEndAttributes` can read it
+// without threading it through `RootState` / `CompanionState`.
+let braintrustSdkVersion: string | undefined;
 
 // ────────────────────────────────────────────────────────────────────────
 // Public entry points
@@ -116,6 +125,7 @@ export const installBraintrustBridge = (
     realtime: options.realtime ?? false,
     linkToActiveContext: options.linkToActiveContext ?? true,
   };
+  braintrustSdkVersion = resolveBraintrustSdkVersion(ctx);
 
   SpanImpl.prototype[PATCHED_KEY] = true;
 
@@ -157,6 +167,7 @@ export const installBraintrustBridge = (
 export const _resetBraintrustBridgeForTests = (): void => {
   rootStateByRootSpanId.clear();
   warnedNotInitialized = false;
+  braintrustSdkVersion = undefined;
 };
 
 // ────────────────────────────────────────────────────────────────────────
@@ -485,7 +496,9 @@ const applyEndAttributes = (
     [SPAN_TYPE]: laminarType,
     [SPAN_INSTRUMENTATION_SOURCE]: "javascript",
     [SPAN_SDK_VERSION]: SDK_VERSION,
+    [SPAN_BRIDGE_NAME]: "braintrust",
   };
+  if (braintrustSdkVersion) attrs[SPAN_BRIDGE_VERSION] = braintrustSdkVersion;
   const langVersion = getLangVersion();
   if (langVersion) attrs[SPAN_LANGUAGE_VERSION] = langVersion;
 

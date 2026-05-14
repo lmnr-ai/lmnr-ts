@@ -15,6 +15,8 @@ import {
 } from "../src/opentelemetry-lib/instrumentation/braintrust";
 import {
   LaminarAttributes,
+  SPAN_BRIDGE_NAME,
+  SPAN_BRIDGE_VERSION,
   SPAN_IDS_PATH,
   SPAN_INPUT,
   SPAN_OUTPUT,
@@ -545,5 +547,43 @@ void describe("Braintrust bridge", () => {
       s.attributes["lmnr.association.properties.user_id"],
       "u_1",
     );
+  });
+
+  void it("stamps lmnr.span.bridge.name and version from a supplied braintrust module", () => {
+    const SpanImpl = makeFakeSpanImpl();
+    // Simulate the user passing the whole braintrust module (incl. an explicit
+    // `version` field) instead of the installed braintrust/package.json —
+    // useful in edge / bundled runtimes where require.resolve doesn't work.
+    installBraintrustBridge({
+      SpanImpl,
+      braintrust: { SpanImpl, version: "9.9.9-test" },
+    });
+
+    const span = new SpanImpl({ name: "traced_fn", type: "function" });
+    span.end();
+
+    const spans = onlyBraintrustSpans(exporter);
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].attributes[SPAN_BRIDGE_NAME], "braintrust");
+    assert.strictEqual(
+      spans[0].attributes[SPAN_BRIDGE_VERSION],
+      "9.9.9-test",
+    );
+  });
+
+  void it("stamps lmnr.span.bridge.name even when no version source is available", () => {
+    const SpanImpl = makeFakeSpanImpl();
+    // No braintrust / SpanImpl version field; require("braintrust/package.json")
+    // may or may not resolve depending on the test environment — but the name
+    // attribute MUST be set unconditionally so consumers can always identify
+    // bridged spans.
+    installBraintrustBridge({ SpanImpl });
+
+    const span = new SpanImpl({ name: "traced_fn", type: "function" });
+    span.end();
+
+    const spans = onlyBraintrustSpans(exporter);
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].attributes[SPAN_BRIDGE_NAME], "braintrust");
   });
 });
