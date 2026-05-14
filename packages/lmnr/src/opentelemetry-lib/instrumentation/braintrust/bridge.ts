@@ -226,10 +226,13 @@ const handleLogInternal = (
   const holder = span as unknown as Record<symbol, CompanionState | undefined>;
   const existing = holder[COMPANION_KEY];
 
-  const event: BraintrustLogPartial = {
-    ...(args.event ?? {}),
-    ...(args.internalData ?? {}),
-  };
+  // Fold `event` + `internalData` through `mergeLogPartial` rather than a
+  // shallow spread: both sides can carry `metadata` / `metrics` /
+  // `span_attributes`, and a shallow spread silently drops the event-side
+  // map when the same top-level key is present on both.
+  const event: BraintrustLogPartial = {};
+  if (args.event) mergeLogPartial(event, args.event);
+  if (args.internalData) mergeLogPartial(event, args.internalData);
 
   // End detection: Braintrust's `SpanImpl.end(...)` calls
   // `logInternal({ internalData: { metrics: { end } } })`. A user call to

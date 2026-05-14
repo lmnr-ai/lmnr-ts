@@ -438,4 +438,37 @@ void describe("Braintrust bridge", () => {
       "prod",
     );
   });
+
+  void it("deep-merges event + internalData when both carry metadata", () => {
+    const SpanImpl = makeFakeSpanImpl();
+    installBraintrustBridge({ SpanImpl });
+
+    // Simulate Braintrust firing a logInternal call where BOTH event and
+    // internalData carry a `metadata` map — e.g. a plugin stamps
+    // internal-only `metadata.provider` while the user passes
+    // `metadata.env` on the same call. A shallow spread would drop one side.
+    const span = new SpanImpl({ name: "traced_fn", type: "function" });
+    span.logInternal({
+      event: { metadata: { env: "prod", userId: "u_1" } },
+      internalData: { metadata: { provider: "openai" } },
+    });
+    span.end();
+
+    const spans = onlyBraintrustSpans(exporter);
+    assert.strictEqual(spans.length, 1);
+    const s = spans[0];
+    // Both sides survived the merge.
+    assert.strictEqual(
+      s.attributes["lmnr.association.properties.metadata.env"],
+      "prod",
+    );
+    assert.strictEqual(
+      s.attributes["lmnr.association.properties.metadata.provider"],
+      "openai",
+    );
+    assert.strictEqual(
+      s.attributes["lmnr.association.properties.user_id"],
+      "u_1",
+    );
+  });
 });
