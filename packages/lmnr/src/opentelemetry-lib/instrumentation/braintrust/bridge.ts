@@ -42,11 +42,15 @@ import {
   BraintrustSpanLike,
 } from "./types";
 import {
+  braintrustToOtelSpanId,
+  braintrustToOtelTraceId,
+  extractAssistantFromOutput,
   extractLlmMetadata,
   extractSpanName,
   formatMetrics,
   mapBraintrustSpanType,
   mergeLogPartial,
+  readStringArrayAttribute,
   serializeJSON,
   toAttributeValue,
   unixSecondsToHrTime,
@@ -61,6 +65,102 @@ const logger = initializeLogger();
 const PATCHED_KEY = Symbol.for("lmnr.braintrust.bridge.patched");
 // Per-SpanImpl-instance companion OTel span + accumulated log data.
 const COMPANION_KEY = Symbol.for("lmnr.braintrust.bridge.companion");
+
+let bridgeOptions: Required<BraintrustBridgeOptions> = {
+  realtime: false,
+  linkToActiveContext: true,
+};
+
+// ────────────────────────────────────────────────────────────────────────
+// Public entry points
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Patch Braintrust's `SpanImpl` prototype so every span it creates — via
+ * `logger.traced`, `wrapOpenAI`, `wrapAISDK`, `wrapAnthropic`, or manual
+ * `span.startSpan(...)` — also flows into Laminar's OTel pipeline.
+ *
+ * Idempotent. Pass the module/object that exports `SpanImpl`; if the caller
+ * doesn't have it handy they can pass a `Logger` (which exposes `.startSpan`
+ * on its prototype chain — we walk up to find `SpanImpl`). In practice the
+ * cleanest path is to import `{ SpanImpl }` from `braintrust` and pass that.
+ */
+export const installBraintrustBridge = (
+  ctx: {
+    // One of these three — whichever the user can most easily get.
+
+    SpanImpl?: any;
+
+    logger?: any;
+
+    braintrust?: any;
+  },
+  options: BraintrustBridgeOptions = {},
+): void => {
+  const SpanImpl = resolveSpanImpl(ctx);
+  if (!SpanImpl) {
+    logger.warn(
+      "[Laminar.wrapBraintrust] Could not locate braintrust's SpanImpl. " +
+        "Import `SpanImpl` from `braintrust` and pass it explicitly, " +
+        "e.g. `Laminar.wrapBraintrust({ SpanImpl })`.",
+    );
+    return;
+  }
+
+  if (SpanImpl.prototype[PATCHED_KEY]) return;
+
+  // Only latch options on the first successful install — repeat calls are
+  // no-ops and must not silently mutate the already-active configuration.
+  bridgeOptions = {
+    realtime: options.realtime ?? false,
+    linkToActiveContext: options.linkToActiveContext ?? true,
+  };
+
+  SpanImpl.prototype[PATCHED_KEY] = true;
+
+  const originalLogInternal = SpanImpl.prototype.logInternal;
+  if (typeof originalLogInternal !== "function") {
+    logger.warn(
+      "[Laminar.wrapBraintrust] braintrust's SpanImpl.prototype.logInternal " +
+        "is not a function — Braintrust internals may have changed. " +
+        "Skipping bridge install.",
+    );
+
+    SpanImpl.prototype[PATCHED_KEY] = false;
+    return;
+  }
+
+  SpanImpl.prototype.logInternal = function patchedLogInternal(
+    this: BraintrustSpanLike,
+    args: BraintrustLogInternalArgs,
+  ): unknown {
+    // Call the original first so Braintrust's own bookkeeping
+    // (loggedEndTime, spanCache queueing, bgLogger) happens exactly as
+    // before — we are purely a side-channel observer.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+    const retval: unknown = originalLogInternal.call(this, args);
+    try {
+      handleLogInternal(this, args);
+    } catch (err) {
+      logger.error(
+        `[Laminar.wrapBraintrust] failed on logInternal: ${errorMessage(err)}`,
+      );
+    }
+    return retval;
+  };
+};
+
+// For tests: clear module-level state so a new `wrapBraintrust` call on a
+// fresh tracer provider starts from zero. Not exported from the public
+// surface — kept on the internal bridge module.
+export const _resetBraintrustBridgeForTests = (): void => {
+  rootStateByRootSpanId.clear();
+  warnedNotInitialized = false;
+};
+
+// ────────────────────────────────────────────────────────────────────────
+// Internal state types
+// ────────────────────────────────────────────────────────────────────────
 
 interface CompanionState {
   otelSpan: Span;
@@ -95,106 +195,9 @@ interface RootState {
 // trace tree — matches how Braintrust itself tracks rootSpanId globally.
 const rootStateByRootSpanId: Map<string, RootState> = new Map();
 
-// Resolve-OTel-span-for-attribute helper. LaminarSpan is our wrapper around
-// the SDK span; access the underlying attributes map via the `attributes`
-// getter that exists on both OTel v1 ReadableSpan and our LaminarSpan.
-const readAttributeArray = (
-  span: Span | undefined,
-  key: string,
-): string[] | undefined => {
-  if (!span) return undefined;
-  const attrs = (span as unknown as { attributes?: Record<string, unknown> })
-    .attributes;
-  if (!attrs) return undefined;
-  const value = attrs[key];
-  if (Array.isArray(value) && value.every((p) => typeof p === "string")) {
-    return value;
-  }
-  return undefined;
-};
-
-let bridgeOptions: Required<BraintrustBridgeOptions> = {
-  realtime: false,
-  linkToActiveContext: true,
-};
-
-/**
- * Patch Braintrust's `SpanImpl` prototype so every span it creates — via
- * `logger.traced`, `wrapOpenAI`, `wrapAISDK`, `wrapAnthropic`, or manual
- * `span.startSpan(...)` — also flows into Laminar's OTel pipeline.
- *
- * Idempotent. Pass the module/object that exports `SpanImpl`; if the caller
- * doesn't have it handy they can pass a `Logger` (which exposes `.startSpan`
- * on its prototype chain — we walk up to find `SpanImpl`). In practice the
- * cleanest path is to import `{ SpanImpl }` from `braintrust` and pass that.
- */
-export const installBraintrustBridge = (
-  ctx: {
-    // One of these three — whichever the user can most easily get.
-
-    SpanImpl?: any;
-
-    logger?: any;
-
-    braintrust?: any;
-  },
-  options: BraintrustBridgeOptions = {},
-): void => {
-  const SpanImpl = resolveSpanImpl(ctx);
-  if (!SpanImpl) {
-    logger.warn(
-      "[Laminar.wrapBraintrust] Could not locate braintrust's SpanImpl. " +
-        "Import `SpanImpl` from `braintrust` and pass it explicitly, " +
-        "e.g. `Laminar.wrapBraintrust({ SpanImpl })`.",
-    );
-    return;
-  }
-
-
-  if (SpanImpl.prototype[PATCHED_KEY]) return;
-
-  // Only latch options on the first successful install — repeat calls are
-  // no-ops and must not silently mutate the already-active configuration.
-  bridgeOptions = {
-    realtime: options.realtime ?? false,
-    linkToActiveContext: options.linkToActiveContext ?? true,
-  };
-
-  SpanImpl.prototype[PATCHED_KEY] = true;
-
-
-  const originalLogInternal = SpanImpl.prototype.logInternal;
-  if (typeof originalLogInternal !== "function") {
-    logger.warn(
-      "[Laminar.wrapBraintrust] braintrust's SpanImpl.prototype.logInternal " +
-        "is not a function — Braintrust internals may have changed. " +
-        "Skipping bridge install.",
-    );
-
-    SpanImpl.prototype[PATCHED_KEY] = false;
-    return;
-  }
-
-
-  SpanImpl.prototype.logInternal = function patchedLogInternal(
-    this: BraintrustSpanLike,
-    args: BraintrustLogInternalArgs,
-  ): unknown {
-    // Call the original first so Braintrust's own bookkeeping
-    // (loggedEndTime, spanCache queueing, bgLogger) happens exactly as
-    // before — we are purely a side-channel observer.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-    const retval: unknown = originalLogInternal.call(this, args);
-    try {
-      handleLogInternal(this, args);
-    } catch (err) {
-      logger.error(
-        `[Laminar.wrapBraintrust] failed on logInternal: ${errorMessage(err)}`,
-      );
-    }
-    return retval;
-  };
-};
+// ────────────────────────────────────────────────────────────────────────
+// Internal: SpanImpl resolution + logInternal routing
+// ────────────────────────────────────────────────────────────────────────
 
 // Walk common locations to find the SpanImpl class reference.
 
@@ -266,6 +269,10 @@ const handleLogInternal = (
     holder[COMPANION_KEY] = undefined;
   }
 };
+
+// ────────────────────────────────────────────────────────────────────────
+// Internal: companion OTel span lifecycle
+// ────────────────────────────────────────────────────────────────────────
 
 const createCompanion = (
   span: BraintrustSpanLike,
@@ -376,40 +383,6 @@ const createCompanion = (
   return companion;
 };
 
-// Braintrust span ids are ~22-char base58 (ksuid-like) — hash them down to
-// a deterministic 16-hex OTel span id so every Braintrust span under one
-// rootSpanId nests under the same OTel trace, and sibling spans get distinct
-// ids.
-const braintrustToOtelSpanId = (bt: string): string => normalizeOtelSpanId(hashToHex(bt, 16));
-
-const braintrustToOtelTraceId = (bt: string): string => normalizeOtelTraceId(hashToHex(bt, 32));
-
-// FNV-1a 32-bit, repeated / mixed to reach `hexChars`. Not crypto — just a
-// stable, collision-resistant-enough mapping for trace/span ids derived from
-// Braintrust's own base58 ids. Avoids a `crypto` import to keep this module
-// usable in edge runtimes.
-const hashToHex = (input: string, hexChars: number): string => {
-  let a = 0x811c9dc5;
-  let b = 0x1b873593;
-  for (let i = 0; i < input.length; i++) {
-    const c = input.charCodeAt(i);
-    a = Math.imul(a ^ c, 0x01000193) >>> 0;
-    b = Math.imul(b ^ c, 0x9e3779b1) >>> 0;
-  }
-  let out = "";
-  let x = a;
-  let y = b;
-  while (out.length < hexChars) {
-    out += x.toString(16).padStart(8, "0");
-    if (out.length >= hexChars) break;
-    out += y.toString(16).padStart(8, "0");
-    // Re-mix so the next round isn't just a repeat.
-    x = Math.imul(x ^ (y + 0x9e3779b1), 0x85ebca6b) >>> 0;
-    y = Math.imul(y ^ (x + 0xc2b2ae35), 0xcc9e2d51) >>> 0;
-  }
-  return out.slice(0, hexChars);
-};
-
 const getOrCreateRootState = (rootSpanId: string): RootState => {
   const existing = rootStateByRootSpanId.get(rootSpanId);
   if (existing) return existing;
@@ -424,9 +397,9 @@ const getOrCreateRootState = (rootSpanId: string): RootState => {
     if (ctx && ctx.traceId && ctx.spanId) {
       created.outerTraceId = normalizeOtelTraceId(ctx.traceId);
       created.outerSpanId = normalizeOtelSpanId(ctx.spanId);
-      const parentPath = readAttributeArray(activeSpan, SPAN_PATH);
+      const parentPath = readStringArrayAttribute(activeSpan, SPAN_PATH);
       if (parentPath) created.outerSpanPath = parentPath;
-      const parentIdsPath = readAttributeArray(activeSpan, SPAN_IDS_PATH);
+      const parentIdsPath = readStringArrayAttribute(activeSpan, SPAN_IDS_PATH);
       if (parentIdsPath) created.outerSpanIdsPath = parentIdsPath;
     }
   }
@@ -489,6 +462,10 @@ const finalizeCompanion = (
     }
   }
 };
+
+// ────────────────────────────────────────────────────────────────────────
+// Internal: end-time attribute application
+// ────────────────────────────────────────────────────────────────────────
 
 const applyEndAttributes = (
   span: BraintrustSpanLike,
@@ -622,40 +599,9 @@ const applyLlmAttributes = (
   }
 };
 
-// Braintrust's openai plugin logs `output = result.choices` (an array of
-// `{ index, message: { role, content, tool_calls }, finish_reason }`). Pull
-// out the first choice's message content + tool calls to surface in Laminar's
-// AI SDK message renderer.
-const extractAssistantFromOutput = (
-  output: unknown,
-): { responseText?: string; toolCallsStr?: string } => {
-  if (!Array.isArray(output) || output.length === 0) return {};
-  const first = output[0] as Record<string, unknown> | undefined;
-  if (!first || typeof first !== "object") return {};
-  const message = first.message as Record<string, unknown> | undefined;
-  if (!message || typeof message !== "object") return {};
-  const content = message.content;
-  const toolCalls = message.tool_calls;
-  const result: { responseText?: string; toolCallsStr?: string } = {};
-  if (typeof content === "string" && content.length > 0) {
-    result.responseText = content;
-  }
-  if (Array.isArray(toolCalls) && toolCalls.length > 0) {
-    const normalized = (toolCalls as Array<Record<string, unknown>>).map(
-      (tc) => {
-        const fn = tc.function as Record<string, unknown> | undefined;
-        return {
-          toolCallType: "function",
-          toolCallId: tc.id,
-          toolName: fn?.name,
-          args: typeof fn?.arguments === "string" ? fn.arguments : serializeJSON(fn?.arguments),
-        };
-      },
-    );
-    result.toolCallsStr = JSON.stringify(normalized);
-  }
-  return result;
-};
+// ────────────────────────────────────────────────────────────────────────
+// Internal: logging
+// ────────────────────────────────────────────────────────────────────────
 
 let warnedNotInitialized = false;
 const warnNotInitializedOnce = (): void => {
@@ -667,12 +613,4 @@ const warnNotInitializedOnce = (): void => {
       "`Laminar.initialize({ projectApiKey: ... })` before calling " +
       "`Laminar.wrapBraintrust(...)`.",
   );
-};
-
-// For tests: clear module-level state so a new `wrapBraintrust` call on a
-// fresh tracer provider starts from zero. Not exported from the public
-// surface — kept on the internal bridge module.
-export const _resetBraintrustBridgeForTests = (): void => {
-  rootStateByRootSpanId.clear();
-  warnedNotInitialized = false;
 };
