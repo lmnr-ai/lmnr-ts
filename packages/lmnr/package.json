@@ -116,6 +116,7 @@
     "playwright": "^1.59.1",
     "puppeteer": "^24.43.0",
     "puppeteer-core": "^24.43.0",
-    "undici-types": "^8.0.2"
+    "undici-types": "^8.0.2",
+    "unrun": "^0.3.0"
   }
 }
