@@ -204,13 +204,25 @@ void describe("Braintrust bridge", () => {
     assert.strictEqual(s.attributes[LaminarAttributes.INPUT_TOKEN_COUNT], 7);
     assert.strictEqual(s.attributes[LaminarAttributes.OUTPUT_TOKEN_COUNT], 3);
     assert.strictEqual(s.attributes[LaminarAttributes.TOTAL_TOKEN_COUNT], 10);
-    assert.strictEqual(s.attributes["ai.response.text"], "pong");
-    // Messages array should be on ai.prompt.messages for the LLM renderer.
-    const prompt = JSON.parse(s.attributes["ai.prompt.messages"] as string);
-    assert.strictEqual(prompt[0].role, "user");
+
+    // Input/output follow OTel GenAI semconv: `{role, parts: [{type, ...}]}`.
+    const input = JSON.parse(s.attributes["gen_ai.input.messages"] as string);
+    assert.strictEqual(input.length, 1);
+    assert.strictEqual(input[0].role, "user");
+    assert.deepStrictEqual(input[0].parts, [
+      { type: "text", content: "ping" },
+    ]);
+
+    const output = JSON.parse(s.attributes["gen_ai.output.messages"] as string);
+    assert.strictEqual(output.length, 1);
+    assert.strictEqual(output[0].role, "assistant");
+    assert.strictEqual(output[0].finish_reason, "stop");
+    assert.deepStrictEqual(output[0].parts, [
+      { type: "text", content: "pong" },
+    ]);
   });
 
-  void it("emits ai.response.toolCalls for tool-calling outputs", () => {
+  void it("emits tool_call parts in gen_ai.output.messages", () => {
     const SpanImpl = makeFakeSpanImpl();
     installBraintrustBridge({ SpanImpl });
 
@@ -246,12 +258,20 @@ void describe("Braintrust bridge", () => {
 
     const spans = onlyBraintrustSpans(exporter);
     assert.strictEqual(spans.length, 1);
-    const toolCalls = JSON.parse(
-      spans[0].attributes["ai.response.toolCalls"] as string,
+    const output = JSON.parse(
+      spans[0].attributes["gen_ai.output.messages"] as string,
     );
-    assert.strictEqual(toolCalls[0].toolName, "get_weather");
-    assert.strictEqual(toolCalls[0].toolCallId, "call_abc");
-    assert.strictEqual(toolCalls[0].args, '{"city":"NYC"}');
+    assert.strictEqual(output.length, 1);
+    assert.strictEqual(output[0].role, "assistant");
+    assert.strictEqual(output[0].finish_reason, "tool_calls");
+    const toolCallPart = output[0].parts.find(
+      (p: { type: string }) => p.type === "tool_call",
+    );
+    assert.ok(toolCallPart);
+    assert.strictEqual(toolCallPart.id, "call_abc");
+    assert.strictEqual(toolCallPart.name, "get_weather");
+    // Arguments should be JSON-parsed into a structured object.
+    assert.deepStrictEqual(toolCallPart.arguments, { city: "NYC" });
   });
 
   void it("maps type='tool' to TOOL span with ai.toolCall.name", () => {

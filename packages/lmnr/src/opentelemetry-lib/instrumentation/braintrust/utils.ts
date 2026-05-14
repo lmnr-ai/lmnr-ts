@@ -247,40 +247,123 @@ export const braintrustToOtelSpanId = (bt: string): string =>
 export const braintrustToOtelTraceId = (bt: string): string =>
   normalizeOtelTraceId(hashToHex(bt, 32));
 
-// Braintrust's openai plugin logs `output = result.choices` (an array of
-// `{ index, message: { role, content, tool_calls }, finish_reason }`). Pull
-// out the first choice's message content + tool calls to surface in Laminar's
-// AI SDK message renderer.
-export const extractAssistantFromOutput = (
-  output: unknown,
-): { responseText?: string; toolCallsStr?: string } => {
-  if (!Array.isArray(output) || output.length === 0) return {};
-  const first = output[0] as Record<string, unknown> | undefined;
-  if (!first || typeof first !== "object") return {};
-  const message = first.message as Record<string, unknown> | undefined;
-  if (!message || typeof message !== "object") return {};
-  const content = message.content;
-  const toolCalls = message.tool_calls;
-  const result: { responseText?: string; toolCallsStr?: string } = {};
+// OTel GenAI semconv part type — `{type: "text"|"thinking"|"tool_call"|
+// "tool_call_response", ...}`. The backend (`app-server/src/traces/spans.rs`)
+// preserves these verbatim and the frontend parser in
+// `frontend/lib/spans/types/gen-ai.ts` maps each part to the appropriate
+// ModelMessage shape.
+export interface GenAIPart {
+  type: "text" | "thinking" | "tool_call" | "tool_call_response";
+  content?: string;
+  id?: string;
+  name?: string;
+  arguments?: unknown;
+  result?: unknown;
+}
+
+export interface GenAIMessage {
+  role: string;
+  parts: GenAIPart[];
+  finish_reason?: string;
+}
+
+// Parse OpenAI's tool-call `function.arguments` — which is always a JSON string
+// — into its structured form so it lands as an object under `arguments` rather
+// than a stringified blob. Leave non-JSON-parseable values as strings so the
+// backend still has something to render.
+const parseJsonOrRaw = (value: unknown): unknown => {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+};
+
+// Convert a single Braintrust-shaped OpenAI ChatCompletion message (including
+// tool-result messages: `{role: "tool", tool_call_id, content}`) into a GenAI
+// semconv `{role, parts}` entry. Returns null if the input isn't object-shaped.
+const chatMessageToGenAI = (msg: unknown): GenAIMessage | null => {
+  if (!msg || typeof msg !== "object") return null;
+  const m = msg as Record<string, unknown>;
+  const role = typeof m.role === "string" ? m.role : "user";
+  const parts: GenAIPart[] = [];
+
+  if (role === "tool") {
+    const id = typeof m.tool_call_id === "string" ? m.tool_call_id : undefined;
+    parts.push({
+      type: "tool_call_response",
+      id,
+      result: parseJsonOrRaw(m.content),
+    });
+    return { role, parts };
+  }
+
+  const content = m.content;
   if (typeof content === "string" && content.length > 0) {
-    result.responseText = content;
+    parts.push({ type: "text", content });
+  } else if (Array.isArray(content)) {
+    // OpenAI multimodal content is an array of `{type: "text"|"image_url"|...}`;
+    // the only one we can round-trip into GenAI semconv without an ontology is
+    // text. Non-text parts become a stringified fallback text part so nothing is
+    // silently lost.
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      const p = part as Record<string, unknown>;
+      if (p.type === "text" && typeof p.text === "string") {
+        parts.push({ type: "text", content: p.text });
+      } else {
+        parts.push({ type: "text", content: serializeJSON(p) });
+      }
+    }
   }
-  if (Array.isArray(toolCalls) && toolCalls.length > 0) {
-    const normalized = (toolCalls as Array<Record<string, unknown>>).map(
-      (tc) => {
-        const fn = tc.function as Record<string, unknown> | undefined;
-        return {
-          toolCallType: "function",
-          toolCallId: tc.id,
-          toolName: fn?.name,
-          args:
-            typeof fn?.arguments === "string"
-              ? fn.arguments
-              : serializeJSON(fn?.arguments),
-        };
-      },
-    );
-    result.toolCallsStr = JSON.stringify(normalized);
+
+  const toolCalls = m.tool_calls;
+  if (Array.isArray(toolCalls)) {
+    for (const tc of toolCalls as Array<Record<string, unknown>>) {
+      const fn = tc.function as Record<string, unknown> | undefined;
+      parts.push({
+        type: "tool_call",
+        id: typeof tc.id === "string" ? tc.id : undefined,
+        name: typeof fn?.name === "string" ? fn.name : undefined,
+        arguments: parseJsonOrRaw(fn?.arguments),
+      });
+    }
   }
-  return result;
+
+  return { role, parts };
+};
+
+// Braintrust's OpenAI plugin passes `input` = the full messages array exactly
+// as the user sent it to `openai.chat.completions.create` (see `extractInput`
+// in `braintrust/dist/index.mjs` openai plugin: `const { messages, ...rest }`).
+// Anthropic / AI SDK plugins follow similar message-array shapes.
+export const inputMessagesToGenAI = (input: unknown): GenAIMessage[] => {
+  if (!Array.isArray(input)) return [];
+  const out: GenAIMessage[] = [];
+  for (const msg of input) {
+    const converted = chatMessageToGenAI(msg);
+    if (converted) out.push(converted);
+  }
+  return out;
+};
+
+// Braintrust's OpenAI plugin logs `output = result.choices` — an array of
+// `{index, message: {role, content, tool_calls}, finish_reason}`. Collapse the
+// choices into the assistant-side GenAI messages array; most plugins only have
+// one choice, but we preserve all of them for parity.
+export const outputChoicesToGenAI = (output: unknown): GenAIMessage[] => {
+  if (!Array.isArray(output)) return [];
+  const out: GenAIMessage[] = [];
+  for (const choice of output) {
+    if (!choice || typeof choice !== "object") continue;
+    const c = choice as Record<string, unknown>;
+    const converted = chatMessageToGenAI(c.message);
+    if (!converted) continue;
+    if (typeof c.finish_reason === "string") {
+      converted.finish_reason = c.finish_reason;
+    }
+    out.push(converted);
+  }
+  return out;
 };

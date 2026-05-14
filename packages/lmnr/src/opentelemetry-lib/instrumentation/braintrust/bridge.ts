@@ -44,12 +44,13 @@ import {
 import {
   braintrustToOtelSpanId,
   braintrustToOtelTraceId,
-  extractAssistantFromOutput,
   extractLlmMetadata,
   extractSpanName,
   formatMetrics,
+  inputMessagesToGenAI,
   mapBraintrustSpanType,
   mergeLogPartial,
+  outputChoicesToGenAI,
   readStringArrayAttribute,
   serializeJSON,
   toAttributeValue,
@@ -575,27 +576,23 @@ const applyLlmAttributes = (
   // Braintrust OpenAI plugin passes `input` = the messages array (see
   // `extractInput` in openai-plugin.ts: `const { messages, ...metadata }`);
   // output = `result.choices`. Anthropic / AI SDK follow similar shapes.
-  // Emit both the legacy Laminar generic input/output AND the AI SDK
-  // semconv attributes Laminar's LLM renderer prefers.
+  // Emit OTel GenAI semconv attributes (`gen_ai.input.messages` /
+  // `gen_ai.output.messages`) as the single LLM message surface — Laminar's
+  // backend preserves them verbatim and the frontend parser renders them.
   if (accumulated.input !== undefined) {
-    const inputStr = serializeJSON(accumulated.input);
-    attrs[SPAN_INPUT] = inputStr;
-    if (
-      Array.isArray(accumulated.input) &&
-      accumulated.input.every((m) => m && typeof m === "object")
-    ) {
-      attrs["ai.prompt.messages"] = inputStr;
+    attrs[SPAN_INPUT] = serializeJSON(accumulated.input);
+    const genaiInput = inputMessagesToGenAI(accumulated.input);
+    if (genaiInput.length > 0) {
+      attrs["gen_ai.input.messages"] = JSON.stringify(genaiInput);
     }
   }
 
   if (accumulated.output !== undefined) {
-    const outputStr = serializeJSON(accumulated.output);
-    attrs[SPAN_OUTPUT] = outputStr;
-    const { responseText, toolCallsStr } = extractAssistantFromOutput(
-      accumulated.output,
-    );
-    if (responseText) attrs["ai.response.text"] = responseText;
-    if (toolCallsStr) attrs["ai.response.toolCalls"] = toolCallsStr;
+    attrs[SPAN_OUTPUT] = serializeJSON(accumulated.output);
+    const genaiOutput = outputChoicesToGenAI(accumulated.output);
+    if (genaiOutput.length > 0) {
+      attrs["gen_ai.output.messages"] = JSON.stringify(genaiOutput);
+    }
   }
 };
 
