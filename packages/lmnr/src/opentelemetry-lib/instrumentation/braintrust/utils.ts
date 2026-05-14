@@ -111,8 +111,13 @@ export const formatMetrics = (
 
 export const serializeJSON = (value: unknown): string => {
   if (typeof value === "string") return value;
+  // `JSON.stringify` returns the primitive `undefined` for `undefined`
+  // and for bare functions — we must return a string unconditionally, so
+  // fall back to the empty string for those cases.
+  if (value === undefined || typeof value === "function") return "";
   try {
-    return JSON.stringify(value);
+    const out = JSON.stringify(value);
+    return out ?? "";
   } catch {
     return "[unserializable]";
   }
