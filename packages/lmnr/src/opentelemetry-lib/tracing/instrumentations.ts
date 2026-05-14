@@ -2,7 +2,6 @@ import { LaminarClient } from "@lmnr-ai/client";
 import { SessionRecordingOptions } from "@lmnr-ai/types";
 import { Instrumentation } from "@opentelemetry/instrumentation";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
-import { AzureOpenAIInstrumentation } from "@traceloop/instrumentation-azure";
 import { BedrockInstrumentation } from "@traceloop/instrumentation-bedrock";
 import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
 import { CohereInstrumentation } from "@traceloop/instrumentation-cohere";
@@ -156,12 +155,6 @@ const initInstrumentations = (
   );
 
   instrumentations.push(
-    new AzureOpenAIInstrumentation({
-      traceContent: !suppressContentTracing,
-    }),
-  );
-
-  instrumentations.push(
     new CohereInstrumentation({
       traceContent: !suppressContentTracing,
     }),
@@ -295,12 +288,8 @@ const manuallyInitInstrumentations = (
   }
 
   if (instrumentModules?.azureOpenAI) {
-    const azureOpenAIInstrumentation = new AzureOpenAIInstrumentation({
-      traceContent: !suppressContentTracing,
-    });
-    instrumentations.push(azureOpenAIInstrumentation);
-    azureOpenAIInstrumentation.manuallyInstrument(
-      instrumentModules.azureOpenAI,
+    logger.warn(
+      "Azure OpenAI instrumentation is no longer supported. Not enabling any instrumentation.",
     );
   }
 
