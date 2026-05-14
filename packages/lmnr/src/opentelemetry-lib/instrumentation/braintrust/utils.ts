@@ -1,12 +1,15 @@
-import { AttributeValue, HrTime, Span } from "@opentelemetry/api";
+import { HrTime, Span } from "@opentelemetry/api";
 
 import { normalizeOtelSpanId, normalizeOtelTraceId } from "../../../utils";
 import { LaminarAttributes } from "../../tracing/attributes";
 import { LaminarSpanType } from "../mastra/types";
+import { serializeJSON, toAttributeValue } from "../shared/serialization";
 import {
   BraintrustLogPartial,
   BraintrustSpanAttributes,
 } from "./types";
+
+export { serializeJSON, toAttributeValue };
 
 // Braintrust represents timestamps as fractional unix seconds (see
 // `getCurrentUnixTimestamp` in braintrust/dist/index.mjs — `Date.now() / 1000`).
@@ -108,45 +111,6 @@ export const formatMetrics = (
   }
 
   return out;
-};
-
-export const serializeJSON = (value: unknown): string => {
-  if (typeof value === "string") return value;
-  // `JSON.stringify` returns the primitive `undefined` for `undefined`
-  // and for bare functions — we must return a string unconditionally, so
-  // fall back to the empty string for those cases.
-  if (value === undefined || typeof value === "function") return "";
-  try {
-    const out = JSON.stringify(value);
-    return out ?? "";
-  } catch {
-    return "[unserializable]";
-  }
-};
-
-export const toAttributeValue = (
-  value: unknown,
-): AttributeValue | undefined => {
-  if (value === undefined || value === null) return undefined;
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    if (value.every((v) => typeof v === "string")) {
-      return value;
-    }
-    if (value.every((v) => typeof v === "number")) {
-      return value;
-    }
-    if (value.every((v) => typeof v === "boolean")) {
-      return value;
-    }
-  }
-  return serializeJSON(value);
 };
 
 // Merge a partial log into an accumulator. Braintrust's `logInternal` writes
