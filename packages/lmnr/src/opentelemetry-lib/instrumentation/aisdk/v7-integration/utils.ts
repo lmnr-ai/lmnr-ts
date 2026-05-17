@@ -1,15 +1,9 @@
 import type { HrTime, Span } from "@opentelemetry/api";
 
 import { LaminarAttributes } from "../../../tracing/attributes";
+import { serializeJSON } from "../../shared/serialization";
 
-export const serializeJSON = (value: unknown): string => {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return "[unserializable]";
-  }
-};
+export { serializeJSON };
 
 export const normalizeProvider = (
   provider: string | undefined,
