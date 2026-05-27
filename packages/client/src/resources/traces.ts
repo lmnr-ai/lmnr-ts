@@ -10,14 +10,16 @@ export class TracesResource extends BaseResource {
   }
 
   /**
-   * Merge a metadata patch onto an existing trace.
+   * Push a metadata patch to an existing trace.
    *
-   * The patch is shallow-merged into the trace's existing metadata server-side
+   * The patch is shallow-merged server-side into the trace's existing metadata
    * (`existing || patch`, last-write-wins per top-level key). Useful for
    * attaching post-factum signals — quality scores, human edits, triage labels —
-   * to a trace that has already finished. The patch does NOT extend `endTime`,
-   * increment `numSpans`, or otherwise touch trace stats; it also does not add
-   * a span to the trace.
+   * to a trace that has already finished. The patch does NOT extend `endTime`
+   * or change tokens / cost / top span / tags / span names. `numSpans` is
+   * incremented by 1 (paid by the virtual span that carried the patch through
+   * the ingestion queue) so the new ClickHouse row beats the prior version on
+   * `ReplacingMergeTree(numSpans)`. No row is added to the `spans` table.
    *
    * Compared to `Laminar.setTraceMetadata` (which sets metadata on the
    * currently in-flight trace via OpenTelemetry attributes), this method
@@ -28,7 +30,7 @@ export class TracesResource extends BaseResource {
    * it has not been flushed yet) is silently swallowed; any other non-OK
    * status throws.
    *
-   * @param traceId - The trace id to merge metadata onto. Accepts a UUID string
+   * @param traceId - The trace id to push metadata to. Accepts a UUID string
    *   or a 32-char OTel hex trace id.
    * @param metadata - The metadata patch. Top-level keys are merged into the
    *   trace's existing metadata. Must be non-empty (the server rejects empty
@@ -46,7 +48,7 @@ export class TracesResource extends BaseResource {
    * await Laminar.flush();
    *
    * if (traceId) {
-   *   await client.traces.mergeMetadata(traceId, {
+   *   await client.traces.pushMetadata(traceId, {
    *     score: 0.85,
    *     reviewer: "alice",
    *     needsReview: false,
@@ -54,7 +56,7 @@ export class TracesResource extends BaseResource {
    * }
    * ```
    */
-  public async mergeMetadata(
+  public async pushMetadata(
     traceId: string,
     metadata: Record<string, unknown>,
   ): Promise<void> {

@@ -21,7 +21,7 @@ void describe("TracesResource Client Methods", () => {
     nock.cleanAll();
   });
 
-  void describe("mergeMetadata", () => {
+  void describe("pushMetadata", () => {
     void it("POSTs to /v1/traces/metadata with the formatted UUID", async () => {
       const traceId = "12345678-1234-5678-9abc-123456789abc";
       const metadata = { score: 0.85, reviewer: "alice" };
@@ -30,7 +30,7 @@ void describe("TracesResource Client Methods", () => {
         .post("/v1/traces/metadata", { traceId, metadata })
         .reply(200);
 
-      await client.traces.mergeMetadata(traceId, metadata);
+      await client.traces.pushMetadata(traceId, metadata);
       scope.done();
     });
 
@@ -43,7 +43,7 @@ void describe("TracesResource Client Methods", () => {
         .post("/v1/traces/metadata", { traceId: expectedUuid, metadata: { k: "v" } })
         .reply(200);
 
-      await client.traces.mergeMetadata(otelHex, { k: "v" });
+      await client.traces.pushMetadata(otelHex, { k: "v" });
       scope.done();
     });
 
@@ -54,7 +54,7 @@ void describe("TracesResource Client Methods", () => {
         .reply(404, "Trace not found");
 
       // No throw — that's the contract.
-      await client.traces.mergeMetadata(traceId, { k: "v" });
+      await client.traces.pushMetadata(traceId, { k: "v" });
       scope.done();
     });
 
@@ -65,7 +65,7 @@ void describe("TracesResource Client Methods", () => {
         .reply(500, "Internal");
 
       await assert.rejects(
-        () => client.traces.mergeMetadata(traceId, { k: "v" }),
+        () => client.traces.pushMetadata(traceId, { k: "v" }),
         /500/,
       );
       scope.done();
@@ -75,7 +75,7 @@ void describe("TracesResource Client Methods", () => {
       const traceId = "12345678-1234-5678-9abc-123456789abc";
       // No nock interceptor — the call must short-circuit before fetch.
       await assert.rejects(
-        () => client.traces.mergeMetadata(traceId, {}),
+        () => client.traces.pushMetadata(traceId, {}),
         /non-empty/,
       );
     });
