@@ -5,6 +5,7 @@ import { EvaluatorsResource } from "./resources/evaluators";
 import { RolloutSessionsResource } from "./resources/rollout-sessions";
 import { SqlResource } from "./resources/sql";
 import { TagsResource } from "./resources/tags";
+import { TracesResource } from "./resources/traces";
 import { loadEnv } from "./utils";
 
 export class LaminarClient {
@@ -17,6 +18,7 @@ export class LaminarClient {
   private _rolloutSessions: RolloutSessionsResource;
   private _sql: SqlResource;
   private _tags: TagsResource;
+  private _traces: TracesResource;
 
   constructor({
     baseUrl,
@@ -43,6 +45,7 @@ export class LaminarClient {
     this._rolloutSessions = new RolloutSessionsResource(this.baseUrl, this.projectApiKey);
     this._sql = new SqlResource(this.baseUrl, this.projectApiKey);
     this._tags = new TagsResource(this.baseUrl, this.projectApiKey);
+    this._traces = new TracesResource(this.baseUrl, this.projectApiKey);
   }
 
   public get browserEvents() {
@@ -71,5 +74,9 @@ export class LaminarClient {
 
   public get tags() {
     return this._tags;
+  }
+
+  public get traces() {
+    return this._traces;
   }
 }
