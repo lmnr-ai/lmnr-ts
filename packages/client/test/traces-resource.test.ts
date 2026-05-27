@@ -47,13 +47,14 @@ void describe("TracesResource Client Methods", () => {
       scope.done();
     });
 
-    void it("silently swallows 404 (trace not flushed yet)", async () => {
+    void it("does not throw on 404 (trace not flushed yet) — logs a warning", async () => {
       const traceId = "12345678-1234-5678-9abc-123456789abc";
       const scope = nock(baseUrl)
         .post("/v1/traces/metadata")
         .reply(404, "Trace not found");
 
-      // No throw — that's the contract.
+      // No throw — that's the contract. The warn line is emitted via the
+      // lib-wide pino logger; we don't intercept it here.
       await client.traces.pushMetadata(traceId, { k: "v" });
       scope.done();
     });

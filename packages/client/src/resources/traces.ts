@@ -1,7 +1,9 @@
 /** Resource for post-factum operations on existing traces. */
 
-import { isStringUUID, otelTraceIdToUUID } from "../utils";
+import { initializeLogger, isStringUUID, otelTraceIdToUUID } from "../utils";
 import { BaseResource } from "./index";
+
+const logger = initializeLogger();
 
 export class TracesResource extends BaseResource {
   /** Resource for post-factum operations on existing traces. */
@@ -27,8 +29,8 @@ export class TracesResource extends BaseResource {
    * trace has been flushed.
    *
    * A 404 response (the trace was not found in the project — typically because
-   * it has not been flushed yet) is silently swallowed; any other non-OK
-   * status throws.
+   * it has not been flushed yet) is logged as a warning and the call returns
+   * without throwing; any other non-OK status throws.
    *
    * @param traceId - The trace id to push metadata to. Accepts a UUID string
    *   or a 32-char OTel hex trace id.
@@ -79,7 +81,12 @@ export class TracesResource extends BaseResource {
     });
 
     if (response.status === 404) {
-      // Trace not found — likely not flushed yet. Don't throw.
+      // Trace not found in this project — likely not flushed yet. Don't throw,
+      // but surface a warning so callers debugging an empty patch see it.
+      logger.warn(
+        `Trace ${formattedTraceId} not found. The trace may not have been ` +
+          "flushed yet — call await Laminar.flush() and retry.",
+      );
       return;
     }
 
