@@ -1,6 +1,7 @@
 import { HrTime } from "@opentelemetry/api";
 
 import { LaminarAttributes } from "../../tracing/attributes";
+import { serializeJSON, toAttributeValue } from "../shared/serialization";
 import {
   AISdkContentPart,
   AISdkMessage,
@@ -9,6 +10,8 @@ import {
   MastraSpanType,
   MastraUsageStats,
 } from "./types";
+
+export { serializeJSON, toAttributeValue };
 
 export const dateToHrTime = (date: Date): HrTime => {
   const ms = date.getTime();
@@ -34,35 +37,6 @@ export const mapLaminarSpanType = (spanType: string): LaminarSpanType => {
     default:
       return "DEFAULT";
   }
-};
-
-export const serializeJSON = (value: unknown): string => {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return "[unserializable]";
-  }
-};
-
-type AttrPrimitive = string | number | boolean;
-export const toAttributeValue = (
-  value: unknown,
-): AttrPrimitive | AttrPrimitive[] | undefined => {
-  if (value === undefined || value === null) return undefined;
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    if (value.every((v) => typeof v === "string")) return value;
-    if (value.every((v) => typeof v === "number")) return value;
-    if (value.every((v) => typeof v === "boolean")) return value;
-  }
-  return serializeJSON(value);
 };
 
 export const extractMessages = (input: unknown): unknown[] | undefined => {

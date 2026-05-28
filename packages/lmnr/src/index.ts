@@ -26,6 +26,10 @@ export {
   type LaminarAiSdkTelemetryOptions,
   registerAiSdkTelemetry,
 } from "./opentelemetry-lib/instrumentation/aisdk/v7-integration/index";
+export {
+  type BraintrustBridgeOptions,
+  installBraintrustBridge,
+} from "./opentelemetry-lib/instrumentation/braintrust";
 export { instrumentClaudeAgentQuery } from "./opentelemetry-lib/instrumentation/claude-agent-sdk";
 export {
   MastraExporter,
