@@ -185,6 +185,60 @@ void describe('DebugRuntime', () => {
     assert.strictEqual(first.runtime, getRuntime());
   });
 
+  void it('idempotent init returns the in-flight ready promise', async () => {
+    // A second init while the first call's cache is still loading must return
+    // the same in-flight build promise, not an already-settled Promise.resolve()
+    // — otherwise a caller awaiting the second `ready` runs before setCache.
+    process.env.LMNR_DEBUG = 'true';
+    process.env.LMNR_DEBUG_REPLAY_TRACE_ID = 'trace-1';
+    process.env.LMNR_DEBUG_CACHE_UNTIL = '2';
+
+    const metadata = [
+      { path: 'agent.loop.llm', span_type: 'LLM', start_time: 1.0, end_time: 1.5 },
+      { path: 'agent.loop.llm', span_type: 'LLM', start_time: 2.0, end_time: 2.5 },
+    ];
+    const payloads = [
+      { name: 'chat', input: 'a', output: '0', attributes: {} },
+      { name: 'chat', input: 'b', output: '1', attributes: {} },
+    ];
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    class DeferredSql implements SqlQuery {
+      private metadataRows = metadata;
+      private payloadRows = payloads;
+      async query(sql: string): Promise<Array<Record<string, any>>> {
+        await gate;
+        if (sql.includes('span_type, start_time')) {
+          const rows = this.metadataRows;
+          this.metadataRows = [];
+          return rows;
+        }
+        const rows = this.payloadRows;
+        this.payloadRows = [];
+        return rows;
+      }
+    }
+
+    const first = initDebugRuntime(new DeferredSql(), 'https://www.lmnr.ai');
+    // Second init happens while the first build is still gated (not settled).
+    const second = initDebugRuntime({} as SqlQuery);
+    assert.strictEqual(first.runtime, second.runtime);
+    assert.notStrictEqual(second.ready, Promise.resolve());
+
+    release();
+    await second.ready;
+    // The cache landed by the time the second `ready` resolved.
+    assert.deepStrictEqual(second.runtime!.getCached('agent.loop.llm'), {
+      name: 'chat',
+      input: 'a',
+      output: '0',
+      attributes: {},
+    });
+  });
+
   void it('reset allows reinit to re-read env', () => {
     // A shutdown/initialize cycle must re-read LMNR_DEBUG*: reset clears the
     // one-shot flag so a previously-off run can turn debug on (and vice versa).

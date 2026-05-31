@@ -116,6 +116,11 @@ export class DebugRuntime {
 
 let runtime: DebugRuntime | null = null;
 let initialized = false;
+// The in-flight cache-build promise from the first `initDebugRuntime` call.
+// Returned from the idempotent branch so a second caller awaits the same build
+// instead of an already-settled `Promise.resolve()` (which would let replay
+// lookups run before `setCache` completes).
+let readyPromise: Promise<void> = Promise.resolve();
 
 /** Return the process-wide debug runtime, or null when debug mode is off. */
 export const getRuntime = (): DebugRuntime | null => runtime;
@@ -140,7 +145,7 @@ export const initDebugRuntime = (
   debuggerUrl: string | null = null,
 ): { runtime: DebugRuntime | null; ready: Promise<void> } => {
   if (initialized) {
-    return { runtime, ready: Promise.resolve() };
+    return { runtime, ready: readyPromise };
   }
   initialized = true;
 
@@ -156,7 +161,7 @@ export const initDebugRuntime = (
     return { runtime: built, ready: Promise.resolve() };
   }
 
-  const ready = buildCache(client, config)
+  readyPromise = buildCache(client, config)
     .then((cache) => {
       built.setCache(cache);
     })
@@ -167,7 +172,7 @@ export const initDebugRuntime = (
       );
     });
 
-  return { runtime: built, ready };
+  return { runtime: built, ready: readyPromise };
 };
 
 /**
@@ -182,6 +187,7 @@ export const initDebugRuntime = (
 export const resetDebugRuntime = (): void => {
   runtime = null;
   initialized = false;
+  readyPromise = Promise.resolve();
 };
 
 const buildCache = async (
