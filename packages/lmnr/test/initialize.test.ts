@@ -83,7 +83,10 @@ void describe("initialize", () => {
     const pointerLine = lines.find((l) => l.startsWith("LMNR_DEBUG_RUN "));
     assert.ok(pointerLine !== undefined);
     const payload = JSON.parse(pointerLine.slice("LMNR_DEBUG_RUN ".length));
-    assert.strictEqual(payload.trace_id, "01234567-89ab-cdef-0123-456789abcdef");
+    assert.strictEqual(
+      payload.trace_id,
+      "01234567-89ab-cdef-0123-456789abcdef",
+    );
   });
 
   void it("does not leak exit listeners across init/shutdown cycles", async () => {
