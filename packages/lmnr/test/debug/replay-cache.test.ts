@@ -14,8 +14,7 @@ void describe('ReplayCache', () => {
 
     const seen: (CachedSpan | undefined)[] = [];
     for (let i = 0; i < 3; i++) {
-      const occ = cache.nextOccurrence('loop.llm');
-      seen.push(cache.getCached('loop.llm', occ));
+      seen.push(cache.getCached('loop.llm', i));
     }
 
     assert.deepStrictEqual(seen, [
@@ -23,15 +22,6 @@ void describe('ReplayCache', () => {
       { output: 'resp-1' },
       { output: 'resp-2' },
     ]);
-  });
-
-  void it('occurrence counter increments per path', () => {
-    const cache = new ReplayCache('loop.llm', 2, payloads(2));
-    assert.strictEqual(cache.nextOccurrence('loop.llm'), 0);
-    assert.strictEqual(cache.nextOccurrence('loop.llm'), 1);
-    assert.strictEqual(cache.nextOccurrence('loop.llm'), 2);
-    // A different path has its own independent counter.
-    assert.strictEqual(cache.nextOccurrence('other'), 0);
   });
 
   void it('returns undefined for non-spine path', () => {

@@ -114,6 +114,24 @@ void describe('DebugRuntime', () => {
     assert.strictEqual(runtime.getCached('loop.llm'), undefined);
   });
 
+  void it('getCached advances the counter while the cache is loading', () => {
+    // Simulates the async-fill window: calls happen before setCache. The
+    // counter must advance so post-setCache calls resume at the right slot.
+    const runtime = new DebugRuntime(config(), null, null);
+    assert.strictEqual(runtime.getCached('loop.llm'), undefined);
+
+    runtime.setCache(
+      new ReplayCache('loop.llm', 2, [
+        { output: '0' } as unknown as CachedSpan,
+        { output: '1' } as unknown as CachedSpan,
+      ]),
+    );
+
+    // First live call consumed occurrence 0; the cache resumes at 1.
+    assert.deepStrictEqual(runtime.getCached('loop.llm'), { output: '1' });
+    assert.strictEqual(runtime.getCached('loop.llm'), undefined);
+  });
+
   void it('recordTraceId keeps the first trace id', () => {
     const runtime = new DebugRuntime(config(), null, null);
     runtime.recordTraceId('trace-a');

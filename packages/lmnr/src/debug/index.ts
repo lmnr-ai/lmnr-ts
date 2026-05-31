@@ -42,6 +42,7 @@ export class DebugRuntime {
   private readonly _debuggerUrl: string | null;
   private _traceId: string | null = null;
   private _emitted = false;
+  private readonly _counters = new Map<string, number>();
 
   constructor(
     config: DebugConfig,
@@ -77,13 +78,18 @@ export class DebugRuntime {
    * Return the cached payload to replay for the next occurrence, or undefined.
    *
    * Increments the per-path occurrence counter as a side effect, mirroring a
-   * live call consuming one slot of the cache window.
+   * live call consuming one slot of the cache window. The counter is owned by
+   * the runtime (not the cache) so it advances even while the cache is still
+   * loading (`_cache === null`); otherwise spine calls in that window would run
+   * live without consuming a slot and the post-`setCache` calls would replay
+   * cached responses meant for earlier occurrences.
    */
   getCached(spanPath: string): CachedSpan | undefined {
+    const occurrence = this._counters.get(spanPath) ?? 0;
+    this._counters.set(spanPath, occurrence + 1);
     if (this._cache === null) {
       return undefined;
     }
-    const occurrence = this._cache.nextOccurrence(spanPath);
     return this._cache.getCached(spanPath, occurrence);
   }
 
