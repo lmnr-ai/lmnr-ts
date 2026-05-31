@@ -38,7 +38,11 @@ import {
   makeSpanOtelV2Compatible,
   OTelSpanCompat,
 } from "./compat";
-import { ASSOCIATION_PROPERTIES_KEY, CONTEXT_SPAN_PATH_KEY } from "./context";
+import {
+  ASSOCIATION_PROPERTIES_KEY,
+  CONTEXT_SPAN_PATH_KEY,
+  LaminarContextManager,
+} from "./context";
 import { LaminarSpanExporter } from "./exporter";
 
 interface LaminarSpanProcessorOptions {
@@ -197,6 +201,18 @@ export class LaminarSpanProcessor implements SpanProcessor {
     const langVersion = getLangVersion();
     if (langVersion) {
       span.setAttribute(SPAN_LANGUAGE_VERSION, langVersion);
+    }
+
+    // Stamp global metadata (e.g. the debug run's `rollout.session_id`) onto
+    // every span. Unlike association properties, global metadata is not carried
+    // on the OTEL context, so traces built purely from auto-instrumentation
+    // (no observe / startActiveSpan) would otherwise never receive it. The
+    // association-properties block below re-applies the per-span metadata, which
+    // already merges global metadata in (see buildContextProperties), so any
+    // span-level overrides still win.
+    const globalMetadata = LaminarContextManager.getGlobalMetadata();
+    if (globalMetadata && Object.keys(globalMetadata).length > 0) {
+      span.setAttributes(metadataToAttributes(globalMetadata));
     }
 
     // This sets the properties only if the context has them
