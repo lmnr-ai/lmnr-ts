@@ -18,7 +18,7 @@ import {
 import { LaminarClient } from "@lmnr-ai/client";
 import { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 
-import { initDebugRuntime } from "./debug";
+import { getRuntime, initDebugRuntime } from "./debug";
 import {
   InitializeOptions,
   initializeTracing,
@@ -925,6 +925,10 @@ export class Laminar {
   public static async shutdown() {
     if (this.isInitialized) {
       logger.debug("Shutting down Laminar");
+      // Emit the debug run pointer before flushing so flows that shut down
+      // without terminating the process still get LMNR_DEBUG_RUN +
+      // .lmnr/last-run.json. Idempotent — the process-exit hooks are a fallback.
+      getRuntime()?.emitPointer();
       await forceFlush();
       // Unlike Python where asynchronous nature of `BatchSpanProcessor.forceFlush()`
       // forces us to actually use `SpanProcessor.shutdown()` and make any
