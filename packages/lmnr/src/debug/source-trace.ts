@@ -27,11 +27,14 @@ const PAGE_SIZE = 1000;
  * Best-effort conversion of a ClickHouse timestamp to a float epoch (ms).
  *
  * The SQL endpoint returns ISO-8601 strings; fall back to lexical ordering so
- * detection still works even if parsing fails.
+ * detection still works even if parsing fails. `missingDefault` is returned for
+ * a null / omitted value — callers pass `Infinity` for `end_time` so the §F
+ * overlap guard treats an unknown end as overlapping (fail loud, run live)
+ * rather than silently passing as 0.
  */
-export const toEpoch = (value: any): number => {
+export const toEpoch = (value: any, missingDefault = 0): number => {
   if (value === null || value === undefined) {
-    return 0;
+    return missingDefault;
   }
   if (typeof value === "number") {
     return value;
@@ -71,7 +74,7 @@ export const fetchSpineMetadata = async (
         spanPath: row.path || "",
         spanType: String(row.span_type || ""),
         startTime: toEpoch(row.start_time),
-        endTime: toEpoch(row.end_time),
+        endTime: toEpoch(row.end_time, Infinity),
       });
     }
     if (rows.length < PAGE_SIZE) {

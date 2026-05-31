@@ -9,6 +9,7 @@ This is the main `@lmnr-ai/lmnr` SDK package — OpenTelemetry-based tracing for
 - `Laminar.initialize()` is synchronous but the source-trace fetch is async: `initDebugRuntime(client, debuggerUrl)` returns `{ runtime, ready }`. The runtime registers immediately (so `sessionId` is available to stamp `rollout.session_id` on trace metadata) and the cache fills in the background via `runtime.setCache`. In tests, `await ready` before asserting on cached payloads. Any fetch/build failure degrades to debug-no-replay (warn, never throw).
 - Naming: new env/file/module naming is `debug`; the persisted metadata key stays `rollout.session_id` (intentional — do not rename to `debug.session_id`).
 - `source-trace.ts` fetches in two phases over `LaminarClient.sql.query`: phase 1 SELECTs `path, span_type, start_time, end_time` (identify it by the `"span_type, start_time"` substring when faking the SQL client in tests); phase 2 SELECTs payloads for the chosen spine path only.
+- **A missing / null `end_time` maps to `Infinity`, NOT `0`** (`toEpoch(value, missingDefault)` — `Infinity` for `end_time`, default `0` for `start_time`). The §F overlap guard is `cur.startTime < prev.endTime`; collapsing an unknown end to `0` would make that comparison always false and let overlapping spine calls pass the guard, so replay would proceed when it should force a live run. `Infinity` makes an unknown end conservatively overlap. Python `_to_epoch(value, missing_default=inf)` mirrors this — keep both in lockstep.
 
 # Tests
 
