@@ -11,7 +11,7 @@ import {
   DebugRuntime,
   getRuntime,
   initDebugRuntime,
-  resetRuntimeForTesting,
+  resetDebugRuntime,
 } from '../../src/debug/index';
 import { ReplayCache } from '../../src/debug/replay-cache';
 import { SqlQuery } from '../../src/debug/source-trace';
@@ -85,11 +85,11 @@ const withCapturedConsole = (fn: () => void): string[] => {
 
 void describe('DebugRuntime', () => {
   beforeEach(() => {
-    resetRuntimeForTesting();
+    resetDebugRuntime();
     clearDebugEnv();
   });
   afterEach(() => {
-    resetRuntimeForTesting();
+    resetDebugRuntime();
     clearDebugEnv();
     process.cwd = originalCwd;
   });
@@ -166,6 +166,19 @@ void describe('DebugRuntime', () => {
     const second = initDebugRuntime({} as SqlQuery);
     assert.strictEqual(first.runtime, second.runtime);
     assert.strictEqual(first.runtime, getRuntime());
+  });
+
+  void it('reset allows reinit to re-read env', () => {
+    // A shutdown/initialize cycle must re-read LMNR_DEBUG*: reset clears the
+    // one-shot flag so a previously-off run can turn debug on (and vice versa).
+    const off = initDebugRuntime({} as SqlQuery);
+    assert.strictEqual(off.runtime, null);
+
+    resetDebugRuntime();
+    process.env.LMNR_DEBUG = 'true';
+    const on = initDebugRuntime({} as SqlQuery);
+    assert.ok(on.runtime !== null);
+    assert.strictEqual(getRuntime(), on.runtime);
   });
 
   void it('init builds the cache for a looping spine', async () => {

@@ -1,3 +1,4 @@
+import { LaminarClient } from "@lmnr-ai/client";
 import {
   errorMessage,
   type LaminarSpanContext,
@@ -15,10 +16,9 @@ import {
   TimeInput,
   trace,
 } from "@opentelemetry/api";
-import { LaminarClient } from "@lmnr-ai/client";
 import { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 
-import { getRuntime, initDebugRuntime } from "./debug";
+import { getRuntime, initDebugRuntime, resetDebugRuntime } from "./debug";
 import {
   InitializeOptions,
   initializeTracing,
@@ -940,6 +940,9 @@ export class Laminar {
       _resetConfiguration();
       LaminarContextManager.clearContexts();
       LaminarContextManager.clearActiveSpans();
+      // Clear the one-shot debug-runtime state so a subsequent initialize()
+      // re-reads LMNR_DEBUG* instead of resurrecting the previous run.
+      resetDebugRuntime();
 
       // Force release the claude-code proxy if it was started (ignores ref count)
       forceReleaseClaudeProxy();

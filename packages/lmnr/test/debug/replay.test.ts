@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import { Span } from '@opentelemetry/api';
 
-import { initDebugRuntime, resetRuntimeForTesting } from '../../src/debug/index';
+import { initDebugRuntime, resetDebugRuntime } from '../../src/debug/index';
 import {
   cachedPayloadFor,
   markSpanCached,
@@ -71,11 +71,11 @@ const clearDebugEnv = () => {
 
 void describe('debug replay helpers', () => {
   beforeEach(() => {
-    resetRuntimeForTesting();
+    resetDebugRuntime();
     clearDebugEnv();
   });
   afterEach(() => {
-    resetRuntimeForTesting();
+    resetDebugRuntime();
     clearDebugEnv();
   });
 

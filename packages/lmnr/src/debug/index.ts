@@ -166,8 +166,16 @@ export const initDebugRuntime = (
   return { runtime: built, ready };
 };
 
-/** Reset module state. Test-only seam, mirrors Python's `_reset_runtime`. */
-export const resetRuntimeForTesting = (): void => {
+/**
+ * Reset module state so a later `initDebugRuntime` re-reads `LMNR_DEBUG*`.
+ *
+ * Called by `Laminar.shutdown()` (which supports a subsequent `initialize()`)
+ * and by tests. Without this, the one-shot `initialized` flag would pin the
+ * first run's runtime — stale replay cache, session metadata, and a spent
+ * pointer — across a shutdown/initialize cycle. Mirrors Python's
+ * `reset_debug_runtime`.
+ */
+export const resetDebugRuntime = (): void => {
   runtime = null;
   initialized = false;
 };
