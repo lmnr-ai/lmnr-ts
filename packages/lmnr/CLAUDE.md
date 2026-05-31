@@ -1,5 +1,14 @@
 This is the main `@lmnr-ai/lmnr` SDK package — OpenTelemetry-based tracing for the Laminar observability platform.
 
+# Debug mode / replay (`src/debug/`)
+
+- A "debug run" is just a normal process started with `LMNR_DEBUG*` env vars; there is no cache server, SSE, orchestrator, entrypoint flag, or bundling anymore (all removed from `lmnr-cli` + `@lmnr-ai/lmnr`). The replay cache lives in-process.
+- `src/debug/` is a **cross-language parity surface** with Python `src/lmnr/sdk/debug/`. Keep `config.ts`, `spine.ts`, `replay-cache.ts`, `pointer.ts`, `replay.ts`, `source-trace.ts`, `index.ts` line-comparable. The shared test vectors (`test/data/debug/*.json`) are byte-identical copies of `lmnr-python/tests/data/debug/`; change them in lockstep across both repos.
+- Parity invariants that MUST match Python exactly: truthy set `["true","1","yes","on"]`; `replayEnabledForConfig = replayTraceId !== null && cacheUntil > 0`; pointer key order `{trace_id, session_id, replay_trace_id, cache_until, debugger_url, started_at}`; `CONSOLE_PREFIX = "LMNR_DEBUG_RUN "`; spine = shallowest looping path / tie-break earliest start / fallback shallowest single call; `ReplayCache` truncates `payloads.slice(0, cacheUntil)`.
+- `Laminar.initialize()` is synchronous but the source-trace fetch is async: `initDebugRuntime(client, debuggerUrl)` returns `{ runtime, ready }`. The runtime registers immediately (so `sessionId` is available to stamp `rollout.session_id` on trace metadata) and the cache fills in the background via `runtime.setCache`. In tests, `await ready` before asserting on cached payloads. Any fetch/build failure degrades to debug-no-replay (warn, never throw).
+- Naming: new env/file/module naming is `debug`; the persisted metadata key stays `rollout.session_id` (intentional — do not rename to `debug.session_id`).
+- `source-trace.ts` fetches in two phases over `LaminarClient.sql.query`: phase 1 SELECTs `path, span_type, start_time, end_time` (identify it by the `"span_type, start_time"` substring when faking the SQL client in tests); phase 2 SELECTs payloads for the chosen spine path only.
+
 # Tests
 
 - Tests are run with `pnpm test` which invokes `tsx --test test/*.test.ts test/**/*.test.ts`. No Jest, no Vitest.

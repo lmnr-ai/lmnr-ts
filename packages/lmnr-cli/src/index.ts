@@ -10,7 +10,6 @@ import {
   handleDatasetsPull,
   handleDatasetsPush,
 } from "./commands/dataset";
-import { runDev } from "./commands/dev";
 import { handleSqlQuery } from "./commands/sql";
 import { SQL_SCHEMA_HELP } from "./commands/sql/schema";
 
@@ -21,92 +20,6 @@ async function main() {
     .name("lmnr-cli")
     .description("CLI for the Laminar agent observability platform")
     .version(version, "-v, --version", "display version number");
-
-  program
-    .command("dev")
-    .description("Start a debugging session")
-    .argument(
-      "[file]",
-      "Path to file containing the entrypoint function(s). Either `file` or `-m` must be provided.",
-    )
-    .option(
-      "-m, --python-module <module>",
-      "Python module path (e.g., src.myfile). Either `file` or `-m` must be provided.",
-    )
-    .option(
-      "--function <name>",
-      "Specific function to serve (if multiple entrypoint functions found)",
-    )
-    .option(
-      "--project-api-key <key>",
-      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
-    )
-    .option(
-      "--base-url <url>",
-      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
-    )
-    .option(
-      "--port <port>",
-      "Port for the Laminar API. Defaults to 443",
-      (val) => parseInt(val, 10),
-    )
-    .option(
-      "--grpc-port <port>",
-      "Port for the Laminar gRPC backend. Defaults to 8443",
-      (val) => parseInt(val, 10),
-    )
-    .option(
-      "--frontend-port <port>",
-      "Port for the Laminar frontend. Defaults to 5667",
-      (val) => parseInt(val, 10),
-    )
-    .option(
-      "--external-packages <packages...>",
-      "[ADVANCED] List of packages to pass as external to esbuild. This will not link " +
-        "the packages directly into the dev file, but will instead require them at runtime. " +
-        "Read more: https://esbuild.github.io/api/#external",
-    )
-    .option(
-      "--dynamic-imports-to-skip <modules...>",
-      "[ADVANCED] List of module names to skip when encountered as dynamic imports. " +
-        "These dynamic imports will resolve to an empty module to prevent build failures. " +
-        "This is meant to skip the imports that are not used in the entrypoint function itself.",
-    )
-    .option(
-      "--command <command>",
-      "[ADVANCED] Custom command to run the worker (e.g., python3, node)",
-    )
-    .option(
-      "--command-args <args...>",
-      "[ADVANCED] Arguments for the custom command",
-    )
-    .action(async (file: string | undefined, options) => {
-      // Validation: must have either file or python-module, but not both
-      if (!file && !options.pythonModule) {
-        console.error(
-          "Error: Must provide either a file path or --python-module (-m) flag",
-        );
-        process.exit(1);
-      }
-      if (file && options.pythonModule) {
-        console.error(
-          "Error: Cannot specify both file path and --python-module (-m) flag",
-        );
-        process.exit(1);
-      }
-
-      await runDev(file, options);
-    })
-    .addHelpText(
-      "after",
-      `
-Examples:
-  $ lmnr-cli dev agent.ts                    # TypeScript file
-  $ lmnr-cli dev agent.py                    # Python file (script mode)
-  $ lmnr-cli dev -m src.agent                # Python module (module mode)
-  $ lmnr-cli dev agent.ts --function myAgent # Specific function
-`,
-    );
 
   const datasetsCmd = program
     .command("dataset")
@@ -278,9 +191,6 @@ Authentication:
   Get your key at https://www.laminar.sh (Settings > Project API Keys).
 
 Examples:
-  lmnr-cli dev agent.ts                                    # Debugger TypeScript entrypoint
-  lmnr-cli dev agent.py                                    # Debugger Python script mode
-  lmnr-cli dev -m src.agent                                # Debugger Python module mode
   lmnr-cli dataset list --json                             # List all datasets
   lmnr-cli dataset push data.jsonl -n my-dataset --json    # Push data to a dataset
   lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a dataset

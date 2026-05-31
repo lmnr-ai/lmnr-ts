@@ -255,7 +255,6 @@ export const deserializeLaminarSpanContext = (
   const metadata = data.metadata;
   const traceType = data.traceType ?? data.trace_type;
   const tracingLevel = data.tracingLevel ?? data.tracing_level;
-  const rolloutSessionId = data.rolloutSessionId ?? data.rollout_session_id;
 
   if (typeof traceId !== 'string' || typeof spanId !== 'string') {
     throw new Error('Invalid LaminarSpanContext: traceId and spanId must be strings');
@@ -277,7 +276,6 @@ export const deserializeLaminarSpanContext = (
     metadata: metadata as Record<string, unknown> | undefined,
     traceType: traceType as TraceType | undefined,
     tracingLevel: tracingLevel as TracingLevel | undefined,
-    rolloutSessionId: rolloutSessionId as string | undefined,
   };
 };
 

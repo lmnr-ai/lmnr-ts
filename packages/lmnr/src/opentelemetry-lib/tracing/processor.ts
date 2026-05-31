@@ -1,6 +1,4 @@
-import { LaminarClient } from "@lmnr-ai/client";
-import { errorMessage, SpanType } from "@lmnr-ai/types";
-import { AttributeValue, Context, context } from "@opentelemetry/api";
+import { Context, context } from "@opentelemetry/api";
 import {
   BatchSpanProcessor,
   SimpleSpanProcessor,
@@ -10,11 +8,13 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import { Logger } from "pino";
 
+import { getRuntime } from "../../debug";
 import { version as SDK_VERSION } from "../../../package.json";
 import {
   initializeLogger,
   metadataToAttributes,
   otelSpanIdToUUID,
+  otelTraceIdToUUID,
   StringUUID,
 } from "../../utils";
 import { getLangVersion } from "../../version";
@@ -23,7 +23,6 @@ import {
   ASSOCIATION_PROPERTIES_OVERRIDES,
   PARENT_SPAN_IDS_PATH,
   PARENT_SPAN_PATH,
-  ROLLOUT_SESSION_ID,
   SESSION_ID,
   SPAN_IDS_PATH,
   SPAN_INSTRUMENTATION_SOURCE,
@@ -102,7 +101,6 @@ interface LaminarSpanProcessorOptions {
 
 export class LaminarSpanProcessor implements SpanProcessor {
   private instance: BatchSpanProcessor | SimpleSpanProcessor;
-  private client: LaminarClient | undefined;
   private logger: Logger;
   private readonly _spanIdToPath: Map<string, string[]> = new Map();
   private readonly _spanIdLists: Map<string, string[]> = new Map();
@@ -144,14 +142,6 @@ export class LaminarSpanProcessor implements SpanProcessor {
           maxExportBatchSize: options.maxExportBatchSize ?? 512,
           exportTimeoutMillis: options.traceExportTimeoutMillis ?? 30000,
         });
-    }
-
-    if (process.env.LMNR_ROLLOUT_SESSION_ID) {
-      this.client = new LaminarClient({
-        baseUrl: options.baseUrl,
-        projectApiKey: options.apiKey,
-        port: options.httpPort ?? options.port,
-      });
     }
   }
 
@@ -219,9 +209,6 @@ export class LaminarSpanProcessor implements SpanProcessor {
           span.setAttribute(ASSOCIATION_PROPERTIES_OVERRIDES[key], value);
         } else if (key === "tracing_level") {
           span.setAttribute("lmnr.internal.tracing_level", value);
-        } else if (key === "rolloutSessionId") {
-          span.setAttribute(ROLLOUT_SESSION_ID, value);
-          span.setAttribute("lmnr.rollout.session_id", value);
         } else if (
           key === "metadata" &&
           typeof value === "object" &&
@@ -248,29 +235,30 @@ export class LaminarSpanProcessor implements SpanProcessor {
 
     makeSpanOtelV2Compatible(span);
 
-    if (process.env.LMNR_ROLLOUT_SESSION_ID && this.client) {
-      this.client.rolloutSessions
-        .sendSpanUpdate({
-          sessionId: process.env.LMNR_ROLLOUT_SESSION_ID,
-          span: {
-            name: span.name,
-            startTime: new Date(
-              span.startTime[0] * 1000 + span.startTime[1] / 1e6,
-            ).toISOString(),
-            spanId: span.spanContext().spanId,
-            traceId: span.spanContext().traceId,
-            parentSpanId: getParentSpanId(span),
-            attributes: attributesForStartEvent(span.name, span.attributes),
-            spanType: inferSpanType(span.name, span.attributes),
-          },
-        })
-        .catch((error: any) => {
-          this.logger.debug(
-            `Failed to send span update: ${errorMessage(error)}`,
-          );
-        });
+    // On a debug run, remember the root trace id so the run pointer (§5) can be
+    // emitted at shutdown.
+    if (parentSpanId === undefined) {
+      this.recordDebugTraceId(span);
     }
+
     this.instance.onStart(span, parentContext);
+  }
+
+  /**
+   * Record the root trace id on the debug runtime, if this is a debug run.
+   *
+   * No-op when debug mode is off. Best-effort: never break tracing.
+   */
+  private recordDebugTraceId(span: OTelSpanCompat): void {
+    try {
+      const runtime = getRuntime();
+      if (runtime === null) {
+        return;
+      }
+      runtime.recordTraceId(otelTraceIdToUUID(span.spanContext().traceId));
+    } catch (e) {
+      this.logger.debug(`Failed to record debug trace id: ${String(e)}`);
+    }
   }
 
   // type ReadableSpan
@@ -315,68 +303,3 @@ export class LaminarSpanProcessor implements SpanProcessor {
     this._spanIdLists.clear();
   }
 }
-
-const inferSpanType = (
-  name: string,
-  attributes: Record<string, AttributeValue | undefined>,
-): SpanType => {
-  if (attributes[SPAN_TYPE]) {
-    return attributes[SPAN_TYPE] as SpanType;
-  }
-  if (attributes["gen_ai.system"]) {
-    return "LLM";
-  }
-  if (
-    Object.keys(attributes).some(
-      (k) => k.startsWith("gen_ai.") || k.startsWith("llm."),
-    )
-  ) {
-    return "LLM";
-  }
-  if (
-    name === "ai.toolCall" ||
-    attributes["ai.toolCall.id"] ||
-    attributes["ai.toolCall.name"]
-  ) {
-    return "TOOL";
-  }
-  return "DEFAULT";
-};
-
-const attributesForStartEvent = (
-  name: string,
-  attributes: Record<string, AttributeValue | undefined>,
-): Record<string, AttributeValue> => {
-  const keysToKeep = [
-    SPAN_PATH,
-    SPAN_TYPE,
-    SPAN_IDS_PATH,
-    PARENT_SPAN_PATH,
-    PARENT_SPAN_IDS_PATH,
-    SPAN_INSTRUMENTATION_SOURCE,
-    SPAN_SDK_VERSION,
-    SPAN_LANGUAGE_VERSION,
-    "gen_ai.request.model",
-    "gen_ai.response.model",
-    "gen_ai.system",
-    "lmnr.span.original_type",
-    "ai.model.id",
-  ];
-  const newAttributes = Object.fromEntries(
-    Object.entries(attributes).filter(([key]) => keysToKeep.includes(key)),
-  );
-
-  // Common scenario, because we don't have the response model in the start event.
-  // Atrificially set the response model to the request model, just so frontend
-  // can show the model in the UI.
-  if (
-    attributes["gen_ai.request.model"] &&
-    !attributes["gen_ai.response.model"]
-  ) {
-    newAttributes["gen_ai.response.model"] = attributes["gen_ai.request.model"];
-  }
-  return {
-    [SPAN_TYPE]: inferSpanType(name, attributes),
-    ...newAttributes,
-  };
-};

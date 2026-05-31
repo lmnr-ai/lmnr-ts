@@ -15,8 +15,10 @@ import {
   TimeInput,
   trace,
 } from "@opentelemetry/api";
+import { LaminarClient } from "@lmnr-ai/client";
 import { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 
+import { initDebugRuntime } from "./debug";
 import {
   InitializeOptions,
   initializeTracing,
@@ -47,6 +49,7 @@ import { LaminarContextManager } from "./opentelemetry-lib/tracing/context";
 import { LaminarSpan } from "./opentelemetry-lib/tracing/span";
 import {
   deserializeLaminarSpanContext,
+  getFrontendUrl,
   initializeLogger,
   loadEnv,
   metadataToAttributes,
@@ -204,6 +207,7 @@ export class Laminar {
     }
 
     this.globalMetadata = metadata ?? {};
+    this._initDebugRuntime(url, port);
     LaminarContextManager.setGlobalMetadata(this.globalMetadata);
     if (inheritGlobalContext) {
       LaminarContextManager.inheritGlobalContext = true;
@@ -292,6 +296,45 @@ export class Laminar {
       logger.warn(
         "LMNR_SPAN_CONTEXT is set but could not be used: " + errorMessage(e),
       );
+    }
+  }
+
+  /**
+   * Build the in-process debug runtime (§4, §5) when LMNR_DEBUG is set.
+   *
+   * On a debug run the session id from the config is stamped into the global
+   * trace metadata as `rollout.session_id`, and a process-exit hook emits the
+   * run pointer once the root trace id is known. When debug mode is off this is
+   * a no-op and the SDK behaves exactly as before.
+   * @private
+   */
+  private static _initDebugRuntime(
+    baseUrl: string | undefined,
+    httpPort: number | undefined,
+  ): void {
+    try {
+      const client = new LaminarClient({
+        baseUrl,
+        projectApiKey: this.projectApiKey,
+        port: httpPort,
+      });
+      const debuggerUrl =
+        process?.env?.LMNR_FRONTEND_URL ?? getFrontendUrl(baseUrl);
+      const { runtime } = initDebugRuntime(client.sql, debuggerUrl);
+      if (runtime === null) {
+        return;
+      }
+
+      this.globalMetadata = {
+        ...this.globalMetadata,
+        "rollout.session_id": runtime.sessionId,
+      };
+      const emit = () => runtime.emitPointer();
+      process.once("exit", emit);
+      process.once("beforeExit", emit);
+    } catch (e) {
+      // never let debug setup crash initialization
+      logger.warn("Failed to initialize debug runtime: " + errorMessage(e));
     }
   }
 
