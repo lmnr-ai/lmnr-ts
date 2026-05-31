@@ -79,12 +79,25 @@ void describe('debug replay helpers', () => {
     clearDebugEnv();
   });
 
-  void it('replayEnabled reflects the runtime', () => {
+  void it('replayEnabled is true only when replay is configured', () => {
     assert.strictEqual(replayEnabled(), false);
     process.env.LMNR_DEBUG = 'true';
+    process.env.LMNR_DEBUG_REPLAY_TRACE_ID = 'trace-1';
+    process.env.LMNR_DEBUG_CACHE_UNTIL = '1';
     const { runtime } = initDebugRuntime({} as SqlQuery);
     assert.ok(runtime !== null);
     assert.strictEqual(replayEnabled(), true);
+  });
+
+  void it('replayEnabled is false for a debug-no-replay runtime', () => {
+    // LMNR_DEBUG set but no source trace / cache window: the runtime exists (to
+    // stamp rollout.session_id) but replay must stay off so the provider
+    // wrappers skip the cache lookup instead of advancing a counter against a
+    // cache that will never be built.
+    process.env.LMNR_DEBUG = 'true';
+    const { runtime } = initDebugRuntime({} as SqlQuery);
+    assert.ok(runtime !== null);
+    assert.strictEqual(replayEnabled(), false);
   });
 
   void it('spanPathFromSpan joins with a dot', () => {

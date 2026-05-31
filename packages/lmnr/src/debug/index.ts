@@ -65,6 +65,11 @@ export class DebugRuntime {
     return this._config.replayTraceId;
   }
 
+  /** True when replay is configured for this run (source trace + cache window). */
+  get replayConfigured(): boolean {
+    return replayEnabledForConfig(this._config);
+  }
+
   /** Install the replay cache once it has been fetched and built (§E). */
   setCache(cache: ReplayCache | null): void {
     this._cache = cache;

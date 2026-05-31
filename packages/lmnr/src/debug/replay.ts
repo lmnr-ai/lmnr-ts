@@ -14,8 +14,17 @@ import { Span } from "@opentelemetry/api";
 import { SPAN_PATH } from "../opentelemetry-lib/tracing/attributes";
 import { getRuntime } from "./index";
 
-/** True when this process is a debug run with a replay cache. */
-export const replayEnabled = (): boolean => getRuntime() !== null;
+/**
+ * True when this process is a debug run with replay configured (a source trace
+ * + a non-zero cache window). A debug-no-replay run (`LMNR_DEBUG` set but no
+ * `LMNR_DEBUG_REPLAY_TRACE_ID` / `LMNR_DEBUG_CACHE_UNTIL`) returns false — the
+ * provider wrappers then skip the cache lookup entirely instead of advancing a
+ * per-path occurrence counter against a cache that will never be built. Note
+ * this stays true during the async cache-load window (`_cache === null` but
+ * replay IS configured), so the counter still advances there as designed.
+ */
+export const replayEnabled = (): boolean =>
+  getRuntime()?.replayConfigured ?? false;
 
 /**
  * Resolve the dot-joined span path from a span's attributes.
