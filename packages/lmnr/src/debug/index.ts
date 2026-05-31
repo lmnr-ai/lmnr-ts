@@ -165,8 +165,13 @@ export class DebugRuntime {
       traceId: this._traceId ?? "",
       sessionId: this._config.sessionId,
       replayTraceId: this._config.replayTraceId,
+<<<<<<< HEAD
       cacheUntil,
       debuggerUrl: this.debuggerSessionUrl(),
+=======
+      cacheUntil: this._config.cacheUntil,
+      debuggerUrl: this._debuggerUrl,
+>>>>>>> f29018c (fix(debug): capture pointer started_at at run start, not emit time)
       startedAt: this._startedAt,
     });
     emitPointer(pointer);
