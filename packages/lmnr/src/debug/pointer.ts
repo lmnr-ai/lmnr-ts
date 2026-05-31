@@ -25,20 +25,27 @@ export const CONSOLE_PREFIX = "LMNR_DEBUG_RUN ";
 export const POINTER_DIR = ".lmnr";
 export const POINTER_FILE = "last-run.json";
 
-/** Build the pointer payload. Key order matches the Python SDK. */
+/**
+ * Build the pointer payload. Key order matches the Python SDK.
+ *
+ * `startedAt` is the run's start time, captured by `DebugRuntime` at SDK init so
+ * the pointer reflects when tracing began rather than when it was emitted
+ * (shutdown). Defaults to now for standalone callers.
+ */
 export const buildPointer = (args: {
   traceId: string;
   sessionId: string;
   replayTraceId: string | null;
   cacheUntil: number;
   debuggerUrl: string | null;
+  startedAt?: string;
 }): DebugRunPointer => ({
   trace_id: args.traceId,
   session_id: args.sessionId,
   replay_trace_id: args.replayTraceId,
   cache_until: args.cacheUntil,
   debugger_url: args.debuggerUrl,
-  started_at: new Date().toISOString(),
+  started_at: args.startedAt ?? new Date().toISOString(),
 });
 
 /** Print the console line, then best-effort write the pointer file. */

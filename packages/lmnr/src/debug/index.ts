@@ -43,6 +43,9 @@ export class DebugRuntime {
   private _traceId: string | null = null;
   private _emitted = false;
   private readonly _counters = new Map<string, number>();
+  // Captured at construction (SDK init) so the pointer's `started_at` reflects
+  // when the run began, not when the pointer is emitted (shutdown).
+  private readonly _startedAt = new Date().toISOString();
 
   constructor(
     config: DebugConfig,
@@ -105,6 +108,7 @@ export class DebugRuntime {
       replayTraceId: this._config.replayTraceId,
       cacheUntil: this._config.cacheUntil,
       debuggerUrl: this._debuggerUrl,
+      startedAt: this._startedAt,
     });
     emitPointer(pointer);
   }

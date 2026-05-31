@@ -141,6 +141,23 @@ void describe('DebugRuntime', () => {
     assert.strictEqual(JSON.parse(payload).trace_id, 'trace-a');
   });
 
+  void it('emitPointer uses the construction-time started_at', async () => {
+    // started_at must reflect when the run began (runtime construction at SDK
+    // init), not when the pointer is emitted (shutdown). Wait between the two so
+    // an emit-time timestamp would land strictly after the construction window.
+    const dir = mkdtempSync(join(tmpdir(), 'lmnr-runtime-'));
+    process.cwd = () => dir;
+    const runtime = new DebugRuntime(config(), null, null);
+    const afterConstruct = new Date().toISOString();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    runtime.recordTraceId('trace-a');
+    const lines = withCapturedConsole(() => runtime.emitPointer());
+    const payload = JSON.parse(lines[0].slice('LMNR_DEBUG_RUN '.length));
+    // Captured at/before construction, so it cannot be later than the timestamp
+    // taken right after the constructor — an emit-time value would exceed it.
+    assert.ok(payload.started_at <= afterConstruct);
+  });
+
   void it('emitPointer only emits once', () => {
     const dir = mkdtempSync(join(tmpdir(), 'lmnr-runtime-'));
     process.cwd = () => dir;
