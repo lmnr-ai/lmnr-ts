@@ -12,10 +12,7 @@
       },
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
-    },
-    "./dist/cli/worker/index.cjs": "./dist/cli/worker/index.cjs",
-    "./dist/cli/worker/ts-parser.cjs": "./dist/cli/worker/ts-parser.cjs",
-    "./dist/cli/worker/build.cjs": "./dist/cli/worker/build.cjs"
+    }
   },
   "types": "dist/index.d.cts",
   "scripts": {
