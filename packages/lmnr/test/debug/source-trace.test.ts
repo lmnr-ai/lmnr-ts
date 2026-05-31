@@ -25,6 +25,27 @@ void describe('source-trace toEpoch', () => {
     assert.strictEqual(toEpoch(undefined), 0);
     assert.strictEqual(toEpoch(null, Infinity), Infinity);
   });
+
+  void it('parses ISO-8601 nanosecond timestamps to a ms epoch', () => {
+    // ClickHouse returns DateTime64(9) (nanosecond) strings; they must parse to
+    // a real epoch, not fall through to the lexical fallback.
+    assert.strictEqual(
+      toEpoch('2024-01-15T10:30:45.123456789Z'),
+      Date.parse('2024-01-15T10:30:45.123Z'),
+    );
+  });
+
+  void it('lexical fallback preserves chronological order', () => {
+    // Unparseable-but-ISO-ordered strings must map monotonically: a later
+    // timestamp can never score lower (a flat ordinal sum reversed them).
+    // Force the fallback by appending a non-numeric tail so Date.parse fails;
+    // the strings differ in the resolvable leading chars (year/month).
+    const a = '2024-01-15T10:30:45!';
+    const b = '2024-02-15T10:30:45!';
+    assert.ok(Number.isNaN(Date.parse(a)) && Number.isNaN(Date.parse(b)));
+    assert.ok(a < b);
+    assert.ok(toEpoch(a) < toEpoch(b));
+  });
 });
 
 void describe('fetchSpineMetadata end_time handling', () => {

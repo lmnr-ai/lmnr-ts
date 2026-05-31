@@ -26,11 +26,11 @@ const PAGE_SIZE = 1000;
 /**
  * Best-effort conversion of a ClickHouse timestamp to a float epoch (ms).
  *
- * The SQL endpoint returns ISO-8601 strings; fall back to lexical ordering so
- * detection still works even if parsing fails. `missingDefault` is returned for
- * a null / omitted value — callers pass `Infinity` for `end_time` so the §F
- * overlap guard treats an unknown end as overlapping (fail loud, run live)
- * rather than silently passing as 0.
+ * The SQL endpoint returns ISO-8601 strings; fall back to a chronological
+ * lexical encoding so detection still orders correctly even if parsing fails.
+ * `missingDefault` is returned for a null / omitted value — callers pass
+ * `Infinity` for `end_time` so the §F overlap guard treats an unknown end as
+ * overlapping (fail loud, run live) rather than silently passing as 0.
  */
 export const toEpoch = (value: any, missingDefault = 0): number => {
   if (value === null || value === undefined) {
@@ -44,12 +44,21 @@ export const toEpoch = (value: any, missingDefault = 0): number => {
   if (!Number.isNaN(parsed)) {
     return parsed;
   }
-  // Lexical fallback: ISO strings sort chronologically.
-  let sum = 0;
+  // Lexical fallback: ISO-8601 strings sort chronologically, so map the string
+  // to a fraction in [0, 1) whose digits are the (byte-clamped) character codes,
+  // earliest character weighted most. This is monotonic in lexical order, so a
+  // later timestamp never scores lower. (A flat sum of ordinals — the previous
+  // approach — ignores position and silently reorders the spine.) Float64 only
+  // resolves the first ~6-7 characters; closer strings tie rather than reverse,
+  // and the SQL `ORDER BY start_time` + stable sort preserve their original
+  // order on a tie.
+  let score = 0;
+  let weight = 1;
   for (const c of s.slice(0, 32)) {
-    sum += c.charCodeAt(0);
+    weight /= 256;
+    score += Math.min(c.charCodeAt(0), 255) * weight;
   }
-  return sum;
+  return score;
 };
 
 /** Phase 1: lightweight fetch of path / type / times for all spans. */
