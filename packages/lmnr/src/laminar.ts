@@ -53,6 +53,7 @@ import {
   initializeLogger,
   loadEnv,
   metadataToAttributes,
+  otelTraceIdToUUID,
   type StringUUID,
   tryToOtelSpanContext,
   validateTracingConfig,
@@ -288,6 +289,18 @@ export class Laminar {
         baseContext,
       );
       LaminarContextManager.pushContext(ctx);
+
+      // On a debug run attached via LMNR_SPAN_CONTEXT, no span has a null parent
+      // (everything descends from the injected context), so the processor's
+      // root-span hook never fires. Record the inherited trace id here so the
+      // run pointer (§5) isn't emitted with an empty trace_id.
+      try {
+        getRuntime()?.recordTraceId(otelTraceIdToUUID(otelSpanContext.traceId));
+      } catch (e) {
+        logger.debug(
+          "Failed to record debug trace id from env: " + errorMessage(e),
+        );
+      }
 
       logger.debug(
         "Initialized Laminar parent context from LMNR_SPAN_CONTEXT.",
