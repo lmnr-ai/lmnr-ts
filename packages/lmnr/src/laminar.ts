@@ -1,5 +1,8 @@
+<<<<<<< HEAD
 import { spawn } from "node:child_process";
 
+=======
+>>>>>>> 1158811 (fix(debug): reset debug runtime on shutdown so reinit re-reads env)
 import { LaminarClient } from "@lmnr-ai/client";
 import {
   errorMessage,
@@ -18,15 +21,18 @@ import {
   TimeInput,
   trace,
 } from "@opentelemetry/api";
-import { LaminarClient } from "@lmnr-ai/client";
 import { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 
+<<<<<<< HEAD
 import {
   getRuntime,
   initDebugRuntime,
   isTruthy,
   resetDebugRuntime,
 } from "./debug";
+=======
+import { getRuntime, initDebugRuntime, resetDebugRuntime } from "./debug";
+>>>>>>> 1158811 (fix(debug): reset debug runtime on shutdown so reinit re-reads env)
 import {
   InitializeOptions,
   initializeTracing,
@@ -1033,12 +1039,15 @@ export class Laminar {
       // Clear the one-shot debug-runtime state so a subsequent initialize()
       // re-reads LMNR_DEBUG* instead of resurrecting the previous run.
       resetDebugRuntime();
+<<<<<<< HEAD
       // The pointer was just emitted above, so the `exit` hook would be a
       // redundant no-op; remove it so init/shutdown loops don't leak listeners.
       if (this.debugExitHook !== null) {
         process.removeListener("exit", this.debugExitHook);
         this.debugExitHook = null;
       }
+=======
+>>>>>>> 1158811 (fix(debug): reset debug runtime on shutdown so reinit re-reads env)
 
       // Force release the claude-code proxy if it was started (ignores ref count)
       forceReleaseClaudeProxy();
