@@ -3,12 +3,16 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
+<<<<<<< HEAD
 import {
   detectSpine,
   hasOverlap,
   resolveCacheUntilSpanId,
   SpanRecord,
 } from '../../src/debug/spine';
+=======
+import { detectSpine, hasOverlap, SpanRecord } from '../../src/debug/spine';
+>>>>>>> d989320 (LAM-1672: rework debugger into in-process debug/replay (SDK))
 
 const dataDir = join(__dirname, '..', 'data', 'debug');
 
@@ -46,7 +50,10 @@ void describe('detectSpine (spine vector parity)', () => {
         spanType: s.span_type,
         startTime: s.start_time,
         endTime: s.end_time,
+<<<<<<< HEAD
         spanId: "",
+=======
+>>>>>>> d989320 (LAM-1672: rework debugger into in-process debug/replay (SDK))
       }));
 
       const result = detectSpine(spans);
@@ -67,12 +74,16 @@ void describe('hasOverlap (overlap vector parity)', () => {
         spanType: 'LLM',
         startTime: c.start_time,
         endTime: c.end_time,
+<<<<<<< HEAD
         spanId: '',
+=======
+>>>>>>> d989320 (LAM-1672: rework debugger into in-process debug/replay (SDK))
       }));
       assert.strictEqual(hasOverlap(calls, testCase.n), testCase.expect);
     });
   }
 });
+<<<<<<< HEAD
 
 const spineWithIds = (...spanIds: string[]): SpanRecord[] =>
   spanIds.map((spanId, i) => ({
@@ -114,3 +125,5 @@ void describe('resolveCacheUntilSpanId', () => {
     assert.strictEqual(resolveCacheUntilSpanId([], 'abcdef'), null);
   });
 });
+=======
+>>>>>>> d989320 (LAM-1672: rework debugger into in-process debug/replay (SDK))

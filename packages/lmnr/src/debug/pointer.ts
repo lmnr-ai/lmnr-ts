@@ -63,7 +63,9 @@ const writePointerFile = (payload: string): void => {
   try {
     const directory = join(process.cwd(), POINTER_DIR);
     mkdirSync(directory, { recursive: true });
-    writeFileSync(join(directory, POINTER_FILE), payload, { encoding: "utf-8" });
+    writeFileSync(join(directory, POINTER_FILE), payload, {
+      encoding: "utf-8",
+    });
   } catch (e) {
     logger.debug(`Could not write debug pointer file: ${String(e)}`);
   }

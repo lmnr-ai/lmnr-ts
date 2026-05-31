@@ -18,9 +18,14 @@ import {
   TimeInput,
   trace,
 } from "@opentelemetry/api";
+import { LaminarClient } from "@lmnr-ai/client";
 import { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 
+<<<<<<< HEAD
 import { getRuntime, initDebugRuntime, isTruthy, resetDebugRuntime } from "./debug";
+=======
+import { initDebugRuntime } from "./debug";
+>>>>>>> d989320 (LAM-1672: rework debugger into in-process debug/replay (SDK))
 import {
   InitializeOptions,
   initializeTracing,
@@ -214,10 +219,16 @@ export class Laminar {
       this.baseHttpUrl = "";
     }
 
+<<<<<<< HEAD
     const envMetadata = process.env.LMNR_TRACE_METADATA
       ? JSON.parse(process.env.LMNR_TRACE_METADATA) as Record<string, unknown>
       : {};
     this.globalMetadata = { ...envMetadata, ...(metadata ?? {}) };
+=======
+    this.globalMetadata = metadata ?? {};
+    this._initDebugRuntime(url, port);
+    LaminarContextManager.setGlobalMetadata(this.globalMetadata);
+>>>>>>> d989320 (LAM-1672: rework debugger into in-process debug/replay (SDK))
     if (inheritGlobalContext) {
       LaminarContextManager.inheritGlobalContext = true;
     }
@@ -345,6 +356,7 @@ export class Laminar {
     httpPort: number | undefined,
   ): void {
     try {
+<<<<<<< HEAD
       // Bail before allocating a client on the common (non-debug) path. The
       // LMNR_DEBUG gate also lives inside buildDebugConfig (called by
       // initDebugRuntime), but that runs only after the client and debugger URL
@@ -354,6 +366,8 @@ export class Laminar {
       if (!isTruthy(process.env.LMNR_DEBUG)) {
         return;
       }
+=======
+>>>>>>> d989320 (LAM-1672: rework debugger into in-process debug/replay (SDK))
       const client = new LaminarClient({
         baseUrl,
         projectApiKey: this.projectApiKey,
@@ -366,6 +380,7 @@ export class Laminar {
         return;
       }
 
+<<<<<<< HEAD
       // Register the session with the backend so it shows up in the UI. The
       // SDK owns the session id; this idempotent upsert is what makes a bare
       // `LMNR_DEBUG=true` run (no replay) useful. Best-effort and fire-and-
@@ -395,10 +410,13 @@ export class Laminar {
           logger.warn("Failed to register debug session: " + errorMessage(e));
         });
 
+=======
+>>>>>>> d989320 (LAM-1672: rework debugger into in-process debug/replay (SDK))
       this.globalMetadata = {
         ...this.globalMetadata,
         "rollout.session_id": runtime.sessionId,
       };
+<<<<<<< HEAD
       // `exit` fires on both natural event-loop drain and explicit
       // process.exit(), and emitPointer is synchronous, so a single `exit`
       // hook covers process teardown. Do NOT also hook `beforeExit`: it fires
@@ -413,6 +431,11 @@ export class Laminar {
       }
       this.debugExitHook = () => runtime.emitPointer();
       process.once("exit", this.debugExitHook);
+=======
+      const emit = () => runtime.emitPointer();
+      process.once("exit", emit);
+      process.once("beforeExit", emit);
+>>>>>>> d989320 (LAM-1672: rework debugger into in-process debug/replay (SDK))
     } catch (e) {
       // never let debug setup crash initialization
       logger.warn("Failed to initialize debug runtime: " + errorMessage(e));

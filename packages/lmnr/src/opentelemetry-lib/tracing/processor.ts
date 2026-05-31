@@ -8,6 +8,7 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import { Logger } from "pino";
 
+import { getRuntime } from "../../debug";
 import { version as SDK_VERSION } from "../../../package.json";
 import { getRuntime } from "../../debug";
 import {

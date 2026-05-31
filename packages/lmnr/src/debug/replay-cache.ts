@@ -8,11 +8,12 @@
 
 import { CachedSpan } from "@lmnr-ai/types";
 
-/** Holds cached spine responses, indexed by occurrence on the spine path. */
+/** Holds cached spine responses and tracks per-path occurrence counters. */
 export class ReplayCache {
   private readonly _spinePath: string;
   private readonly _cacheUntil: number;
   private readonly _payloads: CachedSpan[];
+  private readonly _counters = new Map<string, number>();
 
   constructor(spinePath: string, cacheUntil: number, payloads: CachedSpan[]) {
     this._spinePath = spinePath;
@@ -27,6 +28,13 @@ export class ReplayCache {
 
   get cacheUntil(): number {
     return this._cacheUntil;
+  }
+
+  /** Return the current occurrence index for a path and increment it. */
+  nextOccurrence(spanPath: string): number {
+    const occ = this._counters.get(spanPath) ?? 0;
+    this._counters.set(spanPath, occ + 1);
+    return occ;
   }
 
   /** Return the cached payload to replay, or undefined to run live (§8). */
