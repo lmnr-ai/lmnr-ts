@@ -1,4 +1,9 @@
+import { errorMessage } from "@lmnr-ai/types";
+
+import { initializeLogger } from "../utils";
 import { BaseResource } from "./index";
+
+const logger = initializeLogger();
 
 export class RolloutSessionsResource extends BaseResource {
   constructor(baseHttpUrl: string, projectApiKey: string) {
@@ -33,7 +38,8 @@ export class RolloutSessionsResource extends BaseResource {
     try {
       const body = (await response.json()) as { projectId?: string };
       return body.projectId ?? null;
-    } catch {
+    } catch (e) {
+      logger.warn(`Failed to parse rollout register response: ${errorMessage(e)}`);
       return null;
     }
   }
