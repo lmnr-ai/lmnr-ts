@@ -208,8 +208,6 @@ export class Laminar {
     }
 
     this.globalMetadata = metadata ?? {};
-    this._initDebugRuntime(url, port);
-    LaminarContextManager.setGlobalMetadata(this.globalMetadata);
     if (inheritGlobalContext) {
       LaminarContextManager.inheritGlobalContext = true;
     }
@@ -241,6 +239,17 @@ export class Laminar {
       sessionRecordingOptions,
       spanProcessor,
     });
+
+    // Build the debug runtime only after tracing is up. It has no dependency on
+    // initializeTracing (which never reads the runtime or global metadata), so
+    // running it here means a tracing-init failure aborts before any debug side
+    // effects — backend session registration, the `rollout.session_id` stamp,
+    // the process-exit pointer hook — instead of leaving them live on a process
+    // whose tracing never came up. It must still precede setGlobalMetadata (so
+    // `rollout.session_id` is stamped on every span) and _initializeContextFromEnv
+    // (so the runtime is registered before the inherited trace id is recorded).
+    this._initDebugRuntime(url, port);
+    LaminarContextManager.setGlobalMetadata(this.globalMetadata);
 
     this._initializeContextFromEnv();
   }
