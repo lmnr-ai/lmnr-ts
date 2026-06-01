@@ -22,13 +22,20 @@
 import { CachedSpan } from "@lmnr-ai/types";
 
 import { initializeLogger } from "../utils";
-import { buildDebugConfig, DebugConfig, replayEnabledForConfig } from "./config";
+import {
+  buildDebugConfig,
+  DebugConfig,
+  isTruthy,
+  replayEnabledForConfig,
+} from "./config";
 import { buildPointer, emitPointer } from "./pointer";
 import { ReplayCache } from "./replay-cache";
 import { fetchSpineMetadata, fetchSpinePayloads, SqlQuery } from "./source-trace";
 import { detectSpine, hasOverlap } from "./spine";
 
 const logger = initializeLogger();
+
+export { isTruthy };
 
 /**
  * Holds the immutable debug config plus the optional replay cache.

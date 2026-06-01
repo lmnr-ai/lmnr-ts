@@ -18,7 +18,7 @@ import {
 } from "@opentelemetry/api";
 import { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 
-import { getRuntime, initDebugRuntime, resetDebugRuntime } from "./debug";
+import { getRuntime, initDebugRuntime, isTruthy, resetDebugRuntime } from "./debug";
 import {
   InitializeOptions,
   initializeTracing,
@@ -335,6 +335,15 @@ export class Laminar {
     httpPort: number | undefined,
   ): void {
     try {
+      // Bail before allocating a client on the common (non-debug) path. The
+      // LMNR_DEBUG gate also lives inside buildDebugConfig (called by
+      // initDebugRuntime), but that runs only after the client and debugger URL
+      // are built — so check it up front to avoid the wasted allocation on
+      // every initialize(). Mirrors Python's _is_truthy guard in
+      // _init_debug_runtime.
+      if (!isTruthy(process.env.LMNR_DEBUG)) {
+        return;
+      }
       const client = new LaminarClient({
         baseUrl,
         projectApiKey: this.projectApiKey,

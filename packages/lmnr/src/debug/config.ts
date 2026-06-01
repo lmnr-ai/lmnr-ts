@@ -19,7 +19,7 @@ const logger = initializeLogger();
 // Truthy set for LMNR_DEBUG, case-insensitive. Must match the Python SDK exactly.
 const TRUTHY = new Set(["true", "1", "yes", "on"]);
 
-const isTruthy = (value: string | undefined): boolean =>
+export const isTruthy = (value: string | undefined): boolean =>
   value !== undefined && TRUTHY.has(value.trim().toLowerCase());
 
 /** Parse N: clamp <0 to 0, non-numeric to 0 (with a warning). */
