@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import * as assert from "node:assert";
 import {
   mkdirSync,
@@ -9,6 +10,13 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
+=======
+import * as assert from 'node:assert';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, it } from 'node:test';
+>>>>>>> 96fb588 (feat(debug): log debugger URL and add LMNR_DEBUG_FROM_LAST_RUN)
 
 import {
   buildDebugConfig,
@@ -16,11 +24,19 @@ import {
 } from "../../src/debug/config";
 
 const DEBUG_ENV_KEYS = [
+<<<<<<< HEAD
   "LMNR_DEBUG",
   "LMNR_DEBUG_SESSION_ID",
   "LMNR_DEBUG_REPLAY_TRACE_ID",
   "LMNR_DEBUG_CACHE_UNTIL",
   "LMNR_DEBUG_FROM_LAST_RUN",
+=======
+  'LMNR_DEBUG',
+  'LMNR_DEBUG_SESSION_ID',
+  'LMNR_DEBUG_REPLAY_TRACE_ID',
+  'LMNR_DEBUG_CACHE_UNTIL',
+  'LMNR_DEBUG_FROM_LAST_RUN',
+>>>>>>> 96fb588 (feat(debug): log debugger URL and add LMNR_DEBUG_FROM_LAST_RUN)
 ];
 
 interface ConfigCase {
@@ -93,23 +109,36 @@ void describe("buildDebugConfig (truth table parity)", () => {
   });
 });
 
+<<<<<<< HEAD
 void describe("buildDebugConfig (LMNR_DEBUG_FROM_LAST_RUN)", () => {
+=======
+void describe('buildDebugConfig (LMNR_DEBUG_FROM_LAST_RUN)', () => {
+>>>>>>> 96fb588 (feat(debug): log debugger URL and add LMNR_DEBUG_FROM_LAST_RUN)
   let tmp: string;
   let originalCwd: string;
 
   const writeLastRun = (payload: Record<string, unknown>) => {
+<<<<<<< HEAD
     mkdirSync(join(tmp, ".lmnr"), { recursive: true });
     writeFileSync(
       join(tmp, ".lmnr", "last-run.json"),
       JSON.stringify(payload),
       "utf-8",
     );
+=======
+    mkdirSync(join(tmp, '.lmnr'), { recursive: true });
+    writeFileSync(join(tmp, '.lmnr', 'last-run.json'), JSON.stringify(payload), 'utf-8');
+>>>>>>> 96fb588 (feat(debug): log debugger URL and add LMNR_DEBUG_FROM_LAST_RUN)
   };
 
   beforeEach(() => {
     clearDebugEnv();
     originalCwd = process.cwd();
+<<<<<<< HEAD
     tmp = mkdtempSync(join(tmpdir(), "lmnr-config-"));
+=======
+    tmp = mkdtempSync(join(tmpdir(), 'lmnr-config-'));
+>>>>>>> 96fb588 (feat(debug): log debugger URL and add LMNR_DEBUG_FROM_LAST_RUN)
     process.chdir(tmp);
   });
 
@@ -119,6 +148,7 @@ void describe("buildDebugConfig (LMNR_DEBUG_FROM_LAST_RUN)", () => {
     clearDebugEnv();
   });
 
+<<<<<<< HEAD
   void it("seeds replay from the pointer file", () => {
     writeLastRun({
       trace_id: "trace-abc",
@@ -132,10 +162,22 @@ void describe("buildDebugConfig (LMNR_DEBUG_FROM_LAST_RUN)", () => {
     assert.ok(config !== null);
     assert.strictEqual(config.replayTraceId, "trace-abc");
     assert.strictEqual(config.sessionId, "session-xyz");
+=======
+  void it('seeds replay from the pointer file', () => {
+    writeLastRun({ trace_id: 'trace-abc', session_id: 'session-xyz', cache_until: 5 });
+    process.env.LMNR_DEBUG = 'true';
+    process.env.LMNR_DEBUG_FROM_LAST_RUN = 'true';
+
+    const config = buildDebugConfig();
+    assert.ok(config !== null);
+    assert.strictEqual(config.replayTraceId, 'trace-abc');
+    assert.strictEqual(config.sessionId, 'session-xyz');
+>>>>>>> 96fb588 (feat(debug): log debugger URL and add LMNR_DEBUG_FROM_LAST_RUN)
     assert.strictEqual(config.cacheUntil, 5);
     assert.strictEqual(replayEnabledForConfig(config), true);
   });
 
+<<<<<<< HEAD
   void it("env vars override per-field", () => {
     writeLastRun({
       trace_id: "trace-abc",
@@ -157,16 +199,44 @@ void describe("buildDebugConfig (LMNR_DEBUG_FROM_LAST_RUN)", () => {
   void it("ignored when flag is falsey", () => {
     writeLastRun({ trace_id: "trace-abc", session_id: "session-xyz" });
     process.env.LMNR_DEBUG = "true";
+=======
+  void it('env vars override per-field', () => {
+    writeLastRun({ trace_id: 'trace-abc', session_id: 'session-xyz', cache_until: 5 });
+    process.env.LMNR_DEBUG = 'true';
+    process.env.LMNR_DEBUG_FROM_LAST_RUN = 'true';
+    process.env.LMNR_DEBUG_REPLAY_TRACE_ID = 'trace-override';
+    process.env.LMNR_DEBUG_CACHE_UNTIL = '9';
+
+    const config = buildDebugConfig();
+    assert.ok(config !== null);
+    assert.strictEqual(config.replayTraceId, 'trace-override');
+    assert.strictEqual(config.sessionId, 'session-xyz');
+    assert.strictEqual(config.cacheUntil, 9);
+  });
+
+  void it('ignored when flag is falsey', () => {
+    writeLastRun({ trace_id: 'trace-abc', session_id: 'session-xyz' });
+    process.env.LMNR_DEBUG = 'true';
+>>>>>>> 96fb588 (feat(debug): log debugger URL and add LMNR_DEBUG_FROM_LAST_RUN)
 
     const config = buildDebugConfig();
     assert.ok(config !== null);
     assert.strictEqual(config.replayTraceId, null);
+<<<<<<< HEAD
     assert.notStrictEqual(config.sessionId, "session-xyz");
   });
 
   void it("missing file falls back to env", () => {
     process.env.LMNR_DEBUG = "true";
     process.env.LMNR_DEBUG_FROM_LAST_RUN = "true";
+=======
+    assert.notStrictEqual(config.sessionId, 'session-xyz');
+  });
+
+  void it('missing file falls back to env', () => {
+    process.env.LMNR_DEBUG = 'true';
+    process.env.LMNR_DEBUG_FROM_LAST_RUN = 'true';
+>>>>>>> 96fb588 (feat(debug): log debugger URL and add LMNR_DEBUG_FROM_LAST_RUN)
 
     const config = buildDebugConfig();
     assert.ok(config !== null);
