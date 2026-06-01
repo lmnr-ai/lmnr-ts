@@ -353,9 +353,14 @@ export class Laminar {
         ...this.globalMetadata,
         "rollout.session_id": runtime.sessionId,
       };
-      const emit = () => runtime.emitPointer();
-      process.once("exit", emit);
-      process.once("beforeExit", emit);
+      // `exit` fires on both natural event-loop drain and explicit
+      // process.exit(), and emitPointer is synchronous, so a single `exit`
+      // hook covers process teardown. Do NOT also hook `beforeExit`: it fires
+      // on any transient event-loop idle, which can happen before the run's
+      // root trace id is recorded — emitPointer is one-shot, so a premature
+      // call would permanently spend the pointer with an empty trace_id.
+      // Mirrors Python's single atexit hook.
+      process.once("exit", () => runtime.emitPointer());
     } catch (e) {
       // never let debug setup crash initialization
       logger.warn("Failed to initialize debug runtime: " + errorMessage(e));
