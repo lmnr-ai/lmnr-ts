@@ -2,6 +2,7 @@ import { BrowserEventsResource } from "./resources/browser-events";
 import { DatasetsResource } from "./resources/datasets";
 import { EvalsResource } from "./resources/evals";
 import { EvaluatorsResource } from "./resources/evaluators";
+import { RolloutSessionsResource } from "./resources/rollout-sessions";
 import { SqlResource } from "./resources/sql";
 import { TagsResource } from "./resources/tags";
 import { TracesResource } from "./resources/traces";
@@ -14,6 +15,7 @@ export class LaminarClient {
   private _datasets: DatasetsResource;
   private _evals: EvalsResource;
   private _evaluators: EvaluatorsResource;
+  private _rolloutSessions: RolloutSessionsResource;
   private _sql: SqlResource;
   private _tags: TagsResource;
   private _traces: TracesResource;
@@ -40,6 +42,7 @@ export class LaminarClient {
     this._datasets = new DatasetsResource(this.baseUrl, this.projectApiKey);
     this._evals = new EvalsResource(this.baseUrl, this.projectApiKey);
     this._evaluators = new EvaluatorsResource(this.baseUrl, this.projectApiKey);
+    this._rolloutSessions = new RolloutSessionsResource(this.baseUrl, this.projectApiKey);
     this._sql = new SqlResource(this.baseUrl, this.projectApiKey);
     this._tags = new TagsResource(this.baseUrl, this.projectApiKey);
     this._traces = new TracesResource(this.baseUrl, this.projectApiKey);
@@ -59,6 +62,10 @@ export class LaminarClient {
 
   public get evaluators() {
     return this._evaluators;
+  }
+
+  public get rolloutSessions() {
+    return this._rolloutSessions;
   }
 
   public get sql() {
