@@ -24,6 +24,32 @@ void describe('RolloutSessions Resource Tests', () => {
     assert.strictEqual(body.name, undefined);
   });
 
+  void it('should return the backend-resolved projectId', async () => {
+    const mockFetch = mock.fn(() => ({
+      ok: true,
+      json: () => Promise.resolve({ projectId: 'proj-123' }),
+    }));
+    global.fetch = mockFetch as any;
+
+    const resource = new RolloutSessionsResource('https://api.test.com:443', 'test-api-key');
+    const projectId = await resource.register({ sessionId: 'sess-1' });
+
+    assert.strictEqual(projectId, 'proj-123');
+  });
+
+  void it('should return null when the body cannot be parsed', async () => {
+    const mockFetch = mock.fn(() => ({
+      ok: true,
+      json: () => Promise.reject(new Error('not json')),
+    }));
+    global.fetch = mockFetch as any;
+
+    const resource = new RolloutSessionsResource('https://api.test.com:443', 'test-api-key');
+    const projectId = await resource.register({ sessionId: 'sess-1' });
+
+    assert.strictEqual(projectId, null);
+  });
+
   void it('should pass an optional name in the body', async () => {
     const mockFetch = mock.fn(() => ({ ok: true }));
     global.fetch = mockFetch as any;

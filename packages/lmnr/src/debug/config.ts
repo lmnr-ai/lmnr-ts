@@ -8,8 +8,11 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { initializeLogger } from "../utils";
+import { POINTER_DIR, POINTER_FILE } from "./pointer";
 
 const logger = initializeLogger();
 
@@ -34,6 +37,26 @@ const parseCacheUntil = (value: string | undefined): number => {
   return n > 0 ? n : 0;
 };
 
+/**
+ * Read `${CWD}/.lmnr/last-run.json` (the previous run's pointer).
+ *
+ * Best-effort: a missing / unreadable / malformed file returns {} so the caller
+ * silently falls back to env vars. Keep line-comparable with the Python
+ * `_load_last_run`.
+ */
+const loadLastRun = (): Record<string, unknown> => {
+  try {
+    const path = join(process.cwd(), POINTER_DIR, POINTER_FILE);
+    const data: unknown = JSON.parse(readFileSync(path, { encoding: "utf-8" }));
+    return data !== null && typeof data === "object"
+      ? (data as Record<string, unknown>)
+      : {};
+  } catch (e) {
+    logger.debug(`Could not read debug pointer file: ${String(e)}`);
+    return {};
+  }
+};
+
 /** Immutable debug configuration, built once at process start. */
 export interface DebugConfig {
   sessionId: string;
@@ -50,15 +73,38 @@ export const replayEnabledForConfig = (config: DebugConfig): boolean =>
  *
  * Returns null when debug mode is disabled (LMNR_DEBUG falsey/absent) — the
  * caller treats null as "everything inert".
+ *
+ * When `LMNR_DEBUG_FROM_LAST_RUN` is truthy, seed the config from the previous
+ * run's pointer file (`${CWD}/.lmnr/last-run.json`): the file's `trace_id` (the
+ * trace that run produced) becomes this run's `replayTraceId`, and its
+ * `session_id` / `cache_until` are reused. Individual `LMNR_DEBUG_*` env vars
+ * still override per-field, so the agent can replay the last run without
+ * copying its ids into the environment by hand.
  */
 export const buildDebugConfig = (): DebugConfig | null => {
   if (!isTruthy(process.env.LMNR_DEBUG)) {
     return null;
   }
 
-  const sessionId = process.env.LMNR_DEBUG_SESSION_ID || randomUUID();
-  const replayTraceId = process.env.LMNR_DEBUG_REPLAY_TRACE_ID || null;
-  const cacheUntil = parseCacheUntil(process.env.LMNR_DEBUG_CACHE_UNTIL);
+  const lastRun = isTruthy(process.env.LMNR_DEBUG_FROM_LAST_RUN)
+    ? loadLastRun()
+    : {};
+
+  const sessionId =
+    process.env.LMNR_DEBUG_SESSION_ID ||
+    (lastRun.session_id as string | undefined) ||
+    randomUUID();
+  const replayTraceId =
+    process.env.LMNR_DEBUG_REPLAY_TRACE_ID ||
+    (lastRun.trace_id as string | undefined) ||
+    null;
+  const lastRunCacheUntil = lastRun.cache_until as number | undefined;
+  const cacheUntilValue =
+    process.env.LMNR_DEBUG_CACHE_UNTIL ??
+    (lastRunCacheUntil !== undefined && lastRunCacheUntil !== null
+      ? String(lastRunCacheUntil)
+      : undefined);
+  const cacheUntil = parseCacheUntil(cacheUntilValue);
 
   return { sessionId, replayTraceId, cacheUntil };
 };

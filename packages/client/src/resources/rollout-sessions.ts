@@ -9,6 +9,9 @@ export class RolloutSessionsResource extends BaseResource {
    * Idempotently register (upsert) a debug session on the backend, keyed on the
    * SDK-supplied session id. The backend stores the row so the session is
    * visible in the UI; a null/omitted name never clobbers a name set elsewhere.
+   *
+   * Returns the backend-resolved `projectId` (derived from the API key) so the
+   * caller can build the debugger URL; null if the body can't be parsed.
    */
   public async register({
     sessionId,
@@ -16,7 +19,7 @@ export class RolloutSessionsResource extends BaseResource {
   }: {
     sessionId: string;
     name?: string;
-  }): Promise<void> {
+  }): Promise<string | null> {
     const response = await fetch(`${this.baseHttpUrl}/v1/rollouts/${sessionId}`, {
       method: "POST",
       headers: this.headers(),
@@ -25,6 +28,13 @@ export class RolloutSessionsResource extends BaseResource {
 
     if (!response.ok) {
       await this.handleError(response);
+    }
+
+    try {
+      const body = (await response.json()) as { projectId?: string };
+      return body.projectId ?? null;
+    } catch {
+      return null;
     }
   }
 
