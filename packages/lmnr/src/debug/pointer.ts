@@ -10,9 +10,10 @@
  * Python `pointer.py` (identical key order, prefix, and best-effort semantics).
  */
 
-import { DebugRunPointer } from "@lmnr-ai/types";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+
+import { DebugRunPointer } from "@lmnr-ai/types";
 
 import { initializeLogger } from "../utils";
 
@@ -51,7 +52,7 @@ export const buildPointer = (args: {
 /** Print the console line, then best-effort write the pointer file. */
 export const emitPointer = (pointer: DebugRunPointer): void => {
   const payload = JSON.stringify(pointer);
-  // eslint-disable-next-line no-console
+
   console.log(`${CONSOLE_PREFIX}${payload}`);
   writePointerFile(payload);
 };
