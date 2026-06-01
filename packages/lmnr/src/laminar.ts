@@ -338,6 +338,17 @@ export class Laminar {
         return;
       }
 
+      // Register the session with the backend so it shows up in the UI. The
+      // SDK owns the session id; this idempotent upsert is what makes a bare
+      // `LMNR_DEBUG=true` run (no replay) useful. Best-effort and fire-and-
+      // forget — initialize() is synchronous and registration must never block
+      // or crash it.
+      void client.rolloutSessions
+        .register({ sessionId: runtime.sessionId })
+        .catch((e) => {
+          logger.warn("Failed to register debug session: " + errorMessage(e));
+        });
+
       this.globalMetadata = {
         ...this.globalMetadata,
         "rollout.session_id": runtime.sessionId,
