@@ -177,6 +177,19 @@ void describe('DebugRuntime', () => {
     assert.strictEqual(getRuntime(), null);
   });
 
+  void it('init off does not latch the one-shot flag', () => {
+    // When debug is off, init must NOT spend the one-shot flag: a later init
+    // after the env flips LMNR_DEBUG on must still build a runtime without an
+    // intervening resetDebugRuntime().
+    const off = initDebugRuntime({} as SqlQuery);
+    assert.strictEqual(off.runtime, null);
+
+    process.env.LMNR_DEBUG = 'true';
+    const on = initDebugRuntime({} as SqlQuery);
+    assert.ok(on.runtime !== null);
+    assert.strictEqual(getRuntime(), on.runtime);
+  });
+
   void it('init is idempotent', () => {
     process.env.LMNR_DEBUG = 'true';
     const first = initDebugRuntime({} as SqlQuery);

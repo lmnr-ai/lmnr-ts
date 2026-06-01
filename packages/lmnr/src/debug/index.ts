@@ -152,12 +152,16 @@ export const initDebugRuntime = (
   if (initialized) {
     return { runtime, ready: readyPromise };
   }
-  initialized = true;
 
   const config = buildDebugConfig();
   if (config === null) {
+    // Debug mode is off: nothing was built, so do NOT latch the one-shot flag.
+    // Otherwise a later init (e.g. after the env flips LMNR_DEBUG on) would
+    // short-circuit until resetDebugRuntime(). The off path only reads env
+    // vars, so re-running it on a repeat call is cheap.
     return { runtime: null, ready: Promise.resolve() };
   }
+  initialized = true;
 
   runtime = new DebugRuntime(config, null, debuggerUrl);
   const built = runtime;
