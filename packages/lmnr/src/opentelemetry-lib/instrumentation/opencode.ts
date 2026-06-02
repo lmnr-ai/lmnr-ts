@@ -89,6 +89,12 @@ export class OpencodeInstrumentation extends InstrumentationBase {
               synthetic: true,
             },
           ];
+        } else {
+          diag.debug(
+            "OpencodeInstrumentation: no active Laminar span context to " +
+              "propagate. Opencode-side spans will start a new trace " +
+              "instead of being children of the caller's span.",
+          );
         }
       }
       return original.apply(this, args);
