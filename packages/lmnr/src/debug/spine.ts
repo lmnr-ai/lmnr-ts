@@ -25,7 +25,6 @@ export interface SpineResult {
   spinePath: string | null;
   // Spine calls in execution order (by startTime). Empty when no spine.
   spineCalls: SpanRecord[];
-  overlap: boolean;
 }
 
 /** Number of path segments. Identical computation in both SDKs. */
@@ -46,7 +45,7 @@ export const detectSpine = (spans: SpanRecord[]): SpineResult => {
   const llmSpans = spans.filter((s) => s.spanType === "LLM");
   if (llmSpans.length === 0) {
     logger.warn("Source trace has no LLM spans; nothing to cache.");
-    return { spinePath: null, spineCalls: [], overlap: false };
+    return { spinePath: null, spineCalls: [] };
   }
 
   const groups = new Map<string, SpanRecord[]>();
@@ -83,7 +82,7 @@ export const detectSpine = (spans: SpanRecord[]): SpineResult => {
   const spineCalls = [...groups.get(spinePath)!].sort(
     (a, b) => a.startTime - b.startTime,
   );
-  return { spinePath, spineCalls, overlap: false };
+  return { spinePath, spineCalls };
 };
 
 /**
