@@ -366,9 +366,12 @@ export class Laminar {
         .register({ sessionId: runtime.sessionId })
         .then((projectId) => {
           if (projectId) {
+            // Record the project id so the run pointer's debugger_url field
+            // carries the SAME full per-session URL we print here (single code
+            // path via debuggerSessionUrl).
+            runtime.recordProjectId(projectId);
             logger.info(
-              `Laminar debugger session: ${debuggerUrl}/project/` +
-                `${projectId}/debugger-sessions/${runtime.sessionId}`,
+              `Laminar debugger session: ${runtime.debuggerSessionUrl()}`,
             );
           }
         })

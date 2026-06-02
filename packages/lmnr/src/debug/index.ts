@@ -47,6 +47,7 @@ export class DebugRuntime {
   private readonly _config: DebugConfig;
   private _cache: ReplayCache | null;
   private readonly _debuggerUrl: string | null;
+  private _projectId: string | null = null;
   private _traceId: string | null = null;
   private _emitted = false;
   private readonly _counters = new Map<string, number>();
@@ -90,6 +91,41 @@ export class DebugRuntime {
   }
 
   /**
+   * Remember the backend-resolved project id (first wins).
+   *
+   * Resolved by the session-register call AFTER construction, so the runtime
+   * starts with only the base `debuggerUrl`; this lets `debuggerSessionUrl`
+   * upgrade to the full per-session URL once known.
+   */
+  recordProjectId(projectId: string): void {
+    if (this._projectId === null) {
+      this._projectId = projectId;
+    }
+  }
+
+  /**
+   * The human-facing debugger URL for this run, or null.
+   *
+   * Single source of truth for the URL printed to the console AND stored in the
+   * run pointer's `debugger_url` field. When the project id is known (register
+   * succeeded) it is the full
+   * `<base>/project/<projectId>/debugger-sessions/<sessionId>`; otherwise it
+   * falls back to the base `debuggerUrl` (null when even that is unset).
+   */
+  debuggerSessionUrl(): string | null {
+    if (this._debuggerUrl === null) {
+      return null;
+    }
+    if (this._projectId === null) {
+      return this._debuggerUrl;
+    }
+    return (
+      `${this._debuggerUrl}/project/${this._projectId}` +
+      `/debugger-sessions/${this._config.sessionId}`
+    );
+  }
+
+  /**
    * Return the cached payload to replay for the next occurrence, or undefined.
    *
    * Increments the per-path occurrence counter as a side effect, mirroring a
@@ -119,7 +155,7 @@ export class DebugRuntime {
       sessionId: this._config.sessionId,
       replayTraceId: this._config.replayTraceId,
       cacheUntil: this._config.cacheUntil,
-      debuggerUrl: this._debuggerUrl,
+      debuggerUrl: this.debuggerSessionUrl(),
       startedAt: this._startedAt,
     });
     emitPointer(pointer);

@@ -141,6 +141,45 @@ void describe('DebugRuntime', () => {
     assert.strictEqual(JSON.parse(payload).trace_id, 'trace-a');
   });
 
+  void it('recordProjectId keeps the first project id', () => {
+    const runtime = new DebugRuntime(config(), null, 'https://x');
+    runtime.recordProjectId('proj-a');
+    runtime.recordProjectId('proj-b');
+    assert.strictEqual(runtime.debuggerSessionUrl(),
+      'https://x/project/proj-a/debugger-sessions/s');
+  });
+
+  void it('debuggerSessionUrl falls back to the base before a project id', () => {
+    const runtime = new DebugRuntime(config(), null, 'https://app.x');
+    assert.strictEqual(runtime.debuggerSessionUrl(), 'https://app.x');
+  });
+
+  void it('debuggerSessionUrl is null without a base url', () => {
+    const runtime = new DebugRuntime(config(), null, null);
+    assert.strictEqual(runtime.debuggerSessionUrl(), null);
+  });
+
+  void it('debuggerSessionUrl is the full per-session url once known', () => {
+    const runtime = new DebugRuntime(config({ sessionId: 'sess-1' }), null, 'https://app.x');
+    runtime.recordProjectId('proj-1');
+    assert.strictEqual(runtime.debuggerSessionUrl(),
+      'https://app.x/project/proj-1/debugger-sessions/sess-1');
+  });
+
+  void it('emitPointer carries the full debugger url', () => {
+    // The pointer's debugger_url must carry the SAME full per-session URL the
+    // console prints, built via the shared debuggerSessionUrl code path.
+    const dir = mkdtempSync(join(tmpdir(), 'lmnr-runtime-'));
+    process.cwd = () => dir;
+    const runtime = new DebugRuntime(config({ sessionId: 'sess-1' }), null, 'https://app.x');
+    runtime.recordProjectId('proj-1');
+    runtime.recordTraceId('trace-a');
+    const lines = withCapturedConsole(() => runtime.emitPointer());
+    const payload = JSON.parse(lines[0].slice('LMNR_DEBUG_RUN '.length));
+    assert.strictEqual(payload.debugger_url,
+      'https://app.x/project/proj-1/debugger-sessions/sess-1');
+  });
+
   void it('emitPointer uses the construction-time started_at', async () => {
     // started_at must reflect when the run began (runtime construction at SDK
     // init), not when the pointer is emitted (shutdown). Wait between the two so
