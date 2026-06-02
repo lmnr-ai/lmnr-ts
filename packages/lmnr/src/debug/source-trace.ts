@@ -22,6 +22,7 @@ export interface SqlQuery {
 }
 
 const PAGE_SIZE = 1000;
+const PAYLOAD_PAGE_SIZE = 10;
 
 /**
  * Best-effort conversion of a ClickHouse timestamp to a float epoch (ms).
@@ -111,9 +112,9 @@ export const fetchSpinePayloads = async (
     const rows = await client.query(
       "SELECT name, input, output, attributes, start_time FROM spans " +
         "WHERE trace_id = {trace_id:UUID} AND path = {path:String} " +
-        "AND span_type = 'LLM' " +
+        "AND span_type IN ('LLM', 'CACHED') " +
         "ORDER BY start_time LIMIT {limit:UInt32} OFFSET {offset:UInt32}",
-      { trace_id: traceId, path: spinePath, limit: PAGE_SIZE, offset },
+      { trace_id: traceId, path: spinePath, limit: PAYLOAD_PAGE_SIZE, offset },
     );
     if (rows.length === 0) {
       break;
@@ -121,10 +122,10 @@ export const fetchSpinePayloads = async (
     for (const row of rows) {
       out.push(rowToCachedSpan(row));
     }
-    if (rows.length < PAGE_SIZE) {
+    if (rows.length < PAYLOAD_PAGE_SIZE) {
       break;
     }
-    offset += PAGE_SIZE;
+    offset += PAYLOAD_PAGE_SIZE;
   }
   return out;
 };
