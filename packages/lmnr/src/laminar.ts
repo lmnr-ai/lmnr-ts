@@ -91,6 +91,11 @@ export class Laminar {
   private static projectApiKey: string;
   private static isInitialized: boolean = false;
   private static globalMetadata: Record<string, any> = {};
+  // The debug run's `exit` pointer hook, kept by reference so shutdown() can
+  // remove it. `process.once` only auto-detaches after `exit` fires, so without
+  // this an initialize()/shutdown() loop (common in tests) would accumulate
+  // stale listeners and trip Node's MaxListenersExceededWarning.
+  private static debugExitHook: (() => void) | null = null;
   /**
    * Initialize Laminar context across the application.
    * This method must be called before using any other Laminar methods or decorators.
@@ -389,8 +394,14 @@ export class Laminar {
       // on any transient event-loop idle, which can happen before the run's
       // root trace id is recorded — emitPointer is one-shot, so a premature
       // call would permanently spend the pointer with an empty trace_id.
-      // Mirrors Python's single atexit hook.
-      process.once("exit", () => runtime.emitPointer());
+      // Mirrors Python's single atexit hook. Drop any prior hook first so a
+      // repeated initialize() (or an init/shutdown loop) doesn't pile up
+      // listeners; keep this one by reference for shutdown() to remove.
+      if (this.debugExitHook !== null) {
+        process.removeListener("exit", this.debugExitHook);
+      }
+      this.debugExitHook = () => runtime.emitPointer();
+      process.once("exit", this.debugExitHook);
     } catch (e) {
       // never let debug setup crash initialization
       logger.warn("Failed to initialize debug runtime: " + errorMessage(e));
@@ -1002,6 +1013,12 @@ export class Laminar {
       // Clear the one-shot debug-runtime state so a subsequent initialize()
       // re-reads LMNR_DEBUG* instead of resurrecting the previous run.
       resetDebugRuntime();
+      // The pointer was just emitted above, so the `exit` hook would be a
+      // redundant no-op; remove it so init/shutdown loops don't leak listeners.
+      if (this.debugExitHook !== null) {
+        process.removeListener("exit", this.debugExitHook);
+        this.debugExitHook = null;
+      }
 
       // Force release the claude-code proxy if it was started (ignores ref count)
       forceReleaseClaudeProxy();

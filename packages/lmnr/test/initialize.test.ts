@@ -70,4 +70,22 @@ void describe("initialize", () => {
     const payload = JSON.parse(pointerLine.slice("LMNR_DEBUG_RUN ".length));
     assert.strictEqual(payload.trace_id, "01234567-89ab-cdef-0123-456789abcdef");
   });
+
+  void it("does not leak exit listeners across init/shutdown cycles", async () => {
+    // Each debug-mode initialize() registers a process `exit` hook to emit the
+    // run pointer. `process.once` only auto-detaches after exit fires, so the
+    // hook must be removed on shutdown — otherwise repeated cycles accumulate
+    // listeners and trip Node's MaxListenersExceededWarning (~10 cycles).
+    process.env.LMNR_DEBUG = "true";
+    process.env.LMNR_DEBUG_SESSION_ID = "session-leak";
+    delete process.env.LMNR_DEBUG_REPLAY_TRACE_ID;
+    delete process.env.LMNR_DEBUG_CACHE_UNTIL;
+
+    const before = process.listenerCount("exit");
+    for (let i = 0; i < 12; i++) {
+      Laminar.initialize({ projectApiKey: "test" });
+      await Laminar.shutdown();
+    }
+    assert.strictEqual(process.listenerCount("exit"), before);
+  });
 });
