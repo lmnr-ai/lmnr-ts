@@ -31,7 +31,7 @@ import {
 import { buildPointer, emitPointer } from "./pointer";
 import { ReplayCache } from "./replay-cache";
 import { fetchSpineMetadata, fetchSpinePayloads, SqlQuery } from "./source-trace";
-import { detectSpine, hasOverlap } from "./spine";
+import { detectSpine, hasOverlap, resolveCacheUntilSpanId } from "./spine";
 
 const logger = initializeLogger();
 
@@ -152,11 +152,16 @@ export class DebugRuntime {
       return;
     }
     this._emitted = true;
+    // Prefer the cache's resolved window so a span-id `cacheUntil` is persisted
+    // as the concrete occurrence count it resolved to — that keeps a later
+    // LMNR_DEBUG_FROM_LAST_RUN replay stable instead of re-resolving the span id
+    // against a (possibly different) trace.
+    const cacheUntil = this._cache?.cacheUntil ?? this._config.cacheUntil;
     const pointer = buildPointer({
       traceId: this._traceId ?? "",
       sessionId: this._config.sessionId,
       replayTraceId: this._config.replayTraceId,
-      cacheUntil: this._config.cacheUntil,
+      cacheUntil,
       debuggerUrl: this.debuggerSessionUrl(),
       startedAt: this._startedAt,
     });
@@ -299,7 +304,25 @@ const buildCache = async (
     return null;
   }
 
-  if (hasOverlap(result.spineCalls, config.cacheUntil)) {
+  let cacheUntil = config.cacheUntil;
+  if (config.cacheUntilSpanId !== null) {
+    const resolved = resolveCacheUntilSpanId(
+      result.spineCalls,
+      config.cacheUntilSpanId,
+    );
+    if (resolved === null) {
+      logger.warn(
+        `LMNR_DEBUG_CACHE_UNTIL span id ${JSON.stringify(config.cacheUntilSpanId)} ` +
+          `did not match any LLM call on the spine '${result.spinePath}' of ` +
+          `source trace ${traceId} (invalid, not found, or not on the spine ` +
+          "path); running live.",
+      );
+      return null;
+    }
+    cacheUntil = resolved;
+  }
+
+  if (hasOverlap(result.spineCalls, cacheUntil)) {
     logger.warn(
       `Spine '${result.spinePath}' of source trace ${traceId} has LLM calls ` +
         "that overlap in time; v1 cannot safely replay a non-sequential " +
@@ -309,5 +332,5 @@ const buildCache = async (
   }
 
   const payloads = await fetchSpinePayloads(client, traceId, result.spinePath);
-  return new ReplayCache(result.spinePath, config.cacheUntil, payloads);
+  return new ReplayCache(result.spinePath, cacheUntil, payloads);
 };

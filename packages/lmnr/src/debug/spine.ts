@@ -19,6 +19,9 @@ export interface SpanRecord {
   spanType: string;
   startTime: number;
   endTime: number;
+  // The span's UUID (as stored in ClickHouse). Used to resolve a span-id
+  // `LMNR_DEBUG_CACHE_UNTIL` to an occurrence count; "" when unavailable.
+  spanId: string;
 }
 
 export interface SpineResult {
@@ -83,6 +86,40 @@ export const detectSpine = (spans: SpanRecord[]): SpineResult => {
     (a, b) => a.startTime - b.startTime,
   );
   return { spinePath, spineCalls };
+};
+
+/**
+ * True if `needle` (hyphen-stripped lowercase hex) suffix-matches `spanId`.
+ *
+ * The source-trace span ids are full UUIDs, but the user may pass a full UUID,
+ * the last two groups, the raw 16-hex OTel id, or a short hex suffix — all of
+ * which are a suffix of the hyphen-stripped UUID. Identical logic in both SDKs.
+ */
+const matchSpanId = (needle: string, spanId: string): boolean => {
+  if (needle.length === 0 || spanId.length === 0) {
+    return false;
+  }
+  return spanId.toLowerCase().replace(/-/g, "").endsWith(needle);
+};
+
+/**
+ * Resolve a span-id `cacheUntil` to an occurrence count over the spine.
+ *
+ * The spine calls are in execution order, so the matched span's 1-based index
+ * is the number of calls to cache (inclusive of the target). Returns null when
+ * the needle matches none of the spine calls (invalid / not on the spine path)
+ * so the caller can warn and degrade to live.
+ */
+export const resolveCacheUntilSpanId = (
+  spineCalls: SpanRecord[],
+  needle: string,
+): number | null => {
+  for (let i = 0; i < spineCalls.length; i++) {
+    if (matchSpanId(needle, spineCalls[i].spanId)) {
+      return i + 1;
+    }
+  }
+  return null;
 };
 
 /**

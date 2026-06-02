@@ -3,7 +3,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { detectSpine, hasOverlap, SpanRecord } from '../../src/debug/spine';
+import {
+  detectSpine,
+  hasOverlap,
+  resolveCacheUntilSpanId,
+  SpanRecord,
+} from '../../src/debug/spine';
 
 const dataDir = join(__dirname, '..', 'data', 'debug');
 
@@ -41,6 +46,7 @@ void describe('detectSpine (spine vector parity)', () => {
         spanType: s.span_type,
         startTime: s.start_time,
         endTime: s.end_time,
+        spanId: "",
       }));
 
       const result = detectSpine(spans);
@@ -61,8 +67,50 @@ void describe('hasOverlap (overlap vector parity)', () => {
         spanType: 'LLM',
         startTime: c.start_time,
         endTime: c.end_time,
+        spanId: '',
       }));
       assert.strictEqual(hasOverlap(calls, testCase.n), testCase.expect);
     });
   }
+});
+
+const spineWithIds = (...spanIds: string[]): SpanRecord[] =>
+  spanIds.map((spanId, i) => ({
+    spanPath: 'loop.llm',
+    spanType: 'LLM',
+    startTime: i,
+    endTime: i + 0.5,
+    spanId,
+  }));
+
+const FULL_UUID = '00000000-0000-0000-0123-456789abcdef';
+
+void describe('resolveCacheUntilSpanId', () => {
+  // Full UUID, last two groups, raw 16-hex, short hex suffix — all forms the
+  // user might copy for the same span id resolve to the same call.
+  for (const needle of [
+    '00000000000000000123456789abcdef',
+    '0123456789abcdef',
+    'abcdef',
+  ]) {
+    void it(`matches form ${needle}`, () => {
+      const spine = spineWithIds('11111111-1111-1111-1111-111111111111', FULL_UUID);
+      // The target is the 2nd call, so the resolved count is 2 (inclusive).
+      assert.strictEqual(resolveCacheUntilSpanId(spine, needle), 2);
+    });
+  }
+
+  void it('returns the first occurrence count', () => {
+    const spine = spineWithIds(FULL_UUID, '22222222-2222-2222-2222-222222222222');
+    assert.strictEqual(resolveCacheUntilSpanId(spine, '456789abcdef'), 1);
+  });
+
+  void it('returns null when not found', () => {
+    const spine = spineWithIds('11111111-1111-1111-1111-111111111111');
+    assert.strictEqual(resolveCacheUntilSpanId(spine, 'deadbeef'), null);
+  });
+
+  void it('returns null on an empty spine', () => {
+    assert.strictEqual(resolveCacheUntilSpanId([], 'abcdef'), null);
+  });
 });

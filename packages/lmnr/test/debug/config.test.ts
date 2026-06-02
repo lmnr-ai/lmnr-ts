@@ -21,6 +21,7 @@ interface ConfigCase {
     session_id: string;
     replay_trace_id: string | null;
     cache_until: number;
+    cache_until_span_id?: string | null;
     replay_enabled: boolean;
   } | null;
 }
@@ -57,6 +58,7 @@ void describe('buildDebugConfig (truth table parity)', () => {
       assert.strictEqual(config.sessionId, expect.session_id);
       assert.strictEqual(config.replayTraceId, expect.replay_trace_id);
       assert.strictEqual(config.cacheUntil, expect.cache_until);
+      assert.strictEqual(config.cacheUntilSpanId, expect.cache_until_span_id ?? null);
       assert.strictEqual(replayEnabledForConfig(config), expect.replay_enabled);
     });
   }

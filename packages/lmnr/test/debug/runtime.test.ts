@@ -408,6 +408,65 @@ void describe('DebugRuntime', () => {
     });
   });
 
+  void it('init resolves a span-id cache_until to an occurrence count', async () => {
+    // A span-id LMNR_DEBUG_CACHE_UNTIL resolves to the matched call's 1-based
+    // occurrence on the spine: matching the 2nd of 3 calls caches occurrences 0-1.
+    process.env.LMNR_DEBUG = 'true';
+    process.env.LMNR_DEBUG_REPLAY_TRACE_ID = 'trace-1';
+    process.env.LMNR_DEBUG_CACHE_UNTIL = '0123-456789abcdef';
+
+    const metadata = [
+      {
+        path: 'agent.loop.llm', span_type: 'LLM', start_time: 1.0, end_time: 1.5,
+        span_id: '11111111-1111-1111-1111-111111111111',
+      },
+      {
+        path: 'agent.loop.llm', span_type: 'LLM', start_time: 2.0, end_time: 2.5,
+        span_id: '00000000-0000-0000-0123-456789abcdef',
+      },
+      {
+        path: 'agent.loop.llm', span_type: 'LLM', start_time: 3.0, end_time: 3.5,
+        span_id: '22222222-2222-2222-2222-222222222222',
+      },
+    ];
+    const payloads = [
+      { name: 'chat', input: 'a', output: '0', attributes: {} },
+      { name: 'chat', input: 'b', output: '1', attributes: {} },
+      { name: 'chat', input: 'c', output: '2', attributes: {} },
+    ];
+    const sql = new FakeSql(metadata, payloads);
+
+    const { runtime, ready } = initDebugRuntime(sql);
+    await ready;
+    assert.ok(runtime !== null);
+    assert.strictEqual(runtime.replayConfigured, true);
+    // Occurrences 0 and 1 are cached (up to and including the matched span).
+    assert.strictEqual(runtime.getCached('agent.loop.llm')?.output, '0');
+    assert.strictEqual(runtime.getCached('agent.loop.llm')?.output, '1');
+    // The 3rd call is past the resolved window -> live.
+    assert.strictEqual(runtime.getCached('agent.loop.llm'), undefined);
+  });
+
+  void it('init degrades to live on an unmatched span-id cache_until', async () => {
+    process.env.LMNR_DEBUG = 'true';
+    process.env.LMNR_DEBUG_REPLAY_TRACE_ID = 'trace-1';
+    process.env.LMNR_DEBUG_CACHE_UNTIL = 'deadbeef';
+
+    const metadata = [
+      {
+        path: 'agent.loop.llm', span_type: 'LLM', start_time: 1.0, end_time: 1.5,
+        span_id: '11111111-1111-1111-1111-111111111111',
+      },
+    ];
+    const sql = new FakeSql(metadata, []);
+
+    const { runtime, ready } = initDebugRuntime(sql);
+    await ready;
+    assert.ok(runtime !== null);
+    // Unmatched span id -> no cache -> every call runs live.
+    assert.strictEqual(runtime.getCached('agent.loop.llm'), undefined);
+  });
+
   void it('init degrades to live on overlap', async () => {
     process.env.LMNR_DEBUG = 'true';
     process.env.LMNR_DEBUG_REPLAY_TRACE_ID = 'trace-1';

@@ -71,7 +71,7 @@ export const fetchSpineMetadata = async (
   let offset = 0;
   for (;;) {
     const rows = await client.query(
-      "SELECT path, span_type, start_time, end_time FROM spans " +
+      "SELECT path, span_type, start_time, end_time, span_id FROM spans " +
         "WHERE trace_id = {trace_id:UUID} " +
         "ORDER BY start_time LIMIT {limit:UInt32} OFFSET {offset:UInt32}",
       { trace_id: traceId, limit: PAGE_SIZE, offset },
@@ -85,6 +85,7 @@ export const fetchSpineMetadata = async (
         spanType: String(row.span_type || ""),
         startTime: toEpoch(row.start_time),
         endTime: toEpoch(row.end_time, Infinity),
+        spanId: String(row.span_id || ""),
       });
     }
     if (rows.length < PAGE_SIZE) {
