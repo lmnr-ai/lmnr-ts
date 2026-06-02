@@ -332,7 +332,6 @@ void describe("DebugRuntime", () => {
     });
   });
 
-<<<<<<< HEAD
   void it("awaitCacheReady waits for the in-flight build then serves slot 0", async () => {
     // The replay consumer awaits this before the cache lookup. A call that
     // arrives during the async-fill window must wait for setCache so it serves
@@ -358,23 +357,6 @@ void describe("DebugRuntime", () => {
     const payloads = [
       { name: "chat", input: "a", output: "0", attributes: {} },
       { name: "chat", input: "b", output: "1", attributes: {} },
-=======
-  void it('awaitCacheReady waits for the in-flight build then serves slot 0', async () => {
-    // The replay consumer awaits this before the cache lookup. A call that
-    // arrives during the async-fill window must wait for setCache so it serves
-    // occurrence 0 instead of running live and skipping the first cached span.
-    process.env.LMNR_DEBUG = 'true';
-    process.env.LMNR_DEBUG_REPLAY_TRACE_ID = 'trace-1';
-    process.env.LMNR_DEBUG_CACHE_UNTIL = '2';
-
-    const metadata = [
-      { path: 'agent.loop.llm', span_type: 'LLM', start_time: 1.0, end_time: 1.5 },
-      { path: 'agent.loop.llm', span_type: 'LLM', start_time: 2.0, end_time: 2.5 },
-    ];
-    const payloads = [
-      { name: 'chat', input: 'a', output: '0', attributes: {} },
-      { name: 'chat', input: 'b', output: '1', attributes: {} },
->>>>>>> bfccfa7 (fix(debug): wait for replay cache load before serving so first spine calls aren't skipped)
     ];
 
     let release!: () => void;
@@ -386,11 +368,7 @@ void describe("DebugRuntime", () => {
       private payloadRows = payloads;
       async query(sql: string): Promise<Array<Record<string, any>>> {
         await gate;
-<<<<<<< HEAD
         if (sql.includes("span_type, start_time")) {
-=======
-        if (sql.includes('span_type, start_time')) {
->>>>>>> bfccfa7 (fix(debug): wait for replay cache load before serving so first spine calls aren't skipped)
           const rows = this.metadataRows;
           this.metadataRows = [];
           return rows;
@@ -404,50 +382,28 @@ void describe("DebugRuntime", () => {
     const { runtime } = initDebugRuntime(new DeferredSql());
     assert.ok(runtime !== null);
     // Cache is still loading: a lookup right now would miss and burn slot 0.
-<<<<<<< HEAD
     assert.strictEqual(getRuntime()!.getCached("peek") !== undefined, false);
 
     const waited = awaitCacheReady(1_000).then(() =>
       runtime.getCached("agent.loop.llm"),
-=======
-    assert.strictEqual(getRuntime()!.getCached('peek') !== undefined, false);
-
-    const waited = awaitCacheReady(1_000).then(() =>
-      runtime.getCached('agent.loop.llm'),
->>>>>>> bfccfa7 (fix(debug): wait for replay cache load before serving so first spine calls aren't skipped)
     );
     // Let the build settle while the wait is in flight.
     release();
     const served = await waited;
     assert.deepStrictEqual(served, {
-<<<<<<< HEAD
       name: "chat",
       input: "a",
       output: "0",
-=======
-      name: 'chat',
-      input: 'a',
-      output: '0',
->>>>>>> bfccfa7 (fix(debug): wait for replay cache load before serving so first spine calls aren't skipped)
       attributes: {},
     });
   });
 
-<<<<<<< HEAD
   void it("awaitCacheReady is capped by the timeout on a hung build", async () => {
     // A source-trace fetch that never resolves must not block the user's
     // program: the wait is bounded and returns even though the cache never lands.
     process.env.LMNR_DEBUG = "true";
     process.env.LMNR_DEBUG_REPLAY_TRACE_ID = "trace-1";
     process.env.LMNR_DEBUG_CACHE_UNTIL = "2";
-=======
-  void it('awaitCacheReady is capped by the timeout on a hung build', async () => {
-    // A source-trace fetch that never resolves must not block the user's
-    // program: the wait is bounded and returns even though the cache never lands.
-    process.env.LMNR_DEBUG = 'true';
-    process.env.LMNR_DEBUG_REPLAY_TRACE_ID = 'trace-1';
-    process.env.LMNR_DEBUG_CACHE_UNTIL = '2';
->>>>>>> bfccfa7 (fix(debug): wait for replay cache load before serving so first spine calls aren't skipped)
 
     class HangingSql implements SqlQuery {
       // Never resolves -> the cache build hangs forever.
@@ -463,11 +419,7 @@ void describe("DebugRuntime", () => {
     assert.ok(Date.now() - start < 1_000);
   });
 
-<<<<<<< HEAD
   void it("reset allows reinit to re-read env", () => {
-=======
-  void it('reset allows reinit to re-read env', () => {
->>>>>>> bfccfa7 (fix(debug): wait for replay cache load before serving so first spine calls aren't skipped)
     // A shutdown/initialize cycle must re-read LMNR_DEBUG*: reset clears the
     // one-shot flag so a previously-off run can turn debug on (and vice versa).
     const off = initDebugRuntime({} as SqlQuery);
