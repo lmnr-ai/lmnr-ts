@@ -8,6 +8,7 @@ import { CachedSpan } from '@lmnr-ai/types';
 
 import { DebugConfig } from '../../src/debug/config';
 import {
+  awaitCacheReady,
   DebugRuntime,
   getRuntime,
   initDebugRuntime,
@@ -289,6 +290,83 @@ void describe('DebugRuntime', () => {
       output: '0',
       attributes: {},
     });
+  });
+
+  void it('awaitCacheReady waits for the in-flight build then serves slot 0', async () => {
+    // The replay consumer awaits this before the cache lookup. A call that
+    // arrives during the async-fill window must wait for setCache so it serves
+    // occurrence 0 instead of running live and skipping the first cached span.
+    process.env.LMNR_DEBUG = 'true';
+    process.env.LMNR_DEBUG_REPLAY_TRACE_ID = 'trace-1';
+    process.env.LMNR_DEBUG_CACHE_UNTIL = '2';
+
+    const metadata = [
+      { path: 'agent.loop.llm', span_type: 'LLM', start_time: 1.0, end_time: 1.5 },
+      { path: 'agent.loop.llm', span_type: 'LLM', start_time: 2.0, end_time: 2.5 },
+    ];
+    const payloads = [
+      { name: 'chat', input: 'a', output: '0', attributes: {} },
+      { name: 'chat', input: 'b', output: '1', attributes: {} },
+    ];
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    class DeferredSql implements SqlQuery {
+      private metadataRows = metadata;
+      private payloadRows = payloads;
+      async query(sql: string): Promise<Array<Record<string, any>>> {
+        await gate;
+        if (sql.includes('span_type, start_time')) {
+          const rows = this.metadataRows;
+          this.metadataRows = [];
+          return rows;
+        }
+        const rows = this.payloadRows;
+        this.payloadRows = [];
+        return rows;
+      }
+    }
+
+    const { runtime } = initDebugRuntime(new DeferredSql());
+    assert.ok(runtime !== null);
+    // Cache is still loading: a lookup right now would miss and burn slot 0.
+    assert.strictEqual(getRuntime()!.getCached('peek') !== undefined, false);
+
+    const waited = awaitCacheReady(1_000).then(() =>
+      runtime.getCached('agent.loop.llm'),
+    );
+    // Let the build settle while the wait is in flight.
+    release();
+    const served = await waited;
+    assert.deepStrictEqual(served, {
+      name: 'chat',
+      input: 'a',
+      output: '0',
+      attributes: {},
+    });
+  });
+
+  void it('awaitCacheReady is capped by the timeout on a hung build', async () => {
+    // A source-trace fetch that never resolves must not block the user's
+    // program: the wait is bounded and returns even though the cache never lands.
+    process.env.LMNR_DEBUG = 'true';
+    process.env.LMNR_DEBUG_REPLAY_TRACE_ID = 'trace-1';
+    process.env.LMNR_DEBUG_CACHE_UNTIL = '2';
+
+    class HangingSql implements SqlQuery {
+      // Never resolves -> the cache build hangs forever.
+      query(): Promise<Array<Record<string, any>>> {
+        return new Promise(() => {});
+      }
+    }
+
+    initDebugRuntime(new HangingSql());
+    const start = Date.now();
+    await awaitCacheReady(30);
+    // Returned via the timeout branch, not the (never-settling) build promise.
+    assert.ok(Date.now() - start < 1_000);
   });
 
   void it('reset allows reinit to re-read env', () => {

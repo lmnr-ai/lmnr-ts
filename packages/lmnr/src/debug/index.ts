@@ -131,9 +131,11 @@ export class DebugRuntime {
    * Increments the per-path occurrence counter as a side effect, mirroring a
    * live call consuming one slot of the cache window. The counter is owned by
    * the runtime (not the cache) so it advances even while the cache is still
-   * loading (`_cache === null`); otherwise spine calls in that window would run
-   * live without consuming a slot and the post-`setCache` calls would replay
-   * cached responses meant for earlier occurrences.
+   * loading (`_cache === null`). Replay consumers now `awaitCacheReady` before
+   * calling this, so the cache is normally already installed; the unconditional
+   * advance only matters as a fallback when the bounded wait times out on a slow
+   * build — there a spine call runs live without a cached payload, and advancing
+   * the slot keeps the post-`setCache` calls aligned to later occurrences.
    */
   getCached(spanPath: string): CachedSpan | undefined {
     const occurrence = this._counters.get(spanPath) ?? 0;
@@ -170,8 +172,50 @@ let initialized = false;
 // lookups run before `setCache` completes).
 let readyPromise: Promise<void> = Promise.resolve();
 
+// How long a replay-run LLM call waits for the in-flight cache build before
+// giving up and running live. TS-only: the cache fills asynchronously after
+// `initDebugRuntime` returns, so the first one or two spine calls can arrive
+// before `setCache` lands. Without this wait they'd advance the occurrence
+// counter and run live, skipping their cached responses (the user only ever
+// sees replay starting from the 2nd/3rd call). "A couple seconds" is generous:
+// an agent's first call usually follows a network round-trip anyway, so the
+// race almost always resolves on the cache branch well before the timeout.
+const CACHE_READY_TIMEOUT_MS = 2_000;
+
 /** Return the process-wide debug runtime, or null when debug mode is off. */
 export const getRuntime = (): DebugRuntime | null => runtime;
+
+/**
+ * Wait (bounded) for the in-flight replay cache build to settle.
+ *
+ * Replay-run LLM consumers (`doGenerateOrStreamWithCaching`) call this before
+ * the cache lookup so a call that arrives during the async-fill window serves
+ * from occurrence slot 0 instead of running live and skipping it. Races the
+ * module-scope `readyPromise` against a timer: an already-settled promise wins
+ * the race on the next microtask (no spurious wait), and a slow build is capped
+ * at `timeoutMs` so a hung source-trace fetch never blocks the user's program.
+ *
+ * TS-only — Python builds its cache synchronously inside `init_debug_runtime`,
+ * so it has no loading window and nothing to await. Not part of the `replay.py`
+ * line-parity surface.
+ */
+export const awaitCacheReady = async (
+  timeoutMs: number = CACHE_READY_TIMEOUT_MS,
+): Promise<void> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+    // Don't keep the event loop alive just to honor this wait.
+    timer.unref?.();
+  });
+  try {
+    await Promise.race([readyPromise, timeout]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
+};
 
 /**
  * Build the debug runtime once. Idempotent; safe to call from initialize().
@@ -179,9 +223,10 @@ export const getRuntime = (): DebugRuntime | null => runtime;
  * The SDK's `initialize()` is synchronous, so the runtime is registered
  * immediately (making `sessionId` available for metadata stamping) and the
  * replay cache — which needs an async source-trace fetch — is filled in the
- * background via `runtime.setCache`. LLM calls that happen before the cache is
- * ready run live; this is acceptable for v1 (an agent's first call comes after
- * a network round-trip anyway).
+ * background via `runtime.setCache`. Replay consumers `awaitCacheReady`
+ * (bounded) before the cache lookup, so an LLM call that arrives during the
+ * loading window waits for the build instead of running live and skipping its
+ * cached response; only a build slower than the timeout falls through to live.
  *
  * Never throws: a failure to fetch / build the cache degrades the run to
  * debug-no-replay rather than crashing the user's program. Returns a promise

@@ -22,6 +22,7 @@ import {
 } from "@ai-sdk/provider-v2";
 import { CachedSpan } from "@lmnr-ai/types";
 
+import { awaitCacheReady } from "../../../debug/index";
 import { cachedPayloadFor, markSpanCached, replayEnabled } from "../../../debug/replay";
 import { Laminar } from "../../../laminar";
 
@@ -177,14 +178,19 @@ export abstract class BaseLaminarLanguageModel {
    * the cached span and marks the span CACHED; a miss (or a non-debug run) falls
    * through to the live provider call.
    */
-  private doGenerateOrStreamWithCaching(
+  private async doGenerateOrStreamWithCaching(
     options: LanguageModelV2CallOptions | LanguageModelV3CallOptions,
     originalFn: (opts: any) => PromiseLike<any>,
     buildFromCached: (cached: CachedSpan) => any,
-  ): PromiseLike<any> {
+  ): Promise<any> {
     if (!replayEnabled()) {
       return originalFn(options);
     }
+
+    // The replay cache fills asynchronously after init (TS-only); wait a bounded
+    // moment for the in-flight build so the first spine call serves from slot 0
+    // instead of running live and skipping its cached response.
+    await awaitCacheReady();
 
     const span = Laminar.getCurrentSpan();
     const spanPath = Laminar.getLaminarSpanContext()?.spanPath?.join('.') ?? null;
@@ -194,7 +200,7 @@ export abstract class BaseLaminarLanguageModel {
     }
 
     markSpanCached(span);
-    return Promise.resolve(buildFromCached(cached));
+    return buildFromCached(cached);
   }
 
   private cachedDoGenerate(cached: CachedSpan): {
