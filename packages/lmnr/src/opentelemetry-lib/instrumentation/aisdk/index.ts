@@ -1,10 +1,12 @@
 import { type LanguageModelV3 } from "@ai-sdk/provider";
 import { type LanguageModelV2 } from "@ai-sdk/provider-v2";
+import { type LanguageModelV4 } from "@ai-sdk/provider-v4-canary";
 import type * as AI from "ai";
 
 import { getTracer } from "../../tracing";
 import { LaminarLanguageModelV2 } from "./v2";
 import { LaminarLanguageModelV3 } from "./v3";
+import { LaminarLanguageModelV4 } from "./v4";
 import { aiSdkTelemetry } from "./v7-integration/index";
 
 const AI_FUNCTIONS = [
@@ -80,14 +82,20 @@ export const wrapAISDK = (ai: typeof AI): typeof AI => {
 };
 
 export function wrapLanguageModel(
+  languageModel: LanguageModelV4,
+): LanguageModelV4;
+export function wrapLanguageModel(
   languageModel: LanguageModelV3,
 ): LanguageModelV3;
 export function wrapLanguageModel(
   languageModel: LanguageModelV2,
 ): LanguageModelV2;
 export function wrapLanguageModel(
-  languageModel: LanguageModelV2 | LanguageModelV3,
-): LanguageModelV2 | LanguageModelV3 {
+  languageModel: LanguageModelV2 | LanguageModelV3 | LanguageModelV4,
+): LanguageModelV2 | LanguageModelV3 | LanguageModelV4 {
+  if (languageModel.specificationVersion === "v4") {
+    return new LaminarLanguageModelV4(languageModel);
+  }
   if (languageModel.specificationVersion === "v3") {
     return new LaminarLanguageModelV3(languageModel);
   }

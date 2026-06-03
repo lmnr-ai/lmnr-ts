@@ -20,10 +20,25 @@ import {
   type SharedV2Headers,
   type SharedV2ProviderMetadata,
 } from "@ai-sdk/provider-v2";
+import {
+  type LanguageModelV4,
+  type LanguageModelV4CallOptions,
+  type LanguageModelV4Content,
+  type LanguageModelV4FinishReason,
+  type LanguageModelV4ResponseMetadata,
+  type LanguageModelV4Usage,
+  type SharedV4Headers,
+  type SharedV4ProviderMetadata,
+  type SharedV4Warning,
+} from "@ai-sdk/provider-v4-canary";
 import { CachedSpan } from "@lmnr-ai/types";
 
 import { awaitCacheReady } from "../../../debug/index";
-import { cachedPayloadFor, markSpanCached, replayEnabled } from "../../../debug/replay";
+import {
+  cachedPayloadFor,
+  markSpanCached,
+  replayEnabled,
+} from "../../../debug/replay";
 import { Laminar } from "../../../laminar";
 
 /**
@@ -32,12 +47,19 @@ import { Laminar } from "../../../laminar";
  * Uses method overloads for type safety across versions.
  */
 export abstract class BaseLaminarLanguageModel {
-  protected readonly innerLanguageModel: LanguageModelV2 | LanguageModelV3;
+  protected readonly innerLanguageModel:
+    | LanguageModelV2
+    | LanguageModelV3
+    | LanguageModelV4;
   readonly provider: string;
   readonly modelId: string;
-  readonly supportedUrls: PromiseLike<Record<string, RegExp[]>> | Record<string, RegExp[]>;
+  readonly supportedUrls:
+    | PromiseLike<Record<string, RegExp[]>>
+    | Record<string, RegExp[]>;
 
-  constructor(languageModel: LanguageModelV2 | LanguageModelV3) {
+  constructor(
+    languageModel: LanguageModelV2 | LanguageModelV3 | LanguageModelV4,
+  ) {
     this.innerLanguageModel = languageModel;
     this.provider = languageModel.provider;
     this.modelId = languageModel.modelId;
@@ -48,16 +70,24 @@ export abstract class BaseLaminarLanguageModel {
    * Creates a version-specific usage object.
    * V2 and V3 have different usage structures, so this must be implemented by subclasses.
    */
-  protected abstract createUsageObject(): LanguageModelV2Usage | LanguageModelV3Usage;
+  protected abstract createUsageObject():
+    | LanguageModelV2Usage
+    | LanguageModelV3Usage
+    | LanguageModelV4Usage;
 
   /**
    * Creates a version-specific stream from cached response data.
    * V2 and V3 have different stream part types, so this must be implemented by subclasses.
    */
   protected abstract createStreamFromCachedResponse(
-    content: Array<LanguageModelV2Content | LanguageModelV3Content>,
-    finishReason: LanguageModelV2FinishReason | LanguageModelV3FinishReason,
-    usage: LanguageModelV2Usage | LanguageModelV3Usage
+    content: Array<
+      LanguageModelV2Content | LanguageModelV3Content | LanguageModelV4Content
+    >,
+    finishReason:
+      | LanguageModelV2FinishReason
+      | LanguageModelV3FinishReason
+      | LanguageModelV4FinishReason,
+    usage: LanguageModelV2Usage | LanguageModelV3Usage | LanguageModelV4Usage,
   ): ReadableStream<any>;
 
   /**
@@ -71,16 +101,22 @@ export abstract class BaseLaminarLanguageModel {
       usage: LanguageModelV2Usage;
       providerMetadata?: SharedV2ProviderMetadata;
       request?: { body?: unknown };
-      response?: LanguageModelV2ResponseMetadata & { headers?: SharedV2Headers; body?: unknown };
+      response?: LanguageModelV2ResponseMetadata & {
+        headers?: SharedV2Headers;
+        body?: unknown;
+      };
       warnings: Array<LanguageModelV2CallWarning>;
-    }>
+    }>,
   ): PromiseLike<{
     content: Array<LanguageModelV2Content>;
     finishReason: LanguageModelV2FinishReason;
     usage: LanguageModelV2Usage;
     providerMetadata?: SharedV2ProviderMetadata;
     request?: { body?: unknown };
-    response?: LanguageModelV2ResponseMetadata & { headers?: SharedV2Headers; body?: unknown };
+    response?: LanguageModelV2ResponseMetadata & {
+      headers?: SharedV2Headers;
+      body?: unknown;
+    };
     warnings: Array<LanguageModelV2CallWarning>;
   }>;
 
@@ -95,17 +131,53 @@ export abstract class BaseLaminarLanguageModel {
       usage: LanguageModelV3Usage;
       providerMetadata?: SharedV3ProviderMetadata;
       request?: { body?: unknown };
-      response?: LanguageModelV3ResponseMetadata & { headers?: SharedV3Headers; body?: unknown };
+      response?: LanguageModelV3ResponseMetadata & {
+        headers?: SharedV3Headers;
+        body?: unknown;
+      };
       warnings: Array<SharedV3Warning>;
-    }>
+    }>,
   ): PromiseLike<{
     content: Array<LanguageModelV3Content>;
     finishReason: LanguageModelV3FinishReason;
     usage: LanguageModelV3Usage;
     providerMetadata?: SharedV3ProviderMetadata;
     request?: { body?: unknown };
-    response?: LanguageModelV3ResponseMetadata & { headers?: SharedV3Headers; body?: unknown };
+    response?: LanguageModelV3ResponseMetadata & {
+      headers?: SharedV3Headers;
+      body?: unknown;
+    };
     warnings: Array<SharedV3Warning>;
+  }>;
+
+  /**
+   * Main generation method with caching support for V4
+   */
+  protected doGenerateWithCaching(
+    options: LanguageModelV4CallOptions,
+    doGenerateFn: (opts: LanguageModelV4CallOptions) => PromiseLike<{
+      content: Array<LanguageModelV4Content>;
+      finishReason: LanguageModelV4FinishReason;
+      usage: LanguageModelV4Usage;
+      providerMetadata?: SharedV4ProviderMetadata;
+      request?: { body?: unknown };
+      response?: LanguageModelV4ResponseMetadata & {
+        headers?: SharedV4Headers;
+        body?: unknown;
+      };
+      warnings: Array<SharedV4Warning>;
+    }>,
+  ): PromiseLike<{
+    content: Array<LanguageModelV4Content>;
+    finishReason: LanguageModelV4FinishReason;
+    usage: LanguageModelV4Usage;
+    providerMetadata?: SharedV4ProviderMetadata;
+    request?: { body?: unknown };
+    response?: LanguageModelV4ResponseMetadata & {
+      headers?: SharedV4Headers;
+      body?: unknown;
+    };
+    warnings: Array<SharedV4Warning>;
   }>;
 
   /**
@@ -113,13 +185,14 @@ export abstract class BaseLaminarLanguageModel {
    * Consults the in-process replay cache (§G); falls through to the live call.
    */
   protected doGenerateWithCaching(
-    options: LanguageModelV2CallOptions | LanguageModelV3CallOptions,
+    options:
+      | LanguageModelV2CallOptions
+      | LanguageModelV3CallOptions
+      | LanguageModelV4CallOptions,
     doGenerateFn: (opts: any) => PromiseLike<any>,
   ): PromiseLike<any> {
-    return this.doGenerateOrStreamWithCaching(
-      options,
-      doGenerateFn,
-      (cached) => this.cachedDoGenerate(cached),
+    return this.doGenerateOrStreamWithCaching(options, doGenerateFn, (cached) =>
+      this.cachedDoGenerate(cached),
     );
   }
 
@@ -132,7 +205,7 @@ export abstract class BaseLaminarLanguageModel {
       stream: ReadableStream<any>;
       request?: { body?: unknown };
       response?: { headers?: SharedV2Headers };
-    }>
+    }>,
   ): PromiseLike<{
     stream: ReadableStream<any>;
     request?: { body?: unknown };
@@ -148,7 +221,7 @@ export abstract class BaseLaminarLanguageModel {
       stream: ReadableStream<any>;
       request?: { body?: unknown };
       response?: { headers?: SharedV3Headers };
-    }>
+    }>,
   ): PromiseLike<{
     stream: ReadableStream<any>;
     request?: { body?: unknown };
@@ -156,17 +229,34 @@ export abstract class BaseLaminarLanguageModel {
   }>;
 
   /**
+   * Main streaming method with caching support for V4
+   */
+  protected doStreamWithCaching(
+    options: LanguageModelV4CallOptions,
+    doStreamFn: (opts: LanguageModelV4CallOptions) => PromiseLike<{
+      stream: ReadableStream<any>;
+      request?: { body?: unknown };
+      response?: { headers?: SharedV4Headers };
+    }>,
+  ): PromiseLike<{
+    stream: ReadableStream<any>;
+    request?: { body?: unknown };
+    response?: { headers?: SharedV4Headers };
+  }>;
+
+  /**
    * Implementation of doStreamWithCaching
    * Consults the in-process replay cache (§H); falls through to the live call.
    */
   protected doStreamWithCaching(
-    options: LanguageModelV2CallOptions | LanguageModelV3CallOptions,
+    options:
+      | LanguageModelV2CallOptions
+      | LanguageModelV3CallOptions
+      | LanguageModelV4CallOptions,
     doStreamFn: (opts: any) => PromiseLike<any>,
   ): PromiseLike<any> {
-    return this.doGenerateOrStreamWithCaching(
-      options,
-      doStreamFn,
-      (cached) => this.cachedDoStream(cached),
+    return this.doGenerateOrStreamWithCaching(options, doStreamFn, (cached) =>
+      this.cachedDoStream(cached),
     );
   }
 
@@ -179,7 +269,10 @@ export abstract class BaseLaminarLanguageModel {
    * through to the live provider call.
    */
   private async doGenerateOrStreamWithCaching(
-    options: LanguageModelV2CallOptions | LanguageModelV3CallOptions,
+    options:
+      | LanguageModelV2CallOptions
+      | LanguageModelV3CallOptions
+      | LanguageModelV4CallOptions,
     originalFn: (opts: any) => PromiseLike<any>,
     buildFromCached: (cached: CachedSpan) => any,
   ): Promise<any> {
@@ -193,7 +286,8 @@ export abstract class BaseLaminarLanguageModel {
     await awaitCacheReady();
 
     const span = Laminar.getCurrentSpan();
-    const spanPath = Laminar.getLaminarSpanContext()?.spanPath?.join('.') ?? null;
+    const spanPath =
+      Laminar.getLaminarSpanContext()?.spanPath?.join(".") ?? null;
     const cached = cachedPayloadFor(spanPath);
     if (!cached) {
       return originalFn(options);
@@ -204,10 +298,17 @@ export abstract class BaseLaminarLanguageModel {
   }
 
   private cachedDoGenerate(cached: CachedSpan): {
-    content: Array<LanguageModelV2Content | LanguageModelV3Content>;
-    finishReason: LanguageModelV2FinishReason | LanguageModelV3FinishReason;
-    usage: LanguageModelV2Usage | LanguageModelV3Usage;
-    warnings: Array<LanguageModelV2CallWarning | SharedV3Warning>;
+    content: Array<
+      LanguageModelV2Content | LanguageModelV3Content | LanguageModelV4Content
+    >;
+    finishReason:
+      | LanguageModelV2FinishReason
+      | LanguageModelV3FinishReason
+      | LanguageModelV4FinishReason;
+    usage: LanguageModelV2Usage | LanguageModelV3Usage | LanguageModelV4Usage;
+    warnings: Array<
+      LanguageModelV2CallWarning | SharedV3Warning | SharedV4Warning
+    >;
   } {
     return {
       ...this.parseCachedSpan(cached),
@@ -229,9 +330,14 @@ export abstract class BaseLaminarLanguageModel {
    * Reconstructs content blocks, usage, and finish reason from a cached span.
    */
   private parseCachedSpan(cached: CachedSpan): {
-    content: Array<LanguageModelV2Content | LanguageModelV3Content>;
-    finishReason: LanguageModelV2FinishReason | LanguageModelV3FinishReason;
-    usage: LanguageModelV2Usage | LanguageModelV3Usage;
+    content: Array<
+      LanguageModelV2Content | LanguageModelV3Content | LanguageModelV4Content
+    >;
+    finishReason:
+      | LanguageModelV2FinishReason
+      | LanguageModelV3FinishReason
+      | LanguageModelV4FinishReason;
+    usage: LanguageModelV2Usage | LanguageModelV3Usage | LanguageModelV4Usage;
   } {
     let parsedOutput: string | Record<string, any>[] = cached.output;
     try {
@@ -242,62 +348,79 @@ export abstract class BaseLaminarLanguageModel {
 
     const content = this.convertToContentBlocks(parsedOutput);
     const usage = this.createUsageObject();
-    const finishReason = cached.attributes['ai.response.finishReason'] ?? 'stop';
+    const finishReason =
+      cached.attributes["ai.response.finishReason"] ?? "stop";
 
     return { content, usage, finishReason };
   }
 
   /**
-  * Converts output from span to content blocks compatible with both V2 and V3
-  */
+   * Converts output from span to content blocks compatible with both V2 and V3
+   */
   private convertToContentBlocks(
     output: string | Record<string, any>[],
-  ): Array<LanguageModelV3Content | LanguageModelV2Content> {
-    if (typeof output === 'string') {
-      return [{
-        type: 'text',
-        text: output,
-      }];
+  ): Array<
+    LanguageModelV4Content | LanguageModelV3Content | LanguageModelV2Content
+  > {
+    if (typeof output === "string") {
+      return [
+        {
+          type: "text",
+          text: output,
+        },
+      ];
     }
 
-    const handleItem = (item: Record<string, any>): LanguageModelV3Content[] => {
-      if (item.type === 'text') {
-        return [{
-          type: 'text',
-          text: item.text ?? '',
-        }];
+    const handleItem = (
+      item: Record<string, any>,
+    ): LanguageModelV3Content[] => {
+      if (item.type === "text") {
+        return [
+          {
+            type: "text",
+            text: item.text ?? "",
+          },
+        ];
       }
-      if (['tool-call', 'tool_call'].includes(item.type)) {
-        return [{
-          type: 'tool-call',
-          toolCallId: item.toolCallId ?? item.id,
-          toolName: item.toolName ?? item.name,
-          input: JSON.stringify(item.input ?? item.arguments),
-        }];
+      if (["tool-call", "tool_call"].includes(item.type)) {
+        return [
+          {
+            type: "tool-call",
+            toolCallId: item.toolCallId ?? item.id,
+            toolName: item.toolName ?? item.name,
+            input: JSON.stringify(item.input ?? item.arguments),
+          },
+        ];
       }
-      if (item.type === 'reasoning') {
-        return [{
-          type: 'reasoning',
-          text: item.text ?? '',
-        }];
+      if (item.type === "reasoning") {
+        return [
+          {
+            type: "reasoning",
+            text: item.text ?? "",
+          },
+        ];
       }
-      return [{
-        type: 'text',
-        text: JSON.stringify(item),
-      }];
+      return [
+        {
+          type: "text",
+          text: JSON.stringify(item),
+        },
+      ];
     };
 
-    return output.flatMap(item => {
+    return output.flatMap((item) => {
       if (item.role && item.content) {
         let parsedContent: Record<string, any>[] = item.content;
         try {
           parsedContent = JSON.parse(item.content);
         } catch {
-          if (typeof item === 'string') {
-            return [{
-              type: 'text',
-              text: item,
-            }];
+          if (typeof item === "string") {
+            return [
+              {
+                type: "text",
+                text: item,
+              },
+            ];
           }
         }
         return parsedContent.flatMap(handleItem);

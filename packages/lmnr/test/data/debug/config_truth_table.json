@@ -152,6 +152,22 @@
       }
     },
     {
+      "name": "cache-until-full-uuid-span-id-no-hyphen",
+      "env": {
+        "LMNR_DEBUG": "1",
+        "LMNR_DEBUG_SESSION_ID": "sess-10",
+        "LMNR_DEBUG_REPLAY_TRACE_ID": "55555555-5555-5555-5555-555555555555",
+        "LMNR_DEBUG_CACHE_UNTIL": "00000000000000000123456789abcdef"
+      },
+      "expect": {
+        "session_id": "sess-10",
+        "replay_trace_id": "55555555-5555-5555-5555-555555555555",
+        "cache_until": 0,
+        "cache_until_span_id": "00000000000000000123456789abcdef",
+        "replay_enabled": true
+      }
+    },
+    {
       "name": "cache-until-last-groups-span-id",
       "env": {
         "LMNR_DEBUG": "1",

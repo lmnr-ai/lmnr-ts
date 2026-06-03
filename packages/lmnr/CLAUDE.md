@@ -28,6 +28,7 @@ This is the main `@lmnr-ai/lmnr` SDK package — OpenTelemetry-based tracing for
 - Tests are run with `pnpm test` which invokes `tsx --test test/*.test.ts test/**/*.test.ts`. No Jest, no Vitest.
 - HTTP calls are mocked via `nock` using cassette recordings under `test/recordings/*.json`. `decompressRecordingResponse` (in `test/utils.ts`) handles gzipped payloads; hand-crafted cassettes just set a plain JSON `response`.
 - `initializeTracing({ exporter, disableBatch: true })` + `Object.defineProperty(Laminar, "isInitialized", { value: true, writable: true })` is the standard test setup for asserting on exported spans via `InMemorySpanExporter`.
+- **`emitPointer()` writes `${cwd}/.lmnr/last-run.json` as a best-effort side effect.** The `debug/pointer.test.ts` / `debug/runtime.test.ts` cases that assert on the *file* override `process.cwd` to a `mkdtempSync` temp dir, but the ones that only assert on the *console line* (`recordTraceId keeps the first trace id` in `runtime.test.ts`, the `LMNR_SPAN_CONTEXT` case in `initialize.test.ts`) do NOT — so they leak a real `.lmnr/` into the package dir. Both suites guard this with a `before()` that records `existsSync(.lmnr)` and an `after()` that `rmSync`s the dir ONLY if this run created it (never clobber a pre-existing one). When adding a debug test that emits a pointer, either override `process.cwd` to a temp dir or rely on this guard.
 
 # TypeScript / Build
 
