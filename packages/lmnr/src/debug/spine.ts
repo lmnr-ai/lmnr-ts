@@ -1,7 +1,7 @@
 /**
  * Spine detection over a source trace's spans.
  *
- * Implements the authoritative §7 heuristic plus the overlap guard from §F.
+ * Implements the authoritative heuristic plus the overlap guard.
  * Part of the cross-language parity surface — keep line-comparable with the
  * Python `spine.py` and cover with the shared test vectors.
  */
@@ -45,7 +45,7 @@ const depth = (spanPath: string): number => {
  * null only when the trace has zero LLM spans.
  */
 export const detectSpine = (spans: SpanRecord[]): SpineResult => {
-  const llmSpans = spans.filter((s) => s.spanType === "LLM");
+  const llmSpans = spans.filter((s) => ["LLM", "CACHED"].includes(s.spanType));
   if (llmSpans.length === 0) {
     logger.warn("Source trace has no LLM spans; nothing to cache.");
     return { spinePath: null, spineCalls: [] };
@@ -61,7 +61,9 @@ export const detectSpine = (spans: SpanRecord[]): SpineResult => {
     }
   }
 
-  const candidates = [...groups.entries()].filter(([, calls]) => calls.length >= 2);
+  const candidates = [...groups.entries()].filter(
+    ([, calls]) => calls.length >= 2,
+  );
 
   let spinePath: string;
   if (candidates.length > 0) {
@@ -75,11 +77,10 @@ export const detectSpine = (spans: SpanRecord[]): SpineResult => {
       .sort((a, b) => a.depth - b.depth || a.earliest - b.earliest)[0].path;
   } else {
     // Fallback: shallowest single LLM call site; tie-break by earliest start.
-    spinePath = [...llmSpans]
-      .sort(
-        (a, b) =>
-          depth(a.spanPath) - depth(b.spanPath) || a.startTime - b.startTime,
-      )[0].spanPath;
+    spinePath = [...llmSpans].sort(
+      (a, b) =>
+        depth(a.spanPath) - depth(b.spanPath) || a.startTime - b.startTime,
+    )[0].spanPath;
   }
 
   const spineCalls = [...groups.get(spinePath)!].sort(
