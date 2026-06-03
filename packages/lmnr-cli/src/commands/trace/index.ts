@@ -67,7 +67,13 @@ export const handleTraceAppendNote = async (
 
     const existing = readNoteFromMetadata(rows[0].metadata);
     const updated = existing ? `${existing}${NOTE_SEPARATOR}${note}` : note;
-    await client.traces.pushMetadata(id, { [NOTE_METADATA_KEY]: updated });
+    // failOnNotFound: the SQL pre-read can race a trace deletion, and a CLI
+    // exit 0 must mean the note actually landed.
+    await client.traces.pushMetadata(
+      id,
+      { [NOTE_METADATA_KEY]: updated },
+      { failOnNotFound: true },
+    );
 
     if (options.json) {
       outputJson({ traceId: id, note: updated });

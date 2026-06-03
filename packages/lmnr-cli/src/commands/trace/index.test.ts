@@ -36,7 +36,11 @@ describe('handleTraceAppendNote', () => {
 
     await handleTraceAppendNote(TRACE_ID, 'first note', baseOpts);
 
-    expect(mockPushMetadata).toHaveBeenCalledWith(TRACE_ID, { [NOTE_KEY]: 'first note' });
+    expect(mockPushMetadata).toHaveBeenCalledWith(
+      TRACE_ID,
+      { [NOTE_KEY]: 'first note' },
+      { failOnNotFound: true },
+    );
   });
 
   it('appends to an existing note with a blank-line separator', async () => {
@@ -46,9 +50,11 @@ describe('handleTraceAppendNote', () => {
 
     await handleTraceAppendNote(TRACE_ID, 'second note', baseOpts);
 
-    expect(mockPushMetadata).toHaveBeenCalledWith(TRACE_ID, {
-      [NOTE_KEY]: 'first note\n\nsecond note',
-    });
+    expect(mockPushMetadata).toHaveBeenCalledWith(
+      TRACE_ID,
+      { [NOTE_KEY]: 'first note\n\nsecond note' },
+      { failOnNotFound: true },
+    );
   });
 
   it('normalizes a 32-char OTel hex trace id', async () => {
@@ -60,7 +66,11 @@ describe('handleTraceAppendNote', () => {
       expect.stringContaining('SELECT metadata FROM traces'),
       { trace_id: TRACE_ID },
     );
-    expect(mockPushMetadata).toHaveBeenCalledWith(TRACE_ID, { [NOTE_KEY]: 'note' });
+    expect(mockPushMetadata).toHaveBeenCalledWith(
+      TRACE_ID,
+      { [NOTE_KEY]: 'note' },
+      { failOnNotFound: true },
+    );
   });
 
   it('outputs the full updated note in json mode', async () => {

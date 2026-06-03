@@ -59,6 +59,19 @@ void describe("TracesResource Client Methods", () => {
       scope.done();
     });
 
+    void it("throws on 404 when failOnNotFound is set", async () => {
+      const traceId = "12345678-1234-5678-9abc-123456789abc";
+      const scope = nock(baseUrl)
+        .post("/v1/traces/metadata")
+        .reply(404, "Trace not found");
+
+      await assert.rejects(
+        () => client.traces.pushMetadata(traceId, { k: "v" }, { failOnNotFound: true }),
+        /not found/,
+      );
+      scope.done();
+    });
+
     void it("throws on non-OK statuses other than 404", async () => {
       const traceId = "12345678-1234-5678-9abc-123456789abc";
       const scope = nock(baseUrl)
