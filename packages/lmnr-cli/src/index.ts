@@ -10,8 +10,10 @@ import {
   handleDatasetsPull,
   handleDatasetsPush,
 } from "./commands/dataset";
+import { handleDebugSessionSetName } from "./commands/debug";
 import { handleSqlQuery } from "./commands/sql";
 import { SQL_SCHEMA_HELP } from "./commands/sql/schema";
+import { handleTraceSetNote } from "./commands/trace";
 
 async function main() {
   const program = new Command();
@@ -181,6 +183,78 @@ Examples:
       process.stdout.write(SQL_SCHEMA_HELP);
     });
 
+  const traceCmd = program
+    .command("trace")
+    .description("Operate on existing traces")
+    .option(
+      "--project-api-key <key>",
+      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option("--json", "Output structured JSON to stdout");
+
+  traceCmd
+    .command("set-note")
+    .description("Upsert a free-text note on a trace (stored in trace metadata)")
+    .argument("<trace-id>", "Trace ID (UUID or 32-char OTel hex trace id)")
+    .argument("<note>", "Note text (may contain markdown)")
+    .action(async (traceId: string, note: string, _options, cmd) => {
+      await handleTraceSetNote(traceId, note, cmd.optsWithGlobals());
+    })
+    .addHelpText(
+      "after",
+      `
+Examples:
+  $ lmnr-cli trace set-note <trace-id> "Reproduced the timeout on the search tool."
+`,
+    );
+
+  const debugCmd = program
+    .command("debug")
+    .description("Operate on debug sessions")
+    .option(
+      "--project-api-key <key>",
+      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option("--json", "Output structured JSON to stdout");
+
+  const debugSessionCmd = debugCmd
+    .command("session")
+    .description("Manage debug sessions");
+
+  debugSessionCmd
+    .command("set-name")
+    .description("Set the display name of a debug session")
+    .argument("<session-id>", "Debug session ID")
+    .argument("<name>", "Session display name")
+    .action(async (sessionId: string, name: string, _options, cmd) => {
+      await handleDebugSessionSetName(sessionId, name, cmd.optsWithGlobals());
+    })
+    .addHelpText(
+      "after",
+      `
+Examples:
+  $ lmnr-cli debug session set-name <session-id> "Fix report length + search tool"
+`,
+    );
+
   program.addHelpText(
     "after",
     `
@@ -197,6 +271,8 @@ Examples:
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json # Query spans
   lmnr-cli sql query "SELECT t.id, s.name FROM traces t JOIN spans s ON t.id = s.trace_id" --json
   lmnr-cli sql schema                                      # Show available tables
+  lmnr-cli trace set-note <trace-id> "note text"           # Attach a note to a trace
+  lmnr-cli debug session set-name <session-id> "title"     # Rename a debug session
 
 For more information about the Laminar platfrom:
   Documentation: https://laminar.sh/docs
