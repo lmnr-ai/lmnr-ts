@@ -1,10 +1,12 @@
 import { LaminarClient } from "@lmnr-ai/client";
 import { Datapoint, errorMessage, type StringUUID } from "@lmnr-ai/types";
 
+import { resolveAuth } from "../../utils/auth-context";
 import { loadFromPaths, printToConsole, writeToFile } from "../../utils/file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson, outputJsonError } from "../../utils/output";
 import { renderTable } from "../../utils/table";
+import { EXIT_NOT_LOGGED_IN } from "../auth";
 
 const logger = initializeLogger();
 const DEFAULT_DATASET_PULL_BATCH_SIZE = 100;
@@ -16,6 +18,18 @@ interface DatasetCommandOptions {
   port?: number;
   json?: boolean;
 }
+
+const resolveAuthOrExit = async (options: DatasetCommandOptions) => {
+  try {
+    return await resolveAuth(options);
+  } catch (err) {
+    if (options.json) outputJsonError(err);
+    logger.error(errorMessage(err));
+    process.exit(
+      (err as { code?: string })?.code === "NOT_LOGGED_IN" ? EXIT_NOT_LOGGED_IN : 1,
+    );
+  }
+};
 
 /**
  * Pull all data from a dataset in batches.
@@ -67,10 +81,11 @@ const pullAllData = async <D = any, T = any>(
 export const handleDatasetsList = async (
   options: DatasetCommandOptions,
 ): Promise<void> => {
+  const auth = await resolveAuthOrExit(options);
   const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
+    projectApiKey: auth.projectApiKey,
+    baseUrl: auth.baseUrl,
+    port: auth.port,
   });
 
   try {
@@ -127,10 +142,11 @@ export const handleDatasetsPush = async (
     process.exit(1);
   }
 
+  const auth = await resolveAuthOrExit(options);
   const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
+    projectApiKey: auth.projectApiKey,
+    baseUrl: auth.baseUrl,
+    port: auth.port,
   });
 
 
@@ -192,10 +208,11 @@ export const handleDatasetsPull = async (
     process.exit(1);
   }
 
+  const auth = await resolveAuthOrExit(options);
   const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
+    projectApiKey: auth.projectApiKey,
+    baseUrl: auth.baseUrl,
+    port: auth.port,
   });
 
   const identifier = options.name ? { name: options.name } : { id: options.id };
@@ -245,10 +262,11 @@ export const handleDatasetsCreate = async (
     batchSize?: number;
   },
 ): Promise<void> => {
+  const auth = await resolveAuthOrExit(options);
   const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
+    projectApiKey: auth.projectApiKey,
+    baseUrl: auth.baseUrl,
+    port: auth.port,
   });
 
   try {

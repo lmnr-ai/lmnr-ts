@@ -1,9 +1,11 @@
 import { LaminarClient } from "@lmnr-ai/client";
 import { errorMessage } from "@lmnr-ai/types";
 
+import { resolveAuth } from "../../utils/auth-context";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson, outputJsonError } from "../../utils/output";
 import { readNoteFromMetadata } from "../../utils/trace-note";
+import { EXIT_NOT_LOGGED_IN } from "../auth";
 
 const logger = initializeLogger();
 
@@ -14,6 +16,18 @@ interface DebugCommandOptions {
   json?: boolean;
 }
 
+const resolveAuthOrExit = async (options: DebugCommandOptions) => {
+  try {
+    return await resolveAuth(options);
+  } catch (err) {
+    if (options.json) outputJsonError(err);
+    logger.error(errorMessage(err));
+    process.exit(
+      (err as { code?: string })?.code === "NOT_LOGGED_IN" ? EXIT_NOT_LOGGED_IN : 1,
+    );
+  }
+};
+
 /**
  * Upsert the display name of a debug session. Update-only on the backend: a
  * session id unknown to the project 404s rather than creating a ghost session.
@@ -23,10 +37,11 @@ export const handleDebugSessionSetName = async (
   name: string,
   options: DebugCommandOptions,
 ): Promise<void> => {
+  const auth = await resolveAuthOrExit(options);
   const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
+    projectApiKey: auth.projectApiKey,
+    baseUrl: auth.baseUrl,
+    port: auth.port,
   });
 
   try {
@@ -64,10 +79,11 @@ export const handleDebugSessionSummary = async (
   sessionId: string,
   options: DebugCommandOptions,
 ): Promise<void> => {
+  const auth = await resolveAuthOrExit(options);
   const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
+    projectApiKey: auth.projectApiKey,
+    baseUrl: auth.baseUrl,
+    port: auth.port,
   });
 
   try {

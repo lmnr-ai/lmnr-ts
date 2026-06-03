@@ -14,6 +14,35 @@ npm install -g lmnr-cli
 
 ## Commands
 
+### `auth` - CLI Authentication
+
+Browser-based CLI authorization. Opens the Laminar dashboard, lets you pick a
+project, and writes credentials to `~/.lmnr/credentials.json` (mode 0600).
+After `auth login`, every other command can run without `--project-api-key` or
+`LMNR_PROJECT_API_KEY`.
+
+```bash
+lmnr-cli auth login            # Browser flow, persist credentials
+lmnr-cli auth status           # Show active user / project / workspace
+lmnr-cli auth logout           # Delete the credentials file
+```
+
+Exit codes: `0` success, `3` grant expired (re-run `auth login`), `4` already
+claimed by another CLI process, `5` timed out waiting for approval, `6` not
+logged in (status only).
+
+### Credentials
+
+Stored at `~/.lmnr/credentials.json` after `auth login`. Resolution order
+(highest priority first) used by every command that needs a project API key:
+
+1. `--project-api-key <key>` CLI flag
+2. `LMNR_PROJECT_API_KEY` env var
+3. `~/.lmnr/credentials.json` (written by `auth login`)
+4. Hard error with a pointer to `auth login`
+
+CI flows that already set `LMNR_PROJECT_API_KEY` are unaffected.
+
 ### [`sql`](src/commands/sql/README.md) - SQL Queries
 
 Run SQL queries against your Laminar project data (spans, traces, events, and more).

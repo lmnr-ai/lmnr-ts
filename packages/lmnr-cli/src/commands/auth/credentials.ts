@@ -1,0 +1,67 @@
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
+
+export interface Credentials {
+  version: 1;
+  baseUrl: string;
+  dashboardUrl: string;
+  projectId: string;
+  projectName: string;
+  workspaceId: string;
+  workspaceName: string;
+  userEmail: string;
+  projectApiKey: string;
+  createdAt: string;
+}
+
+export const credentialsDir = (): string => path.join(os.homedir(), ".lmnr");
+export const credentialsPath = (): string =>
+  path.join(credentialsDir(), "credentials.json");
+
+export const readCredentials = async (): Promise<Credentials | null> => {
+  try {
+    const raw = await fs.readFile(credentialsPath(), "utf-8");
+    const parsed = JSON.parse(raw) as Partial<Credentials>;
+    if (parsed.version !== 1 || typeof parsed.projectApiKey !== "string") {
+      // Schema mismatch — bail rather than silently use stale fields.
+      throw new Error(
+        `Unrecognized credentials schema in ${credentialsPath()}.` +
+          " Run `lmnr-cli auth login` to refresh.",
+      );
+    }
+    return parsed as Credentials;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+};
+
+export const writeCredentials = async (creds: Credentials): Promise<void> => {
+  await fs.mkdir(credentialsDir(), { recursive: true, mode: 0o700 });
+  // Ensure 0700 even when dir already existed; mkdir's mode is only honoured on
+  // creation. POSIX-only; Windows ignores chmod silently.
+  try {
+    await fs.chmod(credentialsDir(), 0o700);
+  } catch {
+    /* ignore — Windows */
+  }
+  await fs.writeFile(credentialsPath(), JSON.stringify(creds, null, 2), {
+    mode: 0o600,
+  });
+  try {
+    await fs.chmod(credentialsPath(), 0o600);
+  } catch {
+    /* ignore — Windows */
+  }
+};
+
+export const deleteCredentials = async (): Promise<boolean> => {
+  try {
+    await fs.unlink(credentialsPath());
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw err;
+  }
+};
