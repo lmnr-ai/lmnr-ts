@@ -1,6 +1,6 @@
 import type { HrTime, Span } from "@opentelemetry/api";
 
-import { LaminarAttributes } from "../../../tracing/attributes";
+import { LaminarAttributes, SPAN_INPUT } from "../../../tracing/attributes";
 
 export const serializeJSON = (value: unknown): string => {
   if (typeof value === "string") return value;
@@ -110,6 +110,45 @@ export const extractReasoningFromContent = (
     .filter((p) => p && p.type === "reasoning" && typeof p.text === "string")
     .map((p) => p.text as string)
     .join("");
+};
+
+// Apply `applyUsage` output directly onto a span, skipping undefined values.
+export const applyUsageToSpan = (span: Span, usage: any): void => {
+  const attrs: Record<string, any> = {};
+  applyUsage(attrs, usage);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v !== undefined) span.setAttribute(k, v);
+  }
+};
+
+// Set the dual finish-reason attributes used by both ai.* and gen_ai.* parsers.
+export const applyFinishReason = (span: Span, finishReason: string): void => {
+  span.setAttribute("gen_ai.response.finish_reason", finishReason);
+  span.setAttribute("ai.response.finishReason", finishReason);
+};
+
+// Set provider + request-model attributes on an LLM span.
+export const applyRequestModelAttributes = (span: Span, event: any): void => {
+  if (typeof event.provider === "string") {
+    const provider = normalizeProvider(event.provider);
+    if (provider) span.setAttribute(LaminarAttributes.PROVIDER, provider);
+    span.setAttribute("ai.model.provider", event.provider);
+  }
+  if (typeof event.modelId === "string") {
+    span.setAttribute(LaminarAttributes.REQUEST_MODEL, event.modelId);
+    span.setAttribute("ai.model.id", event.modelId);
+  }
+};
+
+// Serialize prompt messages from a StandardizedPrompt-shaped event and set
+// `ai.prompt.messages` + `SPAN_INPUT` on the span. No-ops when the event
+// carries no messages.
+export const applyPromptMessages = (span: Span, event: any): void => {
+  const msgs = standardizedPromptToMessages(event);
+  if (msgs.length === 0) return;
+  const serialized = serializeJSON(msgs);
+  span.setAttribute("ai.prompt.messages", serialized);
+  span.setAttribute(SPAN_INPUT, serialized);
 };
 
 export const compareHrTime = (a: HrTime, b: HrTime): number => {

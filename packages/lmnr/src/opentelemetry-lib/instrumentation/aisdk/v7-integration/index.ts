@@ -52,7 +52,10 @@ import {
   type ToolState,
 } from "./types";
 import {
-  applyUsage,
+  applyFinishReason,
+  applyPromptMessages,
+  applyRequestModelAttributes,
+  applyUsageToSpan,
   compareHrTime,
   extractReasoningFromContent,
   extractTextFromContent,
@@ -60,7 +63,6 @@ import {
   normalizeToolCalls,
   readSpanEndTime,
   serializeJSON,
-  standardizedPromptToMessages,
 } from "./utils";
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
@@ -159,12 +161,7 @@ export class LaminarAiSdkTelemetry {
       // generate/stream variants carry StandardizedPrompt (system + messages);
       // embed carries `value`; rerank carries `documents` + `query`.
       if (Array.isArray(event.messages) || event.system !== undefined) {
-        const msgs = standardizedPromptToMessages(event);
-        if (msgs.length > 0) {
-          const serialized = serializeJSON(msgs);
-          span.setAttribute("ai.prompt.messages", serialized);
-          span.setAttribute(SPAN_INPUT, serialized);
-        }
+        applyPromptMessages(span, event);
       } else if (event.value !== undefined) {
         span.setAttribute(SPAN_INPUT, serializeJSON(event.value));
       } else if (event.query !== undefined || event.documents !== undefined) {
@@ -201,12 +198,7 @@ export class LaminarAiSdkTelemetry {
     span.setAttribute("ai.step.number", stepNumber);
 
     if (this.recordInputs) {
-      const msgs = standardizedPromptToMessages(event);
-      if (msgs.length > 0) {
-        const serialized = serializeJSON(msgs);
-        span.setAttribute("ai.prompt.messages", serialized);
-        span.setAttribute(SPAN_INPUT, serialized);
-      }
+      applyPromptMessages(span, event);
     }
 
     this.stepByKey.set(stepKey(callId, stepNumber), {
@@ -235,22 +227,9 @@ export class LaminarAiSdkTelemetry {
       parentCtx,
     );
     span.setAttribute(SPAN_TYPE, "LLM");
-    if (typeof event.provider === "string") {
-      const provider = normalizeProvider(event.provider);
-      if (provider) span.setAttribute(LaminarAttributes.PROVIDER, provider);
-      span.setAttribute("ai.model.provider", event.provider);
-    }
-    if (typeof event.modelId === "string") {
-      span.setAttribute(LaminarAttributes.REQUEST_MODEL, event.modelId);
-      span.setAttribute("ai.model.id", event.modelId);
-    }
+    applyRequestModelAttributes(span, event);
     if (this.recordInputs) {
-      const msgs = standardizedPromptToMessages(event);
-      if (msgs.length > 0) {
-        const serialized = serializeJSON(msgs);
-        span.setAttribute("ai.prompt.messages", serialized);
-        span.setAttribute(SPAN_INPUT, serialized);
-      }
+      applyPromptMessages(span, event);
     }
 
     this.llmByKey.set(stepKey(callId, stepNumber), {
@@ -276,17 +255,12 @@ export class LaminarAiSdkTelemetry {
       span.setAttribute(LaminarAttributes.RESPONSE_MODEL, event.modelId);
     }
     if (typeof event.finishReason === "string") {
-      span.setAttribute("gen_ai.response.finish_reason", event.finishReason);
-      span.setAttribute("ai.response.finishReason", event.finishReason);
+      applyFinishReason(span, event.finishReason);
     }
     if (typeof event.responseId === "string") {
       span.setAttribute("gen_ai.response.id", event.responseId);
     }
-    const usageAttrs: Record<string, any> = {};
-    applyUsage(usageAttrs, event.usage);
-    for (const [k, v] of Object.entries(usageAttrs)) {
-      if (v !== undefined) span.setAttribute(k, v);
-    }
+    applyUsageToSpan(span, event.usage);
 
     if (this.recordOutputs) {
       const content: any[] | undefined = Array.isArray(event.content)
@@ -428,17 +402,9 @@ export class LaminarAiSdkTelemetry {
 
     // Emit per-step usage + finish reason on the step span too, so a step
     // that was interrupted mid-stream still reports correct totals.
-    const attrs: Record<string, any> = {};
-    applyUsage(attrs, event.usage);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (v !== undefined) step.span.setAttribute(k, v);
-    }
+    applyUsageToSpan(step.span, event.usage);
     if (typeof event.finishReason === "string") {
-      step.span.setAttribute(
-        "gen_ai.response.finish_reason",
-        event.finishReason,
-      );
-      step.span.setAttribute("ai.response.finishReason", event.finishReason);
+      applyFinishReason(step.span, event.finishReason);
     }
     if (this.recordOutputs) {
       const outputPayload: Record<string, unknown> = {};
@@ -489,15 +455,7 @@ export class LaminarAiSdkTelemetry {
       op.ctx,
     );
     span.setAttribute(SPAN_TYPE, "LLM");
-    if (typeof event.provider === "string") {
-      const provider = normalizeProvider(event.provider);
-      if (provider) span.setAttribute(LaminarAttributes.PROVIDER, provider);
-      span.setAttribute("ai.model.provider", event.provider);
-    }
-    if (typeof event.modelId === "string") {
-      span.setAttribute(LaminarAttributes.REQUEST_MODEL, event.modelId);
-      span.setAttribute("ai.model.id", event.modelId);
-    }
+    applyRequestModelAttributes(span, event);
     this.llmByKey.set(stepKey(callId, 0), { span, textDeltas: [] });
   };
 
@@ -507,11 +465,7 @@ export class LaminarAiSdkTelemetry {
     const llm = this.llmByKey.get(stepKey(callId, 0));
     if (!llm) return;
     if (typeof event.finishReason === "string") {
-      llm.span.setAttribute(
-        "gen_ai.response.finish_reason",
-        event.finishReason,
-      );
-      llm.span.setAttribute("ai.response.finishReason", event.finishReason);
+      applyFinishReason(llm.span, event.finishReason);
     }
     // GenerateObjectStepEndEvent.response carries { id, modelId, ... } — mirror
     // onLanguageModelCallEnd by emitting gen_ai.response.model +
@@ -529,11 +483,7 @@ export class LaminarAiSdkTelemetry {
         llm.span.setAttribute("gen_ai.response.id", response.id);
       }
     }
-    const attrs: Record<string, any> = {};
-    applyUsage(attrs, event.usage);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (v !== undefined) llm.span.setAttribute(k, v);
-    }
+    applyUsageToSpan(llm.span, event.usage);
     if (this.recordOutputs && typeof event.objectText === "string") {
       llm.span.setAttribute("ai.response.text", event.objectText);
       llm.span.setAttribute(SPAN_OUTPUT, event.objectText);
@@ -664,16 +614,12 @@ export class LaminarAiSdkTelemetry {
     }
   };
 
-  onEmbedFinish = (event: any): void => {
+  onEmbedEnd = (event: any): void => {
     const callId: string | undefined = event?.callId;
     if (!callId) return;
     const op = this.operationByCallId.get(callId);
     if (!op) return;
-    const attrs: Record<string, any> = {};
-    applyUsage(attrs, event.usage);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (v !== undefined) op.span.setAttribute(k, v);
-    }
+    applyUsageToSpan(op.span, event.usage);
   };
 
   onRerankStart = (): void => {
@@ -681,7 +627,7 @@ export class LaminarAiSdkTelemetry {
     // documents/query are already recorded.
   };
 
-  onRerankFinish = (): void => {
+  onRerankEnd = (): void => {
     // End-of-rerank data lands via onFinish which carries the full event.
   };
 
@@ -689,7 +635,7 @@ export class LaminarAiSdkTelemetry {
   // operation finish / error
   // ------------------------------------------------------------------
 
-  onFinish = (event: any): void => {
+  onEnd = (event: any): void => {
     const callId: string | undefined = event?.callId;
     if (!callId) return;
     const op = this.operationByCallId.get(callId);
@@ -699,15 +645,9 @@ export class LaminarAiSdkTelemetry {
     // of recordOutputs — it's not user-content and is what analytics / cost
     // dashboards read off the top-level span.
     if (typeof event.finishReason === "string") {
-      op.span.setAttribute("gen_ai.response.finish_reason", event.finishReason);
-      op.span.setAttribute("ai.response.finishReason", event.finishReason);
+      applyFinishReason(op.span, event.finishReason);
     }
-    const totalUsage = event.totalUsage ?? event.usage;
-    const usageAttrs: Record<string, any> = {};
-    applyUsage(usageAttrs, totalUsage);
-    for (const [k, v] of Object.entries(usageAttrs)) {
-      if (v !== undefined) op.span.setAttribute(k, v);
-    }
+    applyUsageToSpan(op.span, event.totalUsage ?? event.usage);
 
     // Write final output content onto the operation span.
     if (this.recordOutputs) {
@@ -754,10 +694,7 @@ export class LaminarAiSdkTelemetry {
       op.span.setStatus({ code: SpanStatusCode.OK });
     }
 
-    const latestChildEnd = this.endOrphanChildSpansForCallId(callId);
-    op.span.end(latestChildEnd);
-    this.operationByCallId.delete(callId);
-    this.activeStreamStepByCallId.delete(callId);
+    this.closeOperation(callId, op);
   };
 
   onError = (event: any): void => {
@@ -809,15 +746,56 @@ export class LaminarAiSdkTelemetry {
     // leak if `onError` is terminal (no subsequent `onFinish`). If `onFinish`
     // does fire afterwards, its `operationByCallId.get(callId)` returns
     // undefined and it early-returns.
-    const latestChildEnd = this.endOrphanChildSpansForCallId(targetCallId);
-    targetOp.span.end(latestChildEnd);
-    this.operationByCallId.delete(targetCallId);
-    this.activeStreamStepByCallId.delete(targetCallId);
+    this.closeOperation(targetCallId, targetOp);
+  };
+
+  onAbort = (event: any): void => {
+    // Fired when a streaming text generation is aborted (its AbortSignal
+    // fired) before it could finish — so onEnd never arrives and the
+    // operation + child spans would otherwise leak. An abort is a deliberate
+    // cancellation, NOT a failure: the event carries `{ callId, steps,
+    // reason? }` with no error/finishReason, so we leave span status UNSET
+    // (neither OK nor ERROR) and just record an abort marker.
+    const callId: string | undefined = event?.callId;
+    if (!callId) return;
+    const op = this.operationByCallId.get(callId);
+    if (!op) return;
+
+    op.span.setAttribute("ai.response.aborted", true);
+    op.span.addEvent("abort");
+    // The AbortSignal reason is free-form (often a DOMException or string).
+    // Record it as an attribute when present so the cancellation cause is
+    // visible without implying an error status.
+    if (event?.reason !== undefined) {
+      const reason = event.reason;
+      const reasonStr =
+        reason instanceof Error
+          ? reason.message
+          : typeof reason === "string"
+            ? reason
+            : serializeJSON(reason);
+      if (reasonStr.length > 0) {
+        op.span.setAttribute("ai.response.abortReason", reasonStr);
+      }
+    }
+
+    // Close orphan child spans (llm / step / tool — flushing any buffered
+    // stream deltas) BEFORE the operation span so children never end after
+    // their parent, then clamp the op endTime to the latest child endTime.
+    this.closeOperation(callId, op);
   };
 
   // ------------------------------------------------------------------
   // helpers
   // ------------------------------------------------------------------
+
+  /** End child spans, end the operation span, and clean up both maps. */
+  private closeOperation(callId: string, op: OperationState): void {
+    const latestChildEnd = this.endOrphanChildSpansForCallId(callId);
+    op.span.end(latestChildEnd);
+    this.operationByCallId.delete(callId);
+    this.activeStreamStepByCallId.delete(callId);
+  }
 
   /** Latest (highest-stepNumber) open step for a given callId. */
   private findLatestStep(callId: string): StepState | undefined {
@@ -858,6 +836,16 @@ export class LaminarAiSdkTelemetry {
     };
     for (const [key, llm] of this.llmByKey) {
       if (key.startsWith(prefix)) {
+        // Flush any buffered stream deltas as the text output before force-
+        // closing. This is the only place the buffered-deltas fallback is
+        // consumed for aborted / errored streams where onLanguageModelCallEnd
+        // never fired (see onChunk). Mirror onStepFinish's attribute writes
+        // (ai.response.text + SPAN_OUTPUT) so partial output still renders.
+        if (this.recordOutputs && llm.textDeltas.length > 0) {
+          const bufferedText = llm.textDeltas.join("");
+          llm.span.setAttribute("ai.response.text", bufferedText);
+          llm.span.setAttribute(SPAN_OUTPUT, bufferedText);
+        }
         llm.span.end();
         bump(readSpanEndTime(llm.span));
       }

@@ -196,6 +196,9 @@ importers:
       '@ai-sdk/provider-v2':
         specifier: npm:@ai-sdk/provider@2.0.0
         version: '@ai-sdk/provider@2.0.0'
+      '@ai-sdk/provider-v4-canary':
+        specifier: npm:@ai-sdk/provider@4.0.0-canary.17
+        version: '@ai-sdk/provider@4.0.0-canary.17'
       '@aws-sdk/client-bedrock-runtime':
         specifier: ^3.1057.0
         version: 3.1057.0
@@ -345,6 +348,10 @@ packages:
   '@ai-sdk/provider@3.0.10':
     resolution: {integrity: sha512-Q3BZ27qfpYqnCYGvE3vt+Qi6LGOF9R5Nmzn+9JoM1lCRsD9mYaIhfJLkSunN48nfGXJ6n+XNV0J/XVpqGQl7Dw==}
     engines: {node: '>=18'}
+
+  '@ai-sdk/provider@4.0.0-canary.17':
+    resolution: {integrity: sha512-m/rtalImeIt7deuQGkEHehqlIPOM8Sjb0cF1b1SJ3B6Re+WYgbUkOK9gY2SSro1YO8jYBRgTMPz2qYzPtIzAxQ==}
+    engines: {node: '>=22'}
 
   '@aws-crypto/crc32@5.2.0':
     resolution: {integrity: sha512-nLbCWqQNgUiwwtFsen1AdzAtvuLRsQS8rYgMuxCrdKf9kOssamGLuPwyTY9wyYblNr9+1XM8v6zoDTPPSIeANg==}
@@ -3428,6 +3435,10 @@ snapshots:
       json-schema: 0.4.0
 
   '@ai-sdk/provider@3.0.10':
+    dependencies:
+      json-schema: 0.4.0
+
+  '@ai-sdk/provider@4.0.0-canary.17':
     dependencies:
       json-schema: 0.4.0
 
