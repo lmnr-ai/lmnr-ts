@@ -1,8 +1,8 @@
 import * as assert from 'node:assert';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, it } from 'node:test';
+import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
 
 import { CachedSpan } from '@lmnr-ai/types';
 
@@ -85,6 +85,20 @@ const withCapturedConsole = (fn: () => void): string[] => {
 };
 
 void describe('DebugRuntime', () => {
+  // Some emitPointer tests don't override process.cwd, so they best-effort write
+  // `.lmnr/last-run.json` into the real cwd. Only remove the dir afterwards if
+  // this run is what created it — never clobber a pre-existing one.
+  const pointerDir = join(originalCwd(), '.lmnr');
+  let pointerDirPreexisted = false;
+  before(() => {
+    pointerDirPreexisted = existsSync(pointerDir);
+  });
+  after(() => {
+    if (!pointerDirPreexisted && existsSync(pointerDir)) {
+      rmSync(pointerDir, { recursive: true, force: true });
+    }
+  });
+
   beforeEach(() => {
     resetDebugRuntime();
     clearDebugEnv();

@@ -1,11 +1,26 @@
 import assert from "node:assert";
-import { afterEach, beforeEach, describe, it } from "node:test";
+import { existsSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 
 import { getRuntime } from "../src/debug";
 import { Laminar } from "../src/index";
 
 void describe("initialize", () => {
   const originalEnv = process.env;
+  // The LMNR_SPAN_CONTEXT debug test calls emitPointer() without overriding
+  // process.cwd, so it best-effort writes `.lmnr/last-run.json` into the real
+  // cwd. Only remove the dir afterwards if this run is what created it.
+  const pointerDir = join(process.cwd(), ".lmnr");
+  let pointerDirPreexisted = false;
+  void before(() => {
+    pointerDirPreexisted = existsSync(pointerDir);
+  });
+  void after(() => {
+    if (!pointerDirPreexisted && existsSync(pointerDir)) {
+      rmSync(pointerDir, { recursive: true, force: true });
+    }
+  });
   void beforeEach(() => {
     process.env = { ...originalEnv };
     delete process.env.LMNR_PROJECT_API_KEY;
