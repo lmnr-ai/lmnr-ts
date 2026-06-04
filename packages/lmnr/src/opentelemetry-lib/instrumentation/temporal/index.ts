@@ -336,21 +336,29 @@ export class ActivityInboundInterceptor {
       [k: string]: unknown;
     }) => Promise<unknown>,
   ): Promise<unknown> {
-    const restoredCtx = restoreContextFromHeaders(input.headers);
+    // Wrap the entire execution in an isolated ALS scope so that
+    // _pushLaminarContext's `enterWith` (which restores the remote parent)
+    // cannot leak onto sibling activities that share the same async lineage.
+    return LaminarContextManager.runWithIsolatedContext(
+      LaminarContextManager.getContextStack(),
+      () => {
+        const restoredCtx = restoreContextFromHeaders(input.headers);
 
-    if (!this._createActivitySpan || !restoredCtx) {
-      return next(input);
-    }
+        if (!this._createActivitySpan || !restoredCtx) {
+          return next(input);
+        }
 
-    const activityName =
-      input.info?.activityType ?? "temporal.activity";
+        const activityName =
+          input.info?.activityType ?? "temporal.activity";
 
-    const span = Laminar.startSpan({
-      name: activityName,
-      parentSpanContext: restoredCtx,
-    });
+        const span = Laminar.startSpan({
+          name: activityName,
+          parentSpanContext: restoredCtx,
+        });
 
-    return Laminar.withSpan(span, () => next(input), true);
+        return Laminar.withSpan(span, () => next(input), true);
+      },
+    );
   }
 }
 
