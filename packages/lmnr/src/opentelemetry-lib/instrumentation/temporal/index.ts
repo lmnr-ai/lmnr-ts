@@ -360,9 +360,14 @@ export class ActivityInboundInterceptor {
 
 // ─── Auto-patch helpers ───────────────────────────────────────────────────────
 
+const _patchedWorkerModules = new WeakSet<object>();
+const _patchedClientModules = new WeakSet<object>();
+
 /**
  * Patch a `@temporalio/worker` module object so that every `Worker.create()`
  * call automatically includes `ActivityInboundInterceptor`.
+ *
+ * Idempotent — calling with the same module object more than once is a no-op.
  *
  * Called by `manuallyInitInstrumentations` when
  * `instrumentModules.temporal.worker` is provided.
@@ -373,6 +378,11 @@ export const patchTemporalWorker = (
   },
   options: LaminarTemporalInterceptorOptions = {},
 ): void => {
+  if (_patchedWorkerModules.has(workerModule)) {
+    return;
+  }
+  _patchedWorkerModules.add(workerModule);
+
   const originalCreate = workerModule.Worker.create.bind(
     workerModule.Worker,
   );
@@ -412,12 +422,19 @@ export const patchTemporalWorker = (
  * from the module after `Laminar.initialize()` gets the patched class
  * automatically.
  *
+ * Idempotent — calling with the same module object more than once is a no-op.
+ *
  * Called by `manuallyInitInstrumentations` when
  * `instrumentModules.temporal.client` is provided.
  */
 export const patchTemporalClient = (
   clientModule: { Client: new (...args: unknown[]) => unknown },
 ): void => {
+  if (_patchedClientModules.has(clientModule)) {
+    return;
+  }
+  _patchedClientModules.add(clientModule);
+
   const OriginalClient = clientModule.Client;
 
   type ClientOptions = {
