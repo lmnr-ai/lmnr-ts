@@ -453,18 +453,18 @@ const manuallyInitInstrumentations = (
   }
 
   if (instrumentModules?.temporal) {
-    const { worker, Client, createActivitySpan } = instrumentModules.temporal;
+    const { worker, client, createActivitySpan } = instrumentModules.temporal;
     const activityOptions = createActivitySpan !== undefined
       ? { createActivitySpan }
       : {};
     if (worker?.Worker?.create) {
       patchTemporalWorker(worker, activityOptions);
     }
-    if (Client) {
-      // Replace the Client class reference on the module with the patched version.
-      // Users who destructured `Client` before calling initialize() should use
-      // the explicit interceptor approach (Option A) instead.
-      instrumentModules.temporal.Client = patchTemporalClient(Client);
+    if (client?.Client) {
+      // Mutate client.Client in place so every subsequent `new client.Client()`
+      // (or `new temporalClient.Client()` from the user's module reference)
+      // gets the patched subclass automatically.
+      patchTemporalClient(client);
     }
   }
 

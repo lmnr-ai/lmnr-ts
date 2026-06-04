@@ -389,25 +389,26 @@ export interface InitializeOptions {
      * @example
      * ```typescript
      * import * as temporalWorker from '@temporalio/worker';
-     * import { Client } from '@temporalio/client';
+     * import * as temporalClient from '@temporalio/client';
      * import { Laminar } from '@lmnr-ai/lmnr';
      *
      * Laminar.initialize({
      *   instrumentModules: {
-     *     temporal: { worker: temporalWorker, Client },
+     *     temporal: { worker: temporalWorker, client: temporalClient },
      *   },
      * });
      *
-     * // Now every Worker.create() and new Client() include Laminar interceptors.
+     * // Now every Worker.create() and new temporalClient.Client() include
+     * // Laminar interceptors.
      * const worker = await temporalWorker.Worker.create({ ... });
-     * const client = new Client({ ... });
+     * const client = new temporalClient.Client({ ... });
      * ```
      */
     temporal?: {
       /** The `@temporalio/worker` module (import * as temporalWorker from '@temporalio/worker') */
       worker?: any;
-      /** The `Client` class from `@temporalio/client` */
-      Client?: any;
+      /** The `@temporalio/client` module (import * as temporalClient from '@temporalio/client') */
+      client?: any;
       /**
        * If true (default), wrap each activity execution in a Laminar span.
        * Set to false to only restore the parent context.

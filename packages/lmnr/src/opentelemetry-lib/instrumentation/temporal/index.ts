@@ -26,18 +26,19 @@
  *
  * ```typescript
  * import * as temporalWorker from '@temporalio/worker';
- * import { Client } from '@temporalio/client';
+ * import * as temporalClient from '@temporalio/client';
  * import { Laminar } from '@lmnr-ai/lmnr';
  *
  * Laminar.initialize({
  *   instrumentModules: {
- *     temporal: { worker: temporalWorker, Client },
+ *     temporal: { worker: temporalWorker, client: temporalClient },
  *   },
  * });
  *
- * // Worker.create() and new Client() now automatically include Laminar interceptors.
- * const worker = await Worker.create({ ... });
- * const client = new Client({ ... });
+ * // Worker.create() and new temporalClient.Client() now automatically include
+ * // Laminar interceptors.
+ * const worker = await temporalWorker.Worker.create({ ... });
+ * const client = new temporalClient.Client({ ... });
  * ```
  */
 
@@ -404,22 +405,21 @@ export const patchTemporalWorker = (
 };
 
 /**
- * Wrap a `@temporalio/client` `Client` class so that every `new Client()`
+ * Patch a `@temporalio/client` module object so that every `new Client()`
  * call automatically includes `WorkflowClientInterceptor`.
  *
- * Returns the wrapped class; assign it back to the variable used for `new`:
- * ```typescript
- * const { Client } = require('@temporalio/client');
- * const PatchedClient = patchTemporalClient(Client);
- * const client = new PatchedClient({ ... }); // interceptors injected
- * ```
+ * Mutates `clientModule.Client` in place so any code that reads `Client`
+ * from the module after `Laminar.initialize()` gets the patched class
+ * automatically.
  *
- * When using `instrumentModules.temporal.Client`, `Laminar.initialize()` does
- * this automatically.
+ * Called by `manuallyInitInstrumentations` when
+ * `instrumentModules.temporal.client` is provided.
  */
 export const patchTemporalClient = (
-  ClientClass: new (...args: unknown[]) => unknown,
-): new (...args: unknown[]) => unknown => {
+  clientModule: { Client: new (...args: unknown[]) => unknown },
+): void => {
+  const OriginalClient = clientModule.Client;
+
   type ClientOptions = {
     interceptors?: {
       workflow?: WorkflowClientInterceptor[];
@@ -428,8 +428,8 @@ export const patchTemporalClient = (
     [k: string]: unknown;
   };
 
-  return class LaminarTemporalClient extends (
-    ClientClass as new (opts?: ClientOptions) => unknown
+  clientModule.Client = class LaminarTemporalClient extends (
+    OriginalClient as new (opts?: ClientOptions) => unknown
   ) {
     constructor(opts?: ClientOptions) {
       super({
@@ -443,7 +443,7 @@ export const patchTemporalClient = (
         },
       });
     }
-  };
+  } as unknown as new (...args: unknown[]) => unknown;
 };
 
 // ─── Convenience namespace ────────────────────────────────────────────────────
