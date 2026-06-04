@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process";
+
 import { LaminarClient } from "@lmnr-ai/client";
 import {
   errorMessage,
@@ -212,8 +214,8 @@ export class Laminar {
       this.baseHttpUrl = "";
     }
 
-    const envMetadata = process.env.LMNR_METADATA
-      ? JSON.parse(process.env.LMNR_METADATA) as Record<string, unknown>
+    const envMetadata = process.env.LMNR_TRACE_METADATA
+      ? JSON.parse(process.env.LMNR_TRACE_METADATA) as Record<string, unknown>
       : {};
     this.globalMetadata = { ...envMetadata, ...(metadata ?? {}) };
     if (inheritGlobalContext) {
@@ -378,9 +380,15 @@ export class Laminar {
             // carries the SAME full per-session URL we print here (single code
             // path via debuggerSessionUrl).
             runtime.recordProjectId(projectId);
-            logger.info(
-              `Laminar debugger session: ${runtime.debuggerSessionUrl()}`,
-            );
+            const sessionUrl = runtime.debuggerSessionUrl()!;
+            logger.info(`Laminar debugger session: ${sessionUrl}`);
+            const opener =
+              process.platform === "win32"
+                ? "start"
+                : process.platform === "darwin"
+                  ? "open"
+                  : "xdg-open";
+            spawn(opener, [sessionUrl], { detached: true, stdio: "ignore" }).unref();
           }
         })
         .catch((e) => {
