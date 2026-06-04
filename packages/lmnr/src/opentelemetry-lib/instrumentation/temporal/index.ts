@@ -280,6 +280,14 @@ export class WorkflowClientInterceptor {
     return next({ ...input, headers: buildHeaders(input.headers ?? {}) });
   }
 
+  async signalWithStart(
+    input: { headers: Record<string, unknown>; [k: string]: unknown },
+    next: (i: { headers: Record<string, unknown>; [k: string]: unknown }) =>
+    Promise<unknown>,
+  ): Promise<unknown> {
+    return next({ ...input, headers: buildHeaders(input.headers ?? {}) });
+  }
+
   async startUpdate(
     input: { headers: Record<string, unknown>; [k: string]: unknown },
     next: (i: { headers: Record<string, unknown>; [k: string]: unknown }) =>
