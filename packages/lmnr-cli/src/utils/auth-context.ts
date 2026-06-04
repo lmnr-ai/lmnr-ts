@@ -1,4 +1,11 @@
+import { errorMessage } from "@lmnr-ai/types";
+
+import { EXIT_GENERIC, EXIT_NOT_LOGGED_IN } from "../commands/auth";
 import { readCredentials } from "../commands/auth/credentials";
+import { initializeLogger } from "./logger";
+import { outputJsonError } from "./output";
+
+const logger = initializeLogger();
 
 export interface ResolvedAuth {
   projectApiKey: string;
@@ -10,6 +17,7 @@ export interface AuthResolveOptions {
   projectApiKey?: string;
   baseUrl?: string;
   port?: number;
+  json?: boolean;
 }
 
 // Precedence (highest first):
@@ -55,4 +63,22 @@ export const resolveAuth = async (
   // Sentinel — callers map this to exit code 6 (EXIT_NOT_LOGGED_IN).
   (err as { code?: string }).code = "NOT_LOGGED_IN";
   throw err;
+};
+
+// Shared "resolve auth or die" wrapper. Use this from every command handler
+// instead of inline try/catch + `let auth;` — TS narrows the return to
+// `Promise<ResolvedAuth>` (no undefined leak) because the helper's `Promise<never>`
+// catch branch + the `process.exit` return type combine to a sound type.
+export const resolveAuthOrExit = async (
+  options: AuthResolveOptions,
+): Promise<ResolvedAuth> => {
+  try {
+    return await resolveAuth(options);
+  } catch (err) {
+    if (options.json) outputJsonError(err);
+    logger.error(errorMessage(err));
+    process.exit(
+      (err as { code?: string })?.code === "NOT_LOGGED_IN" ? EXIT_NOT_LOGGED_IN : EXIT_GENERIC,
+    );
+  }
 };

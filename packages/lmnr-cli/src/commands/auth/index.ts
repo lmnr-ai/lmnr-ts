@@ -271,11 +271,13 @@ export const handleAuthStatus = async (
     }
     process.exit(EXIT_NOT_LOGGED_IN);
   }
-  // Mask all but the trailing 4 chars of the API key so `auth status --json`
-  // is safe to include in bug reports.
+  // Mask all but the leading/trailing 4 chars of the API key so
+  // `auth status --json` is safe to include in bug reports. Matches the
+  // `<first4>...<last4>` shape that the DB (project_api_keys.shorthand) and
+  // the approve endpoint already return.
   const masked =
     creds.projectApiKey.length > 8
-      ? `${"*".repeat(creds.projectApiKey.length - 4)}${creds.projectApiKey.slice(-4)}`
+      ? `${creds.projectApiKey.slice(0, 4)}...${creds.projectApiKey.slice(-4)}`
       : "********";
   if (opts.json) {
     outputJson({
