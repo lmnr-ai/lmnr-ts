@@ -63,3 +63,12 @@ When adding/modifying integration tests for Mastra:
 
 - No project-wide `prettier` binary is installed; "format" is enforced through eslint (`@stylistic/*` rules). Use `pnpm -r lint:fix` (or `pnpm --filter <pkg> lint:fix`) instead of `prettier --write`.
 - Max line length is 100 chars (`@stylistic/max-len`). Long destructured `import` lines will fail lint — break them across multiple lines.
+
+## Temporal Instrumentation (`packages/lmnr/src/opentelemetry-lib/instrumentation/temporal/`)
+
+- Temporal workflow functions run in a **V8 deterministic sandbox** — no `crypto.randomUUID()`, no real timestamps. `observe()` / `Laminar.startActiveSpan()` cannot be called inside workflow functions (they call `crypto.randomUUID` internally). Only the client side (workflow-start calls) and worker side (activity functions) are safe to instrument.
+- Context is propagated via Temporal headers (`Record<string, Payload>`). Two headers are written: `laminar-span-context` (full Laminar JSON — preferred) and `traceparent` (W3C, for interop). Both are encoded as `json/plain` Temporal Payloads without importing `@temporalio/common` — we encode as `{ metadata: { encoding: Uint8Array("json/plain") }, data: Uint8Array(JSON.stringify(value)) }`.
+- `WorkflowClientInterceptor` reads the active span via `trace.getSpan(LaminarContextManager.getContext())` (Laminar's ALS first) and checks `instanceof LaminarSpan` to call `getLaminarSpanContext()`. Falls back to OTel span context for `traceparent`-only propagation.
+- `ActivityInboundInterceptor` restores context via `restoreContextFromHeaders` which calls `_pushLaminarContext`. That function calls `processor.setParentPathInfo` so descendant spans inherit the correct `lmnr.span.path`, then pushes the restored context via `LaminarContextManager.pushContext`.
+- `patchTemporalWorker` monkey-patches `Worker.create` static method; `patchTemporalClient` returns a subclass that injects `WorkflowClientInterceptor` in the constructor — auto-patching is wired in `manuallyInitInstrumentations` when `instrumentModules.temporal` is present.
+- After auto-patching, `instrumentModules.temporal.Client` is replaced with the wrapped class — callers using the patched `Client` from `instrumentModules` get the interceptor automatically without explicit registration.

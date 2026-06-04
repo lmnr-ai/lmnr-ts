@@ -31,6 +31,14 @@ export {
   MastraExporter,
   type MastraExporterOptions,
 } from "./opentelemetry-lib/instrumentation/mastra";
+export {
+  LAMINAR_SPAN_CONTEXT_HEADER as LAMINAR_TEMPORAL_SPAN_CONTEXT_HEADER,
+  TRACEPARENT_HEADER as LAMINAR_TEMPORAL_TRACEPARENT_HEADER,
+  ActivityInboundInterceptor as LaminarTemporalActivityInboundInterceptor,
+  type LaminarTemporalInterceptorOptions,
+  LaminarTemporalInterceptors,
+  WorkflowClientInterceptor as LaminarTemporalWorkflowClientInterceptor,
+} from "./opentelemetry-lib/instrumentation/temporal";
 export { LaminarAttributes } from "./opentelemetry-lib/tracing/attributes";
 export {
   getTracer,

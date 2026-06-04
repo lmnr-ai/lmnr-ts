@@ -25,6 +25,10 @@ import { GoogleGenAiInstrumentation } from "../instrumentation/google-genai";
 import { KernelInstrumentation } from "../instrumentation/kernel";
 import { OpenAIAgentsInstrumentation } from "../instrumentation/openai-agents";
 import { OpencodeInstrumentation } from "../instrumentation/opencode";
+import {
+  patchTemporalClient,
+  patchTemporalWorker,
+} from "../instrumentation/temporal";
 import { InitializeOptions } from "../interfaces";
 
 const logger = initializeLogger();
@@ -446,6 +450,22 @@ const manuallyInitInstrumentations = (
     openAIAgentsInstrumentation.manuallyInstrument(
       instrumentModules.openAIAgents,
     );
+  }
+
+  if (instrumentModules?.temporal) {
+    const { worker, Client, createActivitySpan } = instrumentModules.temporal;
+    const activityOptions = createActivitySpan !== undefined
+      ? { createActivitySpan }
+      : {};
+    if (worker?.Worker?.create) {
+      patchTemporalWorker(worker, activityOptions);
+    }
+    if (Client) {
+      // Replace the Client class reference on the module with the patched version.
+      // Users who destructured `Client` before calling initialize() should use
+      // the explicit interceptor approach (Option A) instead.
+      instrumentModules.temporal.Client = patchTemporalClient(Client);
+    }
   }
 
   return instrumentations;
