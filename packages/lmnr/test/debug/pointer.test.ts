@@ -1,8 +1,16 @@
+<<<<<<< HEAD
 import * as assert from "node:assert";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
+=======
+import * as assert from 'node:assert';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, it } from 'node:test';
+>>>>>>> 4406e0c (feat(debug): gate pointer file write on env var; merge LMNR_METADATA on init)
 
 import {
   buildPointer,
@@ -87,8 +95,13 @@ void describe("debug pointer", () => {
     assert.deepStrictEqual(JSON.parse(payload), pointer);
   });
 
+<<<<<<< HEAD
   void it("emit pointer writes file when env var is set", () => {
     process.env.LMNR_DEBUG_WRITE_LAST_RUN_TO_FILE = "1";
+=======
+  void it('emit pointer writes file when env var is set', () => {
+    process.env.LMNR_DEBUG_WRITE_LAST_RUN_TO_FILE = '1';
+>>>>>>> 4406e0c (feat(debug): gate pointer file write on env var; merge LMNR_METADATA on init)
     const dir = makeTmpDir();
     process.cwd = () => dir;
     const pointer = buildPointer({
@@ -105,12 +118,21 @@ void describe("debug pointer", () => {
     assert.deepStrictEqual(JSON.parse(readFileSync(path, "utf-8")), pointer);
   });
 
+<<<<<<< HEAD
   void it("emit pointer does not write file without env var", () => {
     const dir = makeTmpDir();
     process.cwd = () => dir;
     const pointer = buildPointer({
       traceId: "t",
       sessionId: "s",
+=======
+  void it('emit pointer does not write file without env var', () => {
+    const dir = makeTmpDir();
+    process.cwd = () => dir;
+    const pointer = buildPointer({
+      traceId: 't',
+      sessionId: 's',
+>>>>>>> 4406e0c (feat(debug): gate pointer file write on env var; merge LMNR_METADATA on init)
       replayTraceId: null,
       cacheUntil: 0,
       debuggerUrl: null,
@@ -121,10 +143,17 @@ void describe("debug pointer", () => {
     assert.strictEqual(existsSync(join(dir, POINTER_DIR, POINTER_FILE)), false);
   });
 
+<<<<<<< HEAD
   void it("emit pointer is best-effort on unwritable dir", () => {
     // Point cwd at a path under a regular file, so mkdirSync(recursive) raises
     // ENOTDIR; emitPointer must still print and not throw.
     process.env.LMNR_DEBUG_WRITE_LAST_RUN_TO_FILE = "1";
+=======
+  void it('emit pointer is best-effort on unwritable dir', () => {
+    // Point cwd at a path under a regular file, so mkdirSync(recursive) raises
+    // ENOTDIR; emitPointer must still print and not throw.
+    process.env.LMNR_DEBUG_WRITE_LAST_RUN_TO_FILE = '1';
+>>>>>>> 4406e0c (feat(debug): gate pointer file write on env var; merge LMNR_METADATA on init)
     const dir = makeTmpDir();
     const filePath = join(dir, "not-a-dir");
     writeFileSync(filePath, "x");
