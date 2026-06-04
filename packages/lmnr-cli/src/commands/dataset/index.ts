@@ -1,6 +1,7 @@
 import { LaminarClient } from "@lmnr-ai/client";
 import { Datapoint, errorMessage, type StringUUID } from "@lmnr-ai/types";
 
+import { buildLaminarClient } from "../../auth/client";
 import { loadFromPaths, printToConsole, writeToFile } from "../../utils/file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson, outputJsonError } from "../../utils/output";
@@ -67,7 +68,7 @@ const pullAllData = async <D = any, T = any>(
 export const handleDatasetsList = async (
   options: DatasetCommandOptions,
 ): Promise<void> => {
-  const client = new LaminarClient({
+  const client = await buildLaminarClient({
     projectApiKey: options.projectApiKey,
     baseUrl: options.baseUrl,
     port: options.port,
@@ -127,7 +128,7 @@ export const handleDatasetsPush = async (
     process.exit(1);
   }
 
-  const client = new LaminarClient({
+  const client = await buildLaminarClient({
     projectApiKey: options.projectApiKey,
     baseUrl: options.baseUrl,
     port: options.port,
@@ -192,7 +193,7 @@ export const handleDatasetsPull = async (
     process.exit(1);
   }
 
-  const client = new LaminarClient({
+  const client = await buildLaminarClient({
     projectApiKey: options.projectApiKey,
     baseUrl: options.baseUrl,
     port: options.port,
@@ -245,7 +246,7 @@ export const handleDatasetsCreate = async (
     batchSize?: number;
   },
 ): Promise<void> => {
-  const client = new LaminarClient({
+  const client = await buildLaminarClient({
     projectApiKey: options.projectApiKey,
     baseUrl: options.baseUrl,
     port: options.port,

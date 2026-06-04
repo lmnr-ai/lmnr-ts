@@ -11,6 +11,7 @@ import chokidar from "chokidar";
 import * as path from "path";
 import { v4 as uuidv4 } from "uuid";
 
+import { resolveAuth } from "../../auth/resolve";
 import { startCacheServer } from "../../cache-server";
 import { createSSEClient, SSEClient } from "../../sse-client";
 import { SubprocessManager } from "../../subprocess/executor";
@@ -308,12 +309,26 @@ export async function runDev(
   // Generate session ID
   const sessionId = newUUID();
 
-  // Initialize Laminar client
-  const client = new LaminarClient({
-    baseUrl: options.baseUrl,
+  // Resolve auth (flag > env > OAuth credentials) once for the whole dev session.
+  // The bearer is reused for the LaminarClient and propagated to the worker subprocess.
+  const resolvedAuth = await resolveAuth({
     projectApiKey: options.projectApiKey,
+    baseUrl: options.baseUrl,
     port: options.port,
   });
+
+  // Initialize Laminar client
+  const client = new LaminarClient({
+    baseUrl: resolvedAuth.baseUrl,
+    projectApiKey: resolvedAuth.bearer,
+    port: resolvedAuth.port,
+  });
+
+  // Propagate the resolved bearer (JWT or API key) into options so the worker
+  // subprocess and any downstream code that reads options.projectApiKey gets
+  // the actual credential — not just an empty flag when the user logged in via
+  // OAuth.
+  options = { ...options, projectApiKey: resolvedAuth.bearer, baseUrl: resolvedAuth.baseUrl };
 
   // Start cache server
   logger.debug("Starting cache server...");

@@ -11,8 +11,11 @@ import {
   handleDatasetsPush,
 } from "./commands/dataset";
 import { runDev } from "./commands/dev";
+import { handleLogin } from "./commands/login";
+import { handleLogout } from "./commands/logout";
 import { handleSqlQuery } from "./commands/sql";
 import { SQL_SCHEMA_HELP } from "./commands/sql/schema";
+import { handleStatus } from "./commands/status";
 
 async function main() {
   const program = new Command();
@@ -268,14 +271,49 @@ Examples:
       process.stdout.write(SQL_SCHEMA_HELP);
     });
 
+  program
+    .command("login")
+    .description("Authenticate the CLI via OAuth Device Flow")
+    .option(
+      "--dashboard-url <url>",
+      "Dashboard URL (issuer). Defaults to https://www.laminar.sh or LMNR_DASHBOARD_URL env variable",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--project <id>",
+      "Pre-select a project to authorize for (UUID). If omitted, choose on the approval page.",
+    )
+    .option("--no-browser", "Do not open the verification URL in a browser")
+    .action(async (options) => {
+      await handleLogin(options);
+    });
+
+  program
+    .command("logout")
+    .description("Remove the stored OAuth credentials")
+    .action(async () => {
+      await handleLogout();
+    });
+
+  program
+    .command("status")
+    .description("Show the current OAuth login state and token expiry")
+    .action(async () => {
+      await handleStatus();
+    });
+
   program.addHelpText(
     "after",
     `
-Authentication:
-  Most commands require a project API key. Provide it in one of two ways:
-    1. Environment variable: export LMNR_PROJECT_API_KEY=<your-key>
-    2. CLI flag:             --project-api-key <your-key>
-  Get your key at https://www.laminar.sh (Settings > Project API Keys).
+Authentication (precedence: highest first):
+    1. CLI flag:             --project-api-key <your-key>
+    2. Environment variable: export LMNR_PROJECT_API_KEY=<your-key>
+    3. OAuth Device Flow:    lmnr-cli login
+  Get an API key at https://www.laminar.sh (Settings > Project API Keys),
+  or run "lmnr-cli login" to authenticate via your browser.
 
 Examples:
   lmnr-cli dev agent.ts                                    # Debugger TypeScript entrypoint
