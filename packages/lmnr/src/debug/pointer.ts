@@ -54,7 +54,9 @@ export const emitPointer = (pointer: DebugRunPointer): void => {
   const payload = JSON.stringify(pointer);
 
   console.log(`${CONSOLE_PREFIX}${payload}`);
-  writePointerFile(payload);
+  if (process.env.LMNR_DEBUG_WRITE_LAST_RUN_TO_FILE) {
+    writePointerFile(payload);
+  }
 };
 
 const writePointerFile = (payload: string): void => {

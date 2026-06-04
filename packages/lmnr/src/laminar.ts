@@ -212,7 +212,10 @@ export class Laminar {
       this.baseHttpUrl = "";
     }
 
-    this.globalMetadata = metadata ?? {};
+    const envMetadata = process.env.LMNR_METADATA
+      ? JSON.parse(process.env.LMNR_METADATA) as Record<string, unknown>
+      : {};
+    this.globalMetadata = { ...envMetadata, ...(metadata ?? {}) };
     if (inheritGlobalContext) {
       LaminarContextManager.inheritGlobalContext = true;
     }
