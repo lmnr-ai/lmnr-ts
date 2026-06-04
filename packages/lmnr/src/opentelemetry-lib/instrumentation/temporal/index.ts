@@ -331,7 +331,7 @@ export class ActivityInboundInterceptor {
     // cannot leak onto sibling activities that share the same async lineage.
     return LaminarContextManager.runWithIsolatedContext(
       LaminarContextManager.getContextStack(),
-      () => {
+      async () => {
         const restoredCtx = restoreContextFromHeaders(input.headers);
 
         if (!this._createActivitySpan || !restoredCtx) {
