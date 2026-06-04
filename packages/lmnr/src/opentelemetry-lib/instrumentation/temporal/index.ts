@@ -48,6 +48,8 @@ import { Laminar } from "../../../laminar";
 import {
   deserializeLaminarSpanContext,
   initializeLogger,
+  otelSpanIdToUUID,
+  otelTraceIdToUUID,
   tryToOtelSpanContext,
 } from "../../../utils";
 import { LaminarContextManager } from "../../tracing/context";
@@ -58,7 +60,7 @@ import { LaminarSpan } from "../../tracing/span";
 const logger = initializeLogger();
 
 /** Header key used to carry the serialized Laminar span context through Temporal. */
-export const LAMINAR_SPAN_CONTEXT_HEADER = "laminar-span-context";
+export const LAMINAR_SPAN_CONTEXT_HEADER = "x-lmnr-span-context";
 
 /**
  * W3C traceparent header key — written alongside `laminar-span-context` for
@@ -186,19 +188,8 @@ const restoreContextFromHeaders = (
     if (parts.length >= 3) {
       const [, traceHex, spanHex] = parts;
       try {
-        const toUUID = (hex: string, pad: number, fmt: string): string =>
-          hex.padStart(pad, "0").replace(
-            new RegExp(fmt),
-            "$1-$2-$3-$4-$5",
-          );
-        const traceId = toUUID(
-          traceHex, 32,
-          "^([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$",
-        ) as LaminarSpanContext["traceId"];
-        const spanId = toUUID(
-          spanHex.padStart(32, "0"), 32,
-          "^([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$",
-        ) as LaminarSpanContext["spanId"];
+        const traceId = otelTraceIdToUUID(traceHex) as LaminarSpanContext["traceId"];
+        const spanId = otelSpanIdToUUID(spanHex) as LaminarSpanContext["spanId"];
         const ctx: LaminarSpanContext = { traceId, spanId, isRemote: true };
         _pushLaminarContext(ctx);
         return ctx;
