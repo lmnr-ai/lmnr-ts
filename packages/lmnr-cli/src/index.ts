@@ -236,11 +236,23 @@ Examples:
       "Port for the Laminar API. Defaults to 443",
       (val) => parseInt(val, 10),
     )
-    .option("--json", "Output structured JSON to stdout");
+    .option("--json", "Output structured JSON to stdout")
+    .addHelpText(
+      "after",
+      `
+Learn more about debugging features at https://laminar.sh/docs/platform/debugger
+`,
+    );
 
   const debugSessionCmd = debugCmd
     .command("session")
-    .description("Manage debug sessions");
+    .description("Manage debug sessions")
+    .addHelpText(
+      "after",
+      `
+Learn more about debugging features at https://laminar.sh/docs/platform/debugger
+`,
+    );
 
   debugSessionCmd
     .command("set-name")
