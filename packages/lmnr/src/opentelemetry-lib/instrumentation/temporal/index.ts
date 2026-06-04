@@ -318,7 +318,6 @@ export class ActivityInboundInterceptor {
     input: {
       headers: Record<string, unknown> | undefined;
       args: unknown[];
-      info?: { activityType?: string };
       [k: string]: unknown;
     },
     next: (i: {
@@ -339,8 +338,13 @@ export class ActivityInboundInterceptor {
           return next(input);
         }
 
-        const activityName =
-          input.info?.activityType ?? "temporal.activity";
+        let activityName = "temporal.activity";
+        try {
+          const { Context } = await import("@temporalio/activity");
+          activityName = Context.current().info.activityType;
+        } catch {
+          // @temporalio/activity not available or called outside activity context
+        }
 
         const span = Laminar.startSpan({
           name: activityName,
