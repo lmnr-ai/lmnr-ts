@@ -35,8 +35,7 @@
     "open": "^11.0.0",
     "pino": "9.12.0",
     "pino-pretty": "^13.1.1",
-    "tweetnacl": "^1.0.3",
-    "tweetnacl-util": "^0.15.1"
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@lmnr-ai/client": "workspace:*",
