@@ -12,6 +12,45 @@ npx lmnr-cli@latest <command>
 npm install -g lmnr-cli
 ```
 
+## Authentication
+
+The CLI supports three authentication modes, evaluated in this precedence order:
+
+1. `--project-api-key <key>` flag
+2. `LMNR_PROJECT_API_KEY` environment variable
+3. OAuth Device Flow (via `lmnr-cli login`)
+
+### OAuth Device Flow
+
+```bash
+# Start the device authorization flow.  Prints a URL + code, opens your browser.
+lmnr-cli login
+
+# (Optionally pre-select a project)
+lmnr-cli login --project <project-uuid>
+
+# Show the current login state and token expiry.
+lmnr-cli status
+
+# Remove the stored credentials.
+lmnr-cli logout
+```
+
+Tokens are stored at `~/.config/lmnr/credentials.json` with mode `0600` (parent
+directory `0700`, XDG-aware via `$XDG_CONFIG_HOME`). Access tokens are
+auto-refreshed when within 30 seconds of expiry; if the refresh token has been
+revoked or rotated, the CLI exits with an error and you must run
+`lmnr-cli login` again.
+
+For a self-hosted Laminar instance, point the CLI at your deployment:
+
+```bash
+lmnr-cli login --dashboard-url http://localhost:3010 --base-url http://localhost:8010
+```
+
+`LMNR_DASHBOARD_URL` (defaults to `https://www.laminar.sh`) and `LMNR_BASE_URL`
+(defaults to `https://api.lmnr.ai`) are also honored.
+
 ## Commands
 
 ### [`sql`](src/commands/sql/README.md) - SQL Queries
@@ -45,6 +84,10 @@ lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a data
 lmnr-cli dataset create my-dataset data.jsonl -o out.jsonl
 ```
 
+### `login` / `logout` / `status` - Authentication
+
+See [Authentication](#authentication) above.
+
 ## Global Options
 
 - `-v, --version` - Display version number
@@ -52,7 +95,7 @@ lmnr-cli dataset create my-dataset data.jsonl -o out.jsonl
 
 Each command also accepts:
 
-- `--project-api-key <key>` - Project API key (or set `LMNR_PROJECT_API_KEY` env variable)
+- `--project-api-key <key>` - Project API key (or set `LMNR_PROJECT_API_KEY` env variable, or log in via `lmnr-cli login`)
 - `--base-url <url>` - Base URL for the Laminar API (default: https://api.lmnr.ai)
 - `--port <port>` - Port for the Laminar API (default: 443)
 
