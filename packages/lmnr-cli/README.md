@@ -59,11 +59,20 @@ lmnr-cli login
 # (Optionally pre-select a project)
 lmnr-cli login --project <project-uuid>
 
-# Show the current login state and token expiry.
-lmnr-cli status
+# List authenticated project profiles (active one is marked with *).
+lmnr-cli list
 
-# Remove the stored credentials.
+# Change the active project profile (no re-authentication).
+lmnr-cli switch <id|name>
+
+# Remove the active profile.
 lmnr-cli logout
+
+# Remove a specific profile.
+lmnr-cli logout <id|name>
+
+# Remove every stored profile.
+lmnr-cli logout --all
 ```
 
 Tokens are stored at `~/.config/lmnr/credentials.json` with mode `0600` (parent
@@ -71,6 +80,23 @@ directory `0700`, XDG-aware via `$XDG_CONFIG_HOME`). Access tokens are
 auto-refreshed when within 30 seconds of expiry; if the refresh token has been
 revoked or rotated, the CLI exits with an error and you must run
 `lmnr-cli login` again.
+
+### Working with multiple projects
+
+Each `lmnr-cli login` adds a profile to the credentials file, keyed by the
+project's UUID. The most recently logged-in profile becomes active. Run
+`lmnr-cli list` to see all profiles, and `lmnr-cli switch <name>` to change the
+active one without re-authenticating. To target a specific profile for a single
+command, pass `--project <id|name>` (or set `LMNR_PROJECT_ID` in your shell):
+
+```bash
+lmnr-cli sql query "SELECT count() FROM spans" --project staging-tests
+LMNR_PROJECT_ID=my-prod-project lmnr-cli traces wait --since 60s --count 1
+```
+
+If only one profile exists, every command uses it automatically (no flag
+needed). `LMNR_PROJECT_API_KEY` and `--project-api-key` still take precedence
+over OAuth profiles.
 
 For a self-hosted Laminar instance, point the CLI at your deployment:
 
@@ -144,7 +170,7 @@ lmnr-cli traces wait --since 2m --count 5 --json
 Polls the server every 2 seconds. Useful for coding agents that need to confirm
 their instrumentation actually emits traces before declaring "done".
 
-### `login` / `logout` / `status` - Authentication
+### `login` / `logout` / `list` / `switch` - Authentication
 
 See [Authentication](#authentication) above.
 

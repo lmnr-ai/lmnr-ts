@@ -11,12 +11,13 @@ import {
   handleDatasetsPush,
 } from "./commands/dataset";
 import { runDev } from "./commands/dev";
+import { handleList } from "./commands/list";
 import { handleLogin } from "./commands/login";
 import { handleLogout } from "./commands/logout";
 import { handleSetup } from "./commands/setup";
 import { handleSqlQuery } from "./commands/sql";
 import { SQL_SCHEMA_HELP } from "./commands/sql/schema";
-import { handleStatus } from "./commands/status";
+import { handleSwitch } from "./commands/switch";
 import { handleTracesWait } from "./commands/traces";
 
 async function main() {
@@ -295,16 +296,25 @@ Examples:
 
   program
     .command("logout")
-    .description("Remove the stored OAuth credentials")
-    .action(async () => {
-      await handleLogout();
+    .description("Remove a stored OAuth profile. Defaults to the active profile.")
+    .argument("[project]", "Project id or name to log out of")
+    .option("--all", "Remove every stored profile")
+    .action(async (project: string | undefined, options: { all?: boolean }) => {
+      await handleLogout(project, { all: options.all });
     });
 
   program
-    .command("status")
-    .description("Show the current OAuth login state and token expiry")
+    .command("list")
+    .description("List authenticated project profiles")
     .action(async () => {
-      await handleStatus();
+      await handleList();
+    });
+
+  program
+    .command("switch <project>")
+    .description("Change the active project profile (no re-authentication)")
+    .action(async (project: string) => {
+      await handleSwitch(project);
     });
 
   const traces = program
@@ -365,6 +375,11 @@ Authentication (precedence: highest first):
 Examples:
   lmnr-cli setup --json                                    # One-shot onboarding (login + .env)
   lmnr-cli setup --workspace <uuid> --project-name my-app  # Into a specific workspace
+  lmnr-cli login                                           # Add a project profile
+  lmnr-cli list                                            # List authenticated project profiles
+  lmnr-cli switch my-prod-project                          # Change the active profile
+  lmnr-cli logout                                          # Log out of the active profile
+  lmnr-cli logout --all                                    # Remove every stored profile
   lmnr-cli traces wait --since 60s --count 1               # Wait for traces (verifies)
   lmnr-cli dev agent.ts                                    # Debugger TypeScript entrypoint
   lmnr-cli dev agent.py                                    # Debugger Python script mode
