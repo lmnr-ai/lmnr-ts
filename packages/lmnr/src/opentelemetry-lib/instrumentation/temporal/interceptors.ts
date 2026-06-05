@@ -1,0 +1,236 @@
+import { Laminar } from "../../../laminar";
+import { LaminarContextManager } from "../../tracing/context";
+import { buildHeaders, restoreContextFromHeaders } from "./helpers";
+
+/**
+ * Options for Laminar Temporal interceptors.
+ */
+export interface LaminarTemporalInterceptorOptions {
+  /**
+   * Whether the activity inbound interceptor should wrap each activity
+   * execution in a Laminar span named after the activity type.
+   *
+   * Defaults to `true`. Set to `false` if you want only context restoration
+   * (letting your own `observe()` calls act as roots inside the activity).
+   */
+  createActivitySpan?: boolean;
+}
+
+// Inject Laminar span-context headers and forward, preserving input/output types.
+// T is unconstrained so Temporal's concrete input types (some of which lack a
+// `headers` field entirely) are accepted without an index-signature requirement.
+const withLaminarHeaders = async <T, R>(
+  input: T,
+  next: (i: T) => Promise<R>,
+): Promise<R> => {
+  const existing = (input as { headers?: Record<string, unknown> }).headers;
+  return next({
+    ...(input as object),
+    headers: buildHeaders(existing ?? {}),
+  } as T);
+};
+
+const withLaminarHeadersIterable = <T, R>(
+  input: T,
+  next: (i: T) => AsyncIterable<R>,
+): AsyncIterable<R> => {
+  const existing = (input as { headers?: Record<string, unknown> }).headers;
+  return next({
+    ...(input as object),
+    headers: buildHeaders(existing ?? {}),
+  } as T);
+};
+
+// ─── WorkflowClientInterceptor ────────────────────────────────────────────────
+
+/**
+ * Temporal client-side workflow interceptor. Injects the active Laminar span context
+ * into every workflow-start / signal / query / update-start call via headers.
+ *
+ * **Explicit usage:**
+ * ```typescript
+ * const client = new Client({
+ *   interceptors: {
+ *     workflow: [new LaminarTemporalInterceptors.WorkflowClientInterceptor()],
+ *   },
+ * });
+ * ```
+ */
+export class WorkflowClientInterceptor {
+  async start<T, R>(input: T, next: (i: T) => Promise<R>): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+
+  async startWithDetails<T, R>(
+    input: T,
+    next: (i: T) => Promise<R>,
+  ): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+
+  async startUpdate<T, R>(input: T, next: (i: T) => Promise<R>): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+
+  async startUpdateWithStart<T, R>(
+    input: T,
+    next: (i: T) => Promise<R>,
+  ): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+
+  async signal<T, R>(input: T, next: (i: T) => Promise<R>): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+
+  async signalWithStart<T, R>(
+    input: T,
+    next: (i: T) => Promise<R>,
+  ): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+
+  async query<T, R>(input: T, next: (i: T) => Promise<R>): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+
+  async terminate<T, R>(input: T, next: (i: T) => Promise<R>): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+
+  async describe<T, R>(input: T, next: (i: T) => Promise<R>): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+}
+
+// ─── ScheduleClientInterceptor ────────────────────────────────────────────────
+
+/**
+ * Temporal client-side schedule interceptor. Injects the active Laminar span context
+ * into every schedule create call headers.
+ *
+ * **Explicit usage:**
+ * ```typescript
+ * const client = new Client({
+ *   interceptors: {
+ *     schedule: [new LaminarTemporalInterceptors.ScheduleClientInterceptor()],
+ *   },
+ * });
+ * ```
+ */
+export class ScheduleClientInterceptor {
+  async create<T, R>(input: T, next: (i: T) => Promise<R>): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+}
+
+/**
+ * Warning: Standalone Activities are experimental in Temporal. If the API changes,
+ * this interceptor may not work as expected.
+ * Temporal client-side activity interceptor. Injects the active Laminar span context
+ * into every activity start / terminate call via headers.
+ *
+ * **Explicit usage:**
+ * ```typescript
+ * const client = new Client({
+ *   interceptors: {
+ *     schedule: [new LaminarTemporalInterceptors.ScheduleClientInterceptor()],
+ *   },
+ * });
+ * ```
+ */
+export class ActivityClientInterceptor {
+  async start<T, R>(input: T, next: (i: T) => Promise<R>): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+
+  async getResult<T, R>(input: T, next: (i: T) => Promise<R>): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+
+  async describe<T, R>(input: T, next: (i: T) => Promise<R>): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+
+  async cancel<T, R>(input: T, next: (i: T) => Promise<R>): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+
+  async terminate<T, R>(input: T, next: (i: T) => Promise<R>): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+
+  list<T, R>(input: T, next: (i: T) => AsyncIterable<R>): AsyncIterable<R> {
+    return withLaminarHeadersIterable(input, next);
+  }
+
+  async count<T, R>(input: T, next: (i: T) => Promise<R>): Promise<R> {
+    return withLaminarHeaders(input, next);
+  }
+}
+
+// ─── ActivityInboundInterceptor ───────────────────────────────────────────────
+
+/**
+ * Temporal worker-side interceptor. Reads the Laminar span context from
+ * Temporal headers and restores it as the parent context before each activity
+ * executes. When `createActivitySpan` is `true` (default), also wraps the
+ * activity in a Laminar span named after the activity type.
+ *
+ * **Explicit usage:**
+ * ```typescript
+ * const worker = await Worker.create({
+ *   interceptors: {
+ *     activityInbound: [
+ *       () => new LaminarTemporalInterceptors.ActivityInboundInterceptor(),
+ *     ],
+ *   },
+ * });
+ * ```
+ */
+class ActivityInboundInterceptor {
+  readonly createActivitySpan: boolean;
+  readonly activityType: string | undefined;
+
+  constructor(
+    options: LaminarTemporalInterceptorOptions = {},
+    activityContext?: any,
+  ) {
+    this.createActivitySpan = options.createActivitySpan ?? true;
+    this.activityType = activityContext?.info?.activityType;
+  }
+
+  execute = async <
+    T extends { headers: Record<string, unknown> | undefined; args: unknown[] },
+    R,
+  >(
+    input: T,
+    next: (i: T) => Promise<R>,
+  ): Promise<R> =>
+    // Wrap the entire execution in an isolated ALS scope so that
+    // _pushLaminarContext's `enterWith` (which restores the remote parent)
+    // cannot leak onto sibling activities that share the same async lineage.
+    LaminarContextManager.runWithIsolatedContext(
+      LaminarContextManager.getContextStack(),
+      async () => {
+        const restoredCtx = restoreContextFromHeaders(input.headers);
+        if (!this.createActivitySpan || !restoredCtx) {
+          return next(input);
+        }
+
+        const activityName = this.activityType ?? "temporal.activity";
+
+        const span = Laminar.startSpan({
+          name: activityName,
+          parentSpanContext: restoredCtx,
+        });
+
+        return Laminar.withSpan(span, () => next(input), true);
+      },
+    );
+}
+
+export const ActivityInterceptorFactory =
+  (options?: LaminarTemporalInterceptorOptions) => (ctx: any) => ({
+    inbound: new ActivityInboundInterceptor(options, ctx),
+  });
