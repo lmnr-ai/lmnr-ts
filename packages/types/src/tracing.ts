@@ -53,7 +53,6 @@ export type LaminarSpanContext = {
   spanIdsPath?: StringUUID[];
   userId?: string;
   sessionId?: string;
-  rolloutSessionId?: string;
   metadata?: Record<string, any>;
   traceType?: TraceType;
   tracingLevel?: TracingLevel;

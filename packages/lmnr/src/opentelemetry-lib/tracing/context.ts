@@ -201,7 +201,6 @@ export class LaminarContextManager {
     let entityContext = context;
     const userId = properties.userId;
     const sessionId = properties.sessionId;
-    const rolloutSessionId = properties.rolloutSessionId;
     const traceType = properties.traceType;
     const metadata = properties.metadata;
     const tracingLevel = properties.tracingLevel;
@@ -211,7 +210,6 @@ export class LaminarContextManager {
       traceType,
       metadata,
       tracingLevel,
-      rolloutSessionId,
     });
     return entityContext;
   }
@@ -227,7 +225,6 @@ export class LaminarContextManager {
   public static getAssociationProperties(): {
     userId?: string;
     sessionId?: string;
-    rolloutSessionId?: string;
     traceType?: TraceType;
     tracingLevel?: TracingLevel;
     metadata?: Record<string, any>;

@@ -1,8 +1,8 @@
 import * as assert from 'node:assert';
 import { describe, it } from 'node:test';
 
-import { LaminarLanguageModelV2 } from '../../src/opentelemetry-lib/instrumentation/aisdk/v2';
-import { LaminarLanguageModelV3 } from '../../src/opentelemetry-lib/instrumentation/aisdk/v3';
+import { LaminarLanguageModelV2 } from '../src/opentelemetry-lib/instrumentation/aisdk/v2';
+import { LaminarLanguageModelV3 } from '../src/opentelemetry-lib/instrumentation/aisdk/v3';
 
 // Factory function to create V3 usage object
 function createV3Usage() {

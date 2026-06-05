@@ -7,12 +7,11 @@ This is a CLI for the Laminar agent observability platform.
 # Package Boundaries
 - `lmnr-cli` is the standalone CLI (`npx lmnr-cli@latest`). It depends on
   `@lmnr-ai/client` for API calls, not the full `@lmnr-ai/lmnr` SDK.
-- `@lmnr-ai/lmnr` is an optional peer dependency, only needed by the `dev`
-command
-  (for worker resolution). Dataset commands do not need it.
-- There is a known circular dependency between `@lmnr-ai/lmnr` and
-`lmnr-cli`
-  caused by the `dev` command's worker resolution. Do not make this worse.
+- `lmnr-cli` has NO dependency on `@lmnr-ai/lmnr`. The old `dev` command (the
+  interactive debugger / worker resolution) was removed in the debugger rework —
+  debug runs are now plain processes driven by `LMNR_DEBUG*` env vars with an
+  in-process replay cache (see `@lmnr-ai/lmnr` `src/debug/`). Do NOT re-introduce
+  a `@lmnr-ai/lmnr` peer dep or the previously-known circular dependency.
 
 # Guideline Resources
 

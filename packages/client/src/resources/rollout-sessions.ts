@@ -1,7 +1,9 @@
-import { type RolloutParam, type SpanType } from "@lmnr-ai/types";
+import { errorMessage } from "@lmnr-ai/types";
 
-import { otelSpanIdToUUID, otelTraceIdToUUID } from "../utils";
+import { initializeLogger } from "../utils";
 import { BaseResource } from "./index";
+
+const logger = initializeLogger();
 
 export class RolloutSessionsResource extends BaseResource {
   constructor(baseHttpUrl: string, projectApiKey: string) {
@@ -9,102 +11,47 @@ export class RolloutSessionsResource extends BaseResource {
   }
 
   /**
-   * Connects to the SSE stream for rollout debugging sessions
-   * Returns the Response object for streaming SSE events
+   * Idempotently register (upsert) a debug session on the backend, keyed on the
+   * SDK-supplied session id. The backend stores the row so the session is
+   * visible in the UI; a null/omitted name never clobbers a name set elsewhere.
+   *
+   * Returns the backend-resolved `projectId` (derived from the API key) so the
+   * caller can build the debugger URL; null if the body can't be parsed.
    */
-  public async connect({
+  public async register({
     sessionId,
     name,
-    params,
-    signal,
   }: {
     sessionId: string;
-    params: RolloutParam[];
-    name: string;
-    signal?: AbortSignal;
-  }): Promise<Response> {
+    name?: string;
+  }): Promise<string | null> {
     const response = await fetch(`${this.baseHttpUrl}/v1/rollouts/${sessionId}`, {
       method: "POST",
-      headers: {
-        ...this.headers(),
-        'Accept': 'text/event-stream',
-      },
-      body: JSON.stringify({ name, params }),
-      signal,
+      headers: this.headers(),
+      body: JSON.stringify({ name }),
     });
 
     if (!response.ok) {
-      throw new Error(`SSE connection failed: ${response.status} ${response.statusText}`);
+      await this.handleError(response);
     }
 
-    if (!response.body) {
-      throw new Error('No response body');
+    try {
+      const body = (await response.json()) as { projectId?: string };
+      return body.projectId ?? null;
+    } catch (e) {
+      logger.warn(`Failed to parse rollout register response: ${errorMessage(e)}`);
+      return null;
     }
-
-    return response;
   }
 
   public async delete({
     sessionId,
   }: {
     sessionId: string;
-  }) {
+  }): Promise<void> {
     const response = await fetch(`${this.baseHttpUrl}/v1/rollouts/${sessionId}`, {
       method: "DELETE",
       headers: this.headers(),
-    });
-
-    if (!response.ok) {
-      await this.handleError(response);
-    }
-  }
-
-  public async setStatus({
-    sessionId,
-    status,
-  }: {
-    sessionId: string;
-    status: 'PENDING' | 'RUNNING' | 'FINISHED' | 'STOPPED';
-  }) {
-    const response = await fetch(`${this.baseHttpUrl}/v1/rollouts/${sessionId}/status`, {
-      method: "PATCH",
-      headers: this.headers(),
-      body: JSON.stringify({ status }),
-    });
-
-    if (!response.ok) {
-      await this.handleError(response);
-    }
-  }
-
-  public async sendSpanUpdate({
-    sessionId,
-    span,
-  }: {
-    sessionId: string;
-    span: {
-      name: string;
-      startTime: string;
-      spanId: string;
-      traceId: string;
-      parentSpanId: string | undefined;
-      attributes: Record<string, any>;
-      spanType: SpanType;
-    };
-  }) {
-    const response = await fetch(`${this.baseHttpUrl}/v1/rollouts/${sessionId}/update`, {
-      method: "PATCH",
-      headers: this.headers(),
-      body: JSON.stringify({
-        type: "spanStart",
-        spanId: otelSpanIdToUUID(span.spanId),
-        traceId: otelTraceIdToUUID(span.traceId),
-        parentSpanId: span.parentSpanId ? otelSpanIdToUUID(span.parentSpanId) : undefined,
-        attributes: span.attributes,
-        startTime: span.startTime,
-        name: span.name,
-        spanType: span.spanType,
-      }),
     });
 
     if (!response.ok) {

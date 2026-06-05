@@ -6,6 +6,7 @@ import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
 import { Laminar, observe } from "../src/index";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
 import { LaminarSpan } from "../src/opentelemetry-lib/tracing/span";
 
 
@@ -87,5 +88,24 @@ void describe("span interface tests", () => {
     assert.strictEqual(span?.attributes['lmnr.association.properties.metadata.key'], "value");
     assert.strictEqual(span?.attributes['lmnr.association.properties.session_id'], "123");
     assert.strictEqual(span?.attributes['lmnr.association.properties.user_id'], "456");
+  });
+
+  void it("stamps global metadata on spans built without observe / startActiveSpan", () => {
+    // Mirrors a pure auto-instrumentation trace: no observe / startActiveSpan,
+    // so no association properties are on the OTEL context. Global metadata
+    // (e.g. a debug run's rollout.session_id) must still land on the span.
+    LaminarContextManager.setGlobalMetadata({ "rollout.session_id": "abc" });
+    try {
+      const span = Laminar.startSpan({ name: "auto" });
+      span.end();
+      const spans = exporter.getFinishedSpans();
+      assert.strictEqual(spans.length, 1);
+      assert.strictEqual(
+        spans[0].attributes['lmnr.association.properties.metadata.rollout.session_id'],
+        "abc",
+      );
+    } finally {
+      LaminarContextManager.setGlobalMetadata({});
+    }
   });
 });

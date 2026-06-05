@@ -13,7 +13,6 @@ import {
   handleDatasetsPush,
 } from "./datasets";
 import { runEvaluation } from "./evals";
-import { proxyToLmnrCli } from "./proxy-to-lmnr-cli.js";
 
 const logger = initializeLogger();
 
@@ -168,22 +167,6 @@ async function cli() {
       process.stderr.write(deprecatedDatasetsWarning + "\n");
       const parentOpts = cmd.parent?.opts() || {};
       await handleDatasetsCreate(name, paths, { ...parentOpts, ...options });
-    });
-
-  // Dev command - proxy to lmnr-cli
-  program
-    .command("dev")
-    .description("Start a rollout debugging session")
-    .argument("[file]", "Path to file containing the agent function(s)")
-    .allowExcessArguments(true)
-    .allowUnknownOption(true)
-    .action(() => {
-      // Find the dev command arguments (everything after 'dev')
-      const devIndex = process.argv.indexOf('dev');
-      const devArgs = devIndex !== -1 ? process.argv.slice(devIndex + 1) : [];
-
-      // Proxy to lmnr-cli with 'dev' command and all arguments
-      proxyToLmnrCli(['dev', ...devArgs]);
     });
 
   // If no command provided, show help

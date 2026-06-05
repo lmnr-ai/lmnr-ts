@@ -1,3 +1,6 @@
+import { spawn } from "node:child_process";
+
+import { LaminarClient } from "@lmnr-ai/client";
 import {
   errorMessage,
   type LaminarSpanContext,
@@ -17,6 +20,7 @@ import {
 } from "@opentelemetry/api";
 import { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 
+import { getRuntime, initDebugRuntime, isTruthy, resetDebugRuntime } from "./debug";
 import {
   InitializeOptions,
   initializeTracing,
@@ -47,9 +51,11 @@ import { LaminarContextManager } from "./opentelemetry-lib/tracing/context";
 import { LaminarSpan } from "./opentelemetry-lib/tracing/span";
 import {
   deserializeLaminarSpanContext,
+  getFrontendUrl,
   initializeLogger,
   loadEnv,
   metadataToAttributes,
+  otelTraceIdToUUID,
   type StringUUID,
   tryToOtelSpanContext,
   validateTracingConfig,
@@ -87,6 +93,11 @@ export class Laminar {
   private static projectApiKey: string;
   private static isInitialized: boolean = false;
   private static globalMetadata: Record<string, any> = {};
+  // The debug run's `exit` pointer hook, kept by reference so shutdown() can
+  // remove it. `process.once` only auto-detaches after `exit` fires, so without
+  // this an initialize()/shutdown() loop (common in tests) would accumulate
+  // stale listeners and trip Node's MaxListenersExceededWarning.
+  private static debugExitHook: (() => void) | null = null;
   /**
    * Initialize Laminar context across the application.
    * This method must be called before using any other Laminar methods or decorators.
@@ -203,8 +214,10 @@ export class Laminar {
       this.baseHttpUrl = "";
     }
 
-    this.globalMetadata = metadata ?? {};
-    LaminarContextManager.setGlobalMetadata(this.globalMetadata);
+    const envMetadata = process.env.LMNR_TRACE_METADATA
+      ? JSON.parse(process.env.LMNR_TRACE_METADATA) as Record<string, unknown>
+      : {};
+    this.globalMetadata = { ...envMetadata, ...(metadata ?? {}) };
     if (inheritGlobalContext) {
       LaminarContextManager.inheritGlobalContext = true;
     }
@@ -236,6 +249,17 @@ export class Laminar {
       sessionRecordingOptions,
       spanProcessor,
     });
+
+    // Build the debug runtime only after tracing is up. It has no dependency on
+    // initializeTracing (which never reads the runtime or global metadata), so
+    // running it here means a tracing-init failure aborts before any debug side
+    // effects — backend session registration, the `rollout.session_id` stamp,
+    // the process-exit pointer hook — instead of leaving them live on a process
+    // whose tracing never came up. It must still precede setGlobalMetadata (so
+    // `rollout.session_id` is stamped on every span) and _initializeContextFromEnv
+    // (so the runtime is registered before the inherited trace id is recorded).
+    this._initDebugRuntime(url, port);
+    LaminarContextManager.setGlobalMetadata(this.globalMetadata);
 
     this._initializeContextFromEnv();
   }
@@ -285,6 +309,18 @@ export class Laminar {
       );
       LaminarContextManager.pushContext(ctx);
 
+      // On a debug run attached via LMNR_SPAN_CONTEXT, no span has a null parent
+      // (everything descends from the injected context), so the processor's
+      // root-span hook never fires. Record the inherited trace id here so the
+      // run pointer (§5) isn't emitted with an empty trace_id.
+      try {
+        getRuntime()?.recordTraceId(otelTraceIdToUUID(otelSpanContext.traceId));
+      } catch (e) {
+        logger.debug(
+          "Failed to record debug trace id from env: " + errorMessage(e),
+        );
+      }
+
       logger.debug(
         "Initialized Laminar parent context from LMNR_SPAN_CONTEXT.",
       );
@@ -292,6 +328,94 @@ export class Laminar {
       logger.warn(
         "LMNR_SPAN_CONTEXT is set but could not be used: " + errorMessage(e),
       );
+    }
+  }
+
+  /**
+   * Build the in-process debug runtime (§4, §5) when LMNR_DEBUG is set.
+   *
+   * On a debug run the session id from the config is stamped into the global
+   * trace metadata as `rollout.session_id`, and a process-exit hook emits the
+   * run pointer once the root trace id is known. When debug mode is off this is
+   * a no-op and the SDK behaves exactly as before.
+   * @private
+   */
+  private static _initDebugRuntime(
+    baseUrl: string | undefined,
+    httpPort: number | undefined,
+  ): void {
+    try {
+      // Bail before allocating a client on the common (non-debug) path. The
+      // LMNR_DEBUG gate also lives inside buildDebugConfig (called by
+      // initDebugRuntime), but that runs only after the client and debugger URL
+      // are built — so check it up front to avoid the wasted allocation on
+      // every initialize(). Mirrors Python's _is_truthy guard in
+      // _init_debug_runtime.
+      if (!isTruthy(process.env.LMNR_DEBUG)) {
+        return;
+      }
+      const client = new LaminarClient({
+        baseUrl,
+        projectApiKey: this.projectApiKey,
+        port: httpPort,
+      });
+      const debuggerUrl =
+        process?.env?.LMNR_FRONTEND_URL ?? getFrontendUrl(baseUrl);
+      const { runtime } = initDebugRuntime(client.sql, debuggerUrl);
+      if (runtime === null) {
+        return;
+      }
+
+      // Register the session with the backend so it shows up in the UI. The
+      // SDK owns the session id; this idempotent upsert is what makes a bare
+      // `LMNR_DEBUG=true` run (no replay) useful. Best-effort and fire-and-
+      // forget — initialize() is synchronous and registration must never block
+      // or crash it. The backend returns the project id (derived from the API
+      // key) so we can print the human-facing session URL.
+      void client.rolloutSessions
+        .register({ sessionId: runtime.sessionId })
+        .then((projectId) => {
+          if (projectId) {
+            // Record the project id so the run pointer's debugger_url field
+            // carries the SAME full per-session URL we print here (single code
+            // path via debuggerSessionUrl).
+            runtime.recordProjectId(projectId);
+            const sessionUrl = runtime.debuggerSessionUrl()!;
+            logger.info(`Laminar debugger session: ${sessionUrl}`);
+            const opener =
+              process.platform === "win32"
+                ? "start"
+                : process.platform === "darwin"
+                  ? "open"
+                  : "xdg-open";
+            spawn(opener, [sessionUrl], { detached: true, stdio: "ignore" }).unref();
+          }
+        })
+        .catch((e) => {
+          logger.warn("Failed to register debug session: " + errorMessage(e));
+        });
+
+      this.globalMetadata = {
+        ...this.globalMetadata,
+        "rollout.session_id": runtime.sessionId,
+      };
+      // `exit` fires on both natural event-loop drain and explicit
+      // process.exit(), and emitPointer is synchronous, so a single `exit`
+      // hook covers process teardown. Do NOT also hook `beforeExit`: it fires
+      // on any transient event-loop idle, which can happen before the run's
+      // root trace id is recorded — emitPointer is one-shot, so a premature
+      // call would permanently spend the pointer with an empty trace_id.
+      // Mirrors Python's single atexit hook. Drop any prior hook first so a
+      // repeated initialize() (or an init/shutdown loop) doesn't pile up
+      // listeners; keep this one by reference for shutdown() to remove.
+      if (this.debugExitHook !== null) {
+        process.removeListener("exit", this.debugExitHook);
+      }
+      this.debugExitHook = () => runtime.emitPointer();
+      process.once("exit", this.debugExitHook);
+    } catch (e) {
+      // never let debug setup crash initialization
+      logger.warn("Failed to initialize debug runtime: " + errorMessage(e));
     }
   }
 
@@ -882,6 +1006,10 @@ export class Laminar {
   public static async shutdown() {
     if (this.isInitialized) {
       logger.debug("Shutting down Laminar");
+      // Emit the debug run pointer before flushing so flows that shut down
+      // without terminating the process still get LMNR_DEBUG_RUN +
+      // .lmnr/last-run.json. Idempotent — the process-exit hooks are a fallback.
+      getRuntime()?.emitPointer();
       await forceFlush();
       // Unlike Python where asynchronous nature of `BatchSpanProcessor.forceFlush()`
       // forces us to actually use `SpanProcessor.shutdown()` and make any
@@ -893,6 +1021,15 @@ export class Laminar {
       _resetConfiguration();
       LaminarContextManager.clearContexts();
       LaminarContextManager.clearActiveSpans();
+      // Clear the one-shot debug-runtime state so a subsequent initialize()
+      // re-reads LMNR_DEBUG* instead of resurrecting the previous run.
+      resetDebugRuntime();
+      // The pointer was just emitted above, so the `exit` hook would be a
+      // redundant no-op; remove it so init/shutdown loops don't leak listeners.
+      if (this.debugExitHook !== null) {
+        process.removeListener("exit", this.debugExitHook);
+        this.debugExitHook = null;
+      }
 
       // Force release the claude-code proxy if it was started (ignores ref count)
       forceReleaseClaudeProxy();

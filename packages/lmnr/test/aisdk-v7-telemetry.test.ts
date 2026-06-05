@@ -167,7 +167,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     tel.onLanguageModelCallStart(mkLlmCallStart(callId));
     tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
     tel.onStepFinish(mkStepEnd(callId, 0));
-    tel.onFinish(mkFinish(callId));
+    tel.onEnd(mkFinish(callId));
 
     const spans = exporter.getFinishedSpans();
     const byName = new Map(spans.map((s) => [s.name, s]));
@@ -279,7 +279,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     tel.onLanguageModelCallStart(mkLlmCallStart(callId));
     tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
     tel.onStepFinish(mkStepEnd(callId, 1));
-    tel.onFinish(mkFinish(callId, { stepNumber: 1 }));
+    tel.onEnd(mkFinish(callId, { stepNumber: 1 }));
 
     const spans = exporter.getFinishedSpans();
 
@@ -350,7 +350,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
         tel.onLanguageModelCallStart(mkLlmCallStart(innerCallId));
         tel.onLanguageModelCallEnd(mkLlmCallEnd(innerCallId));
         tel.onStepFinish(mkStepEnd(innerCallId, 0));
-        tel.onFinish(mkFinish(innerCallId));
+        tel.onEnd(mkFinish(innerCallId));
         return Promise.resolve("ok");
       },
     });
@@ -370,7 +370,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
         finishReason: "tool-calls",
       }),
     );
-    tel.onFinish(mkFinish(outerCallId));
+    tel.onEnd(mkFinish(outerCallId));
 
     const spans = exporter.getFinishedSpans();
     // The outer operation span's span id is shared — the inner operation
@@ -410,7 +410,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
       toolOutput: { type: "tool-error", error: new Error("boom") },
     });
     tel.onStepFinish(mkStepEnd(callId, 0));
-    tel.onFinish(mkFinish(callId));
+    tel.onEnd(mkFinish(callId));
 
     const spans = exporter.getFinishedSpans();
     const tool = spans.find((s) => s.name === "ai.tool broken");
@@ -433,7 +433,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
       headers: undefined,
       providerOptions: undefined,
     });
-    tel.onFinish({
+    tel.onEnd({
       callId,
       operationId: "ai.embed",
       provider: "openai",
@@ -471,7 +471,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
       }),
     );
     tel.onStepFinish(mkStepEnd(callId, 0, { text: "42" }));
-    tel.onFinish(mkFinish(callId, { text: "42" }));
+    tel.onEnd(mkFinish(callId, { text: "42" }));
 
     const spans = exporter.getFinishedSpans();
     const llm = spans.find((s) => s.name.startsWith("ai.llm "));
@@ -549,7 +549,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.equal(spans[0].status.message, "A broke");
 
     // call-B must still be open and unaffected — onFinish will close it.
-    tel.onFinish(mkFinish("call-B"));
+    tel.onEnd(mkFinish("call-B"));
     const after = exporter.getFinishedSpans();
     const b = after.find(
       (s) =>
@@ -568,8 +568,8 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     // No spans should have ended yet — we refused to guess which op failed.
     assert.equal(exporter.getFinishedSpans().length, 0);
 
-    tel.onFinish(mkFinish("call-X"));
-    tel.onFinish(mkFinish("call-Y"));
+    tel.onEnd(mkFinish("call-X"));
+    tel.onEnd(mkFinish("call-Y"));
     const ended = exporter.getFinishedSpans();
     for (const s of ended) {
       assert.notEqual(s.status.code, 2, "no op should be marked errored");
@@ -615,7 +615,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     });
     // Provider never emits onToolExecutionEnd — onFinish must still close
     // the tool span so it doesn't leak in the tracing backend or the map.
-    tel.onFinish(mkFinish(callId));
+    tel.onEnd(mkFinish(callId));
 
     const spans = exporter.getFinishedSpans();
     const names = spans.map((s) => s.name).sort();
@@ -637,7 +637,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     });
     // Provider skipped every per-child end callback. onFinish must end
     // children BEFORE the parent so the parent's endTime is the latest.
-    tel.onFinish(mkFinish(callId));
+    tel.onEnd(mkFinish(callId));
 
     const spans = exporter.getFinishedSpans();
     const op = spans.find((s) => s.name === "ai.generateText");
@@ -691,7 +691,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     const tel = new LaminarAiSdkTelemetry();
     const callId = "call-tool-only";
     tel.onStart(mkStartEvent(callId));
-    tel.onFinish(
+    tel.onEnd(
       mkFinish(callId, {
         text: "",
         content: [],
@@ -720,7 +720,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     const tel = new LaminarAiSdkTelemetry();
     const callId = "call-finish-error";
     tel.onStart(mkStartEvent(callId));
-    tel.onFinish(mkFinish(callId, { finishReason: "error" }));
+    tel.onEnd(mkFinish(callId, { finishReason: "error" }));
 
     const spans = exporter.getFinishedSpans();
     const op = spans.find((s) => s.name === "ai.generateText");
@@ -755,7 +755,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
       }),
     );
     tel.onStepFinish(mkStepEnd(callId, 0));
-    tel.onFinish(mkFinish(callId));
+    tel.onEnd(mkFinish(callId));
 
     const spans = exporter.getFinishedSpans();
     const llm = spans.find((s) => s.name.startsWith("ai.llm "));
@@ -796,7 +796,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
         text: "",
       }),
     );
-    tel.onFinish(mkFinish(callId));
+    tel.onEnd(mkFinish(callId));
 
     const spans = exporter.getFinishedSpans();
     const llm = spans.find((s) => s.name.startsWith("ai.llm "));
@@ -819,7 +819,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     tel.onChunk({ chunk: { type: "text-delta", id: "d1", text: "ghost" } });
     tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
     tel.onStepFinish(mkStepEnd(callId, 0));
-    tel.onFinish(mkFinish(callId));
+    tel.onEnd(mkFinish(callId));
 
     const spans = exporter.getFinishedSpans();
     const llm = spans.find((s) => s.name.startsWith("ai.llm "));
@@ -873,8 +873,8 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     // Close out via onStepFinish fallback so buffered deltas get flushed.
     tel.onStepFinish(mkStepEnd(callA, 0, { content: [], text: "" }));
     tel.onStepFinish(mkStepEnd(callB, 0, { content: [], text: "" }));
-    tel.onFinish(mkFinish(callA));
-    tel.onFinish(mkFinish(callB));
+    tel.onEnd(mkFinish(callA));
+    tel.onEnd(mkFinish(callB));
 
     const spans = exporter.getFinishedSpans();
     const llmSpans = spans.filter((s) => s.name.startsWith("ai.llm "));
@@ -934,7 +934,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
       },
       providerMetadata: undefined,
     });
-    tel.onFinish(mkFinish(callId));
+    tel.onEnd(mkFinish(callId));
 
     const spans = exporter.getFinishedSpans();
     const llm = spans.find((s) => s.name.startsWith("ai.llm "));
