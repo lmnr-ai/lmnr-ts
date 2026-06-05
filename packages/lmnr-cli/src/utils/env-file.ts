@@ -2,9 +2,9 @@ import {
   access,
   readFile,
   rename,
+  stat,
   writeFile,
 } from "node:fs/promises";
-import { dirname } from "node:path";
 
 const DEFAULT_VAR_NAME = "LMNR_PROJECT_API_KEY";
 
@@ -56,7 +56,11 @@ export async function writeEnvFile(
     const prefix = original.endsWith("\n") || original.length === 0 ? original : `${original}\n`;
     next = `${prefix}${varName}=${value}\n`;
   }
-  await atomicWrite(envPath, next, undefined);
+  // Capture existing mode so the tmp inherits dest's perms — POSIX `rename`
+  // adopts the source inode's permissions, so without this an existing 0o600
+  // .env would silently widen to the umask default (0o644) on every rerun.
+  const existingMode = (await stat(envPath)).mode & 0o777;
+  await atomicWrite(envPath, next, existingMode);
   return { path: envPath, created: false, replaced };
 }
 
@@ -77,8 +81,6 @@ async function atomicWrite(
   const tmp = `${path}.tmp`;
   await writeFile(tmp, contents, mode === undefined ? undefined : { mode });
   await rename(tmp, path);
-  // Touch the parent dir variable so Windows doesn't complain — no-op on POSIX.
-  void dirname(path);
 }
 
 function escapeRegex(raw: string): string {

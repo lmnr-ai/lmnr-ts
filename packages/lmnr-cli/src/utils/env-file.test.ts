@@ -68,6 +68,30 @@ describe("writeEnvFile", () => {
     expect(statSync(path).mode & 0o777).toBe(0o644);
   });
 
+  it("preserves a tighter-than-umask mode on existing files (0o640)", async () => {
+    if (isWin) return;
+    const path = join(scratch, ".env");
+    writeFileSync(path, "FOO=bar\n", { mode: 0o640 });
+    // chmod explicitly because writeFileSync's mode option is masked by umask
+    // on some systems, and we need the on-disk mode to be exactly 0o640 first.
+    const { chmodSync } = await import("node:fs");
+    chmodSync(path, 0o640);
+    expect(statSync(path).mode & 0o777).toBe(0o640);
+    await writeEnvFile(path, "k");
+    expect(statSync(path).mode & 0o777).toBe(0o640);
+  });
+
+  it("preserves 0o600 mode across idempotent re-runs", async () => {
+    if (isWin) return;
+    const path = join(scratch, ".env");
+    // First write: no file → created with 0o600.
+    await writeEnvFile(path, "first");
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    // Idempotent rerun: must NOT widen to 0o644.
+    await writeEnvFile(path, "second");
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
   it("supports a custom var name", async () => {
     const path = join(scratch, ".env");
     await writeEnvFile(path, "v", "CUSTOM_KEY");
