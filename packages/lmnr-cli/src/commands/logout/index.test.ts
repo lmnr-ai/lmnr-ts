@@ -10,12 +10,13 @@ import {
   readCredentials,
   writeCredentials,
 } from '../../auth/credentials';
-import { handleLogout } from './index';
+import { deriveRevokeEndpoint, handleLogout } from './index';
 
 const SAVED_XDG = process.env.XDG_CONFIG_HOME;
 let scratch: string;
 let exitMock: ReturnType<typeof vi.spyOn>;
 let stderrMock: ReturnType<typeof vi.spyOn>;
+let fetchMock: ReturnType<typeof vi.fn>;
 
 function profile(overrides: Partial<ProfileEntry> = {}): ProfileEntry {
   return {
@@ -41,11 +42,18 @@ beforeEach(() => {
     throw new Error(`exit:${code ?? 0}`);
   }) as never);
   stderrMock = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  // Stub global fetch so logout's best-effort revoke call doesn't try to
+  // hit a real server. Default: 200 OK.
+  fetchMock = vi.fn(() =>
+    Promise.resolve(new Response(null, { status: 200 })),
+  );
+  vi.stubGlobal('fetch', fetchMock);
 });
 
 afterEach(async () => {
   if (SAVED_XDG === undefined) delete process.env.XDG_CONFIG_HOME;
   else process.env.XDG_CONFIG_HOME = SAVED_XDG;
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
   await rm(scratch, { recursive: true, force: true });
 });
@@ -149,5 +157,93 @@ describe('handleLogout', () => {
     });
     await expect(handleLogout('does-not-exist')).rejects.toThrow('exit:1');
     expect(exitMock).toHaveBeenCalledWith(1);
+  });
+
+  it('POSTs to revoke endpoint with refresh_token before deleting the profile', async () => {
+    const a = profile({
+      projectId: 'p-aaaa',
+      projectName: 'alpha',
+      refreshToken: 'super-secret-rt',
+      tokenEndpoint: 'http://localhost:3010/oauth/token',
+    });
+    await writeCredentials({
+      version: 2,
+      active: a.projectId,
+      profiles: { [a.projectId]: a },
+    });
+    await handleLogout('p-aaaa');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://localhost:3010/oauth/revoke');
+    expect(init.method).toBe('POST');
+    expect(init.headers['content-type']).toBe('application/x-www-form-urlencoded');
+    const params = new URLSearchParams(init.body);
+    expect(params.get('token')).toBe('super-secret-rt');
+    expect(params.get('token_type_hint')).toBe('refresh_token');
+    expect(await readCredentials()).toBeNull();
+  });
+
+  it('continues local logout even when revoke endpoint errors', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('boom', { status: 500 }));
+    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
+    await writeCredentials({
+      version: 2,
+      active: a.projectId,
+      profiles: { [a.projectId]: a },
+    });
+    await handleLogout('p-aaaa');
+    expect(await readCredentials()).toBeNull();
+  });
+
+  it('continues local logout when revoke endpoint throws (network down)', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
+    await writeCredentials({
+      version: 2,
+      active: a.projectId,
+      profiles: { [a.projectId]: a },
+    });
+    await handleLogout('p-aaaa');
+    expect(await readCredentials()).toBeNull();
+  });
+
+  it('--all revokes every profile before deleting the file', async () => {
+    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha', refreshToken: 'rt-a' });
+    const b = profile({ projectId: 'p-bbbb', projectName: 'beta', refreshToken: 'rt-b' });
+    await writeCredentials({
+      version: 2,
+      active: a.projectId,
+      profiles: { [a.projectId]: a, [b.projectId]: b },
+    });
+    await handleLogout(undefined, { all: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const tokens = fetchMock.mock.calls.map((c) => {
+      const params = new URLSearchParams(c[1].body);
+      return params.get('token');
+    });
+    expect(tokens.sort()).toEqual(['rt-a', 'rt-b']);
+    expect(await readCredentials()).toBeNull();
+  });
+});
+
+describe('deriveRevokeEndpoint', () => {
+  it('rewrites /oauth/token to /oauth/revoke', () => {
+    expect(deriveRevokeEndpoint('http://localhost:3010/oauth/token')).toBe(
+      'http://localhost:3010/oauth/revoke',
+    );
+  });
+
+  it('rewrites a /token suffix even without /oauth prefix', () => {
+    expect(deriveRevokeEndpoint('https://issuer.example.com/path/token')).toBe(
+      'https://issuer.example.com/path/revoke',
+    );
+  });
+
+  it('returns null when the endpoint is not /token-suffixed', () => {
+    expect(deriveRevokeEndpoint('https://issuer.example.com/something-else')).toBeNull();
+  });
+
+  it('returns null when the URL is malformed', () => {
+    expect(deriveRevokeEndpoint('not a url')).toBeNull();
   });
 });
