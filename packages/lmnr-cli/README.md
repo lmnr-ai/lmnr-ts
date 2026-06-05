@@ -128,6 +128,12 @@ Re-running setup in the same repo reuses the same project but mints a fresh API
 key each time. Old keys remain visible in the dashboard under "API keys" until
 you revoke them.
 
+Note: `workspaceCreated` reflects whether the CLI bootstrap step created the
+workspace, not whether the user is brand-new. Fresh users who create their
+first workspace inline on the OAuth approval page will see
+`workspaceCreated: false` because the workspace already exists by the time
+bootstrap runs.
+
 ### `traces wait` - Wait for trace ingestion
 
 ```bash
