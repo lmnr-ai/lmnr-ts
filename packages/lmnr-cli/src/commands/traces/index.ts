@@ -1,23 +1,30 @@
-import { readCredentials } from "../../auth/credentials";
-import { refreshIfNeeded } from "../../auth/resolve";
+import { buildLaminarClient } from "../../auth/client";
 import { parseDuration } from "../../utils/duration";
+
+// TODO: revisit whether even this much abstraction is necessary. Today the
+// command polls the same SQL surface a user could hit themselves via
+// `lmnr-cli sql query "SELECT count() FROM spans WHERE ..."`. If coding
+// agents are the only callers, we could collapse this into a one-shot script
+// in the agent prompt and delete the command entirely. Keep it for now —
+// the retry/timeout/exit-code semantics are nicer than a shell loop.
 
 export interface TracesWaitOptions {
   since?: string;
   count?: string;
   timeout?: string;
-  project?: string;
-  json?: boolean;
+  projectApiKey?: string;
   baseUrl?: string;
+  port?: number;
+  json?: boolean;
 }
 
 const POLL_INTERVAL_MS = 2000;
 
 /**
- * Poll the app-server until at least `--count` spans appear in the last
+ * Poll the SQL endpoint until at least `--count` spans appear in the last
  * `--since` window, or until `--timeout` elapses. Designed to be invoked by
  * a coding agent after running an instrumented script — exit 0 = "tracing
- * works"; exit 1 = timed out; exit 6 = no credentials and no API key.
+ * works"; exit 1 = timed out; exit 6 = no credentials.
  */
 export async function handleTracesWait(options: TracesWaitOptions): Promise<void> {
   const isJson = options.json === true;
@@ -29,48 +36,16 @@ export async function handleTracesWait(options: TracesWaitOptions): Promise<void
     process.exit(1);
   }
 
-  // Resolve project id + bearer. Use OAuth credentials first; API-key callers
-  // must pass --project because the key doesn't carry a project id over the
-  // wire on the CLI side.
-  const creds = await readCredentials();
-  let bearer: string;
-  let issuer: string;
-  let projectId: string;
-
-  if (creds) {
-    const refreshed = await refreshIfNeeded(creds);
-    bearer = refreshed.accessToken;
-    issuer = refreshed.issuer;
-    projectId = options.project ?? refreshed.projectId ?? "";
-    if (!projectId) {
-      emitError(
-        isJson,
-        "no_project",
-        "No project id in credentials. Pass --project <uuid>.",
-      );
-      process.exit(1);
-    }
-  } else {
-    const envKey = process.env.LMNR_PROJECT_API_KEY;
-    if (!envKey) {
-      emitError(
-        isJson,
-        "not_authenticated",
-        "Run `lmnr-cli login` or set LMNR_PROJECT_API_KEY.",
-      );
-      process.exit(6);
-    }
-    if (!options.project) {
-      emitError(
-        isJson,
-        "no_project",
-        "API key auth requires --project <uuid>.",
-      );
-      process.exit(6);
-    }
-    bearer = envKey;
-    issuer = process.env.LMNR_DASHBOARD_URL ?? "https://www.laminar.sh";
-    projectId = options.project;
+  let client;
+  try {
+    client = await buildLaminarClient({
+      projectApiKey: options.projectApiKey,
+      baseUrl: options.baseUrl,
+      port: options.port,
+    });
+  } catch (err) {
+    emitError(isJson, "not_authenticated", describeError(err));
+    process.exit(6);
   }
 
   if (!isJson) {
@@ -79,45 +54,28 @@ export async function handleTracesWait(options: TracesWaitOptions): Promise<void
     );
   }
 
+  const sql = `SELECT count() AS count FROM spans WHERE start_time > now() - INTERVAL ${sinceSeconds} SECOND`;
   const start = Date.now();
-  const trimmedIssuer = issuer.replace(/\/+$/, "");
-  const url =
-    `${trimmedIssuer}/api/cli/projects/${projectId}/traces/recent?since=${sinceSeconds}s`;
 
   for (;;) {
-    let res: Response;
     try {
-      res = await fetch(url, { headers: { authorization: `Bearer ${bearer}` } });
-    } catch (err) {
-      process.stderr.write(`(network error: ${describeError(err)})\n`);
-      // continue polling
-      if (Date.now() - start >= timeoutSeconds * 1000) break;
-      await sleep(POLL_INTERVAL_MS);
-      continue;
-    }
-
-    if (res.status === 401 || res.status === 403) {
-      emitError(isJson, "unauthorized", `Server returned ${res.status}`);
-      process.exit(6);
-    }
-    if (!res.ok) {
-      process.stderr.write(`(server returned ${res.status})\n`);
-    } else {
-      const body = (await res.json().catch(() => null)) as { count?: number } | null;
-      const count = body?.count ?? 0;
+      const rows = (await client.sql.query(sql)) as Array<Record<string, unknown>>;
+      const count = Number(rows[0]?.count ?? 0);
       if (count >= targetCount) {
         const elapsedMs = Date.now() - start;
         if (isJson) {
           process.stdout.write(
-            JSON.stringify({ found: count, projectId, elapsedMs, timedOut: false }) + "\n",
+            JSON.stringify({ found: count, elapsedMs, timedOut: false }) + "\n",
           );
         } else {
           const noun = count === 1 ? "trace" : "traces";
           const secs = (elapsedMs / 1000).toFixed(1);
-          process.stdout.write(`✓ Found ${count} ${noun} in ${secs}s\n`);
+          process.stdout.write(`Found ${count} ${noun} in ${secs}s\n`);
         }
         return;
       }
+    } catch (err) {
+      process.stderr.write(`(query failed: ${describeError(err)})\n`);
     }
 
     if (Date.now() - start >= timeoutSeconds * 1000) break;
@@ -127,11 +85,11 @@ export async function handleTracesWait(options: TracesWaitOptions): Promise<void
   const elapsedMs = Date.now() - start;
   if (isJson) {
     process.stdout.write(
-      JSON.stringify({ found: 0, projectId, elapsedMs, timedOut: true }) + "\n",
+      JSON.stringify({ found: 0, elapsedMs, timedOut: true }) + "\n",
     );
   } else {
     process.stdout.write(
-      `✗ Timed out after ${(elapsedMs / 1000).toFixed(1)}s (0 traces in last ${sinceSeconds}s)\n`,
+      `Timed out after ${(elapsedMs / 1000).toFixed(1)}s (0 traces in last ${sinceSeconds}s)\n`,
     );
   }
   process.exit(1);

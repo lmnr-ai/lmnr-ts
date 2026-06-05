@@ -64,6 +64,23 @@ export async function writeEnvFile(
   return { path: envPath, created: false, replaced };
 }
 
+/**
+ * Read a single env var's value from a .env file. Returns null when the file
+ * is missing, the var is absent, or its value is empty/whitespace.
+ */
+export async function readEnvVar(
+  envPath: string,
+  varName: string = DEFAULT_VAR_NAME,
+): Promise<string | null> {
+  if (!(await fileExists(envPath))) return null;
+  const original = await readFile(envPath, "utf-8");
+  const regex = new RegExp(`^${escapeRegex(varName)}\\s*=(.*)$`, "m");
+  const match = original.match(regex);
+  if (!match) return null;
+  const value = match[1].trim().replace(/^["']|["']$/g, "");
+  return value.length > 0 ? value : null;
+}
+
 async function fileExists(path: string): Promise<boolean> {
   try {
     await access(path);

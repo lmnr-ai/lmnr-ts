@@ -3,7 +3,7 @@ import { createInterface } from "node:readline";
 
 import { readCredentials, type StoredCredentials, writeCredentials } from "../../auth/credentials";
 import { refreshIfNeeded } from "../../auth/resolve";
-import { writeEnvFile } from "../../utils/env-file";
+import { readEnvVar, writeEnvFile } from "../../utils/env-file";
 import { deriveProjectName, deriveWorkspaceName } from "../../utils/project-name";
 import { handleLogin } from "../login";
 
@@ -55,6 +55,22 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   );
   const baseUrl = pick(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
   const isJson = options.json === true;
+
+  // Step 0 — short-circuit if the cwd already has Laminar configured.
+  const cwdEnvPath = resolvePath(process.cwd(), ".env");
+  const existingKey = await readEnvVar(cwdEnvPath, "LMNR_PROJECT_API_KEY");
+  if (existingKey) {
+    if (isJson) {
+      process.stdout.write(
+        JSON.stringify({ skipped: true, reason: "already_configured", envFile: cwdEnvPath }) + "\n",
+      );
+    } else {
+      process.stderr.write(
+        `Laminar is already configured: LMNR_PROJECT_API_KEY is set in ${cwdEnvPath}. Skipping setup.\n`,
+      );
+    }
+    process.exit(0);
+  }
 
   // Step 1 — login if needed.
   let creds: StoredCredentials | null;
@@ -250,11 +266,11 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   }
 }
 
-async function postBootstrap(
+async function postSetup(
   caller: CallerContext,
   body: { workspaceId?: string; workspaceName: string; projectName: string },
 ): Promise<{ status: number; body: Record<string, unknown> | null }> {
-  return jsonFetch(caller, "POST", "/api/cli/bootstrap", body);
+  return jsonFetch(caller, "POST", "/api/cli/setup", body);
 }
 
 async function postApiKey(

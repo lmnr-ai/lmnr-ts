@@ -4,19 +4,21 @@ export const CLI_CLIENT_ID = "lmnr-cli";
 export const CLI_SCOPE = "projects:rw";
 
 /**
- * Discover the AS via /.well-known/openid-configuration.
+ * Discover the AS via RFC 8414 metadata at /.well-known/oauth-authorization-server.
  * The CLI is a public client (token_endpoint_auth_method=none).
  */
 export async function getConfig(issuer: string): Promise<client.Configuration> {
-  const issuerUrl = new URL(issuer);
-  // Mark the issuer as HTTP-allowed when targeting localhost — openid-client
-  // rejects non-HTTPS issuers by default outside of the AllowInsecureRequests
-  // hook.
+  const discoveryUrl = new URL(
+    "/.well-known/oauth-authorization-server",
+    issuer.endsWith("/") ? issuer : issuer + "/",
+  );
+  // openid-client rejects non-HTTPS issuers by default outside of the
+  // AllowInsecureRequests hook — allow http for localhost dev.
   const options: client.DiscoveryRequestOptions = {};
-  if (issuerUrl.protocol === "http:") {
+  if (discoveryUrl.protocol === "http:") {
     options.execute = [client.allowInsecureRequests];
   }
-  return await client.discovery(issuerUrl, CLI_CLIENT_ID, undefined, client.None(), options);
+  return await client.discovery(discoveryUrl, CLI_CLIENT_ID, undefined, client.None(), options);
 }
 
 export async function initiate(

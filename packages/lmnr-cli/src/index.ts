@@ -317,9 +317,10 @@ Examples:
     .option("--since <duration>", "Look-back window (e.g. 60s, 2m, 1h)", "60s")
     .option("--count <n>", "Minimum span count", "1")
     .option("--timeout <duration>", "Give up after this duration", "120s")
-    .option("--project <id>", "Project UUID (defaults to credentials)")
+    .option("--project-api-key <key>", "Override LMNR_PROJECT_API_KEY")
     .option("--json", "Emit a machine-readable JSON line on stdout")
     .option("--base-url <url>", "Base URL for the Laminar API")
+    .option("--port <port>", "Port for the Laminar API", (v) => parseInt(v, 10))
     .action(async (options) => {
       await handleTracesWait(options);
     });
