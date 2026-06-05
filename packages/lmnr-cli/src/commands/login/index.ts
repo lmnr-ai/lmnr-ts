@@ -1,6 +1,6 @@
 import open from "open";
 
-import { type StoredCredentials, writeCredentials } from "../../auth/credentials";
+import { type ProfileEntry, upsertProfile } from "../../auth/credentials";
 import { decodeAccessToken } from "../../auth/jwt";
 import { CLI_CLIENT_ID, CLI_SCOPE, getConfig, initiate, poll } from "../../auth/oidc";
 
@@ -36,7 +36,7 @@ export async function handleLogin(options: LoginOptions): Promise<void> {
     try {
       await open(completeUri);
     } catch {
-      // Best-effort — the user can copy/paste the URL.
+      // Best-effort. The user can copy/paste the URL.
     }
   }
 
@@ -54,8 +54,7 @@ export async function handleLogin(options: LoginOptions): Promise<void> {
       ? ((tokens as Record<string, unknown>).refresh_token_expires_in as number)
       : 30 * 24 * 60 * 60;
 
-  // Best-effort name enrichment via /api/cli/me — fails silently if the
-  // browser session is not shared with the CLI process.
+  // Best-effort name enrichment via /api/cli/me.
   let projectName: string | undefined;
   let workspaceName: string | undefined;
   let workspaceId: string | undefined;
@@ -78,12 +77,19 @@ export async function handleLogin(options: LoginOptions): Promise<void> {
         }
       }
     } catch {
-      // Ignore — CLI doesn't carry the browser session cookie.
+      // Ignore. CLI doesn't carry the browser session cookie.
     }
   }
 
-  const creds: StoredCredentials = {
-    version: 1,
+  const projectId = claims?.project_id;
+  if (!projectId) {
+    throw new Error(
+      "Login completed but the issued access token did not carry a project_id. " +
+        "Re-run `lmnr-cli login` and pick a project on the approval page.",
+    );
+  }
+
+  const profile: ProfileEntry = {
     tokenEndpoint: `${issuer.replace(/\/+$/, "")}/oauth/token`,
     issuer,
     baseUrl,
@@ -95,15 +101,16 @@ export async function handleLogin(options: LoginOptions): Promise<void> {
     scope: tokens.scope ?? CLI_SCOPE,
     userEmail: claims?.email,
     userId: claims?.sub,
-    projectId: claims?.project_id,
+    projectId,
     projectName,
     workspaceId,
     workspaceName,
     createdAt: new Date().toISOString(),
+    lastUsedAt: new Date().toISOString(),
   };
-  await writeCredentials(creds);
+  await upsertProfile(profile);
 
-  const projectLabel = projectName ? `${projectName}` : (claims?.project_id ?? "<unknown>");
+  const projectLabel = projectName ? `${projectName}` : projectId;
   process.stderr.write(`Logged in as ${claims?.email ?? "<unknown>"}. Project: ${projectLabel}.\n`);
   process.stderr.write(
     `Client: ${CLI_CLIENT_ID}. Tokens stored at ~/.config/lmnr/credentials.json (mode 0600).\n`,

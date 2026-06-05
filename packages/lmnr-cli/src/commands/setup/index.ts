@@ -1,7 +1,13 @@
 import { resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline";
 
-import { readCredentials, type StoredCredentials, writeCredentials } from "../../auth/credentials";
+import {
+  getActiveProfile,
+  type ProfileEntry,
+  readCredentials,
+  type StoredCredentialsV2,
+  writeCredentials,
+} from "../../auth/credentials";
 import { refreshIfNeeded } from "../../auth/resolve";
 import { readEnvVar, writeEnvFile } from "../../utils/env-file";
 import { deriveProjectName, deriveWorkspaceName } from "../../utils/project-name";
@@ -73,19 +79,24 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   }
 
   // Step 1 — login if needed.
-  let creds: StoredCredentials | null;
+  let creds: StoredCredentialsV2 | null;
+  let profile: ProfileEntry | null = null;
   try {
     creds = await readCredentials();
     if (creds) {
-      creds = await refreshIfNeeded(creds);
+      const active = getActiveProfile(creds);
+      if (active) {
+        profile = await refreshIfNeeded(creds, active);
+      }
     }
   } catch (err) {
     if (!isJson) {
       process.stderr.write(`Refresh failed (${describeError(err)}); re-running login...\n`);
     }
     creds = null;
+    profile = null;
   }
-  if (!creds) {
+  if (!profile) {
     try {
       await handleLogin({
         dashboardUrl,
@@ -98,17 +109,18 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
       process.exit(6);
     }
     creds = await readCredentials();
-    if (!creds) {
+    profile = creds ? getActiveProfile(creds) : null;
+    if (!creds || !profile) {
       emitError(isJson, "login_failed", "credentials missing after login");
       process.exit(6);
     }
   }
 
   const caller: CallerContext = {
-    bearer: creds.accessToken,
-    issuer: creds.issuer || dashboardUrl,
-    baseUrl: creds.baseUrl || baseUrl,
-    userEmail: creds.userEmail ?? null,
+    bearer: profile.accessToken,
+    issuer: profile.issuer || dashboardUrl,
+    baseUrl: profile.baseUrl || baseUrl,
+    userEmail: profile.userEmail ?? null,
   };
 
   if (!isJson) {
@@ -196,13 +208,23 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   }
 
   // Persist project id in credentials so subsequent `traces wait` etc. work.
-  await writeCredentials({
-    ...creds,
+  // The profile is keyed by its original projectId; rekey to the bootstrap
+  // result so future lookups by the real id resolve correctly.
+  const reloaded = (await readCredentials()) ?? creds;
+  const existing = reloaded.profiles[profile.projectId];
+  if (existing) {
+    delete reloaded.profiles[profile.projectId];
+  }
+  const updatedProfile: ProfileEntry = {
+    ...(existing ?? profile),
     projectId,
     projectName: resolvedProjectName,
     workspaceId,
     workspaceName: resolvedWorkspaceName,
-  });
+  };
+  reloaded.profiles[projectId] = updatedProfile;
+  reloaded.active = projectId;
+  await writeCredentials(reloaded);
 
   // Step 6 — write .env.
   let envPath: string | null = null;
