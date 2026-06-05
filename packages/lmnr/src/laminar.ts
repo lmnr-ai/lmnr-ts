@@ -20,7 +20,12 @@ import {
 } from "@opentelemetry/api";
 import { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 
-import { getRuntime, initDebugRuntime, isTruthy, resetDebugRuntime } from "./debug";
+import {
+  getRuntime,
+  initDebugRuntime,
+  isTruthy,
+  resetDebugRuntime,
+} from "./debug";
 import {
   InitializeOptions,
   initializeTracing,
@@ -215,7 +220,7 @@ export class Laminar {
     }
 
     const envMetadata = process.env.LMNR_TRACE_METADATA
-      ? JSON.parse(process.env.LMNR_TRACE_METADATA) as Record<string, unknown>
+      ? (JSON.parse(process.env.LMNR_TRACE_METADATA) as Record<string, unknown>)
       : {};
     this.globalMetadata = { ...envMetadata, ...(metadata ?? {}) };
     if (inheritGlobalContext) {
@@ -388,7 +393,10 @@ export class Laminar {
                 : process.platform === "darwin"
                   ? "open"
                   : "xdg-open";
-            spawn(opener, [sessionUrl], { detached: true, stdio: "ignore" }).unref();
+            spawn(opener, [sessionUrl], {
+              detached: true,
+              stdio: "ignore",
+            }).unref();
           }
         })
         .catch((e) => {

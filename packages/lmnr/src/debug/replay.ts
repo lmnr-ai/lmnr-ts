@@ -33,7 +33,9 @@ export const replayEnabled = (): boolean =>
  * Laminar's context, so the path is read from the attribute the processor
  * already set (a string[]; see `LaminarSpanProcessor.onStart`).
  */
-export const spanPathFromSpan = (span: Span | undefined | null): string | null => {
+export const spanPathFromSpan = (
+  span: Span | undefined | null,
+): string | null => {
   if (!span) {
     return null;
   }

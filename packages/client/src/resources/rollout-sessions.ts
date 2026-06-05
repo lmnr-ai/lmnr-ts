@@ -25,11 +25,14 @@ export class RolloutSessionsResource extends BaseResource {
     sessionId: string;
     name?: string;
   }): Promise<string | null> {
-    const response = await fetch(`${this.baseHttpUrl}/v1/rollouts/${sessionId}`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ name }),
-    });
+    const response = await fetch(
+      `${this.baseHttpUrl}/v1/rollouts/${sessionId}`,
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({ name }),
+      },
+    );
 
     if (!response.ok) {
       await this.handleError(response);
@@ -39,20 +42,48 @@ export class RolloutSessionsResource extends BaseResource {
       const body = (await response.json()) as { projectId?: string };
       return body.projectId ?? null;
     } catch (e) {
-      logger.warn(`Failed to parse rollout register response: ${errorMessage(e)}`);
+      logger.warn(
+        `Failed to parse rollout register response: ${errorMessage(e)}`,
+      );
       return null;
     }
   }
 
-  public async delete({
+  /**
+   * Rename an existing debug session. Update-only: the backend returns 404 (and
+   * this throws) when the session id is unknown for the project, so a mistyped
+   * id surfaces as an error rather than silently creating a session. Creation
+   * stays the SDK's job via {@link register}.
+   */
+  public async setName({
     sessionId,
+    name,
   }: {
     sessionId: string;
+    name: string;
   }): Promise<void> {
-    const response = await fetch(`${this.baseHttpUrl}/v1/rollouts/${sessionId}`, {
-      method: "DELETE",
-      headers: this.headers(),
-    });
+    const response = await fetch(
+      `${this.baseHttpUrl}/v1/rollouts/${sessionId}/name`,
+      {
+        method: "PATCH",
+        headers: this.headers(),
+        body: JSON.stringify({ name }),
+      },
+    );
+
+    if (!response.ok) {
+      await this.handleError(response);
+    }
+  }
+
+  public async delete({ sessionId }: { sessionId: string }): Promise<void> {
+    const response = await fetch(
+      `${this.baseHttpUrl}/v1/rollouts/${sessionId}`,
+      {
+        method: "DELETE",
+        headers: this.headers(),
+      },
+    );
 
     if (!response.ok) {
       await this.handleError(response);

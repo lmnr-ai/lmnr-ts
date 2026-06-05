@@ -30,7 +30,11 @@ import {
 } from "./config";
 import { buildPointer, emitPointer } from "./pointer";
 import { ReplayCache } from "./replay-cache";
-import { fetchSpineMetadata, fetchSpinePayloads, SqlQuery } from "./source-trace";
+import {
+  fetchSpineMetadata,
+  fetchSpinePayloads,
+  SqlQuery,
+} from "./source-trace";
 import { detectSpine, hasOverlap, resolveCacheUntilSpanId } from "./spine";
 
 const logger = initializeLogger();
