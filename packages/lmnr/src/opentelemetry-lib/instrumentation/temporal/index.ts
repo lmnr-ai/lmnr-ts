@@ -10,7 +10,8 @@
  *
  * const worker = await Worker.create({
  *   interceptors: {
- *     activityInbound: [() => new LaminarTemporalInterceptors.ActivityInboundInterceptor()],
+ *     activity: [LaminarTemporalInterceptors.ActivityInterceptorFactory()],
+ *     workflowModules: [require.resolve('@lmnr-ai/lmnr/temporal-workflow-interceptors')],
  *   },
  *   // ...
  * });
@@ -100,6 +101,10 @@ export const patchTemporalWorker = (
         activity: [
           ActivityInterceptorFactory(options),
           ...(rawOpts?.interceptors?.activity ?? []),
+        ],
+        workflowModules: [
+          require.resolve("@lmnr-ai/lmnr/temporal-workflow-interceptors"),
+          ...((rawOpts?.interceptors?.workflowModules as string[] | undefined) ?? []),
         ],
       },
     };

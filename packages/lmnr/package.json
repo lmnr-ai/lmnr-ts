@@ -12,6 +12,14 @@
       },
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
+    },
+    "./temporal-workflow-interceptors": {
+      "types": {
+        "require": "./dist/opentelemetry-lib/instrumentation/temporal/workflow-interceptors.d.cts",
+        "import": "./dist/opentelemetry-lib/instrumentation/temporal/workflow-interceptors.d.mts"
+      },
+      "import": "./dist/opentelemetry-lib/instrumentation/temporal/workflow-interceptors.mjs",
+      "require": "./dist/opentelemetry-lib/instrumentation/temporal/workflow-interceptors.cjs"
     }
   },
   "types": "dist/index.d.cts",
