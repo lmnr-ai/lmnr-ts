@@ -1,15 +1,22 @@
 import { mkdtempSync, statSync } from 'node:fs';
-import { rm } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   credentialsPath,
   deleteCredentials,
+  emptyCredentials,
+  findProfile,
+  getActiveProfile,
+  migrateV1ToV2,
+  type ProfileEntry,
   readCredentials,
-  type StoredCredentials,
+  type StoredCredentialsV1,
+  type StoredCredentialsV2,
+  upsertProfile,
   writeCredentials,
 } from './credentials';
 
@@ -32,26 +39,35 @@ afterEach(async () => {
   await rm(scratch, { recursive: true, force: true });
 });
 
-describe('credentials roundtrip', () => {
-  it('writes then reads back the same shape', async () => {
-    const sample: StoredCredentials = {
-      version: 1,
-      tokenEndpoint: 'http://localhost:3010/oauth/token',
-      issuer: 'http://localhost:3010',
-      baseUrl: 'http://localhost:8010',
-      accessToken: 'eyJ.fake.jwt',
-      accessTokenExpiresAt: '2030-01-01T00:00:00.000Z',
-      refreshToken: 'rt-fake',
-      refreshTokenExpiresAt: '2030-02-01T00:00:00.000Z',
-      tokenType: 'Bearer',
-      scope: 'projects:rw',
-      userEmail: 'alice@example.com',
-      userId: '11111111-1111-1111-1111-111111111111',
-      projectId: '00000000-0000-0000-0000-000000000000',
-      projectName: 'my-project',
-      workspaceId: '22222222-2222-2222-2222-222222222222',
-      workspaceName: "Alice's Workspace",
-      createdAt: '2026-06-04T12:34:56.000Z',
+function sampleProfile(overrides: Partial<ProfileEntry> = {}): ProfileEntry {
+  return {
+    tokenEndpoint: 'http://localhost:3010/oauth/token',
+    issuer: 'http://localhost:3010',
+    baseUrl: 'http://localhost:8010',
+    accessToken: 'eyJ.fake.jwt',
+    accessTokenExpiresAt: '2030-01-01T00:00:00.000Z',
+    refreshToken: 'rt-fake',
+    refreshTokenExpiresAt: '2030-02-01T00:00:00.000Z',
+    tokenType: 'Bearer',
+    scope: 'projects:rw',
+    userEmail: 'alice@example.com',
+    userId: '11111111-1111-1111-1111-111111111111',
+    projectId: '00000000-0000-0000-0000-000000000000',
+    projectName: 'my-project',
+    workspaceId: '22222222-2222-2222-2222-222222222222',
+    workspaceName: "Alice's Workspace",
+    createdAt: '2026-06-04T12:34:56.000Z',
+    ...overrides,
+  };
+}
+
+describe('credentials v2 roundtrip', () => {
+  it('writes then reads back the same v2 shape', async () => {
+    const profile = sampleProfile();
+    const sample: StoredCredentialsV2 = {
+      version: 2,
+      active: profile.projectId,
+      profiles: { [profile.projectId]: profile },
     };
 
     await writeCredentials(sample);
@@ -64,7 +80,68 @@ describe('credentials roundtrip', () => {
   });
 
   it.skipIf(isWin)('persists credentials with mode 0o600', async () => {
-    const sample: StoredCredentials = {
+    const profile = sampleProfile();
+    await writeCredentials({
+      version: 2,
+      active: profile.projectId,
+      profiles: { [profile.projectId]: profile },
+    });
+
+    const stat = statSync(credentialsPath());
+    const mode = stat.mode & 0o777;
+    expect(mode).toBe(0o600);
+  });
+
+  it('readCredentials returns null when no file exists', async () => {
+    const c = await readCredentials();
+    expect(c).toBeNull();
+  });
+
+  it('deleteCredentials returns false when no file exists, true after a write', async () => {
+    expect(await deleteCredentials()).toBe(false);
+    const profile = sampleProfile();
+    await writeCredentials({
+      version: 2,
+      active: profile.projectId,
+      profiles: { [profile.projectId]: profile },
+    });
+    expect(await deleteCredentials()).toBe(true);
+    expect(await readCredentials()).toBeNull();
+  });
+});
+
+describe('v1 → v2 migration', () => {
+  it('migrateV1ToV2 lifts a single v1 entry into a profile keyed by projectId', () => {
+    const v1: StoredCredentialsV1 = {
+      version: 1,
+      tokenEndpoint: 'http://localhost:3010/oauth/token',
+      issuer: 'http://localhost:3010',
+      baseUrl: 'http://localhost:8010',
+      accessToken: 'eyJ.fake.jwt',
+      accessTokenExpiresAt: '2030-01-01T00:00:00.000Z',
+      refreshToken: 'rt-fake',
+      refreshTokenExpiresAt: '2030-02-01T00:00:00.000Z',
+      tokenType: 'Bearer',
+      scope: 'projects:rw',
+      userEmail: 'alice@example.com',
+      userId: '11111111-1111-1111-1111-111111111111',
+      projectId: 'abc-project-id',
+      projectName: 'my-project',
+      workspaceId: 'ws-id',
+      workspaceName: "Alice's Workspace",
+      createdAt: '2026-06-04T12:34:56.000Z',
+    };
+    const v2 = migrateV1ToV2(v1);
+    expect(v2.version).toBe(2);
+    expect(v2.active).toBe('abc-project-id');
+    expect(v2.profiles['abc-project-id']).toBeDefined();
+    expect(v2.profiles['abc-project-id'].projectId).toBe('abc-project-id');
+    expect(v2.profiles['abc-project-id'].userEmail).toBe('alice@example.com');
+    expect(v2.profiles['abc-project-id'].accessToken).toBe('eyJ.fake.jwt');
+  });
+
+  it('migrateV1ToV2 falls back to "default" key when projectId is missing', () => {
+    const v1: StoredCredentialsV1 = {
       version: 1,
       tokenEndpoint: 'http://localhost:3010/oauth/token',
       issuer: 'http://localhost:3010',
@@ -77,24 +154,14 @@ describe('credentials roundtrip', () => {
       scope: 'projects:rw',
       createdAt: '2026-06-04T12:34:56.000Z',
     };
-
-    await writeCredentials(sample);
-
-    const stat = statSync(credentialsPath());
-    // strip file-type bits, keep permission bits only
-    const mode = stat.mode & 0o777;
-    expect(mode).toBe(0o600);
+    const v2 = migrateV1ToV2(v1);
+    expect(v2.active).toBe('default');
+    expect(v2.profiles.default).toBeDefined();
+    expect(v2.profiles.default.projectId).toBe('default');
   });
 
-  it('readCredentials returns null when no file exists', async () => {
-    const c = await readCredentials();
-    expect(c).toBeNull();
-  });
-
-  it('deleteCredentials returns false when no file exists, true after a write', async () => {
-    expect(await deleteCredentials()).toBe(false);
-
-    await writeCredentials({
+  it('readCredentials transparently migrates v1 → v2 on disk', async () => {
+    const v1: StoredCredentialsV1 = {
       version: 1,
       tokenEndpoint: 'http://localhost:3010/oauth/token',
       issuer: 'http://localhost:3010',
@@ -105,9 +172,75 @@ describe('credentials roundtrip', () => {
       refreshTokenExpiresAt: '2030-02-01T00:00:00.000Z',
       tokenType: 'Bearer',
       scope: 'projects:rw',
+      projectId: 'p-1234',
+      projectName: 'legacy-project',
       createdAt: '2026-06-04T12:34:56.000Z',
+    };
+    // Seed disk with a v1 blob manually so readCredentials must migrate.
+    await mkdir(dirname(credentialsPath()), { recursive: true, mode: 0o700 });
+    await writeFile(credentialsPath(), JSON.stringify(v1, null, 2), { mode: 0o600 });
+
+    const read = await readCredentials();
+    expect(read).not.toBeNull();
+    expect(read!.version).toBe(2);
+    expect(read!.active).toBe('p-1234');
+    expect(read!.profiles['p-1234'].projectName).toBe('legacy-project');
+
+    // File on disk is rewritten in v2.
+    const onDisk = JSON.parse(await readFile(credentialsPath(), 'utf-8')) as { version: number };
+    expect(onDisk.version).toBe(2);
+  });
+
+  it('readCredentials rejects unknown versions', async () => {
+    await mkdir(dirname(credentialsPath()), { recursive: true, mode: 0o700 });
+    await writeFile(credentialsPath(), JSON.stringify({ version: 99 }, null, 2), { mode: 0o600 });
+    await expect(readCredentials()).rejects.toThrow(/Unsupported credentials file version/);
+  });
+});
+
+describe('profile helpers', () => {
+  it('upsertProfile inserts and marks active', async () => {
+    const p1 = sampleProfile({ projectId: 'aaa', projectName: 'one' });
+    const after = await upsertProfile(p1);
+    expect(after.active).toBe('aaa');
+    expect(Object.keys(after.profiles)).toEqual(['aaa']);
+
+    const p2 = sampleProfile({ projectId: 'bbb', projectName: 'two' });
+    const after2 = await upsertProfile(p2);
+    expect(after2.active).toBe('bbb');
+    expect(Object.keys(after2.profiles).sort()).toEqual(['aaa', 'bbb']);
+  });
+
+  it('findProfile resolves by exact id, exact name, and prefix>=8', () => {
+    const a = sampleProfile({
+      projectId: 'aaaaaaaa-1111-1111-1111-111111111111',
+      projectName: 'alpha',
     });
-    expect(await deleteCredentials()).toBe(true);
-    expect(await readCredentials()).toBeNull();
+    const b = sampleProfile({
+      projectId: 'aaaaaaaa-2222-2222-2222-222222222222',
+      projectName: 'beta',
+    });
+    const creds: StoredCredentialsV2 = {
+      version: 2,
+      active: a.projectId,
+      profiles: { [a.projectId]: a, [b.projectId]: b },
+    };
+    expect(findProfile(creds, a.projectId)?.projectName).toBe('alpha');
+    expect(findProfile(creds, 'beta')?.projectId).toBe(b.projectId);
+    // Both ids share 'aaaaaaaa' prefix — ambiguous so should return null.
+    expect(findProfile(creds, 'aaaaaaaa')).toBeNull();
+    // Unique prefix.
+    expect(findProfile(creds, 'aaaaaaaa-1111')?.projectName).toBe('alpha');
+    // Short prefix below threshold.
+    expect(findProfile(creds, 'aaa')).toBeNull();
+    expect(findProfile(creds, 'does-not-exist')).toBeNull();
+  });
+
+  it('getActiveProfile returns the active or null', () => {
+    const p = sampleProfile({ projectId: 'x' });
+    const creds: StoredCredentialsV2 = { version: 2, active: 'x', profiles: { x: p } };
+    expect(getActiveProfile(creds)?.projectId).toBe('x');
+    const empty = emptyCredentials();
+    expect(getActiveProfile(empty)).toBeNull();
   });
 });
