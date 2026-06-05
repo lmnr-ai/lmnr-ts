@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -98,7 +98,28 @@ export async function writeCredentials(creds: StoredCredentialsV2): Promise<void
   const path = credentialsPath();
   const parent = dirname(path);
   await mkdir(parent, { recursive: true, mode: 0o700 });
-  await writeFile(path, JSON.stringify(creds, null, 2), { mode: 0o600 });
+
+  // Mode preservation: Node's writeFile `mode` option only applies when the
+  // file is being CREATED. On overwrite the existing mode survives, but here
+  // we are writing to a `.tmp` and then renaming, so the temp adopts whatever
+  // mode `writeFile` sets and the final file inherits that. Capture the
+  // current dest mode first if present (default 0o600 for new files) so
+  // tighter user-set modes like 0o640 / 0o600 survive token-refresh writes.
+  let mode = 0o600;
+  try {
+    const existing = await stat(path);
+    mode = existing.mode & 0o777;
+  } catch (e: unknown) {
+    if (!isNotFound(e)) throw e;
+  }
+
+  // Atomic temp+rename: a partial / crashed write can't corrupt the canonical
+  // file, and two concurrent writers can't interleave bytes (the later
+  // rename overwrites the earlier - last-write-wins is acceptable for this
+  // file). `wx` ensures we never collide with a leftover from a previous run.
+  const tmp = `${path}.tmp.${process.pid}.${Date.now()}`;
+  await writeFile(tmp, JSON.stringify(creds, null, 2), { mode, flag: "wx" });
+  await rename(tmp, path);
 }
 
 export async function deleteCredentials(): Promise<boolean> {

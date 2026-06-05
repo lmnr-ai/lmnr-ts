@@ -1,4 +1,4 @@
-import { mkdtempSync, statSync } from 'node:fs';
+import { chmodSync, mkdtempSync, statSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -90,6 +90,47 @@ describe('credentials v2 roundtrip', () => {
     const stat = statSync(credentialsPath());
     const mode = stat.mode & 0o777;
     expect(mode).toBe(0o600);
+  });
+
+  it.skipIf(isWin)('preserves an existing 0o640 mode across overwrites', async () => {
+    const profile = sampleProfile();
+    await writeCredentials({
+      version: 2,
+      active: profile.projectId,
+      profiles: { [profile.projectId]: profile },
+    });
+    // Simulate a user-set wider mode then rerun.
+    chmodSync(credentialsPath(), 0o640);
+    expect(statSync(credentialsPath()).mode & 0o777).toBe(0o640);
+
+    await writeCredentials({
+      version: 2,
+      active: profile.projectId,
+      profiles: {
+        [profile.projectId]: { ...profile, accessToken: 'rotated' },
+      },
+    });
+    expect(statSync(credentialsPath()).mode & 0o777).toBe(0o640);
+    const round = await readCredentials();
+    expect(round?.profiles[profile.projectId].accessToken).toBe('rotated');
+  });
+
+  it.skipIf(isWin)('keeps 0o600 across re-runs', async () => {
+    const profile = sampleProfile();
+    await writeCredentials({
+      version: 2,
+      active: profile.projectId,
+      profiles: { [profile.projectId]: profile },
+    });
+    expect(statSync(credentialsPath()).mode & 0o777).toBe(0o600);
+    await writeCredentials({
+      version: 2,
+      active: profile.projectId,
+      profiles: {
+        [profile.projectId]: { ...profile, accessToken: 'rotated' },
+      },
+    });
+    expect(statSync(credentialsPath()).mode & 0o777).toBe(0o600);
   });
 
   it('readCredentials returns null when no file exists', async () => {
