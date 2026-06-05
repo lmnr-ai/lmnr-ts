@@ -44,6 +44,33 @@ export class RolloutSessionsResource extends BaseResource {
     }
   }
 
+  /**
+   * Rename an existing debug session. Update-only: the backend returns 404 (and
+   * this throws) when the session id is unknown for the project, so a mistyped
+   * id surfaces as an error rather than silently creating a session. Creation
+   * stays the SDK's job via {@link register}.
+   */
+  public async setName({
+    sessionId,
+    name,
+  }: {
+    sessionId: string;
+    name: string;
+  }): Promise<void> {
+    const response = await fetch(
+      `${this.baseHttpUrl}/v1/rollouts/${sessionId}/name`,
+      {
+        method: "PATCH",
+        headers: this.headers(),
+        body: JSON.stringify({ name }),
+      },
+    );
+
+    if (!response.ok) {
+      await this.handleError(response);
+    }
+  }
+
   public async delete({
     sessionId,
   }: {
