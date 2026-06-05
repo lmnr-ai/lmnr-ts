@@ -214,8 +214,6 @@ export const awaitCacheReady = async (
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<void>((resolve) => {
     timer = setTimeout(resolve, timeoutMs);
-    // Don't keep the event loop alive just to honor this wait.
-    timer.unref?.();
   });
   try {
     await Promise.race([readyPromise, timeout]);
