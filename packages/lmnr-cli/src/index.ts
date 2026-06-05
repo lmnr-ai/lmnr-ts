@@ -13,9 +13,11 @@ import {
 import { runDev } from "./commands/dev";
 import { handleLogin } from "./commands/login";
 import { handleLogout } from "./commands/logout";
+import { handleSetup } from "./commands/setup";
 import { handleSqlQuery } from "./commands/sql";
 import { SQL_SCHEMA_HELP } from "./commands/sql/schema";
 import { handleStatus } from "./commands/status";
+import { handleTracesWait } from "./commands/traces";
 
 async function main() {
   const program = new Command();
@@ -305,6 +307,50 @@ Examples:
       await handleStatus();
     });
 
+  const traces = program
+    .command("traces")
+    .description("Inspect traces in a project");
+
+  traces
+    .command("wait")
+    .description("Poll the server until N spans appear in the last <since> window")
+    .option("--since <duration>", "Look-back window (e.g. 60s, 2m, 1h)", "60s")
+    .option("--count <n>", "Minimum span count", "1")
+    .option("--timeout <duration>", "Give up after this duration", "120s")
+    .option("--project <id>", "Project UUID (defaults to credentials)")
+    .option("--json", "Emit a machine-readable JSON line on stdout")
+    .option("--base-url <url>", "Base URL for the Laminar API")
+    .action(async (options) => {
+      await handleTracesWait(options);
+    });
+
+  program
+    .command("setup")
+    .description("One-shot onboarding: login + workspace/project + write LMNR_PROJECT_API_KEY")
+    .option(
+      "--workspace <id>",
+      "Target workspace UUID (skips picker on multi-workspace accounts)",
+    )
+    .option(
+      "--project-name <name>",
+      "Project name (default: derive from git remote / cwd)",
+    )
+    .option("--write-env", "Write LMNR_PROJECT_API_KEY to ./.env (default)", true)
+    .option("--no-write-env", "Do not write to ./.env")
+    .option("--json", "Emit a machine-readable JSON line on stdout")
+    .option("--no-browser", "Do not auto-open the device-flow URL")
+    .option(
+      "--dashboard-url <url>",
+      "Dashboard URL (issuer). Defaults to LMNR_DASHBOARD_URL or https://www.laminar.sh",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to LMNR_BASE_URL or https://api.lmnr.ai",
+    )
+    .action(async (options) => {
+      await handleSetup(options);
+    });
+
   program.addHelpText(
     "after",
     `
@@ -316,6 +362,9 @@ Authentication (precedence: highest first):
   or run "lmnr-cli login" to authenticate via your browser.
 
 Examples:
+  lmnr-cli setup --json                                    # One-shot onboarding (login + .env)
+  lmnr-cli setup --workspace <uuid> --project-name my-app  # Into a specific workspace
+  lmnr-cli traces wait --since 60s --count 1               # Wait for traces (verifies)
   lmnr-cli dev agent.ts                                    # Debugger TypeScript entrypoint
   lmnr-cli dev agent.py                                    # Debugger Python script mode
   lmnr-cli dev -m src.agent                                # Debugger Python module mode
