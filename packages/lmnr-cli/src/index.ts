@@ -17,6 +17,7 @@ import { handleSetup } from "./commands/setup";
 import { handleSqlQuery } from "./commands/sql";
 import { SQL_SCHEMA_HELP } from "./commands/sql/schema";
 import { handleStatus } from "./commands/status";
+import { handleTracesWait } from "./commands/traces";
 
 async function main() {
   const program = new Command();
@@ -304,6 +305,23 @@ Examples:
     .description("Show the current OAuth login state and token expiry")
     .action(async () => {
       await handleStatus();
+    });
+
+  const traces = program
+    .command("traces")
+    .description("Inspect traces in a project");
+
+  traces
+    .command("wait")
+    .description("Poll the server until N spans appear in the last <since> window")
+    .option("--since <duration>", "Look-back window (e.g. 60s, 2m, 1h)", "60s")
+    .option("--count <n>", "Minimum span count", "1")
+    .option("--timeout <duration>", "Give up after this duration", "120s")
+    .option("--project <id>", "Project UUID (defaults to credentials)")
+    .option("--json", "Emit a machine-readable JSON line on stdout")
+    .option("--base-url <url>", "Base URL for the Laminar API")
+    .action(async (options) => {
+      await handleTracesWait(options);
     });
 
   program
