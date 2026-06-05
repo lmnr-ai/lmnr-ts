@@ -45,37 +45,26 @@ const normalizeSpanId = (value: string): string | null => {
 };
 
 /**
- * Parse LMNR_DEBUG_CACHE_UNTIL into { cacheUntil, spanId }.
+ * Parse LMNR_DEBUG_CACHE_UNTIL into a span-id needle.
  *
- * The value is either a count N (clamp <0 to 0) or a span id in UUID shape that
- * is resolved to N once the source trace is fetched. A numeric value always
- * wins, so a purely decimal string is treated as a count, never a span id.
- * Returns { cacheUntil: 0, spanId: null } for an empty value and warns (then
- * returns the same) for a value that is neither a number nor a span id.
+ * In debug-replay v2 the cache window is ALWAYS a span id (the count form was
+ * removed): the server resolves the needle into a stop point. Accepts any
+ * UUID-ish shape a user copies from the UI. Returns null for an empty value, and
+ * warns (then returns null) for a value that isn't span-id shaped.
  */
-const parseCacheUntil = (
-  value: string | undefined,
-): { cacheUntil: number; spanId: string | null } => {
+const parseCacheUntil = (value: string | undefined): string | null => {
   if (value === undefined || value === "") {
-    return { cacheUntil: 0, spanId: null };
-  }
-  // Number("") is 0 and Number(" 3 ") is 3, but a span id like "0123" is also a
-  // finite number — so only treat strictly-integer values as counts and let
-  // everything else fall through to span-id parsing.
-  const trimmed = value.trim();
-  const n = Number(trimmed);
-  if (trimmed !== "" && Number.isInteger(n) && /^[+-]?\d+$/.test(trimmed)) {
-    return { cacheUntil: n > 0 ? n : 0, spanId: null };
+    return null;
   }
   const spanId = normalizeSpanId(value);
   if (spanId !== null) {
-    return { cacheUntil: 0, spanId };
+    return spanId;
   }
   logger.warn(
-    `LMNR_DEBUG_CACHE_UNTIL=${JSON.stringify(value)} is neither an integer ` +
-      "nor a span id; defaulting to 0",
+    `LMNR_DEBUG_CACHE_UNTIL=${JSON.stringify(value)} is not a span id; ` +
+      "ignoring",
   );
-  return { cacheUntil: 0, spanId: null };
+  return null;
 };
 
 /**
@@ -102,25 +91,20 @@ const loadLastRun = (): Record<string, unknown> => {
 export interface DebugConfig {
   sessionId: string;
   replayTraceId: string | null;
-  cacheUntil: number;
-  // When LMNR_DEBUG_CACHE_UNTIL was given as a span id rather than a count, this
-  // holds the hyphen-stripped lowercase hex needle; `cacheUntil` stays 0 until
-  // the source trace is fetched and the needle is resolved to an occurrence
-  // count (see `buildCache`). null when the value was a plain count.
+  // Hyphen-stripped lowercase hex needle of the span id that bounds the replay
+  // window (LMNR_DEBUG_CACHE_UNTIL). Sent verbatim to the cache endpoint, which
+  // resolves it server-side. null when no span id was given — replay is then
+  // not configured.
   cacheUntilSpanId: string | null;
 }
 
 /**
- * True when a source trace is set and at least one call should replay.
- *
- * A span-id cache window also counts as replay-configured even though
- * `cacheUntil` is still 0 — the count is resolved later from the source trace,
- * so gating on `cacheUntil > 0` alone would wrongly treat a span-id run as
- * no-replay before the trace is fetched.
+ * True when both a replay trace and a cache-until span id are set, i.e. at least
+ * one call should consult the cache. The server resolves the span-id window, so
+ * the SDK only needs both ids present to arm replay.
  */
 export const replayEnabledForConfig = (config: DebugConfig): boolean =>
-  config.replayTraceId !== null &&
-  (config.cacheUntil > 0 || config.cacheUntilSpanId !== null);
+  config.replayTraceId !== null && config.cacheUntilSpanId !== null;
 
 /**
  * Build the debug config from the environment.
@@ -152,14 +136,11 @@ export const buildDebugConfig = (): DebugConfig | null => {
     process.env.LMNR_DEBUG_REPLAY_TRACE_ID ||
     (lastRun.trace_id as string | undefined) ||
     null;
-  const lastRunCacheUntil = lastRun.cache_until as number | undefined;
+  const lastRunCacheUntil =
+    typeof lastRun.cache_until === "string" ? lastRun.cache_until : undefined;
   const cacheUntilValue =
-    process.env.LMNR_DEBUG_CACHE_UNTIL ??
-    (lastRunCacheUntil !== undefined && lastRunCacheUntil !== null
-      ? String(lastRunCacheUntil)
-      : undefined);
-  const { cacheUntil, spanId: cacheUntilSpanId } =
-    parseCacheUntil(cacheUntilValue);
+    process.env.LMNR_DEBUG_CACHE_UNTIL ?? lastRunCacheUntil;
+  const cacheUntilSpanId = parseCacheUntil(cacheUntilValue);
 
-  return { sessionId, replayTraceId, cacheUntil, cacheUntilSpanId };
+  return { sessionId, replayTraceId, cacheUntilSpanId };
 };

@@ -1,9 +1,49 @@
-import { errorMessage } from "@lmnr-ai/types";
+import { type CachedSpan, errorMessage } from "@lmnr-ai/types";
 
 import { initializeLogger } from "../utils";
 import { BaseResource } from "./index";
 
 const logger = initializeLogger();
+
+/**
+ * Result of a debug-replay cache lookup (debug-replay v2).
+ *
+ *  - `hit`  — the server served a cached response for this input hash; replay it
+ *             and mark the span CACHED.
+ *  - `miss` — no cache entry; the caller latches process-wide live mode and runs
+ *             every subsequent call live.
+ *  - `live` — run THIS call live without latching (server COLD warmup-timeout
+ *             degrade, or any non-OK / transport error here).
+ */
+export type CacheOutcome =
+  | { kind: "hit"; cached: CachedSpan }
+  | { kind: "miss" }
+  | { kind: "live" };
+
+/**
+ * Map the opaque HIT `response` payload onto a {@link CachedSpan} the provider
+ * wrappers can replay. The server-side shape of `response` is not yet frozen
+ * (app-server plan 01 leaves it as a `serde_json::Value`), so this stays
+ * deliberately tolerant: the whole payload is serialized into `output` (the only
+ * field the AI SDK wrapper's `parseCachedSpan` actually reads, via
+ * `JSON.parse`), and a `finishReason` is surfaced into `attributes` when the
+ * payload carries one. `name`/`input` are irrelevant to replay and left empty.
+ */
+const toCachedSpan = (response: unknown): CachedSpan => {
+  const output =
+    typeof response === "string" ? response : JSON.stringify(response ?? null);
+  const attributes: Record<string, any> = {};
+  if (
+    response !== null &&
+    typeof response === "object" &&
+    typeof (response as Record<string, unknown>).finishReason === "string"
+  ) {
+    attributes["ai.response.finishReason"] = (
+      response as Record<string, unknown>
+    ).finishReason;
+  }
+  return { name: "", input: "", output, attributes };
+};
 
 export class RolloutSessionsResource extends BaseResource {
   constructor(baseHttpUrl: string, projectApiKey: string) {
@@ -73,6 +113,78 @@ export class RolloutSessionsResource extends BaseResource {
 
     if (!response.ok) {
       await this.handleError(response);
+    }
+  }
+
+  /**
+   * Look up the debug-replay cache for a single LLM call (debug-replay v2).
+   *
+   * The server is keyed by `inputHash` (hex blake3 of the canonicalized,
+   * system-stripped input messages). It returns one of three outcomes:
+   *   - `{ outcome: "hit", response }` — a cached response to replay.
+   *   - `{ outcome: "miss" }`          — no entry; caller latches live mode.
+   *   - `{ outcome: "live" }`          — run this call live (COLD degrade).
+   *
+   * Error posture: a non-OK response or a transport error degrades to
+   * `{ kind: "live" }` for THIS call only — it never throws and never latches
+   * the process-wide live flag (only a real MISS does that). This keeps a flaky
+   * cache backend from turning a replay into a crash.
+   */
+  public async cache({
+    sessionId,
+    replayTraceId,
+    cacheUntil,
+    inputHash,
+  }: {
+    sessionId: string;
+    replayTraceId: string;
+    cacheUntil: string;
+    inputHash: string;
+  }): Promise<CacheOutcome> {
+    let response: Response;
+    try {
+      response = await fetch(
+        `${this.baseHttpUrl}/v1/rollouts/${sessionId}/cache`,
+        {
+          method: "POST",
+          headers: this.headers(),
+          body: JSON.stringify({ replayTraceId, cacheUntil, inputHash }),
+        },
+      );
+    } catch (e) {
+      logger.warn(`Debug cache lookup failed, running live: ${errorMessage(e)}`);
+      return { kind: "live" };
+    }
+
+    if (!response.ok) {
+      logger.warn(
+        `Debug cache lookup returned ${response.status}, running live`,
+      );
+      return { kind: "live" };
+    }
+
+    let body: { outcome?: string; response?: unknown };
+    try {
+      body = (await response.json()) as { outcome?: string; response?: unknown };
+    } catch (e) {
+      logger.warn(
+        `Failed to parse debug cache response, running live: ${errorMessage(e)}`,
+      );
+      return { kind: "live" };
+    }
+
+    switch (body.outcome) {
+      case "hit":
+        return { kind: "hit", cached: toCachedSpan(body.response) };
+      case "miss":
+        return { kind: "miss" };
+      case "live":
+        return { kind: "live" };
+      default:
+        logger.warn(
+          `Unknown debug cache outcome "${body.outcome}", running live`,
+        );
+        return { kind: "live" };
     }
   }
 

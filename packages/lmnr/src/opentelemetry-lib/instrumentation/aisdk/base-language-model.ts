@@ -33,12 +33,10 @@ import {
 } from "@ai-sdk/provider-v4-canary";
 import { CachedSpan } from "@lmnr-ai/types";
 
-import { awaitCacheReady } from "../../../debug/index";
-import {
-  cachedPayloadFor,
-  markSpanCached,
-  replayEnabled,
-} from "../../../debug/replay";
+import { extractInputMessages } from "../../../debug/aisdk-normalize";
+import { debugInputHash } from "../../../debug/hash";
+import { getRuntime } from "../../../debug/index";
+import { markSpanCached, replayEnabled } from "../../../debug/replay";
 import { Laminar } from "../../../laminar";
 
 /**
@@ -263,10 +261,14 @@ export abstract class BaseLaminarLanguageModel {
   /**
    * Common implementation for both doGenerateWithCaching and doStreamWithCaching.
    *
-   * On a debug replay run, resolves the current span path and consults the
-   * in-process replay cache (§G, §H). A cache hit reconstructs the response from
-   * the cached span and marks the span CACHED; a miss (or a non-debug run) falls
-   * through to the live provider call.
+   * On a debug replay run, hashes this call's input messages and consults the
+   * server-side replay cache (debug-replay v2, §9). Three outcomes:
+   *   - HIT  — reconstruct the response from the cached span and mark CACHED.
+   *   - MISS — latch process-wide live mode and run this (and every later) call
+   *            live; the server records the response so the cache warms up.
+   *   - LIVE — run THIS call live WITHOUT latching (server COLD warmup-timeout
+   *            degrade, or any transport/parse error in the lookup).
+   * A non-debug or no-replay run falls through to the live provider call.
    */
   private async doGenerateOrStreamWithCaching(
     options:
@@ -276,25 +278,31 @@ export abstract class BaseLaminarLanguageModel {
     originalFn: (opts: any) => PromiseLike<any>,
     buildFromCached: (cached: CachedSpan) => any,
   ): Promise<any> {
-    if (!replayEnabled()) {
+    if (!replayEnabled() || Laminar.debugRunLive) {
       return originalFn(options);
     }
 
-    // The replay cache fills asynchronously after init (TS-only); wait a bounded
-    // moment for the in-flight build so the first spine call serves from slot 0
-    // instead of running live and skipping its cached response.
-    await awaitCacheReady();
+    // Reshape the prompt into the message array the server hashes, then hash it
+    // (system message excluded) so the SDK and server key the cache identically.
+    const messages = extractInputMessages(options as { prompt: any });
+    const inputHash = debugInputHash(messages);
+    const outcome = (await getRuntime()?.lookupCache(inputHash)) ?? {
+      kind: "live" as const,
+    };
 
-    const span = Laminar.getCurrentSpan();
-    const spanPath =
-      Laminar.getLaminarSpanContext()?.spanPath?.join(".") ?? null;
-    const cached = cachedPayloadFor(spanPath);
-    if (!cached) {
-      return originalFn(options);
+    switch (outcome.kind) {
+      case "hit":
+        markSpanCached(Laminar.getCurrentSpan());
+        return buildFromCached(outcome.cached);
+      case "miss":
+        // First MISS latches live mode for the rest of the process, so later
+        // calls skip the lookup entirely and run live.
+        Laminar.debugRunLive = true;
+        return originalFn(options);
+      case "live":
+      default:
+        return originalFn(options);
     }
-
-    markSpanCached(span);
-    return buildFromCached(cached);
   }
 
   private cachedDoGenerate(cached: CachedSpan): {

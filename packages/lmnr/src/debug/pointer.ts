@@ -37,7 +37,7 @@ export const buildPointer = (args: {
   traceId: string;
   sessionId: string;
   replayTraceId: string | null;
-  cacheUntil: number;
+  cacheUntil: string | null;
   debuggerUrl: string | null;
   startedAt?: string;
 }): DebugRunPointer => ({

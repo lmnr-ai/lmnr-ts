@@ -104,6 +104,14 @@ export class Laminar {
   // stale listeners and trip Node's MaxListenersExceededWarning.
   private static debugExitHook: (() => void) | null = null;
   /**
+   * Process-wide latch for debug-replay v2: once any LLM call gets a cache MISS,
+   * every subsequent call runs live (skipping the cache lookup) for the rest of
+   * the process. A COLD/`live` outcome runs that single call live WITHOUT
+   * setting this flag. Read by the AI SDK wrapper's caching path; reset in
+   * {@link shutdown} so an init/shutdown loop (tests) starts clean.
+   */
+  public static debugRunLive: boolean = false;
+  /**
    * Initialize Laminar context across the application.
    * This method must be called before using any other Laminar methods or decorators.
    *
@@ -366,7 +374,10 @@ export class Laminar {
       });
       const debuggerUrl =
         process?.env?.LMNR_FRONTEND_URL ?? getFrontendUrl(baseUrl);
-      const { runtime } = initDebugRuntime(client.sql, debuggerUrl);
+      const { runtime } = initDebugRuntime(
+        client.rolloutSessions,
+        debuggerUrl,
+      );
       if (runtime === null) {
         return;
       }
@@ -1032,6 +1043,9 @@ export class Laminar {
       // Clear the one-shot debug-runtime state so a subsequent initialize()
       // re-reads LMNR_DEBUG* instead of resurrecting the previous run.
       resetDebugRuntime();
+      // Clear the process-wide live latch so a re-initialized run starts by
+      // consulting the cache again instead of inheriting the prior run's MISS.
+      this.debugRunLive = false;
       // The pointer was just emitted above, so the `exit` hook would be a
       // redundant no-op; remove it so init/shutdown loops don't leak listeners.
       if (this.debugExitHook !== null) {
