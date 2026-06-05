@@ -12,6 +12,36 @@ npx lmnr-cli@latest <command>
 npm install -g lmnr-cli
 ```
 
+## Quick start
+
+One command takes you from a fresh install to a working API key in `./.env`:
+
+```bash
+lmnr-cli setup --json
+```
+
+Approve the device-flow URL in your browser, and `setup` will:
+
+1. Log in (if you are not already)
+2. Create or reuse a workspace + project (idempotent on re-runs in the same repo)
+3. Mint a fresh API key and write `LMNR_PROJECT_API_KEY=...` to `./.env`
+4. Print a dashboard URL and the revoke link
+
+```bash
+# Verify your instrumentation runs end-to-end:
+lmnr-cli traces wait --since 60s --count 1
+```
+
+`setup` is designed to be invoked by coding agents. Exit codes:
+
+- `0` success
+- `1` generic error
+- `6` login failed or aborted
+- `7` ambiguous workspace (multiple workspaces, no `--workspace`, non-interactive)
+- `8` `.env` write failed (API key is surfaced on stderr so the agent can rescue it)
+
+See `lmnr-cli setup --help` and `lmnr-cli traces wait --help` for all flags.
+
 ## Authentication
 
 The CLI supports three authentication modes, evaluated in this precedence order:
@@ -83,6 +113,30 @@ lmnr-cli dataset push data.jsonl -n my-dataset --json    # Push data to a datase
 lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a dataset
 lmnr-cli dataset create my-dataset data.jsonl -o out.jsonl
 ```
+
+### `setup` - One-shot onboarding
+
+```bash
+lmnr-cli setup                              # Human-readable summary
+lmnr-cli setup --json                       # Machine-readable single-line JSON
+lmnr-cli setup --workspace <uuid>           # Target a specific workspace
+lmnr-cli setup --project-name my-app        # Use an explicit project name
+lmnr-cli setup --no-write-env               # Skip writing ./.env
+```
+
+Re-running setup in the same repo reuses the same project but mints a fresh API
+key each time. Old keys remain visible in the dashboard under "API keys" until
+you revoke them.
+
+### `traces wait` - Wait for trace ingestion
+
+```bash
+lmnr-cli traces wait --since 60s --count 1 --timeout 120s
+lmnr-cli traces wait --since 2m --count 5 --json
+```
+
+Polls the server every 2 seconds. Useful for coding agents that need to confirm
+their instrumentation actually emits traces before declaring "done".
 
 ### `login` / `logout` / `status` - Authentication
 
