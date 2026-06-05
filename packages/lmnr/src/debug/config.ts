@@ -98,26 +98,6 @@ const loadLastRun = (): Record<string, unknown> => {
   }
 };
 
-/**
- * Read `${CWD}/.lmnr/last-run.json` (the previous run's pointer).
- *
- * Best-effort: a missing / unreadable / malformed file returns {} so the caller
- * silently falls back to env vars. Keep line-comparable with the Python
- * `_load_last_run`.
- */
-const loadLastRun = (): Record<string, unknown> => {
-  try {
-    const path = join(process.cwd(), POINTER_DIR, POINTER_FILE);
-    const data: unknown = JSON.parse(readFileSync(path, { encoding: "utf-8" }));
-    return data !== null && typeof data === "object"
-      ? (data as Record<string, unknown>)
-      : {};
-  } catch (e) {
-    logger.debug(`Could not read debug pointer file: ${String(e)}`);
-    return {};
-  }
-};
-
 /** Immutable debug configuration, built once at process start. */
 export interface DebugConfig {
   sessionId: string;
