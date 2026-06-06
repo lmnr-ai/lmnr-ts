@@ -57,7 +57,7 @@ describe('handleSwitch', () => {
     const a = profile({ projectId: 'p-aaaa-1111-1111-1111-111111111111', projectName: 'alpha' });
     const b = profile({ projectId: 'p-bbbb-2222-2222-2222-222222222222', projectName: 'beta' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a, [b.projectId]: b },
     });
@@ -71,7 +71,7 @@ describe('handleSwitch', () => {
     const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
     const b = profile({ projectId: 'p-bbbb', projectName: 'beta' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: 'p-aaaa',
       profiles: { [a.projectId]: a, [b.projectId]: b },
     });
@@ -84,7 +84,7 @@ describe('handleSwitch', () => {
     const a = profile({ projectId: 'aaaaaaaa-1111-1111-1111-111111111111', projectName: 'alpha' });
     const b = profile({ projectId: 'bbbbbbbb-2222-2222-2222-222222222222', projectName: 'beta' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a, [b.projectId]: b },
     });
@@ -96,7 +96,7 @@ describe('handleSwitch', () => {
   it('exits 1 when no profile matches', async () => {
     const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a },
     });

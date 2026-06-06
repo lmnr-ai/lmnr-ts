@@ -5,7 +5,7 @@ import {
   getActiveProfile,
   type ProfileEntry,
   readCredentials,
-  type StoredCredentialsV2,
+  type StoredCredentials,
   writeCredentials,
 } from "../../auth/credentials";
 import { refreshIfNeeded } from "../../auth/resolve";
@@ -79,7 +79,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   }
 
   // Step 1 — login if needed.
-  let creds: StoredCredentialsV2 | null;
+  let creds: StoredCredentials | null;
   let profile: ProfileEntry | null = null;
   try {
     creds = await readCredentials();
@@ -132,7 +132,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   const workspaceName = deriveWorkspaceName();
 
   // Step 4 — bootstrap.
-  let bootstrap = await postBootstrap(caller, {
+  let bootstrap = await postSetup(caller, {
     workspaceId: options.workspace,
     workspaceName,
     projectName,
@@ -158,7 +158,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
       emitError(false, "workspace_pick_aborted", "Selection aborted.");
       process.exit(7);
     }
-    bootstrap = await postBootstrap(caller, {
+    bootstrap = await postSetup(caller, {
       workspaceId: chosenId,
       workspaceName,
       projectName,

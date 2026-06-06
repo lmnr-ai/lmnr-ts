@@ -84,7 +84,7 @@ describe('handleList', () => {
 
   it('renders a single profile with an active marker', async () => {
     const a = profile({ projectId: 'p-aaaa', projectName: 'alpha', workspaceName: 'acme' });
-    await writeCredentials({ version: 2, active: 'p-aaaa', profiles: { [a.projectId]: a } });
+    await writeCredentials({ version: 1, active: 'p-aaaa', profiles: { [a.projectId]: a } });
     await handleList();
     const printed = collectStdout(stdoutMock);
     expect(printed).toContain('alpha');
@@ -100,7 +100,7 @@ describe('handleList', () => {
     const b = profile({ projectId: 'p-bbbb', projectName: 'beta', workspaceName: 'acme' });
     const c = profile({ projectId: 'p-cccc', projectName: 'gamma', workspaceName: 'other' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: 'p-bbbb',
       profiles: { [a.projectId]: a, [b.projectId]: b, [c.projectId]: c },
     });

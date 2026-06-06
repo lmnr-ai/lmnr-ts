@@ -3,7 +3,7 @@ import {
   getActiveProfile,
   type ProfileEntry,
   readCredentials,
-  type StoredCredentialsV2,
+  type StoredCredentials,
   writeCredentials,
 } from "./credentials";
 import { getConfig, refresh } from "./oidc";
@@ -61,7 +61,7 @@ export async function resolveAuth(opts: AuthInputs): Promise<ResolvedAuth> {
   };
 }
 
-function pickProfile(creds: StoredCredentialsV2, explicit?: string): ProfileEntry {
+function pickProfile(creds: StoredCredentials, explicit?: string): ProfileEntry {
   if (explicit && explicit.length > 0) {
     const match = findProfile(creds, explicit);
     if (!match) {
@@ -99,7 +99,7 @@ function pickProfile(creds: StoredCredentialsV2, explicit?: string): ProfileEntr
  * REFRESH_BUFFER_SECONDS of expiry. Always bumps lastUsedAt and persists.
  */
 export async function refreshIfNeeded(
-  creds: StoredCredentialsV2,
+  creds: StoredCredentials,
   profile: ProfileEntry,
 ): Promise<ProfileEntry> {
   const expiresAtMs = new Date(profile.accessTokenExpiresAt).getTime();

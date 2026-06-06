@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   type ProfileEntry,
-  type StoredCredentialsV2,
+  type StoredCredentials,
   writeCredentials,
 } from './credentials';
 import { resolveAuth } from './resolve';
@@ -60,8 +60,8 @@ describe('resolveAuth precedence', () => {
   it('1. --project-api-key flag wins', async () => {
     process.env.LMNR_PROJECT_API_KEY = 'env-key';
     const a = freshProfile();
-    const creds: StoredCredentialsV2 = {
-      version: 2,
+    const creds: StoredCredentials = {
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a },
     };
@@ -74,7 +74,7 @@ describe('resolveAuth precedence', () => {
     process.env.LMNR_PROJECT_API_KEY = 'env-key';
     const a = freshProfile();
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a },
     });
@@ -86,7 +86,7 @@ describe('resolveAuth precedence', () => {
     const a = freshProfile({ projectId: 'p-aaaa', accessToken: 'tok-a', projectName: 'alpha' });
     const b = freshProfile({ projectId: 'p-bbbb', accessToken: 'tok-b', projectName: 'beta' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a, [b.projectId]: b },
     });
@@ -98,7 +98,7 @@ describe('resolveAuth precedence', () => {
     const a = freshProfile({ projectId: 'p-aaaa', accessToken: 'tok-a' });
     const b = freshProfile({ projectId: 'p-bbbb', accessToken: 'tok-b', projectName: 'beta' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a, [b.projectId]: b },
     });
@@ -111,7 +111,7 @@ describe('resolveAuth precedence', () => {
     const a = freshProfile({ projectId: 'p-aaaa', accessToken: 'tok-a' });
     const b = freshProfile({ projectId: 'p-bbbb', accessToken: 'tok-b' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: 'p-bbbb',
       profiles: { [a.projectId]: a, [b.projectId]: b },
     });
@@ -122,7 +122,7 @@ describe('resolveAuth precedence', () => {
   it('6. single-profile shortcut when active is unset', async () => {
     const a = freshProfile({ projectId: 'p-aaaa', accessToken: 'only-tok' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: null,
       profiles: { [a.projectId]: a },
     });
@@ -134,7 +134,7 @@ describe('resolveAuth precedence', () => {
     const a = freshProfile({ projectId: 'p-aaaa' });
     const b = freshProfile({ projectId: 'p-bbbb' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: null,
       profiles: { [a.projectId]: a, [b.projectId]: b },
     });
@@ -144,7 +144,7 @@ describe('resolveAuth precedence', () => {
   it('errors when --project does not match any profile', async () => {
     const a = freshProfile();
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a },
     });

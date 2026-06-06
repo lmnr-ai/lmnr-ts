@@ -5,7 +5,7 @@ import {
   getActiveProfile,
   type ProfileEntry,
   readCredentials,
-  type StoredCredentialsV2,
+  type StoredCredentials,
   writeCredentials,
 } from "../../auth/credentials";
 
@@ -126,7 +126,7 @@ export async function handleLogout(
 }
 
 function resolveTarget(
-  creds: StoredCredentialsV2,
+  creds: StoredCredentials,
   target: string | undefined,
 ): ProfileEntry | null {
   if (target && target.length > 0) {
@@ -157,4 +157,4 @@ function pickNextActive(profiles: ProfileEntry[]): ProfileEntry {
 }
 
 // Re-export for tests that want to inspect type without depending on creds.
-export type { StoredCredentialsV2 };
+export type { StoredCredentials };

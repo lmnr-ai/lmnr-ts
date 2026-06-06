@@ -63,7 +63,7 @@ describe('handleLogout', () => {
     const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
     const b = profile({ projectId: 'p-bbbb', projectName: 'beta' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a, [b.projectId]: b },
     });
@@ -75,7 +75,7 @@ describe('handleLogout', () => {
     const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
     const b = profile({ projectId: 'p-bbbb', projectName: 'beta' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a, [b.projectId]: b },
     });
@@ -92,7 +92,7 @@ describe('handleLogout', () => {
     const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
     const b = profile({ projectId: 'p-bbbb', projectName: 'beta' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a, [b.projectId]: b },
     });
@@ -116,7 +116,7 @@ describe('handleLogout', () => {
       lastUsedAt: newerTime,
     });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: 'p-active',
       profiles: {
         [active.projectId]: active,
@@ -134,7 +134,7 @@ describe('handleLogout', () => {
   it('default-with-one-profile removes and deletes the file', async () => {
     const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a },
     });
@@ -151,7 +151,7 @@ describe('handleLogout', () => {
   it('exits 1 when target does not match', async () => {
     const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a },
     });
@@ -167,7 +167,7 @@ describe('handleLogout', () => {
       tokenEndpoint: 'http://localhost:3010/oauth/token',
     });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a },
     });
@@ -187,7 +187,7 @@ describe('handleLogout', () => {
     fetchMock.mockResolvedValueOnce(new Response('boom', { status: 500 }));
     const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a },
     });
@@ -199,7 +199,7 @@ describe('handleLogout', () => {
     fetchMock.mockRejectedValueOnce(new Error('ECONNREFUSED'));
     const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a },
     });
@@ -211,7 +211,7 @@ describe('handleLogout', () => {
     const a = profile({ projectId: 'p-aaaa', projectName: 'alpha', refreshToken: 'rt-a' });
     const b = profile({ projectId: 'p-bbbb', projectName: 'beta', refreshToken: 'rt-b' });
     await writeCredentials({
-      version: 2,
+      version: 1,
       active: a.projectId,
       profiles: { [a.projectId]: a, [b.projectId]: b },
     });
