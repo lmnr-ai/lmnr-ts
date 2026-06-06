@@ -284,7 +284,15 @@ export abstract class BaseLaminarLanguageModel {
 
     // Reshape the prompt into the message array the server hashes, then hash it
     // (system message excluded) so the SDK and server key the cache identically.
+    // A null/empty reshape means we could not reconstruct the prompt at all (a
+    // stringify/JSON.parse failure, or no extractable messages). Hashing that
+    // would key the lookup off the wrong bytes and force a spurious MISS, which
+    // would wrongly latch live mode for the whole replay — so degrade to a live
+    // call WITHOUT latching, exactly like a transport error in the lookup.
     const messages = extractInputMessages(options as { prompt: any });
+    if (messages === null || messages.length === 0) {
+      return originalFn(options);
+    }
     const inputHash = debugInputHash(messages);
     const outcome = (await getRuntime()?.lookupCache(inputHash)) ?? {
       kind: "live" as const,

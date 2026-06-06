@@ -141,4 +141,14 @@ void describe('extractInputMessages', () => {
     // The same bytes the server would hash flow through debugInputHash.
     assert.match(debugInputHash(reshaped), /^[0-9a-f]{64}$/);
   });
+
+  void it('returns null when the prompt cannot be stringified', () => {
+    // A circular content object makes stringifyPromptForTelemetry's JSON.stringify
+    // throw. The caller must see null (run live, no latch) rather than a hash over
+    // a default payload that would force a spurious MISS.
+    const circular: Record<string, unknown> = { type: 'text', text: 'hi' };
+    circular.self = circular;
+    const prompt = [{ role: 'user', content: [circular] }];
+    assert.strictEqual(extractInputMessages({ prompt: prompt as never }), null);
+  });
 });

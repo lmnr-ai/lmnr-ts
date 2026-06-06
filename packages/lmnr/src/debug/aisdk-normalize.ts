@@ -312,15 +312,21 @@ export const inputChatMessagesFromJson = (input: unknown): unknown[] => {
  * normalizes V2/V3/V4 prompts (Uint8Array file `data` → base64) into the stored
  * `ai.prompt.messages` JSON, and the reshape operates on that JSON identically
  * across versions.
+ *
+ * Returns `null` when the prompt cannot be reshaped at all (a `stringify` /
+ * `JSON.parse` failure). The caller MUST treat `null` as "can't compute a real
+ * key" and degrade to a live call WITHOUT latching: hashing a default/empty
+ * payload here would key the lookup off the wrong bytes, force a spurious MISS,
+ * and wrongly latch live mode for the rest of the replay.
  */
 export const extractInputMessages = (options: {
   prompt: LanguageModelV2Prompt | LanguageModelV3Prompt;
-}): unknown[] => {
+}): unknown[] | null => {
   let aiPromptMessages: unknown;
   try {
     aiPromptMessages = JSON.parse(stringifyPromptForTelemetry(options.prompt));
   } catch {
-    return [];
+    return null;
   }
   return inputChatMessagesFromJson(aiPromptMessages);
 };
