@@ -8,14 +8,20 @@ export interface Credentials {
   dashboardUrl: string;
   projectId: string;
   projectName: string;
-  workspaceId: string;
-  workspaceName: string;
-  userEmail: string;
+  // On-disk key field is `projectApiKey` (read by resolveAuth). SPEC's `apiKey`
+  // maps here.
   projectApiKey: string;
-  createdAt: string;
+  // No longer returned by the new token route — kept optional so legacy files
+  // and `auth status` output stay stable.
+  workspaceId?: string;
+  workspaceName?: string;
+  userEmail?: string;
+  createdAt?: string;
 }
 
-export const credentialsDir = (): string => path.join(os.homedir(), ".lmnr");
+// XDG-aware: ~/.config/lmnr/credentials.json (honours XDG_CONFIG_HOME).
+export const credentialsDir = (): string =>
+  path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"), "lmnr");
 export const credentialsPath = (): string =>
   path.join(credentialsDir(), "credentials.json");
 
@@ -27,7 +33,7 @@ export const readCredentials = async (): Promise<Credentials | null> => {
       // Schema mismatch — bail rather than silently use stale fields.
       throw new Error(
         `Unrecognized credentials schema in ${credentialsPath()}.` +
-          " Run `lmnr-cli auth login` to refresh.",
+          " Run `lmnr-cli setup` or `lmnr-cli auth login` to refresh.",
       );
     }
     return parsed as Credentials;

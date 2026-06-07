@@ -13,17 +13,22 @@ import {
 
 let tmpHome: string;
 let prevHome: string | undefined;
+let prevXdg: string | undefined;
 
 beforeEach(async () => {
   tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "lmnr-cli-cred-test-"));
   prevHome = process.env.HOME;
+  prevXdg = process.env.XDG_CONFIG_HOME;
   process.env.HOME = tmpHome;
   process.env.USERPROFILE = tmpHome; // Windows shim
+  delete process.env.XDG_CONFIG_HOME; // default to ~/.config/lmnr
 });
 
 afterEach(async () => {
   if (prevHome === undefined) delete process.env.HOME;
   else process.env.HOME = prevHome;
+  if (prevXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+  else process.env.XDG_CONFIG_HOME = prevXdg;
   await fs.rm(tmpHome, { recursive: true, force: true });
 });
 
@@ -46,6 +51,33 @@ describe("credentials round-trip", () => {
     const round = await readCredentials();
     expect(round).toEqual(sample);
     expect(credentialsPath().startsWith(tmpHome)).toBe(true);
+  });
+
+  it("defaults to ~/.config/lmnr/credentials.json", () => {
+    expect(credentialsPath()).toBe(
+      path.join(tmpHome, ".config", "lmnr", "credentials.json"),
+    );
+  });
+
+  it("honours XDG_CONFIG_HOME", async () => {
+    const xdg = path.join(tmpHome, "custom-xdg");
+    process.env.XDG_CONFIG_HOME = xdg;
+    expect(credentialsPath()).toBe(path.join(xdg, "lmnr", "credentials.json"));
+    await writeCredentials(sample);
+    expect(await readCredentials()).toEqual(sample);
+  });
+
+  it("reads credentials without optional workspace fields", async () => {
+    const minimal: Credentials = {
+      version: 1,
+      baseUrl: "https://api.example.com",
+      dashboardUrl: "https://example.com",
+      projectId: "00000000-0000-0000-0000-000000000000",
+      projectName: "test-project",
+      projectApiKey: "abcdef0123456789",
+    };
+    await writeCredentials(minimal);
+    expect(await readCredentials()).toEqual(minimal);
   });
 
   it("chmod 0600 on POSIX", async () => {

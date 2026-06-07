@@ -20,45 +20,42 @@ export interface AuthResolveOptions {
   json?: boolean;
 }
 
-// Precedence (highest first):
+// Precedence for the API KEY (highest first):
 //   1. --project-api-key flag (`options.projectApiKey`)
 //   2. LMNR_PROJECT_API_KEY env var
-//   3. credentials file ~/.lmnr/credentials.json
+//   3. credentials file ~/.config/lmnr/credentials.json
 //   4. throw (caller prints actionable message + exits)
 //
-// Same precedence for baseUrl. We treat env vars as having priority over the
-// credentials file's baseUrl: CI workflows that source the prod base URL via
-// env should not be overridden by a stale local dev credential file.
+// baseUrl resolves INDEPENDENTLY of which source won the key race (PLAN line
+// 72): `--base-url` flag > LMNR_BASE_URL env > credentials file `baseUrl`. This
+// means a user who passes only `--project-api-key X` against a local-dev creds
+// file still hits the creds file's baseUrl (e.g. http://localhost:8020) rather
+// than silently defaulting to api.lmnr.ai. The flag/env still win when set, so
+// CI workflows that source a prod base URL are unaffected.
 export const resolveAuth = async (
   options: AuthResolveOptions,
 ): Promise<ResolvedAuth> => {
+  // Read once; used both for the key (branch 3) and for baseUrl fallback in all
+  // branches. Best-effort: a malformed/unreadable file shouldn't block an
+  // explicit flag/env key.
+  const creds = await readCredentials().catch(() => null);
+  const baseUrl = options.baseUrl ?? process.env.LMNR_BASE_URL ?? creds?.baseUrl;
+
   if (options.projectApiKey) {
-    return {
-      projectApiKey: options.projectApiKey,
-      baseUrl: options.baseUrl ?? process.env.LMNR_BASE_URL,
-      port: options.port,
-    };
+    return { projectApiKey: options.projectApiKey, baseUrl, port: options.port };
   }
 
   if (process.env.LMNR_PROJECT_API_KEY) {
-    return {
-      projectApiKey: process.env.LMNR_PROJECT_API_KEY,
-      baseUrl: options.baseUrl ?? process.env.LMNR_BASE_URL,
-      port: options.port,
-    };
+    return { projectApiKey: process.env.LMNR_PROJECT_API_KEY, baseUrl, port: options.port };
   }
 
-  const creds = await readCredentials();
   if (creds) {
-    return {
-      projectApiKey: creds.projectApiKey,
-      baseUrl: options.baseUrl ?? process.env.LMNR_BASE_URL ?? creds.baseUrl,
-      port: options.port,
-    };
+    return { projectApiKey: creds.projectApiKey, baseUrl, port: options.port };
   }
 
   const err = new Error(
-    "No Laminar credentials found. Run `lmnr-cli auth login` or set LMNR_PROJECT_API_KEY.",
+    "No Laminar credentials found. Run `lmnr-cli setup` (or `lmnr-cli auth login`)" +
+      " or set LMNR_PROJECT_API_KEY.",
   );
   // Sentinel — callers map this to exit code 6 (EXIT_NOT_LOGGED_IN).
   (err as { code?: string }).code = "NOT_LOGGED_IN";

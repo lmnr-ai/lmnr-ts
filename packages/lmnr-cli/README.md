@@ -14,32 +14,52 @@ npm install -g lmnr-cli
 
 ## Commands
 
-### `auth` - CLI Authentication
+### `setup` - Zero-to-first-trace
 
-Browser-based CLI authorization. Opens the Laminar dashboard, lets you pick a
-project, and writes credentials to `~/.lmnr/credentials.json` (mode 0600).
-After `auth login`, every other command can run without `--project-api-key` or
-`LMNR_PROJECT_API_KEY`.
+Browser-based authorization that also writes `LMNR_PROJECT_API_KEY` to `./.env`.
+Opens the Laminar dashboard via a local loopback + PKCE flow, lets you pick (or
+create) a project, mints a project API key, and persists credentials to
+`~/.config/lmnr/credentials.json` (mode 0600, XDG-aware).
 
 ```bash
-lmnr-cli auth login            # Browser flow, persist credentials
-lmnr-cli auth status           # Show active user / project / workspace
+lmnr-cli setup                 # Browser flow, write ./.env + credentials
+lmnr-cli setup --no-browser    # Headless: print a URL, paste the key back
+```
+
+Exit codes:
+
+| Code | Meaning |
+| ---- | ------- |
+| `0`  | Success |
+| `1`  | Generic failure |
+| `6`  | Auth failed / not logged in |
+| `8`  | `.env` write failed — the API key was minted and is printed on stderr so the caller can rescue it (distinct code so coding agents can branch) |
+
+### `auth` - CLI Authentication
+
+`auth login` runs the same loopback + PKCE flow but writes ONLY the credentials
+file (no `.env`). After it, every other command can run without
+`--project-api-key` or `LMNR_PROJECT_API_KEY`.
+
+```bash
+lmnr-cli auth login            # Browser flow, persist credentials only
+lmnr-cli auth status           # Show active project + masked key
 lmnr-cli auth logout           # Delete the credentials file
 ```
 
-Exit codes: `0` success, `3` grant expired (re-run `auth login`), `4` already
-claimed by another CLI process, `5` timed out waiting for approval, `6` not
-logged in (status only).
+Exit codes are shared with `setup` (see the table above); `auth login` never
+writes `.env`, so it uses only `0` / `1` / `6`.
 
 ### Credentials
 
-Stored at `~/.lmnr/credentials.json` after `auth login`. Resolution order
-(highest priority first) used by every command that needs a project API key:
+Stored at `~/.config/lmnr/credentials.json` (honours `XDG_CONFIG_HOME`).
+Resolution order (highest priority first) used by every command that needs a
+project API key:
 
 1. `--project-api-key <key>` CLI flag
 2. `LMNR_PROJECT_API_KEY` env var
-3. `~/.lmnr/credentials.json` (written by `auth login`)
-4. Hard error with a pointer to `auth login`
+3. `~/.config/lmnr/credentials.json` (written by `setup` / `auth login`)
+4. Hard error with a pointer to `setup`
 
 CI flows that already set `LMNR_PROJECT_API_KEY` are unaffected.
 
