@@ -315,9 +315,11 @@ Examples:
 `,
     );
 
-  const authCmd = program
-    .command("auth")
-    .description("Authenticate the CLI against your Laminar account")
+  program
+    .command("login")
+    .description(
+      "Open the browser, authorize the CLI, and store credentials (no .env write)",
+    )
     .option(
       "--dashboard-url <url>",
       "Dashboard URL. Defaults to https://www.laminar.sh or LMNR_DASHBOARD_URL env variable",
@@ -327,13 +329,7 @@ Examples:
       "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
     )
     .option("--no-browser", "Skip launching a browser; use the copy/paste manual flow")
-    .option("--json", "Output structured JSON to stdout");
-
-  authCmd
-    .command("login")
-    .description(
-      "Open the browser, authorize the CLI, and store credentials (no .env write)",
-    )
+    .option("--json", "Output structured JSON to stdout")
     .action(async (_o, cmd) => {
       await handleAuthLogin(cmd.optsWithGlobals());
     })
@@ -341,21 +337,23 @@ Examples:
       "after",
       `
 Examples:
-  $ lmnr-cli auth login
-  $ LMNR_DASHBOARD_URL=http://localhost:3020 LMNR_BASE_URL=http://localhost:8020 lmnr-cli auth login
+  $ lmnr-cli login
+  $ LMNR_DASHBOARD_URL=http://localhost:3020 LMNR_BASE_URL=http://localhost:8020 lmnr-cli login
 `,
     );
 
-  authCmd
+  program
     .command("logout")
     .description("Delete the locally stored credentials")
+    .option("--json", "Output structured JSON to stdout")
     .action(async (_o, cmd) => {
       await handleAuthLogout(cmd.optsWithGlobals());
     });
 
-  authCmd
+  program
     .command("status")
     .description("Show which user/project/workspace the CLI is logged in as")
+    .option("--json", "Output structured JSON to stdout")
     .action(async (_o, cmd) => {
       await handleAuthStatus(cmd.optsWithGlobals());
     });
@@ -374,9 +372,9 @@ Authentication:
 
 Examples:
   lmnr-cli setup                                           # Authorize + write ./.env
-  lmnr-cli auth login                                      # Authorize (creds only)
-  lmnr-cli auth status                                     # Show active user/project
-  lmnr-cli auth logout                                     # Remove stored credentials
+  lmnr-cli login                                           # Authorize (creds only)
+  lmnr-cli status                                          # Show active user/project
+  lmnr-cli logout                                          # Remove stored credentials
   lmnr-cli dataset list --json                             # List all datasets
   lmnr-cli dataset push data.jsonl -n my-dataset --json    # Push data to a dataset
   lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a dataset

@@ -37,17 +37,17 @@ Exit codes:
 
 ### `auth` - CLI Authentication
 
-`auth login` runs the same loopback + PKCE flow but writes ONLY the credentials
+`login` runs the same loopback + PKCE flow but writes ONLY the credentials
 file (no `.env`). After it, every other command can run without
 `--project-api-key` or `LMNR_PROJECT_API_KEY`.
 
 ```bash
-lmnr-cli auth login            # Browser flow, persist credentials only
-lmnr-cli auth status           # Show active project + masked key
-lmnr-cli auth logout           # Delete the credentials file
+lmnr-cli login            # Browser flow, persist credentials only
+lmnr-cli status           # Show active project + masked key
+lmnr-cli logout           # Delete the credentials file
 ```
 
-Exit codes are shared with `setup` (see the table above); `auth login` never
+Exit codes are shared with `setup` (see the table above); `login` never
 writes `.env`, so it uses only `0` / `1` / `6`.
 
 ### Credentials
@@ -58,7 +58,7 @@ project API key:
 
 1. `--project-api-key <key>` CLI flag
 2. `LMNR_PROJECT_API_KEY` env var
-3. `~/.config/lmnr/credentials.json` (written by `setup` / `auth login`)
+3. `~/.config/lmnr/credentials.json` (written by `setup` / `login`)
 4. Hard error with a pointer to `setup`
 
 CI flows that already set `LMNR_PROJECT_API_KEY` are unaffected.

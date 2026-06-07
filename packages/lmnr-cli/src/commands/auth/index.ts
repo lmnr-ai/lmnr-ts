@@ -229,7 +229,7 @@ export const handleSetup = async (opts: AuthCommandOptions): Promise<void> => {
   logger.info(`Dashboard: ${dashboardLink}`);
 };
 
-// `auth login`: like setup but writes ONLY the credentials file (no .env).
+// `login`: like setup but writes ONLY the credentials file (no .env).
 export const handleAuthLogin = async (opts: AuthCommandOptions): Promise<void> => {
   const dashboardUrl = resolveDashboardUrl(opts);
   const baseUrl = resolveBaseUrl(opts);
@@ -283,7 +283,7 @@ export const handleAuthStatus = async (opts: AuthCommandOptions): Promise<void> 
     }
     process.exit(EXIT_NOT_LOGGED_IN);
   }
-  // Mask all but the leading/trailing 4 chars so `auth status --json` is safe
+  // Mask all but the leading/trailing 4 chars so `status --json` is safe
   // to include in bug reports.
   const masked =
     creds.projectApiKey.length > 8

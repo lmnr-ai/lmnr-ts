@@ -12,7 +12,7 @@ export interface Credentials {
   // maps here.
   projectApiKey: string;
   // No longer returned by the new token route — kept optional so legacy files
-  // and `auth status` output stay stable.
+  // and `status` output stay stable.
   workspaceId?: string;
   workspaceName?: string;
   userEmail?: string;
@@ -33,7 +33,7 @@ export const readCredentials = async (): Promise<Credentials | null> => {
       // Schema mismatch — bail rather than silently use stale fields.
       throw new Error(
         `Unrecognized credentials schema in ${credentialsPath()}.` +
-          " Run `lmnr-cli setup` or `lmnr-cli auth login` to refresh.",
+          " Run `lmnr-cli setup` or `lmnr-cli login` to refresh.",
       );
     }
     return parsed as Credentials;

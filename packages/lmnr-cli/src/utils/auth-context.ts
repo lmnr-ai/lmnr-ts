@@ -54,7 +54,7 @@ export const resolveAuth = async (
   }
 
   const err = new Error(
-    "No Laminar credentials found. Run `lmnr-cli setup` (or `lmnr-cli auth login`)" +
+    "No Laminar credentials found. Run `lmnr-cli setup` (or `lmnr-cli login`)" +
       " or set LMNR_PROJECT_API_KEY.",
   );
   // Sentinel — callers map this to exit code 6 (EXIT_NOT_LOGGED_IN).
