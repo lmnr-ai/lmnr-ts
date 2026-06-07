@@ -4,12 +4,7 @@ import { errorMessage } from "@lmnr-ai/types";
 import { Command } from "commander";
 
 import { version } from "../package.json";
-import {
-  handleAuthLogin,
-  handleAuthLogout,
-  handleAuthStatus,
-  handleSetup,
-} from "./commands/auth";
+import { handleSetup } from "./commands/auth";
 import {
   handleDatasetsCreate,
   handleDatasetsList,
@@ -288,7 +283,7 @@ Examples:
 `,
     );
 
-  // Top-level `setup`: zero-to-first-trace onboarding (login → .env + creds).
+  // Top-level `setup`: zero-to-first-trace onboarding (login → .env).
   program
     .command("setup")
     .description("Authorize the CLI in the browser and write LMNR_PROJECT_API_KEY to ./.env")
@@ -315,66 +310,20 @@ Examples:
 `,
     );
 
-  program
-    .command("login")
-    .description(
-      "Open the browser, authorize the CLI, and store credentials (no .env write)",
-    )
-    .option(
-      "--dashboard-url <url>",
-      "Dashboard URL. Defaults to https://www.laminar.sh or LMNR_DASHBOARD_URL env variable",
-    )
-    .option(
-      "--base-url <url>",
-      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
-    )
-    .option("--no-browser", "Skip launching a browser; use the copy/paste manual flow")
-    .option("--json", "Output structured JSON to stdout")
-    .action(async (_o, cmd) => {
-      await handleAuthLogin(cmd.optsWithGlobals());
-    })
-    .addHelpText(
-      "after",
-      `
-Examples:
-  $ lmnr-cli login
-  $ LMNR_DASHBOARD_URL=http://localhost:3020 LMNR_BASE_URL=http://localhost:8020 lmnr-cli login
-`,
-    );
-
-  program
-    .command("logout")
-    .description("Delete the locally stored credentials")
-    .option("--json", "Output structured JSON to stdout")
-    .action(async (_o, cmd) => {
-      await handleAuthLogout(cmd.optsWithGlobals());
-    });
-
-  program
-    .command("status")
-    .description("Show which user/project/workspace the CLI is logged in as")
-    .option("--json", "Output structured JSON to stdout")
-    .action(async (_o, cmd) => {
-      await handleAuthStatus(cmd.optsWithGlobals());
-    });
-
   program.addHelpText(
     "after",
     `
 Authentication:
-  Most commands require a project API key. Provide it in one of three ways
+  Most commands require a project API key. Provide it in one of two ways
   (highest priority first):
     1. CLI flag:             --project-api-key <your-key>
     2. Environment variable: export LMNR_PROJECT_API_KEY=<your-key>
-    3. Credentials file:     run \`lmnr-cli setup\` to authorize the CLI in the browser
-                             and persist credentials to ~/.config/lmnr/credentials.json.
-  Get your key at https://www.laminar.sh (Settings > Project API Keys).
+  Run \`lmnr-cli setup\` to authorize the CLI in the browser and write
+  LMNR_PROJECT_API_KEY to ./.env. Get your key at https://www.laminar.sh
+  (Settings > Project API Keys).
 
 Examples:
   lmnr-cli setup                                           # Authorize + write ./.env
-  lmnr-cli login                                           # Authorize (creds only)
-  lmnr-cli status                                          # Show active user/project
-  lmnr-cli logout                                          # Remove stored credentials
   lmnr-cli dataset list --json                             # List all datasets
   lmnr-cli dataset push data.jsonl -n my-dataset --json    # Push data to a dataset
   lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a dataset

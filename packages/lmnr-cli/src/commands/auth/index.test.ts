@@ -2,31 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // `vi.mock` calls are hoisted above imports, so helpers they reference must be
 // hoisted via `vi.hoisted`.
-const {
-  mockWriteCredentials,
-  mockReadCredentials,
-  mockWriteEnvFile,
-  mockOpen,
-  mockStartLoopbackServer,
-  mockQuestion,
-} = vi.hoisted(() => ({
-  mockWriteCredentials: vi.fn(),
-  mockReadCredentials: vi.fn(),
+const { mockWriteEnvFile, mockOpen, mockStartLoopbackServer, mockQuestion } = vi.hoisted(() => ({
   mockWriteEnvFile: vi.fn(),
   mockOpen: vi.fn(),
   mockStartLoopbackServer: vi.fn(),
   mockQuestion: vi.fn(),
 }));
-
-vi.mock("./credentials", async () => {
-  const actual = await vi.importActual<typeof import("./credentials")>("./credentials");
-  return {
-    ...actual,
-    writeCredentials: mockWriteCredentials,
-    readCredentials: mockReadCredentials,
-    credentialsPath: () => "/tmp/test-credentials.json",
-  };
-});
 
 vi.mock("../../utils/env-file", () => ({ writeEnvFile: mockWriteEnvFile }));
 vi.mock("open", () => ({ default: mockOpen }));
@@ -56,9 +37,6 @@ beforeEach(() => {
   });
   vi.spyOn(process.stderr, "write").mockReturnValue(true);
   fetchSpy = vi.spyOn(globalThis, "fetch");
-  mockWriteCredentials.mockReset();
-  mockReadCredentials.mockReset();
-  mockReadCredentials.mockResolvedValue(null);
   mockWriteEnvFile.mockReset();
   mockWriteEnvFile.mockResolvedValue({ path: "/tmp/.env", created: true, replaced: false });
   mockOpen.mockReset();
@@ -78,7 +56,7 @@ afterEach(() => {
 });
 
 describe("handleSetup (loopback + PKCE)", () => {
-  it("exchanges the code, writes .env + credentials on success", async () => {
+  it("exchanges the code and writes .env on success", async () => {
     fetchSpy.mockResolvedValue(
       await mockResponse({ apiKey: "abcd1234abcd1234", projectId: "p-1", projectName: "proj" }),
     );
@@ -95,15 +73,20 @@ describe("handleSetup (loopback + PKCE)", () => {
       expect.stringMatching(/\.env$/),
       "abcd1234abcd1234",
     );
-    const written = mockWriteCredentials.mock.calls[0][0];
-    expect(written.projectApiKey).toBe("abcd1234abcd1234");
-    expect(written.projectId).toBe("p-1");
   });
 
   it("exits 6 (auth failed) when token exchange fails", async () => {
     fetchSpy.mockResolvedValue(await mockResponse({ error: "challenge_mismatch" }, 400));
     await expect(handleSetup(baseOpts)).rejects.toThrow("process.exit(6)");
-    expect(mockWriteCredentials).not.toHaveBeenCalled();
+    expect(mockWriteEnvFile).not.toHaveBeenCalled();
+  });
+
+  it("exits 8 when the .env write fails after the key is minted", async () => {
+    fetchSpy.mockResolvedValue(
+      await mockResponse({ apiKey: "abcd1234abcd1234", projectId: "p", projectName: "n" }),
+    );
+    mockWriteEnvFile.mockRejectedValue(new Error("EACCES"));
+    await expect(handleSetup(baseOpts)).rejects.toThrow("process.exit(8)");
   });
 
   it("opens the dashboard with port + state + code_challenge params", async () => {
@@ -117,30 +100,14 @@ describe("handleSetup (loopback + PKCE)", () => {
     expect(opened).toContain("code_challenge=");
   });
 
-  it("does not run the loopback server in --no-browser mode", async () => {
+  it("does not run the loopback server in --no-browser mode; pastes the key to .env", async () => {
     // Manual flow reads stdin; the mocked readline returns a pasted key.
     mockQuestion.mockImplementation((_q: string, cb: (a: string) => void) => cb("manualkey12345"));
     await handleSetup({ ...baseOpts, browser: false });
     expect(mockStartLoopbackServer).not.toHaveBeenCalled();
-    expect(mockWriteCredentials).toHaveBeenCalled();
-  });
-
-  it("manual paste preserves prior projectId/projectName instead of blanking", async () => {
-    // Manual paste carries no project metadata; a prior browser login's creds
-    // should survive (only the api key changes).
-    mockReadCredentials.mockResolvedValue({
-      version: 1,
-      baseUrl: "http://localhost:8020",
-      dashboardUrl: "http://localhost:3020",
-      projectId: "p-prior",
-      projectName: "prior-proj",
-      projectApiKey: "old-key",
-    });
-    mockQuestion.mockImplementation((_q: string, cb: (a: string) => void) => cb("manualkey12345"));
-    await handleSetup({ ...baseOpts, browser: false });
-    const written = mockWriteCredentials.mock.calls[0][0];
-    expect(written.projectApiKey).toBe("manualkey12345");
-    expect(written.projectId).toBe("p-prior");
-    expect(written.projectName).toBe("prior-proj");
+    expect(mockWriteEnvFile).toHaveBeenCalledWith(
+      expect.stringMatching(/\.env$/),
+      "manualkey12345",
+    );
   });
 });

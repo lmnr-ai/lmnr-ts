@@ -16,13 +16,13 @@ npm install -g lmnr-cli
 
 ### `setup` - Zero-to-first-trace
 
-Browser-based authorization that also writes `LMNR_PROJECT_API_KEY` to `./.env`.
+Browser-based authorization that writes `LMNR_PROJECT_API_KEY` to `./.env`.
 Opens the Laminar dashboard via a local loopback + PKCE flow, lets you pick (or
-create) a project, mints a project API key, and persists credentials to
-`~/.config/lmnr/credentials.json` (mode 0600, XDG-aware).
+create) a project, and mints a project API key. `./.env` is the only artifact
+`setup` writes — there is no credentials file.
 
 ```bash
-lmnr-cli setup                 # Browser flow, write ./.env + credentials
+lmnr-cli setup                 # Browser flow, write ./.env
 lmnr-cli setup --no-browser    # Headless: print a URL, paste the key back
 ```
 
@@ -35,31 +35,15 @@ Exit codes:
 | `6`  | Auth failed / not logged in |
 | `8`  | `.env` write failed — the API key was minted and is printed on stderr so the caller can rescue it (distinct code so coding agents can branch) |
 
-### `auth` - CLI Authentication
+### Authentication
 
-`login` runs the same loopback + PKCE flow but writes ONLY the credentials
-file (no `.env`). After it, every other command can run without
-`--project-api-key` or `LMNR_PROJECT_API_KEY`.
-
-```bash
-lmnr-cli login            # Browser flow, persist credentials only
-lmnr-cli status           # Show active project + masked key
-lmnr-cli logout           # Delete the credentials file
-```
-
-Exit codes are shared with `setup` (see the table above); `login` never
-writes `.env`, so it uses only `0` / `1` / `6`.
-
-### Credentials
-
-Stored at `~/.config/lmnr/credentials.json` (honours `XDG_CONFIG_HOME`).
-Resolution order (highest priority first) used by every command that needs a
-project API key:
+The CLI's only auth artifacts are the `--project-api-key` flag and the
+`LMNR_PROJECT_API_KEY` env var. Resolution order (highest priority first) used
+by every command that needs a project API key:
 
 1. `--project-api-key <key>` CLI flag
-2. `LMNR_PROJECT_API_KEY` env var
-3. `~/.config/lmnr/credentials.json` (written by `setup` / `login`)
-4. Hard error with a pointer to `setup`
+2. `LMNR_PROJECT_API_KEY` env var (e.g. written to `./.env` by `setup`)
+3. Hard error with a pointer to `setup`
 
 CI flows that already set `LMNR_PROJECT_API_KEY` are unaffected.
 
