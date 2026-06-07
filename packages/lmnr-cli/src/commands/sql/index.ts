@@ -1,6 +1,7 @@
 import { LaminarClient } from "@lmnr-ai/client";
 import { errorMessage } from "@lmnr-ai/types";
 
+import { resolveAuthOrExit } from "../../utils/auth-context";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson, outputJsonError } from "../../utils/output";
 import { renderTable } from "../../utils/table";
@@ -18,10 +19,11 @@ export const handleSqlQuery = async (
   query: string,
   options: SqlCommandOptions,
 ): Promise<void> => {
+  const auth = await resolveAuthOrExit(options);
   const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
+    projectApiKey: auth.projectApiKey,
+    baseUrl: auth.baseUrl,
+    port: auth.port,
   });
 
   try {

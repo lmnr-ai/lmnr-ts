@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.\\(ts|js\\)$\")"
+    ]
+  },
+  "enabledPlugins": {
+    "slack@claude-plugins-official": true
+  }
+}

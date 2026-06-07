@@ -14,6 +14,39 @@ npm install -g lmnr-cli
 
 ## Commands
 
+### `setup` - Zero-to-first-trace
+
+Browser-based authorization that writes `LMNR_PROJECT_API_KEY` to `./.env`.
+Opens the Laminar dashboard via a local loopback + PKCE flow, lets you pick (or
+create) a project, and mints a project API key. `./.env` is the only artifact
+`setup` writes — there is no credentials file.
+
+```bash
+lmnr-cli setup                 # Browser flow, write ./.env
+lmnr-cli setup --no-browser    # Headless: print a URL, paste the key back
+```
+
+Exit codes:
+
+| Code | Meaning |
+| ---- | ------- |
+| `0`  | Success |
+| `1`  | Generic failure |
+| `6`  | Auth failed / not logged in |
+| `8`  | `.env` write failed — the API key was minted and is printed on stderr so the caller can rescue it (distinct code so coding agents can branch) |
+
+### Authentication
+
+The CLI's only auth artifacts are the `--project-api-key` flag and the
+`LMNR_PROJECT_API_KEY` env var. Resolution order (highest priority first) used
+by every command that needs a project API key:
+
+1. `--project-api-key <key>` CLI flag
+2. `LMNR_PROJECT_API_KEY` env var (e.g. written to `./.env` by `setup`)
+3. Hard error with a pointer to `setup`
+
+CI flows that already set `LMNR_PROJECT_API_KEY` are unaffected.
+
 ### [`sql`](src/commands/sql/README.md) - SQL Queries
 
 Run SQL queries against your Laminar project data (spans, traces, events, and more).

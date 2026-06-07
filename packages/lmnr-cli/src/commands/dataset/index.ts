@@ -1,6 +1,7 @@
 import { LaminarClient } from "@lmnr-ai/client";
 import { Datapoint, errorMessage, type StringUUID } from "@lmnr-ai/types";
 
+import { resolveAuthOrExit } from "../../utils/auth-context";
 import { loadFromPaths, printToConsole, writeToFile } from "../../utils/file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson, outputJsonError } from "../../utils/output";
@@ -67,10 +68,11 @@ const pullAllData = async <D = any, T = any>(
 export const handleDatasetsList = async (
   options: DatasetCommandOptions,
 ): Promise<void> => {
+  const auth = await resolveAuthOrExit(options);
   const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
+    projectApiKey: auth.projectApiKey,
+    baseUrl: auth.baseUrl,
+    port: auth.port,
   });
 
   try {
@@ -127,10 +129,11 @@ export const handleDatasetsPush = async (
     process.exit(1);
   }
 
+  const auth = await resolveAuthOrExit(options);
   const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
+    projectApiKey: auth.projectApiKey,
+    baseUrl: auth.baseUrl,
+    port: auth.port,
   });
 
 
@@ -192,10 +195,11 @@ export const handleDatasetsPull = async (
     process.exit(1);
   }
 
+  const auth = await resolveAuthOrExit(options);
   const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
+    projectApiKey: auth.projectApiKey,
+    baseUrl: auth.baseUrl,
+    port: auth.port,
   });
 
   const identifier = options.name ? { name: options.name } : { id: options.id };
@@ -245,10 +249,11 @@ export const handleDatasetsCreate = async (
     batchSize?: number;
   },
 ): Promise<void> => {
+  const auth = await resolveAuthOrExit(options);
   const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
+    projectApiKey: auth.projectApiKey,
+    baseUrl: auth.baseUrl,
+    port: auth.port,
   });
 
   try {
