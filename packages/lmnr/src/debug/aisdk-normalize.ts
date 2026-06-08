@@ -151,7 +151,23 @@ const parseDocument = (e: Record<string, unknown>): Record<string, unknown> | nu
 
 const DATA_URL_RE = /^data:((?:application|image)\/[a-zA-Z-]+);base64,/;
 
-/** Port of the `File` arm (OpenAI file-id / base64, AI SDK v1/v2). */
+/**
+ * Port of the `File` arm (OpenAI file-id / base64, AI SDK v1/v2).
+ *
+ * Known parity gap (v7 + image-by-URL only): on AI SDK v7 the recording path
+ * stores `ai.prompt.messages` from the user-facing `ModelMessage[]` (an image
+ * passed by URL is a `{type:"image", image:"https://…"}` part), which the
+ * server reshapes via `parseImage` into an `image_url`. Replay instead hashes
+ * the LanguageModel-level prompt, where that same image is already a
+ * `{type:"file", data:"https://…", mediaType:"image/*"}` part — this arm maps
+ * it to `image`, not `image_url`, so the two hashes diverge and the lookup
+ * MISSes (degrading safely to a live call). This can't be reconciled here: the
+ * arm is a faithful port of the server's Rust `parseFile`, so on v6 (where the
+ * server itself reshapes a file part) emitting `image_url` would instead BREAK
+ * parity, and the replay wrapper has no signal for which SDK version recorded
+ * the span. Plain text, multi-part text, tool calls, and base64 images all hash
+ * identically across both paths; only URL-referenced images on v7 are affected.
+ */
 const parseFile = (e: Record<string, unknown>): Record<string, unknown> | null => {
   // OpenAI: { file: { file_id } | { filename, file_data } }
   if (isRecord(e.file)) {
