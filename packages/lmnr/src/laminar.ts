@@ -374,10 +374,7 @@ export class Laminar {
       });
       const debuggerUrl =
         process?.env?.LMNR_FRONTEND_URL ?? getFrontendUrl(baseUrl);
-      const { runtime } = initDebugRuntime(
-        client.rolloutSessions,
-        debuggerUrl,
-      );
+      const { runtime } = initDebugRuntime(client.rolloutSessions, debuggerUrl);
       if (runtime === null) {
         return;
       }
@@ -398,16 +395,20 @@ export class Laminar {
             runtime.recordProjectId(projectId);
             const sessionUrl = runtime.debuggerSessionUrl()!;
             logger.info(`Laminar debugger session: ${sessionUrl}`);
-            const opener =
-              process.platform === "win32"
-                ? "start"
-                : process.platform === "darwin"
-                  ? "open"
-                  : "xdg-open";
-            spawn(opener, [sessionUrl], {
-              detached: true,
-              stdio: "ignore",
-            }).unref();
+            if (!process.env.LMNR_DEBUG_SESSION_ID) {
+              // only open URL in browser on first run
+              // when we are the one creating session id
+              const opener =
+                process.platform === "win32"
+                  ? "start"
+                  : process.platform === "darwin"
+                    ? "open"
+                    : "xdg-open";
+              spawn(opener, [sessionUrl], {
+                detached: true,
+                stdio: "ignore",
+              }).unref();
+            }
           }
         })
         .catch((e) => {

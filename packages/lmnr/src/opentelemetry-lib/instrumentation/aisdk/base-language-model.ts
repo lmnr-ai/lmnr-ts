@@ -39,6 +39,20 @@ import { getRuntime } from "../../../debug/index";
 import { markSpanCached, replayEnabled } from "../../../debug/replay";
 import { Laminar } from "../../../laminar";
 
+type CacheResponse =
+  | {
+      type: "raw";
+      response: Record<string, any> | Record<string, any>[];
+      finishReasons?: string[] | null;
+      model?: string | null;
+    }
+  | {
+      type: "genAi";
+      messages: Record<string, any>[];
+      finishReasons?: string[] | null;
+      model?: string | null;
+    };
+
 /**
  * Base class for Laminar language model wrappers.
  * Implements shared replay-cache logic for both V2 and V3 specifications.
@@ -355,7 +369,7 @@ export abstract class BaseLaminarLanguageModel {
       | LanguageModelV4FinishReason;
     usage: LanguageModelV2Usage | LanguageModelV3Usage | LanguageModelV4Usage;
   } {
-    let parsedOutput: string | Record<string, any>[] = cached.output;
+    let parsedOutput: string | CacheResponse = cached.output;
     try {
       parsedOutput = JSON.parse(cached.output);
     } catch {
@@ -374,7 +388,7 @@ export abstract class BaseLaminarLanguageModel {
    * Converts output from span to content blocks compatible with both V2 and V3
    */
   private convertToContentBlocks(
-    output: string | Record<string, any>[],
+    output: string | CacheResponse,
   ): Array<
     LanguageModelV4Content | LanguageModelV3Content | LanguageModelV2Content
   > {
@@ -424,7 +438,13 @@ export abstract class BaseLaminarLanguageModel {
       ];
     };
 
-    return output.flatMap((item) => {
+    const outputContent: Record<string, any>[] =
+      output.type === "genAi"
+        ? output.messages
+        : Array.isArray(output.response)
+          ? output.response
+          : [output.response];
+    return outputContent.flatMap((item) => {
       if (item.role && item.content) {
         let parsedContent: Record<string, any>[] = item.content;
         try {

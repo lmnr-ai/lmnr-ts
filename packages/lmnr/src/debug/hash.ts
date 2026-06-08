@@ -111,7 +111,9 @@ const stripSystemMessage = (messages: unknown[]): unknown[] => {
   if (sysIdx === -1) {
     return messages;
   }
-  const sysText = systemMessageText(messages[sysIdx] as Record<string, unknown>);
+  const sysText = systemMessageText(
+    messages[sysIdx] as Record<string, unknown>,
+  );
   if (sysText.length === 0) {
     return messages;
   }
