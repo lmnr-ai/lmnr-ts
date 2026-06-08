@@ -263,6 +263,12 @@ const parsePart = (el: unknown): Record<string, unknown> | null => {
   }
 };
 
+const isSingleTextPart = (
+  part: Record<string, unknown>,
+): part is { type: "text"; text: string } =>
+  part.type === "text" && typeof part.text === "string" &&
+  Object.keys(part).length === 2;
+
 /**
  * Port of `input_chat_messages_from_json`. `input` is the parsed
  * `ai.prompt.messages` array. Each message's `content` becomes either a
@@ -298,7 +304,20 @@ export const inputChatMessagesFromJson = (input: unknown): unknown[] => {
         parts.push(parsed);
       }
     }
-    const content = parts !== null ? parts : jsonValueToString(otelContent);
+    let content: unknown;
+    if (parts !== null) {
+      // The recording path stores plain-text messages with bare-string content
+      // (StandardizedPrompt level), so the server reconstructs them as a bare
+      // string (`ChatMessageContent::Text`). The replay path hashes the
+      // LanguageModel-level `options.prompt`, where AI SDK has already normalized
+      // that same string into a single `{type:"text", text}` part. Collapse it
+      // back to the bare string so both sides hash identical canonical JSON.
+      content = parts.length === 1 && isSingleTextPart(parts[0])
+        ? parts[0].text
+        : parts;
+    } else {
+      content = jsonValueToString(otelContent);
+    }
 
     const out: Record<string, unknown> = { role, content };
     if (typeof message.tool_call_id === "string") {
