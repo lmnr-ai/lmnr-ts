@@ -41,17 +41,26 @@ import { Laminar } from "../../../laminar";
 
 type CacheResponse =
   | {
-      type: "raw";
-      response: Record<string, any> | Record<string, any>[];
-      finishReasons?: string[] | null;
-      model?: string | null;
-    }
+    type: "raw";
+    response: Record<string, any> | Record<string, any>[];
+    finishReasons?: string[] | null;
+    model?: string | null;
+  }
   | {
-      type: "genAi";
-      messages: Record<string, any>[];
-      finishReasons?: string[] | null;
-      model?: string | null;
-    };
+    type: "genAi";
+    messages: Record<string, any>[];
+    finishReasons?: string[] | null;
+    model?: string | null;
+  };
+
+/**
+ * Parsed HIT `output`. The server-side response shape is not yet frozen
+ * (app-server plan 01 §4.3 stores EITHER the raw provider response OR a bare
+ * `gen_ai.output.messages` array, and a discriminated {@link CacheResponse}
+ * wrapper is the firmed-up form), so the consumer accepts all three and stays
+ * tolerant rather than throwing on an unwrapped payload.
+ */
+type CacheOutput = CacheResponse | Record<string, any> | Record<string, any>[];
 
 /**
  * Base class for Laminar language model wrappers.
@@ -369,7 +378,7 @@ export abstract class BaseLaminarLanguageModel {
       | LanguageModelV4FinishReason;
     usage: LanguageModelV2Usage | LanguageModelV3Usage | LanguageModelV4Usage;
   } {
-    let parsedOutput: string | CacheResponse = cached.output;
+    let parsedOutput: string | CacheOutput = cached.output;
     try {
       parsedOutput = JSON.parse(cached.output);
     } catch {
@@ -388,7 +397,7 @@ export abstract class BaseLaminarLanguageModel {
    * Converts output from span to content blocks compatible with both V2 and V3
    */
   private convertToContentBlocks(
-    output: string | CacheResponse,
+    output: string | CacheOutput,
   ): Array<
     LanguageModelV4Content | LanguageModelV3Content | LanguageModelV2Content
   > {
@@ -438,12 +447,24 @@ export abstract class BaseLaminarLanguageModel {
       ];
     };
 
-    const outputContent: Record<string, any>[] =
-      output.type === "genAi"
-        ? output.messages
-        : Array.isArray(output.response)
-          ? output.response
-          : [output.response];
+    // The HIT payload shape is not frozen (see CacheOutput): a discriminated
+    // CacheResponse wrapper, a bare provider object, or a bare message array are
+    // all possible. Unwrap the wrapper when present; otherwise treat the payload
+    // itself as the content (array as-is, single object wrapped) so an unwrapped
+    // server response replays instead of dereferencing a missing `.messages` /
+    // `.response` and yielding `[undefined]`.
+    let outputContent: Record<string, any>[];
+    if (Array.isArray(output)) {
+      outputContent = output;
+    } else if (output.type === "genAi" && Array.isArray(output.messages)) {
+      outputContent = output.messages;
+    } else if (output.type === "raw" && "response" in output) {
+      outputContent = Array.isArray(output.response)
+        ? output.response
+        : [output.response];
+    } else {
+      outputContent = [output];
+    }
     return outputContent.flatMap((item) => {
       if (item.role && item.content) {
         let parsedContent: Record<string, any>[] = item.content;
