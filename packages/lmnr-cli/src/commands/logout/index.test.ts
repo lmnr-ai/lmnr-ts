@@ -10,7 +10,7 @@ import {
   readCredentials,
   writeCredentials,
 } from '../../auth/credentials';
-import { deriveRevokeEndpoint, handleLogout } from './index';
+import { handleLogout } from './index';
 
 const SAVED_XDG = process.env.XDG_CONFIG_HOME;
 let scratch: string;
@@ -20,16 +20,17 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 function profile(overrides: Partial<ProfileEntry> = {}): ProfileEntry {
   return {
-    tokenEndpoint: 'http://localhost:3010/oauth/token',
+    tokenEndpoint: 'http://localhost:3010/api/cli/device/poll',
     issuer: 'http://localhost:3010',
     baseUrl: 'http://localhost:8010',
-    accessToken: 't',
-    accessTokenExpiresAt: '2030-01-01T00:00:00.000Z',
-    refreshToken: 'rt',
-    refreshTokenExpiresAt: '2030-02-01T00:00:00.000Z',
+    accessToken: 'real-api-key',
+    accessTokenExpiresAt: '2099-01-01T00:00:00.000Z',
+    refreshToken: '',
+    refreshTokenExpiresAt: '2099-01-01T00:00:00.000Z',
     tokenType: 'Bearer',
     scope: 'projects:rw',
     projectId: 'p-aaaa',
+    apiKeyId: '11111111-1111-1111-1111-111111111111',
     createdAt: '2026-06-01T00:00:00.000Z',
     ...overrides,
   };
@@ -159,12 +160,12 @@ describe('handleLogout', () => {
     expect(exitMock).toHaveBeenCalledWith(1);
   });
 
-  it('POSTs to revoke endpoint with refresh_token before deleting the profile', async () => {
+  it('DELETEs the project API key before removing the profile', async () => {
     const a = profile({
       projectId: 'p-aaaa',
       projectName: 'alpha',
-      refreshToken: 'super-secret-rt',
-      tokenEndpoint: 'http://localhost:3010/oauth/token',
+      apiKeyId: 'aaaa-1111-2222-3333-bbbb',
+      accessToken: 'secret-key',
     });
     await writeCredentials({
       version: 1,
@@ -174,12 +175,21 @@ describe('handleLogout', () => {
     await handleLogout('p-aaaa');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('http://localhost:3010/oauth/revoke');
-    expect(init.method).toBe('POST');
-    expect(init.headers['content-type']).toBe('application/x-www-form-urlencoded');
-    const params = new URLSearchParams(init.body);
-    expect(params.get('token')).toBe('super-secret-rt');
-    expect(params.get('token_type_hint')).toBe('refresh_token');
+    expect(url).toBe('http://localhost:3010/api/projects/p-aaaa/api-keys/aaaa-1111-2222-3333-bbbb');
+    expect(init.method).toBe('DELETE');
+    expect(init.headers.authorization).toBe('Bearer secret-key');
+    expect(await readCredentials()).toBeNull();
+  });
+
+  it('skips server-side revoke when apiKeyId is missing', async () => {
+    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha', apiKeyId: undefined });
+    await writeCredentials({
+      version: 1,
+      active: a.projectId,
+      profiles: { [a.projectId]: a },
+    });
+    await handleLogout('p-aaaa');
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(await readCredentials()).toBeNull();
   });
 
@@ -208,8 +218,8 @@ describe('handleLogout', () => {
   });
 
   it('--all revokes every profile before deleting the file', async () => {
-    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha', refreshToken: 'rt-a' });
-    const b = profile({ projectId: 'p-bbbb', projectName: 'beta', refreshToken: 'rt-b' });
+    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha', apiKeyId: 'k-a' });
+    const b = profile({ projectId: 'p-bbbb', projectName: 'beta', apiKeyId: 'k-b' });
     await writeCredentials({
       version: 1,
       active: a.projectId,
@@ -217,33 +227,11 @@ describe('handleLogout', () => {
     });
     await handleLogout(undefined, { all: true });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    const tokens = fetchMock.mock.calls.map((c) => {
-      const params = new URLSearchParams(c[1].body);
-      return params.get('token');
-    });
-    expect(tokens.sort()).toEqual(['rt-a', 'rt-b']);
+    const urls = fetchMock.mock.calls.map((c) => c[0]).sort();
+    expect(urls).toEqual([
+      'http://localhost:3010/api/projects/p-aaaa/api-keys/k-a',
+      'http://localhost:3010/api/projects/p-bbbb/api-keys/k-b',
+    ]);
     expect(await readCredentials()).toBeNull();
-  });
-});
-
-describe('deriveRevokeEndpoint', () => {
-  it('rewrites /oauth/token to /oauth/revoke', () => {
-    expect(deriveRevokeEndpoint('http://localhost:3010/oauth/token')).toBe(
-      'http://localhost:3010/oauth/revoke',
-    );
-  });
-
-  it('rewrites a /token suffix even without /oauth prefix', () => {
-    expect(deriveRevokeEndpoint('https://issuer.example.com/path/token')).toBe(
-      'https://issuer.example.com/path/revoke',
-    );
-  });
-
-  it('returns null when the endpoint is not /token-suffixed', () => {
-    expect(deriveRevokeEndpoint('https://issuer.example.com/something-else')).toBeNull();
-  });
-
-  it('returns null when the URL is malformed', () => {
-    expect(deriveRevokeEndpoint('not a url')).toBeNull();
   });
 });

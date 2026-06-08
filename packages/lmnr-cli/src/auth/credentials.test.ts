@@ -39,13 +39,13 @@ afterEach(async () => {
 
 function sampleProfile(overrides: Partial<ProfileEntry> = {}): ProfileEntry {
   return {
-    tokenEndpoint: 'http://localhost:3010/oauth/token',
+    tokenEndpoint: 'http://localhost:3010/api/cli/device/poll',
     issuer: 'http://localhost:3010',
     baseUrl: 'http://localhost:8010',
-    accessToken: 'eyJ.fake.jwt',
-    accessTokenExpiresAt: '2030-01-01T00:00:00.000Z',
-    refreshToken: 'rt-fake',
-    refreshTokenExpiresAt: '2030-02-01T00:00:00.000Z',
+    accessToken: 'project-api-key-value-64-chars-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    accessTokenExpiresAt: '2099-01-01T00:00:00.000Z',
+    refreshToken: '',
+    refreshTokenExpiresAt: '2099-01-01T00:00:00.000Z',
     tokenType: 'Bearer',
     scope: 'projects:rw',
     userEmail: 'alice@example.com',
@@ -54,6 +54,7 @@ function sampleProfile(overrides: Partial<ProfileEntry> = {}): ProfileEntry {
     projectName: 'my-project',
     workspaceId: '22222222-2222-2222-2222-222222222222',
     workspaceName: "Alice's Workspace",
+    apiKeyId: '33333333-3333-3333-3333-333333333333',
     createdAt: '2026-06-04T12:34:56.000Z',
     ...overrides,
   };

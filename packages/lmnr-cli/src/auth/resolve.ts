@@ -6,9 +6,6 @@ import {
   type StoredCredentials,
   writeCredentials,
 } from "./credentials";
-import { getConfig, refresh } from "./oidc";
-
-const REFRESH_BUFFER_SECONDS = 30;
 
 export interface AuthInputs {
   projectApiKey?: string;
@@ -19,7 +16,7 @@ export interface AuthInputs {
 }
 
 export interface ResolvedAuth {
-  /** The string the CLI passes as `projectApiKey` to LaminarClient — JWT or API key. */
+  /** The Laminar project API key — passed to LaminarClient as projectApiKey. */
   bearer: string;
   baseUrl?: string;
   port?: number;
@@ -53,10 +50,10 @@ export async function resolveAuth(opts: AuthInputs): Promise<ResolvedAuth> {
   }
 
   const profile = pickProfile(creds, opts.project);
-  const refreshed = await refreshIfNeeded(creds, profile);
+  const updated = await touchLastUsed(creds, profile);
   return {
-    bearer: refreshed.accessToken,
-    baseUrl: opts.baseUrl ?? refreshed.baseUrl,
+    bearer: updated.accessToken,
+    baseUrl: opts.baseUrl ?? updated.baseUrl,
     port: opts.port,
   };
 }
@@ -95,42 +92,21 @@ function pickProfile(creds: StoredCredentials, explicit?: string): ProfileEntry 
 }
 
 /**
- * Refresh the chosen profile's access token if it's within
- * REFRESH_BUFFER_SECONDS of expiry. Always bumps lastUsedAt and persists.
+ * Bump lastUsedAt on the picked profile and persist. Project API keys don't
+ * expire — the historical refresh-grant branch is gone.
  */
 export async function refreshIfNeeded(
   creds: StoredCredentials,
   profile: ProfileEntry,
 ): Promise<ProfileEntry> {
-  const expiresAtMs = new Date(profile.accessTokenExpiresAt).getTime();
-  const stillFresh =
-    Number.isFinite(expiresAtMs) && expiresAtMs - REFRESH_BUFFER_SECONDS * 1000 > Date.now();
+  return touchLastUsed(creds, profile);
+}
 
-  let updated: ProfileEntry = profile;
-  if (!stillFresh) {
-    const config = await getConfig(profile.issuer);
-    const tokens = await refresh(config, profile.refreshToken);
-    if (!tokens.access_token || !tokens.refresh_token) {
-      throw new Error("Refresh did not return access_token + refresh_token");
-    }
-    const expiresInSec = tokens.expires_in ?? 3600;
-    const refreshExpiresIn =
-      typeof (tokens as Record<string, unknown>).refresh_token_expires_in === "number"
-        ? ((tokens as Record<string, unknown>).refresh_token_expires_in as number)
-        : 30 * 24 * 60 * 60;
-    updated = {
-      ...profile,
-      accessToken: tokens.access_token,
-      accessTokenExpiresAt: new Date(Date.now() + expiresInSec * 1000).toISOString(),
-      refreshToken: tokens.refresh_token,
-      refreshTokenExpiresAt: new Date(Date.now() + refreshExpiresIn * 1000).toISOString(),
-      tokenType: tokens.token_type ?? "Bearer",
-      scope: tokens.scope ?? profile.scope,
-    };
-  }
-
-  // Bump lastUsedAt and persist (write is tiny — fine on every call).
-  updated = { ...updated, lastUsedAt: new Date().toISOString() };
+async function touchLastUsed(
+  creds: StoredCredentials,
+  profile: ProfileEntry,
+): Promise<ProfileEntry> {
+  const updated: ProfileEntry = { ...profile, lastUsedAt: new Date().toISOString() };
   creds.profiles[updated.projectId] = updated;
   await writeCredentials(creds);
   return updated;

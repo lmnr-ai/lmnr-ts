@@ -285,10 +285,6 @@ Examples:
       "--base-url <url>",
       "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
     )
-    .option(
-      "--project <id>",
-      "Pre-select a project to authorize for (UUID). If omitted, choose on the approval page.",
-    )
     .option("--no-browser", "Do not open the verification URL in a browser")
     .action(async (options) => {
       await handleLogin(options);
@@ -337,15 +333,7 @@ Examples:
 
   program
     .command("setup")
-    .description("One-shot onboarding: login + workspace/project + write LMNR_PROJECT_API_KEY")
-    .option(
-      "--workspace <id>",
-      "Target workspace UUID (skips picker on multi-workspace accounts)",
-    )
-    .option(
-      "--project-name <name>",
-      "Project name (default: derive from git remote / cwd)",
-    )
+    .description("One-shot onboarding: login + write LMNR_PROJECT_API_KEY")
     .option("--write-env", "Write LMNR_PROJECT_API_KEY to ./.env (default)", true)
     .option("--no-write-env", "Do not write to ./.env")
     .option("--json", "Emit a machine-readable JSON line on stdout")
@@ -374,7 +362,6 @@ Authentication (precedence: highest first):
 
 Examples:
   lmnr-cli setup --json                                    # One-shot onboarding (login + .env)
-  lmnr-cli setup --workspace <uuid> --project-name my-app  # Into a specific workspace
   lmnr-cli login                                           # Add a project profile
   lmnr-cli list                                            # List authenticated project profiles
   lmnr-cli switch my-prod-project                          # Change the active profile

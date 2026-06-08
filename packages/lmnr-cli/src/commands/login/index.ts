@@ -1,16 +1,19 @@
+import { hostname } from "node:os";
+
 import open from "open";
 
 import { type ProfileEntry, upsertProfile } from "../../auth/credentials";
-import { decodeAccessToken } from "../../auth/jwt";
-import { CLI_CLIENT_ID, CLI_SCOPE, getConfig, initiate, poll } from "../../auth/oidc";
+import { CLI_CLIENT_ID, CLI_SCOPE, initiateDevice, pollDevice } from "../../auth/device";
 
 const DEFAULT_DASHBOARD_URL = "https://www.laminar.sh";
 const DEFAULT_BASE_URL = "https://api.lmnr.ai";
+// API keys don't expire. Park accessTokenExpiresAt far in the future so
+// downstream consumers' fresh-token checks never trigger a refresh path.
+const NEVER_EXPIRES = "2099-01-01T00:00:00.000Z";
 
 export interface LoginOptions {
   dashboardUrl?: string;
   baseUrl?: string;
-  projectId?: string;
   noBrowser?: boolean;
 }
 
@@ -18,14 +21,7 @@ export async function handleLogin(options: LoginOptions): Promise<void> {
   const issuer = pick(options.dashboardUrl, process.env.LMNR_DASHBOARD_URL, DEFAULT_DASHBOARD_URL);
   const baseUrl = pick(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
 
-  const config = await getConfig(issuer);
-
-  const da = await initiate(
-    config,
-    CLI_SCOPE,
-    options.projectId ? { project_id: options.projectId } : undefined,
-  );
-
+  const da = await initiateDevice(issuer, CLI_SCOPE);
   const completeUri = da.verification_uri_complete ?? da.verification_uri;
   process.stderr.write(`\nOpen this URL in your browser to authorize:\n  ${completeUri}\n`);
   if (da.user_code) {
@@ -41,79 +37,40 @@ export async function handleLogin(options: LoginOptions): Promise<void> {
   }
 
   process.stderr.write("Waiting for authorization...\n");
-  const tokens = await poll(config, da);
+  const result = await pollDevice(issuer, da.device_code, {
+    intervalSeconds: da.interval,
+    timeoutSeconds: da.expires_in,
+    deviceName: hostname(),
+  });
 
-  if (!tokens.access_token || !tokens.refresh_token) {
-    throw new Error("Token response missing access_token or refresh_token");
-  }
-
-  const claims = decodeAccessToken(tokens.access_token);
-  const expiresInSec = tokens.expires_in ?? 3600;
-  const refreshExpiresIn =
-    typeof (tokens as Record<string, unknown>).refresh_token_expires_in === "number"
-      ? ((tokens as Record<string, unknown>).refresh_token_expires_in as number)
-      : 30 * 24 * 60 * 60;
-
-  // Best-effort name enrichment via /api/cli/me.
-  let projectName: string | undefined;
-  let workspaceName: string | undefined;
-  let workspaceId: string | undefined;
-  if (claims?.project_id) {
-    try {
-      const trimmedIssuer = issuer.replace(/\/+$/, "");
-      const projectIdQs = encodeURIComponent(claims.project_id);
-      const url = `${trimmedIssuer}/api/cli/me?projectId=${projectIdQs}`;
-      const res = await fetch(url, {
-        headers: { authorization: `Bearer ${tokens.access_token}` },
-      });
-      if (res.ok) {
-        const body = (await res.json()) as {
-          project?: { id: string; name: string; workspaceId: string; workspaceName: string };
-        };
-        if (body.project) {
-          projectName = body.project.name;
-          workspaceName = body.project.workspaceName;
-          workspaceId = body.project.workspaceId;
-        }
-      }
-    } catch {
-      // Ignore. CLI doesn't carry the browser session cookie.
-    }
-  }
-
-  const projectId = claims?.project_id;
-  if (!projectId) {
-    throw new Error(
-      "Login completed but the issued access token did not carry a project_id. " +
-        "Re-run `lmnr-cli login` and pick a project on the approval page.",
-    );
-  }
-
+  const now = new Date().toISOString();
   const profile: ProfileEntry = {
-    tokenEndpoint: `${issuer.replace(/\/+$/, "")}/oauth/token`,
+    tokenEndpoint: `${trimSlash(issuer)}/api/cli/device/poll`,
     issuer,
     baseUrl,
-    accessToken: tokens.access_token,
-    accessTokenExpiresAt: new Date(Date.now() + expiresInSec * 1000).toISOString(),
-    refreshToken: tokens.refresh_token,
-    refreshTokenExpiresAt: new Date(Date.now() + refreshExpiresIn * 1000).toISOString(),
-    tokenType: tokens.token_type ?? "Bearer",
-    scope: tokens.scope ?? CLI_SCOPE,
-    userEmail: claims?.email,
-    userId: claims?.sub,
-    projectId,
-    projectName,
-    workspaceId,
-    workspaceName,
-    createdAt: new Date().toISOString(),
-    lastUsedAt: new Date().toISOString(),
+    accessToken: result.apiKey,
+    accessTokenExpiresAt: NEVER_EXPIRES,
+    refreshToken: "",
+    refreshTokenExpiresAt: NEVER_EXPIRES,
+    tokenType: "Bearer",
+    scope: CLI_SCOPE,
+    userEmail: result.userEmail ?? undefined,
+    userId: result.userId,
+    projectId: result.projectId,
+    projectName: result.projectName,
+    workspaceId: result.workspaceId,
+    workspaceName: result.workspaceName,
+    apiKeyId: result.apiKeyId,
+    createdAt: now,
+    lastUsedAt: now,
   };
   await upsertProfile(profile);
 
-  const projectLabel = projectName ? `${projectName}` : projectId;
-  process.stderr.write(`Logged in as ${claims?.email ?? "<unknown>"}. Project: ${projectLabel}.\n`);
   process.stderr.write(
-    `Client: ${CLI_CLIENT_ID}. Tokens stored at ~/.config/lmnr/credentials.json (mode 0600).\n`,
+    `Logged in as ${result.userEmail ?? "<unknown>"}. Project: ${result.projectName} (${result.workspaceName}).\n`,
+  );
+  process.stderr.write(
+    `Client: ${CLI_CLIENT_ID}. API key stored at ~/.config/lmnr/credentials.json (mode 0600).\n`,
   );
 }
 
@@ -122,4 +79,8 @@ function pick(...candidates: (string | undefined)[]): string {
     if (c && c.length > 0) return c;
   }
   return "";
+}
+
+function trimSlash(url: string): string {
+  return url.replace(/\/+$/, "");
 }

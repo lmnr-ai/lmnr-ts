@@ -30,6 +30,9 @@ export interface ProfileEntry {
   projectName?: string;
   workspaceId?: string;
   workspaceName?: string;
+  // Server-side row id for the project API key stored in `accessToken`. Used by
+  // `lmnr-cli logout` to revoke via DELETE /api/projects/<id>/api-keys/<keyId>.
+  apiKeyId?: string;
   createdAt: string;
   lastUsedAt?: string;
 }

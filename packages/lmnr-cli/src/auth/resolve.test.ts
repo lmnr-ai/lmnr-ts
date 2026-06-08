@@ -12,17 +12,17 @@ import {
 } from './credentials';
 import { resolveAuth } from './resolve';
 
-// refreshIfNeeded does a network call when expiry is near. Keep tokens fresh
-// in every fixture so resolveAuth never reaches the openid-client path.
+// Project API keys don't expire. resolveAuth just touches lastUsedAt; no
+// network round-trip happens regardless of accessTokenExpiresAt.
 function freshProfile(overrides: Partial<ProfileEntry> = {}): ProfileEntry {
   return {
-    tokenEndpoint: 'http://localhost:3010/oauth/token',
+    tokenEndpoint: 'http://localhost:3010/api/cli/device/poll',
     issuer: 'http://localhost:3010',
     baseUrl: 'http://localhost:8010',
     accessToken: 'fresh-token',
-    accessTokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    refreshToken: 'rt',
-    refreshTokenExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    accessTokenExpiresAt: '2099-01-01T00:00:00.000Z',
+    refreshToken: '',
+    refreshTokenExpiresAt: '2099-01-01T00:00:00.000Z',
     tokenType: 'Bearer',
     scope: 'projects:rw',
     projectId: 'p-aaaa',

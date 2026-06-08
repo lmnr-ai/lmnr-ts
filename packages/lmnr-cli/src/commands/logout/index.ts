@@ -14,61 +14,39 @@ export interface LogoutOptions {
 }
 
 /**
- * Best-effort RFC 7009 revoke. Logout MUST complete locally even if the
- * server is unreachable - the user expects "log me out" to remove the file.
- * On any failure we log to stderr and continue.
+ * Best-effort server-side revoke of the project API key. Logout MUST complete
+ * locally even if the server is unreachable - the user expects "log me out"
+ * to remove the file. On any failure we log to stderr and continue.
+ *
+ * Auth: we send the same API key being deleted as the Bearer. The Laminar
+ * project API keys DELETE route accepts the key being revoked as auth for
+ * itself; if the project's authz rules tighten in the future this becomes a
+ * best-effort fall-through (the local file is still deleted).
  */
-export async function revokeRefreshToken(profile: ProfileEntry): Promise<void> {
-  // Derive the revoke endpoint from the saved token endpoint. The discovery
-  // metadata now exposes `revocation_endpoint` but we avoid an extra fetch
-  // here - the token / revoke routes are siblings under `/oauth/` by design.
-  const revokeUrl = deriveRevokeEndpoint(profile.tokenEndpoint);
-  if (!revokeUrl) {
+export async function revokeProjectApiKey(profile: ProfileEntry): Promise<void> {
+  if (!profile.apiKeyId || profile.apiKeyId.length === 0) {
     process.stderr.write(
-      "warning: could not derive revoke endpoint from " +
-        `${profile.tokenEndpoint}; skipping server-side revoke.\n`,
+      "warning: profile has no apiKeyId; skipping server-side revoke. " +
+        `Revoke manually at ${trimSlash(profile.issuer)}/project/${profile.projectId}/settings/api-keys.\n`,
     );
     return;
   }
-  const body = new URLSearchParams({
-    token: profile.refreshToken,
-    token_type_hint: "refresh_token",
-  });
+  const url = `${trimSlash(profile.issuer)}/api/projects/${profile.projectId}/api-keys/${profile.apiKeyId}`;
   try {
-    const res = await fetch(revokeUrl, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
+    const res = await fetch(url, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${profile.accessToken}` },
     });
     if (!res.ok) {
       process.stderr.write(
-        `warning: refresh-token revoke at ${revokeUrl} returned ` +
-          `${res.status}; local credentials still removed.\n`,
+        `warning: API key revoke at ${url} returned ${res.status}; local credentials still removed.\n`,
       );
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     process.stderr.write(
-      `warning: refresh-token revoke at ${revokeUrl} failed ` +
-        `(${msg}); local credentials still removed.\n`,
+      `warning: API key revoke at ${url} failed (${msg}); local credentials still removed.\n`,
     );
-  }
-}
-
-export function deriveRevokeEndpoint(tokenEndpoint: string): string | null {
-  try {
-    const url = new URL(tokenEndpoint);
-    if (url.pathname.endsWith("/oauth/token")) {
-      url.pathname = url.pathname.slice(0, -"/oauth/token".length) + "/oauth/revoke";
-      return url.toString();
-    }
-    if (url.pathname.endsWith("/token")) {
-      url.pathname = url.pathname.slice(0, -"/token".length) + "/revoke";
-      return url.toString();
-    }
-    return null;
-  } catch {
-    return null;
   }
 }
 
@@ -77,11 +55,9 @@ export async function handleLogout(
   options: LogoutOptions = {},
 ): Promise<void> {
   if (options.all) {
-    // Revoke every refresh family before nuking the file so the server-side
-    // tokens are dead even if the user re-installs / re-uses the file.
     const creds = await readCredentials();
     if (creds) {
-      await Promise.all(Object.values(creds.profiles).map(revokeRefreshToken));
+      await Promise.all(Object.values(creds.profiles).map(revokeProjectApiKey));
     }
     const existed = await deleteCredentials();
     if (existed) {
@@ -100,13 +76,10 @@ export async function handleLogout(
 
   const toRemove = resolveTarget(creds, target);
   if (!toRemove) {
-    // resolveTarget already wrote a stderr message and called process.exit.
     return;
   }
 
-  // Revoke BEFORE removing from credentials so a crash between revoke + write
-  // leaves the user able to retry. If revoke fails we still proceed locally.
-  await revokeRefreshToken(toRemove);
+  await revokeProjectApiKey(toRemove);
 
   const removedLabel = toRemove.projectName ?? toRemove.projectId;
   delete creds.profiles[toRemove.projectId];
@@ -154,6 +127,10 @@ function pickNextActive(profiles: ProfileEntry[]): ProfileEntry {
     return bT - aT;
   });
   return sorted[0];
+}
+
+function trimSlash(url: string): string {
+  return url.replace(/\/+$/, "");
 }
 
 // Re-export for tests that want to inspect type without depending on creds.

@@ -1,24 +1,18 @@
 import { resolve as resolvePath } from "node:path";
-import { createInterface } from "node:readline";
 
 import {
   getActiveProfile,
   type ProfileEntry,
   readCredentials,
   type StoredCredentials,
-  writeCredentials,
 } from "../../auth/credentials";
-import { refreshIfNeeded } from "../../auth/resolve";
 import { readEnvVar, writeEnvFile } from "../../utils/env-file";
-import { deriveProjectName, deriveWorkspaceName } from "../../utils/project-name";
 import { handleLogin } from "../login";
 
 const DEFAULT_DASHBOARD_URL = "https://www.laminar.sh";
 const DEFAULT_BASE_URL = "https://api.lmnr.ai";
 
 export interface SetupOptions {
-  workspace?: string;
-  projectName?: string;
   writeEnv?: boolean;
   json?: boolean;
   noBrowser?: boolean;
@@ -28,29 +22,20 @@ export interface SetupOptions {
 
 export interface SetupResult {
   projectId: string;
-  projectName: string;
-  workspaceId: string;
-  workspaceName: string;
-  workspaceCreated: boolean;
-  projectCreated: boolean;
+  projectName: string | null;
+  workspaceId: string | null;
+  workspaceName: string | null;
   apiKey: string;
-  apiKeyName: string;
   envFileUpdated: string | null;
   dashboardUrl: string;
   userEmail: string | null;
 }
 
-interface CallerContext {
-  bearer: string;
-  issuer: string;
-  baseUrl: string;
-  userEmail: string | null;
-}
-
 /**
- * One-shot onboarding: login (if needed) → bootstrap workspace + project →
- * mint API key → write `.env` → print summary. Exits with non-zero on
- * recoverable failures so coding agents can branch on $?.
+ * One-shot onboarding: login (if needed) → write LMNR_PROJECT_API_KEY to
+ * ./.env from the active profile. Workspace + project bootstrap now happens
+ * in the browser approval flow (see frontend /device page), so the CLI no
+ * longer round-trips through /api/cli/setup / /api/cli/projects/<id>/api-keys.
  */
 export async function handleSetup(options: SetupOptions): Promise<void> {
   const writeEnv = options.writeEnv !== false;
@@ -62,7 +47,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   const baseUrl = pick(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
   const isJson = options.json === true;
 
-  // Step 0 — short-circuit if the cwd already has Laminar configured.
+  // Short-circuit if the cwd already has Laminar configured.
   const cwdEnvPath = resolvePath(process.cwd(), ".env");
   const existingKey = await readEnvVar(cwdEnvPath, "LMNR_PROJECT_API_KEY");
   if (existingKey) {
@@ -78,21 +63,13 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     process.exit(0);
   }
 
-  // Step 1 — login if needed.
-  let creds: StoredCredentials | null;
+  // Login if needed.
+  let creds: StoredCredentials | null = null;
   let profile: ProfileEntry | null = null;
   try {
     creds = await readCredentials();
-    if (creds) {
-      const active = getActiveProfile(creds);
-      if (active) {
-        profile = await refreshIfNeeded(creds, active);
-      }
-    }
-  } catch (err) {
-    if (!isJson) {
-      process.stderr.write(`Refresh failed (${describeError(err)}); re-running login...\n`);
-    }
+    profile = creds ? getActiveProfile(creds) : null;
+  } catch {
     creds = null;
     profile = null;
   }
@@ -102,7 +79,6 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
         dashboardUrl,
         baseUrl,
         noBrowser: options.noBrowser,
-        projectId: undefined,
       });
     } catch (err) {
       emitError(isJson, "login_failed", describeError(err));
@@ -116,117 +92,17 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     }
   }
 
-  const caller: CallerContext = {
-    bearer: profile.accessToken,
-    issuer: profile.issuer || dashboardUrl,
-    baseUrl: profile.baseUrl || baseUrl,
-    userEmail: profile.userEmail ?? null,
-  };
-
   if (!isJson) {
-    process.stderr.write(`✓ Logged in as ${caller.userEmail ?? "<unknown>"}\n`);
-  }
-
-  // Step 2/3 — derive names.
-  const projectName = deriveProjectName({ explicit: options.projectName });
-  const workspaceName = deriveWorkspaceName();
-
-  // Step 4 — bootstrap.
-  let bootstrap = await postSetup(caller, {
-    workspaceId: options.workspace,
-    workspaceName,
-    projectName,
-  });
-
-  if (
-    bootstrap.status === 400 &&
-    bootstrap.body?.error === "workspace_ambiguous" &&
-    !options.workspace
-  ) {
-    const candidates = (bootstrap.body.workspaces ?? []) as { id: string; name: string }[];
-    if (isJson || !process.stdin.isTTY) {
-      process.stdout.write(
-        JSON.stringify({
-          error: "workspace_ambiguous",
-          workspaces: candidates,
-        }) + "\n",
-      );
-      process.exit(7);
-    }
-    const chosenId = await pickWorkspace(candidates);
-    if (!chosenId) {
-      emitError(false, "workspace_pick_aborted", "Selection aborted.");
-      process.exit(7);
-    }
-    bootstrap = await postSetup(caller, {
-      workspaceId: chosenId,
-      workspaceName,
-      projectName,
-    });
-  }
-
-  if (bootstrap.status !== 200 || !bootstrap.body) {
-    emitError(isJson, bootstrap.body?.error ?? "bootstrap_failed", JSON.stringify(bootstrap.body));
-    process.exit(1);
-  }
-
-  const {
-    workspaceId,
-    workspaceName: resolvedWorkspaceName,
-    workspaceCreated,
-    projectId,
-    projectName: resolvedProjectName,
-    projectCreated,
-  } = bootstrap.body as {
-    workspaceId: string;
-    workspaceName: string;
-    workspaceCreated: boolean;
-    projectId: string;
-    projectName: string;
-    projectCreated: boolean;
-  };
-
-  if (!isJson) {
+    process.stderr.write(`✓ Logged in as ${profile.userEmail ?? "<unknown>"}\n`);
     process.stderr.write(
-      `✓ Workspace: ${resolvedWorkspaceName} (${workspaceCreated ? "created" : "existing"})\n`,
-    );
-    process.stderr.write(
-      `✓ Project: ${resolvedProjectName} (${projectCreated ? "created" : "existing"})\n`,
+      `✓ Project: ${profile.projectName ?? profile.projectId} (${profile.workspaceName ?? "workspace"})\n`,
     );
   }
 
-  // Step 5 — mint API key.
-  const apiKeyName = `cli-setup-${resolvedProjectName}-${utcDate()}`;
-  const mint = await postApiKey(caller, projectId, apiKeyName);
-  if (mint.status !== 200 || !mint.body) {
-    emitError(isJson, mint.body?.error ?? "api_key_failed", JSON.stringify(mint.body));
-    process.exit(1);
-  }
-  const apiKey = (mint.body as { value: string }).value;
-  if (!isJson) {
-    process.stderr.write(`✓ API key: ${apiKeyName}\n`);
-  }
+  const issuer = profile.issuer || dashboardUrl;
+  const apiKey = profile.accessToken;
 
-  // Persist project id in credentials so subsequent `traces wait` etc. work.
-  // The profile is keyed by its original projectId; rekey to the bootstrap
-  // result so future lookups by the real id resolve correctly.
-  const reloaded = (await readCredentials()) ?? creds;
-  const existing = reloaded.profiles[profile.projectId];
-  if (existing) {
-    delete reloaded.profiles[profile.projectId];
-  }
-  const updatedProfile: ProfileEntry = {
-    ...(existing ?? profile),
-    projectId,
-    projectName: resolvedProjectName,
-    workspaceId,
-    workspaceName: resolvedWorkspaceName,
-  };
-  reloaded.profiles[projectId] = updatedProfile;
-  reloaded.active = projectId;
-  await writeCredentials(reloaded);
-
-  // Step 6 — write .env.
+  // Write .env.
   let envPath: string | null = null;
   if (writeEnv) {
     const target = resolvePath(process.cwd(), ".env");
@@ -242,7 +118,6 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
         process.stderr.write(`✓ ${verb} ${result.path}\n`);
       }
     } catch (err) {
-      // Surface key on stderr so the agent can rescue it.
       process.stderr.write(
         `\nERROR: failed to write ${target}: ${describeError(err)}\n` +
           `Your API key (set it manually):\n  LMNR_PROJECT_API_KEY=${apiKey}\n\n`,
@@ -251,7 +126,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
         const payload = {
           error: "env_write_failed",
           apiKey,
-          projectId,
+          projectId: profile.projectId,
           message: describeError(err),
         };
         process.stdout.write(JSON.stringify(payload) + "\n");
@@ -260,99 +135,27 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     }
   }
 
-  // Step 7 — summary.
-  const dashboardLink = `${caller.issuer.replace(/\/+$/, "")}/project/${projectId}/traces`;
-  const revokeLink = `${caller.issuer.replace(/\/+$/, "")}/project/${projectId}/settings/api-keys`;
+  const dashboardLink = `${trimSlash(issuer)}/project/${profile.projectId}/traces`;
+  const revokeLink = `${trimSlash(issuer)}/project/${profile.projectId}/settings/api-keys`;
 
   const result: SetupResult = {
-    projectId,
-    projectName: resolvedProjectName,
-    workspaceId,
-    workspaceName: resolvedWorkspaceName,
-    workspaceCreated,
-    projectCreated,
+    projectId: profile.projectId,
+    projectName: profile.projectName ?? null,
+    workspaceId: profile.workspaceId ?? null,
+    workspaceName: profile.workspaceName ?? null,
     apiKey,
-    apiKeyName,
     envFileUpdated: envPath,
     dashboardUrl: dashboardLink,
-    userEmail: caller.userEmail,
+    userEmail: profile.userEmail ?? null,
   };
 
   if (isJson) {
     process.stdout.write(JSON.stringify(result) + "\n");
   } else {
     process.stdout.write(
-      `\nDashboard:    ${dashboardLink}\n` +
-        `Revoke key:   ${revokeLink}\n`,
+      `\nDashboard:    ${dashboardLink}\n` + `Revoke key:   ${revokeLink}\n`,
     );
   }
-}
-
-async function postSetup(
-  caller: CallerContext,
-  body: { workspaceId?: string; workspaceName: string; projectName: string },
-): Promise<{ status: number; body: Record<string, unknown> | null }> {
-  return jsonFetch(caller, "POST", "/api/cli/setup", body);
-}
-
-async function postApiKey(
-  caller: CallerContext,
-  projectId: string,
-  name: string,
-): Promise<{ status: number; body: Record<string, unknown> | null }> {
-  return jsonFetch(caller, "POST", `/api/cli/projects/${projectId}/api-keys`, {
-    name,
-    isIngestOnly: false,
-  });
-}
-
-async function jsonFetch(
-  caller: CallerContext,
-  method: "GET" | "POST",
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; body: Record<string, unknown> | null }> {
-  const url = `${caller.issuer.replace(/\/+$/, "")}${path}`;
-  const res = await fetch(url, {
-    method,
-    headers: {
-      authorization: `Bearer ${caller.bearer}`,
-      "content-type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  let parsed: Record<string, unknown> | null;
-  try {
-    parsed = (await res.json()) as Record<string, unknown>;
-  } catch {
-    parsed = null;
-  }
-  return { status: res.status, body: parsed };
-}
-
-async function pickWorkspace(candidates: { id: string; name: string }[]): Promise<string | null> {
-  if (candidates.length === 0) return null;
-  process.stderr.write("\nMultiple workspaces. Pick one:\n");
-  candidates.forEach((w, i) => {
-    process.stderr.write(`  ${i + 1}. ${w.name} (${w.id})\n`);
-  });
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  try {
-    const answer = await new Promise<string>((resolveP) => {
-      rl.question(`Enter 1-${candidates.length}: `, (a) => resolveP(a));
-    });
-    const idx = Number(answer.trim());
-    if (!Number.isFinite(idx) || idx < 1 || idx > candidates.length) {
-      return null;
-    }
-    return candidates[idx - 1].id;
-  } finally {
-    rl.close();
-  }
-}
-
-function utcDate(): string {
-  return new Date().toISOString().slice(0, 10).replace(/-/g, "");
 }
 
 function pick(...candidates: (string | undefined)[]): string {
@@ -360,6 +163,10 @@ function pick(...candidates: (string | undefined)[]): string {
     if (c && c.length > 0) return c;
   }
   return "";
+}
+
+function trimSlash(url: string): string {
+  return url.replace(/\/+$/, "");
 }
 
 function describeError(err: unknown): string {
