@@ -395,9 +395,15 @@ export class Laminar {
             runtime.recordProjectId(projectId);
             const sessionUrl = runtime.debuggerSessionUrl()!;
             logger.info(`Laminar debugger session: ${sessionUrl}`);
-            if (!process.env.LMNR_DEBUG_SESSION_ID) {
-              // only open URL in browser on first run
-              // when we are the one creating session id
+            if (
+              !process.env.LMNR_DEBUG_SESSION_ID &&
+              !isTruthy(process.env.LMNR_DEBUG_FROM_LAST_RUN)
+            ) {
+              // only open URL in browser on first run when we minted a fresh
+              // session id ourselves. A reused session id — passed explicitly
+              // via LMNR_DEBUG_SESSION_ID, or seeded from the prior run's
+              // pointer via LMNR_DEBUG_FROM_LAST_RUN — is a replay/continuation,
+              // so do not reopen the browser.
               const opener =
                 process.platform === "win32"
                   ? "start"
