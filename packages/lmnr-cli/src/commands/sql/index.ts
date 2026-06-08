@@ -1,6 +1,6 @@
-import { LaminarClient } from "@lmnr-ai/client";
 import { errorMessage } from "@lmnr-ai/types";
 
+import { buildLaminarClient } from "../../auth/client";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson, outputJsonError } from "../../utils/output";
 import { renderTable } from "../../utils/table";
@@ -18,7 +18,7 @@ export const handleSqlQuery = async (
   query: string,
   options: SqlCommandOptions,
 ): Promise<void> => {
-  const client = new LaminarClient({
+  const client = await buildLaminarClient({
     projectApiKey: options.projectApiKey,
     baseUrl: options.baseUrl,
     port: options.port,

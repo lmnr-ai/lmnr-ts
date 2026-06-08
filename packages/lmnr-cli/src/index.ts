@@ -11,9 +11,15 @@ import {
   handleDatasetsPush,
 } from "./commands/dataset";
 import { handleDebugSessionSetName, handleDebugSessionSummary } from "./commands/debug";
+import { handleList } from "./commands/list";
+import { handleLogin } from "./commands/login";
+import { handleLogout } from "./commands/logout";
+import { handleSetup } from "./commands/setup";
 import { handleSqlQuery } from "./commands/sql";
 import { SQL_SCHEMA_HELP } from "./commands/sql/schema";
+import { handleSwitch } from "./commands/switch";
 import { handleTraceAppendNote } from "./commands/trace";
+import { handleTracesWait } from "./commands/traces";
 
 async function main() {
   const program = new Command();
@@ -294,16 +300,100 @@ Examples:
 `,
     );
 
+  program
+    .command("login")
+    .description("Authenticate the CLI via OAuth Device Flow")
+    .option(
+      "--dashboard-url <url>",
+      "Dashboard URL (issuer). Defaults to https://www.laminar.sh or LMNR_DASHBOARD_URL env variable",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option("--no-browser", "Do not open the verification URL in a browser")
+    .action(async (options) => {
+      await handleLogin(options);
+    });
+
+  program
+    .command("logout")
+    .description("Remove a stored login profile. Defaults to the active profile.")
+    .argument("[user]", "User email or id to log out of")
+    .option("--all", "Remove every stored profile")
+    .action(async (user: string | undefined, options: { all?: boolean }) => {
+      await handleLogout(user, { all: options.all });
+    });
+
+  program
+    .command("list")
+    .description("List authenticated login profiles")
+    .action(async () => {
+      await handleList();
+    });
+
+  program
+    .command("switch <user>")
+    .description("Change the active login profile (no re-authentication)")
+    .action(async (user: string) => {
+      await handleSwitch(user);
+    });
+
+  const traces = program
+    .command("traces")
+    .description("Inspect traces in a project");
+
+  traces
+    .command("wait")
+    .description("Poll the server until N spans appear in the last <since> window")
+    .option("--since <duration>", "Look-back window (e.g. 60s, 2m, 1h)", "60s")
+    .option("--count <n>", "Minimum span count", "1")
+    .option("--timeout <duration>", "Give up after this duration", "120s")
+    .option("--project-api-key <key>", "Override LMNR_PROJECT_API_KEY")
+    .option("--json", "Emit a machine-readable JSON line on stdout")
+    .option("--base-url <url>", "Base URL for the Laminar API")
+    .option("--port <port>", "Port for the Laminar API", (v) => parseInt(v, 10))
+    .action(async (options) => {
+      await handleTracesWait(options);
+    });
+
+  program
+    .command("setup")
+    .description("One-shot onboarding: login + write LMNR_PROJECT_API_KEY")
+    .option("--write-env", "Write LMNR_PROJECT_API_KEY to ./.env (default)", true)
+    .option("--no-write-env", "Do not write to ./.env")
+    .option("--json", "Emit a machine-readable JSON line on stdout")
+    .option("--no-browser", "Do not auto-open the device-flow URL")
+    .option(
+      "--dashboard-url <url>",
+      "Dashboard URL (issuer). Defaults to LMNR_DASHBOARD_URL or https://www.laminar.sh",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to LMNR_BASE_URL or https://api.lmnr.ai",
+    )
+    .action(async (options) => {
+      await handleSetup(options);
+    });
+
   program.addHelpText(
     "after",
     `
-Authentication:
-  Most commands require a project API key. Provide it in one of two ways:
-    1. Environment variable: export LMNR_PROJECT_API_KEY=<your-key>
-    2. CLI flag:             --project-api-key <your-key>
-  Get your key at https://www.laminar.sh (Settings > Project API Keys).
+Authentication (precedence: highest first):
+    1. CLI flag:             --project-api-key <your-key>
+    2. Environment variable: export LMNR_PROJECT_API_KEY=<your-key>
+    3. OAuth Device Flow:    lmnr-cli login
+  Get an API key at https://www.laminar.sh (Settings > Project API Keys),
+  or run "lmnr-cli login" to authenticate via your browser.
 
 Examples:
+  lmnr-cli setup --json                                    # One-shot onboarding (login + .env)
+  lmnr-cli login                                           # Add a project profile
+  lmnr-cli list                                            # List authenticated project profiles
+  lmnr-cli switch my-prod-project                          # Change the active profile
+  lmnr-cli logout                                          # Log out of the active profile
+  lmnr-cli logout --all                                    # Remove every stored profile
+  lmnr-cli traces wait --since 60s --count 1               # Wait for traces (verifies)
   lmnr-cli dataset list --json                             # List all datasets
   lmnr-cli dataset push data.jsonl -n my-dataset --json    # Push data to a dataset
   lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a dataset
