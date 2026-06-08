@@ -111,6 +111,93 @@ void describe('inputChatMessagesFromJson', () => {
     );
   });
 
+  void it('reshapes camelCase AI SDK tool-call/tool-result parts (no Text-blob fallback)', () => {
+    // AI SDK prompt parts are camelCase (toolName/toolCallId), matching the
+    // server's `#[serde(rename_all = "camelCase")]`. They must parse into the
+    // normalized content-part shape, NOT collapse to a stringified Text blob.
+    assert.deepStrictEqual(
+      inputChatMessagesFromJson([
+        {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool-call',
+              toolName: 'get_weather',
+              toolCallId: 'call_1',
+              input: { city: 'SF' },
+            },
+          ],
+        },
+        {
+          role: 'tool',
+          content: [
+            {
+              type: 'tool-result',
+              toolCallId: 'call_1',
+              toolName: 'get_weather',
+              output: '72F',
+            },
+          ],
+        },
+      ]),
+      [
+        {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_call',
+              name: 'get_weather',
+              id: 'call_1',
+              arguments: { city: 'SF' },
+            },
+          ],
+        },
+        {
+          role: 'tool',
+          content: [
+            {
+              type: 'tool-result',
+              toolCallId: 'call_1',
+              output: '72F',
+              toolName: 'get_weather',
+            },
+          ],
+        },
+      ],
+    );
+  });
+
+  void it('accepts AI SDK v4 args/result aliases for tool parts', () => {
+    assert.deepStrictEqual(
+      inputChatMessagesFromJson([
+        {
+          role: 'assistant',
+          content: [
+            { type: 'tool-call', toolName: 't', toolCallId: 'c', args: { a: 1 } },
+          ],
+        },
+        {
+          role: 'tool',
+          content: [
+            { type: 'tool-result', toolCallId: 'c', toolName: 't', result: 'ok' },
+          ],
+        },
+      ]),
+      [
+        {
+          role: 'assistant',
+          content: [{ type: 'tool_call', name: 't', id: 'c', arguments: { a: 1 } }],
+        },
+        {
+          role: 'tool',
+          content: [
+            { type: 'tool-result', toolCallId: 'c', output: 'ok', toolName: 't' },
+          ],
+        },
+      ],
+    );
+  });
+
   void it('preserves tool_call_id and skips malformed messages', () => {
     assert.deepStrictEqual(
       inputChatMessagesFromJson([

@@ -227,21 +227,24 @@ const parsePart = (el: unknown): Record<string, unknown> | null => {
     case "file":
       return parseFile(el);
     case "tool-call": {
-      // AISDKToolCall { tool_name, tool_call_id?, input (alias "args")? }
-      if (typeof el.tool_name !== "string") {
+      // AISDKToolCall { toolName, toolCallId?, input (alias "args")? }
+      // Server reads camelCase (`#[serde(rename_all = "camelCase")]`); `args` is
+      // the AI SDK v4 alias for `input`.
+      if (typeof el.toolName !== "string") {
         return null;
       }
       const rawInput = "input" in el ? el.input : el.args;
       return {
         type: "tool_call",
-        name: el.tool_name,
-        id: typeof el.tool_call_id === "string" ? el.tool_call_id : null,
+        name: el.toolName,
+        id: typeof el.toolCallId === "string" ? el.toolCallId : null,
         arguments: rawInput === undefined || rawInput === null ? null : rawInput,
       };
     }
     case "tool-result": {
-      // AISDKToolResult { tool_call_id, output (alias "result"), tool_name }
-      if (typeof el.tool_call_id !== "string" || typeof el.tool_name !== "string") {
+      // AISDKToolResult { toolCallId, output (alias "result"), toolName }
+      // Server reads camelCase; `result` is the AI SDK v4 alias for `output`.
+      if (typeof el.toolCallId !== "string" || typeof el.toolName !== "string") {
         return null;
       }
       const hasOutput = "output" in el || "result" in el;
@@ -250,9 +253,9 @@ const parsePart = (el: unknown): Record<string, unknown> | null => {
       }
       return {
         type: "tool-result",
-        toolCallId: el.tool_call_id,
+        toolCallId: el.toolCallId,
         output: "output" in el ? el.output : el.result,
-        toolName: el.tool_name,
+        toolName: el.toolName,
       };
     }
     default:
