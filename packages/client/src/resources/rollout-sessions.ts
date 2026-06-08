@@ -175,6 +175,13 @@ export class RolloutSessionsResource extends BaseResource {
 
     switch (body.outcome) {
       case "hit":
+        // A HIT with no replayable payload (missing / JSON `null` response) is
+        // useless: serializing it would store the string "null", which parses
+        // back to `null` and crashes reconstruction. Degrade to live instead.
+        if (body.response === null || body.response === undefined) {
+          logger.warn("Debug cache HIT had no response payload, running live");
+          return { kind: "live" };
+        }
         return { kind: "hit", cached: toCachedSpan(body.response) };
       case "miss":
         return { kind: "miss" };

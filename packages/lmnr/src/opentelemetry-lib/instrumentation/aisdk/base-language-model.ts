@@ -410,6 +410,14 @@ export abstract class BaseLaminarLanguageModel {
       ];
     }
 
+    // A JSON `null` / primitive payload has no content to replay and would crash
+    // the wrapper / unwrap logic below (`output.type` on null throws). The
+    // resource degrades a no-payload HIT to live, but parseCachedSpan can't —
+    // so guard here too and emit an empty content array rather than throwing.
+    if (output === null || typeof output !== "object") {
+      return [];
+    }
+
     const handleItem = (
       item: Record<string, any>,
     ): LanguageModelV3Content[] => {

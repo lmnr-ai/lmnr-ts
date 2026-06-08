@@ -192,6 +192,30 @@ void describe('Stream Caching', () => {
     assert.strictEqual(parts[parts.length - 1].type, 'finish');
   });
 
+  void it('returns empty content for a null cached output (no crash)', () => {
+    const wrappedModel = new LaminarLanguageModelV3(createMockModelV3() as any);
+    // A no-payload HIT serializes to the string "null" in `output`; parsing it
+    // yields `null`, which must not crash reconstruction.
+    const parsed = (wrappedModel as any).parseCachedSpan({
+      name: '',
+      input: '',
+      output: 'null',
+      attributes: {},
+    });
+    assert.deepStrictEqual(parsed.content, []);
+  });
+
+  void it('returns empty content for a primitive cached output (no crash)', () => {
+    const wrappedModel = new LaminarLanguageModelV3(createMockModelV3() as any);
+    const parsed = (wrappedModel as any).parseCachedSpan({
+      name: '',
+      input: '',
+      output: '42',
+      attributes: {},
+    });
+    assert.deepStrictEqual(parsed.content, []);
+  });
+
   void it('creates stream with correct part order', async () => {
     const content = [
       { type: 'text' as const, text: 'Hello' },
