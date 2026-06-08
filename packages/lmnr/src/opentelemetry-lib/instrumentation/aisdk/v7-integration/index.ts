@@ -56,6 +56,7 @@ import {
   applyPromptMessages,
   applyRequestModelAttributes,
   applyUsageToSpan,
+  buildGenAiOutputMessages,
   compareHrTime,
   extractReasoningFromContent,
   extractTextFromContent,
@@ -273,34 +274,13 @@ export class LaminarAiSdkTelemetry {
         : [];
       const normalizedToolCallsList = normalizeToolCalls(toolCallsRaw);
 
-      const parts: any[] = [];
-      if (reasoningText.length > 0) {
-        parts.push({ type: "thinking", content: reasoningText });
-      }
-      if (text.length > 0) {
-        parts.push({ type: "text", content: text });
-      }
-      for (const tc of normalizedToolCallsList) {
-        let argsObj: unknown = tc.args;
-        if (typeof argsObj === "string") {
-          try {
-            argsObj = JSON.parse(argsObj);
-          } catch {
-            // leave string — backend tolerates both
-          }
-        }
-        parts.push({
-          type: "tool_call",
-          id: tc.toolCallId,
-          name: tc.toolName,
-          arguments: argsObj,
-        });
-      }
-      if (parts.length > 0) {
-        span.setAttribute(
-          "gen_ai.output.messages",
-          JSON.stringify([{ role: "assistant", parts }]),
-        );
+      const outputMessages = buildGenAiOutputMessages({
+        text,
+        reasoningText,
+        toolCalls: normalizedToolCallsList,
+      });
+      if (outputMessages) {
+        span.setAttribute("gen_ai.output.messages", outputMessages);
       }
     }
 
@@ -365,15 +345,16 @@ export class LaminarAiSdkTelemetry {
     const llm = this.llmByKey.get(key);
     if (llm) {
       // Flush any buffered stream deltas as the text output if we haven't
-      // already set one via onLanguageModelCallEnd. Mirror that path's
-      // attribute writes (ai.response.text + SPAN_OUTPUT) — Laminar's backend
-      // reads SPAN_OUTPUT (`lmnr.span.output`) to render the span's output
-      // panel, so setting only ai.response.text would leave the LLM span
-      // visually empty.
+      // already set one via onLanguageModelCallEnd. Use the same
+      // gen_ai.output.messages shape that path emits, so the backend stores a
+      // single consistent output format and the debugger can replay it.
       if (this.recordOutputs && llm.textDeltas.length > 0) {
-        const bufferedText = llm.textDeltas.join("");
-        llm.span.setAttribute("ai.response.text", bufferedText);
-        llm.span.setAttribute(SPAN_OUTPUT, bufferedText);
+        const outputMessages = buildGenAiOutputMessages({
+          text: llm.textDeltas.join(""),
+        });
+        if (outputMessages) {
+          llm.span.setAttribute("gen_ai.output.messages", outputMessages);
+        }
       }
       llm.span.end();
       this.llmByKey.delete(key);
@@ -464,8 +445,12 @@ export class LaminarAiSdkTelemetry {
     }
     applyUsageToSpan(llm.span, event.usage);
     if (this.recordOutputs && typeof event.objectText === "string") {
-      llm.span.setAttribute("ai.response.text", event.objectText);
-      llm.span.setAttribute(SPAN_OUTPUT, event.objectText);
+      const outputMessages = buildGenAiOutputMessages({
+        text: event.objectText,
+      });
+      if (outputMessages) {
+        llm.span.setAttribute("gen_ai.output.messages", outputMessages);
+      }
     }
     llm.span.setStatus({ code: SpanStatusCode.OK });
     llm.span.end();
@@ -818,12 +803,16 @@ export class LaminarAiSdkTelemetry {
         // Flush any buffered stream deltas as the text output before force-
         // closing. This is the only place the buffered-deltas fallback is
         // consumed for aborted / errored streams where onLanguageModelCallEnd
-        // never fired (see onChunk). Mirror onStepFinish's attribute writes
-        // (ai.response.text + SPAN_OUTPUT) so partial output still renders.
+        // never fired (see onChunk). Use the same gen_ai.output.messages shape
+        // as onStepFinish / onLanguageModelCallEnd so partial output still
+        // renders and the debugger can replay it.
         if (this.recordOutputs && llm.textDeltas.length > 0) {
-          const bufferedText = llm.textDeltas.join("");
-          llm.span.setAttribute("ai.response.text", bufferedText);
-          llm.span.setAttribute(SPAN_OUTPUT, bufferedText);
+          const outputMessages = buildGenAiOutputMessages({
+            text: llm.textDeltas.join(""),
+          });
+          if (outputMessages) {
+            llm.span.setAttribute("gen_ai.output.messages", outputMessages);
+          }
         }
         llm.span.end();
         bump(readSpanEndTime(llm.span));

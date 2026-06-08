@@ -216,6 +216,80 @@ void describe('Stream Caching', () => {
     assert.deepStrictEqual(parsed.content, []);
   });
 
+  void it('rebuilds content from v7 gen_ai.output.messages parts', () => {
+    const wrappedModel = new LaminarLanguageModelV3(createMockModelV3() as any);
+    // v7 stores the assistant turn verbatim as `[{role, parts:[...]}]` where
+    // each part uses `{type, content}` (text/thinking) or
+    // `{type:"tool_call", id, name, arguments}`.
+    const output = JSON.stringify([
+      {
+        role: 'assistant',
+        parts: [
+          { type: 'thinking', content: 'Let me think...' },
+          { type: 'text', content: 'Hello world' },
+          {
+            type: 'tool_call',
+            id: 'call-123',
+            name: 'get_weather',
+            arguments: { location: 'SF' },
+          },
+        ],
+      },
+    ]);
+    const parsed = (wrappedModel as any).parseCachedSpan({
+      name: '',
+      input: '',
+      output,
+      attributes: { 'ai.response.finishReason': 'tool-calls' },
+    });
+    assert.deepStrictEqual(parsed.content, [
+      { type: 'reasoning', text: 'Let me think...' },
+      { type: 'text', text: 'Hello world' },
+      {
+        type: 'tool-call',
+        toolCallId: 'call-123',
+        toolName: 'get_weather',
+        input: '{"location":"SF"}',
+      },
+    ]);
+    assert.strictEqual(parsed.finishReason, 'tool-calls');
+  });
+
+  void it('rebuilds content from v6 legacy message content shape', () => {
+    const wrappedModel = new LaminarLanguageModelV3(createMockModelV3() as any);
+    // v6 legacy stores `[{role, content:[{type:"text", text}, ...]}]`.
+    const output = JSON.stringify([
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'Hi there' },
+          {
+            type: 'tool_call',
+            name: 'lookup',
+            id: 'tc-1',
+            arguments: { q: 'a' },
+          },
+        ],
+      },
+    ]);
+    const parsed = (wrappedModel as any).parseCachedSpan({
+      name: '',
+      input: '',
+      output,
+      attributes: {},
+    });
+    assert.deepStrictEqual(parsed.content, [
+      { type: 'text', text: 'Hi there' },
+      {
+        type: 'tool-call',
+        toolCallId: 'tc-1',
+        toolName: 'lookup',
+        input: '{"q":"a"}',
+      },
+    ]);
+    assert.strictEqual(parsed.finishReason, 'stop');
+  });
+
   void it('creates stream with correct part order', async () => {
     const content = [
       { type: 'text' as const, text: 'Hello' },

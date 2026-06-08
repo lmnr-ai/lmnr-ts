@@ -418,6 +418,11 @@ export abstract class BaseLaminarLanguageModel {
       return [];
     }
 
+    // Handles a single content part. Covers both the v6 legacy shape
+    // (`{type:"text", text}` / `{type:"tool_call", name, id, arguments}`) and the
+    // v7 `gen_ai.output.messages` part shape (`{type:"text"|"thinking", content}` /
+    // `{type:"tool_call", id, name, arguments}`), so `text` and `content` are both
+    // accepted for the textual fields.
     const handleItem = (
       item: Record<string, any>,
     ): LanguageModelV3Content[] => {
@@ -425,7 +430,7 @@ export abstract class BaseLaminarLanguageModel {
         return [
           {
             type: "text",
-            text: item.text ?? "",
+            text: item.text ?? item.content ?? "",
           },
         ];
       }
@@ -439,11 +444,11 @@ export abstract class BaseLaminarLanguageModel {
           },
         ];
       }
-      if (item.type === "reasoning") {
+      if (["reasoning", "thinking"].includes(item.type)) {
         return [
           {
             type: "reasoning",
-            text: item.text ?? "",
+            text: item.text ?? item.content ?? "",
           },
         ];
       }
@@ -474,16 +479,23 @@ export abstract class BaseLaminarLanguageModel {
       outputContent = [output];
     }
     return outputContent.flatMap((item) => {
+      // v7 `gen_ai.output.messages` shape: `{role, parts:[...]}` (already an
+      // object array, never a JSON string). Map each part through handleItem.
+      if (item.role && Array.isArray(item.parts)) {
+        return item.parts.flatMap(handleItem);
+      }
+      // v6 legacy shape: `{role, content}` where content is either an array of
+      // parts or a JSON-encoded string of them.
       if (item.role && item.content) {
         let parsedContent: Record<string, any>[] = item.content;
-        try {
-          parsedContent = JSON.parse(item.content);
-        } catch {
-          if (typeof item === "string") {
+        if (typeof item.content === "string") {
+          try {
+            parsedContent = JSON.parse(item.content);
+          } catch {
             return [
               {
                 type: "text",
-                text: item,
+                text: item.content,
               },
             ];
           }

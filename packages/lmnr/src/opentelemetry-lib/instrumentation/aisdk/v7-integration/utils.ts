@@ -94,6 +94,44 @@ export const normalizeToolCalls = (toolCalls: any[] | undefined): any[] => {
   }));
 };
 
+// Build the OTel GenAI `gen_ai.output.messages` payload from a single
+// assistant turn's reasoning / text / tool calls. The backend stores this
+// verbatim on the span output and the debugger replays from it, so this is the
+// single output shape for v7 — no legacy `ai.response.*` / `SPAN_OUTPUT` writes.
+// `toolCalls` are the `normalizeToolCalls` output (`{toolCallId, toolName, args}`).
+// Returns the JSON string, or `undefined` when there is nothing to emit.
+export const buildGenAiOutputMessages = (args: {
+  text?: string;
+  reasoningText?: string;
+  toolCalls?: any[];
+}): string | undefined => {
+  const parts: any[] = [];
+  if (args.reasoningText && args.reasoningText.length > 0) {
+    parts.push({ type: "thinking", content: args.reasoningText });
+  }
+  if (args.text && args.text.length > 0) {
+    parts.push({ type: "text", content: args.text });
+  }
+  for (const tc of args.toolCalls ?? []) {
+    let argsObj: unknown = tc.args;
+    if (typeof argsObj === "string") {
+      try {
+        argsObj = JSON.parse(argsObj);
+      } catch {
+        // leave string — backend tolerates both
+      }
+    }
+    parts.push({
+      type: "tool_call",
+      id: tc.toolCallId,
+      name: tc.toolName,
+      arguments: argsObj,
+    });
+  }
+  if (parts.length === 0) return undefined;
+  return JSON.stringify([{ role: "assistant", parts }]);
+};
+
 export const extractTextFromContent = (content: any[] | undefined): string => {
   if (!Array.isArray(content)) return "";
   return content

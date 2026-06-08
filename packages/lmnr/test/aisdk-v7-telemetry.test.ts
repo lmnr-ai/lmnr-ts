@@ -197,7 +197,10 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.equal(llm.attributes["gen_ai.response.finish_reason"], "stop");
     assert.equal(llm.attributes["gen_ai.usage.input_tokens"], 10);
     assert.equal(llm.attributes["gen_ai.usage.output_tokens"], 5);
-    assert.equal(llm.attributes["ai.response.text"], "hello");
+    assert.deepEqual(
+      JSON.parse(llm.attributes["gen_ai.output.messages"] as string),
+      [{ role: "assistant", parts: [{ type: "text", content: "hello" }] }],
+    );
     assert.equal(llm.parentSpanContext?.spanId, step.spanContext().spanId);
 
     // Hybrid attribute check: ai.prompt.messages includes the system prompt.
@@ -801,10 +804,14 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     const spans = exporter.getFinishedSpans();
     const llm = spans.find((s) => s.name.startsWith("ai.llm "));
     assert.ok(llm, "llm span missing");
-    assert.equal(llm.attributes["ai.response.text"], "hello");
-    // Laminar's backend reads SPAN_OUTPUT to render the span output panel —
-    // the streaming fallback must mirror onLanguageModelCallEnd's behavior.
-    assert.equal(llm.attributes[SPAN_OUTPUT], "hello");
+    // The streaming fallback mirrors onLanguageModelCallEnd: it emits the
+    // single gen_ai.output.messages shape (no legacy ai.response.text /
+    // SPAN_OUTPUT), so the backend stores one consistent output format that
+    // the debugger can replay.
+    assert.deepEqual(
+      JSON.parse(llm.attributes["gen_ai.output.messages"] as string),
+      [{ role: "assistant", parts: [{ type: "text", content: "hello" }] }],
+    );
   });
 
   void it("drops text-delta chunks that arrive without a preceding firstChunk marker", () => {
@@ -825,7 +832,10 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     const llm = spans.find((s) => s.name.startsWith("ai.llm "));
     assert.ok(llm);
     // "hello" comes from onLanguageModelCallEnd, NOT from the ghost delta.
-    assert.equal(llm.attributes["ai.response.text"], "hello");
+    assert.deepEqual(
+      JSON.parse(llm.attributes["gen_ai.output.messages"] as string),
+      [{ role: "assistant", parts: [{ type: "text", content: "hello" }] }],
+    );
   });
 
   void it("does not misattribute text-delta chunks across concurrent streams", () => {
@@ -956,6 +966,9 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.equal(llm.attributes["gen_ai.response.id"], "resp-object-1");
     // Usage + finish reason still flow through
     assert.equal(llm.attributes["gen_ai.response.finish_reason"], "stop");
-    assert.equal(llm.attributes["ai.response.text"], '{"x":1}');
+    assert.deepEqual(
+      JSON.parse(llm.attributes["gen_ai.output.messages"] as string),
+      [{ role: "assistant", parts: [{ type: "text", content: '{"x":1}' }] }],
+    );
   });
 });
