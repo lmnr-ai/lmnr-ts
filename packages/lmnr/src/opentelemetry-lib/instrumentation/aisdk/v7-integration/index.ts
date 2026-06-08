@@ -273,55 +273,34 @@ export class LaminarAiSdkTelemetry {
         : [];
       const normalizedToolCallsList = normalizeToolCalls(toolCallsRaw);
 
+      const parts: any[] = [];
+      if (reasoningText.length > 0) {
+        parts.push({ type: "thinking", content: reasoningText });
+      }
       if (text.length > 0) {
-        span.setAttribute("ai.response.text", text);
-        span.setAttribute(SPAN_OUTPUT, text);
+        parts.push({ type: "text", content: text });
       }
-      if (normalizedToolCallsList.length > 0) {
-        span.setAttribute(
-          "ai.response.toolCalls",
-          serializeJSON(normalizedToolCallsList),
-        );
-        if (text.length === 0) {
-          span.setAttribute(
-            SPAN_OUTPUT,
-            serializeJSON(normalizedToolCallsList),
-          );
-        }
-      }
-
-      // OTel GenAI semconv `gen_ai.output.messages` — rendered by the Laminar
-      // UI with a Thinking label when `type: "thinking"` is present.
-      if (reasoningText.length > 0 || normalizedToolCallsList.length > 0) {
-        const parts: any[] = [];
-        if (reasoningText.length > 0) {
-          parts.push({ type: "thinking", content: reasoningText });
-        }
-        if (text.length > 0) {
-          parts.push({ type: "text", content: text });
-        }
-        for (const tc of normalizedToolCallsList) {
-          let argsObj: unknown = tc.args;
-          if (typeof argsObj === "string") {
-            try {
-              argsObj = JSON.parse(argsObj);
-            } catch {
-              // leave string — backend tolerates both
-            }
+      for (const tc of normalizedToolCallsList) {
+        let argsObj: unknown = tc.args;
+        if (typeof argsObj === "string") {
+          try {
+            argsObj = JSON.parse(argsObj);
+          } catch {
+            // leave string — backend tolerates both
           }
-          parts.push({
-            type: "tool_call",
-            id: tc.toolCallId,
-            name: tc.toolName,
-            arguments: argsObj,
-          });
         }
-        if (parts.length > 0) {
-          span.setAttribute(
-            "gen_ai.output.messages",
-            JSON.stringify([{ role: "assistant", parts }]),
-          );
-        }
+        parts.push({
+          type: "tool_call",
+          id: tc.toolCallId,
+          name: tc.toolName,
+          arguments: argsObj,
+        });
+      }
+      if (parts.length > 0) {
+        span.setAttribute(
+          "gen_ai.output.messages",
+          JSON.stringify([{ role: "assistant", parts }]),
+        );
       }
     }
 
