@@ -14,38 +14,32 @@ export interface LogoutOptions {
 }
 
 /**
- * Best-effort server-side revoke of the project API key. Logout MUST complete
- * locally even if the server is unreachable - the user expects "log me out"
- * to remove the file. On any failure we log to stderr and continue.
- *
- * Auth: we send the same API key being deleted as the Bearer. The Laminar
- * project API keys DELETE route accepts the key being revoked as auth for
- * itself; if the project's authz rules tighten in the future this becomes a
- * best-effort fall-through (the local file is still deleted).
+ * Best-effort server-side session revoke via POST /api/auth/sign-out with the
+ * session token as Bearer. Logout MUST complete locally even if the server is
+ * unreachable — the user expects "log me out" to remove the file. On any
+ * failure we log to stderr and continue.
  */
-export async function revokeProjectApiKey(profile: ProfileEntry): Promise<void> {
-  if (!profile.apiKeyId || profile.apiKeyId.length === 0) {
-    process.stderr.write(
-      "warning: profile has no apiKeyId; skipping server-side revoke. " +
-        `Revoke manually at ${trimSlash(profile.issuer)}/project/${profile.projectId}/settings/api-keys.\n`,
-    );
+export async function revokeSession(profile: ProfileEntry): Promise<void> {
+  if (!profile.sessionToken || profile.sessionToken.length === 0) {
     return;
   }
-  const url = `${trimSlash(profile.issuer)}/api/projects/${profile.projectId}/api-keys/${profile.apiKeyId}`;
+  const url = `${trimSlash(profile.issuer)}/api/auth/sign-out`;
   try {
+    // BetterAuth's sign-out 500s on an empty body (JSON parse fails); send `{}`.
     const res = await fetch(url, {
-      method: "DELETE",
-      headers: { authorization: `Bearer ${profile.accessToken}` },
+      method: "POST",
+      headers: { authorization: `Bearer ${profile.sessionToken}`, "content-type": "application/json" },
+      body: "{}",
     });
     if (!res.ok) {
       process.stderr.write(
-        `warning: API key revoke at ${url} returned ${res.status}; local credentials still removed.\n`,
+        `warning: session revoke at ${url} returned ${res.status}; local credentials still removed.\n`,
       );
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     process.stderr.write(
-      `warning: API key revoke at ${url} failed (${msg}); local credentials still removed.\n`,
+      `warning: session revoke at ${url} failed (${msg}); local credentials still removed.\n`,
     );
   }
 }
@@ -57,7 +51,7 @@ export async function handleLogout(
   if (options.all) {
     const creds = await readCredentials();
     if (creds) {
-      await Promise.all(Object.values(creds.profiles).map(revokeProjectApiKey));
+      await Promise.all(Object.values(creds.profiles).map(revokeSession));
     }
     const existed = await deleteCredentials();
     if (existed) {
@@ -79,10 +73,10 @@ export async function handleLogout(
     return;
   }
 
-  await revokeProjectApiKey(toRemove);
+  await revokeSession(toRemove);
 
-  const removedLabel = toRemove.projectName ?? toRemove.projectId;
-  delete creds.profiles[toRemove.projectId];
+  const removedLabel = toRemove.userEmail ?? toRemove.userId;
+  delete creds.profiles[toRemove.userId];
 
   const remaining = Object.values(creds.profiles);
   if (remaining.length === 0) {
@@ -91,8 +85,8 @@ export async function handleLogout(
     return;
   }
 
-  if (creds.active === toRemove.projectId) {
-    creds.active = pickNextActive(remaining).projectId;
+  if (creds.active === toRemove.userId) {
+    creds.active = pickNextActive(remaining).userId;
   }
   await writeCredentials(creds);
   process.stderr.write(`Logged out of ${removedLabel}.\n`);
@@ -116,7 +110,7 @@ function resolveTarget(
   if (all.length === 1) return all[0];
   const active = getActiveProfile(creds);
   if (active) return active;
-  process.stderr.write("No active profile to log out of. Pass <id|name> or --all.\n");
+  process.stderr.write("No active profile to log out of. Pass <email|userId> or --all.\n");
   process.exit(1);
 }
 

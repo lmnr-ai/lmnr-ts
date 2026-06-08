@@ -7,26 +7,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   type ProfileEntry,
+  readCredentials,
   type StoredCredentials,
   writeCredentials,
 } from './credentials';
 import { resolveAuth } from './resolve';
 
-// Project API keys don't expire. resolveAuth just touches lastUsedAt; no
-// network round-trip happens regardless of accessTokenExpiresAt.
+// Far-future expiry so resolveAuth's near-expiry refresh path is NOT taken —
+// the bearer is returned straight from accessToken with no network round-trip.
 function freshProfile(overrides: Partial<ProfileEntry> = {}): ProfileEntry {
   return {
-    tokenEndpoint: 'http://localhost:3010/api/cli/device/poll',
     issuer: 'http://localhost:3010',
     baseUrl: 'http://localhost:8010',
-    accessToken: 'fresh-token',
+    sessionToken: 'session-token',
+    accessToken: 'fresh-jwt',
     accessTokenExpiresAt: '2099-01-01T00:00:00.000Z',
-    refreshToken: '',
-    refreshTokenExpiresAt: '2099-01-01T00:00:00.000Z',
-    tokenType: 'Bearer',
-    scope: 'projects:rw',
-    projectId: 'p-aaaa',
-    projectName: 'alpha',
+    sessionExpiresAt: '2099-01-08T00:00:00.000Z',
+    userId: 'u-aaaa',
+    userEmail: 'alpha@x.com',
     createdAt: new Date().toISOString(),
     ...overrides,
   };
@@ -47,6 +45,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   if (SAVED_XDG === undefined) delete process.env.XDG_CONFIG_HOME;
   else process.env.XDG_CONFIG_HOME = SAVED_XDG;
   if (SAVED_KEY === undefined) delete process.env.LMNR_PROJECT_API_KEY;
@@ -62,8 +61,8 @@ describe('resolveAuth precedence', () => {
     const a = freshProfile();
     const creds: StoredCredentials = {
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a },
+      active: a.userId,
+      profiles: { [a.userId]: a },
     };
     await writeCredentials(creds);
     const r = await resolveAuth({ projectApiKey: 'flag-key' });
@@ -75,68 +74,55 @@ describe('resolveAuth precedence', () => {
     const a = freshProfile();
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a },
+      active: a.userId,
+      profiles: { [a.userId]: a },
     });
     const r = await resolveAuth({});
     expect(r.bearer).toBe('env-key');
   });
 
-  it('3. --project <id> selects a specific profile', async () => {
-    const a = freshProfile({ projectId: 'p-aaaa', accessToken: 'tok-a', projectName: 'alpha' });
-    const b = freshProfile({ projectId: 'p-bbbb', accessToken: 'tok-b', projectName: 'beta' });
+  it('3. --project <email|userId> selects a specific profile', async () => {
+    const a = freshProfile({ userId: 'u-aaaa', accessToken: 'jwt-a', userEmail: 'alpha@x.com' });
+    const b = freshProfile({ userId: 'u-bbbb', accessToken: 'jwt-b', userEmail: 'beta@x.com' });
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a, [b.projectId]: b },
+      active: a.userId,
+      profiles: { [a.userId]: a, [b.userId]: b },
     });
-    const r = await resolveAuth({ project: 'beta' });
-    expect(r.bearer).toBe('tok-b');
+    const r = await resolveAuth({ project: 'beta@x.com' });
+    expect(r.bearer).toBe('jwt-b');
   });
 
-  it('4. LMNR_PROJECT_ID env selects when no --project flag', async () => {
-    const a = freshProfile({ projectId: 'p-aaaa', accessToken: 'tok-a' });
-    const b = freshProfile({ projectId: 'p-bbbb', accessToken: 'tok-b', projectName: 'beta' });
+  it('4. falls back to active profile', async () => {
+    const a = freshProfile({ userId: 'u-aaaa', accessToken: 'jwt-a' });
+    const b = freshProfile({ userId: 'u-bbbb', accessToken: 'jwt-b' });
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a, [b.projectId]: b },
-    });
-    process.env.LMNR_PROJECT_ID = 'p-bbbb';
-    const r = await resolveAuth({});
-    expect(r.bearer).toBe('tok-b');
-  });
-
-  it('5. falls back to active profile', async () => {
-    const a = freshProfile({ projectId: 'p-aaaa', accessToken: 'tok-a' });
-    const b = freshProfile({ projectId: 'p-bbbb', accessToken: 'tok-b' });
-    await writeCredentials({
-      version: 1,
-      active: 'p-bbbb',
-      profiles: { [a.projectId]: a, [b.projectId]: b },
+      active: 'u-bbbb',
+      profiles: { [a.userId]: a, [b.userId]: b },
     });
     const r = await resolveAuth({});
-    expect(r.bearer).toBe('tok-b');
+    expect(r.bearer).toBe('jwt-b');
   });
 
-  it('6. single-profile shortcut when active is unset', async () => {
-    const a = freshProfile({ projectId: 'p-aaaa', accessToken: 'only-tok' });
+  it('5. single-profile shortcut when active is unset', async () => {
+    const a = freshProfile({ userId: 'u-aaaa', accessToken: 'only-jwt' });
     await writeCredentials({
       version: 1,
       active: null,
-      profiles: { [a.projectId]: a },
+      profiles: { [a.userId]: a },
     });
     const r = await resolveAuth({});
-    expect(r.bearer).toBe('only-tok');
+    expect(r.bearer).toBe('only-jwt');
   });
 
-  it('7. errors when multiple profiles and no selector', async () => {
-    const a = freshProfile({ projectId: 'p-aaaa' });
-    const b = freshProfile({ projectId: 'p-bbbb' });
+  it('6. errors when multiple profiles and no selector', async () => {
+    const a = freshProfile({ userId: 'u-aaaa' });
+    const b = freshProfile({ userId: 'u-bbbb' });
     await writeCredentials({
       version: 1,
       active: null,
-      profiles: { [a.projectId]: a, [b.projectId]: b },
+      profiles: { [a.userId]: a, [b.userId]: b },
     });
     await expect(resolveAuth({})).rejects.toThrow(/Multiple profiles/);
   });
@@ -145,13 +131,58 @@ describe('resolveAuth precedence', () => {
     const a = freshProfile();
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a },
+      active: a.userId,
+      profiles: { [a.userId]: a },
     });
     await expect(resolveAuth({ project: 'does-not-exist' })).rejects.toThrow(/No profile matching/);
   });
 
   it('errors when no credentials and no env / flag', async () => {
     await expect(resolveAuth({})).rejects.toThrow(/Not authenticated/);
+  });
+});
+
+describe('resolveAuth JWT refresh', () => {
+  it('re-mints the JWT when within ~30s of expiry and persists it', async () => {
+    // exp in 10s → within the 30s skew → refresh fires.
+    const nearExpiry = new Date(Date.now() + 10_000).toISOString();
+    // A JWT whose payload.exp is ~1h out, base64url-encoded middle segment.
+    const futureExpSec = Math.floor((Date.now() + 3_600_000) / 1000);
+    const payload = Buffer.from(JSON.stringify({ exp: futureExpSec })).toString('base64url');
+    const newJwt = `header.${payload}.sig`;
+
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ token: newJwt }), { status: 200 })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = freshProfile({
+      userId: 'u-aaaa',
+      accessToken: 'stale-jwt',
+      accessTokenExpiresAt: nearExpiry,
+    });
+    await writeCredentials({ version: 1, active: a.userId, profiles: { [a.userId]: a } });
+
+    const r = await resolveAuth({});
+    expect(r.bearer).toBe(newJwt);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://localhost:3010/api/auth/token');
+    expect((init.headers as Record<string, string>).authorization).toBe('Bearer session-token');
+
+    // Persisted: the new JWT is stored back.
+    const after = await readCredentials();
+    expect(after?.profiles['u-aaaa'].accessToken).toBe(newJwt);
+  });
+
+  it('throws a clear login hint when the session is expired (401)', async () => {
+    const nearExpiry = new Date(Date.now() + 5_000).toISOString();
+    const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 401 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = freshProfile({ userId: 'u-aaaa', accessTokenExpiresAt: nearExpiry });
+    await writeCredentials({ version: 1, active: a.userId, profiles: { [a.userId]: a } });
+
+    await expect(resolveAuth({})).rejects.toThrow(/Session expired/);
   });
 });

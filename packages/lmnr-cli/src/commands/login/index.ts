@@ -1,15 +1,18 @@
-import { hostname } from "node:os";
-
 import open from "open";
 
 import { type ProfileEntry, upsertProfile } from "../../auth/credentials";
-import { CLI_CLIENT_ID, CLI_SCOPE, initiateDevice, pollDevice } from "../../auth/device";
+import {
+  CLI_CLIENT_ID,
+  CLI_SCOPE,
+  decodeJwtExp,
+  fetchSession,
+  initiateDevice,
+  mintAccessJwt,
+  pollDevice,
+} from "../../auth/device";
 
 const DEFAULT_DASHBOARD_URL = "https://www.laminar.sh";
 const DEFAULT_BASE_URL = "https://api.lmnr.ai";
-// API keys don't expire. Park accessTokenExpiresAt far in the future so
-// downstream consumers' fresh-token checks never trigger a refresh path.
-const NEVER_EXPIRES = "2099-01-01T00:00:00.000Z";
 
 export interface LoginOptions {
   dashboardUrl?: string;
@@ -37,40 +40,37 @@ export async function handleLogin(options: LoginOptions): Promise<void> {
   }
 
   process.stderr.write("Waiting for authorization...\n");
-  const result = await pollDevice(issuer, da.device_code, {
+  const token = await pollDevice(issuer, da.device_code, {
     intervalSeconds: da.interval,
     timeoutSeconds: da.expires_in,
-    deviceName: hostname(),
   });
+
+  // The device token's access_token is the durable session token (refresh).
+  const sessionToken = token.access_token;
+  const jwt = await mintAccessJwt(issuer, sessionToken);
+  const session = await fetchSession(issuer, sessionToken);
 
   const now = new Date().toISOString();
   const profile: ProfileEntry = {
-    tokenEndpoint: `${trimSlash(issuer)}/api/cli/device/poll`,
     issuer,
     baseUrl,
-    accessToken: result.apiKey,
-    accessTokenExpiresAt: NEVER_EXPIRES,
-    refreshToken: "",
-    refreshTokenExpiresAt: NEVER_EXPIRES,
-    tokenType: "Bearer",
-    scope: CLI_SCOPE,
-    userEmail: result.userEmail ?? undefined,
-    userId: result.userId,
-    projectId: result.projectId,
-    projectName: result.projectName,
-    workspaceId: result.workspaceId,
-    workspaceName: result.workspaceName,
-    apiKeyId: result.apiKeyId,
+    sessionToken,
+    accessToken: jwt,
+    accessTokenExpiresAt: decodeJwtExp(jwt) ?? now,
+    sessionExpiresAt:
+      typeof token.expires_in === "number"
+        ? new Date(Date.now() + token.expires_in * 1000).toISOString()
+        : undefined,
+    userEmail: session.email || undefined,
+    userId: session.id,
     createdAt: now,
     lastUsedAt: now,
   };
   await upsertProfile(profile);
 
+  process.stderr.write(`Logged in as ${session.email || "<unknown>"}.\n`);
   process.stderr.write(
-    `Logged in as ${result.userEmail ?? "<unknown>"}. Project: ${result.projectName} (${result.workspaceName}).\n`,
-  );
-  process.stderr.write(
-    `Client: ${CLI_CLIENT_ID}. API key stored at ~/.config/lmnr/credentials.json (mode 0600).\n`,
+    `Client: ${CLI_CLIENT_ID}. Tokens stored at ~/.config/lmnr/credentials.json (mode 0600).\n`,
   );
 }
 
@@ -79,8 +79,4 @@ function pick(...candidates: (string | undefined)[]): string {
     if (c && c.length > 0) return c;
   }
   return "";
-}
-
-function trimSlash(url: string): string {
-  return url.replace(/\/+$/, "");
 }

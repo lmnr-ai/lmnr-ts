@@ -21,16 +21,14 @@ let stdoutMock: ReturnType<typeof vi.spyOn>;
 
 function profile(overrides: Partial<ProfileEntry> = {}): ProfileEntry {
   return {
-    tokenEndpoint: 'http://localhost:3010/oauth/token',
     issuer: 'http://localhost:3010',
     baseUrl: 'http://localhost:8010',
-    accessToken: 't',
+    sessionToken: 'session-token',
+    accessToken: 'jwt',
     accessTokenExpiresAt: '2030-01-01T00:00:00.000Z',
-    refreshToken: 'rt',
-    refreshTokenExpiresAt: '2030-02-01T00:00:00.000Z',
-    tokenType: 'Bearer',
-    scope: 'projects:rw',
-    projectId: 'p-aaaa',
+    sessionExpiresAt: '2030-01-08T00:00:00.000Z',
+    userId: 'u-aaaa',
+    userEmail: 'alpha@x.com',
     createdAt: '2026-06-01T00:00:00.000Z',
     ...overrides,
   };
@@ -83,26 +81,26 @@ describe('handleList', () => {
   });
 
   it('renders a single profile with an active marker', async () => {
-    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha', workspaceName: 'acme' });
-    await writeCredentials({ version: 1, active: 'p-aaaa', profiles: { [a.projectId]: a } });
+    const a = profile({ userId: 'u-aaaa', userEmail: 'alpha@x.com' });
+    await writeCredentials({ version: 1, active: 'u-aaaa', profiles: { [a.userId]: a } });
     await handleList();
     const printed = collectStdout(stdoutMock);
-    expect(printed).toContain('alpha');
-    expect(printed).toContain('acme');
+    expect(printed).toContain('alpha@x.com');
+    expect(printed).toContain('http://localhost:3010');
     // Active line starts with "* ".
     const lines = printed.split('\n');
-    const activeAlpha = lines.some((l: string) => l.startsWith('* ') && l.includes('alpha'));
+    const activeAlpha = lines.some((l: string) => l.startsWith('* ') && l.includes('alpha@x.com'));
     expect(activeAlpha).toBe(true);
   });
 
   it('renders 3 profiles and marks only the active one', async () => {
-    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha', workspaceName: 'acme' });
-    const b = profile({ projectId: 'p-bbbb', projectName: 'beta', workspaceName: 'acme' });
-    const c = profile({ projectId: 'p-cccc', projectName: 'gamma', workspaceName: 'other' });
+    const a = profile({ userId: 'u-aaaa', userEmail: 'alpha@x.com' });
+    const b = profile({ userId: 'u-bbbb', userEmail: 'beta@x.com' });
+    const c = profile({ userId: 'u-cccc', userEmail: 'gamma@x.com' });
     await writeCredentials({
       version: 1,
-      active: 'p-bbbb',
-      profiles: { [a.projectId]: a, [b.projectId]: b, [c.projectId]: c },
+      active: 'u-bbbb',
+      profiles: { [a.userId]: a, [b.userId]: b, [c.userId]: c },
     });
     await handleList();
     const printed = collectStdout(stdoutMock);
@@ -111,11 +109,11 @@ describe('handleList', () => {
     expect(lines.length).toBe(4);
     const activeRows = lines.filter((l: string) => l.startsWith('* '));
     expect(activeRows.length).toBe(1);
-    expect(activeRows[0]).toContain('beta');
+    expect(activeRows[0]).toContain('beta@x.com');
     // alpha + gamma are inactive (leading "  ").
     const inactiveRows = lines.filter((l: string, i: number) => i > 0 && !l.startsWith('* '));
     expect(inactiveRows.length).toBe(2);
-    expect(printed).toContain('alpha');
-    expect(printed).toContain('gamma');
+    expect(printed).toContain('alpha@x.com');
+    expect(printed).toContain('gamma@x.com');
   });
 });

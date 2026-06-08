@@ -39,22 +39,14 @@ afterEach(async () => {
 
 function sampleProfile(overrides: Partial<ProfileEntry> = {}): ProfileEntry {
   return {
-    tokenEndpoint: 'http://localhost:3010/api/cli/device/poll',
     issuer: 'http://localhost:3010',
     baseUrl: 'http://localhost:8010',
-    accessToken: 'project-api-key-value-64-chars-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    sessionToken: 'session-token-value-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    accessToken: 'jwt.value.signature',
     accessTokenExpiresAt: '2099-01-01T00:00:00.000Z',
-    refreshToken: '',
-    refreshTokenExpiresAt: '2099-01-01T00:00:00.000Z',
-    tokenType: 'Bearer',
-    scope: 'projects:rw',
+    sessionExpiresAt: '2099-01-08T00:00:00.000Z',
     userEmail: 'alice@example.com',
     userId: '11111111-1111-1111-1111-111111111111',
-    projectId: '00000000-0000-0000-0000-000000000000',
-    projectName: 'my-project',
-    workspaceId: '22222222-2222-2222-2222-222222222222',
-    workspaceName: "Alice's Workspace",
-    apiKeyId: '33333333-3333-3333-3333-333333333333',
     createdAt: '2026-06-04T12:34:56.000Z',
     ...overrides,
   };
@@ -65,8 +57,8 @@ describe('credentials roundtrip', () => {
     const profile = sampleProfile();
     const sample: StoredCredentials = {
       version: 1,
-      active: profile.projectId,
-      profiles: { [profile.projectId]: profile },
+      active: profile.userId,
+      profiles: { [profile.userId]: profile },
     };
 
     await writeCredentials(sample);
@@ -82,8 +74,8 @@ describe('credentials roundtrip', () => {
     const profile = sampleProfile();
     await writeCredentials({
       version: 1,
-      active: profile.projectId,
-      profiles: { [profile.projectId]: profile },
+      active: profile.userId,
+      profiles: { [profile.userId]: profile },
     });
 
     const stat = statSync(credentialsPath());
@@ -95,8 +87,8 @@ describe('credentials roundtrip', () => {
     const profile = sampleProfile();
     await writeCredentials({
       version: 1,
-      active: profile.projectId,
-      profiles: { [profile.projectId]: profile },
+      active: profile.userId,
+      profiles: { [profile.userId]: profile },
     });
     // Simulate a user-set wider mode then rerun.
     chmodSync(credentialsPath(), 0o640);
@@ -104,29 +96,29 @@ describe('credentials roundtrip', () => {
 
     await writeCredentials({
       version: 1,
-      active: profile.projectId,
+      active: profile.userId,
       profiles: {
-        [profile.projectId]: { ...profile, accessToken: 'rotated' },
+        [profile.userId]: { ...profile, accessToken: 'rotated' },
       },
     });
     expect(statSync(credentialsPath()).mode & 0o777).toBe(0o640);
     const round = await readCredentials();
-    expect(round?.profiles[profile.projectId].accessToken).toBe('rotated');
+    expect(round?.profiles[profile.userId].accessToken).toBe('rotated');
   });
 
   it.skipIf(isWin)('keeps 0o600 across re-runs', async () => {
     const profile = sampleProfile();
     await writeCredentials({
       version: 1,
-      active: profile.projectId,
-      profiles: { [profile.projectId]: profile },
+      active: profile.userId,
+      profiles: { [profile.userId]: profile },
     });
     expect(statSync(credentialsPath()).mode & 0o777).toBe(0o600);
     await writeCredentials({
       version: 1,
-      active: profile.projectId,
+      active: profile.userId,
       profiles: {
-        [profile.projectId]: { ...profile, accessToken: 'rotated' },
+        [profile.userId]: { ...profile, accessToken: 'rotated' },
       },
     });
     expect(statSync(credentialsPath()).mode & 0o777).toBe(0o600);
@@ -142,8 +134,8 @@ describe('credentials roundtrip', () => {
     const profile = sampleProfile();
     await writeCredentials({
       version: 1,
-      active: profile.projectId,
-      profiles: { [profile.projectId]: profile },
+      active: profile.userId,
+      profiles: { [profile.userId]: profile },
     });
     expect(await deleteCredentials()).toBe(true);
     expect(await readCredentials()).toBeNull();
@@ -158,46 +150,46 @@ describe('credentials roundtrip', () => {
 
 describe('profile helpers', () => {
   it('upsertProfile inserts and marks active', async () => {
-    const p1 = sampleProfile({ projectId: 'aaa', projectName: 'one' });
+    const p1 = sampleProfile({ userId: 'aaa', userEmail: 'one@x.com' });
     const after = await upsertProfile(p1);
     expect(after.active).toBe('aaa');
     expect(Object.keys(after.profiles)).toEqual(['aaa']);
 
-    const p2 = sampleProfile({ projectId: 'bbb', projectName: 'two' });
+    const p2 = sampleProfile({ userId: 'bbb', userEmail: 'two@x.com' });
     const after2 = await upsertProfile(p2);
     expect(after2.active).toBe('bbb');
     expect(Object.keys(after2.profiles).sort()).toEqual(['aaa', 'bbb']);
   });
 
-  it('findProfile resolves by exact id, exact name, and prefix>=8', () => {
+  it('findProfile resolves by exact userId, exact email, and prefix>=8', () => {
     const a = sampleProfile({
-      projectId: 'aaaaaaaa-1111-1111-1111-111111111111',
-      projectName: 'alpha',
+      userId: 'aaaaaaaa-1111-1111-1111-111111111111',
+      userEmail: 'alpha@x.com',
     });
     const b = sampleProfile({
-      projectId: 'aaaaaaaa-2222-2222-2222-222222222222',
-      projectName: 'beta',
+      userId: 'aaaaaaaa-2222-2222-2222-222222222222',
+      userEmail: 'beta@x.com',
     });
     const creds: StoredCredentials = {
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a, [b.projectId]: b },
+      active: a.userId,
+      profiles: { [a.userId]: a, [b.userId]: b },
     };
-    expect(findProfile(creds, a.projectId)?.projectName).toBe('alpha');
-    expect(findProfile(creds, 'beta')?.projectId).toBe(b.projectId);
+    expect(findProfile(creds, a.userId)?.userEmail).toBe('alpha@x.com');
+    expect(findProfile(creds, 'beta@x.com')?.userId).toBe(b.userId);
     // Both ids share 'aaaaaaaa' prefix — ambiguous so should return null.
     expect(findProfile(creds, 'aaaaaaaa')).toBeNull();
     // Unique prefix.
-    expect(findProfile(creds, 'aaaaaaaa-1111')?.projectName).toBe('alpha');
+    expect(findProfile(creds, 'aaaaaaaa-1111')?.userEmail).toBe('alpha@x.com');
     // Short prefix below threshold.
     expect(findProfile(creds, 'aaa')).toBeNull();
     expect(findProfile(creds, 'does-not-exist')).toBeNull();
   });
 
   it('getActiveProfile returns the active or null', () => {
-    const p = sampleProfile({ projectId: 'x' });
+    const p = sampleProfile({ userId: 'x' });
     const creds: StoredCredentials = { version: 1, active: 'x', profiles: { x: p } };
-    expect(getActiveProfile(creds)?.projectId).toBe('x');
+    expect(getActiveProfile(creds)?.userId).toBe('x');
     const empty = emptyCredentials();
     expect(getActiveProfile(empty)).toBeNull();
   });

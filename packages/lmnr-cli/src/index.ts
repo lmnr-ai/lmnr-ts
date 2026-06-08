@@ -292,25 +292,25 @@ Examples:
 
   program
     .command("logout")
-    .description("Remove a stored OAuth profile. Defaults to the active profile.")
-    .argument("[project]", "Project id or name to log out of")
+    .description("Remove a stored login profile. Defaults to the active profile.")
+    .argument("[user]", "User email or id to log out of")
     .option("--all", "Remove every stored profile")
-    .action(async (project: string | undefined, options: { all?: boolean }) => {
-      await handleLogout(project, { all: options.all });
+    .action(async (user: string | undefined, options: { all?: boolean }) => {
+      await handleLogout(user, { all: options.all });
     });
 
   program
     .command("list")
-    .description("List authenticated project profiles")
+    .description("List authenticated login profiles")
     .action(async () => {
       await handleList();
     });
 
   program
-    .command("switch <project>")
-    .description("Change the active project profile (no re-authentication)")
-    .action(async (project: string) => {
-      await handleSwitch(project);
+    .command("switch <user>")
+    .description("Change the active login profile (no re-authentication)")
+    .action(async (user: string) => {
+      await handleSwitch(user);
     });
 
   const traces = program

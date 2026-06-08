@@ -15,8 +15,8 @@ export async function handleSwitch(target: string): Promise<void> {
     process.exit(1);
   }
 
-  creds.active = match.projectId;
+  creds.active = match.userId;
   await writeCredentials(creds);
-  const label = match.projectName ?? match.projectId;
+  const label = match.userEmail ?? match.userId;
   process.stdout.write(`Switched to ${label}\n`);
 }

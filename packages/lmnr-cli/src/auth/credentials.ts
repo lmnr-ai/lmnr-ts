@@ -5,8 +5,8 @@ import { dirname, join } from "node:path";
 export const CREDENTIALS_VERSION = 1;
 
 /**
- * Profile-keyed credentials. One file holds N projects' tokens.
- * `active` is the projectId of the currently selected profile.
+ * Profile-keyed credentials. One file holds N users' tokens.
+ * `active` is the userId of the currently selected profile.
  */
 export interface StoredCredentials {
   version: 1;
@@ -14,25 +14,20 @@ export interface StoredCredentials {
   profiles: Record<string, ProfileEntry>;
 }
 
+/**
+ * BetterAuth token bundle for one user. Login is user-scoped now:
+ * - `sessionToken` is the durable BetterAuth session token (the refresh token).
+ * - `accessToken` is the short-lived (15m) EdDSA JWT minted from the session.
+ */
 export interface ProfileEntry {
-  tokenEndpoint: string;
   issuer: string;
   baseUrl: string;
+  sessionToken: string;
   accessToken: string;
   accessTokenExpiresAt: string;
-  refreshToken: string;
-  refreshTokenExpiresAt: string;
-  tokenType: string;
-  scope: string;
+  sessionExpiresAt?: string;
   userEmail?: string;
-  userId?: string;
-  projectId: string;
-  projectName?: string;
-  workspaceId?: string;
-  workspaceName?: string;
-  // Server-side row id for the project API key stored in `accessToken`. Used by
-  // `lmnr-cli logout` to revoke via DELETE /api/projects/<id>/api-keys/<keyId>.
-  apiKeyId?: string;
+  userId: string;
   createdAt: string;
   lastUsedAt?: string;
 }
@@ -111,13 +106,13 @@ export async function deleteCredentials(): Promise<boolean> {
 }
 
 /**
- * Insert / replace a profile keyed by projectId, set it active, and write back.
+ * Insert / replace a profile keyed by userId, set it active, and write back.
  * Returns the updated blob.
  */
 export async function upsertProfile(profile: ProfileEntry): Promise<StoredCredentials> {
   const existing = (await readCredentials()) ?? emptyCredentials();
-  existing.profiles[profile.projectId] = profile;
-  existing.active = profile.projectId;
+  existing.profiles[profile.userId] = profile;
+  existing.active = profile.userId;
   await writeCredentials(existing);
   return existing;
 }
@@ -127,8 +122,8 @@ export function emptyCredentials(): StoredCredentials {
 }
 
 /**
- * Resolve a profile from the blob by projectId (exact or prefix>=8) or
- * exact projectName. Returns null if not found.
+ * Resolve a profile from the blob by exact userId, exact userEmail, or
+ * userId prefix (>=8 chars, unique). Returns null if not found.
  */
 export function findProfile(
   creds: StoredCredentials,
@@ -139,11 +134,11 @@ export function findProfile(
   const direct = creds.profiles[trimmed];
   if (direct) return direct;
   for (const p of Object.values(creds.profiles)) {
-    if (p.projectName && p.projectName === trimmed) return p;
+    if (p.userEmail && p.userEmail === trimmed) return p;
   }
   if (trimmed.length >= 8) {
     const prefixMatches = Object.values(creds.profiles).filter((p) =>
-      p.projectId.startsWith(trimmed),
+      p.userId.startsWith(trimmed),
     );
     if (prefixMatches.length === 1) return prefixMatches[0];
   }

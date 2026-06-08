@@ -20,17 +20,14 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 function profile(overrides: Partial<ProfileEntry> = {}): ProfileEntry {
   return {
-    tokenEndpoint: 'http://localhost:3010/api/cli/device/poll',
     issuer: 'http://localhost:3010',
     baseUrl: 'http://localhost:8010',
-    accessToken: 'real-api-key',
+    sessionToken: 'session-token',
+    accessToken: 'jwt-value',
     accessTokenExpiresAt: '2099-01-01T00:00:00.000Z',
-    refreshToken: '',
-    refreshTokenExpiresAt: '2099-01-01T00:00:00.000Z',
-    tokenType: 'Bearer',
-    scope: 'projects:rw',
-    projectId: 'p-aaaa',
-    apiKeyId: '11111111-1111-1111-1111-111111111111',
+    sessionExpiresAt: '2099-01-08T00:00:00.000Z',
+    userId: 'u-aaaa',
+    userEmail: 'alpha@x.com',
     createdAt: '2026-06-01T00:00:00.000Z',
     ...overrides,
   };
@@ -43,8 +40,8 @@ beforeEach(() => {
     throw new Error(`exit:${code ?? 0}`);
   }) as never);
   stderrMock = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-  // Stub global fetch so logout's best-effort revoke call doesn't try to
-  // hit a real server. Default: 200 OK.
+  // Stub global fetch so logout's best-effort session revoke call doesn't try
+  // to hit a real server. Default: 200 OK.
   fetchMock = vi.fn(() =>
     Promise.resolve(new Response(null, { status: 200 })),
   );
@@ -61,83 +58,83 @@ afterEach(async () => {
 
 describe('handleLogout', () => {
   it('--all removes the entire file', async () => {
-    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
-    const b = profile({ projectId: 'p-bbbb', projectName: 'beta' });
+    const a = profile({ userId: 'u-aaaa', userEmail: 'alpha@x.com' });
+    const b = profile({ userId: 'u-bbbb', userEmail: 'beta@x.com' });
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a, [b.projectId]: b },
+      active: a.userId,
+      profiles: { [a.userId]: a, [b.userId]: b },
     });
     await handleLogout(undefined, { all: true });
     expect(await readCredentials()).toBeNull();
   });
 
-  it('removes a specific profile by id', async () => {
-    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
-    const b = profile({ projectId: 'p-bbbb', projectName: 'beta' });
+  it('removes a specific profile by userId', async () => {
+    const a = profile({ userId: 'u-aaaa', userEmail: 'alpha@x.com' });
+    const b = profile({ userId: 'u-bbbb', userEmail: 'beta@x.com' });
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a, [b.projectId]: b },
+      active: a.userId,
+      profiles: { [a.userId]: a, [b.userId]: b },
     });
-    await handleLogout('p-bbbb');
+    await handleLogout('u-bbbb');
     const after = await readCredentials();
-    expect(after?.profiles['p-bbbb']).toBeUndefined();
-    expect(after?.profiles['p-aaaa']).toBeDefined();
+    expect(after?.profiles['u-bbbb']).toBeUndefined();
+    expect(after?.profiles['u-aaaa']).toBeDefined();
     // Active unchanged because we removed a non-active profile.
-    expect(after?.active).toBe('p-aaaa');
-    expect(stderrMock).toHaveBeenCalledWith('Logged out of beta.\n');
+    expect(after?.active).toBe('u-aaaa');
+    expect(stderrMock).toHaveBeenCalledWith('Logged out of beta@x.com.\n');
   });
 
-  it('removes a profile by name', async () => {
-    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
-    const b = profile({ projectId: 'p-bbbb', projectName: 'beta' });
+  it('removes a profile by email', async () => {
+    const a = profile({ userId: 'u-aaaa', userEmail: 'alpha@x.com' });
+    const b = profile({ userId: 'u-bbbb', userEmail: 'beta@x.com' });
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a, [b.projectId]: b },
+      active: a.userId,
+      profiles: { [a.userId]: a, [b.userId]: b },
     });
-    await handleLogout('beta');
+    await handleLogout('beta@x.com');
     const after = await readCredentials();
-    expect(after?.profiles['p-bbbb']).toBeUndefined();
+    expect(after?.profiles['u-bbbb']).toBeUndefined();
   });
 
   it('default-when-active: removes active, reassigns to most-recently-used', async () => {
     const olderTime = '2026-05-01T00:00:00.000Z';
     const newerTime = '2026-06-01T00:00:00.000Z';
-    const active = profile({ projectId: 'p-active', projectName: 'act' });
+    const active = profile({ userId: 'u-active', userEmail: 'act@x.com' });
     const older = profile({
-      projectId: 'p-older',
-      projectName: 'old',
+      userId: 'u-older',
+      userEmail: 'old@x.com',
       lastUsedAt: olderTime,
     });
     const newer = profile({
-      projectId: 'p-newer',
-      projectName: 'new',
+      userId: 'u-newer',
+      userEmail: 'new@x.com',
       lastUsedAt: newerTime,
     });
     await writeCredentials({
       version: 1,
-      active: 'p-active',
+      active: 'u-active',
       profiles: {
-        [active.projectId]: active,
-        [older.projectId]: older,
-        [newer.projectId]: newer,
+        [active.userId]: active,
+        [older.userId]: older,
+        [newer.userId]: newer,
       },
     });
     await handleLogout(undefined);
     const after = await readCredentials();
-    expect(after?.profiles['p-active']).toBeUndefined();
-    expect(after?.active).toBe('p-newer');
-    expect(stderrMock).toHaveBeenCalledWith('Logged out of act.\n');
+    expect(after?.profiles['u-active']).toBeUndefined();
+    expect(after?.active).toBe('u-newer');
+    expect(stderrMock).toHaveBeenCalledWith('Logged out of act@x.com.\n');
   });
 
   it('default-with-one-profile removes and deletes the file', async () => {
-    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
+    const a = profile({ userId: 'u-aaaa', userEmail: 'alpha@x.com' });
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a },
+      active: a.userId,
+      profiles: { [a.userId]: a },
     });
     await handleLogout(undefined);
     expect(await readCredentials()).toBeNull();
@@ -150,88 +147,88 @@ describe('handleLogout', () => {
   });
 
   it('exits 1 when target does not match', async () => {
-    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
+    const a = profile({ userId: 'u-aaaa', userEmail: 'alpha@x.com' });
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a },
+      active: a.userId,
+      profiles: { [a.userId]: a },
     });
     await expect(handleLogout('does-not-exist')).rejects.toThrow('exit:1');
     expect(exitMock).toHaveBeenCalledWith(1);
   });
 
-  it('DELETEs the project API key before removing the profile', async () => {
+  it('POSTs sign-out with the session token before removing the profile', async () => {
     const a = profile({
-      projectId: 'p-aaaa',
-      projectName: 'alpha',
-      apiKeyId: 'aaaa-1111-2222-3333-bbbb',
-      accessToken: 'secret-key',
+      userId: 'u-aaaa',
+      userEmail: 'alpha@x.com',
+      sessionToken: 'secret-session',
     });
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a },
+      active: a.userId,
+      profiles: { [a.userId]: a },
     });
-    await handleLogout('p-aaaa');
+    await handleLogout('u-aaaa');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('http://localhost:3010/api/projects/p-aaaa/api-keys/aaaa-1111-2222-3333-bbbb');
-    expect(init.method).toBe('DELETE');
-    expect(init.headers.authorization).toBe('Bearer secret-key');
+    expect(url).toBe('http://localhost:3010/api/auth/sign-out');
+    expect(init.method).toBe('POST');
+    expect(init.headers.authorization).toBe('Bearer secret-session');
+    expect(init.body).toBe('{}');
     expect(await readCredentials()).toBeNull();
   });
 
-  it('skips server-side revoke when apiKeyId is missing', async () => {
-    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha', apiKeyId: undefined });
+  it('skips server-side revoke when sessionToken is missing', async () => {
+    const a = profile({ userId: 'u-aaaa', userEmail: 'alpha@x.com', sessionToken: '' });
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a },
+      active: a.userId,
+      profiles: { [a.userId]: a },
     });
-    await handleLogout('p-aaaa');
+    await handleLogout('u-aaaa');
     expect(fetchMock).not.toHaveBeenCalled();
     expect(await readCredentials()).toBeNull();
   });
 
   it('continues local logout even when revoke endpoint errors', async () => {
     fetchMock.mockResolvedValueOnce(new Response('boom', { status: 500 }));
-    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
+    const a = profile({ userId: 'u-aaaa', userEmail: 'alpha@x.com' });
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a },
+      active: a.userId,
+      profiles: { [a.userId]: a },
     });
-    await handleLogout('p-aaaa');
+    await handleLogout('u-aaaa');
     expect(await readCredentials()).toBeNull();
   });
 
   it('continues local logout when revoke endpoint throws (network down)', async () => {
     fetchMock.mockRejectedValueOnce(new Error('ECONNREFUSED'));
-    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
+    const a = profile({ userId: 'u-aaaa', userEmail: 'alpha@x.com' });
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a },
+      active: a.userId,
+      profiles: { [a.userId]: a },
     });
-    await handleLogout('p-aaaa');
+    await handleLogout('u-aaaa');
     expect(await readCredentials()).toBeNull();
   });
 
-  it('--all revokes every profile before deleting the file', async () => {
-    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha', apiKeyId: 'k-a' });
-    const b = profile({ projectId: 'p-bbbb', projectName: 'beta', apiKeyId: 'k-b' });
+  it('--all revokes every session before deleting the file', async () => {
+    const a = profile({ userId: 'u-aaaa', userEmail: 'alpha@x.com', sessionToken: 's-a' });
+    const b = profile({ userId: 'u-bbbb', userEmail: 'beta@x.com', sessionToken: 's-b' });
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a, [b.projectId]: b },
+      active: a.userId,
+      profiles: { [a.userId]: a, [b.userId]: b },
     });
     await handleLogout(undefined, { all: true });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    const urls = fetchMock.mock.calls.map((c) => c[0]).sort();
-    expect(urls).toEqual([
-      'http://localhost:3010/api/projects/p-aaaa/api-keys/k-a',
-      'http://localhost:3010/api/projects/p-bbbb/api-keys/k-b',
-    ]);
+    const tokens = fetchMock.mock.calls
+      .map((c) => (c[1] as RequestInit).headers as Record<string, string>)
+      .map((h) => h.authorization)
+      .sort();
+    expect(tokens).toEqual(['Bearer s-a', 'Bearer s-b']);
     expect(await readCredentials()).toBeNull();
   });
 });

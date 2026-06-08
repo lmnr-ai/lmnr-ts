@@ -20,16 +20,14 @@ let stdoutMock: ReturnType<typeof vi.spyOn>;
 
 function profile(overrides: Partial<ProfileEntry> = {}): ProfileEntry {
   return {
-    tokenEndpoint: 'http://localhost:3010/oauth/token',
     issuer: 'http://localhost:3010',
     baseUrl: 'http://localhost:8010',
-    accessToken: 't',
+    sessionToken: 'session-token',
+    accessToken: 'jwt',
     accessTokenExpiresAt: '2030-01-01T00:00:00.000Z',
-    refreshToken: 'rt',
-    refreshTokenExpiresAt: '2030-02-01T00:00:00.000Z',
-    tokenType: 'Bearer',
-    scope: 'projects:rw',
-    projectId: 'p-aaaa',
+    sessionExpiresAt: '2030-01-08T00:00:00.000Z',
+    userId: 'u-aaaa',
+    userEmail: 'alpha@x.com',
     createdAt: '2026-06-01T00:00:00.000Z',
     ...overrides,
   };
@@ -53,52 +51,52 @@ afterEach(async () => {
 });
 
 describe('handleSwitch', () => {
-  it('switches by exact projectId', async () => {
-    const a = profile({ projectId: 'p-aaaa-1111-1111-1111-111111111111', projectName: 'alpha' });
-    const b = profile({ projectId: 'p-bbbb-2222-2222-2222-222222222222', projectName: 'beta' });
+  it('switches by exact userId', async () => {
+    const a = profile({ userId: 'u-aaaa-1111-1111-1111-111111111111', userEmail: 'alpha@x.com' });
+    const b = profile({ userId: 'u-bbbb-2222-2222-2222-222222222222', userEmail: 'beta@x.com' });
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a, [b.projectId]: b },
+      active: a.userId,
+      profiles: { [a.userId]: a, [b.userId]: b },
     });
-    await handleSwitch(b.projectId);
+    await handleSwitch(b.userId);
     const after = await readCredentials();
-    expect(after?.active).toBe(b.projectId);
-    expect(stdoutMock).toHaveBeenCalledWith('Switched to beta\n');
+    expect(after?.active).toBe(b.userId);
+    expect(stdoutMock).toHaveBeenCalledWith('Switched to beta@x.com\n');
   });
 
-  it('switches by exact projectName', async () => {
-    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
-    const b = profile({ projectId: 'p-bbbb', projectName: 'beta' });
+  it('switches by exact email', async () => {
+    const a = profile({ userId: 'u-aaaa', userEmail: 'alpha@x.com' });
+    const b = profile({ userId: 'u-bbbb', userEmail: 'beta@x.com' });
     await writeCredentials({
       version: 1,
-      active: 'p-aaaa',
-      profiles: { [a.projectId]: a, [b.projectId]: b },
+      active: 'u-aaaa',
+      profiles: { [a.userId]: a, [b.userId]: b },
     });
-    await handleSwitch('beta');
+    await handleSwitch('beta@x.com');
     const after = await readCredentials();
-    expect(after?.active).toBe('p-bbbb');
+    expect(after?.active).toBe('u-bbbb');
   });
 
   it('switches by id prefix (>=8 chars, unique)', async () => {
-    const a = profile({ projectId: 'aaaaaaaa-1111-1111-1111-111111111111', projectName: 'alpha' });
-    const b = profile({ projectId: 'bbbbbbbb-2222-2222-2222-222222222222', projectName: 'beta' });
+    const a = profile({ userId: 'aaaaaaaa-1111-1111-1111-111111111111', userEmail: 'alpha@x.com' });
+    const b = profile({ userId: 'bbbbbbbb-2222-2222-2222-222222222222', userEmail: 'beta@x.com' });
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a, [b.projectId]: b },
+      active: a.userId,
+      profiles: { [a.userId]: a, [b.userId]: b },
     });
     await handleSwitch('bbbbbbbb');
     const after = await readCredentials();
-    expect(after?.active).toBe(b.projectId);
+    expect(after?.active).toBe(b.userId);
   });
 
   it('exits 1 when no profile matches', async () => {
-    const a = profile({ projectId: 'p-aaaa', projectName: 'alpha' });
+    const a = profile({ userId: 'u-aaaa', userEmail: 'alpha@x.com' });
     await writeCredentials({
       version: 1,
-      active: a.projectId,
-      profiles: { [a.projectId]: a },
+      active: a.userId,
+      profiles: { [a.userId]: a },
     });
     await expect(handleSwitch('does-not-exist')).rejects.toThrow('exit:1');
     expect(exitMock).toHaveBeenCalledWith(1);

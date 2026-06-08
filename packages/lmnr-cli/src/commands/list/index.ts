@@ -11,9 +11,9 @@ export async function handleList(): Promise<void> {
 
   const profiles = Object.values(creds.profiles);
   const rows = profiles.map((p) => ({
-    active: p.projectId === creds.active,
-    project: p.projectName ?? p.projectId,
-    workspace: p.workspaceName ?? "—",
+    active: p.userId === creds.active,
+    email: p.userEmail ?? p.userId,
+    issuer: p.issuer,
     lastUsed: relativeTime(p.lastUsedAt ?? p.createdAt),
     sortKey: lastUsedMs(p),
   }));
@@ -25,28 +25,28 @@ export async function handleList(): Promise<void> {
 
 interface Row {
   active: boolean;
-  project: string;
-  workspace: string;
+  email: string;
+  issuer: string;
   lastUsed: string;
 }
 
 function renderTable(rows: Row[]): string {
-  const headers = { project: "PROJECT", workspace: "WORKSPACE", lastUsed: "LAST USED" };
-  const projectW = Math.max(headers.project.length, ...rows.map((r) => r.project.length));
-  const workspaceW = Math.max(headers.workspace.length, ...rows.map((r) => r.workspace.length));
+  const headers = { email: "EMAIL", issuer: "ISSUER", lastUsed: "LAST USED" };
+  const emailW = Math.max(headers.email.length, ...rows.map((r) => r.email.length));
+  const issuerW = Math.max(headers.issuer.length, ...rows.map((r) => r.issuer.length));
 
   const pad = (s: string, w: number) => s + " ".repeat(Math.max(0, w - s.length));
   const lines: string[] = [];
   // 2-char active gutter, then columns separated by 2 spaces.
   const head =
-    `  ${pad(headers.project, projectW)}  ` +
-    `${pad(headers.workspace, workspaceW)}  ${headers.lastUsed}`;
+    `  ${pad(headers.email, emailW)}  ` +
+    `${pad(headers.issuer, issuerW)}  ${headers.lastUsed}`;
   lines.push(head);
   for (const r of rows) {
     const marker = r.active ? "* " : "  ";
     const line =
-      `${marker}${pad(r.project, projectW)}  ` +
-      `${pad(r.workspace, workspaceW)}  ${r.lastUsed}`;
+      `${marker}${pad(r.email, emailW)}  ` +
+      `${pad(r.issuer, issuerW)}  ${r.lastUsed}`;
     lines.push(line);
   }
   return lines.join("\n") + "\n";
