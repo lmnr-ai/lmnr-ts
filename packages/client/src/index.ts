@@ -3,6 +3,7 @@ import { CliResource } from "./resources/cli";
 import { DatasetsResource } from "./resources/datasets";
 import { EvalsResource } from "./resources/evals";
 import { EvaluatorsResource } from "./resources/evaluators";
+import { type LaminarAuth } from "./resources/index";
 import { RolloutSessionsResource } from "./resources/rollout-sessions";
 import { SqlResource } from "./resources/sql";
 import { TagsResource } from "./resources/tags";
@@ -11,7 +12,7 @@ import { loadEnv } from "./utils";
 
 export class LaminarClient {
   private baseUrl: string;
-  private projectApiKey: string;
+  private auth: LaminarAuth;
   private _browserEvents: BrowserEventsResource;
   private _cli: CliResource;
   private _datasets: DatasetsResource;
@@ -24,22 +25,37 @@ export class LaminarClient {
 
   constructor({
     baseUrl,
-    projectApiKey,
     port,
+    auth,
+    projectApiKey,
     cliUserProjectId,
   }: {
     baseUrl?: string,
-    projectApiKey?: string,
     port?: number,
     /**
-     * CLI user-token auth: when set, `projectApiKey` is a BetterAuth user
-     * access JWT and the CLI-surfaced resources (sql/datasets/rollouts) route
-     * to `/v1/cli/*` with this project id in the `x-lmnr-project-id` header.
+     * Unified auth. A discriminated union that drives both the URL prefix and
+     * the request headers:
+     *  - `{ type: "apiKey", key }`               → project key, `/v1/*`.
+     *  - `{ type: "userToken", token, projectId }` → user JWT, `/v1/cli/*` with
+     *    `x-lmnr-project-id`.
+     * When omitted, the legacy `projectApiKey` / `cliUserProjectId` fields (or
+     * `LMNR_PROJECT_API_KEY`) are normalized into this union.
+     */
+    auth?: LaminarAuth,
+    /**
+     * @deprecated Pass `auth: { type: "apiKey", key }` instead. Kept for
+     * backward compatibility — normalized into the unified `auth` union.
+     */
+    projectApiKey?: string,
+    /**
+     * @deprecated Pass `auth: { type: "userToken", token, projectId }` instead.
+     * Kept for backward compatibility: when set, the legacy `projectApiKey` is
+     * treated as a user JWT and routes to `/v1/cli/*` with this project id.
      */
     cliUserProjectId?: string,
   } = {}) {
     loadEnv();
-    this.projectApiKey = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY!;
+    this.auth = LaminarClient.normalizeAuth(auth, projectApiKey, cliUserProjectId);
     const httpPort = port ?? (
       baseUrl?.match(/:\d{1,5}$/g)
         ? parseInt(baseUrl.match(/:\d{1,5}$/g)![0].slice(1))
@@ -47,17 +63,37 @@ export class LaminarClient {
     const baseUrlNoPort = (baseUrl ?? process.env.LMNR_BASE_URL)
       ?.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
     this.baseUrl = `${baseUrlNoPort ?? 'https://api.lmnr.ai'}:${httpPort}`;
-    // Only the CLI-twinned resources accept cliUserProjectId; the rest are
-    // always project-key / `/v1` (the CLI never calls them on the user path).
-    this._browserEvents = new BrowserEventsResource(this.baseUrl, this.projectApiKey);
-    this._cli = new CliResource(this.baseUrl, this.projectApiKey);
-    this._datasets = new DatasetsResource(this.baseUrl, this.projectApiKey, cliUserProjectId);
-    this._evals = new EvalsResource(this.baseUrl, this.projectApiKey);
-    this._evaluators = new EvaluatorsResource(this.baseUrl, this.projectApiKey);
-    this._rolloutSessions = new RolloutSessionsResource(this.baseUrl, this.projectApiKey, cliUserProjectId);
-    this._sql = new SqlResource(this.baseUrl, this.projectApiKey, cliUserProjectId);
-    this._tags = new TagsResource(this.baseUrl, this.projectApiKey);
-    this._traces = new TracesResource(this.baseUrl, this.projectApiKey);
+    this._browserEvents = new BrowserEventsResource(this.baseUrl, this.auth);
+    this._cli = new CliResource(this.baseUrl, this.auth);
+    this._datasets = new DatasetsResource(this.baseUrl, this.auth);
+    this._evals = new EvalsResource(this.baseUrl, this.auth);
+    this._evaluators = new EvaluatorsResource(this.baseUrl, this.auth);
+    this._rolloutSessions = new RolloutSessionsResource(this.baseUrl, this.auth);
+    this._sql = new SqlResource(this.baseUrl, this.auth);
+    this._tags = new TagsResource(this.baseUrl, this.auth);
+    this._traces = new TracesResource(this.baseUrl, this.auth);
+  }
+
+  /**
+   * Normalize the constructor's auth inputs into a {@link LaminarAuth} union.
+   * Precedence: an explicit `auth` wins; otherwise the legacy
+   * `projectApiKey` (+ optional `cliUserProjectId`) is mapped — a present
+   * `cliUserProjectId` selects the user-token surface, otherwise the project
+   * key surface. Falls back to `LMNR_PROJECT_API_KEY` as a project key.
+   */
+  private static normalizeAuth(
+    auth: LaminarAuth | undefined,
+    projectApiKey: string | undefined,
+    cliUserProjectId: string | undefined,
+  ): LaminarAuth {
+    if (auth) {
+      return auth;
+    }
+    const key = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY!;
+    if (cliUserProjectId) {
+      return { type: "userToken", token: key, projectId: cliUserProjectId };
+    }
+    return { type: "apiKey", key };
   }
 
   public get browserEvents() {
@@ -102,3 +138,4 @@ export {
   RolloutSessionsResource,
 } from "./resources/rollout-sessions";
 export type { CliProject } from "./resources/cli";
+export type { LaminarAuth } from "./resources/index";

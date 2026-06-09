@@ -7,15 +7,15 @@ import {
 } from "@lmnr-ai/types";
 
 import { initializeLogger } from "../utils";
-import { BaseResource } from ".";
+import { BaseResource, type LaminarAuth } from ".";
 
 const logger = initializeLogger();
 const DEFAULT_DATASET_PULL_LIMIT = 100;
 const DEFAULT_DATASET_PUSH_BATCH_SIZE = 100;
 
 export class DatasetsResource extends BaseResource {
-  constructor(baseHttpUrl: string, projectApiKey: string, cliUserProjectId?: string) {
-    super(baseHttpUrl, projectApiKey, cliUserProjectId);
+  constructor(baseHttpUrl: string, auth: LaminarAuth) {
+    super(baseHttpUrl, auth);
   }
 
   /**

@@ -1,7 +1,7 @@
 import { type StringUUID } from "@lmnr-ai/types";
 
 import { isStringUUID, otelSpanIdToUUID, otelTraceIdToUUID } from "../utils";
-import { BaseResource } from ".";
+import { BaseResource, type LaminarAuth } from ".";
 
 enum EvaluatorScoreSourceType {
   Evaluator = "Evaluator",
@@ -31,8 +31,8 @@ type ScoreOptions =
  * Resource for creating evaluator scores
  */
 export class EvaluatorsResource extends BaseResource {
-  constructor(baseHttpUrl: string, projectApiKey: string) {
-    super(baseHttpUrl, projectApiKey);
+  constructor(baseHttpUrl: string, auth: LaminarAuth) {
+    super(baseHttpUrl, auth);
   }
 
   /**

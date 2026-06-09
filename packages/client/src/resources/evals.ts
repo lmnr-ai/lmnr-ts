@@ -6,14 +6,14 @@ import {
 } from "@lmnr-ai/types";
 
 import { initializeLogger, newUUID, slicePayload } from "../utils";
-import { BaseResource } from ".";
+import { BaseResource, type LaminarAuth } from ".";
 
 const logger = initializeLogger();
 const INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH = 16_000_000; // 16MB
 
 export class EvalsResource extends BaseResource {
-  constructor(baseHttpUrl: string, projectApiKey: string) {
-    super(baseHttpUrl, projectApiKey);
+  constructor(baseHttpUrl: string, auth: LaminarAuth) {
+    super(baseHttpUrl, auth);
   }
 
   /**

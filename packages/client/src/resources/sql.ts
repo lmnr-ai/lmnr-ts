@@ -1,8 +1,8 @@
-import { BaseResource } from "./index";
+import { BaseResource, type LaminarAuth } from "./index";
 
 export class SqlResource extends BaseResource {
-  constructor(baseHttpUrl: string, projectApiKey: string, cliUserProjectId?: string) {
-    super(baseHttpUrl, projectApiKey, cliUserProjectId);
+  constructor(baseHttpUrl: string, auth: LaminarAuth) {
+    super(baseHttpUrl, auth);
   }
 
   public async query(

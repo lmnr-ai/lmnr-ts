@@ -1,7 +1,7 @@
 import { type CachedSpan, errorMessage } from "@lmnr-ai/types";
 
 import { initializeLogger } from "../utils";
-import { BaseResource } from "./index";
+import { BaseResource, type LaminarAuth } from "./index";
 
 const logger = initializeLogger();
 
@@ -46,8 +46,8 @@ const toCachedSpan = (response: unknown): CachedSpan => {
 };
 
 export class RolloutSessionsResource extends BaseResource {
-  constructor(baseHttpUrl: string, projectApiKey: string) {
-    super(baseHttpUrl, projectApiKey);
+  constructor(baseHttpUrl: string, auth: LaminarAuth) {
+    super(baseHttpUrl, auth);
   }
 
   /**
