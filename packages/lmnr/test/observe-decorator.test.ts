@@ -4,7 +4,8 @@ import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { context, trace } from "@opentelemetry/api";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
-import { Laminar, observeExperimentalDecorator } from "../src";
+import { Laminar, observe, observeExperimentalDecorator } from "../src";
+import { getRuntime, resetDebugRuntime } from "../src/debug";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 
 void describe("observeExperimentalDecorator", () => {
@@ -218,5 +219,40 @@ void describe("observeExperimentalDecorator", () => {
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].attributes["lmnr.span.input"], undefined);
     assert.strictEqual(spans[0].attributes["lmnr.span.output"], undefined);
+  });
+
+  void it("arms the debug runtime from observe({ parentSpanContext })", async () => {
+    // observe() spans bypass Laminar._startSpan, so a downstream process whose
+    // first traced work is observe({ parentSpanContext }) carrying an armed
+    // debug block must still join the upstream run. observeBase arms the runtime
+    // when it parses the parent context, mirroring _startSpan.
+    resetDebugRuntime();
+    assert.strictEqual(getRuntime(), null);
+
+    try {
+      await observe(
+        {
+          name: "downstream",
+          parentSpanContext: {
+            traceId: "01234567-89ab-cdef-0123-456789abcdef",
+            spanId: "00000000-0000-0000-0123-456789abcdef",
+            isRemote: false,
+            debug: {
+              enabled: true,
+              sessionId: "00000000-0000-0000-0000-0000000000bb",
+            },
+          },
+        },
+        // eslint-disable-next-line @typescript-eslint/require-await
+        async () => "ok",
+      );
+
+      const runtime = getRuntime();
+      assert.ok(runtime !== null);
+      assert.strictEqual(runtime.sessionId, "00000000-0000-0000-0000-0000000000bb");
+      assert.strictEqual(runtime.localOrigin, false);
+    } finally {
+      resetDebugRuntime();
+    }
   });
 });

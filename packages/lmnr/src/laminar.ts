@@ -467,7 +467,8 @@ export class Laminar {
   /**
    * Arm the debug runtime from a propagated `DebugContext`, if not already armed.
    *
-   * Called from `_startSpan` (the single funnel all spans pass through) when a
+   * Called from `_startSpan` (the funnel for explicit span creation) and from
+   * `observeBase` (the funnel for `observe()` / the observe decorators), when a
    * parent `LaminarSpanContext` carrying an armed debug block first parses — so
    * a downstream service joins the upstream debug run regardless of how its
    * spans originate (auto-instrumentation, manual observe, external library).
@@ -481,9 +482,11 @@ export class Laminar {
    * session (idempotent) and stamps `rollout.session_id`.
    *
    * Never throws: any failure leaves debug inert.
-   * @private
+   *
+   * @internal Public only so `observeBase` (in opentelemetry-lib) can reach it
+   * without an import cycle; not part of the supported API.
    */
-  private static _armDebugRuntimeFromContext(
+  public static _armDebugRuntimeFromContext(
     debug: LaminarSpanContext["debug"],
   ): void {
     try {
