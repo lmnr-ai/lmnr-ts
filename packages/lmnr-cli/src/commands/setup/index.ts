@@ -21,7 +21,7 @@ const DEFAULT_BASE_URL = "https://api.lmnr.ai";
 //   6  login_failed         — device-flow login failed / no creds after login
 //   7  no_project           — no project to select (and none could be created)
 //   8  env_write_failed     — minted a key but couldn't write ./.env
-//   9  setup_key_failed     — POST /api/cli/setup-key failed
+//   9  setup_key_failed     — POST /api/cli/api-key failed
 //   10 list_projects_failed — GET /v1/cli/projects (discovery) failed
 const EXIT_NO_ACCESS = 4;
 const EXIT_LOGIN_FAILED = 6;
@@ -479,13 +479,13 @@ async function safeReadCredentials(): Promise<Credentials | null> {
 // Key minting
 // ---------------------------------------------------------------------------
 
-/** POST /api/cli/setup-key with the session bearer for an explicit project. */
+/** POST /api/cli/api-key with the session bearer for an explicit project. */
 async function mintSetupKey(
   issuer: string,
   sessionToken: string,
   projectId: string,
 ): Promise<SetupKeyResponse> {
-  const url = `${trimSlash(issuer)}/api/cli/setup-key`;
+  const url = `${trimSlash(issuer)}/api/cli/api-key`;
   const res = await fetch(url, {
     method: "POST",
     headers: { authorization: `Bearer ${sessionToken}`, "content-type": "application/json" },
@@ -495,7 +495,7 @@ async function mintSetupKey(
     return (await res.json()) as SetupKeyResponse;
   }
   const body = (await res.json().catch(() => ({}))) as { error?: string };
-  throw new Error(body.error ?? `setup-key request failed (${res.status})`);
+  throw new Error(body.error ?? `api-key request failed (${res.status})`);
 }
 
 async function promptProjectChoice(projects: CliProject[]): Promise<CliProject> {

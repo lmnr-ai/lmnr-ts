@@ -10,11 +10,11 @@ import { installSkill } from "./install-skill";
 
 // Mock giget: instead of hitting the network, write a small fixture skill tree
 // (SKILL.md + references/quickstart-node.md) into the dir giget was asked to
-// populate. Tests can override the impl (e.g. reject) per case.
-const downloadTemplate = vi.fn();
-vi.mock("giget", () => ({
-  downloadTemplate: (...args: unknown[]) => downloadTemplate(...args),
-}));
+// populate. Tests can override the impl (e.g. reject) per case. `vi.hoisted`
+// lets the mock factory (hoisted above imports) reference the same spy the
+// tests configure.
+const { downloadTemplate } = vi.hoisted(() => ({ downloadTemplate: vi.fn() }));
+vi.mock("giget", () => ({ downloadTemplate }));
 
 let scratch: string;
 
@@ -25,11 +25,11 @@ const skillPaths = (root: string) =>
 beforeEach(() => {
   scratch = mkdtempSync(join(tmpdir(), "lmnr-cli-skill-"));
   downloadTemplate.mockReset();
-  downloadTemplate.mockImplementation(async (_source: string, opts: { dir: string }) => {
+  downloadTemplate.mockImplementation((_source: string, opts: { dir: string }) => {
     mkdirSync(join(opts.dir, "references"), { recursive: true });
     writeFileSync(join(opts.dir, "SKILL.md"), "# Laminar quickstart trace\n");
     writeFileSync(join(opts.dir, "references", "quickstart-node.md"), "node quickstart\n");
-    return { dir: opts.dir, source: _source };
+    return Promise.resolve({ dir: opts.dir, source: _source });
   });
 });
 
