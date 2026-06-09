@@ -306,7 +306,10 @@ const asString = (value: unknown): string | undefined =>
  * `DebugContext.deserialize`.
  */
 const deserializeDebugContext = (data: Record<string, unknown>): DebugContext => ({
-  enabled: Boolean(data.enabled),
+  // Strict `=== true`, NOT Boolean(...): the producer always emits a real
+  // boolean, so anything else (e.g. the string "false", which is truthy) is a
+  // malformed/forged block and must NOT arm a downstream runtime.
+  enabled: data.enabled === true,
   sessionId: asString(data.sessionId ?? data.session_id),
   replayTraceId: asString(data.replayTraceId ?? data.replay_trace_id),
   cacheUntil: asString(data.cacheUntil ?? data.cache_until),

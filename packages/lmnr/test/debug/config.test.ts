@@ -282,4 +282,19 @@ void describe('LaminarSpanContext debug block parsing', () => {
     const ctx = deserializeLaminarSpanContext({ traceId: SESSION, spanId: REPLAY });
     assert.strictEqual(ctx.debug, undefined);
   });
+
+  void it('a non-boolean enabled never arms the block', () => {
+    // The producer always emits a real boolean. A truthy non-true value (e.g.
+    // the JSON string "false", or 1) is a malformed/forged block and must parse
+    // to enabled:false, never arming a downstream runtime.
+    for (const enabled of ['false', 'true', 1, {}] as unknown[]) {
+      const ctx = deserializeLaminarSpanContext({
+        traceId: SESSION,
+        spanId: REPLAY,
+        debug: { enabled, sessionId: SESSION },
+      });
+      assert.ok(ctx.debug !== undefined);
+      assert.strictEqual(ctx.debug.enabled, false);
+    }
+  });
 });
