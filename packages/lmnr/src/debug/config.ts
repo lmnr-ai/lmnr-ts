@@ -144,8 +144,12 @@ export const buildDebugConfig = (): DebugConfig | null => {
     (lastRun.session_id as string | undefined);
   const sessionId = providedSessionId || randomUUID();
   // The browser is opened once per fresh run; a reused (provided) session id is
-  // a continuation/replay, so it is not reopened.
-  const sessionMinted = providedSessionId === undefined;
+  // a continuation/replay, so it is not reopened. A FROM_LAST_RUN run is also a
+  // continuation attempt even when the pointer file is missing / has no
+  // session_id (loadLastRun returns {}), so suppress the browser there too.
+  const sessionMinted =
+    providedSessionId === undefined &&
+    !isTruthy(process.env.LMNR_DEBUG_FROM_LAST_RUN);
   const replayTraceId =
     process.env.LMNR_DEBUG_REPLAY_TRACE_ID ||
     (lastRun.trace_id as string | undefined) ||

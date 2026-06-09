@@ -121,6 +121,9 @@ void describe('buildDebugConfig (LMNR_DEBUG_FROM_LAST_RUN)', () => {
     assert.strictEqual(config.sessionId, 'session-xyz');
     assert.strictEqual(config.cacheUntilSpanId, '0123456789abcdef');
     assert.strictEqual(replayEnabledForConfig(config), true);
+    // A continuation reuses the pointer's session id, so the browser must not
+    // reopen.
+    assert.strictEqual(config.sessionMinted, false);
   });
 
   void it('env vars override per-field', () => {
@@ -159,6 +162,9 @@ void describe('buildDebugConfig (LMNR_DEBUG_FROM_LAST_RUN)', () => {
     assert.ok(config !== null);
     assert.strictEqual(config.replayTraceId, null);
     assert.strictEqual(config.sessionId.length, 36);
+    // FROM_LAST_RUN is a continuation attempt; even with a missing pointer the
+    // browser must not reopen, despite the freshly minted fallback id.
+    assert.strictEqual(config.sessionMinted, false);
   });
 });
 
