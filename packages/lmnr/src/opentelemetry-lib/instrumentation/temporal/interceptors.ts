@@ -207,11 +207,15 @@ class ActivityInboundInterceptor {
     input: T,
     next: (i: T) => Promise<R>,
   ): Promise<R> =>
-    // Wrap the entire execution in an isolated ALS scope so that
-    // _pushLaminarContext's `enterWith` (which restores the remote parent)
-    // cannot leak onto sibling activities that share the same async lineage.
+    // Wrap the entire execution in an isolated ALS scope seeded with an EMPTY
+    // stack. An activity's only legitimate parent is the remote context carried
+    // in its headers — never the worker thread's ambient stack. Seeding empty
+    // both isolates `_pushLaminarContext`'s `enterWith` from sibling activities
+    // and guarantees that when header restoration fails the activity runs
+    // detached (ROOT_CONTEXT) instead of attaching to an unrelated in-process
+    // trace left on the worker's async lineage.
     LaminarContextManager.runWithIsolatedContext(
-      LaminarContextManager.getContextStack(),
+      [],
       async () => {
         const restoredCtx = restoreContextFromHeaders(input.headers);
         if (!this.createActivitySpan || !restoredCtx) {
