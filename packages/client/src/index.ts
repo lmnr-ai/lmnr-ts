@@ -101,3 +101,4 @@ export {
   type CacheOutcome,
   RolloutSessionsResource,
 } from "./resources/rollout-sessions";
+export type { CliProject } from "./resources/cli";

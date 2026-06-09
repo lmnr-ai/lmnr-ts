@@ -1,3 +1,5 @@
+/* eslint-disable @stylistic/max-len -- this file is a markdown content asset, not code */
+
 // The Laminar agent skill, authored as a CLI asset and written directly to each
 // present agent dir by `installSkill` (no `npx skills add` — network dep /
 // version drift / historically mis-targeted Claude Code). Keep this concise:
