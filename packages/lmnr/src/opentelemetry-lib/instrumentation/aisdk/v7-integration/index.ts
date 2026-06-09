@@ -44,6 +44,7 @@ import {
   SPAN_TYPE,
 } from "../../../tracing/attributes";
 import { LaminarContextManager } from "../../../tracing/context";
+import { pushActiveLlmSpan, removeActiveLlmSpan } from "../active-llm-span";
 import {
   type LlmState,
   type OperationState,
@@ -237,6 +238,9 @@ export class LaminarAiSdkTelemetry {
       span,
       textDeltas: [],
     });
+    // Publish to the replay wrapper so a cache HIT marks THIS span CACHED, not
+    // the on-context operation span (the parked llm span never enters context).
+    pushActiveLlmSpan(span);
   };
 
   onLanguageModelCallEnd = (event: any): void => {
@@ -286,6 +290,7 @@ export class LaminarAiSdkTelemetry {
 
     span.setStatus({ code: SpanStatusCode.OK });
     span.end();
+    removeActiveLlmSpan(span);
     this.llmByKey.delete(stepKey(callId, stepNumber));
   };
 
@@ -357,6 +362,7 @@ export class LaminarAiSdkTelemetry {
         }
       }
       llm.span.end();
+      removeActiveLlmSpan(llm.span);
       this.llmByKey.delete(key);
     }
 
@@ -417,6 +423,7 @@ export class LaminarAiSdkTelemetry {
     span.setAttribute(SPAN_TYPE, "LLM");
     applyRequestModelAttributes(span, event);
     this.llmByKey.set(stepKey(callId, 0), { span, textDeltas: [] });
+    pushActiveLlmSpan(span);
   };
 
   onObjectStepFinish = (event: any): void => {
@@ -454,6 +461,7 @@ export class LaminarAiSdkTelemetry {
     }
     llm.span.setStatus({ code: SpanStatusCode.OK });
     llm.span.end();
+    removeActiveLlmSpan(llm.span);
     this.llmByKey.delete(stepKey(callId, 0));
   };
 
@@ -815,6 +823,7 @@ export class LaminarAiSdkTelemetry {
           }
         }
         llm.span.end();
+        removeActiveLlmSpan(llm.span);
         bump(readSpanEndTime(llm.span));
       }
     }

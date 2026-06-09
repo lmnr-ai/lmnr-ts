@@ -38,6 +38,7 @@ import { debugInputHash } from "../../../debug/hash";
 import { getRuntime } from "../../../debug/index";
 import { markSpanCached, replayEnabled } from "../../../debug/replay";
 import { Laminar } from "../../../laminar";
+import { peekActiveLlmSpan } from "./active-llm-span";
 
 type CacheResponse =
   | {
@@ -305,6 +306,18 @@ export abstract class BaseLaminarLanguageModel {
       return originalFn(options);
     }
 
+    // Capture the span to mark CACHED on a HIT, synchronously at call entry
+    // (before any await). On v7 the real `ai.llm` span is created by the
+    // telemetry integration and parked off the OTel context, so
+    // `Laminar.getCurrentSpan()` would resolve to the top-level operation span
+    // (`ai.generateText`) instead — the wrong span. The integration publishes
+    // each open LLM span to `peekActiveLlmSpan`, and AI SDK fires
+    // `onLanguageModelCallStart` immediately before this `doGenerate`/`doStream`
+    // with no await between, so the top of that stack is THIS call's LLM span.
+    // On v6 the integration isn't used (stack empty) and the SDK activates the
+    // live `doGenerate` LLM span on context, so `getCurrentSpan()` is correct.
+    const spanToMark = peekActiveLlmSpan() ?? Laminar.getCurrentSpan();
+
     // Reshape the prompt into the message array the server hashes, then hash it
     // (system message excluded) so the SDK and server key the cache identically.
     // A null/empty reshape means we could not reconstruct the prompt at all (a
@@ -323,7 +336,7 @@ export abstract class BaseLaminarLanguageModel {
 
     switch (outcome.kind) {
       case "hit":
-        markSpanCached(Laminar.getCurrentSpan());
+        markSpanCached(spanToMark);
         return buildFromCached(outcome.cached);
       case "miss":
         // First MISS latches live mode for the rest of the process, so later
