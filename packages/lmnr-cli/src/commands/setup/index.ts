@@ -5,8 +5,8 @@ import { createInterface } from "node:readline/promises";
 import { type CliProject, LaminarClient } from "@lmnr-ai/client";
 
 import { type Credentials, readCredentials } from "../../auth/credentials";
+import { getProjectId } from "../../auth/project-id";
 import { refreshIfNeeded } from "../../auth/resolve";
-import { whoami } from "../../auth/whoami";
 import { readEnvVar, writeEnvFile } from "../../utils/env-file";
 import { installSkill } from "../../utils/install-skill";
 import { type ProjectLink, readProjectLink, writeProjectLink } from "../../utils/project-link";
@@ -169,7 +169,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
 
   let needMint = true;
   if (envKey) {
-    const owner = await whoami(envKey, userBaseUrl);
+    const owner = await getProjectId(envKey, userBaseUrl);
     if (owner && owner === link.projectId) {
       needMint = false;
       if (!isJson) {

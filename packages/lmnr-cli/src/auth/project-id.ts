@@ -1,7 +1,7 @@
-// Standalone `GET /v1/cli/whoami` probe authed by a PROJECT API KEY (not the
+// Standalone `GET /v1/project` probe authed by a PROJECT API KEY (not the
 // user JWT). It's a separate helper rather than a `CliResource` method because
-// `CliResource` is keyed by the user JWT, while whoami is keyed by the project
-// key already sitting in the environment — overloading the resource's
+// `CliResource` is keyed by the user JWT, while this probe is keyed by the
+// project key already sitting in the environment — overloading the resource's
 // single-key model would be confusing.
 
 function trimSlash(url: string): string {
@@ -16,11 +16,11 @@ const DEFAULT_BASE_URL = "https://api.lmnr.ai";
  * caller treats null the same as "doesn't match the selected project" and
  * mints a fresh key.
  */
-export async function whoami(
+export async function getProjectId(
   projectApiKey: string,
   baseUrl: string = DEFAULT_BASE_URL,
 ): Promise<string | null> {
-  const url = `${trimSlash(baseUrl)}/v1/cli/whoami`;
+  const url = `${trimSlash(baseUrl)}/v1/project`;
   let res: Response;
   try {
     res = await fetch(url, {
