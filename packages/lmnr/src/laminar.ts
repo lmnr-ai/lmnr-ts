@@ -104,6 +104,14 @@ export class Laminar {
   // stale listeners and trip Node's MaxListenersExceededWarning.
   private static debugExitHook: (() => void) | null = null;
   /**
+   * Process-wide latch for debug-replay v2: once any LLM call gets a cache MISS,
+   * every subsequent call runs live (skipping the cache lookup) for the rest of
+   * the process. A COLD/`live` outcome runs that single call live WITHOUT
+   * setting this flag. Read by the AI SDK wrapper's caching path; reset in
+   * {@link shutdown} so an init/shutdown loop (tests) starts clean.
+   */
+  public static debugRunLive: boolean = false;
+  /**
    * Initialize Laminar context across the application.
    * This method must be called before using any other Laminar methods or decorators.
    *
@@ -366,7 +374,7 @@ export class Laminar {
       });
       const debuggerUrl =
         process?.env?.LMNR_FRONTEND_URL ?? getFrontendUrl(baseUrl);
-      const { runtime } = initDebugRuntime(client.sql, debuggerUrl);
+      const { runtime } = initDebugRuntime(client.rolloutSessions, debuggerUrl);
       if (runtime === null) {
         return;
       }
@@ -387,16 +395,26 @@ export class Laminar {
             runtime.recordProjectId(projectId);
             const sessionUrl = runtime.debuggerSessionUrl()!;
             logger.info(`Laminar debugger session: ${sessionUrl}`);
-            const opener =
-              process.platform === "win32"
-                ? "start"
-                : process.platform === "darwin"
-                  ? "open"
-                  : "xdg-open";
-            spawn(opener, [sessionUrl], {
-              detached: true,
-              stdio: "ignore",
-            }).unref();
+            if (
+              !process.env.LMNR_DEBUG_SESSION_ID &&
+              !isTruthy(process.env.LMNR_DEBUG_FROM_LAST_RUN)
+            ) {
+              // only open URL in browser on first run when we minted a fresh
+              // session id ourselves. A reused session id — passed explicitly
+              // via LMNR_DEBUG_SESSION_ID, or seeded from the prior run's
+              // pointer via LMNR_DEBUG_FROM_LAST_RUN — is a replay/continuation,
+              // so do not reopen the browser.
+              const opener =
+                process.platform === "win32"
+                  ? "start"
+                  : process.platform === "darwin"
+                    ? "open"
+                    : "xdg-open";
+              spawn(opener, [sessionUrl], {
+                detached: true,
+                stdio: "ignore",
+              }).unref();
+            }
           }
         })
         .catch((e) => {
@@ -1032,6 +1050,9 @@ export class Laminar {
       // Clear the one-shot debug-runtime state so a subsequent initialize()
       // re-reads LMNR_DEBUG* instead of resurrecting the previous run.
       resetDebugRuntime();
+      // Clear the process-wide live latch so a re-initialized run starts by
+      // consulting the cache again instead of inheriting the prior run's MISS.
+      this.debugRunLive = false;
       // The pointer was just emitted above, so the `exit` hook would be a
       // redundant no-op; remove it so init/shutdown loops don't leak listeners.
       if (this.debugExitHook !== null) {

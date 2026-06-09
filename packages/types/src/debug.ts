@@ -1,6 +1,7 @@
 /**
- * A single cached LLM span fetched from a source trace. Shaped like the row the
- * SQL/query endpoint returns so the provider wrappers consume it unchanged.
+ * A single cached LLM response served by a debug-replay cache HIT. The provider
+ * wrappers consume `output` (a JSON string) and `attributes` to reconstruct the
+ * call result; `name`/`input` are unused by replay.
  */
 export interface CachedSpan {
   name: string;
@@ -18,7 +19,7 @@ export interface DebugRunPointer {
   trace_id: string;
   session_id: string;
   replay_trace_id: string | null;
-  cache_until: number;
+  cache_until: string | null;
   debugger_url: string | null;
   started_at: string;
 }

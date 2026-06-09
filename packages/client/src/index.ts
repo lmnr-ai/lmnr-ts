@@ -80,3 +80,8 @@ export class LaminarClient {
     return this._traces;
   }
 }
+
+export {
+  type CacheOutcome,
+  RolloutSessionsResource,
+} from "./resources/rollout-sessions";

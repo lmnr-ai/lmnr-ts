@@ -4,24 +4,20 @@
  * The provider wrappers keep their own cached-response reconstruction and
  * streaming wrappers; everything generic — the replay decision, span-path
  * resolution, and the CACHED span marking — lives here so all providers stay in
- * lockstep with the in-process `ReplayCache`. Part of the cross-language parity
- * surface — keep line-comparable with the Python `replay.py`.
+ * lockstep. Part of the cross-language parity surface — keep line-comparable
+ * with the Python `replay.py`.
  */
 
-import { CachedSpan } from "@lmnr-ai/types";
 import { Span } from "@opentelemetry/api";
 
 import { SPAN_PATH } from "../opentelemetry-lib/tracing/attributes";
 import { getRuntime } from "./index";
 
 /**
- * True when this process is a debug run with replay configured (a source trace
- * + a non-zero cache window). A debug-no-replay run (`LMNR_DEBUG` set but no
+ * True when this process is a debug run with replay configured (a replay trace
+ * + a cache-until span id). A debug-no-replay run (`LMNR_DEBUG` set but no
  * `LMNR_DEBUG_REPLAY_TRACE_ID` / `LMNR_DEBUG_CACHE_UNTIL`) returns false — the
- * provider wrappers then skip the cache lookup entirely instead of advancing a
- * per-path occurrence counter against a cache that will never be built. Note
- * this stays true during the async cache-load window (`_cache === null` but
- * replay IS configured), so the counter still advances there as designed.
+ * provider wrappers then skip the per-call cache lookup entirely.
  */
 export const replayEnabled = (): boolean =>
   getRuntime()?.replayConfigured ?? false;
@@ -45,23 +41,6 @@ export const spanPathFromSpan = (
     return pathList.join(".");
   }
   return null;
-};
-
-/**
- * Advance the occurrence counter and return the payload to replay, or undefined.
- *
- * Always advances the counter (when a runtime exists) so a live call and a
- * replayed call consume the same occurrence slot — keeping the spine's
- * occurrence index aligned across record and replay runs.
- */
-export const cachedPayloadFor = (
-  spanPath: string | null,
-): CachedSpan | undefined => {
-  const runtime = getRuntime();
-  if (runtime === null || !spanPath) {
-    return undefined;
-  }
-  return runtime.getCached(spanPath);
 };
 
 /** Stamp the CACHED boundary attributes the frontend renders (§9). */

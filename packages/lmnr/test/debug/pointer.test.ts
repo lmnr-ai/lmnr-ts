@@ -44,7 +44,7 @@ void describe('debug pointer', () => {
       traceId: 'trace-1',
       sessionId: 'sess-1',
       replayTraceId: 'replay-1',
-      cacheUntil: 3,
+      cacheUntil: '0123456789abcdef',
       debuggerUrl: 'https://www.lmnr.ai',
     });
 
@@ -60,7 +60,7 @@ void describe('debug pointer', () => {
     assert.strictEqual(pointer.trace_id, 'trace-1');
     assert.strictEqual(pointer.session_id, 'sess-1');
     assert.strictEqual(pointer.replay_trace_id, 'replay-1');
-    assert.strictEqual(pointer.cache_until, 3);
+    assert.strictEqual(pointer.cache_until, '0123456789abcdef');
     assert.strictEqual(pointer.debugger_url, 'https://www.lmnr.ai');
     assert.ok(typeof pointer.started_at === 'string' && pointer.started_at.length > 0);
   });
@@ -72,7 +72,7 @@ void describe('debug pointer', () => {
       traceId: 't',
       sessionId: 's',
       replayTraceId: null,
-      cacheUntil: 0,
+      cacheUntil: null,
       debuggerUrl: null,
     });
 
@@ -94,7 +94,7 @@ void describe('debug pointer', () => {
       traceId: 't',
       sessionId: 's',
       replayTraceId: 'r',
-      cacheUntil: 2,
+      cacheUntil: 'abcdef',
       debuggerUrl: 'https://www.lmnr.ai',
     });
 
@@ -111,7 +111,7 @@ void describe('debug pointer', () => {
       traceId: 't',
       sessionId: 's',
       replayTraceId: null,
-      cacheUntil: 0,
+      cacheUntil: null,
       debuggerUrl: null,
     });
 
@@ -132,7 +132,7 @@ void describe('debug pointer', () => {
       traceId: 't',
       sessionId: 's',
       replayTraceId: null,
-      cacheUntil: 0,
+      cacheUntil: null,
       debuggerUrl: null,
     });
 

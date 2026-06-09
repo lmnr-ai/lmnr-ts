@@ -33,13 +33,35 @@ import {
 } from "@ai-sdk/provider-v4-canary";
 import { CachedSpan } from "@lmnr-ai/types";
 
-import { awaitCacheReady } from "../../../debug/index";
-import {
-  cachedPayloadFor,
-  markSpanCached,
-  replayEnabled,
-} from "../../../debug/replay";
+import { extractInputMessages } from "../../../debug/aisdk-normalize";
+import { debugInputHash } from "../../../debug/hash";
+import { getRuntime } from "../../../debug/index";
+import { markSpanCached, replayEnabled } from "../../../debug/replay";
 import { Laminar } from "../../../laminar";
+import { peekActiveLlmSpan } from "./active-llm-span";
+
+type CacheResponse =
+  | {
+    type: "raw";
+    response: Record<string, any> | Record<string, any>[];
+    finishReasons?: string[] | null;
+    model?: string | null;
+  }
+  | {
+    type: "genAi";
+    messages: Record<string, any>[];
+    finishReasons?: string[] | null;
+    model?: string | null;
+  };
+
+/**
+ * Parsed HIT `output`. The server-side response shape is not yet frozen
+ * (app-server plan 01 §4.3 stores EITHER the raw provider response OR a bare
+ * `gen_ai.output.messages` array, and a discriminated {@link CacheResponse}
+ * wrapper is the firmed-up form), so the consumer accepts all three and stays
+ * tolerant rather than throwing on an unwrapped payload.
+ */
+type CacheOutput = CacheResponse | Record<string, any> | Record<string, any>[];
 
 /**
  * Base class for Laminar language model wrappers.
@@ -263,10 +285,14 @@ export abstract class BaseLaminarLanguageModel {
   /**
    * Common implementation for both doGenerateWithCaching and doStreamWithCaching.
    *
-   * On a debug replay run, resolves the current span path and consults the
-   * in-process replay cache (§G, §H). A cache hit reconstructs the response from
-   * the cached span and marks the span CACHED; a miss (or a non-debug run) falls
-   * through to the live provider call.
+   * On a debug replay run, hashes this call's input messages and consults the
+   * server-side replay cache (debug-replay v2, §9). Three outcomes:
+   *   - HIT  — reconstruct the response from the cached span and mark CACHED.
+   *   - MISS — latch process-wide live mode and run this (and every later) call
+   *            live; the server records the response so the cache warms up.
+   *   - LIVE — run THIS call live WITHOUT latching (server COLD warmup-timeout
+   *            degrade, or any transport/parse error in the lookup).
+   * A non-debug or no-replay run falls through to the live provider call.
    */
   private async doGenerateOrStreamWithCaching(
     options:
@@ -276,25 +302,51 @@ export abstract class BaseLaminarLanguageModel {
     originalFn: (opts: any) => PromiseLike<any>,
     buildFromCached: (cached: CachedSpan) => any,
   ): Promise<any> {
-    if (!replayEnabled()) {
+    if (!replayEnabled() || Laminar.debugRunLive) {
       return originalFn(options);
     }
 
-    // The replay cache fills asynchronously after init (TS-only); wait a bounded
-    // moment for the in-flight build so the first spine call serves from slot 0
-    // instead of running live and skipping its cached response.
-    await awaitCacheReady();
+    // Capture the span to mark CACHED on a HIT, synchronously at call entry
+    // (before any await). On v7 the real `ai.llm` span is created by the
+    // telemetry integration and parked off the OTel context, so
+    // `Laminar.getCurrentSpan()` would resolve to the top-level operation span
+    // (`ai.generateText`) instead — the wrong span. The integration publishes
+    // each open LLM span to `peekActiveLlmSpan`, and AI SDK fires
+    // `onLanguageModelCallStart` immediately before this `doGenerate`/`doStream`
+    // with no await between, so the top of that stack is THIS call's LLM span.
+    // On v6 the integration isn't used (stack empty) and the SDK activates the
+    // live `doGenerate` LLM span on context, so `getCurrentSpan()` is correct.
+    const spanToMark = peekActiveLlmSpan() ?? Laminar.getCurrentSpan();
 
-    const span = Laminar.getCurrentSpan();
-    const spanPath =
-      Laminar.getLaminarSpanContext()?.spanPath?.join(".") ?? null;
-    const cached = cachedPayloadFor(spanPath);
-    if (!cached) {
+    // Reshape the prompt into the message array the server hashes, then hash it
+    // (system message excluded) so the SDK and server key the cache identically.
+    // A null/empty reshape means we could not reconstruct the prompt at all (a
+    // stringify/JSON.parse failure, or no extractable messages). Hashing that
+    // would key the lookup off the wrong bytes and force a spurious MISS, which
+    // would wrongly latch live mode for the whole replay — so degrade to a live
+    // call WITHOUT latching, exactly like a transport error in the lookup.
+    const messages = extractInputMessages(options as { prompt: any });
+    if (messages === null || messages.length === 0) {
       return originalFn(options);
     }
+    const inputHash = debugInputHash(messages);
+    const outcome = (await getRuntime()?.lookupCache(inputHash)) ?? {
+      kind: "live" as const,
+    };
 
-    markSpanCached(span);
-    return buildFromCached(cached);
+    switch (outcome.kind) {
+      case "hit":
+        markSpanCached(spanToMark);
+        return buildFromCached(outcome.cached);
+      case "miss":
+        // First MISS latches live mode for the rest of the process, so later
+        // calls skip the lookup entirely and run live.
+        Laminar.debugRunLive = true;
+        return originalFn(options);
+      case "live":
+      default:
+        return originalFn(options);
+    }
   }
 
   private cachedDoGenerate(cached: CachedSpan): {
@@ -339,7 +391,7 @@ export abstract class BaseLaminarLanguageModel {
       | LanguageModelV4FinishReason;
     usage: LanguageModelV2Usage | LanguageModelV3Usage | LanguageModelV4Usage;
   } {
-    let parsedOutput: string | Record<string, any>[] = cached.output;
+    let parsedOutput: string | CacheOutput = cached.output;
     try {
       parsedOutput = JSON.parse(cached.output);
     } catch {
@@ -358,7 +410,7 @@ export abstract class BaseLaminarLanguageModel {
    * Converts output from span to content blocks compatible with both V2 and V3
    */
   private convertToContentBlocks(
-    output: string | Record<string, any>[],
+    output: string | CacheOutput,
   ): Array<
     LanguageModelV4Content | LanguageModelV3Content | LanguageModelV2Content
   > {
@@ -371,6 +423,19 @@ export abstract class BaseLaminarLanguageModel {
       ];
     }
 
+    // A JSON `null` / primitive payload has no content to replay and would crash
+    // the wrapper / unwrap logic below (`output.type` on null throws). The
+    // resource degrades a no-payload HIT to live, but parseCachedSpan can't —
+    // so guard here too and emit an empty content array rather than throwing.
+    if (output === null || typeof output !== "object") {
+      return [];
+    }
+
+    // Handles a single content part. Covers both the v6 legacy shape
+    // (`{type:"text", text}` / `{type:"tool_call", name, id, arguments}`) and the
+    // v7 `gen_ai.output.messages` part shape (`{type:"text"|"thinking", content}` /
+    // `{type:"tool_call", id, name, arguments}`), so `text` and `content` are both
+    // accepted for the textual fields.
     const handleItem = (
       item: Record<string, any>,
     ): LanguageModelV3Content[] => {
@@ -378,7 +443,7 @@ export abstract class BaseLaminarLanguageModel {
         return [
           {
             type: "text",
-            text: item.text ?? "",
+            text: item.text ?? item.content ?? "",
           },
         ];
       }
@@ -392,11 +457,11 @@ export abstract class BaseLaminarLanguageModel {
           },
         ];
       }
-      if (item.type === "reasoning") {
+      if (["reasoning", "thinking"].includes(item.type)) {
         return [
           {
             type: "reasoning",
-            text: item.text ?? "",
+            text: item.text ?? item.content ?? "",
           },
         ];
       }
@@ -408,17 +473,42 @@ export abstract class BaseLaminarLanguageModel {
       ];
     };
 
-    return output.flatMap((item) => {
+    // The HIT payload shape is not frozen (see CacheOutput): a discriminated
+    // CacheResponse wrapper, a bare provider object, or a bare message array are
+    // all possible. Unwrap the wrapper when present; otherwise treat the payload
+    // itself as the content (array as-is, single object wrapped) so an unwrapped
+    // server response replays instead of dereferencing a missing `.messages` /
+    // `.response` and yielding `[undefined]`.
+    let outputContent: Record<string, any>[];
+    if (Array.isArray(output)) {
+      outputContent = output;
+    } else if (output.type === "genAi" && Array.isArray(output.messages)) {
+      outputContent = output.messages;
+    } else if (output.type === "raw" && "response" in output) {
+      outputContent = Array.isArray(output.response)
+        ? output.response
+        : [output.response];
+    } else {
+      outputContent = [output];
+    }
+    return outputContent.flatMap((item) => {
+      // v7 `gen_ai.output.messages` shape: `{role, parts:[...]}` (already an
+      // object array, never a JSON string). Map each part through handleItem.
+      if (item.role && Array.isArray(item.parts)) {
+        return item.parts.flatMap(handleItem);
+      }
+      // v6 legacy shape: `{role, content}` where content is either an array of
+      // parts or a JSON-encoded string of them.
       if (item.role && item.content) {
         let parsedContent: Record<string, any>[] = item.content;
-        try {
-          parsedContent = JSON.parse(item.content);
-        } catch {
-          if (typeof item === "string") {
+        if (typeof item.content === "string") {
+          try {
+            parsedContent = JSON.parse(item.content);
+          } catch {
             return [
               {
                 type: "text",
-                text: item,
+                text: item.content,
               },
             ];
           }

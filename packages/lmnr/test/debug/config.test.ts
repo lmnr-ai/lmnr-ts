@@ -20,7 +20,6 @@ interface ConfigCase {
   expect: {
     session_id: string;
     replay_trace_id: string | null;
-    cache_until: number;
     cache_until_span_id?: string | null;
     replay_enabled: boolean;
   } | null;
@@ -57,7 +56,6 @@ void describe('buildDebugConfig (truth table parity)', () => {
       assert.ok(config !== null);
       assert.strictEqual(config.sessionId, expect.session_id);
       assert.strictEqual(config.replayTraceId, expect.replay_trace_id);
-      assert.strictEqual(config.cacheUntil, expect.cache_until);
       assert.strictEqual(config.cacheUntilSpanId, expect.cache_until_span_id ?? null);
       assert.strictEqual(replayEnabledForConfig(config), expect.replay_enabled);
     });
@@ -101,7 +99,11 @@ void describe('buildDebugConfig (LMNR_DEBUG_FROM_LAST_RUN)', () => {
   });
 
   void it('seeds replay from the pointer file', () => {
-    writeLastRun({ trace_id: 'trace-abc', session_id: 'session-xyz', cache_until: 5 });
+    writeLastRun({
+      trace_id: 'trace-abc',
+      session_id: 'session-xyz',
+      cache_until: '0123-456789abcdef',
+    });
     process.env.LMNR_DEBUG = 'true';
     process.env.LMNR_DEBUG_FROM_LAST_RUN = 'true';
 
@@ -109,22 +111,26 @@ void describe('buildDebugConfig (LMNR_DEBUG_FROM_LAST_RUN)', () => {
     assert.ok(config !== null);
     assert.strictEqual(config.replayTraceId, 'trace-abc');
     assert.strictEqual(config.sessionId, 'session-xyz');
-    assert.strictEqual(config.cacheUntil, 5);
+    assert.strictEqual(config.cacheUntilSpanId, '0123456789abcdef');
     assert.strictEqual(replayEnabledForConfig(config), true);
   });
 
   void it('env vars override per-field', () => {
-    writeLastRun({ trace_id: 'trace-abc', session_id: 'session-xyz', cache_until: 5 });
+    writeLastRun({
+      trace_id: 'trace-abc',
+      session_id: 'session-xyz',
+      cache_until: '0123-456789abcdef',
+    });
     process.env.LMNR_DEBUG = 'true';
     process.env.LMNR_DEBUG_FROM_LAST_RUN = 'true';
     process.env.LMNR_DEBUG_REPLAY_TRACE_ID = 'trace-override';
-    process.env.LMNR_DEBUG_CACHE_UNTIL = '9';
+    process.env.LMNR_DEBUG_CACHE_UNTIL = 'cafe';
 
     const config = buildDebugConfig();
     assert.ok(config !== null);
     assert.strictEqual(config.replayTraceId, 'trace-override');
     assert.strictEqual(config.sessionId, 'session-xyz');
-    assert.strictEqual(config.cacheUntil, 9);
+    assert.strictEqual(config.cacheUntilSpanId, 'cafe');
   });
 
   void it('ignored when flag is falsey', () => {

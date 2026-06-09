@@ -1,0 +1,83 @@
+{
+  "_comment": [
+    "Debug-replay v2 input_hash parity vectors. Each `expected_hash` is hex(blake3(UTF-8(canonical_hashed))),",
+    "where `canonical_hashed` is canonicalJson(messages) AFTER stripping a non-empty leading system message.",
+    "Every `expected_hash` here was independently validated against the Rust `blake3` crate (v1) fed the same",
+    "`canonical_hashed` string — i.e. the same primitive app-server uses (canonical_json in",
+    "app-server/src/traces/input_dedup.rs + blake3). The full app-server debug_cache.rs pipeline does not exist",
+    "yet, so end-to-end Rust-oracle parity of the reconstruction step is still pending; the hash primitive itself",
+    "is locked here. This file is the cross-language parity surface — the Python SDK debug/hash.py test consumes",
+    "the same vectors."
+  ],
+  "cases": [
+    {
+      "name": "single user text",
+      "messages": [{ "role": "user", "content": "hello world" }],
+      "canonical_hashed": "[{\"content\":\"hello world\",\"role\":\"user\"}]",
+      "expected_hash": "e35dd17654654dc1912f7ebcafdd5e7b1de67c2bf4c3309dea86752efd8c3e9b"
+    },
+    {
+      "name": "system stripped, user kept",
+      "messages": [
+        { "role": "system", "content": "you are a helpful assistant" },
+        { "role": "user", "content": "hi" }
+      ],
+      "canonical_hashed": "[{\"content\":\"hi\",\"role\":\"user\"}]",
+      "expected_hash": "6bec174af3c9655d4dfb3e09a5c2866a500d841139b14322f2ec23ac08db6755"
+    },
+    {
+      "name": "empty system not stripped",
+      "messages": [
+        { "role": "system", "content": "" },
+        { "role": "user", "content": "hi" }
+      ],
+      "canonical_hashed": "[{\"content\":\"\",\"role\":\"system\"},{\"content\":\"hi\",\"role\":\"user\"}]",
+      "expected_hash": "ddf7458ab04fd0de1af103a39e5502355ecd9c64c18254fae3482338cae01db0"
+    },
+    {
+      "name": "anthropic-style system blocks stripped",
+      "messages": [
+        { "role": "system", "content": [{ "type": "text", "text": "be terse" }] },
+        { "role": "user", "content": [{ "type": "text", "text": "ok" }] }
+      ],
+      "canonical_hashed": "[{\"content\":[{\"text\":\"ok\",\"type\":\"text\"}],\"role\":\"user\"}]",
+      "expected_hash": "3331abd42f44dbfbcc891e5a16e410660393924468fdafcbb56176e8f723f20c"
+    },
+    {
+      "name": "key order independence",
+      "messages": [{ "content": "x", "role": "user", "extra": { "b": 2, "a": 1 } }],
+      "canonical_hashed": "[{\"content\":\"x\",\"extra\":{\"a\":1,\"b\":2},\"role\":\"user\"}]",
+      "expected_hash": "177962ed4e499d352879c028796e915b1eb5361602339d3cdef522ebe66645b9"
+    },
+    {
+      "name": "multi-turn with tool call and result",
+      "messages": [
+        { "role": "user", "content": "weather?" },
+        {
+          "role": "assistant",
+          "content": [
+            { "type": "tool_call", "name": "get_weather", "id": "call_1", "arguments": { "city": "SF" } }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_1",
+          "content": [
+            { "type": "tool-result", "toolCallId": "call_1", "toolName": "get_weather", "output": "72F" }
+          ]
+        }
+      ],
+      "canonical_hashed": "[{\"content\":\"weather?\",\"role\":\"user\"},{\"content\":[{\"arguments\":{\"city\":\"SF\"},\"id\":\"call_1\",\"name\":\"get_weather\",\"type\":\"tool_call\"}],\"role\":\"assistant\"},{\"content\":[{\"output\":\"72F\",\"toolCallId\":\"call_1\",\"toolName\":\"get_weather\",\"type\":\"tool-result\"}],\"role\":\"tool\",\"tool_call_id\":\"call_1\"}]",
+      "expected_hash": "b056085948ecbefc5d3b283070abf78d298d0980c6a8de220615cf46e3872be6"
+    },
+    {
+      "name": "no system message",
+      "messages": [
+        { "role": "user", "content": "a" },
+        { "role": "assistant", "content": "b" }
+      ],
+      "canonical_hashed": "[{\"content\":\"a\",\"role\":\"user\"},{\"content\":\"b\",\"role\":\"assistant\"}]",
+      "expected_hash": "49d1193533990d6f74f89838b1119753930da0b9b9967857a7508d9f02215314"
+    }
+  ]
+}
