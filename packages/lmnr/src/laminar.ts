@@ -392,6 +392,21 @@ export class Laminar {
           ...this.globalMetadata,
           "rollout.session_id": armedRuntime.sessionId,
         };
+        // A from-context runtime armed before initialize() built its cache
+        // client from unset connection args (env/default fallback). Now that the
+        // real baseUrl/port/api-key are known, rebind its rollout-sessions handle
+        // so replay lookupCache reaches the same backend as the rest of the SDK.
+        // Only the inherited (localOrigin:false) path can predate initialize();
+        // the local-origin env runtime is built later in this method with the
+        // correct args, so guard on it to avoid a needless client allocation.
+        if (!armedRuntime.localOrigin) {
+          const debugClient = new LaminarClient({
+            baseUrl,
+            projectApiKey: this.projectApiKey,
+            port: httpPort,
+          });
+          armedRuntime.rebindRolloutSessions(debugClient.rolloutSessions);
+        }
       }
 
       // Bail before allocating a client on the common (non-debug) path. The

@@ -131,6 +131,37 @@ void describe('DebugRuntime', () => {
     assert.strictEqual(fake.calls.length, 0);
   });
 
+  void it('rebindRolloutSessions swaps the handle used by lookupCache', async () => {
+    // A from-context runtime armed BEFORE initialize() builds its cache client
+    // from unset connection args. Once initialize() supplies the real
+    // baseUrl/port/api-key it rebinds the handle, so later lookupCache calls must
+    // route through the NEW resource (the stale one never receives them).
+    const stale = new FakeRolloutSessions({ kind: 'live' });
+    const fresh = new FakeRolloutSessions({
+      kind: 'hit',
+      cached: { name: '', input: '', output: '"hi"', attributes: {} },
+    });
+    const runtime = new DebugRuntime(
+      config({ sessionId: 'sess', replayTraceId: 'trace', cacheUntilSpanId: 'span' }),
+      asResource(stale),
+      null,
+    );
+
+    runtime.rebindRolloutSessions(asResource(fresh));
+    const outcome = await runtime.lookupCache('deadbeef');
+
+    assert.strictEqual(outcome.kind, 'hit');
+    assert.strictEqual(stale.calls.length, 0);
+    assert.deepStrictEqual(fresh.calls, [
+      {
+        sessionId: 'sess',
+        replayTraceId: 'trace',
+        cacheUntil: 'span',
+        inputHash: 'deadbeef',
+      },
+    ]);
+  });
+
   void it('replayConfigured reflects both ids being present', () => {
     const fake = asResource(new FakeRolloutSessions());
     assert.strictEqual(new DebugRuntime(config(), fake, null).replayConfigured, true);

@@ -42,7 +42,7 @@ export { isTruthy };
  */
 export class DebugRuntime {
   private readonly _config: DebugConfig;
-  private readonly _rolloutSessions: RolloutSessionsResource;
+  private _rolloutSessions: RolloutSessionsResource;
   private readonly _debuggerUrl: string | null;
   private _projectId: string | null = null;
   private _traceId: string | null = null;
@@ -59,6 +59,20 @@ export class DebugRuntime {
     this._config = config;
     this._rolloutSessions = rolloutSessions;
     this._debuggerUrl = debuggerUrl;
+  }
+
+  /**
+   * Swap in a fresh rollout-sessions handle for cache lookups.
+   *
+   * A from-context runtime can be armed (deep in span creation) BEFORE
+   * `initialize()` runs, so its client is built from unset connection args and
+   * falls back to env/defaults. Once `initialize()` supplies the real
+   * baseUrl/port/api-key, it rebinds the handle so replay `lookupCache` calls
+   * reach the same backend as the rest of the SDK. No-op on the local-origin
+   * path (the env runtime is only ever built after args are known).
+   */
+  rebindRolloutSessions(rolloutSessions: RolloutSessionsResource): void {
+    this._rolloutSessions = rolloutSessions;
   }
 
   get sessionId(): string {
