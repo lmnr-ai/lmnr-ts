@@ -234,16 +234,22 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
 
   let skillsInstalled: string[] = [];
   try {
+    // installSkill fetches the skill from the lmnr-skills repo and is
+    // best-effort: it logs + returns `skipped: true` on network/codeload
+    // failure rather than throwing, so setup never breaks here.
     const skillResult = await installSkill(process.cwd());
     skillsInstalled = skillResult.written;
     if (!isJson) {
-      const label = skillResult.defaulted
-        ? " (no agent dir found; defaulted to .claude)"
-        : "";
-      for (const p of skillResult.written) {
-        process.stderr.write(`✓ Installed Laminar skill: ${p}\n`);
+      if (skillResult.skipped) {
+        process.stderr.write("  Laminar skill install skipped\n");
+      } else {
+        for (const p of skillResult.written) {
+          process.stderr.write(`✓ Installed Laminar skill: ${p}\n`);
+        }
+        if (skillResult.defaulted) {
+          process.stderr.write("  (no agent dir found; defaulted to .claude)\n");
+        }
       }
-      if (label) process.stderr.write(`  ${label.trim()}\n`);
     }
   } catch (err) {
     if (!isJson) {
