@@ -36,6 +36,12 @@ export interface SetupOptions {
   noBrowser?: boolean;
   dashboardUrl?: string;
   baseUrl?: string;
+  /**
+   * Explicit project id. Disambiguates when the user can access >1 project
+   * (otherwise --json setup errors `project_ambiguous`). Validated against the
+   * user's accessible projects before linking.
+   */
+  projectId?: string;
 }
 
 interface SetupKeyResponse {
@@ -333,14 +339,27 @@ async function resolveProjectViaCli(
   }
 
   let chosen: CliProject;
-  if (projects.length === 1) {
+  if (options.projectId) {
+    // Explicit --project-id disambiguates. Validate against the accessible set.
+    const match = projects.find((p) => p.id === options.projectId);
+    if (!match) {
+      emitError(
+        isJson,
+        "no_access",
+        `You don't have access to project ${options.projectId}. Accessible: ` +
+          projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+      );
+      process.exit(EXIT_NO_ACCESS);
+    }
+    chosen = match;
+  } else if (projects.length === 1) {
     chosen = projects[0];
   } else {
     if (isJson) {
       emitError(
         isJson,
         "project_ambiguous",
-        `Multiple projects: pass --project / set LMNR_PROJECT_ID, or run setup interactively. ` +
+        `Multiple projects: pass --project-id <id>, or run setup interactively. ` +
           projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
       );
       process.exit(EXIT_NO_PROJECT);

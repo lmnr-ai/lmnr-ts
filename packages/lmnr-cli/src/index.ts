@@ -228,6 +228,11 @@ Examples:
     )
     .option("--write-env", "Write LMNR_PROJECT_API_KEY to ./.env (default)", true)
     .option("--no-write-env", "Do not write to ./.env")
+    .option(
+      "--project-id <id>",
+      "Project to link when you can access more than one (disambiguates the " +
+        "project_ambiguous case in --json mode)",
+    )
     .option("--json", "Emit a machine-readable JSON line on stdout")
     .option("--no-browser", "Do not auto-open the device-flow URL")
     .option(
