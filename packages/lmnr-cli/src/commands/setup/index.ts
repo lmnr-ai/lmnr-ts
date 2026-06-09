@@ -7,7 +7,7 @@ import { type CliProject, LaminarClient } from "@lmnr-ai/client";
 import { type Credentials, readCredentials } from "../../auth/credentials";
 import { getProjectId } from "../../auth/project-id";
 import { refreshIfNeeded } from "../../auth/resolve";
-import { pc } from "../../utils/colors";
+import { pc, pcOut } from "../../utils/colors";
 import { readEnvVar, writeEnvFile } from "../../utils/env-file";
 import { installSkill } from "../../utils/install-skill";
 import { type ProjectLink, readProjectLink, writeProjectLink } from "../../utils/project-link";
@@ -279,15 +279,17 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   if (isJson) {
     process.stdout.write(JSON.stringify(result) + "\n");
   } else {
+    const docsUrl = "https://laminar.sh/docs/tracing/integrations/overview";
+    const verifyCmd = 'lmnr-cli sql query "SELECT * FROM traces ORDER BY start_time DESC LIMIT 1"';
     process.stdout.write(
       "\nNext steps:\n" +
         "  1. Instrument your project with Laminar using the installed skill or the docs:\n" +
-        "     https://laminar.sh/docs/tracing/integrations/overview\n" +
+        `     ${pcOut.cyan(docsUrl)}\n` +
         "  2. Run your project.\n" +
         "  3. Verify instrumentation:\n" +
-        '     lmnr-cli sql query "SELECT * FROM traces ORDER BY start_time DESC LIMIT 1"\n' +
+        `     ${pcOut.green(verifyCmd)}\n` +
         "  4. View your traces in the browser:\n" +
-        `     ${dashboardLink}\n`,
+        `     ${pcOut.cyan(dashboardLink)}\n`,
     );
   }
 }
