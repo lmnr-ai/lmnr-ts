@@ -8,6 +8,7 @@ import {
   fetchSession,
   initiateDevice,
   mintAccessJwt,
+  parseProjectFromScope,
   pollDevice,
 } from "../../auth/device";
 
@@ -20,7 +21,20 @@ export interface LoginOptions {
   noBrowser?: boolean;
 }
 
-export async function handleLogin(options: LoginOptions): Promise<void> {
+export interface LoginResult {
+  /** The signed-in user's id (from the BetterAuth session). */
+  userId: string;
+  /** The signed-in user's email, when present on the session. */
+  userEmail: string | null;
+  /**
+   * The projectId the user selected/created in the browser, smuggled back via
+   * the device-token `scope` (see `parseProjectFromScope`). Null on the
+   * already-logged-in / legacy paths where the browser had nothing to scope.
+   */
+  projectId: string | null;
+}
+
+export async function handleLogin(options: LoginOptions): Promise<LoginResult> {
   const issuer = pick(options.dashboardUrl, process.env.LMNR_DASHBOARD_URL, DEFAULT_DASHBOARD_URL);
   const baseUrl = pick(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
 
@@ -76,6 +90,12 @@ export async function handleLogin(options: LoginOptions): Promise<void> {
   process.stderr.write(
     "Run `lmnr-cli setup` in a project directory to link it and write its API key.\n",
   );
+
+  return {
+    userId: session.id,
+    userEmail: session.email || null,
+    projectId: parseProjectFromScope(token.scope),
+  };
 }
 
 function pick(...candidates: (string | undefined)[]): string {

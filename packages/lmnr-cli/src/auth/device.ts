@@ -198,6 +198,30 @@ export function decodeJwtExp(jwt: string): string | null {
   }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PROJECT_SCOPE_PREFIX = "lmnr_project=";
+
+/**
+ * Extract the browser-selected projectId smuggled in the device-token `scope`.
+ *
+ * NOTE: `lmnr_project=<uuid>` is NOT an OAuth permission scope. The `/device`
+ * page writes it into the deviceCode `scope` column (alongside the real
+ * `projects:rw`) because the token-poll response echoes `scope` verbatim — it
+ * is the only field that round-trips browser → CLI. Parsing is order-tolerant:
+ * split on whitespace, find the `lmnr_project=` token, validate the suffix is a
+ * UUID. Returns null when absent (legacy / logged-in-elsewhere) or malformed.
+ */
+export function parseProjectFromScope(scope?: string | null): string | null {
+  if (!scope) return null;
+  for (const token of scope.split(/\s+/)) {
+    if (token.startsWith(PROJECT_SCOPE_PREFIX)) {
+      const candidate = token.slice(PROJECT_SCOPE_PREFIX.length);
+      if (UUID_RE.test(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
 async function safeJson(res: Response): Promise<Record<string, unknown> | null> {
   try {
     return (await res.json()) as Record<string, unknown>;
