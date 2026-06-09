@@ -33,6 +33,8 @@ const config = (overrides: Partial<DebugConfig> = {}): DebugConfig => ({
   sessionId: 's',
   replayTraceId: 'r',
   cacheUntilSpanId: 'abc',
+  localOrigin: true,
+  sessionMinted: true,
   ...overrides,
 });
 
@@ -248,6 +250,24 @@ void describe('DebugRuntime', () => {
     });
     const pointerLines = lines.filter((l) => l.startsWith('LMNR_DEBUG_RUN '));
     assert.strictEqual(pointerLines.length, 1);
+  });
+
+  void it('emitPointer is a no-op for a downstream (inherited) run', () => {
+    // A runtime armed from a propagated DebugContext (localOrigin=false) joins
+    // the upstream replay session and must NOT write a run pointer — the origin
+    // owns it. Gated inside emitPointer so shutdown()/exit-hook stay safe.
+    const dir = mkdtempSync(join(tmpdir(), 'lmnr-runtime-'));
+    process.cwd = () => dir;
+    const runtime = new DebugRuntime(
+      config({ localOrigin: false }),
+      asResource(new FakeRolloutSessions()),
+      null,
+    );
+    runtime.recordTraceId('trace-downstream');
+    const lines = withCapturedConsole(() => runtime.emitPointer());
+    const pointerLines = lines.filter((l) => l.startsWith('LMNR_DEBUG_RUN '));
+    assert.strictEqual(pointerLines.length, 0);
+    assert.strictEqual(existsSync(join(dir, '.lmnr', 'last-run.json')), false);
   });
 
   void it('init returns null when disabled', () => {

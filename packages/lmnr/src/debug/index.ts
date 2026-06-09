@@ -162,8 +162,19 @@ export class DebugRuntime {
     );
   }
 
-  /** Emit the run pointer once (console line + best-effort file). */
+  /**
+   * Emit the run pointer once (console line + best-effort file).
+   *
+   * No-op on a downstream run (`localOrigin: false`): a runtime armed from a
+   * propagated `DebugContext` joins the upstream replay session and must NOT
+   * write a run pointer — the origin owns it. Gated here (not just at the call
+   * sites) so `shutdown()` and any exit hook stay safe. Mirrors Python's
+   * `emit_pointer`.
+   */
   emitPointer(): void {
+    if (!this._config.localOrigin) {
+      return;
+    }
     if (this._emitted) {
       return;
     }
