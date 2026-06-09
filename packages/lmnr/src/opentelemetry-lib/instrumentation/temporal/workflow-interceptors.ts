@@ -32,6 +32,18 @@ export const interceptors = (): WorkflowInterceptors => ({
           headers: { ..._headers, ...input.headers },
         });
       },
+      startChildWorkflowExecution: async (input, next) => {
+        return next({
+          ...input,
+          headers: { ..._headers, ...input.headers },
+        });
+      },
+      continueAsNew: async (input, next) => {
+        return next({
+          ...input,
+          headers: { ..._headers, ...input.headers },
+        });
+      },
     },
   ],
 });
