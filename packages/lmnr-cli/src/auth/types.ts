@@ -17,6 +17,12 @@ export interface DeviceTokenResponse {
   token_type?: string;
   expires_in?: number;
   scope?: string;
+  /**
+   * Raw `x-lmnr-metadata` response header (a JSON string) forwarded by the
+   * server's /device/token before-hook. Carries CLI round-trip metadata such as
+   * the browser-selected projectId. Null/absent on legacy or no-selection paths.
+   */
+  metadata?: string | null;
 }
 
 export interface SessionUser {

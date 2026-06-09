@@ -8,7 +8,7 @@ import {
   fetchSession,
   initiateDevice,
   mintAccessJwt,
-  parseProjectFromScope,
+  parseProjectFromMetadata,
   pollDevice,
 } from "../../auth/device";
 import { DEFAULT_BASE_URL, DEFAULT_DASHBOARD_URL } from "../../constants";
@@ -25,9 +25,10 @@ export interface LoginResult {
   /** The signed-in user's email, when present on the session. */
   userEmail: string | null;
   /**
-   * The projectId the user selected/created in the browser, smuggled back via
-   * the device-token `scope` (see `parseProjectFromScope`). Null on the
-   * already-logged-in / legacy paths where the browser had nothing to scope.
+   * The projectId the user selected/created in the browser, delivered back via
+   * the device-token `x-lmnr-metadata` response header (see
+   * `parseProjectFromMetadata`). Null on the already-logged-in / legacy paths
+   * where the browser had nothing to select.
    */
   projectId: string | null;
 }
@@ -92,7 +93,7 @@ export async function handleLogin(options: LoginOptions): Promise<LoginResult> {
   return {
     userId: session.id,
     userEmail: session.email || null,
-    projectId: parseProjectFromScope(token.scope),
+    projectId: parseProjectFromMetadata(token.metadata),
   };
 }
 

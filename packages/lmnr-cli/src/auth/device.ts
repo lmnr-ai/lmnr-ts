@@ -92,6 +92,10 @@ export async function pollDevice(
       if (!body.access_token) {
         throw new DeviceFlowError("server_error", "Device token response missing access_token");
       }
+      // The browser-selected project (and any future CLI metadata) rides back on
+      // the x-lmnr-metadata response header, NOT the OAuth scope. Attach it so
+      // callers can parse it via parseProjectFromMetadata.
+      body.metadata = res.headers.get("x-lmnr-metadata");
       return body;
     }
     const body = (await safeJson(res)) ?? {};
@@ -199,6 +203,23 @@ export function parseProjectFromScope(scope?: string | null): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Extract the browser-selected projectId from the device-token `x-lmnr-metadata`
+ * response header — a JSON string, e.g. `{"projectId":"<uuid>"}`, forwarded by
+ * the server's /device/token before-hook. This replaces the old scope-smuggling
+ * channel (parseProjectFromScope). Returns null when absent or malformed.
+ */
+export function parseProjectFromMetadata(metadata?: string | null): string | null {
+  if (!metadata) return null;
+  try {
+    const obj = JSON.parse(metadata) as { projectId?: unknown };
+    const pid = obj?.projectId;
+    return typeof pid === "string" && UUID_RE.test(pid) ? pid : null;
+  } catch {
+    return null;
+  }
 }
 
 async function safeJson(res: Response): Promise<Record<string, unknown> | null> {
