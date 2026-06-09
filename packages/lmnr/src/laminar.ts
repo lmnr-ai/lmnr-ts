@@ -378,6 +378,22 @@ export class Laminar {
     this.httpPortForDebug = httpPort;
 
     try {
+      // A debug block propagated to a span created BEFORE initialize() may have
+      // already armed a from-context runtime (via _armDebugRuntimeFromContext),
+      // stamping rollout.session_id onto a globalMetadata that initialize() just
+      // rebuilt from env/options — discarding it. Such a downstream run has no
+      // LMNR_DEBUG, so the stamp below never runs. Re-stamp from the live
+      // runtime so spans keep rollout.session_id (and replay stays attributed).
+      // No-op on the common path (getRuntime() is null) and harmless on the
+      // LMNR_DEBUG path (the stamp below re-applies the same session id).
+      const armedRuntime = getRuntime();
+      if (armedRuntime !== null) {
+        this.globalMetadata = {
+          ...this.globalMetadata,
+          "rollout.session_id": armedRuntime.sessionId,
+        };
+      }
+
       // Bail before allocating a client on the common (non-debug) path. The
       // LMNR_DEBUG gate also lives inside buildDebugConfig (called by
       // initDebugRuntime), but that runs only after the client and debugger URL
