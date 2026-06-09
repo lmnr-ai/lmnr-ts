@@ -1,32 +1,10 @@
 import { readProjectLink } from "../utils/project-link";
 import { type Credentials, readCredentials, writeCredentials } from "./credentials";
 import { decodeJwtExp, DeviceFlowError, mintAccessJwt } from "./device";
+import { type AuthInputs, type ResolvedAuth } from "./types";
 
 // Re-mint the JWT when it's within this window of expiry.
 const REFRESH_SKEW_MS = 30_000;
-
-export interface AuthInputs {
-  baseUrl?: string;
-  port?: number;
-  /**
-   * Target project (directory-scoped). The user JWT is user-scoped, so a
-   * project is required. Precedence: this `--project-id` flag > the nearest
-   * `.lmnr/project.json` link written by `setup`.
-   */
-  projectId?: string;
-}
-
-export interface ResolvedAuth {
-  /** The user-scoped BetterAuth access JWT (refreshed near expiry). */
-  bearer: string;
-  baseUrl?: string;
-  port?: number;
-  /**
-   * The resolved target project id. Signals the client to route to `/v1/cli/*`
-   * with an `x-lmnr-project-id` header.
-   */
-  projectId: string;
-}
 
 /**
  * CLI auth is **user-token only** — the CLI authenticates as the single

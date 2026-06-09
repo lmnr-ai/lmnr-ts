@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
 import { downloadSkill } from "../skill/fetch-skill";
-import { skillSource, SKILL_NAME } from "../skill/laminar-skill";
+import { SKILL_NAME, skillSource } from "../skill/laminar-skill";
 
 // Agent dirs we look for in the project root. Order matters only for the
 // "none present" default below.

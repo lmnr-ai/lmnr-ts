@@ -11,9 +11,7 @@ import {
   parseProjectFromScope,
   pollDevice,
 } from "../../auth/device";
-
-const DEFAULT_DASHBOARD_URL = "https://www.laminar.sh";
-const DEFAULT_BASE_URL = "https://api.lmnr.ai";
+import { DEFAULT_BASE_URL, DEFAULT_DASHBOARD_URL } from "../../constants";
 
 export interface LoginOptions {
   dashboardUrl?: string;

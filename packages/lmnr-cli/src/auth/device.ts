@@ -3,6 +3,13 @@
 // refresh token); the access token is a short-lived JWT minted separately via
 // GET /api/auth/token.
 
+import {
+  type DeviceCodeResponse,
+  type DeviceTokenResponse,
+  type PollOptions,
+  type SessionUser,
+} from "./types";
+
 export const CLI_CLIENT_ID = "lmnr-cli";
 export const CLI_SCOPE = "projects:rw";
 
@@ -10,28 +17,6 @@ const DEVICE_CODE_ENDPOINT = "/api/auth/device/code";
 const DEVICE_TOKEN_ENDPOINT = "/api/auth/device/token";
 const TOKEN_ENDPOINT = "/api/auth/token";
 const SESSION_ENDPOINT = "/api/auth/get-session";
-
-export interface DeviceCodeResponse {
-  device_code: string;
-  user_code: string;
-  verification_uri: string;
-  verification_uri_complete: string;
-  expires_in: number;
-  interval: number;
-}
-
-/** BetterAuth device token success — the `access_token` IS the session token. */
-export interface DeviceTokenResponse {
-  access_token: string;
-  token_type?: string;
-  expires_in?: number;
-  scope?: string;
-}
-
-export interface SessionUser {
-  id: string;
-  email: string;
-}
 
 type PollErrorCode =
   | "authorization_pending"
@@ -73,12 +58,6 @@ export async function initiateDevice(
     );
   }
   return (await res.json()) as DeviceCodeResponse;
-}
-
-export interface PollOptions {
-  intervalSeconds?: number;
-  timeoutSeconds?: number;
-  onTick?: () => void;
 }
 
 /**

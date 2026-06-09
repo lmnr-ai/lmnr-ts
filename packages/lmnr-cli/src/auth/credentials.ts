@@ -25,20 +25,21 @@ export interface Credentials {
   lastUsedAt?: string;
 }
 
-export function credentialsDir(): string {
+// The lmnr config dir (XDG_CONFIG_HOME or ~/.config, then `lmnr`). Named
+// generically since we may store more than credentials here in the future.
+export function globalLmnrDirectory(): string {
   const xdg = process.env.XDG_CONFIG_HOME?.trim();
   const base = xdg && xdg.length > 0 ? xdg : join(homedir(), ".config");
   return join(base, "lmnr");
 }
 
 export function credentialsPath(): string {
-  return join(credentialsDir(), "credentials.json");
+  return join(globalLmnrDirectory(), "credentials.json");
 }
 
 /**
- * Read the credentials file. Returns null when no file exists, OR when the
- * stored shape isn't the current flat v1 (pre-release: an old/foreign file just
- * means "not logged in" — the user re-runs `lmnr-cli login`, which overwrites).
+ * Read the credentials file. Returns null when missing or not the current flat
+ * v1 shape (treated as "not logged in" — `lmnr-cli login` overwrites).
  */
 export async function readCredentials(): Promise<Credentials | null> {
   const path = credentialsPath();

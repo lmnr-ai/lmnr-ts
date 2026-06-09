@@ -143,8 +143,8 @@ async function main() {
     .description("Run SQL queries against your Laminar project data")
     .option(
       "--project-id <id>",
-      "Target project id. Defaults to LMNR_PROJECT_ID or the linked " +
-        ".lmnr/project.json. Run `lmnr-cli login` first.",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+        "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",

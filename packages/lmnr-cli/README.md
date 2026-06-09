@@ -28,8 +28,8 @@ Approve the device-flow URL in your browser, and `setup` will:
 4. Print a dashboard URL and the revoke link
 
 ```bash
-# Verify your instrumentation runs end-to-end:
-lmnr-cli traces wait --since 60s --count 1
+# Verify traces are arriving:
+lmnr-cli sql query "SELECT count() FROM spans"
 ```
 
 `setup` is designed to be invoked by coding agents. Exit codes:
@@ -40,7 +40,7 @@ lmnr-cli traces wait --since 60s --count 1
 - `7` ambiguous workspace (multiple workspaces, no `--workspace`, non-interactive)
 - `8` `.env` write failed (API key is surfaced on stderr so the agent can rescue it)
 
-See `lmnr-cli setup --help` and `lmnr-cli traces wait --help` for all flags.
+See `lmnr-cli setup --help` for all flags.
 
 ## Authentication
 
@@ -87,11 +87,10 @@ Each `lmnr-cli login` adds a profile to the credentials file, keyed by the
 project's UUID. The most recently logged-in profile becomes active. Run
 `lmnr-cli list` to see all profiles, and `lmnr-cli switch <name>` to change the
 active one without re-authenticating. To target a specific profile for a single
-command, pass `--project <id|name>` (or set `LMNR_PROJECT_ID` in your shell):
+command, pass `--project-id <id>`:
 
 ```bash
-lmnr-cli sql query "SELECT count() FROM spans" --project staging-tests
-LMNR_PROJECT_ID=my-prod-project lmnr-cli traces wait --since 60s --count 1
+lmnr-cli sql query "SELECT count() FROM spans" --project-id staging-tests
 ```
 
 If only one profile exists, every command uses it automatically (no flag
@@ -159,16 +158,6 @@ workspace, not whether the user is brand-new. Fresh users who create their
 first workspace inline on the OAuth approval page will see
 `workspaceCreated: false` because the workspace already exists by the time
 bootstrap runs.
-
-### `traces wait` - Wait for trace ingestion
-
-```bash
-lmnr-cli traces wait --since 60s --count 1 --timeout 120s
-lmnr-cli traces wait --since 2m --count 5 --json
-```
-
-Polls the server every 2 seconds. Useful for coding agents that need to confirm
-their instrumentation actually emits traces before declaring "done".
 
 ### `login` / `logout` / `list` / `switch` - Authentication
 

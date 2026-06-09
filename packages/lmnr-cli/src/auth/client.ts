@@ -1,6 +1,7 @@
 import { LaminarClient } from "@lmnr-ai/client";
 
-import { type AuthInputs, resolveAuth } from "./resolve";
+import { resolveAuth } from "./resolve";
+import { type AuthInputs } from "./types";
 
 /**
  * Build a LaminarClient for CLI commands. Auth is user-token only: the bearer

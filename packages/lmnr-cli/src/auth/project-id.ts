@@ -4,11 +4,11 @@
 // project key already sitting in the environment — overloading the resource's
 // single-key model would be confusing.
 
+import { DEFAULT_BASE_URL } from "../constants";
+
 function trimSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
-
-const DEFAULT_BASE_URL = "https://api.lmnr.ai";
 
 /**
  * Resolve which project an `LMNR_PROJECT_API_KEY` belongs to. Returns the
