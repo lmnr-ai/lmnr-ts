@@ -6,6 +6,18 @@
 // rely on), so this import is replay-safe — unlike node:async_hooks directly.
 import { AsyncLocalStorage, type WorkflowInterceptors } from "@temporalio/workflow";
 
+import { LAMINAR_SPAN_CONTEXT_HEADER, TRACEPARENT_HEADER } from "./consts";
+
+// True when the headers map actually carries an injected Laminar / W3C trace
+// context. A signal or update may arrive with no injected context (empty or
+// undefined headers); in that case we must NOT enter the handler-headers scope,
+// or `activeHeaders()` would resolve to that empty map and drop the
+// workflow-start trace from any activity / child-workflow scheduled inside the
+// handler.
+const hasTraceHeaders = (headers: Record<string, unknown>): boolean =>
+  headers[LAMINAR_SPAN_CONTEXT_HEADER] != null ||
+  headers[TRACEPARENT_HEADER] != null;
+
 // Trace headers from the workflow-start call. Module-level storage is
 // per-workflow-sandbox — each workflow execution gets its own V8 module
 // instance, so there is no cross-contamination between concurrent workflows on
@@ -38,11 +50,19 @@ export const interceptors = (): WorkflowInterceptors => ({
       },
       handleSignal: async (input: any, next: any) => {
         const headers = (input.headers as Record<string, unknown>) ?? {};
-        return _handlerHeaders.run(headers, () => next(input));
+        // Only override the active trace when the signal carried its own
+        // context — otherwise fall through to the workflow-start headers.
+        return hasTraceHeaders(headers)
+          ? _handlerHeaders.run(headers, () => next(input))
+          : next(input);
       },
       handleUpdate: async (input: any, next: any) => {
         const headers = (input.headers as Record<string, unknown>) ?? {};
-        return _handlerHeaders.run(headers, () => next(input));
+        // Only override the active trace when the update carried its own
+        // context — otherwise fall through to the workflow-start headers.
+        return hasTraceHeaders(headers)
+          ? _handlerHeaders.run(headers, () => next(input))
+          : next(input);
       },
     },
   ],
