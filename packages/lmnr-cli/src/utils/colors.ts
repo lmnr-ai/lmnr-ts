@@ -16,3 +16,10 @@ function enabledFor(stream: NodeJS.WriteStream): boolean {
 export const pc = createColors(enabledFor(process.stderr));
 // The non-json human summary ("Next steps") → stdout.
 export const pcOut = createColors(enabledFor(process.stdout));
+
+// Laminar brand orange (#D0754E = rgb(208,117,78)). picocolors only ships the 16
+// ANSI colors, so wrap a truecolor escape ourselves — gated on stderr color
+// support (the brand banner is a stderr line, same as `pc`).
+const stderrColorEnabled = enabledFor(process.stderr);
+export const orange = (text: string): string =>
+  stderrColorEnabled ? `\x1b[38;2;208;117;78m${text}\x1b[39m` : text;

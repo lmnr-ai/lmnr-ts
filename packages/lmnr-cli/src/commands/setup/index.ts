@@ -4,10 +4,11 @@ import { createInterface } from "node:readline/promises";
 
 import { type CliProject, LaminarClient } from "@lmnr-ai/client";
 
+import { version } from "../../../package.json";
 import { type Credentials, readCredentials } from "../../auth/credentials";
 import { getProjectId } from "../../auth/project-id";
 import { refreshIfNeeded } from "../../auth/resolve";
-import { pc, pcOut } from "../../utils/colors";
+import { orange, pc, pcOut } from "../../utils/colors";
 import { readEnvVar, writeEnvFile } from "../../utils/env-file";
 import { installSkill } from "../../utils/install-skill";
 import { type ProjectLink, readProjectLink, writeProjectLink } from "../../utils/project-link";
@@ -91,6 +92,10 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   );
   const baseUrl = pick(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
   const isJson = options.json === true;
+
+  if (!isJson) {
+    process.stderr.write(`\n${orange("Laminar CLI")} ${pc.dim(`v${version}`)}\n\n`);
+  }
 
   const cwdEnvPath = resolvePath(process.cwd(), ".env");
   const envKey = await readEnvVar(cwdEnvPath, "LMNR_PROJECT_API_KEY");
