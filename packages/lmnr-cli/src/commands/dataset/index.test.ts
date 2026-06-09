@@ -1,18 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock LaminarClient before importing handlers
+// The dataset handlers resolve auth via buildLaminarClient (user-token). Mock
+// it to return a client with the stubbed datasets surface, bypassing
+// credential resolution.
 const mockListDatasets = vi.fn();
 const mockPush = vi.fn();
 const mockPull = vi.fn();
 
-vi.mock('@lmnr-ai/client', () => ({
-  LaminarClient: class {
-    datasets = {
+vi.mock('../../auth/client', () => ({
+  buildLaminarClient: vi.fn(() => Promise.resolve({
+    datasets: {
       listDatasets: mockListDatasets,
       push: mockPush,
       pull: mockPull,
-    };
-  },
+    },
+  })),
 }));
 
 vi.mock('../../utils/file', () => ({

@@ -55,7 +55,8 @@ export async function resolveAuth(opts: AuthInputs): Promise<ResolvedAuth> {
   }
   if (!projectId || projectId.length === 0) {
     throw new Error(
-      "No project for this directory. Run `lmnr-cli setup` here, pass --project-id <id>, or set LMNR_PROJECT_ID.",
+      "No project for this directory. Run `lmnr-cli setup` here, " +
+        "pass --project-id <id>, or set LMNR_PROJECT_ID.",
     );
   }
 

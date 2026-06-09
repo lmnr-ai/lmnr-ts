@@ -53,7 +53,10 @@ function trimSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
-export async function initiateDevice(issuer: string, scope: string = CLI_SCOPE): Promise<DeviceCodeResponse> {
+export async function initiateDevice(
+  issuer: string,
+  scope: string = CLI_SCOPE,
+): Promise<DeviceCodeResponse> {
   const url = `${trimSlash(issuer)}${DEVICE_CODE_ENDPOINT}`;
   const res = await fetch(url, {
     method: "POST",
@@ -66,7 +69,7 @@ export async function initiateDevice(issuer: string, scope: string = CLI_SCOPE):
       typeof body.error === "string" ? body.error : `http_${res.status}`,
       typeof body.error_description === "string"
         ? body.error_description
-        : `Device authorization request failed (${res.status})`
+        : `Device authorization request failed (${res.status})`,
     );
   }
   return (await res.json()) as DeviceCodeResponse;
@@ -85,7 +88,7 @@ export interface PollOptions {
 export async function pollDevice(
   issuer: string,
   deviceCode: string,
-  opts: PollOptions = {}
+  opts: PollOptions = {},
 ): Promise<DeviceTokenResponse> {
   let intervalSeconds = Math.max(1, opts.intervalSeconds ?? 5);
   const timeoutMs = (opts.timeoutSeconds ?? 900) * 1000;
@@ -113,7 +116,9 @@ export async function pollDevice(
       return body;
     }
     const body = (await safeJson(res)) ?? {};
-    const code = (typeof body.error === "string" ? body.error : `http_${res.status}`) as PollErrorCode;
+    const code = (
+      typeof body.error === "string" ? body.error : `http_${res.status}`
+    ) as PollErrorCode;
     const description = typeof body.error_description === "string" ? body.error_description : code;
     if (code === "authorization_pending") {
       opts.onTick?.();
@@ -147,7 +152,7 @@ export async function mintAccessJwt(issuer: string, sessionToken: string): Promi
     const body = (await safeJson(res)) ?? {};
     throw new DeviceFlowError(
       typeof body.error === "string" ? body.error : `http_${res.status}`,
-      `Failed to mint access token (${res.status})`
+      `Failed to mint access token (${res.status})`,
     );
   }
   const body = (await res.json()) as { token?: string };

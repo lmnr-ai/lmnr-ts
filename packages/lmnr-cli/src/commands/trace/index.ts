@@ -11,6 +11,10 @@ import {
 
 const logger = initializeLogger();
 
+// ---------------------------------------------------------------------------
+// trace append-note — debugger feature (project-key auth)
+// ---------------------------------------------------------------------------
+
 interface TraceCommandOptions {
   projectApiKey?: string;
   baseUrl?: string;

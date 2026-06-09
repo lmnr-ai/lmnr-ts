@@ -1,4 +1,5 @@
 import { execFile } from 'child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as http from 'http';
 import * as os from 'os';
@@ -12,13 +13,41 @@ const CLI_PATH = path.resolve(__dirname, '../../src/index.ts');
 
 type CliResult = { stdout: string; stderr: string; exitCode: number };
 
+// XDG_CONFIG_HOME with a flat credentials.json so the user-token auth path
+// resolves without a real login (far-future expiry = no token refresh).
+const credsDir = mkdtempSync(path.join(os.tmpdir(), 'lmnr-cli-test-'));
+mkdirSync(path.join(credsDir, 'lmnr'), { recursive: true });
+writeFileSync(
+  path.join(credsDir, 'lmnr', 'credentials.json'),
+  JSON.stringify({
+    version: 1,
+    issuer: 'http://localhost:0',
+    baseUrl: 'http://localhost:0',
+    sessionToken: 'fake-session',
+    accessToken: 'fake-jwt',
+    accessTokenExpiresAt: '2099-01-01T00:00:00.000Z',
+    userId: '00000000-0000-0000-0000-000000000000',
+    userEmail: 'test@example.com',
+    createdAt: '2024-01-01T00:00:00.000Z',
+  }),
+);
+
+afterAll(() => {
+  rmSync(credsDir, { recursive: true, force: true });
+});
+
 async function runCli(args: string[]): Promise<CliResult> {
   try {
     const { stdout, stderr } = await exec(
       'npx', ['tsx', CLI_PATH, ...args],
       {
         cwd: path.resolve(__dirname, '../..'),
-        env: { ...process.env, LMNR_LOG_LEVEL: 'silent' },
+        env: {
+          ...process.env,
+          LMNR_LOG_LEVEL: 'silent',
+          XDG_CONFIG_HOME: credsDir,
+          LMNR_PROJECT_ID: 'fake-project',
+        },
       },
     );
     return { stdout, stderr, exitCode: 0 };
@@ -98,13 +127,13 @@ describe('datasets CLI integration — with mock server', () => {
       req.on('end', () => {
         res.setHeader('Content-Type', 'application/json');
 
-        if (req.method === 'GET' && req.url?.startsWith('/v1/datasets/datapoints')) {
+        if (req.method === 'GET' && req.url?.startsWith('/v1/cli/datasets/datapoints')) {
           res.writeHead(200);
           res.end(JSON.stringify({ items: mockDatapoints, totalCount: mockDatapoints.length }));
-        } else if (req.method === 'GET' && req.url?.startsWith('/v1/datasets')) {
+        } else if (req.method === 'GET' && req.url?.startsWith('/v1/cli/datasets')) {
           res.writeHead(200);
           res.end(JSON.stringify(mockDatasets));
-        } else if (req.method === 'POST' && req.url?.startsWith('/v1/datasets/datapoints')) {
+        } else if (req.method === 'POST' && req.url?.startsWith('/v1/cli/datasets/datapoints')) {
           res.writeHead(201);
           res.end(JSON.stringify({ datasetId: 'ds-new-001' }));
         } else {

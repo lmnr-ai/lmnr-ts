@@ -18,7 +18,11 @@ interface ProjectsOptions {
 export const handleProjectsList = async (options: ProjectsOptions): Promise<void> => {
   try {
     const auth = await resolveUserToken({ baseUrl: options.baseUrl, port: options.port });
-    const client = new LaminarClient({ projectApiKey: auth.bearer, baseUrl: auth.baseUrl, port: options.port });
+    const client = new LaminarClient({
+      projectApiKey: auth.bearer,
+      baseUrl: auth.baseUrl,
+      port: options.port,
+    });
     const projects = await client.cli.listProjects();
 
     // Mark the project linked to the current directory (.lmnr/project.json).
@@ -39,8 +43,10 @@ export const handleProjectsList = async (options: ProjectsOptions): Promise<void
     console.log(renderTable(columns, rows));
     console.log(
       linked
-        ? "\n● = linked to this directory (lmnr-cli setup). Override per-command with --project-id.\n"
-        : "\nNot linked here. Run `lmnr-cli setup` in your project directory, or pass --project-id.\n",
+        ? "\n● = linked to this directory (lmnr-cli setup). " +
+            "Override per-command with --project-id.\n"
+        : "\nNot linked here. Run `lmnr-cli setup` in your project directory, " +
+            "or pass --project-id.\n",
     );
   } catch (error) {
     if (options.json) outputJsonError(error);

@@ -1,4 +1,9 @@
-import { type Credentials, credentialsPath, deleteCredentials, readCredentials } from "../../auth/credentials";
+import {
+  type Credentials,
+  credentialsPath,
+  deleteCredentials,
+  readCredentials,
+} from "../../auth/credentials";
 
 /**
  * Best-effort server-side session revoke via POST /api/auth/sign-out with the
@@ -15,12 +20,16 @@ export async function revokeSession(creds: Credentials): Promise<void> {
     // BetterAuth's sign-out 500s on an empty body (JSON parse fails); send `{}`.
     const res = await fetch(url, {
       method: "POST",
-      headers: { authorization: `Bearer ${creds.sessionToken}`, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${creds.sessionToken}`,
+        "content-type": "application/json",
+      },
       body: "{}",
     });
     if (!res.ok) {
       process.stderr.write(
-        `warning: session revoke at ${url} returned ${res.status}; local credentials still removed.\n`,
+        `warning: session revoke at ${url} returned ${res.status}; ` +
+          "local credentials still removed.\n",
       );
     }
   } catch (e) {

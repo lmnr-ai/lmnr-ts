@@ -2,15 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockQuery = vi.fn();
 
-vi.mock('@lmnr-ai/client', () => ({
-  LaminarClient: class {
-    sql = { query: mockQuery };
-  },
+// handleSqlQuery resolves auth via buildLaminarClient (user-token). Mock it to
+// return a client with the stubbed sql surface, bypassing credential resolution.
+vi.mock('../../auth/client', () => ({
+  buildLaminarClient: vi.fn(() => Promise.resolve({ sql: { query: mockQuery } })),
 }));
 
 import { handleSqlQuery } from './index';
 
-const baseOpts = { projectApiKey: 'fake-key', baseUrl: 'http://localhost', port: 8080 };
+const baseOpts = { projectId: 'fake-project', baseUrl: 'http://localhost', port: 8080 };
 
 let logSpy: ReturnType<typeof vi.spyOn>;
 

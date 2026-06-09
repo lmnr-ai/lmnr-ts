@@ -73,7 +73,9 @@ export async function handleLogin(options: LoginOptions): Promise<void> {
   process.stderr.write(
     `Client: ${CLI_CLIENT_ID}. Tokens stored at ~/.config/lmnr/credentials.json (mode 0600).\n`,
   );
-  process.stderr.write("Run `lmnr-cli setup` in a project directory to link it and write its API key.\n");
+  process.stderr.write(
+    "Run `lmnr-cli setup` in a project directory to link it and write its API key.\n",
+  );
 }
 
 function pick(...candidates: (string | undefined)[]): string {

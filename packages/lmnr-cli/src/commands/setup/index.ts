@@ -1,6 +1,6 @@
-import { createInterface } from "node:readline/promises";
 import { hostname } from "node:os";
 import { resolve as resolvePath } from "node:path";
+import { createInterface } from "node:readline/promises";
 
 import { type Credentials, readCredentials } from "../../auth/credentials";
 import { readEnvVar, writeEnvFile } from "../../utils/env-file";
@@ -80,7 +80,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   }
 
   // Login if needed.
-  let creds: Credentials | null = null;
+  let creds: Credentials | null;
   try {
     creds = await readCredentials();
   } catch {
@@ -120,7 +120,8 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
       emitError(
         isJson,
         "no_projects",
-        `No projects found. Create one at ${trimSlash(issuer)}/onboarding then re-run \`lmnr-cli setup\`.`,
+        `No projects found. Create one at ${trimSlash(issuer)}/onboarding ` +
+          "then re-run `lmnr-cli setup`.",
       );
       process.exit(7);
     }

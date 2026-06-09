@@ -23,10 +23,12 @@ const LINK_FILE = "project.json";
  * filesystem root (so commands work from subdirectories of a linked project).
  * Returns null if none is found.
  */
-export async function readProjectLink(startDir: string = process.cwd()): Promise<ProjectLink | null> {
+export async function readProjectLink(
+  startDir: string = process.cwd(),
+): Promise<ProjectLink | null> {
   let dir = startDir;
   const root = parse(dir).root;
-  // eslint-disable-next-line no-constant-condition
+
   while (true) {
     const candidate = join(dir, LINK_DIR, LINK_FILE);
     try {
@@ -45,7 +47,10 @@ export async function readProjectLink(startDir: string = process.cwd()): Promise
 }
 
 /** Write `.lmnr/project.json` under `dir` (default cwd). Returns the file path. */
-export async function writeProjectLink(link: ProjectLink, dir: string = process.cwd()): Promise<string> {
+export async function writeProjectLink(
+  link: ProjectLink,
+  dir: string = process.cwd(),
+): Promise<string> {
   const linkDir = join(dir, LINK_DIR);
   await mkdir(linkDir, { recursive: true });
   const path = join(linkDir, LINK_FILE);
