@@ -1,5 +1,5 @@
 import { errorMessage, LaminarSpanContext } from "@lmnr-ai/types";
-import { isSpanContextValid, trace } from "@opentelemetry/api";
+import { isSpanContextValid, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 
 import {
   deserializeLaminarSpanContext,
@@ -157,10 +157,12 @@ const pushLaminarContext = (laminarCtx: LaminarSpanContext): void => {
     );
   }
 
-  const base = trace.setSpan(
-    LaminarContextManager.getContext(),
-    trace.wrapSpanContext(otelCtx),
-  );
+  // Base the restored parent on ROOT_CONTEXT, NOT `getContext()`. On the worker
+  // side an activity has no legitimate ambient parent, and `getContext()` falls
+  // back to the process-global active-span stack when the ALS stack is empty —
+  // basing on it would let an unrelated worker-thread span's baggage /
+  // association properties leak into the restored remote context.
+  const base = trace.setSpan(ROOT_CONTEXT, trace.wrapSpanContext(otelCtx));
   const enriched = LaminarContextManager.setRawAssociationProperties(
     laminarCtx,
     base,

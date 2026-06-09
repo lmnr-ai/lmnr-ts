@@ -1,3 +1,5 @@
+import { ROOT_CONTEXT } from "@opentelemetry/api";
+
 import { Laminar } from "../../../laminar";
 import { LaminarContextManager } from "../../tracing/context";
 import { buildHeaders, restoreContextFromHeaders } from "./helpers";
@@ -207,15 +209,17 @@ class ActivityInboundInterceptor {
     input: T,
     next: (i: T) => Promise<R>,
   ): Promise<R> =>
-    // Wrap the entire execution in an isolated ALS scope seeded with an EMPTY
-    // stack. An activity's only legitimate parent is the remote context carried
-    // in its headers — never the worker thread's ambient stack. Seeding empty
-    // both isolates `_pushLaminarContext`'s `enterWith` from sibling activities
-    // and guarantees that when header restoration fails the activity runs
-    // detached (ROOT_CONTEXT) instead of attaching to an unrelated in-process
+    // Wrap the entire execution in an isolated ALS scope seeded with an
+    // explicit ROOT_CONTEXT. An activity's only legitimate parent is the remote
+    // context carried in its headers — never the worker thread's ambient stack.
+    // We seed `[ROOT_CONTEXT]` rather than `[]` because `getContext()` falls
+    // through to the process-global active-span stack when the ALS stack is
+    // EMPTY (see `LaminarContextManager.getContext`); a single ROOT entry makes
+    // the lookup short-circuit at root, so when header restoration fails the
+    // activity runs detached instead of attaching to an unrelated in-process
     // trace left on the worker's async lineage.
     LaminarContextManager.runWithIsolatedContext(
-      [],
+      [ROOT_CONTEXT],
       async () => {
         const restoredCtx = restoreContextFromHeaders(input.headers);
         if (!this.createActivitySpan || !restoredCtx) {
