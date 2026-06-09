@@ -86,6 +86,31 @@ void describe("initialize", () => {
     assert.strictEqual(payload.trace_id, "01234567-89ab-cdef-0123-456789abcdef");
   });
 
+  void it("arms the debug runtime from an LMNR_SPAN_CONTEXT debug block", () => {
+    // A child continued purely via LMNR_SPAN_CONTEXT (no LMNR_DEBUG) must still
+    // join the upstream debug session: _initializeContextFromEnv arms the
+    // runtime from the deserialized debug block so replay / rollout.session_id
+    // activate even though local debug env vars are unset.
+    delete process.env.LMNR_DEBUG;
+    delete process.env.LMNR_DEBUG_SESSION_ID;
+    process.env.LMNR_SPAN_CONTEXT = JSON.stringify({
+      traceId: "01234567-89ab-cdef-0123-456789abcdef",
+      spanId: "00000000-0000-0000-0123-456789abcdef",
+      isRemote: false,
+      debug: {
+        enabled: true,
+        sessionId: "00000000-0000-0000-0000-0000000000aa",
+      },
+    });
+
+    Laminar.initialize({ projectApiKey: "test" });
+
+    const runtime = getRuntime();
+    assert.ok(runtime !== null);
+    assert.strictEqual(runtime.sessionId, "00000000-0000-0000-0000-0000000000aa");
+    assert.strictEqual(runtime.localOrigin, false);
+  });
+
   void it("does not leak exit listeners across init/shutdown cycles", async () => {
     // Each debug-mode initialize() registers a process `exit` hook to emit the
     // run pointer. `process.once` only auto-detaches after exit fires, so the

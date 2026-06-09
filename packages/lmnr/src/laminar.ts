@@ -297,6 +297,13 @@ export class Laminar {
     try {
       const laminarContext = deserializeLaminarSpanContext(envContext);
 
+      // Arm the debug runtime from a propagated debug block (first-wins,
+      // idempotent — env config from _initDebugRuntime still takes precedence).
+      // Without this, a child continued purely via LMNR_SPAN_CONTEXT (no
+      // LMNR_DEBUG) never joins the upstream debug session or enables replay.
+      // Must run BEFORE recordTraceId below, which reads getRuntime().
+      this._armDebugRuntimeFromContext(laminarContext.debug);
+
       // Convert to OpenTelemetry span context
       const otelSpanContext = tryToOtelSpanContext(laminarContext);
       // If we've parsed the context from the environment variable, it's remote
