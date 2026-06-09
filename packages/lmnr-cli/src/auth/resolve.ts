@@ -6,12 +6,6 @@ import { decodeJwtExp, DeviceFlowError, mintAccessJwt } from "./device";
 const REFRESH_SKEW_MS = 30_000;
 
 export interface AuthInputs {
-  /**
-   * @deprecated The CLI no longer authenticates via a project API key — it is
-   * user-token only. Accepted but IGNORED (kept so legacy call sites compile).
-   * Project API keys are an app/SDK concern written to .env by `setup`.
-   */
-  projectApiKey?: string;
   baseUrl?: string;
   port?: number;
   /**
