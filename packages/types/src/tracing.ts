@@ -37,6 +37,28 @@ export enum TracingLevel {
 }
 
 /**
+ * Debugger context propagated as ONE nested block of a LaminarSpanContext.
+ *
+ * Carries the debug-replay v2 coordinates a downstream run needs to consult the
+ * same server-side cache window as the run that produced this context. Laminar
+ * is the only producer; a hand-forged or `enabled: false` block is treated as
+ * absent by the consumer (behaviour is explicitly undefined).
+ *
+ * enabled - armed flag — only `true` blocks are ever constructed by us.
+ * sessionId - the run's session id, a hyphenated UUID (undefined when absent).
+ * replayTraceId - the source trace to replay, a hyphenated UUID (undefined when
+ *   absent).
+ * cacheUntil - the cache-window span-id needle, kept VERBATIM (hyphenated or
+ *   not, full UUID or short suffix) — the server resolves it.
+ */
+export type DebugContext = {
+  enabled: boolean;
+  sessionId?: string;
+  replayTraceId?: string;
+  cacheUntil?: string;
+};
+
+/**
  * Laminar representation of an OpenTelemetry span context.
  *
  * spanId - The ID of the span.
@@ -44,6 +66,7 @@ export enum TracingLevel {
  * isRemote - Whether the span is remote.
  * spanPath - The span path (span names) leading to this span.
  * spanIdsPath - The span IDs path leading to this span.
+ * debug - Propagated debugger context, if any (debug-replay v2).
  */
 export type LaminarSpanContext = {
   spanId: StringUUID;
@@ -56,6 +79,7 @@ export type LaminarSpanContext = {
   metadata?: Record<string, any>;
   traceType?: TraceType;
   tracingLevel?: TracingLevel;
+  debug?: DebugContext;
 };
 
 export type Event = {

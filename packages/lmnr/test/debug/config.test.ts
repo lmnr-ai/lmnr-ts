@@ -4,7 +4,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
-import { buildDebugConfig, replayEnabledForConfig } from '../../src/debug/config';
+import {
+  buildDebugConfig,
+  buildDebugConfigFromContext,
+  replayEnabledForConfig,
+} from '../../src/debug/config';
+import { deserializeLaminarSpanContext } from '../../src/utils';
+
+const SESSION = '00000000-0000-0000-0000-0000000000aa';
+const REPLAY = '00000000-0000-0000-0000-0000000000bb';
 
 const DEBUG_ENV_KEYS = [
   'LMNR_DEBUG',
@@ -151,5 +159,112 @@ void describe('buildDebugConfig (LMNR_DEBUG_FROM_LAST_RUN)', () => {
     assert.ok(config !== null);
     assert.strictEqual(config.replayTraceId, null);
     assert.strictEqual(config.sessionId.length, 36);
+  });
+});
+
+void describe('local origin / session minted', () => {
+  beforeEach(clearDebugEnv);
+  afterEach(clearDebugEnv);
+
+  void it('a fresh env run is local origin and minted', () => {
+    process.env.LMNR_DEBUG = 'true';
+    const config = buildDebugConfig();
+    assert.ok(config !== null);
+    assert.strictEqual(config.localOrigin, true);
+    assert.strictEqual(config.sessionMinted, true);
+  });
+
+  void it('a provided session id is not minted', () => {
+    process.env.LMNR_DEBUG = 'true';
+    process.env.LMNR_DEBUG_SESSION_ID = 'sess-123';
+    const config = buildDebugConfig();
+    assert.ok(config !== null);
+    assert.strictEqual(config.sessionMinted, false);
+  });
+});
+
+void describe('buildDebugConfigFromContext (inherited path)', () => {
+  void it('builds a downstream config from an armed block', () => {
+    const config = buildDebugConfigFromContext({
+      enabled: true,
+      sessionId: SESSION,
+      replayTraceId: REPLAY,
+      cacheUntil: '0123-456789abcdef',
+    });
+    assert.ok(config !== null);
+    assert.strictEqual(config.sessionId, SESSION);
+    assert.strictEqual(config.replayTraceId, REPLAY);
+    assert.strictEqual(config.cacheUntilSpanId, '0123456789abcdef');
+    assert.strictEqual(config.localOrigin, false);
+    assert.strictEqual(config.sessionMinted, false);
+    assert.strictEqual(replayEnabledForConfig(config), true);
+  });
+
+  void it('returns null when not enabled', () => {
+    assert.strictEqual(
+      buildDebugConfigFromContext({ enabled: false, sessionId: SESSION }),
+      null,
+    );
+  });
+
+  void it('returns null when no session id', () => {
+    assert.strictEqual(buildDebugConfigFromContext({ enabled: true }), null);
+  });
+
+  void it('returns null when block absent', () => {
+    assert.strictEqual(buildDebugConfigFromContext(undefined), null);
+  });
+});
+
+void describe('LaminarSpanContext debug block parsing', () => {
+  void it('parses a nested camelCase debug block', () => {
+    const ctx = deserializeLaminarSpanContext({
+      traceId: SESSION,
+      spanId: REPLAY,
+      debug: {
+        enabled: true,
+        sessionId: SESSION,
+        replayTraceId: REPLAY,
+        cacheUntil: '0123-456789abcdef',
+      },
+    });
+    assert.ok(ctx.debug !== undefined);
+    assert.strictEqual(ctx.debug.enabled, true);
+    assert.strictEqual(ctx.debug.sessionId, SESSION);
+    assert.strictEqual(ctx.debug.replayTraceId, REPLAY);
+    assert.strictEqual(ctx.debug.cacheUntil, '0123-456789abcdef');
+  });
+
+  void it('parses a nested snake_case debug block', () => {
+    const ctx = deserializeLaminarSpanContext({
+      trace_id: SESSION,
+      span_id: REPLAY,
+      debug: {
+        enabled: true,
+        session_id: SESSION,
+        replay_trace_id: REPLAY,
+        cache_until: 'abcdef',
+      },
+    });
+    assert.ok(ctx.debug !== undefined);
+    assert.strictEqual(ctx.debug.sessionId, SESSION);
+    assert.strictEqual(ctx.debug.replayTraceId, REPLAY);
+    assert.strictEqual(ctx.debug.cacheUntil, 'abcdef');
+  });
+
+  void it('drops unparseable ids to undefined', () => {
+    const ctx = deserializeLaminarSpanContext({
+      traceId: SESSION,
+      spanId: REPLAY,
+      debug: { enabled: true, sessionId: 'not-a-uuid', replayTraceId: 'nope' },
+    });
+    assert.ok(ctx.debug !== undefined);
+    assert.strictEqual(ctx.debug.sessionId, undefined);
+    assert.strictEqual(ctx.debug.replayTraceId, undefined);
+  });
+
+  void it('debug is undefined when no block present', () => {
+    const ctx = deserializeLaminarSpanContext({ traceId: SESSION, spanId: REPLAY });
+    assert.strictEqual(ctx.debug, undefined);
   });
 });

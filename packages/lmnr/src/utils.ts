@@ -1,4 +1,10 @@
-import { errorMessage, LaminarSpanContext, TraceType, TracingLevel } from '@lmnr-ai/types';
+import {
+  DebugContext,
+  errorMessage,
+  LaminarSpanContext,
+  TraceType,
+  TracingLevel,
+} from '@lmnr-ai/types';
 import { AttributeValue, SpanContext, TraceFlags } from '@opentelemetry/api';
 import { config } from 'dotenv';
 import * as path from "path";
@@ -255,6 +261,7 @@ export const deserializeLaminarSpanContext = (
   const metadata = data.metadata;
   const traceType = data.traceType ?? data.trace_type;
   const tracingLevel = data.tracingLevel ?? data.tracing_level;
+  const debug = data.debug;
 
   if (typeof traceId !== 'string' || typeof spanId !== 'string') {
     throw new Error('Invalid LaminarSpanContext: traceId and spanId must be strings');
@@ -276,6 +283,37 @@ export const deserializeLaminarSpanContext = (
     metadata: metadata as Record<string, unknown> | undefined,
     traceType: traceType as TraceType | undefined,
     tracingLevel: tracingLevel as TracingLevel | undefined,
+    debug: isRecord(debug) ? deserializeDebugContext(debug) : undefined,
+  };
+};
+
+/**
+ * Normalize a value to a canonical lowercase UUID string, or undefined.
+ *
+ * The debug block's `sessionId` / `replayTraceId` are always full ids; a value
+ * that isn't UUID-shaped is dropped (treated as absent) rather than thrown, so
+ * a partially-broken block never breaks span-context parsing.
+ */
+const normalizeUuidLike = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  return isStringUUID(normalized) ? normalized : undefined;
+};
+
+/**
+ * Parse a debug block, accepting camelCase and snake_case. Per-field tolerant:
+ * a malformed id is dropped to undefined. Keep line-comparable with the Python
+ * `DebugContext.deserialize`.
+ */
+const deserializeDebugContext = (data: Record<string, unknown>): DebugContext => {
+  const cacheUntil = data.cacheUntil ?? data.cache_until;
+  return {
+    enabled: Boolean(data.enabled),
+    sessionId: normalizeUuidLike(data.sessionId ?? data.session_id),
+    replayTraceId: normalizeUuidLike(data.replayTraceId ?? data.replay_trace_id),
+    cacheUntil: typeof cacheUntil === 'string' ? cacheUntil : undefined,
   };
 };
 

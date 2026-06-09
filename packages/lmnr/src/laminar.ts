@@ -23,6 +23,7 @@ import { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import {
   getRuntime,
   initDebugRuntime,
+  initDebugRuntimeFromContext,
   isTruthy,
   resetDebugRuntime,
 } from "./debug";
@@ -103,6 +104,11 @@ export class Laminar {
   // this an initialize()/shutdown() loop (common in tests) would accumulate
   // stale listeners and trip Node's MaxListenersExceededWarning.
   private static debugExitHook: (() => void) | null = null;
+  // Base url / http port captured at initialize(), reused to build the client
+  // when the debug runtime is armed late from a propagated context (the
+  // from-context path has no access to initialize()'s args).
+  private static baseUrlForDebug: string | undefined = undefined;
+  private static httpPortForDebug: number | undefined = undefined;
   /**
    * Process-wide latch for debug-replay v2: once any LLM call gets a cache MISS,
    * every subsequent call runs live (skipping the cache lookup) for the rest of
@@ -357,6 +363,13 @@ export class Laminar {
     baseUrl: string | undefined,
     httpPort: number | undefined,
   ): void {
+    // Capture the connection args so a later context-armed runtime (built deep
+    // in span creation, with no access to initialize()'s args) can construct
+    // its own client. Set unconditionally — even when local debug is off, a
+    // downstream span may arrive carrying a debug block.
+    this.baseUrlForDebug = baseUrl;
+    this.httpPortForDebug = httpPort;
+
     try {
       // Bail before allocating a client on the common (non-debug) path. The
       // LMNR_DEBUG gate also lives inside buildDebugConfig (called by
@@ -395,15 +408,14 @@ export class Laminar {
             runtime.recordProjectId(projectId);
             const sessionUrl = runtime.debuggerSessionUrl()!;
             logger.info(`Laminar debugger session: ${sessionUrl}`);
-            if (
-              !process.env.LMNR_DEBUG_SESSION_ID &&
-              !isTruthy(process.env.LMNR_DEBUG_FROM_LAST_RUN)
-            ) {
+            if (runtime.shouldOpenBrowser) {
               // only open URL in browser on first run when we minted a fresh
-              // session id ourselves. A reused session id — passed explicitly
-              // via LMNR_DEBUG_SESSION_ID, or seeded from the prior run's
-              // pointer via LMNR_DEBUG_FROM_LAST_RUN — is a replay/continuation,
-              // so do not reopen the browser.
+              // session id ourselves. A reused session id (passed explicitly via
+              // LMNR_DEBUG_SESSION_ID or seeded from the prior run's pointer via
+              // LMNR_DEBUG_FROM_LAST_RUN) is a replay/continuation, and a
+              // context-armed downstream run is not the origin — neither reopens
+              // the browser. The decision now reads the resolved config
+              // (runtime.shouldOpenBrowser) rather than re-reading env vars.
               const opener =
                 process.platform === "win32"
                   ? "start"
@@ -442,6 +454,81 @@ export class Laminar {
     } catch (e) {
       // never let debug setup crash initialization
       logger.warn("Failed to initialize debug runtime: " + errorMessage(e));
+    }
+  }
+
+  /**
+   * Arm the debug runtime from a propagated `DebugContext`, if not already armed.
+   *
+   * Called from `_startSpan` (the single funnel all spans pass through) when a
+   * parent `LaminarSpanContext` carrying an armed debug block first parses — so
+   * a downstream service joins the upstream debug run regardless of how its
+   * spans originate (auto-instrumentation, manual observe, external library).
+   *
+   * First-wins and idempotent: if a runtime already exists (from env at init,
+   * or an earlier qualifying context) this returns immediately, so env-var
+   * config keeps precedence over context. A downstream runtime reuses the
+   * upstream session and may consult the cache, but — unlike the local-origin
+   * path — does NOT open the browser, print the session URL, or register an
+   * exit-time pointer hook (the origin owns those). It still registers the
+   * session (idempotent) and stamps `rollout.session_id`.
+   *
+   * Never throws: any failure leaves debug inert.
+   * @private
+   */
+  private static _armDebugRuntimeFromContext(
+    debug: LaminarSpanContext["debug"],
+  ): void {
+    try {
+      // Fast path: already armed (env or a prior context), or no armed block.
+      // Bail before any allocation so this stays cheap on the hot span path.
+      if (getRuntime() !== null) {
+        return;
+      }
+      if (!debug || !debug.enabled || !debug.sessionId) {
+        return;
+      }
+
+      const client = new LaminarClient({
+        baseUrl: this.baseUrlForDebug,
+        projectApiKey: this.projectApiKey,
+        port: this.httpPortForDebug,
+      });
+      const debuggerUrl =
+        process?.env?.LMNR_FRONTEND_URL ?? getFrontendUrl(this.baseUrlForDebug);
+      const { runtime } = initDebugRuntimeFromContext(
+        debug,
+        client.rolloutSessions,
+        debuggerUrl,
+      );
+      if (runtime === null) {
+        return;
+      }
+
+      // Register the (upstream) session so downstream cache lookups are
+      // accepted. Idempotent upsert, fire-and-forget. Unlike the local-origin
+      // path we do NOT log the URL or open a browser — the origin already did.
+      void client.rolloutSessions
+        .register({ sessionId: runtime.sessionId })
+        .then((projectId) => {
+          if (projectId) {
+            runtime.recordProjectId(projectId);
+          }
+        })
+        .catch((e) => {
+          logger.debug(
+            "Failed to register downstream debug session: " + errorMessage(e),
+          );
+        });
+
+      this.globalMetadata = {
+        ...this.globalMetadata,
+        "rollout.session_id": runtime.sessionId,
+      };
+      // No `exit` pointer hook: a downstream run must not emit the pointer.
+    } catch (e) {
+      // never let debug arming crash span creation
+      logger.debug("Failed to arm debug runtime from context: " + errorMessage(e));
     }
   }
 
@@ -861,6 +948,13 @@ export class Laminar {
         parentTracingLevel = laminarContext.tracingLevel;
         parentUserId = laminarContext.userId;
         parentSessionId = laminarContext.sessionId;
+
+        // Arm the debug runtime from a propagated debug block (first-wins,
+        // idempotent, no-op when already armed or no block present). Placed
+        // here — deep in span creation, before any caching instrumentation
+        // consults the runtime — so a downstream run joins the upstream debug
+        // session regardless of how its spans originate.
+        this._armDebugRuntimeFromContext(laminarContext.debug);
 
         const spanContext = tryToOtelSpanContext(laminarContext);
         entityContext = trace.setSpan(

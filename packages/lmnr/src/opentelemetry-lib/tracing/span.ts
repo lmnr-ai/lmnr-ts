@@ -1,4 +1,9 @@
-import { LaminarSpanContext, TraceType, TracingLevel } from "@lmnr-ai/types";
+import {
+  type DebugContext,
+  LaminarSpanContext,
+  TraceType,
+  TracingLevel,
+} from "@lmnr-ai/types";
 import {
   Attributes,
   AttributeValue,
@@ -19,6 +24,7 @@ import {
   TimedEvent,
 } from "@opentelemetry/sdk-trace-base";
 
+import { getRuntime } from "../../debug";
 import {
   initializeLogger,
   metadataToAttributes,
@@ -40,6 +46,32 @@ import { getParentSpanId, makeSpanOtelV2Compatible } from "./compat";
 import { LaminarContextManager } from "./context";
 
 const logger = initializeLogger();
+
+/**
+ * Build the debug block to propagate, or undefined when debug mode is off.
+ *
+ * Reads the process-wide debug runtime so a serialized span context carries the
+ * run's coordinates to downstream services. Only an armed (`enabled: true`)
+ * block is ever produced — we are the sole producer. Best-effort: any failure
+ * (or no runtime) yields undefined so serialization never breaks. Keep
+ * line-comparable with the Python `_current_debug_context`.
+ */
+const currentDebugContext = (): DebugContext | undefined => {
+  try {
+    const runtime = getRuntime();
+    if (runtime === null) {
+      return undefined;
+    }
+    return {
+      enabled: true,
+      sessionId: runtime.sessionId,
+      replayTraceId: runtime.replayTraceId ?? undefined,
+      cacheUntil: runtime.cacheUntilSpanId ?? undefined,
+    };
+  } catch {
+    return undefined;
+  }
+};
 
 // We decided to implement raw otel Span interface and have _span: SdkSpan because SdkSpan
 // discourages use of its constructor directly in favour of Tracer.startSpan()
@@ -273,6 +305,7 @@ export class LaminarSpan implements Span, ReadableSpan {
       metadata,
       traceType,
       tracingLevel,
+      debug: currentDebugContext(),
     };
   }
 

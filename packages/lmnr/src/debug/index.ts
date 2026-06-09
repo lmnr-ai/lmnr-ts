@@ -20,9 +20,11 @@
  */
 
 import { type CacheOutcome, RolloutSessionsResource } from "@lmnr-ai/client";
+import { type DebugContext } from "@lmnr-ai/types";
 
 import {
   buildDebugConfig,
+  buildDebugConfigFromContext,
   DebugConfig,
   isTruthy,
   replayEnabledForConfig,
@@ -67,9 +69,33 @@ export class DebugRuntime {
     return this._config.replayTraceId;
   }
 
+  get cacheUntilSpanId(): string | null {
+    return this._config.cacheUntilSpanId;
+  }
+
   /** True when replay is configured for this run (replay trace + cache window). */
   get replayConfigured(): boolean {
     return replayEnabledForConfig(this._config);
+  }
+
+  /**
+   * True when this process originated the run (config from local env). False
+   * when armed from a propagated `DebugContext`: a downstream run reuses the
+   * upstream session and may consult the cache, but must not open a browser or
+   * emit the run pointer.
+   */
+  get localOrigin(): boolean {
+    return this._config.localOrigin;
+  }
+
+  /**
+   * True when this run should open the debugger URL in a browser once. Only a
+   * local-origin run that minted a fresh session id qualifies: a reused session
+   * id (continuation/replay) or a context-armed downstream run must not reopen
+   * the browser.
+   */
+  get shouldOpenBrowser(): boolean {
+    return this._config.localOrigin && this._config.sessionMinted;
   }
 
   /**
@@ -184,6 +210,37 @@ export const initDebugRuntime = (
     // Otherwise a later init (e.g. after the env flips LMNR_DEBUG on) would
     // short-circuit until resetDebugRuntime(). The off path only reads env
     // vars, so re-running it on a repeat call is cheap.
+    return { runtime: null };
+  }
+  initialized = true;
+
+  runtime = new DebugRuntime(config, rolloutSessions, debuggerUrl);
+  return { runtime };
+};
+
+/**
+ * Arm the debug runtime from a propagated `DebugContext` (process-global).
+ *
+ * Called deep in span creation when a parent `LaminarSpanContext` carrying a
+ * debug block first parses — so a downstream service joins the upstream run
+ * regardless of how the span originated. First-wins and idempotent: once a
+ * runtime exists (from env at init OR an earlier context) this is a no-op, so
+ * env-var config always takes precedence over a later context.
+ *
+ * Returns `{ runtime: null }` without latching when the block is absent /
+ * unarmed, so a later valid context can still arm the runtime. Never throws.
+ */
+export const initDebugRuntimeFromContext = (
+  debug: DebugContext | undefined,
+  rolloutSessions: RolloutSessionsResource,
+  debuggerUrl: string | null = null,
+): { runtime: DebugRuntime | null } => {
+  if (initialized) {
+    return { runtime };
+  }
+
+  const config = buildDebugConfigFromContext(debug);
+  if (config === null) {
     return { runtime: null };
   }
   initialized = true;

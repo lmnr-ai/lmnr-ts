@@ -11,6 +11,8 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { type DebugContext } from "@lmnr-ai/types";
+
 import { initializeLogger } from "../utils";
 import { POINTER_DIR, POINTER_FILE } from "./pointer";
 
@@ -96,6 +98,15 @@ export interface DebugConfig {
   // resolves it server-side. null when no span id was given — replay is then
   // not configured.
   cacheUntilSpanId: string | null;
+  // True when this process is the ORIGIN of the debug run (config built from
+  // local env vars). False when inherited from an upstream service via a
+  // propagated LaminarSpanContext debug block — a downstream run must not open
+  // the browser or emit the run pointer (the origin owns both).
+  localOrigin: boolean;
+  // True when the SDK minted a fresh session id (neither LMNR_DEBUG_SESSION_ID
+  // nor a last-run pointer supplied one). Gates the one-time browser open: a
+  // reused session id is a continuation/replay, so the browser is not reopened.
+  sessionMinted: boolean;
 }
 
 /**
@@ -128,10 +139,13 @@ export const buildDebugConfig = (): DebugConfig | null => {
     ? loadLastRun()
     : {};
 
-  const sessionId =
+  const providedSessionId =
     process.env.LMNR_DEBUG_SESSION_ID ||
-    (lastRun.session_id as string | undefined) ||
-    randomUUID();
+    (lastRun.session_id as string | undefined);
+  const sessionId = providedSessionId || randomUUID();
+  // The browser is opened once per fresh run; a reused (provided) session id is
+  // a continuation/replay, so it is not reopened.
+  const sessionMinted = providedSessionId === undefined;
   const replayTraceId =
     process.env.LMNR_DEBUG_REPLAY_TRACE_ID ||
     (lastRun.trace_id as string | undefined) ||
@@ -142,5 +156,45 @@ export const buildDebugConfig = (): DebugConfig | null => {
     process.env.LMNR_DEBUG_CACHE_UNTIL ?? lastRunCacheUntil;
   const cacheUntilSpanId = parseCacheUntil(cacheUntilValue);
 
-  return { sessionId, replayTraceId, cacheUntilSpanId };
+  return {
+    sessionId,
+    replayTraceId,
+    cacheUntilSpanId,
+    localOrigin: true,
+    sessionMinted,
+  };
+};
+
+/**
+ * Build a debug config from a propagated `DebugContext` (the inherited path).
+ *
+ * Unlike `buildDebugConfig` (which reads `LMNR_DEBUG*`), this consumes the debug
+ * block carried inside a `LaminarSpanContext` that arrived from an upstream
+ * service. Keep line-comparable with the Python `build_debug_config_from_context`.
+ *
+ * Returns null when the block is absent or not armed (`enabled` falsey). We are
+ * the only producer, so an unarmed/forged block is treated as absent (behaviour
+ * explicitly undefined). A block with no session id is also ignored — without
+ * it the run can't be tied to a cache window.
+ *
+ * The resulting config is `localOrigin: false`: a downstream run reuses the
+ * upstream session and may consult the cache, but must NOT open a browser or
+ * emit the run pointer (the origin owns those).
+ */
+export const buildDebugConfigFromContext = (
+  debug: DebugContext | undefined,
+): DebugConfig | null => {
+  if (!debug || !debug.enabled || !debug.sessionId) {
+    return null;
+  }
+  // The needle is propagated verbatim; re-run it through the same parser the
+  // env path uses so a downstream config holds an identical needle form.
+  const cacheUntilSpanId = parseCacheUntil(debug.cacheUntil);
+  return {
+    sessionId: debug.sessionId,
+    replayTraceId: debug.replayTraceId ?? null,
+    cacheUntilSpanId,
+    localOrigin: false,
+    sessionMinted: false,
+  };
 };
