@@ -4,6 +4,7 @@ import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { context, trace } from "@opentelemetry/api";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
+import { getRuntime, resetDebugRuntime } from "../src/debug/index";
 import { Laminar, observe } from "../src/index";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
@@ -105,6 +106,36 @@ void describe("span interface tests", () => {
         "abc",
       );
     } finally {
+      LaminarContextManager.setGlobalMetadata({});
+    }
+  });
+
+  void it("arming from a propagated debug block syncs rollout.session_id to metadata", () => {
+    // A downstream run arms its debug runtime from the parent span context's
+    // debug block during span creation (after initialize()). That path must
+    // re-sync LaminarContextManager.getGlobalMetadata() so auto-instrumentation
+    // spans (which read global metadata in LaminarSpanProcessor.onStart) still
+    // pick up rollout.session_id — not just spans started via _startSpan.
+    const SESSION = "00000000-0000-0000-0000-0000000000aa";
+    resetDebugRuntime();
+    LaminarContextManager.setGlobalMetadata({});
+    try {
+      const parent = Laminar.startSpan({
+        name: "downstream",
+        parentSpanContext: {
+          traceId: "01234567-89ab-cdef-0123-456789abcdef",
+          spanId: "0123456789abcdef",
+          debug: { enabled: true, sessionId: SESSION },
+        },
+      });
+      parent.end();
+      assert.ok(getRuntime() !== null);
+      assert.strictEqual(
+        LaminarContextManager.getGlobalMetadata()["rollout.session_id"],
+        SESSION,
+      );
+    } finally {
+      resetDebugRuntime();
       LaminarContextManager.setGlobalMetadata({});
     }
   });

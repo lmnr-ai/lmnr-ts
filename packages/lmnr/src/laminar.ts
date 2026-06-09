@@ -525,6 +525,10 @@ export class Laminar {
         ...this.globalMetadata,
         "rollout.session_id": runtime.sessionId,
       };
+      // Unlike the local-origin path (synced by initialize() at startup), this
+      // runs during span creation, so re-sync to LaminarContextManager here or
+      // LaminarSpanProcessor.onStart misses rollout.session_id on auto spans.
+      LaminarContextManager.setGlobalMetadata(this.globalMetadata);
       // No `exit` pointer hook: a downstream run must not emit the pointer.
     } catch (e) {
       // never let debug arming crash span creation
