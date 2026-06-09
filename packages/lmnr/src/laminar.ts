@@ -495,7 +495,12 @@ export class Laminar {
       if (getRuntime() !== null) {
         return;
       }
-      if (!debug || !debug.enabled || !debug.sessionId) {
+      // Strict `=== true`, NOT a truthy check: a string `parentSpanContext` is
+      // run through `deserializeDebugContext` (which coerces `enabled` to a real
+      // boolean via `=== true`), but an OBJECT `parentSpanContext` reaches here
+      // verbatim — so a forged block with e.g. `enabled: "false"` (truthy) would
+      // otherwise arm a downstream runtime. Mirror the deserializer's contract.
+      if (!debug || debug.enabled !== true || !debug.sessionId) {
         return;
       }
 

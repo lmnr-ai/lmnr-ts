@@ -139,4 +139,37 @@ void describe("span interface tests", () => {
       LaminarContextManager.setGlobalMetadata({});
     }
   });
+
+  void it("an object debug block with a truthy non-boolean enabled never arms", () => {
+    // A string parentSpanContext is run through deserializeDebugContext, which
+    // coerces enabled via `=== true`. An OBJECT parentSpanContext reaches the
+    // arming path verbatim, so a forged block with e.g. enabled: "false" (a
+    // truthy string) must NOT arm — mirror the deserializer's strict contract.
+    const SESSION = "00000000-0000-0000-0000-0000000000bb";
+    resetDebugRuntime();
+    LaminarContextManager.setGlobalMetadata({});
+    try {
+      const parent = Laminar.startSpan({
+        name: "downstream",
+        parentSpanContext: {
+          traceId: "01234567-89ab-cdef-0123-456789abcdef",
+          spanId: "0123456789abcdef",
+          // Deliberately violates the `enabled: boolean` type — the whole point
+          // is that an object context skips deserialization, so a non-boolean
+          // can slip in here.
+          debug: { enabled: "false", sessionId: SESSION } as unknown as
+            { enabled: boolean; sessionId: string },
+        },
+      });
+      parent.end();
+      assert.strictEqual(getRuntime(), null);
+      assert.strictEqual(
+        LaminarContextManager.getGlobalMetadata()["rollout.session_id"],
+        undefined,
+      );
+    } finally {
+      resetDebugRuntime();
+      LaminarContextManager.setGlobalMetadata({});
+    }
+  });
 });
