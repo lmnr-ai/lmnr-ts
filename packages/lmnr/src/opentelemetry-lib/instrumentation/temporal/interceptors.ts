@@ -108,8 +108,20 @@ export class WorkflowClientInterceptor {
 // ─── ScheduleClientInterceptor ────────────────────────────────────────────────
 
 /**
- * Temporal client-side schedule interceptor. Injects the active Laminar span context
- * into every schedule create call headers.
+ * Temporal client-side schedule interceptor.
+ *
+ * Deliberately a no-op: it does NOT inject Laminar trace headers on schedule
+ * `create`. A Schedule is a long-lived server-side object, and the headers
+ * attached to its workflow-start action are a stored template replayed on every
+ * triggered run — runs that may fire hours or days later. Injecting the active
+ * span at creation time would pin every future scheduled run to that single,
+ * long-dead parent trace instead of letting each run start its own root trace.
+ * Temporal exposes no per-run client-side hook to inject fresh context, so the
+ * correct behavior is to forward unchanged and let each triggered workflow be
+ * its own root.
+ *
+ * Kept as a registered interceptor (rather than omitted) so the wiring stays
+ * explicit and stable, and so future per-run context support has a home.
  *
  * **Explicit usage:**
  * ```typescript
@@ -122,7 +134,7 @@ export class WorkflowClientInterceptor {
  */
 export class ScheduleClientInterceptor {
   async create<T, R>(input: T, next: (i: T) => Promise<R>): Promise<R> {
-    return withLaminarHeaders(input, next);
+    return next(input);
   }
 }
 
