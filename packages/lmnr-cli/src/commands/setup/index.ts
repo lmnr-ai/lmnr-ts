@@ -2,13 +2,9 @@ import { createInterface } from "node:readline/promises";
 import { hostname } from "node:os";
 import { resolve as resolvePath } from "node:path";
 
-import {
-  getActiveProfile,
-  type ProfileEntry,
-  readCredentials,
-  type StoredCredentials,
-} from "../../auth/credentials";
+import { type Credentials, readCredentials } from "../../auth/credentials";
 import { readEnvVar, writeEnvFile } from "../../utils/env-file";
+import { readProjectLink, writeProjectLink } from "../../utils/project-link";
 import { handleLogin } from "../login";
 
 const DEFAULT_DASHBOARD_URL = "https://www.laminar.sh";
@@ -64,33 +60,33 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   const baseUrl = pick(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
   const isJson = options.json === true;
 
-  // Short-circuit if the cwd already has Laminar configured.
+  // Short-circuit only when fully configured: BOTH the .env key (for the app)
+  // AND the .lmnr/project.json link (for CLI commands). If the key exists but
+  // the link is missing, fall through so setup writes the link.
   const cwdEnvPath = resolvePath(process.cwd(), ".env");
   const existingKey = await readEnvVar(cwdEnvPath, "LMNR_PROJECT_API_KEY");
-  if (existingKey) {
+  const existingLink = await readProjectLink();
+  if (existingKey && existingLink) {
     if (isJson) {
       process.stdout.write(
         JSON.stringify({ skipped: true, reason: "already_configured", envFile: cwdEnvPath }) + "\n",
       );
     } else {
       process.stderr.write(
-        `Laminar is already configured: LMNR_PROJECT_API_KEY is set in ${cwdEnvPath}. Skipping setup.\n`,
+        `Laminar is already configured here (.env key + .lmnr/project.json). Skipping setup.\n`,
       );
     }
     process.exit(0);
   }
 
   // Login if needed.
-  let creds: StoredCredentials | null = null;
-  let profile: ProfileEntry | null = null;
+  let creds: Credentials | null = null;
   try {
     creds = await readCredentials();
-    profile = creds ? getActiveProfile(creds) : null;
   } catch {
     creds = null;
-    profile = null;
   }
-  if (!profile) {
+  if (!creds) {
     try {
       await handleLogin({
         dashboardUrl,
@@ -102,24 +98,23 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
       process.exit(6);
     }
     creds = await readCredentials();
-    profile = creds ? getActiveProfile(creds) : null;
-    if (!creds || !profile) {
+    if (!creds) {
       emitError(isJson, "login_failed", "credentials missing after login");
       process.exit(6);
     }
   }
 
   if (!isJson) {
-    process.stderr.write(`✓ Logged in as ${profile.userEmail ?? "<unknown>"}\n`);
+    process.stderr.write(`✓ Logged in as ${creds.userEmail ?? "<unknown>"}\n`);
   }
 
-  const issuer = profile.issuer || dashboardUrl;
+  const issuer = creds.issuer || dashboardUrl;
 
   // Mint a project API key. The server resolves the project from the user's
   // memberships; on ambiguity we prompt for a choice and re-POST.
   let keyResult: SetupKeyResponse;
   try {
-    keyResult = await mintSetupKey(issuer, profile.sessionToken, isJson);
+    keyResult = await mintSetupKey(issuer, creds.sessionToken, isJson);
   } catch (err) {
     if (err instanceof NoProjectsError) {
       emitError(
@@ -174,6 +169,27 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     }
   }
 
+  // Link this directory to the project so CLI commands (sql/dataset) target it
+  // without --project-id. Holds the id + display details, never the key.
+  try {
+    const linkPath = await writeProjectLink({
+      projectId: keyResult.projectId,
+      projectName: keyResult.projectName,
+      workspaceId: keyResult.workspaceId,
+      workspaceName: keyResult.workspaceName,
+    });
+    if (!isJson) {
+      process.stderr.write(`✓ Linked ${linkPath}\n`);
+    }
+  } catch (err) {
+    if (!isJson) {
+      process.stderr.write(
+        `Warning: could not write .lmnr/project.json (${describeError(err)}). ` +
+          `CLI commands will need --project-id ${keyResult.projectId}.\n`,
+      );
+    }
+  }
+
   const dashboardLink = `${trimSlash(issuer)}/project/${keyResult.projectId}/traces`;
   const revokeLink = `${trimSlash(issuer)}/project/${keyResult.projectId}/settings/api-keys`;
 
@@ -185,7 +201,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     apiKey,
     envFileUpdated: envPath,
     dashboardUrl: dashboardLink,
-    userEmail: profile.userEmail ?? null,
+    userEmail: creds.userEmail ?? null,
   };
 
   if (isJson) {

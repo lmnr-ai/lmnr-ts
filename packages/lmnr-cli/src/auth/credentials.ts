@@ -5,21 +5,14 @@ import { dirname, join } from "node:path";
 export const CREDENTIALS_VERSION = 1;
 
 /**
- * Profile-keyed credentials. One file holds N users' tokens.
- * `active` is the userId of the currently selected profile.
- */
-export interface StoredCredentials {
-  version: 1;
-  active: string | null;
-  profiles: Record<string, ProfileEntry>;
-}
-
-/**
- * BetterAuth token bundle for one user. Login is user-scoped now:
+ * The signed-in user's BetterAuth tokens. The CLI is single-user — one account
+ * at a time, so the file is flat (no profiles map / active pointer).
+ * Pre-release: version stays 1, no backcompat with any earlier shape.
  * - `sessionToken` is the durable BetterAuth session token (the refresh token).
  * - `accessToken` is the short-lived (15m) EdDSA JWT minted from the session.
  */
-export interface ProfileEntry {
+export interface Credentials {
+  version: 1;
   issuer: string;
   baseUrl: string;
   sessionToken: string;
@@ -43,10 +36,11 @@ export function credentialsPath(): string {
 }
 
 /**
- * Read the credentials file. Returns null when no file exists.
- * Throws on unknown / unsupported versions.
+ * Read the credentials file. Returns null when no file exists, OR when the
+ * stored shape isn't the current flat v1 (pre-release: an old/foreign file just
+ * means "not logged in" — the user re-runs `lmnr-cli login`, which overwrites).
  */
-export async function readCredentials(): Promise<StoredCredentials | null> {
+export async function readCredentials(): Promise<Credentials | null> {
   const path = credentialsPath();
   let raw: string;
   try {
@@ -55,27 +49,26 @@ export async function readCredentials(): Promise<StoredCredentials | null> {
     if (isNotFound(e)) return null;
     throw e;
   }
-  const parsed = JSON.parse(raw) as { version?: unknown };
-  if (parsed.version === CREDENTIALS_VERSION) {
-    return parsed as unknown as StoredCredentials;
+  let parsed: Partial<Credentials>;
+  try {
+    parsed = JSON.parse(raw) as Partial<Credentials>;
+  } catch {
+    return null;
   }
-  throw new Error(
-    `Unsupported credentials file version: ${String(parsed.version)}. ` +
-      "Delete ~/.config/lmnr/credentials.json and re-run `lmnr-cli login`.",
-  );
+  if (parsed.version === CREDENTIALS_VERSION && typeof parsed.sessionToken === "string") {
+    return parsed as Credentials;
+  }
+  return null;
 }
 
-export async function writeCredentials(creds: StoredCredentials): Promise<void> {
+export async function writeCredentials(creds: Credentials): Promise<void> {
   const path = credentialsPath();
   const parent = dirname(path);
   await mkdir(parent, { recursive: true, mode: 0o700 });
 
-  // Mode preservation: Node's writeFile `mode` option only applies when the
-  // file is being CREATED. On overwrite the existing mode survives, but here
-  // we are writing to a `.tmp` and then renaming, so the temp adopts whatever
-  // mode `writeFile` sets and the final file inherits that. Capture the
-  // current dest mode first if present (default 0o600 for new files) so
-  // tighter user-set modes like 0o640 / 0o600 survive token-refresh writes.
+  // Preserve a tighter user-set mode (e.g. 0o600) across token-refresh writes;
+  // default 0o600 for new files. The temp adopts this mode and the rename
+  // carries it onto the canonical file.
   let mode = 0o600;
   try {
     const existing = await stat(path);
@@ -84,10 +77,7 @@ export async function writeCredentials(creds: StoredCredentials): Promise<void> 
     if (!isNotFound(e)) throw e;
   }
 
-  // Atomic temp+rename: a partial / crashed write can't corrupt the canonical
-  // file, and two concurrent writers can't interleave bytes (the later
-  // rename overwrites the earlier - last-write-wins is acceptable for this
-  // file). `wx` ensures we never collide with a leftover from a previous run.
+  // Atomic temp+rename so a crashed write can't corrupt the canonical file.
   const tmp = `${path}.tmp.${process.pid}.${Date.now()}`;
   await writeFile(tmp, JSON.stringify(creds, null, 2), { mode, flag: "wx" });
   await rename(tmp, path);
@@ -103,51 +93,6 @@ export async function deleteCredentials(): Promise<boolean> {
   }
   await rm(path, { force: true });
   return true;
-}
-
-/**
- * Insert / replace a profile keyed by userId, set it active, and write back.
- * Returns the updated blob.
- */
-export async function upsertProfile(profile: ProfileEntry): Promise<StoredCredentials> {
-  const existing = (await readCredentials()) ?? emptyCredentials();
-  existing.profiles[profile.userId] = profile;
-  existing.active = profile.userId;
-  await writeCredentials(existing);
-  return existing;
-}
-
-export function emptyCredentials(): StoredCredentials {
-  return { version: 1, active: null, profiles: {} };
-}
-
-/**
- * Resolve a profile from the blob by exact userId, exact userEmail, or
- * userId prefix (>=8 chars, unique). Returns null if not found.
- */
-export function findProfile(
-  creds: StoredCredentials,
-  needle: string,
-): ProfileEntry | null {
-  const trimmed = needle.trim();
-  if (trimmed.length === 0) return null;
-  const direct = creds.profiles[trimmed];
-  if (direct) return direct;
-  for (const p of Object.values(creds.profiles)) {
-    if (p.userEmail && p.userEmail === trimmed) return p;
-  }
-  if (trimmed.length >= 8) {
-    const prefixMatches = Object.values(creds.profiles).filter((p) =>
-      p.userId.startsWith(trimmed),
-    );
-    if (prefixMatches.length === 1) return prefixMatches[0];
-  }
-  return null;
-}
-
-export function getActiveProfile(creds: StoredCredentials): ProfileEntry | null {
-  if (!creds.active) return null;
-  return creds.profiles[creds.active] ?? null;
 }
 
 function isNotFound(e: unknown): boolean {

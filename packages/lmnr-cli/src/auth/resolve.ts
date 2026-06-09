@@ -1,62 +1,86 @@
-import {
-  findProfile,
-  getActiveProfile,
-  type ProfileEntry,
-  readCredentials,
-  type StoredCredentials,
-  writeCredentials,
-} from "./credentials";
+import { readProjectLink } from "../utils/project-link";
+import { type Credentials, readCredentials, writeCredentials } from "./credentials";
 import { decodeJwtExp, DeviceFlowError, mintAccessJwt } from "./device";
 
 // Re-mint the JWT when it's within this window of expiry.
 const REFRESH_SKEW_MS = 30_000;
 
 export interface AuthInputs {
+  /**
+   * @deprecated The CLI no longer authenticates via a project API key — it is
+   * user-token only. Accepted but IGNORED (kept so legacy call sites compile).
+   * Project API keys are an app/SDK concern written to .env by `setup`.
+   */
   projectApiKey?: string;
   baseUrl?: string;
   port?: number;
-  /** Explicit profile selector (userId or email). Overrides env + active. */
-  project?: string;
+  /**
+   * Target project (directory-scoped). The user JWT is user-scoped, so a
+   * project is required. Precedence: this > LMNR_PROJECT_ID > the nearest
+   * `.lmnr/project.json` link written by `setup`.
+   */
+  projectId?: string;
 }
 
 export interface ResolvedAuth {
-  /** The bearer token — JWT for profile auth, raw key for flag/env auth. */
+  /** The user-scoped BetterAuth access JWT (refreshed near expiry). */
   bearer: string;
   baseUrl?: string;
   port?: number;
+  /**
+   * The resolved target project id. Signals the client to route to `/v1/cli/*`
+   * with an `x-lmnr-project-id` header.
+   */
+  cliUserProjectId?: string;
 }
 
 /**
- * Precedence (highest first):
- *   1. --project-api-key flag
- *   2. LMNR_PROJECT_API_KEY env
- *   3. --project <userId|email> flag
- *   4. active profile in credentials.json
- *   5. single-profile shortcut
- *   6. error
+ * CLI auth is **user-token only** — the CLI authenticates as the single
+ * signed-in user via the stored BetterAuth session (refreshed access JWT),
+ * never via a project API key.
  *
- * For the profile path, the bearer is the user-scoped access JWT, refreshed via
- * GET /api/auth/token when it's within ~30s of expiry.
+ * Project precedence (directory-scoped): `--project-id` flag > LMNR_PROJECT_ID
+ * env > the nearest `.lmnr/project.json` (written by `setup`). The project is
+ * NOT stored in credentials.json — that holds only user auth.
  */
 export async function resolveAuth(opts: AuthInputs): Promise<ResolvedAuth> {
-  if (opts.projectApiKey && opts.projectApiKey.length > 0) {
-    return { bearer: opts.projectApiKey, baseUrl: opts.baseUrl, port: opts.port };
-  }
-  const envKey = process.env.LMNR_PROJECT_API_KEY;
-  if (envKey && envKey.length > 0) {
-    return { bearer: envKey, baseUrl: opts.baseUrl, port: opts.port };
-  }
-
   const creds = await readCredentials();
   if (!creds) {
+    throw new Error("Not authenticated. Run `lmnr-cli login`.");
+  }
+
+  let projectId = opts.projectId ?? process.env.LMNR_PROJECT_ID;
+  if (!projectId || projectId.length === 0) {
+    projectId = (await readProjectLink())?.projectId;
+  }
+  if (!projectId || projectId.length === 0) {
     throw new Error(
-      "Not authenticated. Run `lmnr-cli login` or pass --project-api-key " +
-        "/ set LMNR_PROJECT_API_KEY.",
+      "No project for this directory. Run `lmnr-cli setup` here, pass --project-id <id>, or set LMNR_PROJECT_ID.",
     );
   }
 
-  const profile = pickProfile(creds, opts.project);
-  const updated = await refreshIfNeeded(creds, profile);
+  const updated = await refreshIfNeeded(creds);
+  return {
+    bearer: updated.accessToken,
+    baseUrl: opts.baseUrl ?? updated.baseUrl,
+    port: opts.port,
+    cliUserProjectId: projectId,
+  };
+}
+
+/**
+ * Resolve only the user-scoped access token (no project) — for discovery
+ * endpoints like listing projects, which run BEFORE a project is selected.
+ */
+export async function resolveUserToken(opts: {
+  baseUrl?: string;
+  port?: number;
+}): Promise<{ bearer: string; baseUrl?: string; port?: number }> {
+  const creds = await readCredentials();
+  if (!creds) {
+    throw new Error("Not authenticated. Run `lmnr-cli login`.");
+  }
+  const updated = await refreshIfNeeded(creds);
   return {
     bearer: updated.accessToken,
     baseUrl: opts.baseUrl ?? updated.baseUrl,
@@ -64,43 +88,18 @@ export async function resolveAuth(opts: AuthInputs): Promise<ResolvedAuth> {
   };
 }
 
-function pickProfile(creds: StoredCredentials, explicit?: string): ProfileEntry {
-  if (explicit && explicit.length > 0) {
-    const match = findProfile(creds, explicit);
-    if (!match) {
-      throw new Error(
-        `No profile matching '${explicit}'. Run \`lmnr-cli list\` to see available profiles.`,
-      );
-    }
-    return match;
-  }
-  const active = getActiveProfile(creds);
-  if (active) return active;
-  const all = Object.values(creds.profiles);
-  if (all.length === 1) return all[0];
-  if (all.length === 0) {
-    throw new Error("Not authenticated. Run `lmnr-cli login`.");
-  }
-  throw new Error(
-    "Multiple profiles found, specify --project <email|userId> or run `lmnr-cli switch <email>`.",
-  );
-}
-
 /**
  * Re-mint the access JWT when it's near expiry, persist it, and bump
  * lastUsedAt. A 401 from the token endpoint means the session is gone — surface
  * a clear "run login" error.
  */
-export async function refreshIfNeeded(
-  creds: StoredCredentials,
-  profile: ProfileEntry,
-): Promise<ProfileEntry> {
-  let next: ProfileEntry = { ...profile };
-  const expMs = new Date(profile.accessTokenExpiresAt).getTime();
+export async function refreshIfNeeded(creds: Credentials): Promise<Credentials> {
+  const next: Credentials = { ...creds };
+  const expMs = new Date(creds.accessTokenExpiresAt).getTime();
   const nearExpiry = !Number.isFinite(expMs) || expMs - Date.now() <= REFRESH_SKEW_MS;
   if (nearExpiry) {
     try {
-      const jwt = await mintAccessJwt(profile.issuer, profile.sessionToken);
+      const jwt = await mintAccessJwt(creds.issuer, creds.sessionToken);
       next.accessToken = jwt;
       next.accessTokenExpiresAt = decodeJwtExp(jwt) ?? new Date().toISOString();
     } catch (e) {
@@ -111,7 +110,6 @@ export async function refreshIfNeeded(
     }
   }
   next.lastUsedAt = new Date().toISOString();
-  creds.profiles[next.userId] = next;
-  await writeCredentials(creds);
+  await writeCredentials(next);
   return next;
 }

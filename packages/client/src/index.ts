@@ -1,4 +1,5 @@
 import { BrowserEventsResource } from "./resources/browser-events";
+import { CliResource } from "./resources/cli";
 import { DatasetsResource } from "./resources/datasets";
 import { EvalsResource } from "./resources/evals";
 import { EvaluatorsResource } from "./resources/evaluators";
@@ -12,6 +13,7 @@ export class LaminarClient {
   private baseUrl: string;
   private projectApiKey: string;
   private _browserEvents: BrowserEventsResource;
+  private _cli: CliResource;
   private _datasets: DatasetsResource;
   private _evals: EvalsResource;
   private _evaluators: EvaluatorsResource;
@@ -24,10 +26,17 @@ export class LaminarClient {
     baseUrl,
     projectApiKey,
     port,
+    cliUserProjectId,
   }: {
     baseUrl?: string,
     projectApiKey?: string,
     port?: number,
+    /**
+     * CLI user-token auth: when set, `projectApiKey` is a BetterAuth user
+     * access JWT and the CLI-surfaced resources (sql/datasets/rollouts) route
+     * to `/v1/cli/*` with this project id in the `x-lmnr-project-id` header.
+     */
+    cliUserProjectId?: string,
   } = {}) {
     loadEnv();
     this.projectApiKey = projectApiKey ?? process.env.LMNR_PROJECT_API_KEY!;
@@ -38,18 +47,25 @@ export class LaminarClient {
     const baseUrlNoPort = (baseUrl ?? process.env.LMNR_BASE_URL)
       ?.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
     this.baseUrl = `${baseUrlNoPort ?? 'https://api.lmnr.ai'}:${httpPort}`;
+    // Only the CLI-twinned resources accept cliUserProjectId; the rest are
+    // always project-key / `/v1` (the CLI never calls them on the user path).
     this._browserEvents = new BrowserEventsResource(this.baseUrl, this.projectApiKey);
-    this._datasets = new DatasetsResource(this.baseUrl, this.projectApiKey);
+    this._cli = new CliResource(this.baseUrl, this.projectApiKey);
+    this._datasets = new DatasetsResource(this.baseUrl, this.projectApiKey, cliUserProjectId);
     this._evals = new EvalsResource(this.baseUrl, this.projectApiKey);
     this._evaluators = new EvaluatorsResource(this.baseUrl, this.projectApiKey);
-    this._rolloutSessions = new RolloutSessionsResource(this.baseUrl, this.projectApiKey);
-    this._sql = new SqlResource(this.baseUrl, this.projectApiKey);
+    this._rolloutSessions = new RolloutSessionsResource(this.baseUrl, this.projectApiKey, cliUserProjectId);
+    this._sql = new SqlResource(this.baseUrl, this.projectApiKey, cliUserProjectId);
     this._tags = new TagsResource(this.baseUrl, this.projectApiKey);
     this._traces = new TracesResource(this.baseUrl, this.projectApiKey);
   }
 
   public get browserEvents() {
     return this._browserEvents;
+  }
+
+  public get cli() {
+    return this._cli;
   }
 
   public get datasets() {

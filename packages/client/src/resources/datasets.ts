@@ -14,8 +14,8 @@ const DEFAULT_DATASET_PULL_LIMIT = 100;
 const DEFAULT_DATASET_PUSH_BATCH_SIZE = 100;
 
 export class DatasetsResource extends BaseResource {
-  constructor(baseHttpUrl: string, projectApiKey: string) {
-    super(baseHttpUrl, projectApiKey);
+  constructor(baseHttpUrl: string, projectApiKey: string, cliUserProjectId?: string) {
+    super(baseHttpUrl, projectApiKey, cliUserProjectId);
   }
 
   /**
@@ -24,7 +24,7 @@ export class DatasetsResource extends BaseResource {
    * @returns {Promise<Dataset[]>} Array of datasets
    */
   public async listDatasets(): Promise<Dataset[]> {
-    const response = await fetch(this.baseHttpUrl + "/v1/datasets", {
+    const response = await fetch(this.baseHttpUrl + this.apiPrefix + "/datasets", {
       method: "GET",
       headers: this.headers(),
     });
@@ -45,7 +45,7 @@ export class DatasetsResource extends BaseResource {
   public async getDatasetByName(name: string): Promise<Dataset[]> {
     const params = new URLSearchParams({ name });
     const response = await fetch(
-      this.baseHttpUrl + `/v1/datasets?${params.toString()}`,
+      this.baseHttpUrl + `${this.apiPrefix}/datasets?${params.toString()}`,
       {
         method: "GET",
         headers: this.headers(),
@@ -105,7 +105,7 @@ export class DatasetsResource extends BaseResource {
 
       const batch = points.slice(i, i + batchSize);
       const fetchResponse = await fetch(
-        this.baseHttpUrl + "/v1/datasets/datapoints",
+        this.baseHttpUrl + this.apiPrefix + "/datasets/datapoints",
         {
           method: "POST",
           headers: this.headers(),
@@ -175,7 +175,7 @@ export class DatasetsResource extends BaseResource {
     const params = new URLSearchParams(paramsObj);
 
     const response = await fetch(
-      this.baseHttpUrl + `/v1/datasets/datapoints?${params.toString()}`,
+      this.baseHttpUrl + `${this.apiPrefix}/datasets/datapoints?${params.toString()}`,
       {
         method: "GET",
         headers: this.headers(),

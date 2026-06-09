@@ -1,6 +1,6 @@
 import open from "open";
 
-import { type ProfileEntry, upsertProfile } from "../../auth/credentials";
+import { type Credentials, writeCredentials } from "../../auth/credentials";
 import {
   CLI_CLIENT_ID,
   CLI_SCOPE,
@@ -51,7 +51,8 @@ export async function handleLogin(options: LoginOptions): Promise<void> {
   const session = await fetchSession(issuer, sessionToken);
 
   const now = new Date().toISOString();
-  const profile: ProfileEntry = {
+  const creds: Credentials = {
+    version: 1,
     issuer,
     baseUrl,
     sessionToken,
@@ -66,12 +67,13 @@ export async function handleLogin(options: LoginOptions): Promise<void> {
     createdAt: now,
     lastUsedAt: now,
   };
-  await upsertProfile(profile);
+  await writeCredentials(creds);
 
   process.stderr.write(`Logged in as ${session.email || "<unknown>"}.\n`);
   process.stderr.write(
     `Client: ${CLI_CLIENT_ID}. Tokens stored at ~/.config/lmnr/credentials.json (mode 0600).\n`,
   );
+  process.stderr.write("Run `lmnr-cli setup` in a project directory to link it and write its API key.\n");
 }
 
 function pick(...candidates: (string | undefined)[]): string {

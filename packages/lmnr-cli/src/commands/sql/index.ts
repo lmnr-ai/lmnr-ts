@@ -8,7 +8,7 @@ import { renderTable } from "../../utils/table";
 const logger = initializeLogger();
 
 interface SqlCommandOptions {
-  projectApiKey?: string;
+  projectId?: string;
   baseUrl?: string;
   port?: number;
   json?: boolean;
@@ -19,7 +19,7 @@ export const handleSqlQuery = async (
   options: SqlCommandOptions,
 ): Promise<void> => {
   const client = await buildLaminarClient({
-    projectApiKey: options.projectApiKey,
+    projectId: options.projectId,
     baseUrl: options.baseUrl,
     port: options.port,
   });
