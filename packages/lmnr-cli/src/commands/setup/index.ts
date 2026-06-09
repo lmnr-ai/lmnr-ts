@@ -15,12 +15,20 @@ import { handleLogin } from "../login";
 const DEFAULT_DASHBOARD_URL = "https://www.laminar.sh";
 const DEFAULT_BASE_URL = "https://api.lmnr.ai";
 
-// Exit codes (machine-readable contract).
-const EXIT_LOGIN_FAILED = 6;
+// Exit codes (machine-readable contract — each distinct so automation can
+// branch on the failure mode):
+//   4  no_access            — user lacks access to the linked project
+//   6  login_failed         — device-flow login failed / no creds after login
+//   7  no_project           — no project to select (and none could be created)
+//   8  env_write_failed     — minted a key but couldn't write ./.env
+//   9  setup_key_failed     — POST /api/cli/setup-key failed
+//   10 list_projects_failed — GET /v1/cli/projects (discovery) failed
 const EXIT_NO_ACCESS = 4;
+const EXIT_LOGIN_FAILED = 6;
 const EXIT_NO_PROJECT = 7;
-const EXIT_SETUP_KEY_FAILED = 7;
 const EXIT_ENV_WRITE_FAILED = 8;
+const EXIT_SETUP_KEY_FAILED = 9;
+const EXIT_LIST_PROJECTS_FAILED = 10;
 
 export interface SetupOptions {
   writeEnv?: boolean;
@@ -283,7 +291,7 @@ async function resolveProjectViaCli(
     projects = await listProjects(creds, userBaseUrl);
   } catch (err) {
     emitError(isJson, "list_projects_failed", describeError(err));
-    process.exit(EXIT_SETUP_KEY_FAILED);
+    process.exit(EXIT_LIST_PROJECTS_FAILED);
   }
 
   if (projects.length === 0) {
