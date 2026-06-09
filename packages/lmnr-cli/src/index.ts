@@ -4,6 +4,7 @@ import { errorMessage } from "@lmnr-ai/types";
 import { Command } from "commander";
 
 import { version } from "../package.json";
+import { withProjectClient, withUserToken } from "./auth/with-client";
 import {
   handleDatasetsCreate,
   handleDatasetsList,
@@ -31,8 +32,9 @@ async function main() {
     .command("dataset")
     .description("Manage datasets")
     .option(
-      "--project-api-key <key>",
-      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+        "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -49,9 +51,7 @@ async function main() {
   datasetsCmd
     .command("list")
     .description("List all datasets")
-    .action(async (_options, cmd) => {
-      await handleDatasetsList(cmd.optsWithGlobals());
-    });
+    .action(withProjectClient(handleDatasetsList));
 
   // Datasets push command
   datasetsCmd
@@ -76,9 +76,7 @@ async function main() {
       (val) => parseInt(val, 10),
       100,
     )
-    .action(async (paths: string[], _options, cmd) => {
-      await handleDatasetsPush(paths, cmd.optsWithGlobals());
-    });
+    .action(withProjectClient(handleDatasetsPush));
 
   // Datasets pull command
   datasetsCmd
@@ -115,9 +113,7 @@ async function main() {
       (val) => parseInt(val, 10),
       0,
     )
-    .action(async (outputPath: string | undefined, _options, cmd) => {
-      await handleDatasetsPull(outputPath, cmd.optsWithGlobals());
-    });
+    .action(withProjectClient(handleDatasetsPull));
 
   // Datasets create command
   datasetsCmd
@@ -140,9 +136,7 @@ async function main() {
       (val) => parseInt(val, 10),
       100,
     )
-    .action(async (name: string, paths: string[], _options, cmd) => {
-      await handleDatasetsCreate(name, paths, cmd.optsWithGlobals());
-    });
+    .action(withProjectClient(handleDatasetsCreate));
 
   const sqlCmd = program
     .command("sql")
@@ -167,9 +161,7 @@ async function main() {
     .command("query")
     .description("Execute a SQL query")
     .argument("<query>", "SQL query string")
-    .action(async (query: string, _options, cmd) => {
-      await handleSqlQuery(query, cmd.optsWithGlobals());
-    })
+    .action(withProjectClient(handleSqlQuery))
     .addHelpText(
       "after",
       SQL_SCHEMA_HELP +
@@ -203,9 +195,7 @@ Examples:
       (val) => parseInt(val, 10),
     )
     .option("--json", "Output structured JSON to stdout")
-    .action(async (_options, cmd) => {
-      await handleProjectsList(cmd.optsWithGlobals());
-    });
+    .action(withUserToken(handleProjectsList));
 
   program
     .command("login")
@@ -365,8 +355,9 @@ Examples:
     "after",
     `
 Authentication:
-  \`lmnr-cli login\` authenticates as a user (used by sql / project).
-  dataset / debug / trace append-note use a project API key
+  \`lmnr-cli login\` authenticates as a user (used by sql / dataset / project).
+  Those commands target a project via --project-id or the linked
+  .lmnr/project.json. debug / trace append-note use a project API key
   (--project-api-key or LMNR_PROJECT_API_KEY). Run \`lmnr-cli setup\` to mint
   one into ./.env and link the project.
 

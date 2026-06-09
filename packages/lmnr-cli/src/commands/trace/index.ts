@@ -22,6 +22,20 @@ interface TraceCommandOptions {
   json?: boolean;
 }
 
+/**
+ * trace append-note is a project-API-key surface (not the user-token wrappers).
+ * Build the client from the project key (flag or LMNR_PROJECT_API_KEY).
+ */
+function buildProjectKeyClient(options: TraceCommandOptions): LaminarClient {
+  return new LaminarClient({
+    baseUrl: options.baseUrl,
+    port: options.port,
+    ...(options.projectApiKey
+      ? { auth: { type: "apiKey", key: options.projectApiKey } as const }
+      : {}),
+  });
+}
+
 // Separator between appended note entries. The note is rendered as markdown,
 // so a blank line keeps each appended entry its own paragraph.
 const NOTE_SEPARATOR = "\n\n";
@@ -49,11 +63,7 @@ export const handleTraceAppendNote = async (
   note: string,
   options: TraceCommandOptions,
 ): Promise<void> => {
-  const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
-  });
+  const client = buildProjectKeyClient(options);
 
   try {
     const id = normalizeTraceId(traceId);

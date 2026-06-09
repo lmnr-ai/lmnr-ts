@@ -422,10 +422,15 @@ async function assertAccess(
   }
 }
 
-/** List the projects the user can access (user-JWT-authed). */
+/** List the projects the user can access (user-JWT-authed discovery). */
 async function listProjects(creds: Credentials, baseUrl: string): Promise<CliProject[]> {
   const updated = await refreshIfNeeded(creds);
-  const client = new LaminarClient({ projectApiKey: updated.accessToken, baseUrl });
+  // Discovery client: CliResource hits /v1/cli/projects with the bare bearer,
+  // no project id needed (it overrides BaseResource's headers/prefix).
+  const client = new LaminarClient({
+    baseUrl,
+    auth: { type: "userToken", token: updated.accessToken, projectId: "" },
+  });
   return client.cli.listProjects();
 }
 

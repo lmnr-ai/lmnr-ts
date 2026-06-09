@@ -46,7 +46,6 @@ async function runCli(args: string[]): Promise<CliResult> {
           ...process.env,
           LMNR_LOG_LEVEL: 'silent',
           XDG_CONFIG_HOME: credsDir,
-          LMNR_PROJECT_ID: 'fake-project',
         },
       },
     );
@@ -63,7 +62,7 @@ async function runCli(args: string[]): Promise<CliResult> {
 describe('datasets CLI integration — validation errors', () => {
   it('datasets push --json with no name/id outputs JSON error', async () => {
     const { stdout, exitCode } = await runCli([
-      'dataset', 'push', '--json', '--project-api-key', 'fake', './nonexistent',
+      'dataset', 'push', '--json', '--project-id', 'fake-project', './nonexistent',
     ]);
 
     expect(exitCode).not.toBe(0);
@@ -75,7 +74,7 @@ describe('datasets CLI integration — validation errors', () => {
   it('datasets push --json with both name and id outputs JSON error', async () => {
     const { stdout, exitCode } = await runCli([
       'dataset', 'push', '--json', '--name', 'x', '--id', 'y',
-      '--project-api-key', 'fake', './nonexistent',
+      '--project-id', 'fake-project', './nonexistent',
     ]);
 
     expect(exitCode).not.toBe(0);
@@ -85,7 +84,7 @@ describe('datasets CLI integration — validation errors', () => {
 
   it('datasets pull --json with no name/id outputs JSON error', async () => {
     const { stdout, exitCode } = await runCli([
-      'dataset', 'pull', '--json', '--project-api-key', 'fake',
+      'dataset', 'pull', '--json', '--project-id', 'fake-project',
     ]);
 
     expect(exitCode).not.toBe(0);
@@ -95,8 +94,8 @@ describe('datasets CLI integration — validation errors', () => {
 
   it('all --json error outputs are valid JSON', async () => {
     const results = await Promise.all([
-      runCli(['dataset', 'push', '--json', '--project-api-key', 'fake', './x']),
-      runCli(['dataset', 'pull', '--json', '--project-api-key', 'fake']),
+      runCli(['dataset', 'push', '--json', '--project-id', 'fake-project', './x']),
+      runCli(['dataset', 'pull', '--json', '--project-id', 'fake-project']),
     ]);
 
     for (const { stdout } of results) {
@@ -171,7 +170,7 @@ describe('datasets CLI integration — with mock server', () => {
       'dataset', 'list', '--json',
       '--base-url', `http://localhost:${mockPort}`,
       '--port', String(mockPort),
-      '--project-api-key', 'fake-key',
+      '--project-id', 'fake-project',
     ]);
 
     expect(exitCode).toBe(0);
@@ -186,7 +185,7 @@ describe('datasets CLI integration — with mock server', () => {
       'dataset', 'pull', '--json', '--name', 'test-dataset',
       '--base-url', `http://localhost:${mockPort}`,
       '--port', String(mockPort),
-      '--project-api-key', 'fake-key',
+      '--project-id', 'fake-project',
     ]);
 
     expect(exitCode).toBe(0);
@@ -205,7 +204,7 @@ describe('datasets CLI integration — with mock server', () => {
       'dataset', 'push', '--json', '--name', 'test-dataset',
       '--base-url', `http://localhost:${mockPort}`,
       '--port', String(mockPort),
-      '--project-api-key', 'fake-key',
+      '--project-id', 'fake-project',
       dataFile,
     ]);
 

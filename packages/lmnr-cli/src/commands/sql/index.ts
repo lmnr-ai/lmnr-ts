@@ -1,53 +1,36 @@
-import { errorMessage } from "@lmnr-ai/types";
+import { LaminarClient } from "@lmnr-ai/client";
 
-import { buildLaminarClient } from "../../auth/client";
-import { initializeLogger } from "../../utils/logger";
-import { outputJson, outputJsonError } from "../../utils/output";
+import type { GlobalOpts } from "../../auth/with-client";
+import { outputJson } from "../../utils/output";
 import { renderTable } from "../../utils/table";
 
-const logger = initializeLogger();
-
-interface SqlCommandOptions {
-  projectId?: string;
-  baseUrl?: string;
-  port?: number;
-  json?: boolean;
-}
-
+/**
+ * Run a SQL query against the project's data and print the rows. Pure handler:
+ * the command wrapper (`withProjectClient`) resolves the client and owns the
+ * error envelope (`--json` → structured error + exit, otherwise log + exit).
+ */
 export const handleSqlQuery = async (
+  client: LaminarClient,
   query: string,
-  options: SqlCommandOptions,
+  opts: GlobalOpts,
 ): Promise<void> => {
-  const client = await buildLaminarClient({
-    projectId: options.projectId,
-    baseUrl: options.baseUrl,
-    port: options.port,
-  });
+  const rows = await client.sql.query(query);
 
-  try {
-    const rows = await client.sql.query(query);
-
-    if (options.json) {
-      outputJson(rows);
-      return;
-    }
-
-    if (rows.length === 0) {
-      console.log("No rows returned.");
-      return;
-    }
-
-    const columns = Object.keys(rows[0]);
-    const tableRows = rows.map((row) =>
-      columns.map((col) => String(row[col] ?? "")),
-    );
-
-    console.log(renderTable(columns, tableRows));
-    console.log(`\n${rows.length} row(s)\n`);
-  } catch (error) {
-    if (options.json) outputJsonError(error);
-    logger.error(`Query failed: ${errorMessage(error)}`);
-    process.exit(1);
+  if (opts.json) {
+    outputJson(rows);
+    return;
   }
-};
 
+  if (rows.length === 0) {
+    console.log("No rows returned.");
+    return;
+  }
+
+  const columns = Object.keys(rows[0]);
+  const tableRows = rows.map((row) =>
+    columns.map((col) => String(row[col] ?? "")),
+  );
+
+  console.log(renderTable(columns, tableRows));
+  console.log(`\n${rows.length} row(s)\n`);
+};

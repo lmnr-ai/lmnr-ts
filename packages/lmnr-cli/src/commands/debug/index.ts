@@ -15,6 +15,21 @@ interface DebugCommandOptions {
 }
 
 /**
+ * debug session commands are a project-API-key surface (not the user-token
+ * wrappers). Build the client from the project key (flag or
+ * LMNR_PROJECT_API_KEY).
+ */
+function buildProjectKeyClient(options: DebugCommandOptions): LaminarClient {
+  return new LaminarClient({
+    baseUrl: options.baseUrl,
+    port: options.port,
+    ...(options.projectApiKey
+      ? { auth: { type: "apiKey", key: options.projectApiKey } as const }
+      : {}),
+  });
+}
+
+/**
  * Upsert the display name of a debug session. Update-only on the backend: a
  * session id unknown to the project 404s rather than creating a ghost session.
  */
@@ -23,11 +38,7 @@ export const handleDebugSessionSetName = async (
   name: string,
   options: DebugCommandOptions,
 ): Promise<void> => {
-  const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
-  });
+  const client = buildProjectKeyClient(options);
 
   try {
     await client.rolloutSessions.setName({ sessionId, name });
@@ -64,11 +75,7 @@ export const handleDebugSessionSummary = async (
   sessionId: string,
   options: DebugCommandOptions,
 ): Promise<void> => {
-  const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
-  });
+  const client = buildProjectKeyClient(options);
 
   try {
     const traces: SessionTraceSummary[] = [];

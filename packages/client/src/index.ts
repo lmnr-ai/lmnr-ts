@@ -133,9 +133,9 @@ export class LaminarClient {
   }
 }
 
+export type { CliProject } from "./resources/cli";
+export type { LaminarAuth } from "./resources/index";
 export {
   type CacheOutcome,
   RolloutSessionsResource,
 } from "./resources/rollout-sessions";
-export type { CliProject } from "./resources/cli";
-export type { LaminarAuth } from "./resources/index";

@@ -16,7 +16,7 @@ export interface AuthInputs {
   port?: number;
   /**
    * Target project (directory-scoped). The user JWT is user-scoped, so a
-   * project is required. Precedence: this > LMNR_PROJECT_ID > the nearest
+   * project is required. Precedence: this `--project-id` flag > the nearest
    * `.lmnr/project.json` link written by `setup`.
    */
   projectId?: string;
@@ -31,7 +31,7 @@ export interface ResolvedAuth {
    * The resolved target project id. Signals the client to route to `/v1/cli/*`
    * with an `x-lmnr-project-id` header.
    */
-  cliUserProjectId?: string;
+  projectId: string;
 }
 
 /**
@@ -39,9 +39,9 @@ export interface ResolvedAuth {
  * signed-in user via the stored BetterAuth session (refreshed access JWT),
  * never via a project API key.
  *
- * Project precedence (directory-scoped): `--project-id` flag > LMNR_PROJECT_ID
- * env > the nearest `.lmnr/project.json` (written by `setup`). The project is
- * NOT stored in credentials.json — that holds only user auth.
+ * Project precedence (directory-scoped): `--project-id` flag > the nearest
+ * `.lmnr/project.json` (written by `setup`). The project is NOT stored in
+ * credentials.json — that holds only user auth.
  */
 export async function resolveAuth(opts: AuthInputs): Promise<ResolvedAuth> {
   const creds = await readCredentials();
@@ -49,14 +49,14 @@ export async function resolveAuth(opts: AuthInputs): Promise<ResolvedAuth> {
     throw new Error("Not authenticated. Run `lmnr-cli login`.");
   }
 
-  let projectId = opts.projectId ?? process.env.LMNR_PROJECT_ID;
+  let projectId = opts.projectId;
   if (!projectId || projectId.length === 0) {
     projectId = (await readProjectLink())?.projectId;
   }
   if (!projectId || projectId.length === 0) {
     throw new Error(
       "No project for this directory. Run `lmnr-cli setup` here, " +
-        "pass --project-id <id>, or set LMNR_PROJECT_ID.",
+        "or pass --project-id <id>.",
     );
   }
 
@@ -65,7 +65,7 @@ export async function resolveAuth(opts: AuthInputs): Promise<ResolvedAuth> {
     bearer: updated.accessToken,
     baseUrl: opts.baseUrl ?? updated.baseUrl,
     port: opts.port,
-    cliUserProjectId: projectId,
+    projectId,
   };
 }
 

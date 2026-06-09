@@ -10,11 +10,10 @@ import { type AuthInputs, resolveAuth } from "./resolve";
 export async function buildLaminarClient(opts: AuthInputs): Promise<LaminarClient> {
   const auth = await resolveAuth(opts);
   return new LaminarClient({
-    projectApiKey: auth.bearer,
     baseUrl: auth.baseUrl,
     port: auth.port,
-    // Set only for user-token (profile) auth → routes to /v1/cli/* with the
-    // x-lmnr-project-id header. Undefined for project-API-key auth (/v1/*).
-    cliUserProjectId: auth.cliUserProjectId,
+    // User-token auth → routes to /v1/cli/* with the resolved project in the
+    // x-lmnr-project-id header.
+    auth: { type: "userToken", token: auth.bearer, projectId: auth.projectId },
   });
 }

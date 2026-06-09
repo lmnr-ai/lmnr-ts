@@ -47,7 +47,6 @@ async function runCli(args: string[]): Promise<CliResult> {
           ...process.env,
           LMNR_LOG_LEVEL: 'silent',
           XDG_CONFIG_HOME: credsDir,
-          LMNR_PROJECT_ID: 'fake-project',
         },
       },
     );
@@ -106,6 +105,7 @@ describe('sql CLI integration — with mock server', () => {
     const { stdout, exitCode } = await runCli([
       'sql', 'query', 'SELECT * FROM spans',
       '--json',
+      '--project-id', 'fake-project',
       '--base-url', `http://localhost:${mockPort}`,
       '--port', String(mockPort),
     ]);
@@ -136,6 +136,7 @@ describe('sql CLI integration — with mock server', () => {
     const { stdout, exitCode } = await runCli([
       'sql', 'query', 'SELECT * FROM spans',
       '--json',
+      '--project-id', 'fake-project',
       '--base-url', `http://localhost:${errorPort}`,
       '--port', String(errorPort),
     ]);
