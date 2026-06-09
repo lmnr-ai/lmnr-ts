@@ -34,7 +34,7 @@ vi.mock('./device', () => ({
   },
 }));
 
-import { resolveAuth } from './resolve';
+import { refreshIfNeeded, resolveAuth } from './resolve';
 
 const freshCreds: Credentials = {
   version: 1,
@@ -80,5 +80,29 @@ describe('resolveAuth project resolution', () => {
 
   it('does not mention LMNR_PROJECT_ID in the no-project error', async () => {
     await expect(resolveAuth({})).rejects.not.toThrow(/LMNR_PROJECT_ID/);
+  });
+});
+
+describe('refreshIfNeeded (logout race guard)', () => {
+  it('does NOT write credentials for a fresh (not-near-expiry) token', async () => {
+    const result = await refreshIfNeeded(freshCreds);
+
+    expect(mockWriteCredentials).not.toHaveBeenCalled();
+    expect(mockMintAccessJwt).not.toHaveBeenCalled();
+    expect(result.accessToken).toBe('jwt');
+  });
+
+  it('re-mints AND writes credentials when the token is near expiry', async () => {
+    mockMintAccessJwt.mockResolvedValue('fresh-jwt');
+    const expiring: Credentials = {
+      ...freshCreds,
+      accessTokenExpiresAt: new Date(Date.now() + 1_000).toISOString(),
+    };
+
+    const result = await refreshIfNeeded(expiring);
+
+    expect(mockMintAccessJwt).toHaveBeenCalledTimes(1);
+    expect(mockWriteCredentials).toHaveBeenCalledTimes(1);
+    expect(result.accessToken).toBe('fresh-jwt');
   });
 });

@@ -84,25 +84,33 @@ export async function resolveUserToken(opts: {
 }
 
 /**
- * Re-mint the access JWT when it's near expiry, persist it, and bump
- * lastUsedAt. A 401 from the token endpoint means the session is gone — surface
- * a clear "run login" error.
+ * Re-mint the access JWT when it's near expiry and persist it. A 401 from the
+ * token endpoint means the session is gone — surface a clear "run login" error.
+ *
+ * Logout race guard: we write credentials ONLY when we actually re-minted. The
+ * old code unconditionally rewrote the file (just to bump lastUsedAt) on every
+ * command, so a concurrent `logout` that deleted the file mid-flight could have
+ * its delete clobbered by this in-flight atomic rename — logout would appear to
+ * succeed while tokens remained on disk. For a fresh (not-near-expiry) token we
+ * now do no write at all, eliminating that window for the common case.
  */
 export async function refreshIfNeeded(creds: Credentials): Promise<Credentials> {
-  const next: Credentials = { ...creds };
   const expMs = new Date(creds.accessTokenExpiresAt).getTime();
   const nearExpiry = !Number.isFinite(expMs) || expMs - Date.now() <= REFRESH_SKEW_MS;
-  if (nearExpiry) {
-    try {
-      const jwt = await mintAccessJwt(creds.issuer, creds.sessionToken);
-      next.accessToken = jwt;
-      next.accessTokenExpiresAt = decodeJwtExp(jwt) ?? new Date().toISOString();
-    } catch (e) {
-      if (e instanceof DeviceFlowError && e.code === "invalid_grant") {
-        throw new Error("Session expired — run `lmnr-cli login`.");
-      }
-      throw e;
+  if (!nearExpiry) {
+    return creds;
+  }
+
+  const next: Credentials = { ...creds };
+  try {
+    const jwt = await mintAccessJwt(creds.issuer, creds.sessionToken);
+    next.accessToken = jwt;
+    next.accessTokenExpiresAt = decodeJwtExp(jwt) ?? new Date().toISOString();
+  } catch (e) {
+    if (e instanceof DeviceFlowError && e.code === "invalid_grant") {
+      throw new Error("Session expired — run `lmnr-cli login`.");
     }
+    throw e;
   }
   next.lastUsedAt = new Date().toISOString();
   await writeCredentials(next);

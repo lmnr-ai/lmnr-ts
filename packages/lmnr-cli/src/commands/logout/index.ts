@@ -46,9 +46,13 @@ export async function handleLogout(): Promise<void> {
     process.stderr.write("Already logged out.\n");
     return;
   }
-  await revokeSession(creds);
   const label = creds.userEmail ?? creds.userId;
+  // Delete the local file FIRST, then best-effort revoke the server session.
+  // "Log me out" must remove the credentials even if the network revoke hangs
+  // or fails; deleting first also means a slow revoke can't race a concurrent
+  // token-refresh write back onto disk after we believed we were logged out.
   await deleteCredentials();
+  await revokeSession(creds);
   process.stderr.write(`Logged out of ${label}. Removed ${credentialsPath()}.\n`);
 }
 
