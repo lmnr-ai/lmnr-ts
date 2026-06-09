@@ -7,6 +7,7 @@ import { type CliProject, LaminarClient } from "@lmnr-ai/client";
 import { type Credentials, readCredentials } from "../../auth/credentials";
 import { getProjectId } from "../../auth/project-id";
 import { refreshIfNeeded } from "../../auth/resolve";
+import { pc } from "../../utils/colors";
 import { readEnvVar, writeEnvFile } from "../../utils/env-file";
 import { installSkill } from "../../utils/install-skill";
 import { type ProjectLink, readProjectLink, writeProjectLink } from "../../utils/project-link";
@@ -143,10 +144,10 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   }
 
   if (!isJson) {
-    process.stderr.write(`✓ Logged in as ${creds.userEmail ?? "<unknown>"}\n`);
+    process.stderr.write(`${pc.green("✓")} Logged in as ${creds.userEmail ?? "<unknown>"}\n`);
     process.stderr.write(
-      `✓ Project: ${link.projectName ?? link.projectId}` +
-        (link.workspaceName ? ` (${link.workspaceName})` : "") +
+      `${pc.green("✓")} Project: ${link.projectName ?? link.projectId}` +
+        (link.workspaceName ? pc.dim(` (${link.workspaceName})`) : "") +
         "\n",
     );
   }
@@ -173,11 +174,11 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     if (owner && owner === link.projectId) {
       needMint = false;
       if (!isJson) {
-        process.stderr.write("✓ Project API Key already in your environment\n");
+        process.stderr.write(`${pc.green("✓")} Project API Key already in your environment\n`);
       }
     } else if (!isJson) {
       process.stderr.write(
-        "⚠ Project API Key in your environment does not match selected project — " +
+        `${pc.yellow("⚠")} Project API Key in your environment does not match selected project — ` +
           "minting a new one\n",
       );
     }
@@ -208,12 +209,13 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
             : result.replaced
               ? "Replaced LMNR_PROJECT_API_KEY in"
               : "Appended LMNR_PROJECT_API_KEY to";
-          process.stderr.write(`✓ ${verb} ${result.path}\n`);
+          process.stderr.write(`${pc.green("✓")} ${verb} ${result.path}\n`);
         }
       } catch (err) {
         process.stderr.write(
-          `\nERROR: failed to write ${target}: ${describeError(err)}\n` +
-            `Your API key (set it manually):\n  LMNR_PROJECT_API_KEY=${apiKey}\n\n`,
+          `\n${pc.red("ERROR")}: failed to write ${target}: ${describeError(err)}\n` +
+            pc.dim("Your API key (set it manually):") +
+            `\n  LMNR_PROJECT_API_KEY=${apiKey}\n\n`,
         );
         if (isJson) {
           process.stdout.write(
@@ -241,26 +243,26 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     skillsInstalled = skillResult.written;
     if (!isJson) {
       if (skillResult.skipped) {
-        process.stderr.write("  Laminar skill install skipped\n");
-      } else {
-        for (const p of skillResult.written) {
-          process.stderr.write(`✓ Installed Laminar skill: ${p}\n`);
-        }
-        if (skillResult.defaulted) {
-          process.stderr.write("  (no agent dir found; defaulted to .claude)\n");
-        }
+        process.stderr.write(pc.dim("  Laminar skill install skipped\n"));
+      } else if (skillResult.written.length > 0) {
+        // One mark for the whole skill, not one per file (SKILL.md + references).
+        const note = skillResult.defaulted
+          ? pc.dim(" (no agent dir found; defaulted to .claude)")
+          : "";
+        process.stderr.write(`${pc.green("✓")} Installed Laminar skill${note}\n`);
       }
     }
   } catch (err) {
     if (!isJson) {
-      process.stderr.write(`Warning: could not install Laminar skill (${describeError(err)}).\n`);
+      process.stderr.write(
+        `${pc.yellow("Warning")}: could not install Laminar skill (${describeError(err)}).\n`,
+      );
     }
   }
 
   // --- 5. Summary -----------------------------------------------------------
 
   const dashboardLink = `${trimSlash(issuer)}/project/${link.projectId}/traces`;
-  const revokeLink = `${trimSlash(issuer)}/project/${link.projectId}/settings/api-keys`;
 
   const result: SetupResult = {
     projectId: link.projectId,
@@ -277,7 +279,16 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   if (isJson) {
     process.stdout.write(JSON.stringify(result) + "\n");
   } else {
-    process.stdout.write(`\nDashboard:    ${dashboardLink}\n` + `Revoke key:   ${revokeLink}\n`);
+    process.stdout.write(
+      "\nNext steps:\n" +
+        "  1. Instrument your project with Laminar using the installed skill or the docs:\n" +
+        "     https://laminar.sh/docs/tracing/integrations/overview\n" +
+        "  2. Run your project.\n" +
+        "  3. Verify instrumentation:\n" +
+        '     lmnr-cli sql query "SELECT * FROM traces ORDER BY start_time DESC LIMIT 1"\n' +
+        "  4. View your traces in the browser:\n" +
+        `     ${dashboardLink}\n`,
+    );
   }
 }
 
@@ -379,7 +390,7 @@ async function resolveProjectViaCli(
     workspaceId: chosen.workspaceId,
     workspaceName: chosen.workspaceName,
   });
-  if (!isJson) process.stderr.write(`✓ Linked ${linkPath}\n`);
+  if (!isJson) process.stderr.write(`${pc.green("✓")} Linked ${linkPath}\n`);
   return {
     projectId: chosen.id,
     projectName: chosen.name,
@@ -415,11 +426,11 @@ async function writeLink(
   }
   try {
     const linkPath = await writeProjectLink(link);
-    if (!isJson) process.stderr.write(`✓ Linked ${linkPath}\n`);
+    if (!isJson) process.stderr.write(`${pc.green("✓")} Linked ${linkPath}\n`);
   } catch (err) {
     if (!isJson) {
       process.stderr.write(
-        `Warning: could not write .lmnr/project.json (${describeError(err)}). ` +
+        `${pc.yellow("Warning")}: could not write .lmnr/project.json (${describeError(err)}). ` +
           `CLI commands will need --project-id ${projectId}.\n`,
       );
     }
@@ -511,7 +522,7 @@ async function promptProjectChoice(projects: CliProject[]): Promise<CliProject> 
       if (Number.isInteger(idx) && idx >= 1 && idx <= projects.length) {
         return projects[idx - 1];
       }
-      process.stderr.write("Invalid selection.\n");
+      process.stderr.write(`${pc.red("Invalid selection.")}\n`);
     }
   } finally {
     rl.close();
@@ -538,6 +549,6 @@ function emitError(json: boolean, code: string, detail: string): void {
   if (json) {
     process.stdout.write(JSON.stringify({ error: code, detail }) + "\n");
   } else {
-    process.stderr.write(`\nERROR (${code}): ${detail}\n`);
+    process.stderr.write(`\n${pc.red(`ERROR (${code})`)}: ${detail}\n`);
   }
 }

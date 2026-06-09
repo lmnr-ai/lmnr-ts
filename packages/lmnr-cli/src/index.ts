@@ -19,6 +19,7 @@ import { handleSetup } from "./commands/setup";
 import { handleSqlQuery } from "./commands/sql";
 import { SQL_SCHEMA_HELP } from "./commands/sql/schema";
 import { handleTraceAppendNote } from "./commands/trace";
+import { pc } from "./utils/colors";
 
 async function main() {
   const program = new Command();
@@ -210,7 +211,14 @@ Examples:
     )
     .option("--no-browser", "Do not open the verification URL in a browser")
     .action(async (options) => {
-      await handleLogin(options);
+      const result = await handleLogin(options);
+      process.stderr.write(`${pc.green("✓")} Logged in as ${result.userEmail ?? "<unknown>"}.\n`);
+      process.stderr.write(
+        pc.dim("Client: lmnr-cli. Tokens stored at ~/.config/lmnr/credentials.json (mode 0600).\n"),
+      );
+      process.stderr.write(
+        pc.dim("Run `lmnr-cli setup` in a project directory to link it and write its API key.\n"),
+      );
     });
 
   program

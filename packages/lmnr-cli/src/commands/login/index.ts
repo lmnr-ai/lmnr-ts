@@ -2,7 +2,6 @@ import open from "open";
 
 import { type Credentials, writeCredentials } from "../../auth/credentials";
 import {
-  CLI_CLIENT_ID,
   CLI_SCOPE,
   decodeJwtExp,
   fetchSession,
@@ -12,6 +11,7 @@ import {
   pollDevice,
 } from "../../auth/device";
 import { DEFAULT_BASE_URL, DEFAULT_DASHBOARD_URL } from "../../constants";
+import { pc } from "../../utils/colors";
 
 export interface LoginOptions {
   dashboardUrl?: string;
@@ -39,9 +39,11 @@ export async function handleLogin(options: LoginOptions): Promise<LoginResult> {
 
   const da = await initiateDevice(issuer, CLI_SCOPE);
   const completeUri = da.verification_uri_complete ?? da.verification_uri;
-  process.stderr.write(`\nOpen this URL in your browser to authorize:\n  ${completeUri}\n`);
+  process.stderr.write(
+    `\nOpen this URL in your browser to authorize:\n  ${pc.cyan(completeUri)}\n`,
+  );
   if (da.user_code) {
-    process.stderr.write(`Code: ${da.user_code}\n\n`);
+    process.stderr.write(`Code: ${pc.bold(pc.cyan(da.user_code))}\n\n`);
   }
 
   if (!options.noBrowser) {
@@ -52,7 +54,7 @@ export async function handleLogin(options: LoginOptions): Promise<LoginResult> {
     }
   }
 
-  process.stderr.write("Waiting for authorization...\n");
+  process.stderr.write(pc.dim("Waiting for authorization...\n"));
   const token = await pollDevice(issuer, da.device_code, {
     intervalSeconds: da.interval,
     timeoutSeconds: da.expires_in,
@@ -82,13 +84,9 @@ export async function handleLogin(options: LoginOptions): Promise<LoginResult> {
   };
   await writeCredentials(creds);
 
-  process.stderr.write(`Logged in as ${session.email || "<unknown>"}.\n`);
-  process.stderr.write(
-    `Client: ${CLI_CLIENT_ID}. Tokens stored at ~/.config/lmnr/credentials.json (mode 0600).\n`,
-  );
-  process.stderr.write(
-    "Run `lmnr-cli setup` in a project directory to link it and write its API key.\n",
-  );
+  // NOTE: the user-facing "logged in / next steps" summary is intentionally NOT
+  // printed here — handleLogin is shared with `setup`, which prints its own
+  // summary. The `login` command prints the summary itself (see src/index.ts).
 
   return {
     userId: session.id,
