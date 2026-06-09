@@ -12,20 +12,21 @@ import { AsyncLocalStorage, type WorkflowInterceptors } from "@temporalio/workfl
 // the same worker.
 let _startHeaders: Record<string, unknown> = {};
 
-// Trace headers scoped to the currently-running signal handler coroutine. The
-// client `signal` interceptor injects its own context, distinct from the
-// workflow-start trace; activities scheduled from inside a signal handler must
-// be parented to the signal's trace, not the workflow-start one. A signal
-// handler runs as its own coroutine, so AsyncLocalStorage keeps its headers
-// isolated from the main workflow path and from other concurrent handlers —
-// overwriting the shared `_startHeaders` would corrupt those interleaved paths.
-const _signalHeaders = new AsyncLocalStorage<Record<string, unknown>>();
+// Trace headers scoped to the currently-running signal/update handler
+// coroutine. The client `signal` / `startUpdate` interceptors inject their own
+// context, distinct from the workflow-start trace; activities scheduled from
+// inside such a handler must be parented to the handler's trace, not the
+// workflow-start one. Each handler runs as its own coroutine, so
+// AsyncLocalStorage keeps its headers isolated from the main workflow path and
+// from other concurrent handlers — overwriting the shared `_startHeaders` would
+// corrupt those interleaved paths.
+const _handlerHeaders = new AsyncLocalStorage<Record<string, unknown>>();
 
 // The trace headers that outbound calls should propagate from: the active
-// signal handler's headers when one is running, otherwise the workflow-start
-// headers.
+// signal/update handler's headers when one is running, otherwise the
+// workflow-start headers.
 const activeHeaders = (): Record<string, unknown> =>
-  _signalHeaders.getStore() ?? _startHeaders;
+  _handlerHeaders.getStore() ?? _startHeaders;
 
 export const interceptors = (): WorkflowInterceptors => ({
   inbound: [
@@ -37,7 +38,11 @@ export const interceptors = (): WorkflowInterceptors => ({
       },
       handleSignal: async (input: any, next: any) => {
         const headers = (input.headers as Record<string, unknown>) ?? {};
-        return _signalHeaders.run(headers, () => next(input));
+        return _handlerHeaders.run(headers, () => next(input));
+      },
+      handleUpdate: async (input: any, next: any) => {
+        const headers = (input.headers as Record<string, unknown>) ?? {};
+        return _handlerHeaders.run(headers, () => next(input));
       },
     },
   ],
