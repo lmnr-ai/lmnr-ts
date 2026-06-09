@@ -294,28 +294,23 @@ export const deserializeLaminarSpanContext = (
  * that isn't UUID-shaped is dropped (treated as absent) rather than thrown, so
  * a partially-broken block never breaks span-context parsing.
  */
-const normalizeUuidLike = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-  const normalized = value.trim().toLowerCase();
-  return isStringUUID(normalized) ? normalized : undefined;
-};
+const asString = (value: unknown): string | undefined =>
+  typeof value === 'string' && value.length > 0 ? value : undefined;
 
 /**
- * Parse a debug block, accepting camelCase and snake_case. Per-field tolerant:
- * a malformed id is dropped to undefined. Keep line-comparable with the Python
+ * Parse a debug block, accepting camelCase and snake_case. All ids are kept
+ * VERBATIM: the producer emits the run's exact session / replay-trace /
+ * cache-until strings (un-normalized — `LMNR_DEBUG_SESSION_ID` may be an
+ * arbitrary non-UUID value), so the consumer must round-trip them unchanged or
+ * a downstream run never joins the run. Keep line-comparable with the Python
  * `DebugContext.deserialize`.
  */
-const deserializeDebugContext = (data: Record<string, unknown>): DebugContext => {
-  const cacheUntil = data.cacheUntil ?? data.cache_until;
-  return {
-    enabled: Boolean(data.enabled),
-    sessionId: normalizeUuidLike(data.sessionId ?? data.session_id),
-    replayTraceId: normalizeUuidLike(data.replayTraceId ?? data.replay_trace_id),
-    cacheUntil: typeof cacheUntil === 'string' ? cacheUntil : undefined,
-  };
-};
+const deserializeDebugContext = (data: Record<string, unknown>): DebugContext => ({
+  enabled: Boolean(data.enabled),
+  sessionId: asString(data.sessionId ?? data.session_id),
+  replayTraceId: asString(data.replayTraceId ?? data.replay_trace_id),
+  cacheUntil: asString(data.cacheUntil ?? data.cache_until),
+});
 
 
 export const getDirname = () => {

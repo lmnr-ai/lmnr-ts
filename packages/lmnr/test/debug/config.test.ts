@@ -252,11 +252,26 @@ void describe('LaminarSpanContext debug block parsing', () => {
     assert.strictEqual(ctx.debug.cacheUntil, 'abcdef');
   });
 
-  void it('drops unparseable ids to undefined', () => {
+  void it('keeps non-UUID ids verbatim', () => {
+    // LMNR_DEBUG_SESSION_ID may be an arbitrary string; the origin registers
+    // and propagates that exact value, so the consumer must round-trip it
+    // unchanged or the downstream treats the block as session-less and never
+    // joins the run.
     const ctx = deserializeLaminarSpanContext({
       traceId: SESSION,
       spanId: REPLAY,
-      debug: { enabled: true, sessionId: 'not-a-uuid', replayTraceId: 'nope' },
+      debug: { enabled: true, sessionId: 'my-session', replayTraceId: 'my-replay' },
+    });
+    assert.ok(ctx.debug !== undefined);
+    assert.strictEqual(ctx.debug.sessionId, 'my-session');
+    assert.strictEqual(ctx.debug.replayTraceId, 'my-replay');
+  });
+
+  void it('drops empty-string ids to undefined', () => {
+    const ctx = deserializeLaminarSpanContext({
+      traceId: SESSION,
+      spanId: REPLAY,
+      debug: { enabled: true, sessionId: '', replayTraceId: '' },
     });
     assert.ok(ctx.debug !== undefined);
     assert.strictEqual(ctx.debug.sessionId, undefined);
