@@ -11,16 +11,24 @@ function trimSlash(url: string): string {
 }
 
 /**
- * Resolve which project an `LMNR_PROJECT_API_KEY` belongs to. Returns the
- * projectId on success, or null when the key is invalid/revoked (401) — the
- * caller treats null the same as "doesn't match the selected project" and
- * mints a fresh key.
+ * Outcome of probing which project an `LMNR_PROJECT_API_KEY` belongs to. These
+ * are deliberately distinct so the caller doesn't conflate "key is bad" with
+ * "couldn't reach the server":
+ *  - `ok`           → key verified; `projectId` is its owner.
+ *  - `invalid`      → 401: key revoked/invalid. Safe to mint a fresh one.
+ *  - `unverifiable` → network error / non-401 / malformed body. The key may be
+ *    perfectly valid — caller MUST NOT mint (minting would clobber it on a blip).
  */
-export async function getProjectId(
+export type KeyProbe =
+  | { status: "ok"; projectId: string }
+  | { status: "invalid" }
+  | { status: "unverifiable" };
+
+export async function probeProjectKey(
   projectApiKey: string,
   baseUrl: string = DEFAULT_BASE_URL,
   port?: number,
-): Promise<string | null> {
+): Promise<KeyProbe> {
   // Compose host + port the same way the real CLI clients do (baseUrl carries
   // no port by convention; LMNR_HTTP_PORT/--port is separate). new URL().port
   // rather than `:${port}` concat so a baseUrl with a path still works.
@@ -37,11 +45,10 @@ export async function getProjectId(
       },
     });
   } catch {
-    // Network error — can't verify; treat as "unknown" so the caller mints.
-    return null;
+    return { status: "unverifiable" };
   }
-  if (res.status === 401) return null;
-  if (!res.ok) return null;
+  if (res.status === 401) return { status: "invalid" };
+  if (!res.ok) return { status: "unverifiable" };
   const body = (await res.json().catch(() => null)) as { projectId?: string } | null;
-  return body?.projectId ?? null;
+  return body?.projectId ? { status: "ok", projectId: body.projectId } : { status: "unverifiable" };
 }

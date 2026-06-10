@@ -6,7 +6,7 @@ import { type CliProject, LaminarClient } from "@lmnr-ai/client";
 
 import { version } from "../../../package.json";
 import { type Credentials, readCredentials } from "../../auth/credentials";
-import { getProjectId } from "../../auth/project-id";
+import { probeProjectKey } from "../../auth/project-id";
 import { envHttpPort, refreshIfNeeded } from "../../auth/resolve";
 import { orange, pc, pcOut } from "../../utils/colors";
 import {
@@ -30,12 +30,16 @@ const DEFAULT_BASE_URL = "https://api.lmnr.ai";
 //   8  env_write_failed     — minted a key but couldn't write ./.env
 //   9  setup_key_failed     — POST /api/cli/api-key failed
 //   10 list_projects_failed — GET /v1/cli/projects (discovery) failed
+//   11 key_probe_failed     — couldn't verify the existing key (network/server error)
+//   12 key_mismatch         — existing key belongs to a different project
 const EXIT_NO_ACCESS = 4;
 const EXIT_LOGIN_FAILED = 6;
 const EXIT_NO_PROJECT = 7;
 const EXIT_ENV_WRITE_FAILED = 8;
 const EXIT_SETUP_KEY_FAILED = 9;
 const EXIT_LIST_PROJECTS_FAILED = 10;
+const EXIT_KEY_PROBE_FAILED = 11;
+const EXIT_KEY_MISMATCH = 12;
 
 export interface SetupOptions {
   writeEnv?: boolean;
@@ -183,22 +187,43 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
 
   let needMint = true;
   if (existingKey) {
-    const owner = await getProjectId(existingKey.value, userBaseUrl, envHttpPort());
-    if (owner && owner === link.projectId) {
+    const probe = await probeProjectKey(existingKey.value, userBaseUrl, envHttpPort());
+    const where =
+      existingKey.source.type === "process-env"
+        ? "your environment"
+        : relative(cwd, existingKey.source.path);
+
+    if (probe.status === "unverifiable") {
+      // Couldn't verify the key (network/server error). Do NOT mint — that would
+      // clobber a possibly-valid key on a transient blip. Abort so the user retries.
+      emitError(
+        isJson,
+        "key_probe_failed",
+        `Couldn't verify the existing Project API Key in ${where} (network or server error). ` +
+          "Check your connection and re-run.",
+      );
+      process.exit(EXIT_KEY_PROBE_FAILED);
+    } else if (probe.status === "ok" && probe.projectId === link.projectId) {
       // Already configured for this project. Respect the user's setup: no mint,
       // no write (option a) — including when the key only lives in process.env.
       needMint = false;
       if (!isJson) {
-        const where =
-          existingKey.source.type === "process-env"
-            ? "your environment"
-            : relative(cwd, existingKey.source.path);
         process.stderr.write(`${pc.green("✓")} Project API Key already set in ${where}\n`);
       }
+    } else if (probe.status === "ok") {
+      // Valid key, but for a DIFFERENT project. Refuse to clobber it — abort so the
+      // user resolves the conflict deliberately rather than silently overwriting.
+      emitError(
+        isJson,
+        "key_mismatch",
+        `The Project API Key in ${where} belongs to a different project (${probe.projectId}), ` +
+          `not the one linked here (${link.projectId}). Remove or update it, then re-run.`,
+      );
+      process.exit(EXIT_KEY_MISMATCH);
     } else if (!isJson) {
+      // invalid / revoked (401) — minting a fresh key is the correct recovery.
       process.stderr.write(
-        `${pc.yellow("⚠")} Existing Project API Key doesn't match the selected project, ` +
-          "minting a new one\n",
+        `${pc.yellow("⚠")} Existing Project API Key in ${where} is invalid or revoked, minting a new one\n`,
       );
     }
   }
