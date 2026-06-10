@@ -8,12 +8,14 @@ import { LaminarClient } from "../src/index";
 // fields once normalized).
 function captureFetch() {
   const calls: { url: string; headers: Record<string, string> }[] = [];
-  const mockFetch = mock.fn((url: string, init: RequestInit) => {
+  // Mirror the real fetch interface: an async fn resolving to a Response-like
+  // object whose .json() also returns a Promise.
+  const mockFetch = mock.fn(async (url: string, init: RequestInit) => {
     calls.push({
       url,
       headers: (init?.headers ?? {}) as Record<string, string>,
     });
-    return { ok: true, json: () => Promise.resolve({ data: [] }) };
+    return { ok: true, json: async () => ({ data: [] }) };
   });
   global.fetch = mockFetch as any;
   return calls;
