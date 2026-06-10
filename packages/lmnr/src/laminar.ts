@@ -496,21 +496,25 @@ export class Laminar {
   }
 
   /**
-   * Arm the debug runtime from a propagated `DebugContext`, if not already armed.
+   * Arm OR refresh the debug runtime from a propagated `DebugContext`.
    *
    * Called from `_startSpan` (the funnel for explicit span creation) and from
    * `observeBase` (the funnel for `observe()` / the observe decorators), when a
-   * parent `LaminarSpanContext` carrying an armed debug block first parses — so
-   * a downstream service joins the upstream debug run regardless of how its
-   * spans originate (auto-instrumentation, manual observe, external library).
+   * parent `LaminarSpanContext` carrying an armed debug block parses — so a
+   * downstream service joins the upstream debug run regardless of how its spans
+   * originate (auto-instrumentation, manual observe, external library).
    *
-   * First-wins and idempotent: if a runtime already exists (from env at init,
-   * or an earlier qualifying context) this returns immediately, so env-var
-   * config keeps precedence over context. A downstream runtime reuses the
-   * upstream session and may consult the cache, but — unlike the local-origin
-   * path — does NOT open the browser, print the session URL, or register an
-   * exit-time pointer hook (the origin owns those). It still registers the
-   * session (idempotent) and stamps `rollout.session_id`.
+   * The coordinates carried in the span context are DYNAMIC: a long-lived
+   * downstream service handling many requests must follow each request's
+   * session / replay-trace / cache-until, not freeze on the first context it
+   * ever saw. So the transport (client) is built once and reused, while the
+   * replay coordinates are refreshed in place on every new context. An env-origin
+   * runtime is the exception — it owns the process, so a propagated context never
+   * overrides it. A context-armed (downstream) runtime reuses the upstream
+   * session and may consult the cache, but — unlike the local-origin path — does
+   * NOT open the browser, print the session URL, or register an exit-time pointer
+   * hook (the origin owns those). It (re-)registers the session and re-stamps
+   * `rollout.session_id` only when the session id actually changes.
    *
    * Never throws: any failure leaves debug inert.
    *
@@ -521,60 +525,75 @@ export class Laminar {
     debug: LaminarSpanContext["debug"],
   ): void {
     try {
-      // Fast path: already armed (env or a prior context), or no armed block.
-      // Bail before any allocation so this stays cheap on the hot span path.
-      if (getRuntime() !== null) {
-        return;
-      }
-      // Strict `=== true`, NOT a truthy check: a string `parentSpanContext` is
-      // run through `deserializeDebugContext` (which coerces `enabled` to a real
-      // boolean via `=== true`), but an OBJECT `parentSpanContext` reaches here
-      // verbatim — so a forged block with e.g. `enabled: "false"` (truthy) would
-      // otherwise arm a downstream runtime. Mirror the deserializer's contract.
+      // No armed block: nothing to do. Strict `=== true`, NOT a truthy check: a
+      // string `parentSpanContext` is run through `deserializeDebugContext`
+      // (which coerces `enabled` to a real boolean via `=== true`), but an OBJECT
+      // `parentSpanContext` reaches here verbatim — so a forged block with e.g.
+      // `enabled: "false"` (truthy) would otherwise arm a downstream runtime.
+      // Mirror the deserializer's contract. Bail before any allocation so this
+      // stays cheap on the hot span path.
       if (!debug || debug.enabled !== true || !debug.sessionId) {
         return;
       }
 
-      const client = new LaminarClient({
-        baseUrl: this.baseUrlForDebug,
-        projectApiKey: this.projectApiKey,
-        port: this.httpPortForDebug,
-      });
+      // An env-origin run owns the process and pins its own coordinates — a
+      // propagated context never overrides it, so there is nothing to refresh.
+      const existing = getRuntime();
+      if (existing !== null && existing.localOrigin) {
+        return;
+      }
+
+      // Reuse the already-built client when a context-armed runtime exists — the
+      // transport is stable; only the dynamic coordinates (session / replay /
+      // cache-until) move per request. Build a client only on first arm so a
+      // long-lived downstream service doesn't allocate one per span.
+      const rolloutSessions =
+        existing?.rolloutSessions ??
+        new LaminarClient({
+          baseUrl: this.baseUrlForDebug,
+          projectApiKey: this.projectApiKey,
+          port: this.httpPortForDebug,
+        }).rolloutSessions;
       const debuggerUrl =
         process?.env?.LMNR_FRONTEND_URL ?? getFrontendUrl(this.baseUrlForDebug);
-      const { runtime } = initDebugRuntimeFromContext(
+      const { runtime, sessionChanged } = initDebugRuntimeFromContext(
         debug,
-        client.rolloutSessions,
+        rolloutSessions,
         debuggerUrl,
       );
       if (runtime === null) {
         return;
       }
 
-      // Register the (upstream) session so downstream cache lookups are
-      // accepted. Idempotent upsert, fire-and-forget. Unlike the local-origin
-      // path we do NOT log the URL or open a browser — the origin already did.
-      void client.rolloutSessions
-        .register({ sessionId: runtime.sessionId })
-        .then((projectId) => {
-          if (projectId) {
-            runtime.recordProjectId(projectId);
-          }
-        })
-        .catch((e) => {
-          logger.debug(
-            "Failed to register downstream debug session: " + errorMessage(e),
-          );
-        });
+      // Only (re-)register + re-stamp when the session id actually moved — a
+      // steady stream of requests on the SAME session must not spam the backend
+      // or rewrite global metadata on every span. Register the (upstream)
+      // session so downstream cache lookups are accepted: idempotent upsert,
+      // fire-and-forget. Unlike the local-origin path we do NOT log the URL or
+      // open a browser — the origin already did.
+      if (sessionChanged) {
+        void runtime.rolloutSessions
+          .register({ sessionId: runtime.sessionId })
+          .then((projectId) => {
+            if (projectId) {
+              runtime.recordProjectId(projectId);
+            }
+          })
+          .catch((e) => {
+            logger.debug(
+              "Failed to register downstream debug session: " + errorMessage(e),
+            );
+          });
 
-      this.globalMetadata = {
-        ...this.globalMetadata,
-        "rollout.session_id": runtime.sessionId,
-      };
-      // Unlike the local-origin path (synced by initialize() at startup), this
-      // runs during span creation, so re-sync to LaminarContextManager here or
-      // LaminarSpanProcessor.onStart misses rollout.session_id on auto spans.
-      LaminarContextManager.setGlobalMetadata(this.globalMetadata);
+        this.globalMetadata = {
+          ...this.globalMetadata,
+          "rollout.session_id": runtime.sessionId,
+        };
+        // Unlike the local-origin path (synced by initialize() at startup), this
+        // runs during span creation, so re-sync to LaminarContextManager here or
+        // LaminarSpanProcessor.onStart misses rollout.session_id on auto spans.
+        LaminarContextManager.setGlobalMetadata(this.globalMetadata);
+      }
       // No `exit` pointer hook: a downstream run must not emit the pointer.
     } catch (e) {
       // never let debug arming crash span creation

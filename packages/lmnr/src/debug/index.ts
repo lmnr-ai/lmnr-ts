@@ -75,6 +75,33 @@ export class DebugRuntime {
     this._rolloutSessions = rolloutSessions;
   }
 
+  /** The rollout-sessions handle this runtime routes cache lookups through. */
+  get rolloutSessions(): RolloutSessionsResource {
+    return this._rolloutSessions;
+  }
+
+  /**
+   * Refresh the DYNAMIC replay coordinates from a freshly-parsed context config.
+   *
+   * The transport (client / rollout-sessions handle) is STABLE and reused; only
+   * the per-request coordinates move — `sessionId`, `replayTraceId`,
+   * `cacheUntilSpanId`. This is what lets a long-lived downstream service follow
+   * each incoming request's `LaminarSpanContext` instead of freezing on the very
+   * first one. `localOrigin` / `sessionMinted` are part of the run's IDENTITY and
+   * never change here (the caller only ever updates a `localOrigin:false`
+   * runtime; env-origin config keeps precedence).
+   *
+   * Returns true when the session id changed, so the caller can re-register the
+   * new session and re-stamp `rollout.session_id`.
+   */
+  updateContextConfig(config: DebugConfig): boolean {
+    const sessionChanged = this._config.sessionId !== config.sessionId;
+    this._config.sessionId = config.sessionId;
+    this._config.replayTraceId = config.replayTraceId;
+    this._config.cacheUntilSpanId = config.cacheUntilSpanId;
+    return sessionChanged;
+  }
+
   get sessionId(): string {
     return this._config.sessionId;
   }
@@ -244,13 +271,24 @@ export const initDebugRuntime = (
 };
 
 /**
- * Arm the debug runtime from a propagated `DebugContext` (process-global).
+ * Arm OR refresh the debug runtime from a propagated `DebugContext`.
  *
  * Called deep in span creation when a parent `LaminarSpanContext` carrying a
- * debug block first parses — so a downstream service joins the upstream run
- * regardless of how the span originated. First-wins and idempotent: once a
- * runtime exists (from env at init OR an earlier context) this is a no-op, so
- * env-var config always takes precedence over a later context.
+ * debug block parses — so a downstream service joins the upstream run regardless
+ * of how the span originated. The whole point of propagating coordinates through
+ * the span context is that they are DYNAMIC: a long-lived downstream service
+ * handling many requests must follow each request's `sessionId` / `replayTraceId`
+ * / `cacheUntil`, not freeze on the first one it ever saw.
+ *
+ * So the transport is stable but the coordinates move:
+ * - No runtime yet → build one from the context (latch `initialized`).
+ * - A `localOrigin` (env) runtime exists → env config wins; leave it untouched.
+ *   The local process owns the run; a propagated context must not hijack it.
+ * - A `localOrigin:false` (context-armed) runtime exists → REUSE its client and
+ *   just refresh the dynamic coordinates from the new context.
+ *
+ * `sessionChanged` is true when the refresh moved to a different session id, so
+ * the caller can re-register it and re-stamp `rollout.session_id`.
  *
  * Returns `{ runtime: null }` without latching when the block is absent /
  * unarmed, so a later valid context can still arm the runtime. Never throws.
@@ -259,19 +297,26 @@ export const initDebugRuntimeFromContext = (
   debug: DebugContext | undefined,
   rolloutSessions: RolloutSessionsResource,
   debuggerUrl: string | null = null,
-): { runtime: DebugRuntime | null } => {
-  if (initialized) {
-    return { runtime };
-  }
-
+): { runtime: DebugRuntime | null; sessionChanged: boolean } => {
   const config = buildDebugConfigFromContext(debug);
   if (config === null) {
-    return { runtime: null };
+    return { runtime: runtime, sessionChanged: false };
   }
-  initialized = true;
 
+  if (runtime !== null) {
+    // An env-origin run owns the process — a propagated context never overrides
+    // it. A context-armed run, by contrast, tracks the live request: refresh its
+    // dynamic coordinates in place and reuse the already-built client.
+    if (runtime.localOrigin) {
+      return { runtime, sessionChanged: false };
+    }
+    const sessionChanged = runtime.updateContextConfig(config);
+    return { runtime, sessionChanged };
+  }
+
+  initialized = true;
   runtime = new DebugRuntime(config, rolloutSessions, debuggerUrl);
-  return { runtime };
+  return { runtime, sessionChanged: true };
 };
 
 /**

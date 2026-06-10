@@ -11,6 +11,7 @@ import {
   DebugRuntime,
   getRuntime,
   initDebugRuntime,
+  initDebugRuntimeFromContext,
   resetDebugRuntime,
 } from '../../src/debug/index';
 
@@ -160,6 +161,108 @@ void describe('DebugRuntime', () => {
         inputHash: 'deadbeef',
       },
     ]);
+  });
+
+  void it('updateContextConfig moves the dynamic coordinates, keeps identity', async () => {
+    // The dynamic coordinates (session / replay / cache-until) follow the live
+    // request; localOrigin/sessionMinted are run identity and must NOT change.
+    const fake = new FakeRolloutSessions({ kind: 'live' });
+    const runtime = new DebugRuntime(
+      config({
+        sessionId: 'sess-a',
+        replayTraceId: 'trace-a',
+        cacheUntilSpanId: 'span-a',
+        localOrigin: false,
+        sessionMinted: false,
+      }),
+      asResource(fake),
+      null,
+    );
+
+    const changed = runtime.updateContextConfig(
+      config({
+        sessionId: 'sess-b',
+        replayTraceId: 'trace-b',
+        cacheUntilSpanId: 'span-b',
+        // Deliberately different identity flags — they must be ignored.
+        localOrigin: true,
+        sessionMinted: true,
+      }),
+    );
+
+    assert.strictEqual(changed, true);
+    assert.strictEqual(runtime.sessionId, 'sess-b');
+    assert.strictEqual(runtime.replayTraceId, 'trace-b');
+    assert.strictEqual(runtime.cacheUntilSpanId, 'span-b');
+    // Identity is preserved: a downstream run stays downstream.
+    assert.strictEqual(runtime.localOrigin, false);
+    assert.strictEqual(runtime.shouldOpenBrowser, false);
+
+    // The refreshed coordinates are what the next cache lookup uses.
+    await runtime.lookupCache('deadbeef');
+    assert.deepStrictEqual(fake.calls, [
+      {
+        sessionId: 'sess-b',
+        replayTraceId: 'trace-b',
+        cacheUntil: 'span-b',
+        inputHash: 'deadbeef',
+      },
+    ]);
+  });
+
+  void it('updateContextConfig reports no change for the same session', () => {
+    const runtime = new DebugRuntime(
+      config({ sessionId: 'sess', localOrigin: false }),
+      asResource(new FakeRolloutSessions()),
+      null,
+    );
+    const changed = runtime.updateContextConfig(
+      config({ sessionId: 'sess', replayTraceId: 'other', localOrigin: false }),
+    );
+    assert.strictEqual(changed, false);
+    // Replay coords still move even when the session id is unchanged.
+    assert.strictEqual(runtime.replayTraceId, 'other');
+  });
+
+  void it('initDebugRuntimeFromContext refreshes a context runtime, reusing client', () => {
+    const fake = new FakeRolloutSessions();
+    const first = initDebugRuntimeFromContext(
+      { enabled: true, sessionId: 'sess-a', replayTraceId: 'trace-a' },
+      asResource(fake),
+      null,
+    );
+    assert.ok(first.runtime !== null);
+    assert.strictEqual(first.sessionChanged, true);
+
+    // A different rollout-sessions handle on the refresh must be IGNORED — the
+    // transport built on first arm is reused; only the coordinates move.
+    const second = initDebugRuntimeFromContext(
+      { enabled: true, sessionId: 'sess-b', replayTraceId: 'trace-b' },
+      asResource(new FakeRolloutSessions()),
+      null,
+    );
+    assert.strictEqual(second.runtime, first.runtime);
+    assert.strictEqual(second.sessionChanged, true);
+    assert.strictEqual(second.runtime?.sessionId, 'sess-b');
+    assert.strictEqual(second.runtime?.rolloutSessions, asResource(fake));
+  });
+
+  void it('initDebugRuntimeFromContext never overrides an env-origin runtime', () => {
+    process.env.LMNR_DEBUG = 'true';
+    process.env.LMNR_DEBUG_SESSION_ID = 'env-sess';
+    const env = initDebugRuntime(asResource(new FakeRolloutSessions()));
+    assert.ok(env.runtime !== null);
+    assert.strictEqual(env.runtime.localOrigin, true);
+
+    const ctx = initDebugRuntimeFromContext(
+      { enabled: true, sessionId: 'ctx-sess', replayTraceId: 'trace' },
+      asResource(new FakeRolloutSessions()),
+      null,
+    );
+    // Env config owns the process: the context must not hijack it.
+    assert.strictEqual(ctx.runtime, env.runtime);
+    assert.strictEqual(ctx.sessionChanged, false);
+    assert.strictEqual(getRuntime()?.sessionId, 'env-sess');
   });
 
   void it('replayConfigured reflects both ids being present', () => {

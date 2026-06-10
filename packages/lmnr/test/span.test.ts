@@ -140,6 +140,53 @@ void describe("span interface tests", () => {
     }
   });
 
+  void it("refreshes the downstream session id when a new context arrives", () => {
+    // The coordinates in a propagated debug block are DYNAMIC: a long-lived
+    // downstream service handling many requests must follow each request's
+    // session id, not freeze on the first context it ever saw. A second span
+    // carrying a different session must update the runtime AND re-stamp
+    // rollout.session_id (the transport is reused; only the coordinates move).
+    const SESSION_A = "00000000-0000-0000-0000-0000000000a1";
+    const SESSION_B = "00000000-0000-0000-0000-0000000000b2";
+    resetDebugRuntime();
+    LaminarContextManager.setGlobalMetadata({});
+    try {
+      const first = Laminar.startSpan({
+        name: "req-1",
+        parentSpanContext: {
+          traceId: "01234567-89ab-cdef-0123-456789abcdef",
+          spanId: "0123456789abcdef",
+          debug: { enabled: true, sessionId: SESSION_A },
+        },
+      });
+      first.end();
+      const runtimeA = getRuntime();
+      assert.ok(runtimeA !== null);
+      assert.strictEqual(runtimeA.sessionId, SESSION_A);
+
+      const second = Laminar.startSpan({
+        name: "req-2",
+        parentSpanContext: {
+          traceId: "11111111-89ab-cdef-0123-456789abcdef",
+          spanId: "1111111111111111",
+          debug: { enabled: true, sessionId: SESSION_B },
+        },
+      });
+      second.end();
+
+      // Same runtime instance (client reused), refreshed coordinates.
+      assert.strictEqual(getRuntime(), runtimeA);
+      assert.strictEqual(getRuntime()?.sessionId, SESSION_B);
+      assert.strictEqual(
+        LaminarContextManager.getGlobalMetadata()["rollout.session_id"],
+        SESSION_B,
+      );
+    } finally {
+      resetDebugRuntime();
+      LaminarContextManager.setGlobalMetadata({});
+    }
+  });
+
   void it("an object debug block with a truthy non-boolean enabled never arms", () => {
     // A string parentSpanContext is run through deserializeDebugContext, which
     // coerces enabled via `=== true`. An OBJECT parentSpanContext reaches the
