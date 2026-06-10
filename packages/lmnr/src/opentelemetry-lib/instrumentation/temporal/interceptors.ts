@@ -1,7 +1,10 @@
+import { errorMessage } from "@lmnr-ai/types";
 import { ROOT_CONTEXT } from "@opentelemetry/api";
 
 import { Laminar } from "../../../laminar";
+import { initializeLogger } from "../../../utils";
 import { LaminarContextManager } from "../../tracing/context";
+import { LaminarSpan } from "../../tracing/span";
 import { buildHeaders, restoreContextFromHeaders } from "./helpers";
 
 /**
@@ -205,6 +208,7 @@ export class ActivityClientInterceptor {
 class ActivityInboundInterceptor {
   readonly createActivitySpan: boolean;
   readonly activityType: string | undefined;
+  readonly logger;
 
   constructor(
     options: LaminarTemporalInterceptorOptions = {},
@@ -212,6 +216,7 @@ class ActivityInboundInterceptor {
   ) {
     this.createActivitySpan = options.createActivitySpan ?? true;
     this.activityType = activityContext?.info?.activityType;
+    this.logger = initializeLogger();
   }
 
   execute = async <
@@ -230,24 +235,36 @@ class ActivityInboundInterceptor {
     // the lookup short-circuit at root, so when header restoration fails the
     // activity runs detached instead of attaching to an unrelated in-process
     // trace left on the worker's async lineage.
-    LaminarContextManager.runWithIsolatedContext(
-      [ROOT_CONTEXT],
-      async () => {
-        const restoredCtx = restoreContextFromHeaders(input.headers);
-        if (!this.createActivitySpan || !restoredCtx) {
-          return next(input);
-        }
+    LaminarContextManager.runWithIsolatedContext([ROOT_CONTEXT], async () => {
+      const restoredCtx = restoreContextFromHeaders(input.headers);
+      if (!this.createActivitySpan || !restoredCtx) {
+        return next(input);
+      }
 
-        const activityName = this.activityType ?? "temporal.activity";
+      const activityName = this.activityType ?? "temporal.activity";
 
-        const span = Laminar.startSpan({
-          name: activityName,
-          parentSpanContext: restoredCtx,
-        });
+      const span = Laminar.startSpan({
+        name: activityName,
+        parentSpanContext: restoredCtx,
+        input: input.args,
+      });
 
-        return Laminar.withSpan(span, () => next(input), true);
-      },
-    );
+      return Laminar.withSpan(
+        span,
+        async () => {
+          const res = await next(input);
+          try {
+            (span as LaminarSpan).setOutput(res);
+          } catch (e) {
+            this.logger.debug(
+              `failed to set output to activity span: ${errorMessage(e)}`,
+            );
+          }
+          return res;
+        },
+        true,
+      );
+    });
 }
 
 export const ActivityInterceptorFactory =

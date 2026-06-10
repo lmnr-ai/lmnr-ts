@@ -19,26 +19,42 @@
  * const client = new Client({
  *   interceptors: {
  *     workflow: [new LaminarTemporalInterceptors.WorkflowClientInterceptor()],
+ *     activity: [new LaminarTemporalInterceptors.ActivityClientInterceptor()],
+ *     schedule: [new LaminarTemporalInterceptors.ScheduleClientInterceptor()],
  *   },
  * });
  * ```
  *
  * Usage — Option B (auto-patch via instrumentModules):
  *
+ * In Temporal, the worker and client typically run in separate processes
+ * (separate entry-point files). Call `Laminar.initialize()` in each file,
+ * passing only the module that belongs to that process:
+ *
+ * worker.ts:
  * ```typescript
  * import * as temporalWorker from '@temporalio/worker';
+ * import { Laminar } from '@lmnr-ai/lmnr';
+ *
+ * Laminar.initialize({
+ *   instrumentModules: { temporal: { worker: temporalWorker } },
+ * });
+ *
+ * // Worker.create() now automatically includes Laminar activity interceptors
+ * // and the workflow interceptor module.
+ * const worker = await temporalWorker.Worker.create({ ... });
+ * ```
+ *
+ * client.ts:
+ * ```typescript
  * import * as temporalClient from '@temporalio/client';
  * import { Laminar } from '@lmnr-ai/lmnr';
  *
  * Laminar.initialize({
- *   instrumentModules: {
- *     temporal: { worker: temporalWorker, client: temporalClient },
- *   },
+ *   instrumentModules: { temporal: { client: temporalClient } },
  * });
  *
- * // Worker.create() and new temporalClient.Client() now automatically include
- * // Laminar interceptors.
- * const worker = await temporalWorker.Worker.create({ ... });
+ * // new temporalClient.Client() now automatically includes Laminar interceptors.
  * const client = new temporalClient.Client({ ... });
  * ```
  */
@@ -104,7 +120,9 @@ export const patchTemporalWorker = (
         ],
         workflowModules: [
           require.resolve("@lmnr-ai/lmnr/temporal-workflow-interceptors"),
-          ...((rawOpts?.interceptors?.workflowModules as string[] | undefined) ?? []),
+          ...((rawOpts?.interceptors?.workflowModules as
+            | string[]
+            | undefined) ?? []),
         ],
       },
     };
