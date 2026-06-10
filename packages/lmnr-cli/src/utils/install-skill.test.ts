@@ -62,11 +62,16 @@ describe("installSkill", () => {
     expect(downloadTemplate).toHaveBeenCalledTimes(1);
   });
 
-  it("defaults to .claude (never .agents) when no agent dir exists", async () => {
+  it("defaults to both .claude and .agents when no agent dir exists", async () => {
     const result = await installSkill(scratch);
     expect(result.defaulted).toBe(true);
-    expect([...result.written].sort()).toEqual(skillPaths(join(scratch, ".claude")));
-    expect(existsSync(join(scratch, ".agents"))).toBe(false);
+    expect([...result.written].sort()).toEqual(
+      [...skillPaths(join(scratch, ".claude")), ...skillPaths(join(scratch, ".agents"))].sort(),
+    );
+    for (const p of result.written) expect(existsSync(p)).toBe(true);
+    expect(existsSync(join(scratch, ".claude", "skills", SKILL_NAME))).toBe(true);
+    expect(existsSync(join(scratch, ".agents", "skills", SKILL_NAME))).toBe(true);
+    expect(downloadTemplate).toHaveBeenCalledTimes(1);
   });
 
   it("is idempotent (overwrites on rerun)", async () => {

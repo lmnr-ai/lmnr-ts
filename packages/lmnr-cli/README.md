@@ -102,10 +102,10 @@ over OAuth profiles.
 For a self-hosted Laminar instance, point the CLI at your deployment:
 
 ```bash
-lmnr-cli login --dashboard-url http://localhost:3010 --base-url http://localhost:8010
+lmnr-cli login --frontend-url http://localhost:3010 --base-url http://localhost:8010
 ```
 
-`LMNR_DASHBOARD_URL` (defaults to `https://www.laminar.sh`) and `LMNR_BASE_URL`
+`LMNR_FRONTEND_URL` (defaults to `https://www.laminar.sh`) and `LMNR_BASE_URL`
 (defaults to `https://api.lmnr.ai`) are also honored.
 
 ## Commands

@@ -133,7 +133,7 @@ export async function findEnvKey(
 export const AUTOLOADED_ENV_KEYS = [
   "LMNR_BASE_URL",
   "LMNR_HTTP_PORT",
-  "LMNR_DASHBOARD_URL",
+  "LMNR_FRONTEND_URL",
 ] as const;
 
 /**

@@ -31,8 +31,6 @@ export const handleDebugSessionSetName = async (
   logger.info(`Set name of session ${sessionId} to "${name}".`);
 };
 
-const SUMMARY_PAGE_SIZE = 1000;
-
 interface SessionTraceSummary {
   note: string;
   traceId: string;
@@ -55,32 +53,22 @@ export const handleDebugSessionSummary = async (
   sessionId: string,
   opts: GlobalOpts,
 ): Promise<void> => {
-  const traces: SessionTraceSummary[] = [];
-  let offset = 0;
-  for (;;) {
-    // formatDateTime pins end_time to unambiguous ISO-8601 UTC — the raw
-    // column serializes as ClickHouse's space-separated local-looking format.
-    const rows = await client.sql.query(
-      "SELECT id, " +
-        "formatDateTime(end_time, '%Y-%m-%dT%H:%i:%S.%fZ') AS end_time, " +
-        "metadata FROM traces " +
-        "WHERE simpleJSONExtractString(metadata, 'rollout.session_id') " +
-        "= {session_id:String} " +
-        "ORDER BY start_time LIMIT {limit:UInt32} OFFSET {offset:UInt32}",
-      { session_id: sessionId, limit: SUMMARY_PAGE_SIZE, offset },
-    );
-    for (const row of rows) {
-      traces.push({
-        note: readNoteFromMetadata(row.metadata),
-        traceId: String(row.id ?? ""),
-        endTime: String(row.end_time ?? ""),
-      });
-    }
-    if (rows.length < SUMMARY_PAGE_SIZE) {
-      break;
-    }
-    offset += SUMMARY_PAGE_SIZE;
-  }
+  // formatDateTime pins end_time to unambiguous ISO-8601 UTC — the raw
+  // column serializes as ClickHouse's space-separated local-looking format.
+  const rows = await client.sql.query(
+    "SELECT id, " +
+      "formatDateTime(end_time, '%Y-%m-%dT%H:%i:%S.%fZ') AS end_time, " +
+      "metadata FROM traces " +
+      "WHERE simpleJSONExtractString(metadata, 'rollout.session_id') " +
+      "= {session_id:String} " +
+      "ORDER BY start_time",
+    { session_id: sessionId },
+  );
+  const traces: SessionTraceSummary[] = rows.map((row) => ({
+    note: readNoteFromMetadata(row.metadata),
+    traceId: String(row.id ?? ""),
+    endTime: String(row.end_time ?? ""),
+  }));
 
   if (opts.json) {
     outputJson(traces);

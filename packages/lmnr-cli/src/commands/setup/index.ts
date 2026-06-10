@@ -19,7 +19,7 @@ import { installSkill } from "../../utils/install-skill";
 import { type ProjectLink, readProjectLink, writeProjectLink } from "../../utils/project-link";
 import { handleLogin } from "../login";
 
-const DEFAULT_DASHBOARD_URL = "https://www.laminar.sh";
+const DEFAULT_FRONTEND_URL = "https://www.laminar.sh";
 const DEFAULT_BASE_URL = "https://api.lmnr.ai";
 
 // Exit codes (machine-readable contract — each distinct so automation can
@@ -45,7 +45,7 @@ export interface SetupOptions {
   writeEnv?: boolean;
   json?: boolean;
   noBrowser?: boolean;
-  dashboardUrl?: string;
+  frontendUrl?: string;
   baseUrl?: string;
   /**
    * Explicit project id. Disambiguates when the user can access >1 project
@@ -74,7 +74,7 @@ export interface SetupResult {
   envFileUpdated: string | null;
   /** SKILL.md paths written by the skill installer. */
   skillsInstalled: string[];
-  dashboardUrl: string;
+  frontendUrl: string;
   userEmail: string | null;
 }
 
@@ -95,10 +95,10 @@ export interface SetupResult {
  */
 export async function handleSetup(options: SetupOptions): Promise<void> {
   const writeEnv = options.writeEnv !== false;
-  const dashboardUrl = pick(
-    options.dashboardUrl,
-    process.env.LMNR_DASHBOARD_URL,
-    DEFAULT_DASHBOARD_URL,
+  const frontendUrl = pick(
+    options.frontendUrl,
+    process.env.LMNR_FRONTEND_URL,
+    DEFAULT_FRONTEND_URL,
   );
   const baseUrl = pick(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
   const isJson = options.json === true;
@@ -122,7 +122,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     // the device-token metadata (parseProjectFromMetadata).
     let login;
     try {
-      login = await handleLogin({ dashboardUrl, noBrowser: options.noBrowser });
+      login = await handleLogin({ frontendUrl, noBrowser: options.noBrowser });
     } catch (err) {
       emitError(isJson, "login_failed", describeError(err));
       process.exit(EXIT_LOGIN_FAILED);
@@ -133,7 +133,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
       process.exit(EXIT_LOGIN_FAILED);
     }
 
-    const issuer = creds.issuer || dashboardUrl;
+    const issuer = creds.issuer || frontendUrl;
     const userBaseUrl = baseUrl;
 
     if (link) {
@@ -144,15 +144,14 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
       // Browser-selected (or just-created) project. Trust it and write the link.
       link = await writeLink(issuer, userBaseUrl, login.projectId, isJson);
     } else {
-      // Defensive: the browser should always attach a project (via metadata) on
-      // this path, but fall back to the CLI picker if it didn't (legacy / older
-      // /device page).
+      // Defensive: fall back to the CLI picker if the browser didn't attach a
+      // project via metadata.
       link = await resolveProjectViaCli(creds, userBaseUrl, issuer, isJson, options);
     }
   } else {
     // Already logged in.
     const userBaseUrl = baseUrl;
-    const issuer = creds.issuer || dashboardUrl;
+    const issuer = creds.issuer || frontendUrl;
     if (link) {
       await assertAccess(creds, userBaseUrl, link.projectId, isJson);
     } else {
@@ -176,7 +175,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     process.exit(EXIT_NO_PROJECT);
   }
 
-  const issuer = creds.issuer || dashboardUrl;
+  const issuer = creds.issuer || frontendUrl;
   const userBaseUrl = baseUrl;
 
   // --- 3. Key handling (SPEC 36-42) -----------------------------------------
@@ -298,7 +297,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
       } else if (skillResult.written.length > 0) {
         // One mark for the whole skill, not one per file (SKILL.md + references).
         const note = skillResult.defaulted
-          ? pc.dim(" (no agent dir found; defaulted to .claude)")
+          ? pc.dim(" (no agent dir found; defaulted to .claude and .agents)")
           : "";
         process.stderr.write(`${pc.green("✓")} Installed Laminar skill${note}\n`);
       }
@@ -313,7 +312,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
 
   // --- 5. Summary -----------------------------------------------------------
 
-  const dashboardLink = `${trimSlash(issuer)}/project/${link.projectId}/traces`;
+  const frontendLink = `${trimSlash(issuer)}/project/${link.projectId}/traces`;
 
   const result: SetupResult = {
     projectId: link.projectId,
@@ -323,7 +322,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     apiKey,
     envFileUpdated: envPath,
     skillsInstalled,
-    dashboardUrl: dashboardLink,
+    frontendUrl: frontendLink,
     userEmail: creds.userEmail ?? null,
   };
 
@@ -340,7 +339,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
         "  3. Verify instrumentation:\n" +
         `     ${pcOut.green(verifyCmd)}\n` +
         "  4. View your traces in the browser:\n" +
-        `     ${pcOut.cyan(dashboardLink)}\n`,
+        `     ${pcOut.cyan(frontendLink)}\n`,
     );
   }
 }
@@ -389,7 +388,7 @@ async function resolveProjectViaCli(
     let login;
     try {
       login = await handleLogin({
-        dashboardUrl: issuer,
+        frontendUrl: issuer,
         noBrowser: options.noBrowser,
       });
     } catch (err) {

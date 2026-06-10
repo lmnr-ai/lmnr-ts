@@ -89,20 +89,21 @@ describe('handleDebugSessionSummary', () => {
     expect(params).toMatchObject({ session_id: SESSION_ID });
   });
 
-  it('pages through results larger than one page', async () => {
-    const page = Array.from({ length: 1000 }, (_, i) =>
+  it('fetches all rows in a single un-paged query', async () => {
+    const rows = Array.from({ length: 1500 }, (_, i) =>
       traceRow(`trace-${i}`, '2026-06-01T10:00:00.000Z'),
     );
-    mockQuery
-      .mockResolvedValueOnce(page)
-      .mockResolvedValueOnce([traceRow('trace-last', '2026-06-01T11:00:00.000Z')]);
+    mockQuery.mockResolvedValue(rows);
 
     await handleDebugSessionSummary(stubClient, SESSION_ID, { ...baseOpts, json: true });
 
-    expect(mockQuery).toHaveBeenCalledTimes(2);
-    expect(mockQuery.mock.calls[1][1]).toMatchObject({ offset: 1000 });
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).not.toContain('LIMIT');
+    expect(sql).not.toContain('OFFSET');
+    expect(params).toEqual({ session_id: SESSION_ID });
     const output = JSON.parse(String(logSpy.mock.calls[0][0])) as unknown[];
-    expect(output).toHaveLength(1001);
+    expect(output).toHaveLength(1500);
   });
 
   it('prints a friendly message for an empty session in text mode', async () => {

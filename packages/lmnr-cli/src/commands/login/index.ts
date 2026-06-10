@@ -10,11 +10,11 @@ import {
   parseProjectFromMetadata,
   pollDevice,
 } from "../../auth/device";
-import { DEFAULT_DASHBOARD_URL } from "../../constants";
+import { DEFAULT_FRONTEND_URL } from "../../constants";
 import { pc } from "../../utils/colors";
 
 export interface LoginOptions {
-  dashboardUrl?: string;
+  frontendUrl?: string;
   noBrowser?: boolean;
 }
 
@@ -26,16 +26,15 @@ export interface LoginResult {
   /**
    * The projectId the user selected/created in the browser, delivered back via
    * the device-token `x-lmnr-metadata` response header (see
-   * `parseProjectFromMetadata`). Null on the already-logged-in / legacy paths
-   * where the browser had nothing to select.
+   * `parseProjectFromMetadata`). Null when the browser had nothing to select.
    */
   projectId: string | null;
 }
 
 export async function handleLogin(options: LoginOptions): Promise<LoginResult> {
-  const issuer = pick(options.dashboardUrl, process.env.LMNR_DASHBOARD_URL, DEFAULT_DASHBOARD_URL);
+  const issuer = pick(options.frontendUrl, process.env.LMNR_FRONTEND_URL, DEFAULT_FRONTEND_URL);
   // NOTE: login does NOT resolve/store a data-API baseUrl — the device flow,
-  // JWT mint and session fetch all hit `issuer` (dashboard). `--base-url` on
+  // JWT mint and session fetch all hit `issuer` (frontend). `--base-url` on
   // login is accepted but inert (candidate for removal); data commands resolve
   // baseUrl themselves via resolveBaseUrl.
 

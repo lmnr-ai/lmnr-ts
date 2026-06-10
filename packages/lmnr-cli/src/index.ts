@@ -209,8 +209,8 @@ Examples:
     .command("login")
     .description("Authenticate the CLI via OAuth Device Flow")
     .option(
-      "--dashboard-url <url>",
-      "Dashboard URL (issuer). Defaults to https://www.laminar.sh or LMNR_DASHBOARD_URL env variable",
+      "--frontend-url <url>",
+      "Frontend URL (issuer). Defaults to https://www.laminar.sh or LMNR_FRONTEND_URL env variable",
     )
     .option("--no-browser", "Do not open the verification URL in a browser")
     .action(async (options) => {
@@ -247,8 +247,8 @@ Examples:
     .option("--json", "Emit a machine-readable JSON line on stdout")
     .option("--no-browser", "Do not auto-open the device-flow URL")
     .option(
-      "--dashboard-url <url>",
-      "Dashboard URL (issuer). Defaults to LMNR_DASHBOARD_URL or https://www.laminar.sh",
+      "--frontend-url <url>",
+      "Frontend URL (issuer). Defaults to LMNR_FRONTEND_URL or https://www.laminar.sh",
     )
     .option(
       "--base-url <url>",

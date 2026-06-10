@@ -9,14 +9,15 @@ import { SKILL_NAME, skillSource } from "../skill/laminar-skill";
 // "none present" default below.
 const AGENT_DIRS = [".claude", ".cursor", ".codex", ".agents"] as const;
 
-// Claude Code reads `.claude/skills/`. When NO agent dir exists we default to
-// `.claude/skills/<SKILL_NAME>/` — NEVER `.agents/` (CC does not load `.agents/`).
-const DEFAULT_AGENT_DIR = ".claude";
+// When NO agent dir exists we default to writing the skill into BOTH
+// `.claude/` (Claude Code reads `.claude/skills/`) and `.agents/`, so whichever
+// agent the project later adopts can find it.
+const DEFAULT_AGENT_DIRS = [".claude", ".agents"];
 
 export interface InstallSkillResult {
   /** Absolute paths of every written file (SKILL.md + references/...). */
   written: string[];
-  /** True when no agent dir existed and we defaulted to `.claude/`. */
+  /** True when no agent dir existed and we defaulted to `.claude/` + `.agents/`. */
   defaulted: boolean;
   /**
    * True when the skill could not be fetched (network failure) and install was
@@ -29,7 +30,8 @@ export interface InstallSkillResult {
  * Fetch the pinned Laminar skill (`SKILL_NAME`) from the lmnr-skills repo and
  * write its full tree into every present agent dir under `cwd`
  * (`<dir>/skills/<SKILL_NAME>/SKILL.md`, `.../references/*.md`, ...). If none
- * are present, default to `.claude/`. Idempotent — overwrites on rerun.
+ * are present, default to BOTH `.claude/` and `.agents/`. Idempotent —
+ * overwrites on rerun.
  *
  * We download ONCE into a temp staging dir (one network hit) and copy it into
  * each agent dir. Skill install is the last, best-effort step of `setup`: a
@@ -50,7 +52,7 @@ export async function installSkill(
     } catch (err) {
       process.stderr.write(
         `Warning: could not fetch the Laminar skill (${skillSource()}): ` +
-          `${describeError(err)}; skipping skill install.\n`,
+        `${describeError(err)}; skipping skill install.\n`,
       );
       return { written: [], defaulted: false, skipped: true };
     }
@@ -65,7 +67,7 @@ export async function installSkill(
       if (await dirExists(join(cwd, dir))) present.push(dir);
     }
 
-    const targets = present.length > 0 ? present : [DEFAULT_AGENT_DIR];
+    const targets = present.length > 0 ? present : DEFAULT_AGENT_DIRS;
     const written: string[] = [];
     for (const dir of targets) {
       const skillRoot = join(cwd, dir, "skills", SKILL_NAME);

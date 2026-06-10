@@ -16,7 +16,7 @@ export interface Credentials {
   issuer: string;
   // No `baseUrl` here on purpose: the data-API endpoint is resolved fresh on
   // every command (`--base-url` flag → LMNR_BASE_URL → default) so a self-host
-  // .env change takes effect without re-login. `issuer` (the dashboard URL,
+  // .env change takes effect without re-login. `issuer` (the frontend URL,
   // used for token refresh) stays cached because refresh has no flag/env.
   sessionToken: string;
   accessToken: string;
@@ -28,12 +28,20 @@ export interface Credentials {
   lastUsedAt?: string;
 }
 
-// The lmnr config dir (XDG_CONFIG_HOME or ~/.config, then `lmnr`). Named
-// generically since we may store more than credentials here in the future.
+// The lmnr config dir. `XDG_CONFIG_HOME` is the explicit override on every
+// platform; when unset we pick the platform default — `%APPDATA%\lmnr` on
+// Windows (idiomatic) and `~/.config/lmnr` elsewhere. Named generically since
+// we may store more than credentials here in the future.
 export function globalLmnrDirectory(): string {
   const xdg = process.env.XDG_CONFIG_HOME?.trim();
-  const base = xdg && xdg.length > 0 ? xdg : join(homedir(), ".config");
-  return join(base, "lmnr");
+  if (xdg && xdg.length > 0) {
+    return join(xdg, "lmnr");
+  }
+  const appData = process.env.APPDATA?.trim();
+  if (process.platform === "win32" && appData && appData.length > 0) {
+    return join(appData, "lmnr");
+  }
+  return join(homedir(), ".config", "lmnr");
 }
 
 export function credentialsPath(): string {
