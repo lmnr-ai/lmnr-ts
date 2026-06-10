@@ -3,8 +3,9 @@ import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 
-import { getRuntime } from "../src/debug";
+import { getRuntime, resetDebugRuntime } from "../src/debug";
 import { Laminar } from "../src/index";
+import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
 
 void describe("initialize", () => {
   const originalEnv = process.env;
@@ -84,6 +85,64 @@ void describe("initialize", () => {
     assert.ok(pointerLine !== undefined);
     const payload = JSON.parse(pointerLine.slice("LMNR_DEBUG_RUN ".length));
     assert.strictEqual(payload.trace_id, "01234567-89ab-cdef-0123-456789abcdef");
+  });
+
+  void it("arms the debug runtime from an LMNR_SPAN_CONTEXT debug block", () => {
+    // A child continued purely via LMNR_SPAN_CONTEXT (no LMNR_DEBUG) must still
+    // join the upstream debug session: _initializeContextFromEnv arms the
+    // runtime from the deserialized debug block so replay / rollout.session_id
+    // activate even though local debug env vars are unset.
+    delete process.env.LMNR_DEBUG;
+    delete process.env.LMNR_DEBUG_SESSION_ID;
+    process.env.LMNR_SPAN_CONTEXT = JSON.stringify({
+      traceId: "01234567-89ab-cdef-0123-456789abcdef",
+      spanId: "00000000-0000-0000-0123-456789abcdef",
+      isRemote: false,
+      debug: {
+        enabled: true,
+        sessionId: "00000000-0000-0000-0000-0000000000aa",
+      },
+    });
+
+    Laminar.initialize({ projectApiKey: "test" });
+
+    const runtime = getRuntime();
+    assert.ok(runtime !== null);
+    assert.strictEqual(runtime.sessionId, "00000000-0000-0000-0000-0000000000aa");
+    assert.strictEqual(runtime.localOrigin, false);
+  });
+
+  void it("keeps a context-armed rollout.session_id across a later initialize()", () => {
+    // A span carrying a propagated debug block can arm a from-context runtime
+    // BEFORE initialize() runs (no LMNR_DEBUG needed). That stamps
+    // rollout.session_id onto globalMetadata. A later initialize() rebuilds
+    // globalMetadata from env/options only and re-syncs setGlobalMetadata; since
+    // the run has no LMNR_DEBUG, _initDebugRuntime would otherwise bail before
+    // re-stamping and spans would silently lose rollout.session_id even though
+    // the runtime (and replay) is still live. _initDebugRuntime must recover the
+    // session id from the already-armed runtime.
+    const SESSION = "00000000-0000-0000-0000-0000000000bb";
+    delete process.env.LMNR_DEBUG;
+    delete process.env.LMNR_DEBUG_SESSION_ID;
+    delete process.env.LMNR_SPAN_CONTEXT;
+    resetDebugRuntime();
+    LaminarContextManager.setGlobalMetadata({});
+    try {
+      // Arm from context before initialize() — mirrors a span created at import
+      // time / before the app calls initialize().
+      Laminar._armDebugRuntimeFromContext({ enabled: true, sessionId: SESSION });
+      assert.ok(getRuntime() !== null);
+
+      Laminar.initialize({ projectApiKey: "test" });
+
+      assert.strictEqual(
+        LaminarContextManager.getGlobalMetadata()["rollout.session_id"],
+        SESSION,
+      );
+    } finally {
+      resetDebugRuntime();
+      LaminarContextManager.setGlobalMetadata({});
+    }
   });
 
   void it("does not leak exit listeners across init/shutdown cycles", async () => {

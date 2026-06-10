@@ -4,7 +4,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
-import { buildDebugConfig, replayEnabledForConfig } from '../../src/debug/config';
+import {
+  buildDebugConfig,
+  buildDebugConfigFromContext,
+  replayEnabledForConfig,
+} from '../../src/debug/config';
+import { deserializeLaminarSpanContext } from '../../src/utils';
+
+const SESSION = '00000000-0000-0000-0000-0000000000aa';
+const REPLAY = '00000000-0000-0000-0000-0000000000bb';
 
 const DEBUG_ENV_KEYS = [
   'LMNR_DEBUG',
@@ -113,6 +121,9 @@ void describe('buildDebugConfig (LMNR_DEBUG_FROM_LAST_RUN)', () => {
     assert.strictEqual(config.sessionId, 'session-xyz');
     assert.strictEqual(config.cacheUntilSpanId, '0123456789abcdef');
     assert.strictEqual(replayEnabledForConfig(config), true);
+    // A continuation reuses the pointer's session id, so the browser must not
+    // reopen.
+    assert.strictEqual(config.sessionMinted, false);
   });
 
   void it('env vars override per-field', () => {
@@ -151,5 +162,145 @@ void describe('buildDebugConfig (LMNR_DEBUG_FROM_LAST_RUN)', () => {
     assert.ok(config !== null);
     assert.strictEqual(config.replayTraceId, null);
     assert.strictEqual(config.sessionId.length, 36);
+    // FROM_LAST_RUN is a continuation attempt; even with a missing pointer the
+    // browser must not reopen, despite the freshly minted fallback id.
+    assert.strictEqual(config.sessionMinted, false);
+  });
+});
+
+void describe('local origin / session minted', () => {
+  beforeEach(clearDebugEnv);
+  afterEach(clearDebugEnv);
+
+  void it('a fresh env run is local origin and minted', () => {
+    process.env.LMNR_DEBUG = 'true';
+    const config = buildDebugConfig();
+    assert.ok(config !== null);
+    assert.strictEqual(config.localOrigin, true);
+    assert.strictEqual(config.sessionMinted, true);
+  });
+
+  void it('a provided session id is not minted', () => {
+    process.env.LMNR_DEBUG = 'true';
+    process.env.LMNR_DEBUG_SESSION_ID = 'sess-123';
+    const config = buildDebugConfig();
+    assert.ok(config !== null);
+    assert.strictEqual(config.sessionMinted, false);
+  });
+});
+
+void describe('buildDebugConfigFromContext (inherited path)', () => {
+  void it('builds a downstream config from an armed block', () => {
+    const config = buildDebugConfigFromContext({
+      enabled: true,
+      sessionId: SESSION,
+      replayTraceId: REPLAY,
+      cacheUntil: '0123-456789abcdef',
+    });
+    assert.ok(config !== null);
+    assert.strictEqual(config.sessionId, SESSION);
+    assert.strictEqual(config.replayTraceId, REPLAY);
+    assert.strictEqual(config.cacheUntilSpanId, '0123456789abcdef');
+    assert.strictEqual(config.localOrigin, false);
+    assert.strictEqual(config.sessionMinted, false);
+    assert.strictEqual(replayEnabledForConfig(config), true);
+  });
+
+  void it('returns null when not enabled', () => {
+    assert.strictEqual(
+      buildDebugConfigFromContext({ enabled: false, sessionId: SESSION }),
+      null,
+    );
+  });
+
+  void it('returns null when no session id', () => {
+    assert.strictEqual(buildDebugConfigFromContext({ enabled: true }), null);
+  });
+
+  void it('returns null when block absent', () => {
+    assert.strictEqual(buildDebugConfigFromContext(undefined), null);
+  });
+});
+
+void describe('LaminarSpanContext debug block parsing', () => {
+  void it('parses a nested camelCase debug block', () => {
+    const ctx = deserializeLaminarSpanContext({
+      traceId: SESSION,
+      spanId: REPLAY,
+      debug: {
+        enabled: true,
+        sessionId: SESSION,
+        replayTraceId: REPLAY,
+        cacheUntil: '0123-456789abcdef',
+      },
+    });
+    assert.ok(ctx.debug !== undefined);
+    assert.strictEqual(ctx.debug.enabled, true);
+    assert.strictEqual(ctx.debug.sessionId, SESSION);
+    assert.strictEqual(ctx.debug.replayTraceId, REPLAY);
+    assert.strictEqual(ctx.debug.cacheUntil, '0123-456789abcdef');
+  });
+
+  void it('parses a nested snake_case debug block', () => {
+    const ctx = deserializeLaminarSpanContext({
+      trace_id: SESSION,
+      span_id: REPLAY,
+      debug: {
+        enabled: true,
+        session_id: SESSION,
+        replay_trace_id: REPLAY,
+        cache_until: 'abcdef',
+      },
+    });
+    assert.ok(ctx.debug !== undefined);
+    assert.strictEqual(ctx.debug.sessionId, SESSION);
+    assert.strictEqual(ctx.debug.replayTraceId, REPLAY);
+    assert.strictEqual(ctx.debug.cacheUntil, 'abcdef');
+  });
+
+  void it('keeps non-UUID ids verbatim', () => {
+    // LMNR_DEBUG_SESSION_ID may be an arbitrary string; the origin registers
+    // and propagates that exact value, so the consumer must round-trip it
+    // unchanged or the downstream treats the block as session-less and never
+    // joins the run.
+    const ctx = deserializeLaminarSpanContext({
+      traceId: SESSION,
+      spanId: REPLAY,
+      debug: { enabled: true, sessionId: 'my-session', replayTraceId: 'my-replay' },
+    });
+    assert.ok(ctx.debug !== undefined);
+    assert.strictEqual(ctx.debug.sessionId, 'my-session');
+    assert.strictEqual(ctx.debug.replayTraceId, 'my-replay');
+  });
+
+  void it('drops empty-string ids to undefined', () => {
+    const ctx = deserializeLaminarSpanContext({
+      traceId: SESSION,
+      spanId: REPLAY,
+      debug: { enabled: true, sessionId: '', replayTraceId: '' },
+    });
+    assert.ok(ctx.debug !== undefined);
+    assert.strictEqual(ctx.debug.sessionId, undefined);
+    assert.strictEqual(ctx.debug.replayTraceId, undefined);
+  });
+
+  void it('debug is undefined when no block present', () => {
+    const ctx = deserializeLaminarSpanContext({ traceId: SESSION, spanId: REPLAY });
+    assert.strictEqual(ctx.debug, undefined);
+  });
+
+  void it('a non-boolean enabled never arms the block', () => {
+    // The producer always emits a real boolean. A truthy non-true value (e.g.
+    // the JSON string "false", or 1) is a malformed/forged block and must parse
+    // to enabled:false, never arming a downstream runtime.
+    for (const enabled of ['false', 'true', 1, {}] as unknown[]) {
+      const ctx = deserializeLaminarSpanContext({
+        traceId: SESSION,
+        spanId: REPLAY,
+        debug: { enabled, sessionId: SESSION },
+      });
+      assert.ok(ctx.debug !== undefined);
+      assert.strictEqual(ctx.debug.enabled, false);
+    }
   });
 });

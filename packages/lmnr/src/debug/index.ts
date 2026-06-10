@@ -20,9 +20,11 @@
  */
 
 import { type CacheOutcome, RolloutSessionsResource } from "@lmnr-ai/client";
+import { type DebugContext } from "@lmnr-ai/types";
 
 import {
   buildDebugConfig,
+  buildDebugConfigFromContext,
   DebugConfig,
   isTruthy,
   replayEnabledForConfig,
@@ -40,7 +42,7 @@ export { isTruthy };
  */
 export class DebugRuntime {
   private readonly _config: DebugConfig;
-  private readonly _rolloutSessions: RolloutSessionsResource;
+  private _rolloutSessions: RolloutSessionsResource;
   private readonly _debuggerUrl: string | null;
   private _projectId: string | null = null;
   private _traceId: string | null = null;
@@ -59,6 +61,50 @@ export class DebugRuntime {
     this._debuggerUrl = debuggerUrl;
   }
 
+  /**
+   * Swap in a fresh rollout-sessions handle for cache lookups.
+   *
+   * A from-context runtime can be armed (deep in span creation) BEFORE
+   * `initialize()` runs, so its client is built from unset connection args and
+   * falls back to env/defaults. Once `initialize()` supplies the real
+   * baseUrl/port/api-key, it rebinds the handle so replay `lookupCache` calls
+   * reach the same backend as the rest of the SDK. No-op on the local-origin
+   * path (the env runtime is only ever built after args are known).
+   */
+  rebindRolloutSessions(rolloutSessions: RolloutSessionsResource): void {
+    this._rolloutSessions = rolloutSessions;
+  }
+
+  /** The rollout-sessions handle this runtime routes cache lookups through. */
+  get rolloutSessions(): RolloutSessionsResource {
+    return this._rolloutSessions;
+  }
+
+  /**
+   * Refresh the DYNAMIC replay coordinates from a freshly-parsed context config.
+   *
+   * The transport (client / rollout-sessions handle) is STABLE and reused; only
+   * the per-request coordinates move — `sessionId`, `replayTraceId`,
+   * `cacheUntilSpanId`. This is what lets a long-lived downstream service follow
+   * each incoming request's `LaminarSpanContext` instead of freezing on the very
+   * first one. `localOrigin` / `sessionMinted` are part of the run's IDENTITY and
+   * never change here (the caller only ever updates a `localOrigin:false`
+   * runtime; env-origin config keeps precedence).
+   *
+   * Returns true when the session id changed, so the caller can re-register the
+   * new session and re-stamp `rollout.session_id`.
+   */
+  updateContextConfig(config: DebugConfig): boolean {
+    const configChanged =
+      this._config.sessionId !== config.sessionId ||
+      this._config.replayTraceId !== config.replayTraceId ||
+      this._config.cacheUntilSpanId !== config.cacheUntilSpanId;
+    this._config.sessionId = config.sessionId;
+    this._config.replayTraceId = config.replayTraceId;
+    this._config.cacheUntilSpanId = config.cacheUntilSpanId;
+    return configChanged;
+  }
+
   get sessionId(): string {
     return this._config.sessionId;
   }
@@ -67,9 +113,33 @@ export class DebugRuntime {
     return this._config.replayTraceId;
   }
 
+  get cacheUntilSpanId(): string | null {
+    return this._config.cacheUntilSpanId;
+  }
+
   /** True when replay is configured for this run (replay trace + cache window). */
   get replayConfigured(): boolean {
     return replayEnabledForConfig(this._config);
+  }
+
+  /**
+   * True when this process originated the run (config from local env). False
+   * when armed from a propagated `DebugContext`: a downstream run reuses the
+   * upstream session and may consult the cache, but must not open a browser or
+   * emit the run pointer.
+   */
+  get localOrigin(): boolean {
+    return this._config.localOrigin;
+  }
+
+  /**
+   * True when this run should open the debugger URL in a browser once. Only a
+   * local-origin run that minted a fresh session id qualifies: a reused session
+   * id (continuation/replay) or a context-armed downstream run must not reopen
+   * the browser.
+   */
+  get shouldOpenBrowser(): boolean {
+    return this._config.localOrigin && this._config.sessionMinted;
   }
 
   /**
@@ -136,8 +206,19 @@ export class DebugRuntime {
     );
   }
 
-  /** Emit the run pointer once (console line + best-effort file). */
+  /**
+   * Emit the run pointer once (console line + best-effort file).
+   *
+   * No-op on a downstream run (`localOrigin: false`): a runtime armed from a
+   * propagated `DebugContext` joins the upstream replay session and must NOT
+   * write a run pointer — the origin owns it. Gated here (not just at the call
+   * sites) so `shutdown()` and any exit hook stay safe. Mirrors Python's
+   * `emit_pointer`.
+   */
   emitPointer(): void {
+    if (!this._config.localOrigin) {
+      return;
+    }
     if (this._emitted) {
       return;
     }
@@ -190,6 +271,52 @@ export const initDebugRuntime = (
 
   runtime = new DebugRuntime(config, rolloutSessions, debuggerUrl);
   return { runtime };
+};
+
+/**
+ * Arm OR refresh the debug runtime from a propagated `DebugContext`.
+ *
+ * Called deep in span creation when a parent `LaminarSpanContext` carrying a
+ * debug block parses — so a downstream service joins the upstream run regardless
+ * of how the span originated. The whole point of propagating coordinates through
+ * the span context is that they are DYNAMIC: a long-lived downstream service
+ * handling many requests must follow each request's `sessionId` / `replayTraceId`
+ * / `cacheUntil`, not freeze on the first one it ever saw.
+ *
+ * So the transport is stable but the coordinates move:
+ * - No runtime yet → build one from the context (latch `initialized`).
+ * - A `localOrigin` (env) runtime exists → env config wins; leave it untouched.
+ *   The local process owns the run; a propagated context must not hijack it.
+ * - A `localOrigin:false` (context-armed) runtime exists → REUSE its client and
+ *   just refresh the dynamic coordinates from the new context.
+ *
+ * Returns `{ runtime: null }` without latching when the block is absent /
+ * unarmed, so a later valid context can still arm the runtime. Never throws.
+ */
+export const initDebugRuntimeFromContext = (
+  debug: DebugContext | undefined,
+  rolloutSessions: RolloutSessionsResource,
+  debuggerUrl: string | null = null,
+): { runtime: DebugRuntime | null; configChanged: boolean } => {
+  const config = buildDebugConfigFromContext(debug);
+  if (config === null) {
+    return { runtime: runtime, configChanged: false };
+  }
+
+  if (runtime !== null) {
+    // An env-origin run owns the process — a propagated context never overrides
+    // it. A context-armed run, by contrast, tracks the live request: refresh its
+    // dynamic coordinates in place and reuse the already-built client.
+    if (runtime.localOrigin) {
+      return { runtime, configChanged: false };
+    }
+    const configChanged = runtime.updateContextConfig(config);
+    return { runtime, configChanged };
+  }
+
+  initialized = true;
+  runtime = new DebugRuntime(config, rolloutSessions, debuggerUrl);
+  return { runtime, configChanged: true };
 };
 
 /**

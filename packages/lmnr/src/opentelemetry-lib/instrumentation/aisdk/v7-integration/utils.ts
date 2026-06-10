@@ -77,10 +77,31 @@ export const standardizedPromptToMessages = (event: {
     messages.push(sys);
   }
   if (Array.isArray(event.messages)) {
-    for (const m of event.messages) messages.push(m);
+    for (const m of event.messages)
+      messages.push(convertRawStringTextToTextBlock(m as LooseMessage));
   }
   return messages;
 };
+
+type LooseMessage = {
+  role: string;
+  content: string | Record<string, any>[];
+  [k: string]: unknown;
+};
+type LooseMessageNoStringContent = {
+  role: string;
+  content: Record<string, any>[];
+  [k: string]: unknown;
+};
+const convertRawStringTextToTextBlock = (
+  m: LooseMessage,
+): LooseMessageNoStringContent => ({
+  ...m,
+  content:
+    typeof m?.content === "string"
+      ? [{ type: "text", text: m.content }]
+      : m?.content,
+});
 
 // Build a concise `ai.response.toolCalls`-shaped array from v7 `toolCalls`.
 export const normalizeToolCalls = (toolCalls: any[] | undefined): any[] => {

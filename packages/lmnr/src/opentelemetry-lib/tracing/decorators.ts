@@ -2,6 +2,7 @@ import { errorMessage, LaminarSpanContext, TraceType, TracingLevel } from "@lmnr
 import { AttributeValue, context, type Span, trace } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
 
+import { Laminar } from "../../laminar";
 import {
   deserializeLaminarSpanContext,
   initializeLogger,
@@ -95,6 +96,13 @@ export function observeBase<
       const laminarContext = typeof parentSpanContext === 'string'
         ? deserializeLaminarSpanContext(parentSpanContext)
         : parentSpanContext;
+
+      // Arm the debug runtime from a propagated debug block (first-wins,
+      // idempotent, no-op when already armed or no block present). observe()
+      // spans bypass Laminar._startSpan, so without this a downstream process
+      // whose first traced work is observe({ parentSpanContext }) would never
+      // join the upstream debug session, replay, or rollout.session_id stamping.
+      Laminar._armDebugRuntimeFromContext(laminarContext.debug);
 
       const spanContext = tryToOtelSpanContext(laminarContext);
       entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));

@@ -92,7 +92,9 @@ const firstString = (...candidates: unknown[]): string | undefined => {
  * `from_instrumentation_content_part`'s `Image` arm. Returns the output
  * `ChatMessageContentPart` object, or `null` if no untagged variant matches.
  */
-const parseImage = (e: Record<string, unknown>): Record<string, unknown> | null => {
+const parseImage = (
+  e: Record<string, unknown>,
+): Record<string, unknown> | null => {
   // WithSource { source: { media_type, data } } → Image { mediaType, data }
   if (isRecord(e.source)) {
     const src = e.source;
@@ -113,7 +115,11 @@ const parseImage = (e: Record<string, unknown>): Record<string, unknown> | null 
     const b64 = base64FromBytes(e.image);
     const mime =
       typeof e.mime_type === "string" ? e.mime_type : inferImageType(b64);
-    return { type: "image_url", url: `data:${mime};base64,${b64}`, detail: null };
+    return {
+      type: "image_url",
+      url: `data:${mime};base64,${b64}`,
+      detail: null,
+    };
   }
   // AISDKImageData { image: string, mime_type? }
   if (typeof e.image === "string") {
@@ -130,7 +136,9 @@ const parseImage = (e: Record<string, unknown>): Record<string, unknown> | null 
 };
 
 /** Port of the `Document` arm (only the Base64 source shape exists). */
-const parseDocument = (e: Record<string, unknown>): Record<string, unknown> | null => {
+const parseDocument = (
+  e: Record<string, unknown>,
+): Record<string, unknown> | null => {
   if (!isRecord(e.source) || e.source.type !== "base64") {
     return null;
   }
@@ -168,7 +176,9 @@ const DATA_URL_RE = /^data:((?:application|image)\/[a-zA-Z-]+);base64,/;
  * the span. Plain text, multi-part text, tool calls, and base64 images all hash
  * identically across both paths; only URL-referenced images on v7 are affected.
  */
-const parseFile = (e: Record<string, unknown>): Record<string, unknown> | null => {
+const parseFile = (
+  e: Record<string, unknown>,
+): Record<string, unknown> | null => {
   // OpenAI: { file: { file_id } | { filename, file_data } }
   if (isRecord(e.file)) {
     const file = e.file;
@@ -254,13 +264,17 @@ const parsePart = (el: unknown): Record<string, unknown> | null => {
         type: "tool_call",
         name: el.toolName,
         id: typeof el.toolCallId === "string" ? el.toolCallId : null,
-        arguments: rawInput === undefined || rawInput === null ? null : rawInput,
+        arguments:
+          rawInput === undefined || rawInput === null ? null : rawInput,
       };
     }
     case "tool-result": {
       // AISDKToolResult { toolCallId, output (alias "result"), toolName }
       // Server reads camelCase; `result` is the AI SDK v4 alias for `output`.
-      if (typeof el.toolCallId !== "string" || typeof el.toolName !== "string") {
+      if (
+        typeof el.toolCallId !== "string" ||
+        typeof el.toolName !== "string"
+      ) {
         return null;
       }
       const hasOutput = "output" in el || "result" in el;
@@ -278,12 +292,6 @@ const parsePart = (el: unknown): Record<string, unknown> | null => {
       return null;
   }
 };
-
-const isSingleTextPart = (
-  part: Record<string, unknown>,
-): part is { type: "text"; text: string } =>
-  part.type === "text" && typeof part.text === "string" &&
-  Object.keys(part).length === 2;
 
 /**
  * Port of `input_chat_messages_from_json`. `input` is the parsed
@@ -320,20 +328,7 @@ export const inputChatMessagesFromJson = (input: unknown): unknown[] => {
         parts.push(parsed);
       }
     }
-    let content: unknown;
-    if (parts !== null) {
-      // The recording path stores plain-text messages with bare-string content
-      // (StandardizedPrompt level), so the server reconstructs them as a bare
-      // string (`ChatMessageContent::Text`). The replay path hashes the
-      // LanguageModel-level `options.prompt`, where AI SDK has already normalized
-      // that same string into a single `{type:"text", text}` part. Collapse it
-      // back to the bare string so both sides hash identical canonical JSON.
-      content = parts.length === 1 && isSingleTextPart(parts[0])
-        ? parts[0].text
-        : parts;
-    } else {
-      content = jsonValueToString(otelContent);
-    }
+    const content = parts !== null ? parts : jsonValueToString(otelContent);
 
     const out: Record<string, unknown> = { role, content };
     if (typeof message.tool_call_id === "string") {

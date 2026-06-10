@@ -1,4 +1,10 @@
-import { errorMessage, LaminarSpanContext, TraceType, TracingLevel } from '@lmnr-ai/types';
+import {
+  DebugContext,
+  errorMessage,
+  LaminarSpanContext,
+  TraceType,
+  TracingLevel,
+} from '@lmnr-ai/types';
 import { AttributeValue, SpanContext, TraceFlags } from '@opentelemetry/api';
 import { config } from 'dotenv';
 import * as path from "path";
@@ -255,6 +261,7 @@ export const deserializeLaminarSpanContext = (
   const metadata = data.metadata;
   const traceType = data.traceType ?? data.trace_type;
   const tracingLevel = data.tracingLevel ?? data.tracing_level;
+  const debug = data.debug;
 
   if (typeof traceId !== 'string' || typeof spanId !== 'string') {
     throw new Error('Invalid LaminarSpanContext: traceId and spanId must be strings');
@@ -276,8 +283,37 @@ export const deserializeLaminarSpanContext = (
     metadata: metadata as Record<string, unknown> | undefined,
     traceType: traceType as TraceType | undefined,
     tracingLevel: tracingLevel as TracingLevel | undefined,
+    debug: isRecord(debug) ? deserializeDebugContext(debug) : undefined,
   };
 };
+
+/**
+ * Normalize a value to a canonical lowercase UUID string, or undefined.
+ *
+ * The debug block's `sessionId` / `replayTraceId` are always full ids; a value
+ * that isn't UUID-shaped is dropped (treated as absent) rather than thrown, so
+ * a partially-broken block never breaks span-context parsing.
+ */
+const asString = (value: unknown): string | undefined =>
+  typeof value === 'string' && value.length > 0 ? value : undefined;
+
+/**
+ * Parse a debug block, accepting camelCase and snake_case. All ids are kept
+ * VERBATIM: the producer emits the run's exact session / replay-trace /
+ * cache-until strings (un-normalized — `LMNR_DEBUG_SESSION_ID` may be an
+ * arbitrary non-UUID value), so the consumer must round-trip them unchanged or
+ * a downstream run never joins the run. Keep line-comparable with the Python
+ * `DebugContext.deserialize`.
+ */
+const deserializeDebugContext = (data: Record<string, unknown>): DebugContext => ({
+  // Strict `=== true`, NOT Boolean(...): the producer always emits a real
+  // boolean, so anything else (e.g. the string "false", which is truthy) is a
+  // malformed/forged block and must NOT arm a downstream runtime.
+  enabled: data.enabled === true,
+  sessionId: asString(data.sessionId ?? data.session_id),
+  replayTraceId: asString(data.replayTraceId ?? data.replay_trace_id),
+  cacheUntil: asString(data.cacheUntil ?? data.cache_until),
+});
 
 
 export const getDirname = () => {
