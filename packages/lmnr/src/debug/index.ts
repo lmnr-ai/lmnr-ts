@@ -95,11 +95,14 @@ export class DebugRuntime {
    * new session and re-stamp `rollout.session_id`.
    */
   updateContextConfig(config: DebugConfig): boolean {
-    const sessionChanged = this._config.sessionId !== config.sessionId;
+    const configChanged =
+      this._config.sessionId !== config.sessionId ||
+      this._config.replayTraceId !== config.replayTraceId ||
+      this._config.cacheUntilSpanId !== config.cacheUntilSpanId;
     this._config.sessionId = config.sessionId;
     this._config.replayTraceId = config.replayTraceId;
     this._config.cacheUntilSpanId = config.cacheUntilSpanId;
-    return sessionChanged;
+    return configChanged;
   }
 
   get sessionId(): string {
@@ -287,9 +290,6 @@ export const initDebugRuntime = (
  * - A `localOrigin:false` (context-armed) runtime exists → REUSE its client and
  *   just refresh the dynamic coordinates from the new context.
  *
- * `sessionChanged` is true when the refresh moved to a different session id, so
- * the caller can re-register it and re-stamp `rollout.session_id`.
- *
  * Returns `{ runtime: null }` without latching when the block is absent /
  * unarmed, so a later valid context can still arm the runtime. Never throws.
  */
@@ -297,10 +297,10 @@ export const initDebugRuntimeFromContext = (
   debug: DebugContext | undefined,
   rolloutSessions: RolloutSessionsResource,
   debuggerUrl: string | null = null,
-): { runtime: DebugRuntime | null; sessionChanged: boolean } => {
+): { runtime: DebugRuntime | null; configChanged: boolean } => {
   const config = buildDebugConfigFromContext(debug);
   if (config === null) {
-    return { runtime: runtime, sessionChanged: false };
+    return { runtime: runtime, configChanged: false };
   }
 
   if (runtime !== null) {
@@ -308,15 +308,15 @@ export const initDebugRuntimeFromContext = (
     // it. A context-armed run, by contrast, tracks the live request: refresh its
     // dynamic coordinates in place and reuse the already-built client.
     if (runtime.localOrigin) {
-      return { runtime, sessionChanged: false };
+      return { runtime, configChanged: false };
     }
-    const sessionChanged = runtime.updateContextConfig(config);
-    return { runtime, sessionChanged };
+    const configChanged = runtime.updateContextConfig(config);
+    return { runtime, configChanged };
   }
 
   initialized = true;
   runtime = new DebugRuntime(config, rolloutSessions, debuggerUrl);
-  return { runtime, sessionChanged: true };
+  return { runtime, configChanged: true };
 };
 
 /**

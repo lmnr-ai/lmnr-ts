@@ -556,7 +556,7 @@ export class Laminar {
         }).rolloutSessions;
       const debuggerUrl =
         process?.env?.LMNR_FRONTEND_URL ?? getFrontendUrl(this.baseUrlForDebug);
-      const { runtime, sessionChanged } = initDebugRuntimeFromContext(
+      const { runtime, configChanged } = initDebugRuntimeFromContext(
         debug,
         rolloutSessions,
         debuggerUrl,
@@ -565,17 +565,7 @@ export class Laminar {
         return;
       }
 
-      // Only (re-)register + re-stamp when the session id actually moved — a
-      // steady stream of requests on the SAME session must not spam the backend
-      // or rewrite global metadata on every span. Register the (upstream)
-      // session so downstream cache lookups are accepted: idempotent upsert,
-      // fire-and-forget. Unlike the local-origin path we do NOT log the URL or
-      // open a browser — the origin already did.
-      if (sessionChanged) {
-        // A new session is a fresh debug run: clear the process-wide run-live
-        // latch so the new session starts from a clean cache state. Otherwise a
-        // MISS latched by the PREVIOUS session would make every call in the new
-        // one skip the cache and run live.
+      if (configChanged) {
         this.debugRunLive = false;
 
         void runtime.rolloutSessions
@@ -603,7 +593,9 @@ export class Laminar {
       // No `exit` pointer hook: a downstream run must not emit the pointer.
     } catch (e) {
       // never let debug arming crash span creation
-      logger.debug("Failed to arm debug runtime from context: " + errorMessage(e));
+      logger.debug(
+        "Failed to arm debug runtime from context: " + errorMessage(e),
+      );
     }
   }
 
