@@ -183,7 +183,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
 
   let needMint = true;
   if (existingKey) {
-    const owner = await getProjectId(existingKey.value, userBaseUrl);
+    const owner = await getProjectId(existingKey.value, userBaseUrl, envHttpPort());
     if (owner && owner === link.projectId) {
       // Already configured for this project. Respect the user's setup: no mint,
       // no write (option a) — including when the key only lives in process.env.

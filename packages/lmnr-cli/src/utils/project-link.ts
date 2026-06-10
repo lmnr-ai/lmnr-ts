@@ -4,7 +4,7 @@ import { dirname, join, parse } from "node:path";
 /**
  * Directory-scoped project link, written by `setup` to `.lmnr/project.json`.
  * The project the CLI operates on is inferred from the directory you're in
- * (Vercel/Supabase style), overridable with --project-id / LMNR_PROJECT_ID.
+ * (Vercel/Supabase style), overridable with --project-id.
  * Holds the project id plus small display details — never secrets (the API key
  * lives in .env).
  */

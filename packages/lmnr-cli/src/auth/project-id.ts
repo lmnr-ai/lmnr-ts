@@ -19,11 +19,17 @@ function trimSlash(url: string): string {
 export async function getProjectId(
   projectApiKey: string,
   baseUrl: string = DEFAULT_BASE_URL,
+  port?: number,
 ): Promise<string | null> {
-  const url = `${trimSlash(baseUrl)}/v1/project`;
+  // Compose host + port the same way the real CLI clients do (baseUrl carries
+  // no port by convention; LMNR_HTTP_PORT/--port is separate). new URL().port
+  // rather than `:${port}` concat so a baseUrl with a path still works.
+  const url = new URL(trimSlash(baseUrl));
+  if (port) url.port = String(port);
+  url.pathname = "/v1/project";
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await fetch(url.toString(), {
       method: "GET",
       headers: {
         Authorization: `Bearer ${projectApiKey}`,

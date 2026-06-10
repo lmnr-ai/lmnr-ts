@@ -126,12 +126,14 @@ export async function findEnvKey(
  *  - `LMNR_GRPC_PORT`: the CLI is REST-only (no gRPC), so it has no use for it.
  *  - `LMNR_LOG_LEVEL`: loggers are built at module-import time (before
  *    `loadLocalEnv` runs), so hydrating it here would silently have no effect.
+ *  - `LMNR_PROJECT_ID`: the project comes from `--project-id` or
+ *    `.lmnr/project.json` only; `resolveAuth` ignores the env var, so loading
+ *    it here would just contradict that.
  */
 export const AUTOLOADED_ENV_KEYS = [
   "LMNR_BASE_URL",
   "LMNR_HTTP_PORT",
   "LMNR_DASHBOARD_URL",
-  "LMNR_PROJECT_ID",
 ] as const;
 
 /**
