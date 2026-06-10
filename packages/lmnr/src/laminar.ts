@@ -572,6 +572,12 @@ export class Laminar {
       // fire-and-forget. Unlike the local-origin path we do NOT log the URL or
       // open a browser — the origin already did.
       if (sessionChanged) {
+        // A new session is a fresh debug run: clear the process-wide run-live
+        // latch so the new session starts from a clean cache state. Otherwise a
+        // MISS latched by the PREVIOUS session would make every call in the new
+        // one skip the cache and run live.
+        this.debugRunLive = false;
+
         void runtime.rolloutSessions
           .register({ sessionId: runtime.sessionId })
           .then((projectId) => {

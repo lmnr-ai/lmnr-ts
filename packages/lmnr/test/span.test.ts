@@ -150,6 +150,7 @@ void describe("span interface tests", () => {
     const SESSION_B = "00000000-0000-0000-0000-0000000000b2";
     resetDebugRuntime();
     LaminarContextManager.setGlobalMetadata({});
+    Laminar.debugRunLive = false;
     try {
       const first = Laminar.startSpan({
         name: "req-1",
@@ -163,6 +164,10 @@ void describe("span interface tests", () => {
       const runtimeA = getRuntime();
       assert.ok(runtimeA !== null);
       assert.strictEqual(runtimeA.sessionId, SESSION_A);
+
+      // Simulate the first session having latched run-live on a cache MISS — the
+      // new session below must clear it so it starts from a clean cache state.
+      Laminar.debugRunLive = true;
 
       const second = Laminar.startSpan({
         name: "req-2",
@@ -181,9 +186,12 @@ void describe("span interface tests", () => {
         LaminarContextManager.getGlobalMetadata()["rollout.session_id"],
         SESSION_B,
       );
+      // The new session reset the process-wide run-live latch.
+      assert.strictEqual(Laminar.debugRunLive, false);
     } finally {
       resetDebugRuntime();
       LaminarContextManager.setGlobalMetadata({});
+      Laminar.debugRunLive = false;
     }
   });
 
