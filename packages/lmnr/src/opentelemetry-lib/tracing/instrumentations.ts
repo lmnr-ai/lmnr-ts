@@ -25,6 +25,10 @@ import { GoogleGenAiInstrumentation } from "../instrumentation/google-genai";
 import { KernelInstrumentation } from "../instrumentation/kernel";
 import { OpenAIAgentsInstrumentation } from "../instrumentation/openai-agents";
 import { OpencodeInstrumentation } from "../instrumentation/opencode";
+import {
+  patchTemporalClient,
+  patchTemporalWorker,
+} from "../instrumentation/temporal";
 import { InitializeOptions } from "../interfaces";
 
 const logger = initializeLogger();
@@ -446,6 +450,30 @@ const manuallyInitInstrumentations = (
     openAIAgentsInstrumentation.manuallyInstrument(
       instrumentModules.openAIAgents,
     );
+  }
+
+  if (instrumentModules?.temporal) {
+    const {
+      worker,
+      client,
+      createActivitySpan,
+      recordActivityArgs,
+      recordActivityOutput,
+    } = instrumentModules.temporal;
+    const activityOptions = {
+      ...(createActivitySpan !== undefined ? { createActivitySpan } : {}),
+      ...(recordActivityArgs !== undefined ? { recordActivityArgs } : {}),
+      ...(recordActivityOutput !== undefined ? { recordActivityOutput } : {}),
+    };
+    if (worker?.Worker?.create) {
+      patchTemporalWorker(worker, activityOptions);
+    }
+    if (client?.Client) {
+      // Mutate client.Client in place so every subsequent `new client.Client()`
+      // (or `new temporalClient.Client()` from the user's module reference)
+      // gets the patched subclass automatically.
+      patchTemporalClient(client);
+    }
   }
 
   return instrumentations;

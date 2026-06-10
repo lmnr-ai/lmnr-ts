@@ -377,6 +377,56 @@ export interface InitializeOptions {
      * ```
      */
     openAIAgents?: any;
+    /**
+     * Auto-patch Temporal Worker and Client so that every `Worker.create()` and
+     * `new Client()` call automatically includes Laminar's interceptors for
+     * distributed trace context propagation.
+     *
+     * Pass the `@temporalio/worker` module as `worker` and the `Client` class
+     * from `@temporalio/client` as `Client`. Both are optional — omit one to
+     * skip patching that side.
+     *
+     * @example
+     * ```typescript
+     * import * as temporalWorker from '@temporalio/worker';
+     * import * as temporalClient from '@temporalio/client';
+     * import { Laminar } from '@lmnr-ai/lmnr';
+     *
+     * Laminar.initialize({
+     *   instrumentModules: {
+     *     temporal: { worker: temporalWorker, client: temporalClient },
+     *   },
+     * });
+     *
+     * // Now every Worker.create() and new temporalClient.Client() include
+     * // Laminar interceptors.
+     * const worker = await temporalWorker.Worker.create({ ... });
+     * const client = new temporalClient.Client({ ... });
+     * ```
+     */
+    temporal?: {
+      /** The `@temporalio/worker` module (import * as temporalWorker from '@temporalio/worker') */
+      worker?: any;
+      /** The `@temporalio/client` module (import * as temporalClient from '@temporalio/client') */
+      client?: any;
+      /**
+       * If true (default), wrap each activity execution in a Laminar span.
+       * Set to false to only restore the parent context.
+       */
+      createActivitySpan?: boolean;
+      /**
+       * If true (default), record activity arguments as the activity span
+       * input. Set to false to omit them. Ignored when `createActivitySpan`
+       * is false.
+       */
+      recordActivityArgs?: boolean;
+      /**
+       * If true (default), record the activity return value as the activity
+       * span output. Set to false to omit it. Ignored when
+       * `createActivitySpan` is false.
+       */
+      recordActivityOutput?: boolean;
+    };
   };
 
   /**
