@@ -1,5 +1,5 @@
 import { hostname } from "node:os";
-import { resolve as resolvePath } from "node:path";
+import { relative } from "node:path";
 import { createInterface } from "node:readline/promises";
 
 import { type CliProject, LaminarClient } from "@lmnr-ai/client";
@@ -9,7 +9,12 @@ import { type Credentials, readCredentials } from "../../auth/credentials";
 import { getProjectId } from "../../auth/project-id";
 import { refreshIfNeeded } from "../../auth/resolve";
 import { orange, pc, pcOut } from "../../utils/colors";
-import { readEnvVar, writeEnvFile } from "../../utils/env-file";
+import {
+  findEnvKey,
+  isPathGitIgnored,
+  resolveEnvWriteTarget,
+  writeEnvFile,
+} from "../../utils/env-file";
 import { installSkill } from "../../utils/install-skill";
 import { type ProjectLink, readProjectLink, writeProjectLink } from "../../utils/project-link";
 import { handleLogin } from "../login";
@@ -72,16 +77,17 @@ export interface SetupResult {
 /**
  * Directory-scoped onboarding (SPEC decision tree):
  *  - log in if needed (browser picks/creates the project; its id rides back on
- *    the device-token scope),
+ *    the device-token metadata, see parseProjectFromMetadata),
  *  - resolve a project for this directory (`.lmnr/project.json`), enforcing
  *    access,
- *  - mint a project API key into ./.env only when one isn't already present and
- *    correct,
+ *  - mint a project API key only when one isn't already configured for this
+ *    project (checked across process.env → .env.local → .env), then write it to
+ *    an existing .env.local or else .env,
  *  - install the Laminar skill into present agent dirs,
  *  - print a summary.
  *
- * The minted key goes ONLY to ./.env, never into credentials.json (which stores
- * user-scoped BetterAuth tokens).
+ * The minted key goes ONLY into the project's env file, never into
+ * credentials.json (which stores user-scoped BetterAuth tokens).
  */
 export async function handleSetup(options: SetupOptions): Promise<void> {
   const writeEnv = options.writeEnv !== false;
@@ -97,8 +103,9 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     process.stderr.write(`\n${orange("Laminar CLI")} ${pc.dim(`v${version}`)}\n\n`);
   }
 
-  const cwdEnvPath = resolvePath(process.cwd(), ".env");
-  const envKey = await readEnvVar(cwdEnvPath, "LMNR_PROJECT_API_KEY");
+  const cwd = process.cwd();
+  // Detect an already-configured key across process.env → .env.local → .env.
+  const existingKey = await findEnvKey(cwd);
 
   let creds: Credentials | null = await safeReadCredentials();
   let link = await readProjectLink();
@@ -108,7 +115,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   if (!creds) {
     // Not logged in: run the device flow. The browser is where the project is
     // chosen/created (when there's no link), and the chosen id rides back on
-    // the device-token scope (parseProjectFromScope).
+    // the device-token metadata (parseProjectFromMetadata).
     let login;
     try {
       login = await handleLogin({ dashboardUrl, baseUrl, noBrowser: options.noBrowser });
@@ -126,15 +133,16 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     const userBaseUrl = creds.baseUrl || baseUrl;
 
     if (link) {
-      // Directory already declares the project — ignore the scope-borne id and
-      // assert the freshly-authenticated user can access the linked project.
+      // Directory already declares the project — ignore the metadata-borne id
+      // and assert the freshly-authenticated user can access the linked project.
       await assertAccess(creds, userBaseUrl, link.projectId, isJson);
     } else if (login.projectId) {
       // Browser-selected (or just-created) project. Trust it and write the link.
       link = await writeLink(issuer, userBaseUrl, login.projectId, isJson);
     } else {
-      // Defensive: the browser should always scope a project on this path, but
-      // fall back to the CLI picker if it didn't (legacy / older /device page).
+      // Defensive: the browser should always attach a project (via metadata) on
+      // this path, but fall back to the CLI picker if it didn't (legacy / older
+      // /device page).
       link = await resolveProjectViaCli(creds, userBaseUrl, issuer, isJson, options);
     }
   } else {
@@ -174,16 +182,22 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   let keyMeta: SetupKeyResponse | null = null;
 
   let needMint = true;
-  if (envKey) {
-    const owner = await getProjectId(envKey, userBaseUrl);
+  if (existingKey) {
+    const owner = await getProjectId(existingKey.value, userBaseUrl);
     if (owner && owner === link.projectId) {
+      // Already configured for this project. Respect the user's setup: no mint,
+      // no write (option a) — including when the key only lives in process.env.
       needMint = false;
       if (!isJson) {
-        process.stderr.write(`${pc.green("✓")} Project API Key already in your environment\n`);
+        const where =
+          existingKey.source.type === "process-env"
+            ? "your environment"
+            : relative(cwd, existingKey.source.path);
+        process.stderr.write(`${pc.green("✓")} Project API Key already set in ${where}\n`);
       }
     } else if (!isJson) {
       process.stderr.write(
-        `${pc.yellow("⚠")} Project API Key in your environment does not match selected project — ` +
+        `${pc.yellow("⚠")} Existing Project API Key doesn't match the selected project, ` +
           "minting a new one\n",
       );
     }
@@ -204,17 +218,24 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     if (!link.workspaceId && keyMeta.workspaceId) link.workspaceId = keyMeta.workspaceId;
 
     if (writeEnv) {
-      const target = cwdEnvPath;
+      const target = await resolveEnvWriteTarget(cwd, existingKey);
       try {
         const result = await writeEnvFile(target, apiKey);
         envPath = result.path;
         if (!isJson) {
+          const rel = relative(cwd, result.path);
           const verb = result.created
             ? "Created"
             : result.replaced
-              ? "Replaced LMNR_PROJECT_API_KEY in"
-              : "Appended LMNR_PROJECT_API_KEY to";
-          process.stderr.write(`${pc.green("✓")} ${verb} ${result.path}\n`);
+              ? "Updated LMNR_PROJECT_API_KEY in"
+              : "Added LMNR_PROJECT_API_KEY to";
+          process.stderr.write(`${pc.green("✓")} ${verb} ${rel}\n`);
+          // The key is a secret; nudge if it landed in a tracked file.
+          if ((await isPathGitIgnored(result.path)) === false) {
+            process.stderr.write(
+              `${pc.yellow("⚠")} ${rel} isn't gitignored; add it so the key isn't committed\n`,
+            );
+          }
         }
       } catch (err) {
         process.stderr.write(
@@ -307,7 +328,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
  * Resolve a project via the CLI (logged-in, no link). 0 projects routes to the
  * browser create flow (gap A): we re-run the device flow, which lands on the
  * /device picker → first-project create UI, and the new project's id rides back
- * on the scope. >1 prompts a CLI choice; ==1 auto-selects.
+ * on the device-token metadata. >1 prompts a CLI choice; ==1 auto-selects.
  */
 async function resolveProjectViaCli(
   creds: Credentials,

@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import {
   access,
   readFile,
@@ -5,8 +6,18 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
+import { resolve } from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 const DEFAULT_VAR_NAME = "LMNR_PROJECT_API_KEY";
+
+// Env files we inspect, highest precedence first (Next.js-style, minus the
+// NODE_ENV-specific rungs). `.env.local` is the JS/Next secret convention
+// (gitignored); `.env` is the cross-ecosystem default every loader reads —
+// including Python's python-dotenv / pydantic, which don't know `.env.local`.
+const CANDIDATE_FILES = [".env.local", ".env"] as const;
 
 export interface WriteEnvResult {
   /** Absolute path of the .env file. */
@@ -79,6 +90,65 @@ export async function readEnvVar(
   if (!match) return null;
   const value = match[1].trim().replace(/^["']|["']$/g, "");
   return value.length > 0 ? value : null;
+}
+
+/** Where an existing key was found: the process environment, or a specific file. */
+export type EnvKeySource = { type: "process-env" } | { type: "file"; path: string };
+
+export interface EnvKeyLocation {
+  value: string;
+  source: EnvKeySource;
+}
+
+/**
+ * Find an already-configured key, checking `process.env` → `.env.local` → `.env`
+ * (first match wins, mirroring Next.js precedence). `process.env` comes first
+ * because an exported var is what actually runs, regardless of language.
+ */
+export async function findEnvKey(
+  cwd: string,
+  varName: string = DEFAULT_VAR_NAME,
+): Promise<EnvKeyLocation | null> {
+  const fromProcess = process.env[varName]?.trim();
+  if (fromProcess) return { value: fromProcess, source: { type: "process-env" } };
+  for (const name of CANDIDATE_FILES) {
+    const path = resolve(cwd, name);
+    const value = await readEnvVar(path, varName);
+    if (value) return { value, source: { type: "file", path } };
+  }
+  return null;
+}
+
+/**
+ * Pick the file to write a freshly-minted key into:
+ *  - rewrite in place if the key already lives in a file,
+ *  - else prefer an existing `.env.local` (its presence proves the project opted
+ *    into the gitignored-secret convention) — but never CREATE one, since Python
+ *    loaders ignore it,
+ *  - else `.env` (the default every ecosystem loads).
+ */
+export async function resolveEnvWriteTarget(
+  cwd: string,
+  existing: EnvKeyLocation | null,
+): Promise<string> {
+  if (existing?.source.type === "file") return existing.source.path;
+  const local = resolve(cwd, ".env.local");
+  if (await fileExists(local)) return local;
+  return resolve(cwd, ".env");
+}
+
+/**
+ * Whether `path` is gitignored. Returns null when it can't be determined (not a
+ * git repo / git absent) so callers can stay silent rather than warn wrongly.
+ */
+export async function isPathGitIgnored(path: string): Promise<boolean | null> {
+  try {
+    await execFileAsync("git", ["check-ignore", "-q", path]);
+    return true; // exit 0 = ignored
+  } catch (err) {
+    // exit 1 = definitely not ignored; 128 (not a repo) / ENOENT (no git) = unknown
+    return (err as { code?: number }).code === 1 ? false : null;
+  }
 }
 
 async function fileExists(path: string): Promise<boolean> {
