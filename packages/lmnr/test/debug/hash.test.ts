@@ -94,16 +94,17 @@ void describe('inputChatMessagesFromJson', () => {
     );
   });
 
-  void it('collapses a single text content-part to a bare string', () => {
-    // The recording path stores plain text as a bare string, so the server
-    // reconstructs `ChatMessageContent::Text`. AI SDK normalizes that same
-    // string into a single `{type:"text"}` part at the LanguageModel level;
-    // collapsing it back keeps both sides' canonical JSON identical.
+  void it('keeps a single text content-part as a content-part list', () => {
+    // No collapse: the recording path (`standardizedPromptToMessages`) now
+    // normalizes bare-string content INTO `[{type:"text", text}]`, so the
+    // server reconstructs a ContentPartList on both sides. The replay path
+    // hashes the LanguageModel-level prompt, which AI SDK already shaped into
+    // a single text part — keeping it as an array matches the recorded shape.
     assert.deepStrictEqual(
       inputChatMessagesFromJson([
         { role: 'user', content: [{ type: 'text', text: 'hi' }] },
       ]),
-      [{ role: 'user', content: 'hi' }],
+      [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
     );
   });
 
