@@ -222,7 +222,8 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     } else if (!isJson) {
       // invalid / revoked (401) — minting a fresh key is the correct recovery.
       process.stderr.write(
-        `${pc.yellow("⚠")} Existing Project API Key in ${where} is invalid or revoked, minting a new one\n`,
+        `${pc.yellow("⚠")} Existing Project API Key in ${where} is invalid or revoked, ` +
+          `minting a new one\n`,
       );
     }
   }
@@ -330,7 +331,8 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     process.stdout.write(JSON.stringify(result) + "\n");
   } else {
     const docsUrl = "https://laminar.sh/docs/tracing/integrations/overview";
-    const verifyCmd = 'lmnr-cli sql query "SELECT * FROM traces ORDER BY start_time DESC LIMIT 1" --json';
+    const verifyCmd =
+      'lmnr-cli sql query "SELECT * FROM traces ORDER BY start_time DESC LIMIT 1" --json';
     process.stdout.write(
       "\nNext steps:\n" +
         "  1. Instrument your project with Laminar using the installed skill or the docs:\n" +

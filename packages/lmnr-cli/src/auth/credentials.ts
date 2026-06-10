@@ -28,10 +28,8 @@ export interface Credentials {
   lastUsedAt?: string;
 }
 
-// The lmnr config dir. `XDG_CONFIG_HOME` is the explicit override on every
-// platform; when unset we pick the platform default — `%APPDATA%\lmnr` on
-// Windows (idiomatic) and `~/.config/lmnr` elsewhere. Named generically since
-// we may store more than credentials here in the future.
+// The lmnr config dir: `XDG_CONFIG_HOME` when set, else `%APPDATA%\lmnr` on
+// Windows and `~/.config/lmnr` elsewhere.
 export function globalLmnrDirectory(): string {
   const xdg = process.env.XDG_CONFIG_HOME?.trim();
   if (xdg && xdg.length > 0) {
