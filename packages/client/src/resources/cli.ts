@@ -33,6 +33,9 @@ export class CliResource extends BaseResource {
     if (!response.ok) {
       await this.handleError(response);
     }
-    return (await response.json()).projects as CliProject[];
+    // Guard the cast: callers do .length/.map, so coerce a missing/non-array
+    // `projects` to [] rather than letting them throw on undefined.
+    const body = (await response.json().catch(() => null)) as { projects?: CliProject[] } | null;
+    return Array.isArray(body?.projects) ? body.projects : [];
   }
 }
