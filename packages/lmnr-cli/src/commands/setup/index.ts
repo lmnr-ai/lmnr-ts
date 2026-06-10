@@ -306,7 +306,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     process.stdout.write(JSON.stringify(result) + "\n");
   } else {
     const docsUrl = "https://laminar.sh/docs/tracing/integrations/overview";
-    const verifyCmd = 'lmnr-cli sql query "SELECT * FROM traces ORDER BY start_time DESC LIMIT 1"';
+    const verifyCmd = 'lmnr-cli sql query "SELECT * FROM traces ORDER BY start_time DESC LIMIT 1" --json';
     process.stdout.write(
       "\nNext steps:\n" +
         "  1. Instrument your project with Laminar using the installed skill or the docs:\n" +
