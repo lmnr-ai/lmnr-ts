@@ -16,7 +16,6 @@ export interface DeviceTokenResponse {
   access_token: string;
   token_type?: string;
   expires_in?: number;
-  scope?: string;
   /**
    * Raw `x-lmnr-metadata` response header (a JSON string) forwarded by the
    * server's /device/token before-hook. Carries CLI round-trip metadata such as
