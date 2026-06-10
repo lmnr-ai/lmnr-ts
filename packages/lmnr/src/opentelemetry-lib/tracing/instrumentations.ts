@@ -453,10 +453,18 @@ const manuallyInitInstrumentations = (
   }
 
   if (instrumentModules?.temporal) {
-    const { worker, client, createActivitySpan } = instrumentModules.temporal;
-    const activityOptions = createActivitySpan !== undefined
-      ? { createActivitySpan }
-      : {};
+    const {
+      worker,
+      client,
+      createActivitySpan,
+      recordActivityArgs,
+      recordActivityOutput,
+    } = instrumentModules.temporal;
+    const activityOptions = {
+      ...(createActivitySpan !== undefined ? { createActivitySpan } : {}),
+      ...(recordActivityArgs !== undefined ? { recordActivityArgs } : {}),
+      ...(recordActivityOutput !== undefined ? { recordActivityOutput } : {}),
+    };
     if (worker?.Worker?.create) {
       patchTemporalWorker(worker, activityOptions);
     }

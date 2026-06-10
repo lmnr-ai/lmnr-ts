@@ -79,6 +79,9 @@ import {
   ScheduleClientInterceptor,
   WorkflowClientInterceptor,
 } from "./interceptors";
+import { patchWorkflowClient } from "./workflow-span";
+
+export { patchWorkflowClient } from "./workflow-span";
 
 const logger = initializeLogger();
 
@@ -203,11 +206,19 @@ export const patchTemporalWorker = (
  */
 export const patchTemporalClient = (clientModule: {
   Client: new (...args: unknown[]) => unknown;
+  WorkflowClient?: { prototype: any };
 }): void => {
   if (_patchedClientModules.has(clientModule)) {
     return;
   }
   _patchedClientModules.add(clientModule);
+
+  // Patch WorkflowClient.prototype so a workflow span tracks each workflow's
+  // client-side lifecycle (start → result / cancel / terminate). The high-level
+  // `Client` constructs its `workflow` sub-client from this same WorkflowClient
+  // class, so patching the prototype covers both `new Client()` and direct
+  // `new WorkflowClient()` usage.
+  patchWorkflowClient(clientModule);
 
   const OriginalClient = clientModule.Client;
 

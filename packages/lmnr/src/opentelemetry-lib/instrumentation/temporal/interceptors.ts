@@ -19,6 +19,24 @@ export interface LaminarTemporalInterceptorOptions {
    * (letting your own `observe()` calls act as roots inside the activity).
    */
   createActivitySpan?: boolean;
+
+  /**
+   * Whether to record the activity's arguments as the span input.
+   *
+   * Defaults to `true`. Set to `false` to omit potentially large or sensitive
+   * activity arguments from the span. Ignored when `createActivitySpan` is
+   * `false`.
+   */
+  recordActivityArgs?: boolean;
+
+  /**
+   * Whether to record the activity's return value as the span output.
+   *
+   * Defaults to `true`. Set to `false` to omit potentially large or sensitive
+   * activity results from the span. Ignored when `createActivitySpan` is
+   * `false`.
+   */
+  recordActivityOutput?: boolean;
 }
 
 // Inject Laminar span-context headers and forward, preserving input/output types.
@@ -207,6 +225,8 @@ export class ActivityClientInterceptor {
  */
 class ActivityInboundInterceptor {
   readonly createActivitySpan: boolean;
+  readonly recordActivityArgs: boolean;
+  readonly recordActivityOutput: boolean;
   readonly activityType: string | undefined;
   readonly logger;
 
@@ -215,6 +235,8 @@ class ActivityInboundInterceptor {
     activityContext?: any,
   ) {
     this.createActivitySpan = options.createActivitySpan ?? true;
+    this.recordActivityArgs = options.recordActivityArgs ?? true;
+    this.recordActivityOutput = options.recordActivityOutput ?? true;
     this.activityType = activityContext?.info?.activityType;
     this.logger = initializeLogger();
   }
@@ -246,19 +268,21 @@ class ActivityInboundInterceptor {
       const span = Laminar.startSpan({
         name: activityName,
         parentSpanContext: restoredCtx,
-        input: input.args,
+        input: this.recordActivityArgs ? input.args : undefined,
       });
 
       return Laminar.withSpan(
         span,
         async () => {
           const res = await next(input);
-          try {
-            (span as LaminarSpan).setOutput(res);
-          } catch (e) {
-            this.logger.debug(
-              `failed to set output to activity span: ${errorMessage(e)}`,
-            );
+          if (this.recordActivityOutput) {
+            try {
+              (span as LaminarSpan).setOutput(res);
+            } catch (e) {
+              this.logger.debug(
+                `failed to set output to activity span: ${errorMessage(e)}`,
+              );
+            }
           }
           return res;
         },

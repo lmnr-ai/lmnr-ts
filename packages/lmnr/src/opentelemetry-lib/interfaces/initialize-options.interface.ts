@@ -414,6 +414,18 @@ export interface InitializeOptions {
        * Set to false to only restore the parent context.
        */
       createActivitySpan?: boolean;
+      /**
+       * If true (default), record activity arguments as the activity span
+       * input. Set to false to omit them. Ignored when `createActivitySpan`
+       * is false.
+       */
+      recordActivityArgs?: boolean;
+      /**
+       * If true (default), record the activity return value as the activity
+       * span output. Set to false to omit it. Ignored when
+       * `createActivitySpan` is false.
+       */
+      recordActivityOutput?: boolean;
     };
   };
 
