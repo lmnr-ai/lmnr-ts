@@ -130,7 +130,9 @@ export const withUserToken =
           });
           const client = new LaminarClient({
             baseUrl: token.baseUrl,
-            port: opts.port,
+            // token.port carries the --port flag OR the LMNR_HTTP_PORT fallback
+            // (resolveUserToken applies it); using opts.port here would drop it.
+            port: token.port,
             // Discovery: no project id yet. CliResource overrides its own
             // URL/headers, so the empty projectId is never sent.
             auth: { type: "userToken", token: token.bearer, projectId: "" },

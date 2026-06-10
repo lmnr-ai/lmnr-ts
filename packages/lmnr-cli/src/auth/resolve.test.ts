@@ -39,7 +39,6 @@ import { refreshIfNeeded, resolveAuth } from './resolve';
 const freshCreds: Credentials = {
   version: 1,
   issuer: 'http://localhost',
-  baseUrl: 'http://localhost',
   sessionToken: 'sess',
   accessToken: 'jwt',
   // Far future → no refresh.

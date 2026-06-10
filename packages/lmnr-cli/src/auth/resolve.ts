@@ -1,3 +1,4 @@
+import { DEFAULT_BASE_URL } from "../constants";
 import { readProjectLink } from "../utils/project-link";
 import { type Credentials, readCredentials, writeCredentials } from "./credentials";
 import { decodeJwtExp, DeviceFlowError, mintAccessJwt } from "./device";
@@ -5,6 +6,30 @@ import { type AuthInputs, type ResolvedAuth } from "./types";
 
 // Re-mint the JWT when it's within this window of expiry.
 const REFRESH_SKEW_MS = 30_000;
+
+/**
+ * HTTP port from `LMNR_HTTP_PORT`. The Laminar convention is that `baseUrl`
+ * carries NO port and the port is supplied separately (mirrors the SDK's
+ * `LMNR_HTTP_PORT` / `LMNR_GRPC_PORT`). Returns undefined when unset/invalid so
+ * the client keeps its 443 default for Cloud. An explicit `--port` flag still
+ * wins (callers do `opts.port ?? envHttpPort()`).
+ */
+export function envHttpPort(): number | undefined {
+  const raw = process.env.LMNR_HTTP_PORT?.trim();
+  if (!raw) return undefined;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * Resolve the data-API base URL: `--base-url` flag → `LMNR_BASE_URL` env →
+ * default. Intentionally NOT read from credentials.json — the endpoint is not
+ * persisted at login, so a self-host `.env` change applies to every command
+ * without re-logging-in (and base URL behaves symmetrically with the port).
+ */
+export function resolveBaseUrl(optBaseUrl?: string): string {
+  return optBaseUrl?.trim() || process.env.LMNR_BASE_URL?.trim() || DEFAULT_BASE_URL;
+}
 
 /**
  * CLI auth is **user-token only** — the CLI authenticates as the single
@@ -35,8 +60,8 @@ export async function resolveAuth(opts: AuthInputs): Promise<ResolvedAuth> {
   const updated = await refreshIfNeeded(creds);
   return {
     bearer: updated.accessToken,
-    baseUrl: opts.baseUrl ?? updated.baseUrl,
-    port: opts.port,
+    baseUrl: resolveBaseUrl(opts.baseUrl),
+    port: opts.port ?? envHttpPort(),
     projectId,
   };
 }
@@ -56,8 +81,8 @@ export async function resolveUserToken(opts: {
   const updated = await refreshIfNeeded(creds);
   return {
     bearer: updated.accessToken,
-    baseUrl: opts.baseUrl ?? updated.baseUrl,
-    port: opts.port,
+    baseUrl: resolveBaseUrl(opts.baseUrl),
+    port: opts.port ?? envHttpPort(),
   };
 }
 

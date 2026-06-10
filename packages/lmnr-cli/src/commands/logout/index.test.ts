@@ -19,7 +19,6 @@ import { handleLogout } from './index';
 const creds: Credentials = {
   version: 1,
   issuer: 'http://localhost',
-  baseUrl: 'http://localhost',
   sessionToken: 'sess',
   accessToken: 'jwt',
   accessTokenExpiresAt: '2099-01-01T00:00:00.000Z',

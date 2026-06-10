@@ -120,6 +120,46 @@ export async function findEnvKey(
 }
 
 /**
+ * LMNR_* config keys the CLI hydrates from a project `.env.local` / `.env`.
+ * Curated on purpose — we do NOT slurp the whole file, so unrelated app secrets
+ * (model API keys, etc.) never enter the CLI process. Notable exclusions:
+ *  - `LMNR_GRPC_PORT`: the CLI is REST-only (no gRPC), so it has no use for it.
+ *  - `LMNR_LOG_LEVEL`: loggers are built at module-import time (before
+ *    `loadLocalEnv` runs), so hydrating it here would silently have no effect.
+ */
+export const AUTOLOADED_ENV_KEYS = [
+  "LMNR_BASE_URL",
+  "LMNR_HTTP_PORT",
+  "LMNR_DASHBOARD_URL",
+  "LMNR_PROJECT_ID",
+] as const;
+
+/**
+ * Hydrate `process.env` from `.env.local` / `.env` in `cwd` for the curated
+ * {@link AUTOLOADED_ENV_KEYS}, WITHOUT overriding values already present in the
+ * environment (a real exported var / Claude Code `settings.json` env always
+ * wins — `findEnvKey` checks `process.env` first and we skip those).
+ *
+ * Why this exists: Claude Code and many other runners do NOT inject a project
+ * `.env` into a spawned subprocess's environment, so self-hosters who put
+ * `LMNR_BASE_URL` / `LMNR_HTTP_PORT` in `.env` previously had to export them or
+ * pass flags on every call. cwd-only, no upward directory walk (mirrors
+ * dotenv's default) — the CLI must be invoked from the dir holding the `.env`.
+ */
+export async function loadLocalEnv(
+  cwd: string,
+  keys: readonly string[] = AUTOLOADED_ENV_KEYS,
+): Promise<void> {
+  for (const key of keys) {
+    const found = await findEnvKey(cwd, key);
+    // Only hydrate from a file; a process-env hit means it's already set.
+    if (found?.source.type === "file") {
+      process.env[key] = found.value;
+    }
+  }
+}
+
+/**
  * Pick the file to write a freshly-minted key into:
  *  - rewrite in place if the key already lives in a file,
  *  - else prefer an existing `.env.local` (its presence proves the project opted

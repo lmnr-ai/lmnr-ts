@@ -7,7 +7,7 @@ import { type CliProject, LaminarClient } from "@lmnr-ai/client";
 import { version } from "../../../package.json";
 import { type Credentials, readCredentials } from "../../auth/credentials";
 import { getProjectId } from "../../auth/project-id";
-import { refreshIfNeeded } from "../../auth/resolve";
+import { envHttpPort, refreshIfNeeded } from "../../auth/resolve";
 import { orange, pc, pcOut } from "../../utils/colors";
 import {
   findEnvKey,
@@ -130,7 +130,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     }
 
     const issuer = creds.issuer || dashboardUrl;
-    const userBaseUrl = creds.baseUrl || baseUrl;
+    const userBaseUrl = baseUrl;
 
     if (link) {
       // Directory already declares the project — ignore the metadata-borne id
@@ -147,7 +147,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     }
   } else {
     // Already logged in.
-    const userBaseUrl = creds.baseUrl || baseUrl;
+    const userBaseUrl = baseUrl;
     const issuer = creds.issuer || dashboardUrl;
     if (link) {
       await assertAccess(creds, userBaseUrl, link.projectId, isJson);
@@ -173,7 +173,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   }
 
   const issuer = creds.issuer || dashboardUrl;
-  const userBaseUrl = creds.baseUrl || baseUrl;
+  const userBaseUrl = baseUrl;
 
   // --- 3. Key handling (SPEC 36-42) -----------------------------------------
 
@@ -501,6 +501,9 @@ async function listProjects(creds: Credentials, baseUrl: string): Promise<CliPro
   // no project id needed (it overrides BaseResource's headers/prefix).
   const client = new LaminarClient({
     baseUrl,
+    // setup has no --port flag, so honor LMNR_HTTP_PORT for local self-host
+    // (baseUrl carries no port by convention). Cloud falls back to 443.
+    port: envHttpPort(),
     auth: { type: "userToken", token: updated.accessToken, projectId: "" },
   });
   return client.cli.listProjects();

@@ -20,8 +20,15 @@ import { handleSqlQuery } from "./commands/sql";
 import { SQL_SCHEMA_HELP } from "./commands/sql/schema";
 import { handleTraceAppendNote } from "./commands/trace";
 import { pc } from "./utils/colors";
+import { loadLocalEnv } from "./utils/env-file";
 
 async function main() {
+  // Hydrate LMNR_* config from a project .env(.local) before anything reads it
+  // (login/setup/resolve read process.env at command-execution time, which is
+  // after this). Runners like Claude Code don't inject .env into the subprocess
+  // env, so this is how a local self-host config gets picked up.
+  await loadLocalEnv(process.cwd());
+
   const program = new Command();
 
   program

@@ -14,7 +14,10 @@ export const CREDENTIALS_VERSION = 1;
 export interface Credentials {
   version: 1;
   issuer: string;
-  baseUrl: string;
+  // No `baseUrl` here on purpose: the data-API endpoint is resolved fresh on
+  // every command (`--base-url` flag → LMNR_BASE_URL → default) so a self-host
+  // .env change takes effect without re-login. `issuer` (the dashboard URL,
+  // used for token refresh) stays cached because refresh has no flag/env.
   sessionToken: string;
   accessToken: string;
   accessTokenExpiresAt: string;

@@ -10,7 +10,7 @@ import {
   parseProjectFromMetadata,
   pollDevice,
 } from "../../auth/device";
-import { DEFAULT_BASE_URL, DEFAULT_DASHBOARD_URL } from "../../constants";
+import { DEFAULT_DASHBOARD_URL } from "../../constants";
 import { pc } from "../../utils/colors";
 
 export interface LoginOptions {
@@ -35,7 +35,10 @@ export interface LoginResult {
 
 export async function handleLogin(options: LoginOptions): Promise<LoginResult> {
   const issuer = pick(options.dashboardUrl, process.env.LMNR_DASHBOARD_URL, DEFAULT_DASHBOARD_URL);
-  const baseUrl = pick(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
+  // NOTE: login does NOT resolve/store a data-API baseUrl — the device flow,
+  // JWT mint and session fetch all hit `issuer` (dashboard). `--base-url` on
+  // login is accepted but inert (candidate for removal); data commands resolve
+  // baseUrl themselves via resolveBaseUrl.
 
   const da = await initiateDevice(issuer, CLI_SCOPE);
   const completeUri = da.verification_uri_complete ?? da.verification_uri;
@@ -69,7 +72,6 @@ export async function handleLogin(options: LoginOptions): Promise<LoginResult> {
   const creds: Credentials = {
     version: 1,
     issuer,
-    baseUrl,
     sessionToken,
     accessToken: jwt,
     accessTokenExpiresAt: decodeJwtExp(jwt) ?? now,
