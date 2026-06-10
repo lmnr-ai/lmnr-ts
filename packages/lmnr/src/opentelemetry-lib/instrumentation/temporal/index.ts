@@ -45,6 +45,18 @@
  * const worker = await temporalWorker.Worker.create({ ... });
  * ```
  *
+ * NOTE: if the worker is created with a pre-built `workflowBundle`, Temporal
+ * ignores `interceptors.workflowModules`, so the workflow interceptor cannot be
+ * auto-injected. Register it at bundle time instead:
+ * ```typescript
+ * await bundleWorkflowCode({
+ *   workflowsPath: require.resolve('./workflows'),
+ *   workflowInterceptorModules: [
+ *     require.resolve('@lmnr-ai/lmnr/temporal-workflow-interceptors'),
+ *   ],
+ * });
+ * ```
+ *
  * client.ts:
  * ```typescript
  * import * as temporalClient from '@temporalio/client';
@@ -59,6 +71,7 @@
  * ```
  */
 
+import { initializeLogger } from "../../../utils";
 import {
   ActivityClientInterceptor,
   ActivityInterceptorFactory,
@@ -67,10 +80,39 @@ import {
   WorkflowClientInterceptor,
 } from "./interceptors";
 
+const logger = initializeLogger();
+
 // ─── Auto-patch helpers ───────────────────────────────────────────────────────
 
 const _patchedWorkerModules = new WeakSet<object>();
 const _patchedClientModules = new WeakSet<object>();
+
+let _warnedWorkflowBundleOnce = false;
+
+// Temporal ignores `interceptors.workflowModules` whenever a pre-built
+// `workflowBundle` is supplied — the bundle is produced before `Worker.create`
+// runs, so there is no hook for us to inject the Laminar workflow interceptor
+// after the fact (see @temporalio/worker WorkerOptions.workflowBundle /
+// .interceptors docs). When that happens the workflow-side outbound header
+// propagation never runs, so trace headers from workflow start are not
+// forwarded to activities / child workflows scheduled from inside the workflow.
+// Warn once with the exact bundle-time fix instead of silently injecting a
+// module Temporal will drop.
+const warnWorkflowBundleOnce = (): void => {
+  if (_warnedWorkflowBundleOnce) {
+    return;
+  }
+  _warnedWorkflowBundleOnce = true;
+  logger.warn(
+    "[Laminar] Temporal Worker.create was called with a pre-built " +
+      "`workflowBundle`; Temporal ignores `interceptors.workflowModules` in " +
+      "that case, so Laminar's workflow interceptor cannot be auto-injected. " +
+      "Trace context from workflow start will NOT propagate to activities or " +
+      "child workflows scheduled inside the workflow. Register the interceptor " +
+      "at bundle time: bundleWorkflowCode({ workflowInterceptorModules: " +
+      "[require.resolve('@lmnr-ai/lmnr/temporal-workflow-interceptors')], ... }).",
+  );
+};
 
 /**
  * Patch a `@temporalio/worker` module object so that every `Worker.create()`
@@ -97,6 +139,7 @@ export const patchTemporalWorker = (
   workerModule.Worker.create = async (...args: unknown[]) => {
     const [rawOpts, ...rest] = args as [
       {
+        workflowBundle?: unknown;
         interceptors?: {
           activity: ((options: LaminarTemporalInterceptorOptions) => (
             ctx: any,
@@ -110,21 +153,35 @@ export const patchTemporalWorker = (
       ...unknown[],
     ];
 
+    // Temporal ignores `interceptors.workflowModules` when a pre-built
+    // `workflowBundle` is supplied (the bundle is already compiled), so we must
+    // NOT inject it there — the user has to register it at bundle time. Warn
+    // once and leave the workflow interceptors untouched.
+    const usesWorkflowBundle = rawOpts?.workflowBundle != null;
+    if (usesWorkflowBundle) {
+      warnWorkflowBundleOnce();
+    }
+
+    const interceptors: Record<string, unknown> = {
+      ...rawOpts?.interceptors,
+      activity: [
+        ActivityInterceptorFactory(options),
+        ...(rawOpts?.interceptors?.activity ?? []),
+      ],
+    };
+
+    if (!usesWorkflowBundle) {
+      interceptors.workflowModules = [
+        require.resolve("@lmnr-ai/lmnr/temporal-workflow-interceptors"),
+        ...((rawOpts?.interceptors?.workflowModules as
+          | string[]
+          | undefined) ?? []),
+      ];
+    }
+
     const patched = {
       ...rawOpts,
-      interceptors: {
-        ...rawOpts?.interceptors,
-        activity: [
-          ActivityInterceptorFactory(options),
-          ...(rawOpts?.interceptors?.activity ?? []),
-        ],
-        workflowModules: [
-          require.resolve("@lmnr-ai/lmnr/temporal-workflow-interceptors"),
-          ...((rawOpts?.interceptors?.workflowModules as
-            | string[]
-            | undefined) ?? []),
-        ],
-      },
+      interceptors,
     };
 
     return originalCreate(patched, ...rest);
