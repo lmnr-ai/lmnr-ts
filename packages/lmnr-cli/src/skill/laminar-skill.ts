@@ -8,6 +8,9 @@
 // to get reproducible installs that we bump deliberately.
 // TODO(skill-choice): `laminar-quickstart-trace` is the placeholder skill for
 // now; make the skill selection configurable later.
+// TODO(skill-replace): BEFORE MERGE — replace this placeholder with the real
+// combined skill (`laminar`, currently on the `feat/combined-skill` branch) and
+// keep SKILL_REF on `main` once that skill has landed. Do not ship the placeholder.
 export const SKILL_REPO = "lmnr-ai/lmnr-skills";
 export const SKILL_REF = "main";
 export const SKILL_NAME = "laminar-quickstart-trace";
