@@ -13,7 +13,7 @@ function captureFetch() {
       url,
       headers: (init?.headers ?? {}) as Record<string, string>,
     });
-    return { ok: true, json: () => ({ data: [] }) };
+    return { ok: true, json: () => Promise.resolve({ data: [] }) };
   });
   global.fetch = mockFetch as any;
   return calls;
