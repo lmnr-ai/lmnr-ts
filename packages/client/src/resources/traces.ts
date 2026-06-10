@@ -74,7 +74,7 @@ export class TracesResource extends BaseResource {
       ? traceId
       : otelTraceIdToUUID(traceId);
 
-    const url = this.baseHttpUrl + "/v1/traces/metadata";
+    const url = this.baseHttpUrl + this.apiPrefix + "/traces/metadata";
     const response = await fetch(url, {
       method: "POST",
       headers: this.headers(),

@@ -66,7 +66,7 @@ export class RolloutSessionsResource extends BaseResource {
     name?: string;
   }): Promise<string | null> {
     const response = await fetch(
-      `${this.baseHttpUrl}/v1/rollouts/${sessionId}`,
+      `${this.baseHttpUrl}${this.apiPrefix}/rollouts/${sessionId}`,
       {
         method: "POST",
         headers: this.headers(),
@@ -103,7 +103,7 @@ export class RolloutSessionsResource extends BaseResource {
     name: string;
   }): Promise<void> {
     const response = await fetch(
-      `${this.baseHttpUrl}/v1/rollouts/${sessionId}/name`,
+      `${this.baseHttpUrl}${this.apiPrefix}/rollouts/${sessionId}/name`,
       {
         method: "PATCH",
         headers: this.headers(),
@@ -144,7 +144,7 @@ export class RolloutSessionsResource extends BaseResource {
     let response: Response;
     try {
       response = await fetch(
-        `${this.baseHttpUrl}/v1/rollouts/${sessionId}/cache`,
+        `${this.baseHttpUrl}${this.apiPrefix}/rollouts/${sessionId}/cache`,
         {
           method: "POST",
           headers: this.headers(),
@@ -197,7 +197,7 @@ export class RolloutSessionsResource extends BaseResource {
 
   public async delete({ sessionId }: { sessionId: string }): Promise<void> {
     const response = await fetch(
-      `${this.baseHttpUrl}/v1/rollouts/${sessionId}`,
+      `${this.baseHttpUrl}${this.apiPrefix}/rollouts/${sessionId}`,
       {
         method: "DELETE",
         headers: this.headers(),

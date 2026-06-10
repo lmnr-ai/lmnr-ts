@@ -255,16 +255,13 @@ Examples:
       await handleSetup(options);
     });
 
-  const traceCmd = program.command("trace").description("Inspect and operate on traces");
-
-  traceCmd
-    .command("append-note")
-    .description("Append a free-text note to a trace (stored in trace metadata)")
-    .argument("<trace-id>", "Trace ID (UUID or 32-char OTel hex trace id)")
-    .argument("<note>", "Note text (may contain markdown)")
+  const traceCmd = program
+    .command("trace")
+    .description("Inspect and operate on traces")
     .option(
-      "--project-api-key <key>",
-      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+        "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -275,10 +272,14 @@ Examples:
       "Port for the Laminar API. Defaults to 443",
       (val) => parseInt(val, 10),
     )
-    .option("--json", "Output structured JSON to stdout")
-    .action(async (traceId: string, note: string, _options, cmd) => {
-      await handleTraceAppendNote(traceId, note, cmd.optsWithGlobals());
-    })
+    .option("--json", "Output structured JSON to stdout");
+
+  traceCmd
+    .command("append-note")
+    .description("Append a free-text note to a trace (stored in trace metadata)")
+    .argument("<trace-id>", "Trace ID (UUID or 32-char OTel hex trace id)")
+    .argument("<note>", "Note text (may contain markdown)")
+    .action(withProjectClient(handleTraceAppendNote))
     .addHelpText(
       "after",
       `
@@ -294,8 +295,9 @@ Examples:
     .command("debug")
     .description("Operate on debug sessions")
     .option(
-      "--project-api-key <key>",
-      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+        "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -329,9 +331,7 @@ Learn more about debugging features at https://laminar.sh/docs/platform/debugger
     .description("Set the display name of a debug session")
     .argument("<session-id>", "Debug session ID")
     .argument("<name>", "Session display name")
-    .action(async (sessionId: string, name: string, _options, cmd) => {
-      await handleDebugSessionSetName(sessionId, name, cmd.optsWithGlobals());
-    })
+    .action(withProjectClient(handleDebugSessionSetName))
     .addHelpText(
       "after",
       `
@@ -344,9 +344,7 @@ Examples:
     .command("summary")
     .description("Print every trace in a debug session with its note, oldest first")
     .argument("<session-id>", "Debug session ID")
-    .action(async (sessionId: string, _options, cmd) => {
-      await handleDebugSessionSummary(sessionId, cmd.optsWithGlobals());
-    })
+    .action(withProjectClient(handleDebugSessionSummary))
     .addHelpText(
       "after",
       `
@@ -368,11 +366,11 @@ Examples:
     "after",
     `
 Authentication:
-  \`lmnr-cli login\` authenticates as a user (used by sql / dataset / project).
-  Those commands target a project via --project-id or the linked
-  .lmnr/project.json. debug / trace append-note use a project API key
-  (--project-api-key or LMNR_PROJECT_API_KEY). Run \`lmnr-cli setup\` to mint
-  one into ./.env and link the project.
+  \`lmnr-cli login\` authenticates as a user. Every project command
+  (sql / dataset / project / trace / debug) runs on that user session and
+  targets a project via --project-id or the linked .lmnr/project.json.
+  Run \`lmnr-cli setup\` to link this directory and write a project API key to
+  ./.env for your application's SDK (ingestion) — the CLI itself never uses it.
 
 Examples:
   lmnr-cli login                                           # Authenticate (user)

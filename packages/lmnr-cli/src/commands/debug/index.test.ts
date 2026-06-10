@@ -1,18 +1,19 @@
+import type { LaminarClient } from '@lmnr-ai/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The debug handlers are now pure: the wrapper resolves a user-token client and
+// owns the error envelope. We pass a stub client with the surfaces it uses.
 const mockQuery = vi.fn();
 const mockSetName = vi.fn();
 
-vi.mock('@lmnr-ai/client', () => ({
-  LaminarClient: class {
-    sql = { query: mockQuery };
-    rolloutSessions = { setName: mockSetName };
-  },
-}));
+const stubClient = {
+  sql: { query: mockQuery },
+  rolloutSessions: { setName: mockSetName },
+} as unknown as LaminarClient;
 
 import { handleDebugSessionSummary } from './index';
 
-const baseOpts = { projectApiKey: 'fake-key', baseUrl: 'http://localhost', port: 8080 };
+const baseOpts = { projectId: 'fake-project', baseUrl: 'http://localhost', port: 8080 };
 const SESSION_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const NOTE_KEY = 'rollout.note';
 
@@ -29,9 +30,6 @@ let logSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-  vi.spyOn(process, 'exit').mockImplementation((code?) => {
-    throw new Error(`process.exit(${code})`);
-  });
   vi.clearAllMocks();
 });
 
@@ -46,7 +44,7 @@ describe('handleDebugSessionSummary', () => {
       traceRow('trace-2', '2026-06-01T11:00:00.000Z', 'second run note'),
     ]);
 
-    await handleDebugSessionSummary(SESSION_ID, baseOpts);
+    await handleDebugSessionSummary(stubClient, SESSION_ID, baseOpts);
 
     expect(logSpy).toHaveBeenCalledWith(
       'first run note\n<trace id="trace-1" end-time="2026-06-01T10:00:00.000Z"/>' +
@@ -58,7 +56,7 @@ describe('handleDebugSessionSummary', () => {
   it('prints only the trace tag when a trace has no note', async () => {
     mockQuery.mockResolvedValue([traceRow('trace-1', '2026-06-01T10:00:00.000Z')]);
 
-    await handleDebugSessionSummary(SESSION_ID, baseOpts);
+    await handleDebugSessionSummary(stubClient, SESSION_ID, baseOpts);
 
     expect(logSpy).toHaveBeenCalledWith(
       '<trace id="trace-1" end-time="2026-06-01T10:00:00.000Z"/>',
@@ -71,7 +69,7 @@ describe('handleDebugSessionSummary', () => {
       traceRow('trace-2', '2026-06-01T11:00:00.000Z'),
     ]);
 
-    await handleDebugSessionSummary(SESSION_ID, { ...baseOpts, json: true });
+    await handleDebugSessionSummary(stubClient, SESSION_ID, { ...baseOpts, json: true });
 
     expect(logSpy).toHaveBeenCalledWith(JSON.stringify([
       { note: 'a note', traceId: 'trace-1', endTime: '2026-06-01T10:00:00.000Z' },
@@ -82,7 +80,7 @@ describe('handleDebugSessionSummary', () => {
   it('filters by session id and orders chronologically', async () => {
     mockQuery.mockResolvedValue([]);
 
-    await handleDebugSessionSummary(SESSION_ID, { ...baseOpts, json: true });
+    await handleDebugSessionSummary(stubClient, SESSION_ID, { ...baseOpts, json: true });
 
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toContain("simpleJSONExtractString(metadata, 'rollout.session_id')");
@@ -99,7 +97,7 @@ describe('handleDebugSessionSummary', () => {
       .mockResolvedValueOnce(page)
       .mockResolvedValueOnce([traceRow('trace-last', '2026-06-01T11:00:00.000Z')]);
 
-    await handleDebugSessionSummary(SESSION_ID, { ...baseOpts, json: true });
+    await handleDebugSessionSummary(stubClient, SESSION_ID, { ...baseOpts, json: true });
 
     expect(mockQuery).toHaveBeenCalledTimes(2);
     expect(mockQuery.mock.calls[1][1]).toMatchObject({ offset: 1000 });
@@ -110,7 +108,7 @@ describe('handleDebugSessionSummary', () => {
   it('prints a friendly message for an empty session in text mode', async () => {
     mockQuery.mockResolvedValue([]);
 
-    await handleDebugSessionSummary(SESSION_ID, baseOpts);
+    await handleDebugSessionSummary(stubClient, SESSION_ID, baseOpts);
 
     expect(logSpy).toHaveBeenCalledWith(`No traces found for session ${SESSION_ID}.`);
   });
@@ -118,16 +116,15 @@ describe('handleDebugSessionSummary', () => {
   it('outputs [] for an empty session in json mode', async () => {
     mockQuery.mockResolvedValue([]);
 
-    await handleDebugSessionSummary(SESSION_ID, { ...baseOpts, json: true });
+    await handleDebugSessionSummary(stubClient, SESSION_ID, { ...baseOpts, json: true });
 
     expect(logSpy).toHaveBeenCalledWith('[]');
   });
 
-  it('exits 1 with a JSON error in json mode on query failure', async () => {
+  it('propagates query failures to the wrapper', async () => {
     mockQuery.mockRejectedValue(new Error('boom'));
 
-    await expect(handleDebugSessionSummary(SESSION_ID, { ...baseOpts, json: true }))
-      .rejects.toThrow('process.exit(1)');
-    expect(logSpy).toHaveBeenCalledWith(JSON.stringify({ error: 'boom' }));
+    await expect(handleDebugSessionSummary(stubClient, SESSION_ID, { ...baseOpts, json: true }))
+      .rejects.toThrow('boom');
   });
 });

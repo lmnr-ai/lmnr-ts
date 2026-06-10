@@ -44,11 +44,13 @@ See `lmnr-cli setup --help` for all flags.
 
 ## Authentication
 
-The CLI supports three authentication modes, evaluated in this precedence order:
+The CLI authenticates as a **user** via the OAuth Device Flow (`lmnr-cli login`).
+Every command runs on that user session — there is no project-API-key auth mode.
+Project commands (`sql`, `dataset`, `trace`, `debug`) target a project via
+`--project-id` or the `.lmnr/project.json` link written by `lmnr-cli setup`.
 
-1. `--project-api-key <key>` flag
-2. `LMNR_PROJECT_API_KEY` environment variable
-3. OAuth Device Flow (via `lmnr-cli login`)
+The project API key that `setup` writes to `./.env` is for your **application's
+SDK** (trace ingestion) — the CLI itself never reads it.
 
 ### OAuth Device Flow
 
@@ -168,9 +170,9 @@ See [Authentication](#authentication) above.
 - `-v, --version` - Display version number
 - `-h, --help` - Display help
 
-Each command also accepts:
+Project commands (`sql`, `dataset`, `trace`, `debug`) also accept:
 
-- `--project-api-key <key>` - Project API key (or set `LMNR_PROJECT_API_KEY` env variable, or log in via `lmnr-cli login`)
+- `--project-id <id>` - Target project (defaults to the `.lmnr/project.json` link written by `setup`)
 - `--base-url <url>` - Base URL for the Laminar API (default: https://api.lmnr.ai)
 - `--port <port>` - Port for the Laminar API (default: 443)
 
