@@ -212,10 +212,6 @@ Examples:
       "--dashboard-url <url>",
       "Dashboard URL (issuer). Defaults to https://www.laminar.sh or LMNR_DASHBOARD_URL env variable",
     )
-    .option(
-      "--base-url <url>",
-      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
-    )
     .option("--no-browser", "Do not open the verification URL in a browser")
     .action(async (options) => {
       const result = await handleLogin(options);

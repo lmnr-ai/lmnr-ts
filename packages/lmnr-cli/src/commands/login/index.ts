@@ -15,7 +15,6 @@ import { pc } from "../../utils/colors";
 
 export interface LoginOptions {
   dashboardUrl?: string;
-  baseUrl?: string;
   noBrowser?: boolean;
 }
 

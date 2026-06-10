@@ -118,7 +118,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     // the device-token metadata (parseProjectFromMetadata).
     let login;
     try {
-      login = await handleLogin({ dashboardUrl, baseUrl, noBrowser: options.noBrowser });
+      login = await handleLogin({ dashboardUrl, noBrowser: options.noBrowser });
     } catch (err) {
       emitError(isJson, "login_failed", describeError(err));
       process.exit(EXIT_LOGIN_FAILED);
@@ -365,7 +365,6 @@ async function resolveProjectViaCli(
     try {
       login = await handleLogin({
         dashboardUrl: issuer,
-        baseUrl: userBaseUrl,
         noBrowser: options.noBrowser,
       });
     } catch (err) {
