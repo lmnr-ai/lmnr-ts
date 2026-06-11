@@ -42,7 +42,7 @@ async function main() {
     .option(
       "--project-id <id>",
       "Target project id. Defaults to the linked .lmnr/project.json. " +
-        "Run `lmnr-cli login` first.",
+      "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -152,7 +152,7 @@ async function main() {
     .option(
       "--project-id <id>",
       "Target project id. Defaults to the linked .lmnr/project.json. " +
-        "Run `lmnr-cli login` first.",
+      "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -173,7 +173,7 @@ async function main() {
     .addHelpText(
       "after",
       SQL_SCHEMA_HELP +
-        `
+      `
 Examples:
   $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10"
   $ lmnr-cli sql query "SELECT id, total_cost, status FROM traces LIMIT 20"
@@ -235,14 +235,14 @@ Examples:
     .command("setup")
     .description(
       "One-shot onboarding: login, select a project, write its key to .env, " +
-        "link .lmnr, and install the Laminar agent skill",
+      "link .lmnr, and install the Laminar agent skill",
     )
     .option("--write-env", "Write LMNR_PROJECT_API_KEY to ./.env (default)", true)
     .option("--no-write-env", "Do not write to ./.env")
     .option(
       "--project-id <id>",
       "Project to link when you can access more than one (disambiguates the " +
-        "project_ambiguous case in --json mode)",
+      "project_ambiguous case in --json mode)",
     )
     .option("--json", "Emit a machine-readable JSON line on stdout")
     .option("--no-browser", "Do not auto-open the device-flow URL")
@@ -264,7 +264,7 @@ Examples:
     .option(
       "--project-id <id>",
       "Target project id. Defaults to the linked .lmnr/project.json. " +
-        "Run `lmnr-cli login` first.",
+      "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -300,7 +300,7 @@ Examples:
     .option(
       "--project-id <id>",
       "Target project id. Defaults to the linked .lmnr/project.json. " +
-        "Run `lmnr-cli login` first.",
+      "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -369,15 +369,15 @@ Examples:
     "after",
     `
 Authentication:
+  Run \`lmnr-cli setup\` to login, link this directory, write a project API key to
+  ./.env, and install the Laminar skill 
   \`lmnr-cli login\` authenticates as a user. Every project command
   (sql / dataset / project / trace / debug) runs on that user session and
   targets a project via --project-id or the linked .lmnr/project.json.
-  Run \`lmnr-cli setup\` to link this directory and write a project API key to
-  ./.env for your application's SDK (ingestion) — the CLI itself never uses it.
 
 Examples:
+  lmnr-cli setup                                           # Logs in and prepares directory
   lmnr-cli login                                           # Authenticate (user)
-  lmnr-cli setup                                           # Link this dir (key + .lmnr)
   lmnr-cli project list                                    # Projects you can access
   lmnr-cli logout                                          # Log out
   lmnr-cli dataset list --json                             # List all datasets
@@ -391,7 +391,6 @@ Examples:
 
 For more information about the Laminar platfrom:
   Documentation: https://laminar.sh/docs
-  Dashboard:     https://www.laminar.sh
 `,
   );
 

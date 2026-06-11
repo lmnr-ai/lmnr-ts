@@ -23,9 +23,10 @@ lmnr-cli setup --json
 Approve the device-flow URL in your browser, and `setup` will:
 
 1. Log in (if you are not already)
-2. Create or reuse a workspace + project (idempotent on re-runs in the same repo)
+2. Select (or create, in the browser) a workspace + project — idempotent on re-runs in the same repo
 3. Mint a fresh API key and write `LMNR_PROJECT_API_KEY=...` to `./.env`
-4. Print a dashboard URL and the revoke link
+4. Link the directory via `.lmnr/project.json` and install the Laminar agent skill into `.claude/` and `.agents/`
+5. Print a dashboard URL and the revoke link
 
 ```bash
 # Verify traces are arriving:
@@ -36,9 +37,14 @@ lmnr-cli sql query "SELECT count() FROM spans"
 
 - `0` success
 - `1` generic error
+- `4` no access to the linked project
 - `6` login failed or aborted
-- `7` ambiguous workspace (multiple workspaces, no `--workspace`, non-interactive)
-- `8` `.env` write failed (API key is surfaced on stderr so the agent can rescue it)
+- `7` no project to select (and none could be created)
+- `8` `.env` write failed (the API key is surfaced on stderr so the agent can rescue it)
+- `9` API key mint failed
+- `10` project discovery (`GET /v1/cli/projects`) failed
+- `11` couldn't verify an existing key (network/server error)
+- `12` existing key belongs to a different project
 
 See `lmnr-cli setup --help` for all flags.
 
@@ -55,58 +61,45 @@ SDK** (trace ingestion) — the CLI itself never reads it.
 ### OAuth Device Flow
 
 ```bash
-# Start the device authorization flow.  Prints a URL + code, opens your browser.
+# Start the device authorization flow. Prints a URL + code and opens your browser.
 lmnr-cli login
 
-# (Optionally pre-select a project)
-lmnr-cli login --project <project-uuid>
+# Self-hosted / headless: point at your deployment, don't auto-open a browser.
+lmnr-cli login --frontend-url http://localhost:3010 --no-browser
 
-# List authenticated project profiles (active one is marked with *).
-lmnr-cli list
-
-# Change the active project profile (no re-authentication).
-lmnr-cli switch <id|name>
-
-# Remove the active profile.
+# Log out (revokes the session server-side, best-effort, then removes local creds).
 lmnr-cli logout
-
-# Remove a specific profile.
-lmnr-cli logout <id|name>
-
-# Remove every stored profile.
-lmnr-cli logout --all
 ```
 
-Tokens are stored at `~/.config/lmnr/credentials.json` with mode `0600` (parent
-directory `0700`, XDG-aware via `$XDG_CONFIG_HOME`). Access tokens are
-auto-refreshed when within 30 seconds of expiry; if the refresh token has been
-revoked or rotated, the CLI exits with an error and you must run
+The CLI signs in **one user at a time**. Tokens are stored at
+`~/.config/lmnr/credentials.json` with mode `0600` (XDG-aware via
+`$XDG_CONFIG_HOME`; `%APPDATA%\lmnr` on Windows). Access tokens are
+auto-refreshed when within ~30 seconds of expiry; if the session has been
+revoked or expired, the CLI exits with an error and you must run
 `lmnr-cli login` again.
 
-### Working with multiple projects
+### Targeting a project
 
-Each `lmnr-cli login` adds a profile to the credentials file, keyed by the
-project's UUID. The most recently logged-in profile becomes active. Run
-`lmnr-cli list` to see all profiles, and `lmnr-cli switch <name>` to change the
-active one without re-authenticating. To target a specific profile for a single
-command, pass `--project-id <id>`:
+Project commands resolve their project from `--project-id`, falling back to the
+`.lmnr/project.json` link that `lmnr-cli setup` writes in the directory:
 
 ```bash
-lmnr-cli sql query "SELECT count() FROM spans" --project-id staging-tests
+lmnr-cli setup                                            # link this directory
+lmnr-cli sql query "SELECT count() FROM spans"            # uses the .lmnr link
+lmnr-cli sql query "SELECT count() FROM spans" --project-id <uuid>  # override
+lmnr-cli project list                                     # projects you can access (● = linked)
 ```
 
-If only one profile exists, every command uses it automatically (no flag
-needed). `LMNR_PROJECT_API_KEY` and `--project-api-key` still take precedence
-over OAuth profiles.
-
-For a self-hosted Laminar instance, point the CLI at your deployment:
+For a self-hosted Laminar instance, point the CLI at your deployment. `--base-url`
+is the data API and carries **no port** — pass the port separately with `--port`:
 
 ```bash
-lmnr-cli login --frontend-url http://localhost:3010 --base-url http://localhost:8010
+lmnr-cli sql schema --base-url http://localhost --port 8000
 ```
 
-`LMNR_FRONTEND_URL` (defaults to `https://www.laminar.sh`) and `LMNR_BASE_URL`
-(defaults to `https://api.lmnr.ai`) are also honored.
+`LMNR_FRONTEND_URL` (default `https://www.laminar.sh`), `LMNR_BASE_URL`
+(default `https://api.lmnr.ai`), and `LMNR_HTTP_PORT` (default `443`) are also
+honored, and are auto-loaded from a `.env` / `.env.local` in the working directory.
 
 ## Commands
 
@@ -117,17 +110,6 @@ Run SQL queries against your Laminar project data (spans, traces, events, and mo
 ```bash
 lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json
 lmnr-cli sql schema                                      # Show available tables
-```
-
-### [`dev`](src/commands/dev/README.md) - Agent Debugger
-
-Start a language-agnostic debugging session for your AI agents. Connects to the Laminar backend, spawns a worker process for your code, and orchestrates the debugging flow.
-
-```bash
-lmnr-cli dev agent.ts                    # TypeScript file
-lmnr-cli dev agent.py                    # Python script mode
-lmnr-cli dev -m src.agent                # Python module mode
-lmnr-cli dev agent.ts --function myAgent # Specific function
 ```
 
 ### [`dataset`](src/commands/dataset/README.md) - Dataset Management
@@ -141,40 +123,53 @@ lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a data
 lmnr-cli dataset create my-dataset data.jsonl -o out.jsonl
 ```
 
+### `trace` / `debug` - Annotate and inspect agent runs
+
+Record findings on a trace and review/name agent debug sessions.
+
+```bash
+lmnr-cli trace append-note <trace-id> "note text"        # Append a markdown note to a trace
+lmnr-cli debug session set-name <session-id> "title"     # Rename a debug session
+lmnr-cli debug session summary <session-id>              # Every trace in a session + its note
+```
+
+`trace append-note` accumulates (each call appends a paragraph). See the Laminar
+debugger docs: https://laminar.sh/docs/platform/debugger
+
 ### `setup` - One-shot onboarding
 
 ```bash
 lmnr-cli setup                              # Human-readable summary
 lmnr-cli setup --json                       # Machine-readable single-line JSON
-lmnr-cli setup --workspace <uuid>           # Target a specific workspace
-lmnr-cli setup --project-name my-app        # Use an explicit project name
+lmnr-cli setup --project-id <uuid>          # Disambiguate when you can access >1 project
 lmnr-cli setup --no-write-env               # Skip writing ./.env
+lmnr-cli setup --no-browser                 # Don't auto-open the device-flow URL
 ```
 
 Re-running setup in the same repo reuses the same project but mints a fresh API
 key each time. Old keys remain visible in the dashboard under "API keys" until
 you revoke them.
 
-Note: `workspaceCreated` reflects whether the CLI bootstrap step created the
-workspace, not whether the user is brand-new. Fresh users who create their
-first workspace inline on the OAuth approval page will see
-`workspaceCreated: false` because the workspace already exists by the time
-bootstrap runs.
-
-### `login` / `logout` / `list` / `switch` - Authentication
+### `login` / `logout` - Authentication
 
 See [Authentication](#authentication) above.
+
+### `project list` - Discovery
+
+Lists the projects you can access; the one linked to the current directory is
+marked with `●`. Accepts `--json`.
 
 ## Global Options
 
 - `-v, --version` - Display version number
 - `-h, --help` - Display help
 
-Project commands (`sql`, `dataset`, `trace`, `debug`) also accept:
+Project commands (`sql`, `dataset`, `trace`, `debug`, `project`) also accept:
 
 - `--project-id <id>` - Target project (defaults to the `.lmnr/project.json` link written by `setup`)
-- `--base-url <url>` - Base URL for the Laminar API (default: https://api.lmnr.ai)
+- `--base-url <url>` - Base URL for the Laminar API, no port (default: https://api.lmnr.ai)
 - `--port <port>` - Port for the Laminar API (default: 443)
+- `--json` - Output structured JSON to stdout
 
 ## Development
 
