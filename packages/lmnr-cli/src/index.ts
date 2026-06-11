@@ -210,7 +210,7 @@ Examples:
     .description("Authenticate the CLI via OAuth Device Flow")
     .option(
       "--frontend-url <url>",
-      "Frontend URL (issuer). Defaults to https://www.laminar.sh or LMNR_FRONTEND_URL env variable",
+      "Frontend URL (issuer). Defaults to https://laminar.sh or LMNR_FRONTEND_URL env variable",
     )
     .option("--no-browser", "Do not open the verification URL in a browser")
     .action(async (options) => {
@@ -248,7 +248,7 @@ Examples:
     .option("--no-browser", "Do not auto-open the device-flow URL")
     .option(
       "--frontend-url <url>",
-      "Frontend URL (issuer). Defaults to LMNR_FRONTEND_URL or https://www.laminar.sh",
+      "Frontend URL (issuer). Defaults to LMNR_FRONTEND_URL or https://laminar.sh",
     )
     .option(
       "--base-url <url>",
