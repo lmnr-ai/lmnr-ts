@@ -4,6 +4,7 @@ import { errorMessage } from "@lmnr-ai/types";
 import { Command } from "commander";
 
 import { version } from "../package.json";
+import { withProjectClient, withUserToken } from "./auth/with-client";
 import {
   handleDatasetsCreate,
   handleDatasetsList,
@@ -11,11 +12,23 @@ import {
   handleDatasetsPush,
 } from "./commands/dataset";
 import { handleDebugSessionSetName, handleDebugSessionSummary } from "./commands/debug";
+import { handleLogin } from "./commands/login";
+import { handleLogout } from "./commands/logout";
+import { handleProjectsList } from "./commands/project";
+import { handleSetup } from "./commands/setup";
 import { handleSqlQuery } from "./commands/sql";
 import { SQL_SCHEMA_HELP } from "./commands/sql/schema";
 import { handleTraceAppendNote } from "./commands/trace";
+import { pc } from "./utils/colors";
+import { loadLocalEnv } from "./utils/env-file";
 
 async function main() {
+  // Hydrate LMNR_* config from a project .env(.local) before anything reads it
+  // (login/setup/resolve read process.env at command-execution time, which is
+  // after this). Runners like Claude Code don't inject .env into the subprocess
+  // env, so this is how a local self-host config gets picked up.
+  await loadLocalEnv(process.cwd());
+
   const program = new Command();
 
   program
@@ -27,8 +40,9 @@ async function main() {
     .command("dataset")
     .description("Manage datasets")
     .option(
-      "--project-api-key <key>",
-      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+      "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -45,9 +59,7 @@ async function main() {
   datasetsCmd
     .command("list")
     .description("List all datasets")
-    .action(async (_options, cmd) => {
-      await handleDatasetsList(cmd.optsWithGlobals());
-    });
+    .action(withProjectClient(handleDatasetsList));
 
   // Datasets push command
   datasetsCmd
@@ -72,9 +84,7 @@ async function main() {
       (val) => parseInt(val, 10),
       100,
     )
-    .action(async (paths: string[], _options, cmd) => {
-      await handleDatasetsPush(paths, cmd.optsWithGlobals());
-    });
+    .action(withProjectClient(handleDatasetsPush));
 
   // Datasets pull command
   datasetsCmd
@@ -111,9 +121,7 @@ async function main() {
       (val) => parseInt(val, 10),
       0,
     )
-    .action(async (outputPath: string | undefined, _options, cmd) => {
-      await handleDatasetsPull(outputPath, cmd.optsWithGlobals());
-    });
+    .action(withProjectClient(handleDatasetsPull));
 
   // Datasets create command
   datasetsCmd
@@ -136,16 +144,15 @@ async function main() {
       (val) => parseInt(val, 10),
       100,
     )
-    .action(async (name: string, paths: string[], _options, cmd) => {
-      await handleDatasetsCreate(name, paths, cmd.optsWithGlobals());
-    });
+    .action(withProjectClient(handleDatasetsCreate));
 
   const sqlCmd = program
     .command("sql")
     .description("Run SQL queries against your Laminar project data")
     .option(
-      "--project-api-key <key>",
-      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+      "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -162,13 +169,11 @@ async function main() {
     .command("query")
     .description("Execute a SQL query")
     .argument("<query>", "SQL query string")
-    .action(async (query: string, _options, cmd) => {
-      await handleSqlQuery(query, cmd.optsWithGlobals());
-    })
+    .action(withProjectClient(handleSqlQuery))
     .addHelpText(
       "after",
       SQL_SCHEMA_HELP +
-        `
+      `
 Examples:
   $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10"
   $ lmnr-cli sql query "SELECT id, total_cost, status FROM traces LIMIT 20"
@@ -183,12 +188,83 @@ Examples:
       process.stdout.write(SQL_SCHEMA_HELP);
     });
 
+  const projectCmd = program.command("project").description("Work with Laminar projects");
+
+  projectCmd
+    .command("list")
+    .description("List the projects you can access (● = linked to this directory)")
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to the logged-in session or LMNR_BASE_URL",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option("--json", "Output structured JSON to stdout")
+    .action(withUserToken(handleProjectsList));
+
+  program
+    .command("login")
+    .description("Authenticate the CLI via OAuth Device Flow")
+    .option(
+      "--frontend-url <url>",
+      "Frontend URL (issuer). Defaults to https://www.laminar.sh or LMNR_FRONTEND_URL env variable",
+    )
+    .option("--no-browser", "Do not open the verification URL in a browser")
+    .action(async (options) => {
+      const result = await handleLogin(options);
+      process.stderr.write(`${pc.green("✓")} Logged in as ${result.userEmail ?? "<unknown>"}.\n`);
+      process.stderr.write(
+        pc.dim("Client: lmnr-cli. Tokens stored at ~/.config/lmnr/credentials.json (mode 0600).\n"),
+      );
+      process.stderr.write(
+        pc.dim("Run `lmnr-cli setup` in a project directory to link it and write its API key.\n"),
+      );
+    });
+
+  program
+    .command("logout")
+    .description("Log out and remove the stored credentials")
+    .action(async () => {
+      await handleLogout();
+    });
+
+  program
+    .command("setup")
+    .description(
+      "One-shot onboarding: login, select a project, write its key to .env, " +
+      "link .lmnr, and install the Laminar agent skill",
+    )
+    .option("--write-env", "Write LMNR_PROJECT_API_KEY to ./.env (default)", true)
+    .option("--no-write-env", "Do not write to ./.env")
+    .option(
+      "--project-id <id>",
+      "Project to link when you can access more than one (disambiguates the " +
+      "project_ambiguous case in --json mode)",
+    )
+    .option("--json", "Emit a machine-readable JSON line on stdout")
+    .option("--no-browser", "Do not auto-open the device-flow URL")
+    .option(
+      "--frontend-url <url>",
+      "Frontend URL (issuer). Defaults to LMNR_FRONTEND_URL or https://www.laminar.sh",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to LMNR_BASE_URL or https://api.lmnr.ai",
+    )
+    .action(async (options) => {
+      await handleSetup(options);
+    });
+
   const traceCmd = program
     .command("trace")
-    .description("Operate on existing traces")
+    .description("Inspect and operate on traces")
     .option(
-      "--project-api-key <key>",
-      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+      "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -206,9 +282,7 @@ Examples:
     .description("Append a free-text note to a trace (stored in trace metadata)")
     .argument("<trace-id>", "Trace ID (UUID or 32-char OTel hex trace id)")
     .argument("<note>", "Note text (may contain markdown)")
-    .action(async (traceId: string, note: string, _options, cmd) => {
-      await handleTraceAppendNote(traceId, note, cmd.optsWithGlobals());
-    })
+    .action(withProjectClient(handleTraceAppendNote))
     .addHelpText(
       "after",
       `
@@ -224,8 +298,9 @@ Examples:
     .command("debug")
     .description("Operate on debug sessions")
     .option(
-      "--project-api-key <key>",
-      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+      "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -259,9 +334,7 @@ Learn more about debugging features at https://laminar.sh/docs/platform/debugger
     .description("Set the display name of a debug session")
     .argument("<session-id>", "Debug session ID")
     .argument("<name>", "Session display name")
-    .action(async (sessionId: string, name: string, _options, cmd) => {
-      await handleDebugSessionSetName(sessionId, name, cmd.optsWithGlobals());
-    })
+    .action(withProjectClient(handleDebugSessionSetName))
     .addHelpText(
       "after",
       `
@@ -274,9 +347,7 @@ Examples:
     .command("summary")
     .description("Print every trace in a debug session with its note, oldest first")
     .argument("<session-id>", "Debug session ID")
-    .action(async (sessionId: string, _options, cmd) => {
-      await handleDebugSessionSummary(sessionId, cmd.optsWithGlobals());
-    })
+    .action(withProjectClient(handleDebugSessionSummary))
     .addHelpText(
       "after",
       `
@@ -298,17 +369,21 @@ Examples:
     "after",
     `
 Authentication:
-  Most commands require a project API key. Provide it in one of two ways:
-    1. Environment variable: export LMNR_PROJECT_API_KEY=<your-key>
-    2. CLI flag:             --project-api-key <your-key>
-  Get your key at https://www.laminar.sh (Settings > Project API Keys).
+  Run \`lmnr-cli setup\` to login, link this directory, write a project API key to
+  ./.env, and install the Laminar skill 
+  \`lmnr-cli login\` authenticates as a user. Every project command
+  (sql / dataset / project / trace / debug) runs on that user session and
+  targets a project via --project-id or the linked .lmnr/project.json.
 
 Examples:
+  lmnr-cli setup                                           # Logs in and prepares directory
+  lmnr-cli login                                           # Authenticate (user)
+  lmnr-cli project list                                    # Projects you can access
+  lmnr-cli logout                                          # Log out
   lmnr-cli dataset list --json                             # List all datasets
   lmnr-cli dataset push data.jsonl -n my-dataset --json    # Push data to a dataset
   lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a dataset
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json # Query spans
-  lmnr-cli sql query "SELECT t.id, s.name FROM traces t JOIN spans s ON t.id = s.trace_id" --json
   lmnr-cli sql schema                                      # Show available tables
   lmnr-cli trace append-note <trace-id> "note text"        # Append a note to a trace
   lmnr-cli debug session set-name <session-id> "title"     # Rename a debug session
@@ -316,7 +391,6 @@ Examples:
 
 For more information about the Laminar platfrom:
   Documentation: https://laminar.sh/docs
-  Dashboard:     https://www.laminar.sh
 `,
   );
 

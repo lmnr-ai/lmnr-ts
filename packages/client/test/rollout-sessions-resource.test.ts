@@ -10,7 +10,7 @@ void describe("RolloutSessions Resource Tests", () => {
 
     const resource = new RolloutSessionsResource(
       "https://api.test.com:443",
-      "test-api-key",
+      { type: "apiKey", key: "test-api-key" },
     );
     await resource.register({ sessionId: "sess-1" });
 
@@ -36,7 +36,7 @@ void describe("RolloutSessions Resource Tests", () => {
 
     const resource = new RolloutSessionsResource(
       "https://api.test.com:443",
-      "test-api-key",
+      { type: "apiKey", key: "test-api-key" },
     );
     const projectId = await resource.register({ sessionId: "sess-1" });
 
@@ -52,7 +52,7 @@ void describe("RolloutSessions Resource Tests", () => {
 
     const resource = new RolloutSessionsResource(
       "https://api.test.com:443",
-      "test-api-key",
+      { type: "apiKey", key: "test-api-key" },
     );
     const projectId = await resource.register({ sessionId: "sess-1" });
 
@@ -65,7 +65,7 @@ void describe("RolloutSessions Resource Tests", () => {
 
     const resource = new RolloutSessionsResource(
       "https://api.test.com:443",
-      "test-api-key",
+      { type: "apiKey", key: "test-api-key" },
     );
     await resource.register({ sessionId: "sess-2", name: "my run" });
 
@@ -82,7 +82,7 @@ void describe("RolloutSessions Resource Tests", () => {
 
     const resource = new RolloutSessionsResource(
       "https://api.test.com:443",
-      "test-api-key",
+      { type: "apiKey", key: "test-api-key" },
     );
     await resource.delete({ sessionId: "sess-3" });
 
@@ -105,7 +105,7 @@ void describe("RolloutSessions Resource Tests", () => {
 
     const resource = new RolloutSessionsResource(
       "https://api.test.com:443",
-      "test-api-key",
+      { type: "apiKey", key: "test-api-key" },
     );
     await assert.rejects(
       () => resource.register({ sessionId: "sess-4" }),

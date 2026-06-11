@@ -1,10 +1,10 @@
 import { version as SDK_VERSION } from '../../package.json';
 import { getLangVersion } from "../version";
-import { BaseResource } from "./index";
+import { BaseResource, type LaminarAuth } from "./index";
 
 export class BrowserEventsResource extends BaseResource {
-  constructor(baseHttpUrl: string, projectApiKey: string) {
-    super(baseHttpUrl, projectApiKey);
+  constructor(baseHttpUrl: string, auth: LaminarAuth) {
+    super(baseHttpUrl, auth);
   }
 
   public async send({

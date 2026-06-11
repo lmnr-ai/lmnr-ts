@@ -10,9 +10,10 @@ lmnr-cli dataset <command> [options]
 
 ### Global Options
 
-These options apply to all dataset subcommands:
+These options apply to all dataset subcommands. Datasets authenticate as the
+signed-in user (run `lmnr-cli login` first) and target a project:
 
-- `--project-api-key <key>` - Project API key (or set `LMNR_PROJECT_API_KEY` env variable)
+- `--project-id <id>` - Target project id (defaults to the linked `.lmnr/project.json`; run `lmnr-cli setup` to link)
 - `--base-url <url>` - Base URL for the Laminar API (default: https://api.lmnr.ai)
 - `--port <port>` - Port for the Laminar API (default: 443)
 - `--json` - Output structured JSON to stdout

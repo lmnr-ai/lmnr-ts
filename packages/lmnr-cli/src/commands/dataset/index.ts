@@ -1,20 +1,29 @@
 import { LaminarClient } from "@lmnr-ai/client";
-import { Datapoint, errorMessage, type StringUUID } from "@lmnr-ai/types";
+import { Datapoint, type StringUUID } from "@lmnr-ai/types";
 
+import type { GlobalOpts } from "../../auth/with-client";
 import { loadFromPaths, printToConsole, writeToFile } from "../../utils/file";
 import { initializeLogger } from "../../utils/logger";
-import { outputJson, outputJsonError } from "../../utils/output";
+import { outputJson } from "../../utils/output";
 import { renderTable } from "../../utils/table";
 
 const logger = initializeLogger();
 const DEFAULT_DATASET_PULL_BATCH_SIZE = 100;
 const DEFAULT_DATASET_PUSH_BATCH_SIZE = 100;
 
-interface DatasetCommandOptions {
-  projectApiKey?: string;
-  baseUrl?: string;
-  port?: number;
-  json?: boolean;
+interface DatasetIdentifierOptions extends GlobalOpts {
+  name?: string;
+  id?: StringUUID;
+}
+
+/** Throw on the name/id mutual-exclusion rule. The wrapper renders the error. */
+function requireSingleIdentifier(opts: { name?: string; id?: StringUUID }): void {
+  if (!opts.name && !opts.id) {
+    throw new Error("Either name or id must be provided");
+  }
+  if (opts.name && opts.id) {
+    throw new Error("Only one of name or id must be provided");
+  }
 }
 
 /**
@@ -62,173 +71,108 @@ const pullAllData = async <D = any, T = any>(
 };
 
 /**
- * Handle datasets list command.
+ * Handle datasets list command. Pure handler — `withProjectClient` resolves the
+ * client and owns the error envelope.
  */
 export const handleDatasetsList = async (
-  options: DatasetCommandOptions,
+  client: LaminarClient,
+  opts: GlobalOpts,
 ): Promise<void> => {
-  const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
+  const datasets = await client.datasets.listDatasets();
+
+  if (opts.json) {
+    outputJson(datasets);
+    return;
+  }
+
+  if (datasets.length === 0) {
+    console.log("No datasets found.");
+    return;
+  }
+
+  const rows = datasets.map((dataset) => {
+    const createdAt = new Date(dataset.createdAt);
+    const createdAtStr = createdAt.toISOString().replace('T', ' ').substring(0, 19);
+    return [dataset.id, createdAtStr, dataset.name];
   });
 
-  try {
-    const datasets = await client.datasets.listDatasets();
-
-    if (options.json) {
-      outputJson(datasets);
-      return;
-    }
-
-    if (datasets.length === 0) {
-      console.log("No datasets found.");
-      return;
-    }
-
-    const rows = datasets.map((dataset) => {
-      const createdAt = new Date(dataset.createdAt);
-      const createdAtStr = createdAt.toISOString().replace('T', ' ').substring(0, 19);
-      return [dataset.id, createdAtStr, dataset.name];
-    });
-
-    console.log(renderTable(['ID', 'Created At', 'Name'], rows));
-    console.log(`\nTotal: ${datasets.length} dataset(s)\n`);
-  } catch (error) {
-    if (options.json) outputJsonError(error);
-    logger.error(
-      `Failed to list datasets: ${errorMessage(error)}`,
-    );
-    process.exit(1);
-  }
+  console.log(renderTable(['ID', 'Created At', 'Name'], rows));
+  console.log(`\nTotal: ${datasets.length} dataset(s)\n`);
 };
 
 /**
  * Handle datasets push command.
  */
 export const handleDatasetsPush = async (
+  client: LaminarClient,
   paths: string[],
-  options: DatasetCommandOptions & {
-    name?: string;
-    id?: StringUUID;
+  opts: DatasetIdentifierOptions & {
     recursive?: boolean;
     batchSize?: number;
   },
 ): Promise<void> => {
-  if (!options.name && !options.id) {
-    if (options.json) outputJsonError("Either name or id must be provided");
-    logger.error("Either name or id must be provided");
-    process.exit(1);
+  requireSingleIdentifier(opts);
+
+  const data = await loadFromPaths(paths, opts.recursive);
+
+  if (data.length === 0) {
+    throw new Error("No data to push");
   }
 
-  if (options.name && options.id) {
-    if (options.json) outputJsonError("Only one of name or id must be provided");
-    logger.error("Only one of name or id must be provided");
-    process.exit(1);
-  }
+  const identifier = opts.name ? { name: opts.name } : { id: opts.id };
 
-  const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
+  const result = await client.datasets.push({
+    points: data,
+    ...identifier,
+    batchSize: opts.batchSize ?? DEFAULT_DATASET_PUSH_BATCH_SIZE,
   });
 
-
-  try {
-    const data = await loadFromPaths(paths, options.recursive);
-
-    if (data.length === 0) {
-      if (options.json) outputJsonError("No data to push");
-      logger.error("No data to push. Skipping");
-      process.exit(1);
-    }
-
-    const identifier = options.name ? { name: options.name } : { id: options.id };
-
-    const result = await client.datasets.push({
-      points: data,
-      ...identifier,
-      batchSize: options.batchSize ?? DEFAULT_DATASET_PUSH_BATCH_SIZE,
-    });
-
-    if (options.json) {
-      outputJson({ datasetId: result?.datasetId, count: data.length });
-      return;
-    }
-
-    logger.info(`Pushed ${data.length} data points to dataset ${options.name || options.id}`);
-  } catch (error) {
-    if (options.json) outputJsonError(error);
-    logger.error(
-      `Failed to push dataset: ${errorMessage(error)}`,
-    );
-    process.exit(1);
+  if (opts.json) {
+    outputJson({ datasetId: result?.datasetId, count: data.length });
+    return;
   }
+
+  logger.info(`Pushed ${data.length} data points to dataset ${opts.name || opts.id}`);
 };
 
 /**
  * Handle datasets pull command.
  */
 export const handleDatasetsPull = async (
+  client: LaminarClient,
   outputPath: string | undefined,
-  options: DatasetCommandOptions & {
-    name?: string;
-    id?: StringUUID;
+  opts: DatasetIdentifierOptions & {
     outputFormat?: 'json' | 'csv' | 'jsonl';
     batchSize?: number;
     limit?: number;
     offset?: number;
   },
 ): Promise<void> => {
-  if (!options.name && !options.id) {
-    if (options.json) outputJsonError("Either name or id must be provided");
-    logger.error("Either name or id must be provided");
-    process.exit(1);
-  }
+  requireSingleIdentifier(opts);
 
-  if (options.name && options.id) {
-    if (options.json) outputJsonError("Only one of name or id must be provided");
-    logger.error("Only one of name or id must be provided");
-    process.exit(1);
-  }
+  const identifier = opts.name ? { name: opts.name } : { id: opts.id };
 
-  const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
-  });
+  const result = await pullAllData(
+    client,
+    identifier,
+    opts.batchSize ?? DEFAULT_DATASET_PULL_BATCH_SIZE,
+    opts.offset ?? 0,
+    opts.limit,
+  );
 
-  const identifier = options.name ? { name: options.name } : { id: options.id };
-
-  try {
-    const result = await pullAllData(
-      client,
-      identifier,
-      options.batchSize ?? DEFAULT_DATASET_PULL_BATCH_SIZE,
-      options.offset ?? 0,
-      options.limit,
-    );
-
-    if (outputPath) {
-      await writeToFile(outputPath, result, options.outputFormat);
-      if (options.json) {
-        outputJson({ path: outputPath, count: result.length });
-      } else {
-        logger.info(`Successfully pulled ${result.length} data points to ${outputPath}`);
-      }
+  if (outputPath) {
+    await writeToFile(outputPath, result, opts.outputFormat);
+    if (opts.json) {
+      outputJson({ path: outputPath, count: result.length });
     } else {
-      if (options.json) {
-        outputJson(result);
-      } else {
-        printToConsole(result, options.outputFormat ?? 'json');
-      }
+      logger.info(`Successfully pulled ${result.length} data points to ${outputPath}`);
     }
-  } catch (error) {
-    if (options.json) outputJsonError(error);
-    logger.error(
-      `Failed to pull dataset: ${errorMessage(error)}`,
-    );
-    process.exit(1);
+  } else {
+    if (opts.json) {
+      outputJson(result);
+    } else {
+      printToConsole(result, opts.outputFormat ?? 'json');
+    }
   }
 };
 
@@ -236,77 +180,54 @@ export const handleDatasetsPull = async (
  * Handle datasets create command.
  */
 export const handleDatasetsCreate = async (
+  client: LaminarClient,
   name: string,
   paths: string[],
-  options: DatasetCommandOptions & {
+  opts: GlobalOpts & {
     outputFile: string;
     outputFormat?: 'json' | 'csv' | 'jsonl';
     recursive?: boolean;
     batchSize?: number;
   },
 ): Promise<void> => {
-  const client = new LaminarClient({
-    projectApiKey: options.projectApiKey,
-    baseUrl: options.baseUrl,
-    port: options.port,
-  });
+  // Load data from input files
+  const data = await loadFromPaths(paths, opts.recursive);
 
-  try {
-    // Load data from input files
-    const data = await loadFromPaths(paths, options.recursive);
-
-    if (data.length === 0) {
-      if (options.json) outputJsonError("No data to push");
-      logger.error("No data to push. Skipping");
-      process.exit(1);
-    }
-
-    // Push data to create/populate the dataset
-    logger.info(`Pushing ${data.length} data points to dataset '${name}'...`);
-
-    await client.datasets.push({
-      points: data,
-      name,
-      batchSize: options.batchSize ?? DEFAULT_DATASET_PUSH_BATCH_SIZE,
-      createDataset: true,
-    });
-    logger.info(`Successfully pushed ${data.length} data points to dataset '${name}'`);
-  } catch (error) {
-    if (options.json) outputJsonError(error);
-    logger.error(
-      `Failed to create dataset: ${errorMessage(error)}`,
-    );
-    process.exit(1);
+  if (data.length === 0) {
+    throw new Error("No data to push");
   }
+
+  // Push data to create/populate the dataset
+  logger.info(`Pushing ${data.length} data points to dataset '${name}'...`);
+
+  await client.datasets.push({
+    points: data,
+    name,
+    batchSize: opts.batchSize ?? DEFAULT_DATASET_PUSH_BATCH_SIZE,
+    createDataset: true,
+  });
+  logger.info(`Successfully pushed ${data.length} data points to dataset '${name}'`);
 
   // Pull data back from the dataset
   logger.info(`Pulling data from dataset '${name}'...`);
 
-  try {
-    const result = await pullAllData(
-      client,
-      { name },
-      options.batchSize ?? DEFAULT_DATASET_PULL_BATCH_SIZE,
-      0,
-      undefined,
-    );
+  const result = await pullAllData(
+    client,
+    { name },
+    opts.batchSize ?? DEFAULT_DATASET_PULL_BATCH_SIZE,
+    0,
+    undefined,
+  );
 
-    // Save to output file
-    await writeToFile(options.outputFile, result, options.outputFormat);
+  // Save to output file
+  await writeToFile(opts.outputFile, result, opts.outputFormat);
 
-    if (options.json) {
-      outputJson({ name, path: options.outputFile, count: result.length });
-    } else {
-      logger.info(
-        `Successfully created dataset '${name}' `
-        + `and saved ${result.length} datapoints to ${options.outputFile}`,
-      );
-    }
-  } catch (error) {
-    if (options.json) outputJsonError(error);
-    logger.error(
-      "Failed to pull dataset after creation: " + errorMessage(error),
+  if (opts.json) {
+    outputJson({ name, path: opts.outputFile, count: result.length });
+  } else {
+    logger.info(
+      `Successfully created dataset '${name}' `
+      + `and saved ${result.length} datapoints to ${opts.outputFile}`,
     );
-    process.exit(1);
   }
 };

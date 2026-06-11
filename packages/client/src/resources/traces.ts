@@ -1,14 +1,14 @@
 /** Resource for post-factum operations on existing traces. */
 
 import { initializeLogger, isStringUUID, otelTraceIdToUUID } from "../utils";
-import { BaseResource } from "./index";
+import { BaseResource, type LaminarAuth } from "./index";
 
 const logger = initializeLogger();
 
 export class TracesResource extends BaseResource {
   /** Resource for post-factum operations on existing traces. */
-  constructor(baseHttpUrl: string, projectApiKey: string) {
-    super(baseHttpUrl, projectApiKey);
+  constructor(baseHttpUrl: string, auth: LaminarAuth) {
+    super(baseHttpUrl, auth);
   }
 
   /**
@@ -74,7 +74,7 @@ export class TracesResource extends BaseResource {
       ? traceId
       : otelTraceIdToUUID(traceId);
 
-    const url = this.baseHttpUrl + "/v1/traces/metadata";
+    const url = this.baseHttpUrl + this.apiPrefix + "/traces/metadata";
     const response = await fetch(url, {
       method: "POST",
       headers: this.headers(),

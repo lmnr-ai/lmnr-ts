@@ -12,7 +12,7 @@ void describe('SQL Resource Tests', () => {
 
     global.fetch = mockFetch as any;
 
-    const sql = new SqlResource('https://api.test.com:443', 'test-api-key');
+    const sql = new SqlResource('https://api.test.com:443', { type: 'apiKey', key: 'test-api-key' });
     const query = 'SELECT * FROM spans';
 
     await sql.query(query);
@@ -43,7 +43,7 @@ void describe('SQL Resource Tests', () => {
 
     global.fetch = mockFetch as any;
 
-    const sql = new SqlResource('https://api.test.com:443', 'test-api-key');
+    const sql = new SqlResource('https://api.test.com:443', { type: 'apiKey', key: 'test-api-key' });
     const result = await sql.query('SELECT * FROM spans');
 
     assert.deepStrictEqual(result, mockResponse.data);
@@ -58,7 +58,7 @@ void describe('SQL Resource Tests', () => {
 
     global.fetch = mockFetch as any;
 
-    const sql = new SqlResource('https://api.test.com:443', 'test-api-key');
+    const sql = new SqlResource('https://api.test.com:443', { type: 'apiKey', key: 'test-api-key' });
 
     await assert.rejects(
       () => sql.query('INVALID QUERY'),

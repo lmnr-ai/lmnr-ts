@@ -2,12 +2,12 @@
 
 
 import { isStringUUID, otelTraceIdToUUID } from "../utils";
-import { BaseResource } from "./index";
+import { BaseResource, type LaminarAuth } from "./index";
 
 export class TagsResource extends BaseResource {
   /** Resource for tagging traces. */
-  constructor(baseHttpUrl: string, projectApiKey: string) {
-    super(baseHttpUrl, projectApiKey);
+  constructor(baseHttpUrl: string, auth: LaminarAuth) {
+    super(baseHttpUrl, auth);
   }
 
   /**

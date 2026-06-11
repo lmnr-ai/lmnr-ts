@@ -1,15 +1,15 @@
-import { BaseResource } from "./index";
+import { BaseResource, type LaminarAuth } from "./index";
 
 export class SqlResource extends BaseResource {
-  constructor(baseHttpUrl: string, projectApiKey: string) {
-    super(baseHttpUrl, projectApiKey);
+  constructor(baseHttpUrl: string, auth: LaminarAuth) {
+    super(baseHttpUrl, auth);
   }
 
   public async query(
     sql: string,
     parameters: Record<string, any> = {},
   ): Promise<Array<Record<string, any>>> {
-    const response = await fetch(`${this.baseHttpUrl}/v1/sql/query`, {
+    const response = await fetch(`${this.baseHttpUrl}${this.apiPrefix}/sql/query`, {
       method: "POST",
       headers: {
         ...this.headers(),
