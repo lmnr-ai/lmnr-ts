@@ -17,8 +17,8 @@ vi.mock('./credentials', () => ({
   writeCredentials: mockWriteCredentials,
 }));
 
-vi.mock('../utils/project-link', () => ({
-  readProjectLink: mockReadProjectLink,
+vi.mock('../utils/local-project-file', () => ({
+  readLocalProjectFile: mockReadProjectLink,
 }));
 
 vi.mock('./device', () => ({

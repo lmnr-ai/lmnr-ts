@@ -11,7 +11,11 @@ import {
   handleDatasetsPull,
   handleDatasetsPush,
 } from "./commands/dataset";
-import { handleDebugSessionSetName, handleDebugSessionSummary } from "./commands/debug";
+import {
+  handleDebugSessionNew,
+  handleDebugSessionSetName,
+  handleDebugSessionSummary,
+} from "./commands/debug";
 import { handleLogin } from "./commands/login";
 import { handleLogout } from "./commands/logout";
 import { handleProjectsList } from "./commands/project";
@@ -365,6 +369,28 @@ Examples:
 `,
     );
 
+  debugSessionCmd
+    .command("new")
+    .description("Create a fresh debug session and reset .lmnr/debug-session.json")
+    .option("--no-browser", "Do not open the debugger session URL in a browser")
+    .action(withProjectClient(handleDebugSessionNew))
+    .addHelpText(
+      "after",
+      `
+Mints a new session id, writes it to .lmnr/debug-session.json (resetting any
+prior session), and registers it with the backend. The next \`LMNR_DEBUG=1 <run>\`
+in this directory rejoins this session silently (no browser).
+
+The bare session id is printed to stdout; in --json mode a
+{"sessionId","projectId","debuggerUrl"} object is printed instead.
+
+Examples:
+  $ lmnr-cli debug session new
+  $ lmnr-cli debug session new --json
+  $ lmnr-cli debug session new --no-browser
+`,
+    );
+
   program.addHelpText(
     "after",
     `
@@ -386,6 +412,7 @@ Examples:
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json # Query spans
   lmnr-cli sql schema                                      # Show available tables
   lmnr-cli trace append-note <trace-id> "note text"        # Append a note to a trace
+  lmnr-cli debug session new                               # Mint a fresh debug session
   lmnr-cli debug session set-name <session-id> "title"     # Rename a debug session
   lmnr-cli debug session summary <session-id>              # Notes for each trace in a session
 

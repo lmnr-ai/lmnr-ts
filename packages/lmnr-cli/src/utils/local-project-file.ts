@@ -8,31 +8,31 @@ import { dirname, join, parse } from "node:path";
  * Holds the project id plus small display details — never secrets (the API key
  * lives in .env).
  */
-export interface ProjectLink {
+export interface LocalProjectFile {
   projectId: string;
   projectName?: string;
   workspaceId?: string;
   workspaceName?: string;
 }
 
-const LINK_DIR = ".lmnr";
-const LINK_FILE = "project.json";
+const LOCAL_LMNR_DIR = ".lmnr";
+const LOCAL_LMNR_PROJECT_FILE = "project.json";
 
 /**
  * Find the nearest `.lmnr/project.json`, walking up from `startDir` to the
  * filesystem root (so commands work from subdirectories of a linked project).
  * Returns null if none is found.
  */
-export async function readProjectLink(
+export async function readLocalProjectFile(
   startDir: string = process.cwd(),
-): Promise<ProjectLink | null> {
+): Promise<LocalProjectFile | null> {
   let dir = startDir;
   const root = parse(dir).root;
 
   while (true) {
-    const candidate = join(dir, LINK_DIR, LINK_FILE);
+    const candidate = join(dir, LOCAL_LMNR_DIR, LOCAL_LMNR_PROJECT_FILE);
     try {
-      const parsed = JSON.parse(await readFile(candidate, "utf8")) as ProjectLink;
+      const parsed = JSON.parse(await readFile(candidate, "utf8")) as LocalProjectFile;
       if (parsed && typeof parsed.projectId === "string" && parsed.projectId.length > 0) {
         return parsed;
       }
@@ -47,13 +47,13 @@ export async function readProjectLink(
 }
 
 /** Write `.lmnr/project.json` under `dir` (default cwd). Returns the file path. */
-export async function writeProjectLink(
-  link: ProjectLink,
+export async function writeLocalProjectFile(
+  link: LocalProjectFile,
   dir: string = process.cwd(),
 ): Promise<string> {
-  const linkDir = join(dir, LINK_DIR);
+  const linkDir = join(dir, LOCAL_LMNR_DIR);
   await mkdir(linkDir, { recursive: true });
-  const path = join(linkDir, LINK_FILE);
+  const path = join(linkDir, LOCAL_LMNR_PROJECT_FILE);
   await writeFile(path, JSON.stringify(link, null, 2) + "\n", "utf8");
   return path;
 }

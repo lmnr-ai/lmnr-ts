@@ -13,6 +13,32 @@ This is a CLI for the Laminar agent observability platform.
   in-process replay cache (see `@lmnr-ai/lmnr` `src/debug/`). Do NOT re-introduce
   a `@lmnr-ai/lmnr` peer dep or the previously-known circular dependency.
 
+# Debug sessions (`src/commands/debug/`)
+- `lmnr-cli debug session new` mints a fresh session id and **resets**
+  `.lmnr/debug-session.json` to it, then best-effort registers it with the
+  backend. Ordering is deliberate: the local file is written FIRST (so the minted
+  session is usable for `LMNR_DEBUG=1` continuation even if the network/endpoint
+  is unavailable), THEN `client.rolloutSessions.register({ sessionId })` runs —
+  this routes to `POST /v1/cli/rollouts/{id}` because the CLI client is
+  userToken-auth. A register failure WARNS but does NOT fail the command (exit 0);
+  the file is already written. Once the project id is known, the file is rewritten
+  with the full `debugger_url`. The next `LMNR_DEBUG=1 <run>` in the directory
+  reads the file and rejoins this session silently (no browser) — "new session" is
+  owned by this command; the SDK only mints when no file exists.
+- The `.lmnr/debug-session.json` **schema + sync read/write helpers are shared**
+  via `@lmnr-ai/types` (`DebugSessionFile`, `writeDebugSessionFile`,
+  `readDebugSessionFile`) — the CLI and the `@lmnr-ai/lmnr` SDK write ONE file
+  shape through one implementation. This does NOT re-introduce an SDK dep (the
+  helpers live in `@lmnr-ai/types`, which the CLI already depends on).
+- The CLI cannot import the SDK's `getFrontendUrl` (no `@lmnr-ai/lmnr` dep), so
+  `src/utils/frontend-url.ts` is a small local port of that base-URL→frontend
+  mapping (honors `LMNR_FRONTEND_URL`, maps the cloud API base to
+  `DEFAULT_FRONTEND_URL`, defaults localhost to port 5667).
+- Output contract: `--json` emits `{sessionId, projectId, debuggerUrl}` on stdout;
+  otherwise the bare session id goes to stdout (agent-capturable) and the
+  human-facing URL to stderr (via the logger). `--no-browser` suppresses the
+  default browser open.
+
 # Guideline Resources
 
 ## [Writing CLI Tools that AI Agents Actually Want To Use](https://dev.to/uenyioha/writing-cli-tools-that-ai-agents-actually-want-to-use-39no)
