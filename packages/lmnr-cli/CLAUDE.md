@@ -9,9 +9,10 @@ This is a CLI for the Laminar agent observability platform.
   `@lmnr-ai/client` for API calls, not the full `@lmnr-ai/lmnr` SDK.
 - `lmnr-cli` has NO dependency on `@lmnr-ai/lmnr`. The old `dev` command (the
   interactive debugger / worker resolution) was removed in the debugger rework —
-  debug runs are now plain processes driven by `LMNR_DEBUG*` env vars with an
-  in-process replay cache (see `@lmnr-ai/lmnr` `src/debug/`). Do NOT re-introduce
-  a `@lmnr-ai/lmnr` peer dep or the previously-known circular dependency.
+  debug runs are now plain processes driven by `LMNR_DEBUG*` env vars against the
+  server-side replay cache v2 (see `@lmnr-ai/lmnr` `src/debug/`). Do NOT
+  re-introduce a `@lmnr-ai/lmnr` peer dep or the previously-known circular
+  dependency.
 
 # Debug sessions (`src/commands/debug/`)
 - `lmnr-cli debug session new` mints a fresh session id and **resets**
