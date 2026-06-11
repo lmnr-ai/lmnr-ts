@@ -1,5 +1,5 @@
 import { errorMessage } from "@lmnr-ai/types";
-import { ROOT_CONTEXT } from "@opentelemetry/api";
+import { context as contextApi, ROOT_CONTEXT } from "@opentelemetry/api";
 
 import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
@@ -258,16 +258,27 @@ class ActivityInboundInterceptor {
     // activity runs detached instead of attaching to an unrelated in-process
     // trace left on the worker's async lineage.
     LaminarContextManager.runWithIsolatedContext([ROOT_CONTEXT], async () => {
-      const restoredCtx = restoreContextFromHeaders(input.headers);
-      if (!this.createActivitySpan || !restoredCtx) {
+      const restored = restoreContextFromHeaders(input.headers);
+      if (!restored) {
         return next(input);
+      }
+
+      // When we don't create our own activity span, the remote parent is only
+      // on Laminar's ALS stack — so `observe()` / `Laminar.startActiveSpan()`
+      // nest correctly, but OTel-aware auto-instrumentations (OpenAI, etc.)
+      // read the standard OTel context (`context.active()`), which is still
+      // ROOT here, and would start detached root traces. Activate the restored
+      // OTel context for the activity body so those spans nest under the
+      // remote parent too.
+      if (!this.createActivitySpan) {
+        return contextApi.with(restored.otelContext, () => next(input));
       }
 
       const activityName = this.activityType ?? "temporal.activity";
 
       const span = Laminar.startSpan({
         name: activityName,
-        parentSpanContext: restoredCtx,
+        parentSpanContext: restored.laminarCtx,
         input: this.recordActivityArgs ? input.args : undefined,
       });
 

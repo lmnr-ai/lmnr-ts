@@ -1,5 +1,5 @@
 import { errorMessage, LaminarSpanContext } from "@lmnr-ai/types";
-import { isSpanContextValid, ROOT_CONTEXT, trace } from "@opentelemetry/api";
+import { Context, isSpanContextValid, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 
 import {
   deserializeLaminarSpanContext,
@@ -88,16 +88,32 @@ export const buildHeaders = (
 
 // ─── Context restoration ──────────────────────────────────────────────────────
 
+/** The trace context restored from Temporal headers. */
+export interface RestoredContext {
+  /** The Laminar span context to use as a span's `parentSpanContext`. */
+  laminarCtx: LaminarSpanContext;
+  /**
+   * The enriched OTel `Context` that was pushed onto Laminar's ALS stack. It
+   * carries the restored remote parent span and the association properties.
+   * Callers that don't create their own activity span should activate this on
+   * the standard OTel context (`contextApi.with(otelContext, ...)`) so that
+   * OTel-aware auto-instrumentations (OpenAI, etc.) — which read
+   * `context.active()` rather than Laminar's ALS — nest under the remote
+   * parent instead of starting detached root traces.
+   */
+  otelContext: Context;
+}
+
 /**
  * Read `laminar-span-context` (preferred) or `traceparent` (fallback) from
  * Temporal headers and push the restored context onto Laminar's ALS stack.
  *
- * Returns the restored `LaminarSpanContext` or `undefined` if headers contain
- * no usable trace context.
+ * Returns the restored context (Laminar + OTel) or `undefined` if headers
+ * contain no usable trace context.
  */
 export const restoreContextFromHeaders = (
   headers: Record<string, unknown> | undefined,
-): LaminarSpanContext | undefined => {
+): RestoredContext | undefined => {
   if (!headers) return undefined;
 
   // Preferred: full Laminar context header
@@ -105,8 +121,8 @@ export const restoreContextFromHeaders = (
   if (laminarRaw) {
     try {
       const ctx = deserializeLaminarSpanContext(laminarRaw);
-      pushLaminarContext(ctx);
-      return ctx;
+      const otelContext = pushLaminarContext(ctx);
+      return { laminarCtx: ctx, otelContext };
     } catch (e) {
       logger.warn(
         `[Laminar] Could not restore ${LAMINAR_SPAN_CONTEXT_HEADER}: ${errorMessage(e)}`,
@@ -126,8 +142,8 @@ export const restoreContextFromHeaders = (
           spanHex,
         ) as LaminarSpanContext["spanId"];
         const ctx: LaminarSpanContext = { traceId, spanId, isRemote: true };
-        pushLaminarContext(ctx);
-        return ctx;
+        const otelContext = pushLaminarContext(ctx);
+        return { laminarCtx: ctx, otelContext };
       } catch (e) {
         logger.warn(
           `[Laminar] Could not restore traceparent: ${errorMessage(e)}`,
@@ -139,8 +155,11 @@ export const restoreContextFromHeaders = (
   return undefined;
 };
 
-/** Push a LaminarSpanContext onto the Laminar ALS stack as a remote parent. */
-const pushLaminarContext = (laminarCtx: LaminarSpanContext): void => {
+/**
+ * Push a LaminarSpanContext onto the Laminar ALS stack as a remote parent and
+ * return the enriched OTel `Context` that was pushed.
+ */
+const pushLaminarContext = (laminarCtx: LaminarSpanContext): Context => {
   const otelCtx = tryToOtelSpanContext(laminarCtx);
   otelCtx.isRemote = true;
 
@@ -168,4 +187,5 @@ const pushLaminarContext = (laminarCtx: LaminarSpanContext): void => {
     base,
   );
   LaminarContextManager.pushContext(enriched);
+  return enriched;
 };

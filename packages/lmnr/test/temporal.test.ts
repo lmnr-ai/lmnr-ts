@@ -4,13 +4,14 @@ import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { context, trace } from "@opentelemetry/api";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
-import { Laminar } from "../src/index";
+import { Laminar, observe } from "../src/index";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 import { patchWorkflowClient } from "../src/opentelemetry-lib/instrumentation/temporal";
 import { buildHeaders } from "../src/opentelemetry-lib/instrumentation/temporal/helpers";
 import {
   ActivityInterceptorFactory,
 } from "../src/opentelemetry-lib/instrumentation/temporal/interceptors";
+import { getTracer } from "../src/opentelemetry-lib/tracing";
 import {
   SPAN_INPUT,
   SPAN_OUTPUT,
@@ -24,11 +25,16 @@ import {
 
 // Produce a Temporal-style headers map carrying the active Laminar span context,
 // the way the client-side WorkflowClientInterceptor would on workflow start.
-const headersFromActiveSpan = (): Record<string, unknown> => {
+// Returns the headers plus the parent span's trace id for nesting assertions.
+const headersFromActiveSpan = (): {
+  headers: Record<string, unknown>;
+  traceId: string;
+} => {
   const span = Laminar.startActiveSpan({ name: "parent" });
   const headers = buildHeaders({});
+  const traceId = span.spanContext().traceId;
   span.end();
-  return headers;
+  return { headers, traceId };
 };
 
 // Run an activity through the inbound interceptor and return the finished
@@ -37,16 +43,18 @@ const runActivity = async (
   exporter: InMemorySpanExporter,
   options: Record<string, unknown>,
   result: unknown = { done: true },
+  next?: () => Promise<unknown>,
 ) => {
-  const headers = headersFromActiveSpan();
+  const { headers, traceId } = headersFromActiveSpan();
   const factory = ActivityInterceptorFactory(options);
   const { inbound } = factory({ info: { activityType: "myActivity" } });
   const res = await inbound.execute(
     { headers, args: [42, "y"] },
-    async () => result,
+    next ?? (async () => result),
   );
   return {
     res,
+    traceId,
     span: exporter
       .getFinishedSpans()
       .find((s) => s.name === "myActivity"),
@@ -242,6 +250,58 @@ void describe("temporal workflow span", () => {
     assert.deepEqual(res, { done: true });
     assert.equal(span, undefined);
   });
+
+  void it(
+    "nests observe() spans under the header context when createActivitySpan is false",
+    async () => {
+      const { traceId } = await runActivity(
+        exporter,
+        { createActivitySpan: false },
+        undefined,
+        async () => {
+          await observe({ name: "userSpan" }, async () => "ok");
+          return { done: true };
+        },
+      );
+
+      const userSpan = findSpan(exporter, "userSpan");
+      assert.ok(userSpan, "observe() span should be recorded");
+      assert.equal(
+        userSpan!.spanContext().traceId,
+        traceId,
+        "observe() span must share the remote parent's trace",
+      );
+      assert.equal(findSpan(exporter, "myActivity"), undefined);
+    },
+  );
+
+  void it(
+    "nests auto-instrumentation (OTel-context) spans under the header context " +
+      "when createActivitySpan is false",
+    async () => {
+      const { traceId } = await runActivity(
+        exporter,
+        { createActivitySpan: false },
+        undefined,
+        async () => {
+          // Auto-instrumentations (OpenAI, etc.) read the standard OTel active
+          // context rather than Laminar's ALS — emulate one here.
+          const s = getTracer().startSpan("autoSpan", {}, context.active());
+          s.end();
+          return { done: true };
+        },
+      );
+
+      const autoSpan = findSpan(exporter, "autoSpan");
+      assert.ok(autoSpan, "auto-instrumentation span should be recorded");
+      assert.equal(
+        autoSpan!.spanContext().traceId,
+        traceId,
+        "auto-instrumentation span must share the remote parent's trace",
+      );
+      assert.equal(findSpan(exporter, "myActivity"), undefined);
+    },
+  );
 
   void it("is idempotent — double patch does not double-wrap", async () => {
     const mod = makeFakeClientModule();
