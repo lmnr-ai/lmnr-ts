@@ -71,6 +71,9 @@ export async function installSkill(
     const written: string[] = [];
     for (const dir of targets) {
       const skillRoot = join(cwd, dir, "skills", SKILL_NAME);
+      // Replace, don't merge: `cp` alone would leave behind files that were
+      // deleted upstream (e.g. a removed reference doc) from a prior install.
+      await rm(skillRoot, { recursive: true, force: true });
       await mkdir(skillRoot, { recursive: true });
       await cp(staging, skillRoot, { recursive: true });
       for (const rel of relFiles) written.push(join(skillRoot, rel));
