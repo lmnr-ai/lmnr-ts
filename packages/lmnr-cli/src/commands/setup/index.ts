@@ -506,8 +506,11 @@ async function assertAccess(
   try {
     projects = await listProjects(creds, userBaseUrl);
   } catch (err) {
-    emitError(isJson, "access_check_failed", describeError(err));
-    process.exit(EXIT_NO_ACCESS);
+    // Discovery FAILED (network/5xx) — we couldn't determine access. Report it
+    // as a transient list failure (exit 10), NOT no_access (exit 4): automation
+    // must be able to retry instead of concluding the user lacks access.
+    emitError(isJson, "list_projects_failed", describeError(err));
+    process.exit(EXIT_LIST_PROJECTS_FAILED);
   }
   if (!projects.some((p) => p.id === projectId)) {
     emitError(
