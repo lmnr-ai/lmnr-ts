@@ -19,7 +19,7 @@ import { installSkill } from "../../utils/install-skill";
 import { type ProjectLink, readProjectLink, writeProjectLink } from "../../utils/project-link";
 import { handleLogin } from "../login";
 
-const DEFAULT_FRONTEND_URL = "https://www.laminar.sh";
+const DEFAULT_FRONTEND_URL = "https://laminar.sh";
 const DEFAULT_BASE_URL = "https://api.lmnr.ai";
 
 // Exit codes (machine-readable contract — each distinct so automation can

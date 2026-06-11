@@ -97,7 +97,7 @@ is the data API and carries **no port** — pass the port separately with `--por
 lmnr-cli sql schema --base-url http://localhost --port 8000
 ```
 
-`LMNR_FRONTEND_URL` (default `https://www.laminar.sh`), `LMNR_BASE_URL`
+`LMNR_FRONTEND_URL` (default `https://laminar.sh`), `LMNR_BASE_URL`
 (default `https://api.lmnr.ai`), and `LMNR_HTTP_PORT` (default `443`) are also
 honored, and are auto-loaded from a `.env` / `.env.local` in the working directory.
 
