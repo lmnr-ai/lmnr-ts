@@ -19,7 +19,6 @@ const DEBUG_ENV_KEYS = [
   'LMNR_DEBUG_SESSION_ID',
   'LMNR_DEBUG_REPLAY_TRACE_ID',
   'LMNR_DEBUG_CACHE_UNTIL',
-  'LMNR_DEBUG_FROM_LAST_RUN',
 ];
 
 interface ConfigCase {
@@ -43,9 +42,22 @@ const clearDebugEnv = () => {
   }
 };
 
+// Truth-table + minted cases read `.lmnr/debug-session.json` from cwd. Pin cwd
+// to an empty temp dir so a stray file in the package dir can't leak in.
+const originalCwd = process.cwd();
+
 void describe('buildDebugConfig (truth table parity)', () => {
-  beforeEach(clearDebugEnv);
-  afterEach(clearDebugEnv);
+  let tmp: string;
+  beforeEach(() => {
+    clearDebugEnv();
+    tmp = mkdtempSync(join(tmpdir(), 'lmnr-config-tt-'));
+    process.chdir(tmp);
+  });
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(tmp, { recursive: true, force: true });
+    clearDebugEnv();
+  });
 
   for (const testCase of vectors) {
     void it(testCase.name, () => {
@@ -84,18 +96,20 @@ void describe('buildDebugConfig (truth table parity)', () => {
   });
 });
 
-void describe('buildDebugConfig (LMNR_DEBUG_FROM_LAST_RUN)', () => {
+void describe('buildDebugConfig (.lmnr/debug-session.json continuation)', () => {
   let tmp: string;
-  let originalCwd: string;
 
-  const writeLastRun = (payload: Record<string, unknown>) => {
+  const writeSessionFile = (payload: Record<string, unknown>) => {
     mkdirSync(join(tmp, '.lmnr'), { recursive: true });
-    writeFileSync(join(tmp, '.lmnr', 'last-run.json'), JSON.stringify(payload), 'utf-8');
+    writeFileSync(
+      join(tmp, '.lmnr', 'debug-session.json'),
+      JSON.stringify(payload),
+      'utf-8',
+    );
   };
 
   beforeEach(() => {
     clearDebugEnv();
-    originalCwd = process.cwd();
     tmp = mkdtempSync(join(tmpdir(), 'lmnr-config-'));
     process.chdir(tmp);
   });
@@ -106,71 +120,95 @@ void describe('buildDebugConfig (LMNR_DEBUG_FROM_LAST_RUN)', () => {
     clearDebugEnv();
   });
 
-  void it('seeds replay from the pointer file', () => {
-    writeLastRun({
-      trace_id: 'trace-abc',
+  void it('rejoins the file session silently (continuation, not minted)', () => {
+    writeSessionFile({
       session_id: 'session-xyz',
+      trace_id: 'trace-abc',
+      replay_trace_id: null,
       cache_until: '0123-456789abcdef',
+      debugger_url: null,
+      started_at: '2026-01-01T00:00:00.000Z',
     });
     process.env.LMNR_DEBUG = 'true';
-    process.env.LMNR_DEBUG_FROM_LAST_RUN = 'true';
 
     const config = buildDebugConfig();
     assert.ok(config !== null);
-    assert.strictEqual(config.replayTraceId, 'trace-abc');
+    // The session id comes from the file; the browser must NOT reopen.
     assert.strictEqual(config.sessionId, 'session-xyz');
-    assert.strictEqual(config.cacheUntilSpanId, '0123456789abcdef');
-    assert.strictEqual(replayEnabledForConfig(config), true);
-    // A continuation reuses the pointer's session id, so the browser must not
-    // reopen.
     assert.strictEqual(config.sessionMinted, false);
+    assert.strictEqual(config.localOrigin, true);
+    // Continuation is NOT replay: the prior run's trace_id is NOT promoted into
+    // replayTraceId. Only an explicit replay_trace_id (file or env) arms replay.
+    assert.strictEqual(config.replayTraceId, null);
+    // cache_until is read from the file when the env var is unset.
+    assert.strictEqual(config.cacheUntilSpanId, '0123456789abcdef');
   });
 
-  void it('env vars override per-field', () => {
-    writeLastRun({
-      trace_id: 'trace-abc',
+  void it('reads replay_trace_id and cache_until from the file when env is unset', () => {
+    writeSessionFile({
       session_id: 'session-xyz',
-      cache_until: '0123-456789abcdef',
+      trace_id: 'trace-abc',
+      replay_trace_id: 'replay-from-file',
+      cache_until: 'abcdef',
+      debugger_url: null,
+      started_at: '2026-01-01T00:00:00.000Z',
     });
     process.env.LMNR_DEBUG = 'true';
-    process.env.LMNR_DEBUG_FROM_LAST_RUN = 'true';
-    process.env.LMNR_DEBUG_REPLAY_TRACE_ID = 'trace-override';
+
+    const config = buildDebugConfig();
+    assert.ok(config !== null);
+    assert.strictEqual(config.replayTraceId, 'replay-from-file');
+    assert.strictEqual(config.cacheUntilSpanId, 'abcdef');
+    assert.strictEqual(replayEnabledForConfig(config), true);
+  });
+
+  void it('env overrides the file per-field', () => {
+    writeSessionFile({
+      session_id: 'session-xyz',
+      trace_id: 'trace-abc',
+      replay_trace_id: 'replay-from-file',
+      cache_until: '0123-456789abcdef',
+      debugger_url: null,
+      started_at: '2026-01-01T00:00:00.000Z',
+    });
+    process.env.LMNR_DEBUG = 'true';
+    process.env.LMNR_DEBUG_SESSION_ID = 'env-session';
+    process.env.LMNR_DEBUG_REPLAY_TRACE_ID = 'env-replay';
     process.env.LMNR_DEBUG_CACHE_UNTIL = 'cafe';
 
     const config = buildDebugConfig();
     assert.ok(config !== null);
-    assert.strictEqual(config.replayTraceId, 'trace-override');
-    assert.strictEqual(config.sessionId, 'session-xyz');
+    // Explicit env session id wins over the file and is still a continuation.
+    assert.strictEqual(config.sessionId, 'env-session');
+    assert.strictEqual(config.sessionMinted, false);
+    assert.strictEqual(config.replayTraceId, 'env-replay');
     assert.strictEqual(config.cacheUntilSpanId, 'cafe');
   });
 
-  void it('ignored when flag is falsey', () => {
-    writeLastRun({ trace_id: 'trace-abc', session_id: 'session-xyz' });
+  void it('mints a fresh session when no file and no env id (browser opens)', () => {
     process.env.LMNR_DEBUG = 'true';
 
     const config = buildDebugConfig();
     assert.ok(config !== null);
-    assert.strictEqual(config.replayTraceId, null);
-    assert.notStrictEqual(config.sessionId, 'session-xyz');
-  });
-
-  void it('missing file falls back to env', () => {
-    process.env.LMNR_DEBUG = 'true';
-    process.env.LMNR_DEBUG_FROM_LAST_RUN = 'true';
-
-    const config = buildDebugConfig();
-    assert.ok(config !== null);
-    assert.strictEqual(config.replayTraceId, null);
     assert.strictEqual(config.sessionId.length, 36);
-    // FROM_LAST_RUN is a continuation attempt; even with a missing pointer the
-    // browser must not reopen, despite the freshly minted fallback id.
-    assert.strictEqual(config.sessionMinted, false);
+    assert.strictEqual(config.sessionMinted, true);
+    assert.strictEqual(config.localOrigin, true);
+    assert.strictEqual(config.replayTraceId, null);
   });
 });
 
 void describe('local origin / session minted', () => {
-  beforeEach(clearDebugEnv);
-  afterEach(clearDebugEnv);
+  let tmp: string;
+  beforeEach(() => {
+    clearDebugEnv();
+    tmp = mkdtempSync(join(tmpdir(), 'lmnr-config-mint-'));
+    process.chdir(tmp);
+  });
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(tmp, { recursive: true, force: true });
+    clearDebugEnv();
+  });
 
   void it('a fresh env run is local origin and minted', () => {
     process.env.LMNR_DEBUG = 'true';

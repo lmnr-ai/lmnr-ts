@@ -8,13 +8,10 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
-import { type DebugContext } from "@lmnr-ai/types";
+import { type DebugContext, readDebugSessionFile } from "@lmnr-ai/types";
 
 import { initializeLogger } from "../utils";
-import { POINTER_DIR, POINTER_FILE } from "./pointer";
 
 const logger = initializeLogger();
 
@@ -69,26 +66,6 @@ const parseCacheUntil = (value: string | undefined): string | null => {
   return null;
 };
 
-/**
- * Read `${CWD}/.lmnr/last-run.json` (the previous run's pointer).
- *
- * Best-effort: a missing / unreadable / malformed file returns {} so the caller
- * silently falls back to env vars. Keep line-comparable with the Python
- * `_load_last_run`.
- */
-const loadLastRun = (): Record<string, unknown> => {
-  try {
-    const path = join(process.cwd(), POINTER_DIR, POINTER_FILE);
-    const data: unknown = JSON.parse(readFileSync(path, { encoding: "utf-8" }));
-    return data !== null && typeof data === "object"
-      ? (data as Record<string, unknown>)
-      : {};
-  } catch (e) {
-    logger.debug(`Could not read debug pointer file: ${String(e)}`);
-    return {};
-  }
-};
-
 /** Immutable debug configuration, built once at process start. */
 export interface DebugConfig {
   sessionId: string;
@@ -103,9 +80,11 @@ export interface DebugConfig {
   // propagated LaminarSpanContext debug block — a downstream run must not open
   // the browser or emit the run pointer (the origin owns both).
   localOrigin: boolean;
-  // True when the SDK minted a fresh session id (neither LMNR_DEBUG_SESSION_ID
-  // nor a last-run pointer supplied one). Gates the one-time browser open: a
-  // reused session id is a continuation/replay, so the browser is not reopened.
+  // True ONLY when the SDK minted a fresh session id — i.e. neither
+  // LMNR_DEBUG_SESSION_ID nor an existing `.lmnr/debug-session.json` supplied
+  // one. Gates the one-time browser open: a reused session id (explicit env or a
+  // continuation from the file) is NOT a fresh run, so the browser is not
+  // reopened.
   sessionMinted: boolean;
 }
 
@@ -123,41 +102,43 @@ export const replayEnabledForConfig = (config: DebugConfig): boolean =>
  * Returns null when debug mode is disabled (LMNR_DEBUG falsey/absent) — the
  * caller treats null as "everything inert".
  *
- * When `LMNR_DEBUG_FROM_LAST_RUN` is truthy, seed the config from the previous
- * run's pointer file (`${CWD}/.lmnr/last-run.json`): the file's `trace_id` (the
- * trace that run produced) becomes this run's `replayTraceId`, and its
- * `session_id` / `cache_until` are reused. Individual `LMNR_DEBUG_*` env vars
- * still override per-field, so the agent can replay the last run without
- * copying its ids into the environment by hand.
+ * The `.lmnr/debug-session.json` file is now DEFAULT-ON: it is read
+ * unconditionally (no opt-in env gate). The decision tree:
+ *
+ *  1. Read the file (best-effort → `existing | null`).
+ *  2. `sessionId` precedence: `LMNR_DEBUG_SESSION_ID` → `existing.session_id` →
+ *     a freshly-minted UUID.
+ *  3. `sessionMinted` is true ONLY when we minted (neither env nor file supplied
+ *     a session id). A file-present run is a CONTINUATION: it rejoins the same
+ *     session silently (no browser).
+ *  4. `replayTraceId`: `LMNR_DEBUG_REPLAY_TRACE_ID` → `existing.replay_trace_id`
+ *     → null. NOTE: continuation is NOT auto-replay — we do NOT promote the prior
+ *     run's `trace_id` into `replayTraceId`. Replay is armed explicitly by the
+ *     agent via the env var or the file's `replay_trace_id`.
+ *  5. `cacheUntilSpanId`: parsed from `LMNR_DEBUG_CACHE_UNTIL ??
+ *     existing.cache_until`.
  */
 export const buildDebugConfig = (): DebugConfig | null => {
   if (!isTruthy(process.env.LMNR_DEBUG)) {
     return null;
   }
 
-  const lastRun = isTruthy(process.env.LMNR_DEBUG_FROM_LAST_RUN)
-    ? loadLastRun()
-    : {};
+  const existing = readDebugSessionFile();
 
   const providedSessionId =
-    process.env.LMNR_DEBUG_SESSION_ID ||
-    (lastRun.session_id as string | undefined);
+    process.env.LMNR_DEBUG_SESSION_ID || existing?.session_id || undefined;
   const sessionId = providedSessionId || randomUUID();
-  // The browser is opened once per fresh run; a reused (provided) session id is
-  // a continuation/replay, so it is not reopened. A FROM_LAST_RUN run is also a
-  // continuation attempt even when the pointer file is missing / has no
-  // session_id (loadLastRun returns {}), so suppress the browser there too.
-  const sessionMinted =
-    providedSessionId === undefined &&
-    !isTruthy(process.env.LMNR_DEBUG_FROM_LAST_RUN);
+  // The browser is opened once per fresh run; a reused session id (explicit env
+  // OR a continuation from the file) is NOT a fresh run, so it is not reopened.
+  const sessionMinted = providedSessionId === undefined;
+  // Continuation is NOT replay: only an explicit replay trace (env or the file's
+  // `replay_trace_id`) arms replay. The prior run's `trace_id` is never promoted.
   const replayTraceId =
     process.env.LMNR_DEBUG_REPLAY_TRACE_ID ||
-    (lastRun.trace_id as string | undefined) ||
+    existing?.replay_trace_id ||
     null;
-  const lastRunCacheUntil =
-    typeof lastRun.cache_until === "string" ? lastRun.cache_until : undefined;
   const cacheUntilValue =
-    process.env.LMNR_DEBUG_CACHE_UNTIL ?? lastRunCacheUntil;
+    process.env.LMNR_DEBUG_CACHE_UNTIL ?? existing?.cache_until ?? undefined;
   const cacheUntilSpanId = parseCacheUntil(cacheUntilValue);
 
   return {

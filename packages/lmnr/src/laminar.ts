@@ -449,11 +449,11 @@ export class Laminar {
             if (runtime.shouldOpenBrowser) {
               // only open URL in browser on first run when we minted a fresh
               // session id ourselves. A reused session id (passed explicitly via
-              // LMNR_DEBUG_SESSION_ID or seeded from the prior run's pointer via
-              // LMNR_DEBUG_FROM_LAST_RUN) is a replay/continuation, and a
-              // context-armed downstream run is not the origin — neither reopens
-              // the browser. The decision now reads the resolved config
-              // (runtime.shouldOpenBrowser) rather than re-reading env vars.
+              // LMNR_DEBUG_SESSION_ID or continued from an existing
+              // .lmnr/debug-session.json) is a continuation, and a context-armed
+              // downstream run is not the origin — neither reopens the browser.
+              // The decision reads the resolved config (runtime.shouldOpenBrowser)
+              // rather than re-reading env vars.
               const opener =
                 process.platform === "win32"
                   ? "start"
@@ -1193,9 +1193,10 @@ export class Laminar {
   public static async shutdown() {
     if (this.isInitialized) {
       logger.debug("Shutting down Laminar");
-      // Emit the debug run pointer before flushing so flows that shut down
+      // Emit the debug-session record before flushing so flows that shut down
       // without terminating the process still get LMNR_DEBUG_RUN +
-      // .lmnr/last-run.json. Idempotent — the process-exit hooks are a fallback.
+      // .lmnr/debug-session.json. Idempotent — the process-exit hooks are a
+      // fallback.
       getRuntime()?.emitPointer();
       await forceFlush();
       // Unlike Python where asynchronous nature of `BatchSpanProcessor.forceFlush()`

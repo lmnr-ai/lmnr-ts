@@ -10,8 +10,8 @@ import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context"
 void describe("initialize", () => {
   const originalEnv = process.env;
   // The LMNR_SPAN_CONTEXT debug test calls emitPointer() without overriding
-  // process.cwd, so it best-effort writes `.lmnr/last-run.json` into the real
-  // cwd. Only remove the dir afterwards if this run is what created it.
+  // process.cwd, so it best-effort writes `.lmnr/debug-session.json` into the
+  // real cwd. Only remove the dir afterwards if this run is what created it.
   const pointerDir = join(process.cwd(), ".lmnr");
   let pointerDirPreexisted = false;
   void before(() => {
