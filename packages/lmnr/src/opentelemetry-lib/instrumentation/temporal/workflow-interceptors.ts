@@ -44,10 +44,7 @@ const _handlerHeaders = new AsyncLocalStorage<Headers>();
 const activeHeaders = (): Headers =>
   _handlerHeaders.getStore() ?? _startHeaders;
 
-/* eslint-disable
-  @typescript-eslint/require-await,
-  @typescript-eslint/no-unsafe-return
-*/
+
 export const interceptors = (): WorkflowInterceptors => ({
   inbound: [
     {
@@ -98,7 +95,4 @@ export const interceptors = (): WorkflowInterceptors => ({
     },
   ],
 });
-/* eslint-enable
-  @typescript-eslint/require-await,
-  @typescript-eslint/no-unsafe-return
-*/
+
