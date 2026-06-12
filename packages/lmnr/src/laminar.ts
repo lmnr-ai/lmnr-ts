@@ -252,6 +252,14 @@ export class Laminar {
       ?.replace(/\/$/, "")
       .replace(/:\d{1,5}$/g, "");
 
+    // A debug run wants spans to land in the UI instantly so the agent can
+    // iterate against fresh results — batching would hold them back by up to the
+    // schedule delay. Force the SimpleSpanProcessor on any LMNR_DEBUG run (the
+    // env-origin gate; a downstream context-armed run inherits the upstream
+    // session but configures its own transport). Mirrors the LMNR_DEBUG truthy
+    // gate used by _initDebugRuntime / the Python SDK.
+    const disableBatchForDebug = isTruthy(process.env.LMNR_DEBUG) || disableBatch;
+
     initializeTracing({
       baseUrl: urlWithoutSlash,
       baseHttpUrl: httpUrlWithoutSlash,
@@ -262,7 +270,7 @@ export class Laminar {
       silenceInitializationMessage: true,
       instrumentModules,
       logLevel: logLevel ?? "error",
-      disableBatch,
+      disableBatch: disableBatchForDebug,
       maxExportBatchSize,
       traceExportTimeoutMillis,
       sessionRecordingOptions,
