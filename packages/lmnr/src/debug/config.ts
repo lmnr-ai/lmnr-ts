@@ -125,8 +125,7 @@ export const buildDebugConfig = (): DebugConfig | null => {
   }
 
   // Nearest-ancestor resolution: a run started from a subdirectory of a
-  // project joins the project's session (TS-only for now; Python still reads
-  // cwd — parity follow-up pending alongside the last-run.json rename).
+  // project joins the project's session.
   const existing = readDebugSessionFile(resolveDebugSessionDir());
 
   const providedSessionId =
