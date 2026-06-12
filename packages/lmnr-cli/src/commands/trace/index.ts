@@ -1,6 +1,7 @@
 import { LaminarClient } from "@lmnr-ai/client";
 
 import type { GlobalOpts } from "../../auth/with-client";
+import { resolveTraceId } from "../../utils/debug-session-file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
 import {
@@ -15,6 +16,12 @@ const logger = initializeLogger();
 // so a blank line keeps each appended entry its own paragraph.
 const NOTE_SEPARATOR = "\n\n";
 
+/** Options accepted by `trace append-note` (extends the shared globals). */
+export interface TraceAppendNoteOpts extends GlobalOpts {
+  /** Set by `--trace-id`; omitted → the debug-session.json `trace_id`. */
+  traceId?: string;
+}
+
 /**
  * Append a free-text note to an existing trace. Stored under the
  * `rollout.note` trace-metadata key via the post-factum metadata patch
@@ -22,6 +29,10 @@ const NOTE_SEPARATOR = "\n\n";
  * note is read back first (via the SQL endpoint) and the new text is pushed
  * as `existing + "\n\n" + note`. The note may contain markdown /
  * span-reference links.
+ *
+ * The target trace is the optional `--trace-id` flag; when omitted the trace
+ * comes from `.lmnr/debug-session.json`'s `trace_id` — the root trace of the
+ * most recent debug run in this directory (see `resolveTraceId`).
  *
  * Pure handler: the command wrapper (`withProjectClient`) resolves a user-token
  * {@link LaminarClient} (routes to `/v1/cli/*` with the resolved project) and
@@ -39,11 +50,10 @@ const NOTE_SEPARATOR = "\n\n";
  */
 export const handleTraceAppendNote = async (
   client: LaminarClient,
-  traceId: string,
   note: string,
-  opts: GlobalOpts,
+  opts: TraceAppendNoteOpts,
 ): Promise<void> => {
-  const id = normalizeTraceId(traceId);
+  const id = normalizeTraceId(resolveTraceId(opts.traceId));
 
   const rows = await client.sql.query(
     "SELECT metadata FROM traces WHERE id = {trace_id:UUID} LIMIT 1",

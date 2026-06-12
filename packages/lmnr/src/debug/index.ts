@@ -29,7 +29,7 @@ import {
   isTruthy,
   replayEnabledForConfig,
 } from "./config";
-import { buildPointer, emitPointer } from "./pointer";
+import { buildDebugSessionFile, emitPointer } from "./pointer";
 
 export { isTruthy };
 
@@ -207,12 +207,13 @@ export class DebugRuntime {
   }
 
   /**
-   * Emit the run pointer once (console line + best-effort file).
+   * Emit the debug-session record once (console line + best-effort file write
+   * to `.lmnr/debug-session.json`).
    *
    * No-op on a downstream run (`localOrigin: false`): a runtime armed from a
    * propagated `DebugContext` joins the upstream replay session and must NOT
-   * write a run pointer — the origin owns it. Gated here (not just at the call
-   * sites) so `shutdown()` and any exit hook stay safe. Mirrors Python's
+   * own/overwrite the file — the origin owns it. Gated here (not just at the
+   * call sites) so `shutdown()` and any exit hook stay safe. Mirrors Python's
    * `emit_pointer`.
    */
   emitPointer(): void {
@@ -223,15 +224,15 @@ export class DebugRuntime {
       return;
     }
     this._emitted = true;
-    const pointer = buildPointer({
-      traceId: this._traceId ?? "",
+    const file = buildDebugSessionFile({
       sessionId: this._config.sessionId,
+      traceId: this._traceId,
       replayTraceId: this._config.replayTraceId,
       cacheUntil: this._config.cacheUntilSpanId,
       debuggerUrl: this.debuggerSessionUrl(),
       startedAt: this._startedAt,
     });
-    emitPointer(pointer);
+    emitPointer(file);
   }
 }
 

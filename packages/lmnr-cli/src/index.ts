@@ -4,14 +4,19 @@ import { errorMessage } from "@lmnr-ai/types";
 import { Command } from "commander";
 
 import { version } from "../package.json";
-import { withProjectClient, withUserToken } from "./auth/with-client";
+import { withLocalOpts, withProjectClient, withUserToken } from "./auth/with-client";
 import {
   handleDatasetsCreate,
   handleDatasetsList,
   handleDatasetsPull,
   handleDatasetsPush,
 } from "./commands/dataset";
-import { handleDebugSessionSetName, handleDebugSessionSummary } from "./commands/debug";
+import {
+  handleDebugSessionNew,
+  handleDebugSessionOpen,
+  handleDebugSessionSetName,
+  handleDebugSessionSummary,
+} from "./commands/debug";
 import { handleLogin } from "./commands/login";
 import { handleLogout } from "./commands/logout";
 import { handleProjectsList } from "./commands/project";
@@ -280,8 +285,12 @@ Examples:
   traceCmd
     .command("append-note")
     .description("Append a free-text note to a trace (stored in trace metadata)")
-    .argument("<trace-id>", "Trace ID (UUID or 32-char OTel hex trace id)")
     .argument("<note>", "Note text (may contain markdown)")
+    .option(
+      "--trace-id <id>",
+      "Trace ID (UUID or 32-char OTel hex trace id). Defaults to the trace_id " +
+      "of .lmnr/debug-session.json (the most recent debug run here)",
+    )
     .action(withProjectClient(handleTraceAppendNote))
     .addHelpText(
       "after",
@@ -289,8 +298,13 @@ Examples:
 Notes accumulate: each call appends a new paragraph to the trace's existing
 note rather than overwriting it.
 
+Without --trace-id, the note goes to the trace_id recorded in
+.lmnr/debug-session.json — the root trace of the most recent LMNR_DEBUG=1 run
+in this directory.
+
 Examples:
-  $ lmnr-cli trace append-note <trace-id> "Reproduced the timeout on the search tool."
+  $ lmnr-cli trace append-note "Reproduced the timeout on the search tool."
+  $ lmnr-cli trace append-note "Reproduced the timeout." --trace-id <trace-id>
 `,
     );
 
@@ -332,25 +346,38 @@ Learn more about debugging features at https://laminar.sh/docs/platform/debugger
   debugSessionCmd
     .command("set-name")
     .description("Set the display name of a debug session")
-    .argument("<session-id>", "Debug session ID")
     .argument("<name>", "Session display name")
+    .option(
+      "--session-id <id>",
+      "Debug session ID. Defaults to the session in .lmnr/debug-session.json",
+    )
     .action(withProjectClient(handleDebugSessionSetName))
     .addHelpText(
       "after",
       `
+Without --session-id, the name applies to the session recorded in
+.lmnr/debug-session.json (written by \`debug session new\` / LMNR_DEBUG=1 runs).
+
 Examples:
-  $ lmnr-cli debug session set-name <session-id> "Fix report length + search tool"
+  $ lmnr-cli debug session set-name "Fix report length + search tool"
+  $ lmnr-cli debug session set-name "Fix report length" --session-id <session-id>
 `,
     );
 
   debugSessionCmd
     .command("summary")
     .description("Print every trace in a debug session with its note, oldest first")
-    .argument("<session-id>", "Debug session ID")
+    .option(
+      "--session-id <id>",
+      "Debug session ID. Defaults to the session in .lmnr/debug-session.json",
+    )
     .action(withProjectClient(handleDebugSessionSummary))
     .addHelpText(
       "after",
       `
+Without --session-id, summarizes the session recorded in
+.lmnr/debug-session.json (written by \`debug session new\` / LMNR_DEBUG=1 runs).
+
 Output is one block per trace (oldest first), the trace's note followed by a
 self-closing tag carrying the trace id and end time:
 
@@ -360,8 +387,52 @@ self-closing tag carrying the trace id and end time:
 With --json, prints an array of {"note", "traceId", "endTime"} objects.
 
 Examples:
-  $ lmnr-cli debug session summary <session-id>
-  $ lmnr-cli debug session summary <session-id> --json
+  $ lmnr-cli debug session summary
+  $ lmnr-cli debug session summary --session-id <session-id> --json
+`,
+    );
+
+  debugSessionCmd
+    .command("open")
+    .description("Open a debug session's debugger page in the browser")
+    .option(
+      "--session-id <id>",
+      "Debug session ID. Defaults to the session in .lmnr/debug-session.json",
+    )
+    .action(withLocalOpts(handleDebugSessionOpen))
+    .addHelpText(
+      "after",
+      `
+Without --session-id, opens the session recorded in .lmnr/debug-session.json
+(written by \`debug session new\` / LMNR_DEBUG=1 runs). The URL is also printed
+to stdout; in --json mode a {"sessionId","debuggerUrl"} object is printed
+instead. Local-only: no login or network needed.
+
+Examples:
+  $ lmnr-cli debug session open
+  $ lmnr-cli debug session open --session-id <session-id>
+`,
+    );
+
+  debugSessionCmd
+    .command("new")
+    .description("Create a fresh debug session and reset .lmnr/debug-session.json")
+    .option("--no-browser", "Do not open the debugger session URL in a browser")
+    .action(withProjectClient(handleDebugSessionNew))
+    .addHelpText(
+      "after",
+      `
+Mints a new session id, writes it to .lmnr/debug-session.json (resetting any
+prior session), and registers it with the backend. The next \`LMNR_DEBUG=1 <run>\`
+in this directory rejoins this session silently (no browser).
+
+The bare session id is printed to stdout; in --json mode a
+{"sessionId","projectId","debuggerUrl"} object is printed instead.
+
+Examples:
+  $ lmnr-cli debug session new
+  $ lmnr-cli debug session new --json
+  $ lmnr-cli debug session new --no-browser
 `,
     );
 
@@ -385,9 +456,11 @@ Examples:
   lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a dataset
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json # Query spans
   lmnr-cli sql schema                                      # Show available tables
-  lmnr-cli trace append-note <trace-id> "note text"        # Append a note to a trace
-  lmnr-cli debug session set-name <session-id> "title"     # Rename a debug session
-  lmnr-cli debug session summary <session-id>              # Notes for each trace in a session
+  lmnr-cli trace append-note "note text"                   # Note on the latest debug trace
+  lmnr-cli debug session new                               # Mint a fresh debug session
+  lmnr-cli debug session open                              # Open the session in the browser
+  lmnr-cli debug session set-name "title"                  # Rename the current debug session
+  lmnr-cli debug session summary                           # Notes for each trace in the session
 
 For more information about the Laminar platfrom:
   Documentation: https://laminar.sh/docs

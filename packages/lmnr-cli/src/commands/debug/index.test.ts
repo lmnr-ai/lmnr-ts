@@ -44,7 +44,7 @@ describe('handleDebugSessionSummary', () => {
       traceRow('trace-2', '2026-06-01T11:00:00.000Z', 'second run note'),
     ]);
 
-    await handleDebugSessionSummary(stubClient, SESSION_ID, baseOpts);
+    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID });
 
     expect(logSpy).toHaveBeenCalledWith(
       'first run note\n<trace id="trace-1" end-time="2026-06-01T10:00:00.000Z"/>' +
@@ -56,7 +56,7 @@ describe('handleDebugSessionSummary', () => {
   it('prints only the trace tag when a trace has no note', async () => {
     mockQuery.mockResolvedValue([traceRow('trace-1', '2026-06-01T10:00:00.000Z')]);
 
-    await handleDebugSessionSummary(stubClient, SESSION_ID, baseOpts);
+    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID });
 
     expect(logSpy).toHaveBeenCalledWith(
       '<trace id="trace-1" end-time="2026-06-01T10:00:00.000Z"/>',
@@ -69,7 +69,7 @@ describe('handleDebugSessionSummary', () => {
       traceRow('trace-2', '2026-06-01T11:00:00.000Z'),
     ]);
 
-    await handleDebugSessionSummary(stubClient, SESSION_ID, { ...baseOpts, json: true });
+    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID, json: true });
 
     expect(logSpy).toHaveBeenCalledWith(JSON.stringify([
       { note: 'a note', traceId: 'trace-1', endTime: '2026-06-01T10:00:00.000Z' },
@@ -80,7 +80,7 @@ describe('handleDebugSessionSummary', () => {
   it('filters by session id and orders chronologically', async () => {
     mockQuery.mockResolvedValue([]);
 
-    await handleDebugSessionSummary(stubClient, SESSION_ID, { ...baseOpts, json: true });
+    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID, json: true });
 
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toContain("simpleJSONExtractString(metadata, 'rollout.session_id')");
@@ -95,7 +95,7 @@ describe('handleDebugSessionSummary', () => {
     );
     mockQuery.mockResolvedValue(rows);
 
-    await handleDebugSessionSummary(stubClient, SESSION_ID, { ...baseOpts, json: true });
+    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID, json: true });
 
     expect(mockQuery).toHaveBeenCalledTimes(1);
     const [sql, params] = mockQuery.mock.calls[0];
@@ -109,7 +109,7 @@ describe('handleDebugSessionSummary', () => {
   it('prints a friendly message for an empty session in text mode', async () => {
     mockQuery.mockResolvedValue([]);
 
-    await handleDebugSessionSummary(stubClient, SESSION_ID, baseOpts);
+    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID });
 
     expect(logSpy).toHaveBeenCalledWith(`No traces found for session ${SESSION_ID}.`);
   });
@@ -117,7 +117,7 @@ describe('handleDebugSessionSummary', () => {
   it('outputs [] for an empty session in json mode', async () => {
     mockQuery.mockResolvedValue([]);
 
-    await handleDebugSessionSummary(stubClient, SESSION_ID, { ...baseOpts, json: true });
+    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID, json: true });
 
     expect(logSpy).toHaveBeenCalledWith('[]');
   });
@@ -125,7 +125,7 @@ describe('handleDebugSessionSummary', () => {
   it('propagates query failures to the wrapper', async () => {
     mockQuery.mockRejectedValue(new Error('boom'));
 
-    await expect(handleDebugSessionSummary(stubClient, SESSION_ID, { ...baseOpts, json: true }))
-      .rejects.toThrow('boom');
+    const opts = { ...baseOpts, sessionId: SESSION_ID, json: true };
+    await expect(handleDebugSessionSummary(stubClient, opts)).rejects.toThrow('boom');
   });
 });

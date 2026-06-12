@@ -1,4 +1,7 @@
 import * as assert from 'node:assert';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import type { RolloutSessionsResource } from '@lmnr-ai/client';
@@ -43,14 +46,22 @@ const clearDebugEnv = () => {
   }
 };
 
+const originalCwd = process.cwd.bind(process);
+
 void describe('debug replay helpers', () => {
   beforeEach(() => {
     resetDebugRuntime();
     clearDebugEnv();
+    // Pin cwd to an empty temp dir: initDebugRuntime → buildDebugConfig reads
+    // the nearest `.lmnr/debug-session.json` (walking up from cwd), and other
+    // suite files emit pointer files into the real package dir concurrently —
+    // a leaked record with replay fields armed would flip replayEnabled here.
+    process.cwd = () => mkdtempSync(join(tmpdir(), 'lmnr-replay-'));
   });
   afterEach(() => {
     resetDebugRuntime();
     clearDebugEnv();
+    process.cwd = originalCwd;
   });
 
   void it('replayEnabled is true only when replay is configured', () => {

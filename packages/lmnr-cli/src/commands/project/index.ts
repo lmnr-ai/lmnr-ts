@@ -1,8 +1,8 @@
 import { LaminarClient } from "@lmnr-ai/client";
 
 import type { GlobalOpts } from "../../auth/with-client";
+import { readLocalProjectFile } from "../../utils/local-project-file";
 import { outputJson } from "../../utils/output";
-import { readProjectLink } from "../../utils/project-link";
 import { renderTable } from "../../utils/table";
 
 /**
@@ -17,7 +17,7 @@ export const handleProjectsList = async (
   const projects = await client.cli.listProjects();
 
   // Mark the project linked to the current directory (.lmnr/project.json).
-  const linked = (await readProjectLink())?.projectId;
+  const linked = (await readLocalProjectFile())?.projectId;
 
   if (opts.json) {
     outputJson(projects.map((p) => ({ ...p, linked: p.id === linked })));
@@ -35,8 +35,8 @@ export const handleProjectsList = async (
   console.log(
     linked
       ? "\n● = linked to this directory (lmnr-cli setup). " +
-          "Override per-command with --project-id.\n"
+      "Override per-command with --project-id.\n"
       : "\nNot linked here. Run `lmnr-cli setup` in your project directory, " +
-          "or pass --project-id.\n",
+      "or pass --project-id.\n",
   );
 };

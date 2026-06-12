@@ -16,7 +16,11 @@ import {
   writeEnvFile,
 } from "../../utils/env-file";
 import { installSkill } from "../../utils/install-skill";
-import { type ProjectLink, readProjectLink, writeProjectLink } from "../../utils/project-link";
+import {
+  type LocalProjectFile,
+  readLocalProjectFile,
+  writeLocalProjectFile,
+} from "../../utils/local-project-file";
 import { handleLogin } from "../login";
 
 const DEFAULT_FRONTEND_URL = "https://laminar.sh";
@@ -112,7 +116,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   const existingKey = await findEnvKey(cwd);
 
   let creds: Credentials | null = await safeReadCredentials();
-  let link = await readProjectLink();
+  let link = await readLocalProjectFile();
 
   // --- 1. Login + project resolution ---------------------------------------
 
@@ -163,8 +167,8 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     process.stderr.write(`${pc.green("✓")} Logged in as ${creds.userEmail ?? "<unknown>"}\n`);
     process.stderr.write(
       `${pc.green("✓")} Project: ${link.projectName ?? link.projectId}` +
-        (link.workspaceName ? pc.dim(` (${link.workspaceName})`) : "") +
-        "\n",
+      (link.workspaceName ? pc.dim(` (${link.workspaceName})`) : "") +
+      "\n",
     );
   }
 
@@ -199,7 +203,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
         isJson,
         "key_probe_failed",
         `Couldn't verify the existing Project API Key in ${where} (network or server error). ` +
-          "Check your connection and re-run.",
+        "Check your connection and re-run.",
       );
       process.exit(EXIT_KEY_PROBE_FAILED);
     } else if (probe.status === "ok" && probe.projectId === link.projectId) {
@@ -216,14 +220,14 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
         isJson,
         "key_mismatch",
         `The Project API Key in ${where} belongs to a different project (${probe.projectId}), ` +
-          `not the one linked here (${link.projectId}). Remove or update it, then re-run.`,
+        `not the one linked here (${link.projectId}). Remove or update it, then re-run.`,
       );
       process.exit(EXIT_KEY_MISMATCH);
     } else if (!isJson) {
       // invalid / revoked (401) — minting a fresh key is the correct recovery.
       process.stderr.write(
         `${pc.yellow("⚠")} Existing Project API Key in ${where} is invalid or revoked, ` +
-          `minting a new one\n`,
+        `minting a new one\n`,
       );
     }
   }
@@ -265,8 +269,8 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
       } catch (err) {
         process.stderr.write(
           `\n${pc.red("ERROR")}: failed to write ${target}: ${describeError(err)}\n` +
-            pc.dim("Your API key (set it manually):") +
-            `\n  LMNR_PROJECT_API_KEY=${apiKey}\n\n`,
+          pc.dim("Your API key (set it manually):") +
+          `\n  LMNR_PROJECT_API_KEY=${apiKey}\n\n`,
         );
         if (isJson) {
           process.stdout.write(
@@ -335,13 +339,13 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
       'lmnr-cli sql query "SELECT * FROM traces ORDER BY start_time DESC LIMIT 1" --json';
     process.stdout.write(
       "\nNext steps:\n" +
-        "  1. Instrument your project with Laminar using the installed skill or the docs:\n" +
-        `     ${pcOut.cyan(docsUrl)}\n` +
-        "  2. Run your project.\n" +
-        "  3. Verify instrumentation:\n" +
-        `     ${pcOut.green(verifyCmd)}\n` +
-        "  4. View your traces in the browser:\n" +
-        `     ${pcOut.cyan(frontendLink)}\n`,
+      "  1. Instrument your project with Laminar using the installed skill or the docs:\n" +
+      `     ${pcOut.cyan(docsUrl)}\n` +
+      "  2. Run your project.\n" +
+      "  3. Verify instrumentation:\n" +
+      `     ${pcOut.green(verifyCmd)}\n` +
+      "  4. View your traces in the browser:\n" +
+      `     ${pcOut.cyan(frontendLink)}\n`,
     );
   }
 }
@@ -362,7 +366,7 @@ async function resolveProjectViaCli(
   issuer: string,
   isJson: boolean,
   options: SetupOptions,
-): Promise<ProjectLink> {
+): Promise<LocalProjectFile> {
   let projects: CliProject[];
   try {
     projects = await listProjects(creds, userBaseUrl);
@@ -380,7 +384,7 @@ async function resolveProjectViaCli(
         isJson,
         "no_projects",
         `No projects found. Run \`lmnr-cli setup\` interactively (it opens the browser ` +
-          `to create your first project) or create one at ${trimSlash(issuer)}/onboarding.`,
+        `to create your first project) or create one at ${trimSlash(issuer)}/onboarding.`,
       );
       process.exit(EXIT_NO_PROJECT);
     }
@@ -417,7 +421,7 @@ async function resolveProjectViaCli(
         isJson,
         "no_access",
         `You don't have access to project ${options.projectId}. Accessible: ` +
-          projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+        projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
       );
       process.exit(EXIT_NO_ACCESS);
     }
@@ -430,14 +434,14 @@ async function resolveProjectViaCli(
         isJson,
         "project_ambiguous",
         `Multiple projects: pass --project-id <id>, or run setup interactively. ` +
-          projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+        projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
       );
       process.exit(EXIT_NO_PROJECT);
     }
     chosen = await promptProjectChoice(projects);
   }
 
-  const linkPath = await writeProjectLink({
+  const linkPath = await writeLocalProjectFile({
     projectId: chosen.id,
     projectName: chosen.name,
     workspaceId: chosen.workspaceId,
@@ -458,8 +462,8 @@ async function writeLink(
   userBaseUrl: string,
   projectId: string,
   isJson: boolean,
-): Promise<ProjectLink> {
-  let link: ProjectLink = { projectId };
+): Promise<LocalProjectFile> {
+  let link: LocalProjectFile = { projectId };
   try {
     const creds = await safeReadCredentials();
     if (creds) {
@@ -478,13 +482,13 @@ async function writeLink(
     // Best-effort enrichment — the id is enough to proceed.
   }
   try {
-    const linkPath = await writeProjectLink(link);
+    const linkPath = await writeLocalProjectFile(link);
     if (!isJson) process.stderr.write(`${pc.green("✓")} Linked ${linkPath}\n`);
   } catch (err) {
     if (!isJson) {
       process.stderr.write(
         `${pc.yellow("Warning")}: could not write .lmnr/project.json (${describeError(err)}). ` +
-          `CLI commands will need --project-id ${projectId}.\n`,
+        `CLI commands will need --project-id ${projectId}.\n`,
       );
     }
   }

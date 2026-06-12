@@ -71,8 +71,8 @@ const withCapturedConsole = (fn: () => void): string[] => {
 
 void describe("DebugRuntime", () => {
   // Some emitPointer tests don't override process.cwd, so they best-effort write
-  // `.lmnr/last-run.json` into the real cwd. Only remove the dir afterwards if
-  // this run is what created it — never clobber a pre-existing one.
+  // `.lmnr/debug-session.json` into the real cwd. Only remove the dir afterwards
+  // if this run is what created it — never clobber a pre-existing one.
   const pointerDir = join(originalCwd(), ".lmnr");
   let pointerDirPreexisted = false;
   before(() => {
@@ -291,6 +291,10 @@ void describe("DebugRuntime", () => {
   });
 
   void it("recordTraceId keeps the first trace id", () => {
+    // Pin cwd: emitPointer writes the session file (with this config's replay
+    // fields armed) to the resolved session dir — leaking it into the real
+    // package dir poisons concurrently-running suite files that read it.
+    process.cwd = () => mkdtempSync(join(tmpdir(), "lmnr-runtime-"));
     const runtime = new DebugRuntime(
       config(),
       asResource(new FakeRolloutSessions()),
@@ -435,7 +439,7 @@ void describe("DebugRuntime", () => {
     const lines = withCapturedConsole(() => runtime.emitPointer());
     const pointerLines = lines.filter((l) => l.startsWith("LMNR_DEBUG_RUN "));
     assert.strictEqual(pointerLines.length, 0);
-    assert.strictEqual(existsSync(join(dir, ".lmnr", "last-run.json")), false);
+    assert.strictEqual(existsSync(join(dir, ".lmnr", "debug-session.json")), false);
   });
 
   void it("init returns null when disabled", () => {

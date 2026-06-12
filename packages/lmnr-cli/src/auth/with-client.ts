@@ -78,6 +78,34 @@ export type ClientAction<A extends unknown[]> = (
 ) => Promise<void>;
 
 /**
+ * The handler shape {@link withLocalOpts} accepts: a pure function of the
+ * commander positionals and the parsed options — no client, for commands that
+ * only touch local state (e.g. `.lmnr/*` files) and never call the API.
+ */
+export type LocalAction<A extends unknown[]> = (
+  ...args: [...A, GlobalOpts]
+) => Promise<void>;
+
+/**
+ * Wrap a local-only command handler. No auth resolution / client build (the
+ * command must not call the API), but the same positionals + options threading
+ * and error envelope as the client wrappers, so handlers stay pure.
+ */
+export const withLocalOpts =
+  <A extends unknown[]>(
+    action: LocalAction<A>,
+    exitCodeFor: ExitCodeMapper = defaultExitCode,
+  ) =>
+    async (...cmdArgs: unknown[]): Promise<void> => {
+      const { positionals, opts } = splitCommanderArgs(cmdArgs);
+      await runWithEnvelope(
+        () => action(...(positionals as A), opts),
+        opts,
+        exitCodeFor,
+      );
+    };
+
+/**
  * Wrap a project-scoped command handler. Resolves a user-token
  * {@link LaminarClient} (routes to `/v1/cli/*` with the resolved project),
  * threads the commander positionals + options through, and owns the error

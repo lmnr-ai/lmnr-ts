@@ -1,5 +1,5 @@
 import { DEFAULT_BASE_URL } from "../constants";
-import { readProjectLink } from "../utils/project-link";
+import { readLocalProjectFile } from "../utils/local-project-file";
 import { type Credentials, readCredentials, writeCredentials } from "./credentials";
 import { decodeJwtExp, DeviceFlowError, mintAccessJwt } from "./device";
 import { type AuthInputs, type ResolvedAuth } from "./types";
@@ -48,12 +48,12 @@ export async function resolveAuth(opts: AuthInputs): Promise<ResolvedAuth> {
 
   let projectId = opts.projectId;
   if (!projectId || projectId.length === 0) {
-    projectId = (await readProjectLink())?.projectId;
+    projectId = (await readLocalProjectFile())?.projectId;
   }
   if (!projectId || projectId.length === 0) {
     throw new Error(
       "No project for this directory. Run `lmnr-cli setup` here, " +
-        "or pass --project-id <id>.",
+      "or pass --project-id <id>.",
     );
   }
 
