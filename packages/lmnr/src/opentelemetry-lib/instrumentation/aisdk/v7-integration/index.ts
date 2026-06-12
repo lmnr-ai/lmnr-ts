@@ -73,7 +73,7 @@ import {
  * The AI SDK v7 diagnostics channel name. Every lifecycle event fires
  * `{ type, event }` through this channel.
  */
-export const AI_SDK_TELEMETRY_DIAGNOSTIC_CHANNEL = "aisdk:telemetry";
+export const AI_SDK_TELEMETRY_DIAGNOSTIC_CHANNEL = "aisdk:lmnr-telemetry";
 
 export interface LaminarAiSdkTelemetryOptions {
   /**
@@ -82,6 +82,11 @@ export interface LaminarAiSdkTelemetryOptions {
    */
   recordInputs?: boolean;
   recordOutputs?: boolean;
+  /**
+   * When true, create an `ai.step N` span for each step in a multi-step
+   * generation. Defaults to false.
+   */
+  createStepSpan?: boolean;
 }
 
 /**
@@ -95,6 +100,7 @@ export interface LaminarAiSdkTelemetryOptions {
 export class LaminarAiSdkTelemetry {
   private readonly recordInputs: boolean;
   private readonly recordOutputs: boolean;
+  private readonly createStepSpan: boolean;
 
   // Root operation span (one per generateText/streamText/generateObject/
   // streamObject/embed/embedMany/rerank call), keyed by AI SDK `callId`.
@@ -115,6 +121,7 @@ export class LaminarAiSdkTelemetry {
   constructor(options: LaminarAiSdkTelemetryOptions = {}) {
     this.recordInputs = options.recordInputs ?? true;
     this.recordOutputs = options.recordOutputs ?? true;
+    this.createStepSpan = options.createStepSpan ?? false;
   }
 
   // ------------------------------------------------------------------
@@ -184,6 +191,7 @@ export class LaminarAiSdkTelemetry {
   };
 
   onStepStart = (event: any): void => {
+    if (!this.createStepSpan) return;
     const callId: string | undefined = event?.callId;
     const stepNumber: number = event?.stepNumber ?? 0;
     if (!callId) return;
@@ -342,8 +350,6 @@ export class LaminarAiSdkTelemetry {
     const stepNumber: number = event?.stepNumber ?? 0;
     if (!callId) return;
     const key = stepKey(callId, stepNumber);
-    const step = this.stepByKey.get(key);
-    if (!step) return;
 
     // Ensure the LLM span for this step is closed, even if the provider
     // skipped `onLanguageModelCallEnd` (e.g. an error surfaced via onError).
@@ -365,6 +371,9 @@ export class LaminarAiSdkTelemetry {
       removeActiveLlmSpan(llm.span);
       this.llmByKey.delete(key);
     }
+
+    const step = this.stepByKey.get(key);
+    if (!step) return;
 
     // Emit per-step usage + finish reason on the step span too, so a step
     // that was interrupted mid-stream still reports correct totals.
@@ -682,8 +691,8 @@ export class LaminarAiSdkTelemetry {
       rawError instanceof Error
         ? rawError
         : new Error(
-          typeof rawError === "string" ? rawError : serializeJSON(rawError),
-        );
+            typeof rawError === "string" ? rawError : serializeJSON(rawError),
+          );
     const eventCallId: string | undefined =
       event && typeof event === "object" && typeof event.callId === "string"
         ? event.callId
