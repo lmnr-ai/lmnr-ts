@@ -137,9 +137,9 @@ lmnr-cli debug session summary                           # Every trace in the se
 
 These commands default to the session/trace recorded in
 `.lmnr/debug-session.json` (written by `debug session new` and `LMNR_DEBUG=1`
-runs); pass an explicit id as the trailing argument to target another one
+runs); target another one with an explicit id
 (e.g. `lmnr-cli debug session summary <session-id>`,
-`lmnr-cli trace append-note "note" <trace-id>`).
+`lmnr-cli trace append-note "note" --trace-id <trace-id>`).
 
 `trace append-note` accumulates (each call appends a paragraph). See the Laminar
 debugger docs: https://laminar.sh/docs/platform/debugger

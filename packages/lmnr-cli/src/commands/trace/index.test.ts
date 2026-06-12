@@ -36,7 +36,7 @@ describe('handleTraceAppendNote', () => {
   it('sets the note as-is when the trace has no existing note', async () => {
     mockQuery.mockResolvedValue([{ metadata: JSON.stringify({}) }]);
 
-    await handleTraceAppendNote(stubClient, 'first note', TRACE_ID, baseOpts);
+    await handleTraceAppendNote(stubClient, 'first note', { ...baseOpts, traceId: TRACE_ID });
 
     expect(mockPushMetadata).toHaveBeenCalledWith(
       TRACE_ID,
@@ -50,7 +50,7 @@ describe('handleTraceAppendNote', () => {
       { metadata: JSON.stringify({ [NOTE_KEY]: 'first note' }) },
     ]);
 
-    await handleTraceAppendNote(stubClient, 'second note', TRACE_ID, baseOpts);
+    await handleTraceAppendNote(stubClient, 'second note', { ...baseOpts, traceId: TRACE_ID });
 
     expect(mockPushMetadata).toHaveBeenCalledWith(
       TRACE_ID,
@@ -62,7 +62,10 @@ describe('handleTraceAppendNote', () => {
   it('normalizes a 32-char OTel hex trace id', async () => {
     mockQuery.mockResolvedValue([{ metadata: '{}' }]);
 
-    await handleTraceAppendNote(stubClient, 'note', '0123456789abcdef0123456789abcdef', baseOpts);
+    await handleTraceAppendNote(stubClient, 'note', {
+      ...baseOpts,
+      traceId: '0123456789abcdef0123456789abcdef',
+    });
 
     expect(mockQuery).toHaveBeenCalledWith(
       expect.stringContaining('SELECT metadata FROM traces'),
@@ -80,7 +83,7 @@ describe('handleTraceAppendNote', () => {
       { metadata: JSON.stringify({ [NOTE_KEY]: 'a' }) },
     ]);
 
-    await handleTraceAppendNote(stubClient, 'b', TRACE_ID, { ...baseOpts, json: true });
+    await handleTraceAppendNote(stubClient, 'b', { ...baseOpts, traceId: TRACE_ID, json: true });
 
     expect(logSpy).toHaveBeenCalledWith(
       JSON.stringify({ traceId: TRACE_ID, note: 'a\n\nb' }),
@@ -90,19 +93,19 @@ describe('handleTraceAppendNote', () => {
   it('throws to the wrapper when the trace does not exist', async () => {
     mockQuery.mockResolvedValue([]);
 
-    await expect(handleTraceAppendNote(stubClient, 'note', TRACE_ID, baseOpts))
+    await expect(handleTraceAppendNote(stubClient, 'note', { ...baseOpts, traceId: TRACE_ID }))
       .rejects.toThrow('not found');
     expect(mockPushMetadata).not.toHaveBeenCalled();
   });
 
   it('throws on an invalid trace id without querying', async () => {
-    await expect(handleTraceAppendNote(stubClient, 'note', 'garbage', baseOpts))
+    await expect(handleTraceAppendNote(stubClient, 'note', { ...baseOpts, traceId: 'garbage' }))
       .rejects.toThrow();
     expect(mockQuery).not.toHaveBeenCalled();
     expect(mockPushMetadata).not.toHaveBeenCalled();
   });
 
-  it('falls back to the debug-session.json trace_id when no trace id is given', async () => {
+  it('falls back to the debug-session.json trace_id when --trace-id is not given', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'lmnr-cli-test-'));
     mkdirSync(join(dir, '.lmnr'), { recursive: true });
     writeFileSync(
@@ -113,7 +116,7 @@ describe('handleTraceAppendNote', () => {
     vi.spyOn(process, 'cwd').mockReturnValue(dir);
     mockQuery.mockResolvedValue([{ metadata: '{}' }]);
 
-    await handleTraceAppendNote(stubClient, 'note', undefined, baseOpts);
+    await handleTraceAppendNote(stubClient, 'note', baseOpts);
 
     expect(mockPushMetadata).toHaveBeenCalledWith(
       TRACE_ID,
@@ -122,10 +125,10 @@ describe('handleTraceAppendNote', () => {
     );
   });
 
-  it('throws an actionable error when no trace id is given and no file exists', async () => {
+  it('throws an actionable error when --trace-id is not given and no file exists', async () => {
     vi.spyOn(process, 'cwd').mockReturnValue(mkdtempSync(join(tmpdir(), 'lmnr-cli-test-')));
 
-    await expect(handleTraceAppendNote(stubClient, 'note', undefined, baseOpts))
+    await expect(handleTraceAppendNote(stubClient, 'note', baseOpts))
       .rejects.toThrow('No trace id given');
     expect(mockQuery).not.toHaveBeenCalled();
   });

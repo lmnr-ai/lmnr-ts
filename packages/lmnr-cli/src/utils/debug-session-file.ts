@@ -50,10 +50,10 @@ export const resolveSessionId = (explicit?: string, dir?: string): string => {
 };
 
 /**
- * Resolve the trace id a trace command should act on: the explicit argument
- * when given, else the `trace_id` of `.lmnr/debug-session.json` (the root trace
- * of the most recent debug run in this directory). Throws an actionable error
- * when neither exists; the command wrapper's error envelope formats it.
+ * Resolve the trace id a trace command should act on: the explicit `--trace-id`
+ * value when given, else the `trace_id` of `.lmnr/debug-session.json` (the root
+ * trace of the most recent debug run in this directory). Throws an actionable
+ * error when neither exists; the command wrapper's error envelope formats it.
  */
 export const resolveTraceId = (explicit?: string, dir?: string): string => {
   if (explicit) return explicit;
@@ -61,8 +61,8 @@ export const resolveTraceId = (explicit?: string, dir?: string): string => {
   if (traceId) return traceId;
   throw new Error(
     "No trace id given and .lmnr/debug-session.json has no trace_id (no debug " +
-    "run has completed in this directory yet). Pass a trace id or run your " +
-    "program with LMNR_DEBUG=1 first.",
+    "run has completed in this directory yet). Pass --trace-id <id> or run " +
+    "your program with LMNR_DEBUG=1 first.",
   );
 };
 

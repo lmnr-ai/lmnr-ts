@@ -286,8 +286,8 @@ Examples:
     .command("append-note")
     .description("Append a free-text note to a trace (stored in trace metadata)")
     .argument("<note>", "Note text (may contain markdown)")
-    .argument(
-      "[trace-id]",
+    .option(
+      "--trace-id <id>",
       "Trace ID (UUID or 32-char OTel hex trace id). Defaults to the trace_id " +
       "of .lmnr/debug-session.json (the most recent debug run here)",
     )
@@ -298,13 +298,13 @@ Examples:
 Notes accumulate: each call appends a new paragraph to the trace's existing
 note rather than overwriting it.
 
-Without a trace id, the note goes to the trace_id recorded in
+Without --trace-id, the note goes to the trace_id recorded in
 .lmnr/debug-session.json — the root trace of the most recent LMNR_DEBUG=1 run
 in this directory.
 
 Examples:
   $ lmnr-cli trace append-note "Reproduced the timeout on the search tool."
-  $ lmnr-cli trace append-note "Reproduced the timeout." <trace-id>
+  $ lmnr-cli trace append-note "Reproduced the timeout." --trace-id <trace-id>
 `,
     );
 
