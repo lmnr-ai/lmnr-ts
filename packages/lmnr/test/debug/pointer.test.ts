@@ -119,6 +119,36 @@ void describe('debug session file', () => {
     assert.deepStrictEqual(JSON.parse(readFileSync(path, 'utf-8')), file);
   });
 
+  void it('emit does not overwrite a newer session minted while running', () => {
+    const dir = makeTmpDir();
+    process.cwd = () => dir;
+    // A newer session was minted (e.g. `debug session new`) while this older
+    // process was still alive.
+    const newer = buildDebugSessionFile({
+      sessionId: 'sess-new',
+      traceId: null,
+      replayTraceId: null,
+      cacheUntil: null,
+      debuggerUrl: null,
+    });
+    writeDebugSessionFile(newer, dir);
+
+    const stale = buildDebugSessionFile({
+      sessionId: 'sess-old',
+      traceId: 't',
+      replayTraceId: null,
+      cacheUntil: null,
+      debuggerUrl: null,
+    });
+    const lines = withCapturedConsole(() => emitPointer(stale));
+
+    // Console marker still printed for the stale run...
+    assert.ok(lines.join('\n').trim().startsWith(CONSOLE_PREFIX));
+    // ...but the file still holds the newer session.
+    const path = join(dir, DEBUG_SESSION_DIR, DEBUG_SESSION_FILE);
+    assert.deepStrictEqual(JSON.parse(readFileSync(path, 'utf-8')), newer);
+  });
+
   void it('emit is best-effort on an unwritable dir', () => {
     // Point cwd at a path under a regular file, so mkdirSync(recursive) raises
     // ENOTDIR; emit must still print and not throw.

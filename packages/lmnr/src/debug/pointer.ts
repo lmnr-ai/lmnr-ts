@@ -16,7 +16,7 @@
 
 import { type DebugSessionFile } from "@lmnr-ai/types";
 
-import { writeDebugSessionFile } from "./debug-session-file";
+import { readDebugSessionFile, writeDebugSessionFile } from "./debug-session-file";
 
 // Console marker the orchestrating tooling greps for. Must match the Python SDK.
 export const CONSOLE_PREFIX = "LMNR_DEBUG_RUN ";
@@ -44,8 +44,22 @@ export const buildDebugSessionFile = (args: {
   started_at: args.startedAt ?? new Date().toISOString(),
 });
 
-/** Print the console line, then best-effort write the debug-session file. */
+/**
+ * Print the console line, then best-effort write the debug-session file.
+ *
+ * The pointer is emitted at shutdown (via the `exit` hook / `Laminar.shutdown()`),
+ * which can be long after the run started. If a newer session was minted in the
+ * meantime — e.g. `lmnr-cli debug session new` reset `.lmnr/debug-session.json`
+ * while this (older) process was still running — blindly writing our in-memory
+ * session would clobber that fresher session id. So skip the file write when the
+ * on-disk `session_id` is present and differs from ours; we no longer own the
+ * file. The console marker is always printed regardless.
+ */
 export const emitPointer = (file: DebugSessionFile): void => {
   console.log(`${CONSOLE_PREFIX}${JSON.stringify(file)}`);
+  const onDisk = readDebugSessionFile();
+  if (onDisk !== null && onDisk.session_id !== file.session_id) {
+    return;
+  }
   writeDebugSessionFile(file);
 };
