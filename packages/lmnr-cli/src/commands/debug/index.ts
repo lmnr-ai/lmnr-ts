@@ -4,9 +4,8 @@ import { LaminarClient } from "@lmnr-ai/client";
 import { errorMessage, writeDebugSessionFile } from "@lmnr-ai/types";
 import open from "open";
 
-import { resolveBaseUrl } from "../../auth/resolve";
 import type { GlobalOpts } from "../../auth/with-client";
-import { getFrontendUrl } from "../../utils/frontend-url";
+import { DEFAULT_FRONTEND_URL } from "../../constants";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
 import { readNoteFromMetadata } from "../../utils/trace-note";
@@ -147,11 +146,10 @@ export const handleDebugSessionNew = async (
   }
 
   // 3. Build the per-session debugger URL once the project id is known and
-  // rewrite the file with it filled in. Derive the frontend from the SAME base
-  // URL the API client resolved (`--base-url` → LMNR_BASE_URL → default) — using
-  // only `opts.baseUrl` would ignore LMNR_BASE_URL and link to the cloud
-  // frontend while registration hit self-host.
-  const frontend = getFrontendUrl(resolveBaseUrl(opts.baseUrl));
+  // rewrite the file with it filled in. The frontend URL is its own env var
+  // (LMNR_FRONTEND_URL) with a cloud default; self-host/local sets it explicitly.
+  const frontend =
+    process.env.LMNR_FRONTEND_URL?.trim().replace(/\/+$/, "") || DEFAULT_FRONTEND_URL;
   const debuggerUrl = projectId
     ? `${frontend}/project/${projectId}/debugger-sessions/${sessionId}`
     : null;
