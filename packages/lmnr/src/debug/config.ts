@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import { type DebugContext } from "@lmnr-ai/types";
 
 import { initializeLogger } from "../utils";
-import { readDebugSessionFile } from "./debug-session-file";
+import { readDebugSessionFile, resolveDebugSessionDir } from "./debug-session-file";
 
 const logger = initializeLogger();
 
@@ -124,7 +124,10 @@ export const buildDebugConfig = (): DebugConfig | null => {
     return null;
   }
 
-  const existing = readDebugSessionFile();
+  // Nearest-ancestor resolution: a run started from a subdirectory of a
+  // project joins the project's session (TS-only for now; Python still reads
+  // cwd — parity follow-up pending alongside the last-run.json rename).
+  const existing = readDebugSessionFile(resolveDebugSessionDir());
 
   const providedSessionId =
     process.env.LMNR_DEBUG_SESSION_ID || existing?.session_id || undefined;

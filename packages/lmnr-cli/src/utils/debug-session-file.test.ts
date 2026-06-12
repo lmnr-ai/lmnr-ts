@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  findDebugSessionDir,
   readDebugSessionFile,
+  resolveDebugSessionDir,
   resolveSessionId,
   resolveTraceId,
   writeDebugSessionFile,
@@ -58,6 +60,48 @@ describe('readDebugSessionFile', () => {
     expect(read?.session_id).toBe(SESSION_ID);
     expect(read?.trace_id).toBeNull();
     expect(read?.debugger_url).toBeNull();
+  });
+});
+
+describe('findDebugSessionDir / resolveDebugSessionDir', () => {
+  it('finds the file from a nested subdirectory by walking up', () => {
+    writeRaw({ session_id: SESSION_ID });
+    const nested = join(dir, 'packages', 'app');
+    mkdirSync(nested, { recursive: true });
+
+    expect(findDebugSessionDir(nested)).toBe(dir);
+    expect(resolveDebugSessionDir(nested)).toBe(dir);
+    expect(resolveSessionId(undefined, nested)).toBe(SESSION_ID);
+  });
+
+  it('prefers the nearest file when both a subdirectory and an ancestor have one', () => {
+    writeRaw({ session_id: 'ancestor-session' });
+    const nested = join(dir, 'sub');
+    mkdirSync(join(nested, '.lmnr'), { recursive: true });
+    writeFileSync(
+      join(nested, '.lmnr', 'debug-session.json'),
+      JSON.stringify({ session_id: 'nearest-session' }),
+      'utf-8',
+    );
+
+    expect(findDebugSessionDir(nested)).toBe(nested);
+    expect(resolveSessionId(undefined, nested)).toBe('nearest-session');
+  });
+
+  it('skips a malformed file and keeps walking to a valid ancestor', () => {
+    writeRaw({ session_id: SESSION_ID });
+    const nested = join(dir, 'sub');
+    mkdirSync(join(nested, '.lmnr'), { recursive: true });
+    writeFileSync(join(nested, '.lmnr', 'debug-session.json'), 'not json', 'utf-8');
+
+    expect(findDebugSessionDir(nested)).toBe(dir);
+  });
+
+  it('resolves to the start directory itself when no ancestor has a file', () => {
+    const nested = join(dir, 'sub');
+    mkdirSync(nested, { recursive: true });
+    expect(findDebugSessionDir(nested)).toBeNull();
+    expect(resolveDebugSessionDir(nested)).toBe(nested);
   });
 });
 

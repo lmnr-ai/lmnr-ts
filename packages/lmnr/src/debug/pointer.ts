@@ -16,7 +16,11 @@
 
 import { type DebugSessionFile } from "@lmnr-ai/types";
 
-import { readDebugSessionFile, writeDebugSessionFile } from "./debug-session-file";
+import {
+  readDebugSessionFile,
+  resolveDebugSessionDir,
+  writeDebugSessionFile,
+} from "./debug-session-file";
 
 // Console marker the orchestrating tooling greps for. Must match the Python SDK.
 export const CONSOLE_PREFIX = "LMNR_DEBUG_RUN ";
@@ -54,12 +58,17 @@ export const buildDebugSessionFile = (args: {
  * session would clobber that fresher session id. So skip the file write when the
  * on-disk `session_id` is present and differs from ours; we no longer own the
  * file. The console marker is always printed regardless.
+ *
+ * The file location is the nearest-ancestor anchor (`resolveDebugSessionDir`),
+ * matching where startup (`config.ts`) read the session from — the guard's
+ * re-read and the write must hit the SAME file or the guard is meaningless.
  */
 export const emitPointer = (file: DebugSessionFile): void => {
   console.log(`${CONSOLE_PREFIX}${JSON.stringify(file)}`);
-  const onDisk = readDebugSessionFile();
+  const dir = resolveDebugSessionDir();
+  const onDisk = readDebugSessionFile(dir);
   if (onDisk !== null && onDisk.session_id !== file.session_id) {
     return;
   }
-  writeDebugSessionFile(file);
+  writeDebugSessionFile(file, dir);
 };

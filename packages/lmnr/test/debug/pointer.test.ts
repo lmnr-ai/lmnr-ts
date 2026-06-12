@@ -1,5 +1,5 @@
 import * as assert from 'node:assert';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
@@ -11,7 +11,9 @@ import {
 } from '@lmnr-ai/types';
 
 import {
+  findDebugSessionDir,
   readDebugSessionFile,
+  resolveDebugSessionDir,
   writeDebugSessionFile,
 } from '../../src/debug/debug-session-file';
 import {
@@ -149,6 +151,35 @@ void describe('debug session file', () => {
     assert.deepStrictEqual(JSON.parse(readFileSync(path, 'utf-8')), newer);
   });
 
+  void it('emit from a subdirectory writes back to the ancestor anchor, not cwd', () => {
+    const dir = makeTmpDir();
+    const nested = join(dir, 'packages', 'app');
+    mkdirSync(nested, { recursive: true });
+    const existing = buildDebugSessionFile({
+      sessionId: 's',
+      traceId: null,
+      replayTraceId: null,
+      cacheUntil: null,
+      debuggerUrl: null,
+    });
+    writeDebugSessionFile(existing, dir);
+    process.cwd = () => nested;
+
+    const updated = buildDebugSessionFile({
+      sessionId: 's',
+      traceId: 't-new',
+      replayTraceId: null,
+      cacheUntil: null,
+      debuggerUrl: null,
+    });
+    withCapturedConsole(() => emitPointer(updated));
+
+    // The ancestor file was updated in place; no nested copy was created.
+    const ancestorPath = join(dir, DEBUG_SESSION_DIR, DEBUG_SESSION_FILE);
+    assert.deepStrictEqual(JSON.parse(readFileSync(ancestorPath, 'utf-8')), updated);
+    assert.strictEqual(existsSync(join(nested, DEBUG_SESSION_DIR)), false);
+  });
+
   void it('emit is best-effort on an unwritable dir', () => {
     // Point cwd at a path under a regular file, so mkdirSync(recursive) raises
     // ENOTDIR; emit must still print and not throw.
@@ -207,6 +238,22 @@ void describe('readDebugSessionFile / writeDebugSessionFile (shared helpers)', (
     const dir = makeTmpDir();
     writeRaw(dir, JSON.stringify({ trace_id: 't' }));
     assert.strictEqual(readDebugSessionFile(dir), null);
+  });
+
+  void it('findDebugSessionDir walks up to the nearest valid file', () => {
+    const dir = makeTmpDir();
+    const nested = join(dir, 'a', 'b');
+    mkdirSync(nested, { recursive: true });
+    writeDebugSessionFile(sample, dir);
+
+    assert.strictEqual(findDebugSessionDir(nested), dir);
+    assert.strictEqual(resolveDebugSessionDir(nested), dir);
+  });
+
+  void it('resolveDebugSessionDir falls back to the start dir when nothing is found', () => {
+    const dir = makeTmpDir();
+    assert.strictEqual(findDebugSessionDir(dir), null);
+    assert.strictEqual(resolveDebugSessionDir(dir), dir);
   });
 
   void it('coerces non-string fields to null on read', () => {

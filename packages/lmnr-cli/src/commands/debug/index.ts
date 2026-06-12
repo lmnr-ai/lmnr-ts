@@ -8,6 +8,7 @@ import type { GlobalOpts } from "../../auth/with-client";
 import { DEFAULT_FRONTEND_URL } from "../../constants";
 import {
   readDebugSessionFile,
+  resolveDebugSessionDir,
   resolveSessionId,
   writeDebugSessionFile,
 } from "../../utils/debug-session-file";
@@ -141,7 +142,7 @@ export const handleDebugSessionOpen = async (
 ): Promise<void> => {
   const sessionId = resolveSessionId(opts.sessionId);
 
-  const file = readDebugSessionFile();
+  const file = readDebugSessionFile(resolveDebugSessionDir());
   let debuggerUrl = file?.session_id === sessionId ? file.debugger_url : null;
   if (!debuggerUrl) {
     const projectId = opts.projectId || (await readLocalProjectFile())?.projectId;
@@ -197,6 +198,12 @@ export const handleDebugSessionNew = async (
 ): Promise<void> => {
   const sessionId = randomUUID();
 
+  // The session file is project-scoped: reset the NEAREST existing
+  // .lmnr/debug-session.json (walking up from cwd) rather than shadowing it
+  // with a nested copy; only when none exists anywhere up the tree is a fresh
+  // one created in cwd. Resolved once — both writes must hit the same file.
+  const sessionDir = resolveDebugSessionDir();
+
   // 1. Write the file FIRST (nulls for trace/replay/cache, fresh started_at).
   // The debugger_url is filled in once we learn the project id from register().
   writeDebugSessionFile({
@@ -206,7 +213,7 @@ export const handleDebugSessionNew = async (
     cache_until: null,
     debugger_url: null,
     started_at: new Date().toISOString(),
-  });
+  }, sessionDir);
 
   // 2. Best-effort register. Routes to POST /v1/cli/rollouts/{id} (userToken
   // auth). A failure (endpoint missing / offline) warns but never fails — the
@@ -232,7 +239,7 @@ export const handleDebugSessionNew = async (
       cache_until: null,
       debugger_url: debuggerUrl,
       started_at: new Date().toISOString(),
-    });
+    }, sessionDir);
   }
 
   // 4. Output.

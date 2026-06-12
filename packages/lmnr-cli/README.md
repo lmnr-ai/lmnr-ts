@@ -137,7 +137,8 @@ lmnr-cli debug session summary                           # Every trace in the se
 
 These commands default to the session/trace recorded in
 `.lmnr/debug-session.json` (written by `debug session new` and `LMNR_DEBUG=1`
-runs); target another one with an explicit id flag
+runs; the nearest one walking up from the current directory, so subdirectories
+of a project work too); target another one with an explicit id flag
 (e.g. `lmnr-cli debug session summary --session-id <session-id>`,
 `lmnr-cli trace append-note "note" --trace-id <trace-id>`).
 

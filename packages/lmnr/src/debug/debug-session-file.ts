@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, parse, resolve } from "node:path";
 
 import {
   DEBUG_SESSION_DIR,
@@ -35,6 +35,33 @@ export const readDebugSessionFile = (dir: string = process.cwd()): DebugSessionF
     return null;
   }
 };
+
+/**
+ * Find the nearest directory (walking up from `startDir` to the filesystem
+ * root) whose `.lmnr/debug-session.json` holds a usable session record, so a
+ * debug run started from a subdirectory of a project joins the project's
+ * session. Returns null when no ancestor (including `startDir`) has one.
+ */
+export const findDebugSessionDir = (startDir: string = process.cwd()): string | null => {
+  let dir = resolve(startDir);
+  const root = parse(dir).root;
+  while (true) {
+    if (readDebugSessionFile(dir) !== null) return dir;
+    const parent = dirname(dir);
+    if (parent === dir || dir === root) return null;
+    dir = parent;
+  }
+};
+
+/**
+ * The directory the debug-session file should be read from AND written to: the
+ * nearest ancestor (incl. `startDir`) that already has one, else `startDir`
+ * itself. Read and write MUST share this anchor — reading from an ancestor but
+ * writing to cwd would strand the ancestor's copy stale and shadow it with a
+ * nested one.
+ */
+export const resolveDebugSessionDir = (startDir: string = process.cwd()): string =>
+  findDebugSessionDir(startDir) ?? resolve(startDir);
 
 /**
  * Write the debug-session file (mkdir -p first). Best-effort: swallows any IO

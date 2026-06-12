@@ -291,6 +291,10 @@ void describe("DebugRuntime", () => {
   });
 
   void it("recordTraceId keeps the first trace id", () => {
+    // Pin cwd: emitPointer writes the session file (with this config's replay
+    // fields armed) to the resolved session dir — leaking it into the real
+    // package dir poisons concurrently-running suite files that read it.
+    process.cwd = () => mkdtempSync(join(tmpdir(), "lmnr-runtime-"));
     const runtime = new DebugRuntime(
       config(),
       asResource(new FakeRolloutSessions()),

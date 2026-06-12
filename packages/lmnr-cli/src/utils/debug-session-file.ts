@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, parse, resolve } from "node:path";
 
 import { DEBUG_SESSION_DIR, DEBUG_SESSION_FILE, type DebugSessionFile } from "@lmnr-ai/types";
 
@@ -34,14 +34,42 @@ export const readDebugSessionFile = (dir: string = process.cwd()): DebugSessionF
 };
 
 /**
- * Resolve the session id a debug command should act on: the explicit
- * `--session-id` value when given, else the `session_id` of
- * `.lmnr/debug-session.json`. Throws an actionable error when neither exists;
- * the command wrapper's error envelope formats it.
+ * Find the nearest directory (walking up from `startDir` to the filesystem
+ * root) whose `.lmnr/debug-session.json` holds a usable session record, so CLI
+ * commands run from a subdirectory of a project act on the project's session.
+ * Mirrors the SDK's `findDebugSessionDir`. Returns null when no ancestor
+ * (including `startDir`) has one.
  */
-export const resolveSessionId = (explicit?: string, dir?: string): string => {
+export const findDebugSessionDir = (startDir: string = process.cwd()): string | null => {
+  let dir = resolve(startDir);
+  const root = parse(dir).root;
+  while (true) {
+    if (readDebugSessionFile(dir) !== null) return dir;
+    const parent = dirname(dir);
+    if (parent === dir || dir === root) return null;
+    dir = parent;
+  }
+};
+
+/**
+ * The directory the debug-session file should be read from AND written to: the
+ * nearest ancestor (incl. `startDir`) that already has one, else `startDir`
+ * itself. Read and write MUST share this anchor — `debug session new` resets
+ * the nearest existing file rather than shadowing it with a nested copy.
+ */
+export const resolveDebugSessionDir = (startDir: string = process.cwd()): string =>
+  findDebugSessionDir(startDir) ?? resolve(startDir);
+
+/**
+ * Resolve the session id a debug command should act on: the explicit
+ * `--session-id` value when given, else the `session_id` of the nearest
+ * `.lmnr/debug-session.json` (walking up from `startDir`). Throws an
+ * actionable error when neither exists; the command wrapper's error envelope
+ * formats it.
+ */
+export const resolveSessionId = (explicit?: string, startDir?: string): string => {
   if (explicit) return explicit;
-  const file = readDebugSessionFile(dir);
+  const file = readDebugSessionFile(resolveDebugSessionDir(startDir));
   if (file?.session_id) return file.session_id;
   throw new Error(
     "No session id given and no .lmnr/debug-session.json found in this " +
@@ -51,13 +79,14 @@ export const resolveSessionId = (explicit?: string, dir?: string): string => {
 
 /**
  * Resolve the trace id a trace command should act on: the explicit `--trace-id`
- * value when given, else the `trace_id` of `.lmnr/debug-session.json` (the root
- * trace of the most recent debug run in this directory). Throws an actionable
- * error when neither exists; the command wrapper's error envelope formats it.
+ * value when given, else the `trace_id` of the nearest
+ * `.lmnr/debug-session.json` (the root trace of the most recent debug run,
+ * walking up from `startDir`). Throws an actionable error when neither exists;
+ * the command wrapper's error envelope formats it.
  */
-export const resolveTraceId = (explicit?: string, dir?: string): string => {
+export const resolveTraceId = (explicit?: string, startDir?: string): string => {
   if (explicit) return explicit;
-  const traceId = readDebugSessionFile(dir)?.trace_id;
+  const traceId = readDebugSessionFile(resolveDebugSessionDir(startDir))?.trace_id;
   if (traceId) return traceId;
   throw new Error(
     "No trace id given and .lmnr/debug-session.json has no trace_id (no debug " +

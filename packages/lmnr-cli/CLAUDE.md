@@ -38,6 +38,15 @@ This is a CLI for the Laminar agent observability platform.
   `src/utils/debug-session-file.ts` (`resolveSessionId` / `resolveTraceId`),
   which throws an actionable error when neither the argument nor the file is
   available — the wrapper's error envelope formats it.
+- **The session file is found by walking UP from cwd** (`findDebugSessionDir` /
+  `resolveDebugSessionDir`, mirrored in the SDK's
+  `src/debug/debug-session-file.ts`): the nearest ancestor with a usable
+  `.lmnr/debug-session.json` wins, so commands work from subdirectories of a
+  project — same nearest-wins rule as `.lmnr/project.json`. Read and write
+  share that anchor: `debug session new` RESETS the nearest existing file
+  (project-scoped, no shadowing nested copies) and only creates one in cwd when
+  no ancestor has one. The SDK reads/writes through the same resolution, so
+  `LMNR_DEBUG=1` runs from a subdirectory join the session the CLI sees.
 - The `.lmnr/debug-session.json` **CONTRACT is shared** via `@lmnr-ai/types`
   (`DebugSessionFile` + `DEBUG_SESSION_DIR`/`DEBUG_SESSION_FILE` consts), which
   stays type-only (no `node:fs`). The sync fs read/write helpers live in each
