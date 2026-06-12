@@ -73,7 +73,7 @@ import {
  * The AI SDK v7 diagnostics channel name. Every lifecycle event fires
  * `{ type, event }` through this channel.
  */
-export const AI_SDK_TELEMETRY_DIAGNOSTIC_CHANNEL = "aisdk:lmnr-telemetry";
+export const AI_SDK_TELEMETRY_DIAGNOSTIC_CHANNEL = "aisdk:telemetry";
 
 export interface LaminarAiSdkTelemetryOptions {
   /**
@@ -169,7 +169,11 @@ export class LaminarAiSdkTelemetry {
     if (this.recordInputs) {
       // generate/stream variants carry StandardizedPrompt (system + messages);
       // embed carries `value`; rerank carries `documents` + `query`.
-      if (Array.isArray(event.messages) || event.system !== undefined) {
+      if (
+        Array.isArray(event.messages) ||
+        event.system !== undefined ||
+        event.instructions !== undefined
+      ) {
         applyPromptMessages(span, event);
       } else if (event.value !== undefined) {
         span.setAttribute(SPAN_INPUT, serializeJSON(event.value));
@@ -221,14 +225,15 @@ export class LaminarAiSdkTelemetry {
   onLanguageModelCallStart = (event: any): void => {
     const callId: string | undefined = event?.callId;
     if (!callId) return;
-    // LLM calls attach either to a step (generateText/streamText) or directly
-    // to the operation span (generateObject/streamObject). Pick whichever
-    // step matches the operation's current latest stepNumber when we don't
-    // have an explicit stepNumber on the event.
+    // When createStepSpan is true, LLM calls attach to the latest open step
+    // span. When false (no step spans registered), use event.stepNumber directly
+    // so each step's LLM span is keyed correctly and multi-step runs don't
+    // collide on stepKey(callId, 0). Fall back to the operation span as parent.
     const step = this.findLatestStep(callId);
+    const stepNumber =
+      step?.stepNumber ?? (event?.stepNumber as number | undefined) ?? 0;
     const parentCtx = step?.ctx ?? this.operationByCallId.get(callId)?.ctx;
     if (!parentCtx) return;
-    const stepNumber = step?.stepNumber ?? 0;
 
     const tracer = getTracer();
     const span = tracer.startSpan(
@@ -255,7 +260,8 @@ export class LaminarAiSdkTelemetry {
     const callId: string | undefined = event?.callId;
     if (!callId) return;
     const step = this.findLatestStep(callId);
-    const stepNumber = step?.stepNumber ?? 0;
+    const stepNumber =
+      step?.stepNumber ?? (event?.stepNumber as number | undefined) ?? 0;
     const llm = this.llmByKey.get(stepKey(callId, stepNumber));
     if (!llm) return;
 
@@ -691,8 +697,8 @@ export class LaminarAiSdkTelemetry {
       rawError instanceof Error
         ? rawError
         : new Error(
-            typeof rawError === "string" ? rawError : serializeJSON(rawError),
-          );
+          typeof rawError === "string" ? rawError : serializeJSON(rawError),
+        );
     const eventCallId: string | undefined =
       event && typeof event === "object" && typeof event.callId === "string"
         ? event.callId
