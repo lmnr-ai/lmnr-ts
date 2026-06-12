@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import { LaminarClient } from "@lmnr-ai/client";
-import { errorMessage, writeDebugSessionFile } from "@lmnr-ai/types";
+import { errorMessage } from "@lmnr-ai/types";
 import open from "open";
 
 import type { GlobalOpts } from "../../auth/with-client";
 import { DEFAULT_FRONTEND_URL } from "../../constants";
+import { writeDebugSessionFile } from "../../utils/debug-session-file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
 import { readNoteFromMetadata } from "../../utils/trace-note";

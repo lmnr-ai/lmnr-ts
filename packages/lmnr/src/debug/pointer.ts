@@ -6,14 +6,17 @@
  * `${CWD}/.lmnr/debug-session.json` (default-on now — there is no longer an
  * opt-in env gate). The file write is best-effort (any IO error is swallowed so
  * a read-only working directory never breaks the run) and delegates to the
- * shared `writeDebugSessionFile` helper in `@lmnr-ai/types` so the SDK and the
- * CLI write the SAME file shape through ONE implementation.
+ * local `writeDebugSessionFile` helper, which writes the SAME shape (the
+ * `DebugSessionFile` contract + filename consts from `@lmnr-ai/types`) the CLI
+ * writes, so the on-disk file stays consistent across both writers.
  *
  * Part of the cross-language parity surface — keep line-comparable with the
  * Python `pointer.py` (identical prefix and best-effort semantics).
  */
 
-import { type DebugSessionFile, writeDebugSessionFile } from "@lmnr-ai/types";
+import { type DebugSessionFile } from "@lmnr-ai/types";
+
+import { writeDebugSessionFile } from "./debug-session-file";
 
 // Console marker the orchestrating tooling greps for. Must match the Python SDK.
 export const CONSOLE_PREFIX = "LMNR_DEBUG_RUN ";

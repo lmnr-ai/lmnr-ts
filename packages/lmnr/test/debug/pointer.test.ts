@@ -8,10 +8,12 @@ import {
   DEBUG_SESSION_DIR,
   DEBUG_SESSION_FILE,
   type DebugSessionFile,
-  readDebugSessionFile,
-  writeDebugSessionFile,
 } from '@lmnr-ai/types';
 
+import {
+  readDebugSessionFile,
+  writeDebugSessionFile,
+} from '../../src/debug/debug-session-file';
 import {
   buildDebugSessionFile,
   CONSOLE_PREFIX,

@@ -9,9 +9,10 @@
 
 import { randomUUID } from "node:crypto";
 
-import { type DebugContext, readDebugSessionFile } from "@lmnr-ai/types";
+import { type DebugContext } from "@lmnr-ai/types";
 
 import { initializeLogger } from "../utils";
+import { readDebugSessionFile } from "./debug-session-file";
 
 const logger = initializeLogger();
 
