@@ -69,7 +69,7 @@ export const standardizedPromptToMessages = (event: {
   messages?: any[];
 }): any[] => {
   const messages: any[] = [];
-  const sys = event.system ?? event.instructions;
+  const sys = event.instructions || event.system;
   if (typeof sys === "string" && sys.length > 0) {
     messages.push({ role: "system", content: sys });
   } else if (Array.isArray(sys)) {
