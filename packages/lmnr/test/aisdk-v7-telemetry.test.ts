@@ -159,7 +159,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("creates operation → step → llm span tree for generateText", () => {
-    const tel = new LaminarAiSdkTelemetry();
+    const tel = new LaminarAiSdkTelemetry({ createStepSpan: true });
     const callId = "call-1";
 
     tel.onStart(mkStartEvent(callId));
@@ -288,9 +288,6 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
 
     const op = spans.find((s) => s.name === "ai.generateText");
     assert.ok(op);
-    const step0 = spans.find((s) => s.name === "ai.step 0");
-    const step1 = spans.find((s) => s.name === "ai.step 1");
-    assert.ok(step0 && step1);
 
     const tool = spans.find((s) => s.name === "ai.tool lookup");
     assert.ok(tool, "tool span missing");
@@ -298,18 +295,18 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.equal(tool.attributes["ai.toolCall.name"], "lookup");
     assert.equal(tool.attributes["ai.toolCall.id"], "tc-abc");
     assert.equal(tool.attributes["ai.toolCall.durationMs"], 12);
-    assert.equal(tool.parentSpanContext?.spanId, step0.spanContext().spanId);
+    assert.equal(tool.parentSpanContext?.spanId, op.spanContext().spanId);
 
     // LLM siblings under each step.
     const llmSpans = spans.filter((s) => s.name.startsWith("ai.llm "));
     assert.equal(llmSpans.length, 2);
     assert.equal(
       llmSpans[0].parentSpanContext?.spanId,
-      step0.spanContext().spanId,
+      op.spanContext().spanId,
     );
     assert.equal(
       llmSpans[1].parentSpanContext?.spanId,
-      step1.spanContext().spanId,
+      op.spanContext().spanId,
     );
   });
 
@@ -600,7 +597,6 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.deepEqual(names, [
       "ai.generateText",
       "ai.llm openai:gpt-4.1-nano",
-      "ai.step 0",
       "ai.tool broken",
     ]);
   });
@@ -627,7 +623,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("onFinish ends orphan children before the parent operation span", () => {
-    const tel = new LaminarAiSdkTelemetry();
+    const tel = new LaminarAiSdkTelemetry({ createStepSpan: true });
     const callId = "call-order";
     tel.onStart(mkStartEvent(callId));
     tel.onStepStart(mkStepStartEvent(callId, 0));
@@ -665,7 +661,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
   });
 
   void it("onError ends orphan tool spans before their parent step span", () => {
-    const tel = new LaminarAiSdkTelemetry();
+    const tel = new LaminarAiSdkTelemetry({ createStepSpan: true });
     const callId = "call-error-order";
     tel.onStart(mkStartEvent(callId));
     tel.onStepStart(mkStepStartEvent(callId, 0));
