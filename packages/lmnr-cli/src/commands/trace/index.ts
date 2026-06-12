@@ -1,6 +1,7 @@
 import { LaminarClient } from "@lmnr-ai/client";
 
 import type { GlobalOpts } from "../../auth/with-client";
+import { resolveTraceId } from "../../utils/debug-session-file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
 import {
@@ -23,6 +24,10 @@ const NOTE_SEPARATOR = "\n\n";
  * as `existing + "\n\n" + note`. The note may contain markdown /
  * span-reference links.
  *
+ * `explicitTraceId` is the optional `[trace-id]` positional; when omitted the
+ * trace comes from `.lmnr/debug-session.json`'s `trace_id` — the root trace of
+ * the most recent debug run in this directory (see `resolveTraceId`).
+ *
  * Pure handler: the command wrapper (`withProjectClient`) resolves a user-token
  * {@link LaminarClient} (routes to `/v1/cli/*` with the resolved project) and
  * owns the error envelope (`--json` → structured error + exit, else log + exit).
@@ -39,11 +44,11 @@ const NOTE_SEPARATOR = "\n\n";
  */
 export const handleTraceAppendNote = async (
   client: LaminarClient,
-  traceId: string,
   note: string,
+  explicitTraceId: string | undefined,
   opts: GlobalOpts,
 ): Promise<void> => {
-  const id = normalizeTraceId(traceId);
+  const id = normalizeTraceId(resolveTraceId(explicitTraceId));
 
   const rows = await client.sql.query(
     "SELECT metadata FROM traces WHERE id = {trace_id:UUID} LIMIT 1",

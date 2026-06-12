@@ -128,10 +128,18 @@ lmnr-cli dataset create my-dataset data.jsonl -o out.jsonl
 Record findings on a trace and review/name agent debug sessions.
 
 ```bash
-lmnr-cli trace append-note <trace-id> "note text"        # Append a markdown note to a trace
-lmnr-cli debug session set-name <session-id> "title"     # Rename a debug session
-lmnr-cli debug session summary <session-id>              # Every trace in a session + its note
+lmnr-cli debug session new                               # Mint a fresh debug session
+lmnr-cli debug session open                              # Open the session in the browser
+lmnr-cli trace append-note "note text"                   # Markdown note on the latest debug trace
+lmnr-cli debug session set-name "title"                  # Rename the current debug session
+lmnr-cli debug session summary                           # Every trace in the session + its note
 ```
+
+These commands default to the session/trace recorded in
+`.lmnr/debug-session.json` (written by `debug session new` and `LMNR_DEBUG=1`
+runs); pass an explicit id as the trailing argument to target another one
+(e.g. `lmnr-cli debug session summary <session-id>`,
+`lmnr-cli trace append-note "note" <trace-id>`).
 
 `trace append-note` accumulates (each call appends a paragraph). See the Laminar
 debugger docs: https://laminar.sh/docs/platform/debugger

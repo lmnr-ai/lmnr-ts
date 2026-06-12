@@ -6,7 +6,12 @@ import open from "open";
 
 import type { GlobalOpts } from "../../auth/with-client";
 import { DEFAULT_FRONTEND_URL } from "../../constants";
-import { writeDebugSessionFile } from "../../utils/debug-session-file";
+import {
+  readDebugSessionFile,
+  resolveSessionId,
+  writeDebugSessionFile,
+} from "../../utils/debug-session-file";
+import { readLocalProjectFile } from "../../utils/local-project-file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
 import { readNoteFromMetadata } from "../../utils/trace-note";
@@ -17,16 +22,20 @@ const logger = initializeLogger();
  * Upsert the display name of a debug session. Update-only on the backend: a
  * session id unknown to the project 404s rather than creating a ghost session.
  *
+ * `explicitSessionId` is the optional `[session-id]` positional; when omitted
+ * the session comes from `.lmnr/debug-session.json` (see `resolveSessionId`).
+ *
  * Pure handler: the command wrapper (`withProjectClient`) resolves a user-token
  * {@link LaminarClient} (routes to `/v1/cli/*` with the resolved project) and
  * owns the error envelope.
  */
 export const handleDebugSessionSetName = async (
   client: LaminarClient,
-  sessionId: string,
   name: string,
+  explicitSessionId: string | undefined,
   opts: GlobalOpts,
 ): Promise<void> => {
+  const sessionId = resolveSessionId(explicitSessionId);
   await client.rolloutSessions.setName({ sessionId, name });
 
   if (opts.json) {
@@ -50,15 +59,19 @@ interface SessionTraceSummary {
  * groups it to the session (`rollout.session_id`), oldest first, with the
  * agent-authored note (`rollout.note`) attached to each.
  *
+ * `explicitSessionId` is the optional `[session-id]` positional; when omitted
+ * the session comes from `.lmnr/debug-session.json` (see `resolveSessionId`).
+ *
  * Pure handler: the command wrapper (`withProjectClient`) resolves a user-token
  * {@link LaminarClient} (routes to `/v1/cli/*` with the resolved project) and
  * owns the error envelope.
  */
 export const handleDebugSessionSummary = async (
   client: LaminarClient,
-  sessionId: string,
+  explicitSessionId: string | undefined,
   opts: GlobalOpts,
 ): Promise<void> => {
+  const sessionId = resolveSessionId(explicitSessionId);
   // formatDateTime pins end_time to unambiguous ISO-8601 UTC — the raw
   // column serializes as ClickHouse's space-separated local-looking format.
   const rows = await client.sql.query(
@@ -91,6 +104,62 @@ export const handleDebugSessionSummary = async (
     return trace.note ? `${trace.note}\n${tag}` : tag;
   });
   console.log(blocks.join("\n\n"));
+};
+
+/**
+ * Build the frontend debugger-session URL. The frontend URL is its own env var
+ * (LMNR_FRONTEND_URL) with a cloud default; self-host/local sets it explicitly.
+ */
+const buildDebuggerUrl = (projectId: string, sessionId: string): string => {
+  const frontend =
+    process.env.LMNR_FRONTEND_URL?.trim().replace(/\/+$/, "") || DEFAULT_FRONTEND_URL;
+  return `${frontend}/project/${projectId}/debugger-sessions/${sessionId}`;
+};
+
+/**
+ * Open a debug session's debugger page in the browser.
+ *
+ * `explicitSessionId` is the optional `[session-id]` positional; when omitted
+ * the session comes from `.lmnr/debug-session.json` (see `resolveSessionId`).
+ * The URL is the file's stored `debugger_url` when it belongs to the resolved
+ * session, else it is rebuilt from the resolved project (`--project-id` or the
+ * linked `.lmnr/project.json`) + LMNR_FRONTEND_URL.
+ *
+ * Local-only handler (registered via `withLocalOpts`, NOT `withProjectClient`):
+ * everything needed lives on disk, so no auth resolution / API call — `open`
+ * works offline and before login.
+ */
+export const handleDebugSessionOpen = async (
+  explicitSessionId: string | undefined,
+  opts: GlobalOpts,
+): Promise<void> => {
+  const sessionId = resolveSessionId(explicitSessionId);
+
+  const file = readDebugSessionFile();
+  let debuggerUrl = file?.session_id === sessionId ? file.debugger_url : null;
+  if (!debuggerUrl) {
+    const projectId = opts.projectId || (await readLocalProjectFile())?.projectId;
+    if (!projectId) {
+      throw new Error(
+        "Cannot build the debugger URL: no project is linked to this " +
+        "directory. Pass --project-id or run `lmnr-cli setup`.",
+      );
+    }
+    debuggerUrl = buildDebuggerUrl(projectId, sessionId);
+  }
+
+  if (opts.json) {
+    outputJson({ sessionId, debuggerUrl });
+  } else {
+    // URL to stdout (agent-capturable); the logger keeps stderr for messages.
+    console.log(debuggerUrl);
+  }
+
+  try {
+    await open(debuggerUrl);
+  } catch (e) {
+    logger.warn(`Could not open a browser (${errorMessage(e)}). URL: ${debuggerUrl}`);
+  }
 };
 
 /** Options accepted by `debug session new` (extends the shared globals). */
@@ -147,13 +216,8 @@ export const handleDebugSessionNew = async (
   }
 
   // 3. Build the per-session debugger URL once the project id is known and
-  // rewrite the file with it filled in. The frontend URL is its own env var
-  // (LMNR_FRONTEND_URL) with a cloud default; self-host/local sets it explicitly.
-  const frontend =
-    process.env.LMNR_FRONTEND_URL?.trim().replace(/\/+$/, "") || DEFAULT_FRONTEND_URL;
-  const debuggerUrl = projectId
-    ? `${frontend}/project/${projectId}/debugger-sessions/${sessionId}`
-    : null;
+  // rewrite the file with it filled in.
+  const debuggerUrl = projectId ? buildDebuggerUrl(projectId, sessionId) : null;
   if (debuggerUrl) {
     writeDebugSessionFile({
       session_id: sessionId,
