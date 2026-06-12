@@ -65,10 +65,11 @@ export const applyUsage = (
 // `ai.prompt.messages` as an array of AI SDK messages.
 export const standardizedPromptToMessages = (event: {
   system?: any;
+  instructions?: any;
   messages?: any[];
 }): any[] => {
   const messages: any[] = [];
-  const sys = event.system;
+  const sys = event.instructions || event.system;
   if (typeof sys === "string" && sys.length > 0) {
     messages.push({ role: "system", content: sys });
   } else if (Array.isArray(sys)) {

@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.8.29",
+  "version": "0.8.30",
   "description": "TypeScript SDK for Laminar AI",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -53,7 +53,7 @@
   },
   "homepage": "https://github.com/lmnr-ai/lmnr-ts#README",
   "dependencies": {
-    "@grpc/grpc-js": "^1.14.3",
+    "@grpc/grpc-js": "^1.14.4",
     "@lmnr-ai/claude-code-proxy": "^0.1.22",
     "@noble/hashes": "~2.2.0",
     "@opentelemetry/api": "^1.9.0",

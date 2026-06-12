@@ -82,6 +82,11 @@ export interface LaminarAiSdkTelemetryOptions {
    */
   recordInputs?: boolean;
   recordOutputs?: boolean;
+  /**
+   * When true, create an `ai.step N` span for each step in a multi-step
+   * generation. Defaults to false.
+   */
+  createStepSpan?: boolean;
 }
 
 /**
@@ -95,6 +100,7 @@ export interface LaminarAiSdkTelemetryOptions {
 export class LaminarAiSdkTelemetry {
   private readonly recordInputs: boolean;
   private readonly recordOutputs: boolean;
+  private readonly createStepSpan: boolean;
 
   // Root operation span (one per generateText/streamText/generateObject/
   // streamObject/embed/embedMany/rerank call), keyed by AI SDK `callId`.
@@ -115,6 +121,7 @@ export class LaminarAiSdkTelemetry {
   constructor(options: LaminarAiSdkTelemetryOptions = {}) {
     this.recordInputs = options.recordInputs ?? true;
     this.recordOutputs = options.recordOutputs ?? true;
+    this.createStepSpan = options.createStepSpan ?? false;
   }
 
   // ------------------------------------------------------------------
@@ -162,7 +169,11 @@ export class LaminarAiSdkTelemetry {
     if (this.recordInputs) {
       // generate/stream variants carry StandardizedPrompt (system + messages);
       // embed carries `value`; rerank carries `documents` + `query`.
-      if (Array.isArray(event.messages) || event.system !== undefined) {
+      if (
+        Array.isArray(event.messages) ||
+        event.system !== undefined ||
+        event.instructions !== undefined
+      ) {
         applyPromptMessages(span, event);
       } else if (event.value !== undefined) {
         span.setAttribute(SPAN_INPUT, serializeJSON(event.value));
@@ -184,6 +195,7 @@ export class LaminarAiSdkTelemetry {
   };
 
   onStepStart = (event: any): void => {
+    if (!this.createStepSpan) return;
     const callId: string | undefined = event?.callId;
     const stepNumber: number = event?.stepNumber ?? 0;
     if (!callId) return;
@@ -213,14 +225,15 @@ export class LaminarAiSdkTelemetry {
   onLanguageModelCallStart = (event: any): void => {
     const callId: string | undefined = event?.callId;
     if (!callId) return;
-    // LLM calls attach either to a step (generateText/streamText) or directly
-    // to the operation span (generateObject/streamObject). Pick whichever
-    // step matches the operation's current latest stepNumber when we don't
-    // have an explicit stepNumber on the event.
+    // When createStepSpan is true, LLM calls attach to the latest open step
+    // span. When false (no step spans registered), use event.stepNumber directly
+    // so each step's LLM span is keyed correctly and multi-step runs don't
+    // collide on stepKey(callId, 0). Fall back to the operation span as parent.
     const step = this.findLatestStep(callId);
+    const stepNumber =
+      step?.stepNumber ?? (event?.stepNumber as number | undefined) ?? 0;
     const parentCtx = step?.ctx ?? this.operationByCallId.get(callId)?.ctx;
     if (!parentCtx) return;
-    const stepNumber = step?.stepNumber ?? 0;
 
     const tracer = getTracer();
     const span = tracer.startSpan(
@@ -247,7 +260,8 @@ export class LaminarAiSdkTelemetry {
     const callId: string | undefined = event?.callId;
     if (!callId) return;
     const step = this.findLatestStep(callId);
-    const stepNumber = step?.stepNumber ?? 0;
+    const stepNumber =
+      step?.stepNumber ?? (event?.stepNumber as number | undefined) ?? 0;
     const llm = this.llmByKey.get(stepKey(callId, stepNumber));
     if (!llm) return;
 
@@ -342,8 +356,6 @@ export class LaminarAiSdkTelemetry {
     const stepNumber: number = event?.stepNumber ?? 0;
     if (!callId) return;
     const key = stepKey(callId, stepNumber);
-    const step = this.stepByKey.get(key);
-    if (!step) return;
 
     // Ensure the LLM span for this step is closed, even if the provider
     // skipped `onLanguageModelCallEnd` (e.g. an error surfaced via onError).
@@ -365,6 +377,9 @@ export class LaminarAiSdkTelemetry {
       removeActiveLlmSpan(llm.span);
       this.llmByKey.delete(key);
     }
+
+    const step = this.stepByKey.get(key);
+    if (!step) return;
 
     // Emit per-step usage + finish reason on the step span too, so a step
     // that was interrupted mid-stream still reports correct totals.
