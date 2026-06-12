@@ -19,11 +19,20 @@ import { readNoteFromMetadata } from "../../utils/trace-note";
 const logger = initializeLogger();
 
 /**
+ * Options accepted by the session-scoped debug commands (`set-name`, `summary`,
+ * `open`), extending the shared globals.
+ */
+export interface DebugSessionScopedOpts extends GlobalOpts {
+  /** Set by `--session-id`; omitted → the debug-session.json `session_id`. */
+  sessionId?: string;
+}
+
+/**
  * Upsert the display name of a debug session. Update-only on the backend: a
  * session id unknown to the project 404s rather than creating a ghost session.
  *
- * `explicitSessionId` is the optional `[session-id]` positional; when omitted
- * the session comes from `.lmnr/debug-session.json` (see `resolveSessionId`).
+ * The target session is the optional `--session-id` flag; when omitted the
+ * session comes from `.lmnr/debug-session.json` (see `resolveSessionId`).
  *
  * Pure handler: the command wrapper (`withProjectClient`) resolves a user-token
  * {@link LaminarClient} (routes to `/v1/cli/*` with the resolved project) and
@@ -32,10 +41,9 @@ const logger = initializeLogger();
 export const handleDebugSessionSetName = async (
   client: LaminarClient,
   name: string,
-  explicitSessionId: string | undefined,
-  opts: GlobalOpts,
+  opts: DebugSessionScopedOpts,
 ): Promise<void> => {
-  const sessionId = resolveSessionId(explicitSessionId);
+  const sessionId = resolveSessionId(opts.sessionId);
   await client.rolloutSessions.setName({ sessionId, name });
 
   if (opts.json) {
@@ -59,8 +67,8 @@ interface SessionTraceSummary {
  * groups it to the session (`rollout.session_id`), oldest first, with the
  * agent-authored note (`rollout.note`) attached to each.
  *
- * `explicitSessionId` is the optional `[session-id]` positional; when omitted
- * the session comes from `.lmnr/debug-session.json` (see `resolveSessionId`).
+ * The target session is the optional `--session-id` flag; when omitted the
+ * session comes from `.lmnr/debug-session.json` (see `resolveSessionId`).
  *
  * Pure handler: the command wrapper (`withProjectClient`) resolves a user-token
  * {@link LaminarClient} (routes to `/v1/cli/*` with the resolved project) and
@@ -68,10 +76,9 @@ interface SessionTraceSummary {
  */
 export const handleDebugSessionSummary = async (
   client: LaminarClient,
-  explicitSessionId: string | undefined,
-  opts: GlobalOpts,
+  opts: DebugSessionScopedOpts,
 ): Promise<void> => {
-  const sessionId = resolveSessionId(explicitSessionId);
+  const sessionId = resolveSessionId(opts.sessionId);
   // formatDateTime pins end_time to unambiguous ISO-8601 UTC — the raw
   // column serializes as ClickHouse's space-separated local-looking format.
   const rows = await client.sql.query(
@@ -119,8 +126,8 @@ const buildDebuggerUrl = (projectId: string, sessionId: string): string => {
 /**
  * Open a debug session's debugger page in the browser.
  *
- * `explicitSessionId` is the optional `[session-id]` positional; when omitted
- * the session comes from `.lmnr/debug-session.json` (see `resolveSessionId`).
+ * The target session is the optional `--session-id` flag; when omitted the
+ * session comes from `.lmnr/debug-session.json` (see `resolveSessionId`).
  * The URL is the file's stored `debugger_url` when it belongs to the resolved
  * session, else it is rebuilt from the resolved project (`--project-id` or the
  * linked `.lmnr/project.json`) + LMNR_FRONTEND_URL.
@@ -130,10 +137,9 @@ const buildDebuggerUrl = (projectId: string, sessionId: string): string => {
  * works offline and before login.
  */
 export const handleDebugSessionOpen = async (
-  explicitSessionId: string | undefined,
-  opts: GlobalOpts,
+  opts: DebugSessionScopedOpts,
 ): Promise<void> => {
-  const sessionId = resolveSessionId(explicitSessionId);
+  const sessionId = resolveSessionId(opts.sessionId);
 
   const file = readDebugSessionFile();
   let debuggerUrl = file?.session_id === sessionId ? file.debugger_url : null;

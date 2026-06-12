@@ -27,12 +27,14 @@ This is a CLI for the Laminar agent observability platform.
   reads the file and rejoins this session silently (no browser) — "new session" is
   owned by this command; the SDK only mints when no file exists.
 - **All session/trace-scoped commands default their id from
-  `.lmnr/debug-session.json`**: `debug session summary [session-id]`,
-  `debug session open [session-id]`, `debug session set-name <name> [session-id]`,
-  and `trace append-note <note> [--trace-id <id>]` (falls back to the file's
-  `trace_id` — the root trace of the most recent debug run). The payload
-  positional comes FIRST; session ids are trailing optional positionals, the
-  trace id is a flag. Resolution lives in
+  `.lmnr/debug-session.json`, and explicit ids are ALWAYS flags, never
+  positionals**: `debug session summary [--session-id <id>]`,
+  `debug session open [--session-id <id>]`,
+  `debug session set-name <name> [--session-id <id>]`, and
+  `trace append-note <note> [--trace-id <id>]` (falls back to the file's
+  `trace_id` — the root trace of the most recent debug run). Positionals are
+  payload only (name / note), so a stray extra positional fails fast at
+  commander instead of being silently treated as an id. Resolution lives in
   `src/utils/debug-session-file.ts` (`resolveSessionId` / `resolveTraceId`),
   which throws an actionable error when neither the argument nor the file is
   available — the wrapper's error envelope formats it.

@@ -347,35 +347,35 @@ Learn more about debugging features at https://laminar.sh/docs/platform/debugger
     .command("set-name")
     .description("Set the display name of a debug session")
     .argument("<name>", "Session display name")
-    .argument(
-      "[session-id]",
+    .option(
+      "--session-id <id>",
       "Debug session ID. Defaults to the session in .lmnr/debug-session.json",
     )
     .action(withProjectClient(handleDebugSessionSetName))
     .addHelpText(
       "after",
       `
-Without a session id, the name applies to the session recorded in
+Without --session-id, the name applies to the session recorded in
 .lmnr/debug-session.json (written by \`debug session new\` / LMNR_DEBUG=1 runs).
 
 Examples:
   $ lmnr-cli debug session set-name "Fix report length + search tool"
-  $ lmnr-cli debug session set-name "Fix report length" <session-id>
+  $ lmnr-cli debug session set-name "Fix report length" --session-id <session-id>
 `,
     );
 
   debugSessionCmd
     .command("summary")
     .description("Print every trace in a debug session with its note, oldest first")
-    .argument(
-      "[session-id]",
+    .option(
+      "--session-id <id>",
       "Debug session ID. Defaults to the session in .lmnr/debug-session.json",
     )
     .action(withProjectClient(handleDebugSessionSummary))
     .addHelpText(
       "after",
       `
-Without a session id, summarizes the session recorded in
+Without --session-id, summarizes the session recorded in
 .lmnr/debug-session.json (written by \`debug session new\` / LMNR_DEBUG=1 runs).
 
 Output is one block per trace (oldest first), the trace's note followed by a
@@ -388,29 +388,29 @@ With --json, prints an array of {"note", "traceId", "endTime"} objects.
 
 Examples:
   $ lmnr-cli debug session summary
-  $ lmnr-cli debug session summary <session-id> --json
+  $ lmnr-cli debug session summary --session-id <session-id> --json
 `,
     );
 
   debugSessionCmd
     .command("open")
     .description("Open a debug session's debugger page in the browser")
-    .argument(
-      "[session-id]",
+    .option(
+      "--session-id <id>",
       "Debug session ID. Defaults to the session in .lmnr/debug-session.json",
     )
     .action(withLocalOpts(handleDebugSessionOpen))
     .addHelpText(
       "after",
       `
-Without a session id, opens the session recorded in .lmnr/debug-session.json
+Without --session-id, opens the session recorded in .lmnr/debug-session.json
 (written by \`debug session new\` / LMNR_DEBUG=1 runs). The URL is also printed
 to stdout; in --json mode a {"sessionId","debuggerUrl"} object is printed
 instead. Local-only: no login or network needed.
 
 Examples:
   $ lmnr-cli debug session open
-  $ lmnr-cli debug session open <session-id>
+  $ lmnr-cli debug session open --session-id <session-id>
 `,
     );
 

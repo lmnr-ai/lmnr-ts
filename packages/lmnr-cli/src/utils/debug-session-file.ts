@@ -34,10 +34,10 @@ export const readDebugSessionFile = (dir: string = process.cwd()): DebugSessionF
 };
 
 /**
- * Resolve the session id a debug command should act on: the explicit argument
- * when given, else the `session_id` of `.lmnr/debug-session.json`. Throws an
- * actionable error when neither exists; the command wrapper's error envelope
- * formats it.
+ * Resolve the session id a debug command should act on: the explicit
+ * `--session-id` value when given, else the `session_id` of
+ * `.lmnr/debug-session.json`. Throws an actionable error when neither exists;
+ * the command wrapper's error envelope formats it.
  */
 export const resolveSessionId = (explicit?: string, dir?: string): string => {
   if (explicit) return explicit;
@@ -45,7 +45,7 @@ export const resolveSessionId = (explicit?: string, dir?: string): string => {
   if (file?.session_id) return file.session_id;
   throw new Error(
     "No session id given and no .lmnr/debug-session.json found in this " +
-    "directory. Pass a session id or run `lmnr-cli debug session new`.",
+    "directory. Pass --session-id <id> or run `lmnr-cli debug session new`.",
   );
 };
 
