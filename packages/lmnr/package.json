@@ -83,7 +83,7 @@
     "commander": "^14.0.2",
     "csv-parser": "^3.2.0",
     "dotenv": "^17.2.2",
-    "esbuild": "^0.25.8",
+    "esbuild": "^0.28.1",
     "export-to-csv": "^1.4.0",
     "glob": "^13.0.6",
     "lmnr-cli": "^0.1.9",
