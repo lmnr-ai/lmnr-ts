@@ -46,6 +46,6 @@
   "devDependencies": {
     "@lmnr-ai/types": "workspace:*",
     "nock": "^14.0.8",
-    "tsx": "^4.20.3"
+    "tsx": "^4.22.4"
   }
 }
