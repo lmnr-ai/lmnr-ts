@@ -231,6 +231,59 @@ void describe("AI SDK harness instrumentation", () => {
     assert.ok(toHr(tool.endTime) <= turnEnd, "tool ended after turn");
   });
 
+  void it("synthesized children keep REAL duration on a normal immediate drain", async () => {
+    // cursor[bot] "Synthesized children always zero duration": the turn span is
+    // finished EAGERLY (data-settle) when stream() resolves, but its PHYSICAL
+    // end is deferred. If the child clamp keyed off the eager snapshot, every
+    // normally-drained child (whose realStart is always after that snapshot)
+    // would be pinned to zero duration. The clamp must engage only once the span
+    // is PHYSICALLY ended — so an immediately-drained TOOL span that spans a real
+    // wall-clock gap keeps its true (non-zero) duration.
+    const slowStream: AsyncIterable<StreamPart> = {
+      async *[Symbol.asyncIterator]() {
+        yield { type: "text-delta", text: "hi" };
+        yield {
+          type: "tool-call",
+          toolCallId: "tc-dur",
+          toolName: "search",
+          input: { q: "x" },
+        };
+        // A real macrotask gap so the TOOL span (opened on tool-call, closed on
+        // tool-result) covers measurable wall-clock time.
+        await new Promise((r) => setTimeout(r, 10));
+        yield { type: "tool-result", toolCallId: "tc-dur", output: { ok: true } };
+      },
+    };
+    const agent = instrumentHarnessAgent(
+      mkAgent({
+        streamResult: { text: "final", stream: slowStream },
+      }),
+    );
+
+    const result = (await agent.stream({ prompt: "go" })) as {
+      stream: AsyncIterable<StreamPart>;
+    };
+    await drain(result.stream);
+
+    const spans = exporter.getFinishedSpans();
+    const turn = spans.find((s) => s.name === "harness.stream");
+    const tool = spans.find((s) => s.name === "harness.tool search");
+    assert.ok(turn, "turn span missing");
+    assert.ok(tool, "synthesized tool span missing");
+    // The TOOL span must carry its REAL duration (>= the ~10ms gap), NOT a
+    // zero-duration pin to the eager parent-end snapshot.
+    const toolDuration = toHr(tool.endTime) - toHr(tool.startTime);
+    assert.ok(
+      toolDuration > 0,
+      `tool span has zero duration (pinned to eager snapshot): ${toolDuration}ns`,
+    );
+    // Invariant still holds: child ends at-or-before the (physically-ended) turn.
+    assert.ok(
+      toHr(tool.endTime) <= toHr(turn.endTime),
+      "tool ended after turn (clamp invariant broken)",
+    );
+  });
+
   void it("dedupes: no synthesized children when core telemetry fired", async () => {
     const agent = instrumentHarnessAgent(
       mkAgent({

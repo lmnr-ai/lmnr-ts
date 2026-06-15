@@ -108,38 +108,45 @@ export const consumeHarnessStream = (
   // matching tool-result. Provider-executed / dynamic tool parts also land here.
   const toolSpans = new Map<string, Span>();
 
-  // CLAMP MODEL. The wrapper finishes the parent turn span EAGERLY from the
-  // resolved result, possibly BEFORE this generator iterates (iteration may be
-  // deferred). The invariant we must keep is child.endTime <= parent.endTime,
-  // WITHOUT needlessly destroying real per-LLM / per-tool timing.
+  // CLAMP MODEL. The wrapper settles the parent turn span's DATA eagerly from
+  // the resolved result, but DEFERS the physical end. `handle.parentEndTime()`
+  // returns a value ONLY once the span is PHYSICALLY ended — `undefined` while
+  // still live — because during the live window `commitTurnEnd` EXTENDS the
+  // parent end to cover the latest child end, so a child drained then keeps its
+  // REAL timing and the parent simply ends at-or-after it. The invariant we must
+  // keep is child.endTime <= parent.endTime, WITHOUT needlessly destroying real
+  // per-LLM / per-tool timing.
   //
-  // Two cases, decided per child by comparing its REAL start to the parent end:
+  // So in the COMMON case (normal / deferred drain, parent still live) parentEnd
+  // is `undefined` and we use the child's REAL start/end with NO clamp — true
+  // duration always survives, including a deferred drain (the parent end is
+  // pushed out to cover it at commit). [If we instead keyed the clamp off the
+  // EAGER data-settle snapshot, every normally-drained child — whose realStart
+  // is always after that snapshot — would be pinned to zero duration. That was
+  // cursor[bot] "Synthesized children always zero duration".]
   //
-  // - Normal / prompt-drain case (realStart <= parentEnd): use the child's REAL
-  //   start and REAL end. For a promptly-drained stream the child also ends
-  //   before the parent (realEnd <= parentEnd), so the general clamp
-  //   end = min(realEnd, parentEnd) is a no-op and TRUE duration survives. If a
-  //   tail somehow ran past parentEnd we clamp only the end down to parentEnd —
-  //   start stays real (still <= end), so the invariant holds with minimal loss.
+  // parentEnd is only KNOWN once the parent is physically ended (a synchronous
+  // error/abort, or the idle-fallback committing during a macrotask gap mid-
+  // drain). Then, deciding per child by comparing its REAL start to that end:
   //
-  // - Deferred case (realStart > parentEnd): a child cannot start after its
-  //   parent ended without the OTel SDK rejecting the backdated start (it falls
-  //   back to now()), so we PIN both start and end to parentEnd — a
-  //   zero-duration child exactly at the parent end. This degradation is now
-  //   confined to the genuinely-after-parent case instead of every child.
+  // - realStart <= parentEnd: keep the child's REAL start; clamp only the end
+  //   down to end = min(realEnd, parentEnd) (a no-op unless a tail ran past it).
   //
-  // When parentEnd isn't known (parent not finished — shouldn't happen on the
-  // eager path, but defensive) we fall back to live timestamps (no clamp).
+  // - realStart > parentEnd: a child cannot start after its parent ended without
+  //   the OTel SDK rejecting the backdated start (it falls back to now()), so we
+  //   PIN both start and end to parentEnd — a zero-duration child exactly at the
+  //   parent end. Confined to the genuinely-after-physical-end case.
   //
-  // Start options for a synthesized child. Use the real start unless it would
-  // fall AFTER the parent end (deferred case) — then pin the start to parentEnd
-  // so the SDK accepts it and the child collapses to zero duration there.
+  // Start options for a synthesized child. Use the real start unless parentEnd
+  // is known AND the real start would fall AFTER it (after-physical-end case) —
+  // then pin the start to parentEnd so the SDK accepts it and the child
+  // collapses to zero duration there.
   const childStartOpts = (kind: SpanKind) => {
     const parentEnd = handle.parentEndTime();
     if (parentEnd === undefined) return { kind };
     const realStartNanos = hrTimeToNanoseconds(hrTime());
     if (realStartNanos > hrTimeToNanoseconds(parentEnd)) {
-      // Deferred: real start is after the parent already ended — pin it.
+      // After physical end: real start is after the parent already ended — pin.
       return { kind, startTime: parentEnd };
     }
     // Normal: let the SDK stamp the real start (now).
@@ -147,9 +154,8 @@ export const consumeHarnessStream = (
   };
 
   // End a synthesized child at min(realEnd, parentEnd) so the child never
-  // outlives the parent, while a promptly-drained child keeps its real end (and
-  // thus its real duration). Falls back to the live end when parentEnd is
-  // unknown.
+  // outlives the parent, while a child whose parent is still live (parentEnd
+  // unknown) keeps its real end (and thus its real duration).
   const endChild = (span: Span): void => {
     const parentEnd = handle.parentEndTime();
     if (parentEnd === undefined) {

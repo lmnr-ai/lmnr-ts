@@ -375,6 +375,17 @@ export const openHarnessTurnSpan = (
     // creates a span outside the already-ended parent window. The normal
     // result close leaves this false so children still synthesize + clamp.
     isFinished: () => closedByErrorOrAbort,
-    parentEndTime: () => turnEndTime,
+    // Report the clamp boundary ONLY once the span is PHYSICALLY ended, NOT at
+    // eager data-settle. `finishFromResult` snapshots `turnEndTime` eagerly but
+    // DEFERS the physical end; during that live window `commitTurnEnd` will
+    // EXTEND `turnEndTime` to cover the latest child end, so a child drained
+    // then must keep its REAL start/end (no clamp) — returning the eager
+    // snapshot here would pin every normally-drained child to zero duration
+    // (its realStart is always after the eager snapshot). Once `spanEnded` (the
+    // deferred end committed by the fallback during a macrotask gap, or a
+    // synchronous error/abort), the parent can no longer be extended, so a child
+    // synthesized after that point IS clamped to the real end. `undefined` while
+    // live makes the consumer use live timestamps — exactly the desired no-clamp.
+    parentEndTime: () => (spanEnded ? turnEndTime : undefined),
   };
 };
