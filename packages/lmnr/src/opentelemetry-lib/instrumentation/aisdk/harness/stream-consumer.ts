@@ -413,5 +413,27 @@ export const consumeHarnessStream = (
     }
   }
 
-  return { consumed: true, stream: wrapped() };
+  // Wrap the generator so ACQUIRING the iterator (`for await` start, or an
+  // explicit `stream[Symbol.asyncIterator]()`) SYNCHRONOUSLY pauses the idle-
+  // fallback BEFORE the first `next()`. Without this, a consumer that takes the
+  // stream and then awaits ≥1 macrotask before its first `next()` leaves the
+  // pre-first-iteration window uncovered: the fallback armed eagerly by
+  // `finishFromResult` fires during that gap and physically ends the turn span,
+  // so the consumer's later `stream.error` / `recordException` / `harness.*`
+  // marker events (recorded on the LIVE span during the deferred drain) are
+  // dropped by OTel (cursor[bot] "Fallback ends span before drain"). The
+  // generator's own loop re-pauses on each `next()` and re-arms before each
+  // `yield`, so a consumer that abandons after acquiring still gets the span
+  // committed by the re-armed fallback rather than leaking. A never-acquired
+  // stream never hits this method, so the eager fallback still commits it (no
+  // leak). The underlying generator returns itself from its `[Symbol.asyncIterator]`,
+  // so re-acquiring is idempotent.
+  const gen = wrapped();
+  const stream$: AsyncIterable<HarnessStreamPart> = {
+    [Symbol.asyncIterator]() {
+      handle.pauseFallbackEnd();
+      return gen[Symbol.asyncIterator]();
+    },
+  };
+  return { consumed: true, stream: stream$ };
 };

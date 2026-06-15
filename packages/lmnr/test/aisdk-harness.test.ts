@@ -900,6 +900,59 @@ void describe("AI SDK harness instrumentation", () => {
     );
   });
 
+  void it("records stream.error when first next() is deferred after acquire", async () => {
+    // cursor[bot] "Fallback ends span before drain": a caller ACQUIRES the
+    // wrapped iterator, then waits ≥1 macrotask before the first `next()`. The
+    // idle-fallback armed eagerly by `finishFromResult` (when stream() resolves)
+    // would fire during that pre-first-next() gap and physically end the turn
+    // span — so the consumer's later `stream.error` / `recordException` events
+    // (recorded on the LIVE span during the deferred drain) would be dropped by
+    // OTel. The fix pauses the fallback SYNCHRONOUSLY at iterator acquisition
+    // (`[Symbol.asyncIterator]()` runs BEFORE the gap), so the span stays live
+    // until the drain records the event.
+    const deferredErrStream: AsyncIterable<StreamPart> = {
+      async *[Symbol.asyncIterator]() {
+        await Promise.resolve();
+        yield { type: "text-delta", text: "partial" };
+        throw new Error("late stream failure");
+      },
+    };
+    const agent = instrumentHarnessAgent(
+      mkAgent({ streamResult: { text: "ok", stream: deferredErrStream } }),
+    );
+    const result = (await agent.stream({ prompt: "x" })) as {
+      stream: AsyncIterable<StreamPart>;
+    };
+    // Acquire the iterator NOW, then defer the first next() by a full macrotask
+    // (the bot's scenario). Without the acquisition-time pause, the fallback
+    // ends the span in this gap.
+    const iter = result.stream[Symbol.asyncIterator]();
+    await new Promise((r) => setTimeout(r, 0));
+    await assert.rejects(async () => {
+      while (true) {
+        const { done } = await iter.next();
+        if (done) break;
+      }
+    }, /late stream failure/);
+
+    const turn = exporter
+      .getFinishedSpans()
+      .find((s) => s.name === "harness.stream");
+    assert.ok(turn, "turn span missing");
+    const ev = turn.events.find((e) => e.name === "stream.error");
+    assert.ok(
+      ev,
+      "stream.error event dropped — fallback ended the span before the deferred first next()",
+    );
+    assert.equal(ev.attributes?.["harness.stream.error"], "late stream failure");
+    assert.ok(
+      turn.events.some((e) => e.name === "exception"),
+      "recordException did not add an exception event on the live span",
+    );
+    // Turn outcome was settled OK from the result before the late failure.
+    assert.equal(turn.status.code, 1); // OK
+  });
+
   void it("clamps children synthesized by DEFERRED iteration to the eager parent end", async () => {
     // Round-3 model: the turn span is finished EAGERLY from the resolved result
     // when stream() resolves — so a dropped/never-iterated stream cannot leak
