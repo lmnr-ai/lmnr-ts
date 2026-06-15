@@ -45,6 +45,7 @@ import {
 } from "../../../tracing/attributes";
 import { LaminarContextManager } from "../../../tracing/context";
 import { pushActiveLlmSpan, removeActiveLlmSpan } from "../active-llm-span";
+import { markCoreTelemetryFired } from "../harness/core-telemetry-signal";
 import {
   type LlmState,
   type OperationState,
@@ -131,6 +132,14 @@ export class LaminarAiSdkTelemetry {
   onStart = (event: any): void => {
     const callId: string | undefined = event?.callId;
     if (!callId) return;
+    // Signal to the harness wrapper that Core telemetry fired during the
+    // currently-active turn, so its stream-consumer can dedupe (skip
+    // synthesizing children the harness routed through Core
+    // generateText/streamText). Turn-scoped via AsyncLocalStorage: a cheap
+    // no-op outside a harness turn (no signal in the ALS frame, nothing
+    // retained). Kept surgical — does not touch the replay / orphan-cleanup
+    // logic.
+    markCoreTelemetryFired();
     const parentCtx = LaminarContextManager.getContext();
     const tracer = getTracer();
     const span = tracer.startSpan(
