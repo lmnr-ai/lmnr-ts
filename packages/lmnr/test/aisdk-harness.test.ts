@@ -508,6 +508,58 @@ void describe("AI SDK harness instrumentation", () => {
     assert.equal(turn.status.code, 1); // OK
   });
 
+  void it("closes open TOOL children when a stream is abandoned mid-tool-call", async () => {
+    // cursor[bot] "Abandoned stream leaves open tools": a caller pulls the
+    // `tool-call` part (which opens a `harness.tool` child) then DROPS the
+    // iterator without draining / return() — so the wrapped generator's `finally`
+    // (which runs `finishSynthesizedSpans` to close tool spans) never runs. The
+    // turn span is committed by the re-armed idle-fallback, which MUST also close
+    // the still-open child clamped to the parent end so it is exported (not
+    // leaked) with child.endTime <= parent.endTime.
+    const agent = instrumentHarnessAgent(
+      mkAgent({
+        streamResult: {
+          text: "final answer",
+          usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
+          stream: mkStream([
+            {
+              type: "tool-call",
+              toolCallId: "tc-abandon",
+              toolName: "search",
+              input: { q: "x" },
+            },
+            { type: "tool-result", toolCallId: "tc-abandon", output: { ok: true } },
+          ]),
+        },
+      }),
+    );
+
+    const result = (await agent.stream({ prompt: "go" })) as {
+      stream: AsyncIterable<StreamPart>;
+    };
+    // Pull exactly the tool-call part (opens the TOOL child), then abandon.
+    const it = result.stream[Symbol.asyncIterator]();
+    const first = await it.next();
+    assert.equal((first.value as StreamPart).type, "tool-call");
+    // Drop `it` — never pull the tool-result, never return(). Let the re-armed
+    // idle-fallback commit the turn end and close the open child.
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const spans = exporter.getFinishedSpans();
+    const turn = spans.find((s) => s.name === "harness.stream");
+    assert.ok(turn, "turn span leaked: abandoned-mid-tool-call stream never committed");
+    const tool = spans.find((s) => s.name === "harness.tool search");
+    assert.ok(
+      tool,
+      "TOOL child leaked: abandoned stream never closed the open harness.tool span",
+    );
+    assert.ok(
+      toHr(tool.endTime) <= toHr(turn.endTime),
+      "TOOL child must end at-or-before the turn span",
+    );
+  });
+
   void it("clamps children synthesized by DEFERRED iteration to the eager parent end", async () => {
     // Round-3 model: the turn span is finished EAGERLY from the resolved result
     // when stream() resolves — so a dropped/never-iterated stream cannot leak

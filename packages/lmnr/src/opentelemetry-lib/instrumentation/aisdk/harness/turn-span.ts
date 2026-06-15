@@ -210,6 +210,24 @@ export const openHarnessTurnSpan = (
       clearTimeout(fallbackEndTimer);
       fallbackEndTimer = undefined;
     }
+    // Close any children still open BEFORE ending the turn span. On the normal
+    // drain the consumer's `finally` already closed them via
+    // `finishSynthesizedSpans`, so this is an idempotent no-op. But on an
+    // ABANDONED stream the macrotask fallback commits the end WITHOUT the
+    // consumer's `finally` ever running — leaving any `harness.tool` child opened
+    // on a `tool-call` part leaked open (issue: "abandoned stream leaves open
+    // tools"). Ending them here, and extending `turnEndTime` to cover the latest
+    // child end (children closed now stamp a live `now()` that may be after the
+    // eager-finish snapshot), preserves child.endTime <= parent.endTime — same as
+    // the synchronous `endTurnSpan` path used by `error` / `abort`.
+    const latestChildEnd = endOpenChildren();
+    if (
+      latestChildEnd &&
+      (turnEndTime === undefined ||
+        compareHrTime(latestChildEnd, turnEndTime) > 0)
+    ) {
+      turnEndTime = latestChildEnd;
+    }
     span.end(turnEndTime);
     turnEndTime = readSpanEndTime(span) ?? turnEndTime;
   };
