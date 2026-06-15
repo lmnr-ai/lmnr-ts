@@ -283,10 +283,16 @@ export const consumeHarnessStream = (
     const iterator = (stream as AsyncIterable<HarnessStreamPart>)[
       Symbol.asyncIterator
     ]();
-    // Snapshot once: whether Core telemetry already covered this turn. The
-    // wrapper passes a closure that reads this turn's dedupe signal; we evaluate
-    // it lazily on the first part so a Core dispatch that happens synchronously
-    // before the first yield is observed.
+    // Whether to synthesize children for the part currently being handled.
+    // RE-READ PER PART (not snapshot once): Core telemetry can flip this turn's
+    // dedupe signal AFTER an earlier part — e.g. a harness that emits a
+    // lifecycle/text part to the user BEFORE its first Core `onStart` microtask
+    // runs, or a later step that routes through Core mid-stream. The wrapper's
+    // closure reads `coreTelemetryFired`, which is MONOTONIC (false→true), so
+    // `shouldSynthesize()` only ever goes true→false; re-reading it each
+    // iteration latches synthesis OFF the moment Core covers the turn and stops
+    // doubling children alongside the real v7 spans. Tracks the latest value so
+    // the `finally` can fall back to it for a zero-part stream.
     let synthesize: boolean | undefined;
     // Captures an in-flight iteration error so the finally can record it on the
     // turn span as evidence (issue #2) before it re-throws to the user.
@@ -307,7 +313,9 @@ export const consumeHarnessStream = (
             () => iterator.next(),
           );
         if (done) break;
-        if (synthesize === undefined) synthesize = shouldSynthesize();
+        // Re-read each part so a Core dispatch that flips the dedupe signal
+        // mid-stream stops further synthesis (monotonic true→false).
+        synthesize = shouldSynthesize();
         handlePart(value, synthesize);
         // RE-ARM the idle-fallback before handing control to the user: if they
         // receive this part and then ABANDON the iterator (never drain /

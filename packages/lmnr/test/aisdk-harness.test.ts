@@ -10,7 +10,9 @@ import {
   initializeTracing,
 } from "../src/opentelemetry-lib/configuration";
 import {
+  getActiveTurnSignal,
   markCoreTelemetryFired,
+  type TurnSignal,
 } from "../src/opentelemetry-lib/instrumentation/aisdk/harness/core-telemetry-signal";
 import {
   harnessTelemetry,
@@ -62,6 +64,10 @@ const mkAgent = (opts: {
   // integration's onStart (which calls markCoreTelemetryFired) fires WHILE the
   // wrapped stream() runs — i.e. inside the turn's context/signal frame.
   streamFiresCoreTelemetry?: boolean;
+  // Capture this turn's dedupe signal from inside stream() (it is the ALS frame
+  // the v7 onStart would flip). Lets a test fire Core telemetry LATE — after the
+  // first stream part — to exercise the per-part re-read of `shouldSynthesize`.
+  captureTurnSignal?: (signal: TurnSignal | undefined) => void;
 }): TestAgent => ({
   harness: opts.harness ?? "claude-code",
   generate: () => {
@@ -72,6 +78,7 @@ const mkAgent = (opts: {
   },
   stream: () => {
     if (opts.streamFiresCoreTelemetry) markCoreTelemetryFired();
+    opts.captureTurnSignal?.(getActiveTurnSignal());
     return Promise.resolve(opts.streamResult ?? {});
   },
   createSession: () => ({ id: "sess-1" }),
@@ -262,6 +269,66 @@ void describe("AI SDK harness instrumentation", () => {
       spans.find((s) => s.name === "harness.tool search"),
       undefined,
       "should not synthesize a TOOL span when core telemetry fired",
+    );
+  });
+
+  void it("dedupes when core telemetry fires LATE (after the first part)", async () => {
+    // cursor[bot] "Core dedupe only first part": some harnesses emit a
+    // lifecycle/text part to the user BEFORE their first Core `onStart` runs (or
+    // route a later step through Core mid-stream). `shouldSynthesize()` must be
+    // re-read PER PART, not snapshot once — otherwise the consumer keeps
+    // synthesizing duplicate children after Core covered the turn. We capture
+    // this turn's dedupe signal in stream() and flip it AFTER the first part.
+    let turnSignal: TurnSignal | undefined;
+    const agent = instrumentHarnessAgent(
+      mkAgent({
+        captureTurnSignal: (s) => {
+          turnSignal = s;
+        },
+        streamResult: {
+          text: "final",
+          stream: mkStream([
+            // First part: pure text — synthesize is still true here.
+            { type: "text-delta", text: "hi" },
+            // Core fires LATE (flipped between parts below) — this tool-call and
+            // the LLM span at finish must NOT be synthesized.
+            {
+              type: "tool-call",
+              toolCallId: "tc-late",
+              toolName: "search",
+              input: {},
+            },
+            { type: "tool-result", toolCallId: "tc-late", output: { ok: true } },
+          ]),
+        },
+      }),
+    );
+
+    const result = (await agent.stream({ prompt: "go" })) as {
+      stream: AsyncIterable<StreamPart>;
+    };
+    const it = result.stream[Symbol.asyncIterator]();
+    const first = await it.next();
+    assert.equal((first.value as StreamPart).type, "text-delta");
+    // Core telemetry fires NOW — after the first part was already handled.
+    assert.ok(turnSignal, "turn signal should have been captured in stream()");
+    turnSignal.coreTelemetryFired = true;
+    // Drain the rest: the tool-call + tool-result arrive after the flip.
+    while (!(await it.next()).done) {
+      // consume
+    }
+
+    const spans = exporter.getFinishedSpans();
+    assert.ok(spans.find((s) => s.name === "harness.stream"));
+    assert.equal(
+      spans.find((s) => s.name === "harness.tool search"),
+      undefined,
+      "must stop synthesizing TOOL children once Core telemetry fires mid-stream",
+    );
+    assert.equal(
+      spans.find((s) => s.name === "harness.llm"),
+      undefined,
+      "must not synthesize the LLM span once Core telemetry fired mid-stream",
     );
   });
 
