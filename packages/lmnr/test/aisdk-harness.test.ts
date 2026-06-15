@@ -332,6 +332,56 @@ void describe("AI SDK harness instrumentation", () => {
     );
   });
 
+  void it("dedupes when core telemetry fires DURING part production (next())", async () => {
+    // cursor[bot] "Core dedupe missing during stream": the turn-signal ALS frame
+    // the wrapper opens around the harness call has UNWOUND by the time the user
+    // iterates result.stream. A harness that routes a step through Core WHILE
+    // producing a part calls markCoreTelemetryFired() during iterator.next() — if
+    // the consumer doesn't re-establish runWithTurnSignal around next(), that
+    // call is a no-op (no active store) and the flag never flips, so synthesized
+    // children duplicate the v7 spans. This stream fires it from inside its OWN
+    // generator body (which runs during next()), NOT by flipping a captured
+    // signal, so it only passes when the consumer wraps next() in the signal.
+    const stream: AsyncIterable<StreamPart> = {
+      async *[Symbol.asyncIterator]() {
+        await Promise.resolve();
+        yield { type: "text-delta", text: "hi" };
+        // Core telemetry fires WHILE producing the next part (inside next()).
+        markCoreTelemetryFired();
+        await Promise.resolve();
+        yield {
+          type: "tool-call",
+          toolCallId: "tc-during",
+          toolName: "search",
+          input: {},
+        };
+        await Promise.resolve();
+        yield { type: "tool-result", toolCallId: "tc-during", output: { ok: true } };
+      },
+    };
+    const agent = instrumentHarnessAgent(
+      mkAgent({ streamResult: { text: "final", stream } }),
+    );
+
+    const result = (await agent.stream({ prompt: "go" })) as {
+      stream: AsyncIterable<StreamPart>;
+    };
+    await drain(result.stream);
+
+    const spans = exporter.getFinishedSpans();
+    assert.ok(spans.find((s) => s.name === "harness.stream"));
+    assert.equal(
+      spans.find((s) => s.name === "harness.tool search"),
+      undefined,
+      "Core telemetry fired during next() must flip the dedupe flag (no TOOL child)",
+    );
+    assert.equal(
+      spans.find((s) => s.name === "harness.llm"),
+      undefined,
+      "Core telemetry fired during next() must flip the dedupe flag (no LLM child)",
+    );
+  });
+
   void it("closes turn + open children on error (child.endTime <= parent.endTime)", async () => {
     const agent = instrumentHarnessAgent(
       mkAgent({ generateThrows: new Error("boom") }),

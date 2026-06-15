@@ -39,6 +39,10 @@ import {
   buildGenAiOutputMessages,
   serializeJSON,
 } from "../v7-integration/utils";
+import {
+  runWithTurnSignal,
+  type TurnSignal,
+} from "./core-telemetry-signal";
 import type {
   HarnessStreamPart,
   HarnessTurnSpanHandle,
@@ -86,8 +90,16 @@ export const consumeHarnessStream = (
   stream: unknown,
   handle: HarnessTurnSpanHandle,
   // Reads this turn's dedupe signal: false once Core telemetry fired during the
-  // turn. Evaluated lazily on the first stream part.
+  // turn. Re-read per stream part (the flag is monotonic false→true).
   shouldSynthesize: () => boolean,
+  // This turn's dedupe signal object. The consumer RE-ESTABLISHES the
+  // `runWithTurnSignal` ALS frame around each `iterator.next()` so a harness
+  // that routes a step through Core WHILE producing a part (its v7 `onStart`
+  // calls `markCoreTelemetryFired`) actually flips THIS turn's flag. Without it
+  // the frame opened by the wrapper has already unwound by iteration time, so
+  // `markCoreTelemetryFired` would be a no-op and synthesized children would
+  // duplicate the v7 spans.
+  turnSignal: TurnSignal,
 ): ConsumeHarnessStreamResult => {
   if (!isAsyncIterable(stream)) return { consumed: false };
 
@@ -307,10 +319,17 @@ export const consumeHarnessStream = (
         // context across yields (per CLAUDE.md).
         handle.pauseFallbackEnd();
         const stack = LaminarContextManager.getContextStack();
+        // Pull the next part inside BOTH the isolated Laminar context frame
+        // (nested instrumentation sees the turn context — per CLAUDE.md) AND the
+        // turn-signal frame, so Core telemetry fired by the producer DURING
+        // `next()` flips THIS turn's dedupe flag (the wrapper's frame has already
+        // unwound by now). `synthesize` is then re-read below off that flag.
         const { value, done } =
-          await LaminarContextManager.runWithIsolatedContext(
-            [...stack, handle.ctx],
-            () => iterator.next(),
+          await runWithTurnSignal(turnSignal, () =>
+            LaminarContextManager.runWithIsolatedContext(
+              [...stack, handle.ctx],
+              () => iterator.next(),
+            ),
           );
         if (done) break;
         // Re-read each part so a Core dispatch that flips the dedupe signal

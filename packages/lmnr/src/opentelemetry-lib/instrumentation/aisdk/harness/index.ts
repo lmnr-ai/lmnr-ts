@@ -189,6 +189,12 @@ const wrapStream = (
       resolved?.stream,
       handle,
       shouldSynthesize,
+      // Pass the turn signal so the consumer can re-establish the turn-signal
+      // ALS frame around each `iterator.next()`. The frame this `wrapStream`
+      // opened around `original.call` has unwound by the time the user iterates,
+      // so a harness that routes a step through Core WHILE producing a part
+      // needs the consumer's frame for `markCoreTelemetryFired` to flip the flag.
+      signal,
     );
 
     // FINALIZATION MODEL (LAM-1763, round 3) — eager-finalize + child clamp.
