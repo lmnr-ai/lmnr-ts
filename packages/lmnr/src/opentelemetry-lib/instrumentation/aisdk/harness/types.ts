@@ -152,6 +152,16 @@ export interface HarnessTurnSpanHandle {
    */
   registerChild: (child: Span) => void;
   /**
+   * Unregister a previously-registered child span so the turn's close paths
+   * (`endOpenChildren`) will NOT end/export it. Used by the stream consumer to
+   * DISCARD a synthesized TOOL span when Core telemetry fired LATE (dedupe): a
+   * `tool-call` part opened the span before the dedupe flag flipped, and the
+   * matching `tool-result` is then skipped — the v7 integration already produced
+   * the real span, so the synthesized one is dropped (never `.end()`ed, so never
+   * exported) and unregistered so the turn close doesn't end it either.
+   */
+  unregisterChild: (child: Span) => void;
+  /**
    * True once the turn span has been closed by `error()` / `abort()` — a
    * terminal that pre-empts the normal result-driven close. The stream consumer
    * reads this to SKIP synthesizing children after such a close: an abort/error

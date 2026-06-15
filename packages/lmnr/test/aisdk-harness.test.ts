@@ -378,6 +378,71 @@ void describe("AI SDK harness instrumentation", () => {
     );
   });
 
+  void it("discards a TOOL span opened before a LATE core-telemetry dedupe", async () => {
+    // cursor[bot] "Late dedupe duplicates tool spans": a `tool-call` part can
+    // OPEN a `harness.tool` child while synthesize is still true, and then Core
+    // telemetry fires LATE (flipping the dedupe flag). The matching `tool-result`
+    // is now skipped, so the span stays open in `toolSpans` — and at finish it
+    // must NOT be ended/exported (the v7 integration already produced the real
+    // tool span), nor left registered so the turn-close ends it. It must be
+    // DISCARDED entirely.
+    let turnSignal: TurnSignal | undefined;
+    const agent = instrumentHarnessAgent(
+      mkAgent({
+        captureTurnSignal: (s) => {
+          turnSignal = s;
+        },
+        streamResult: {
+          text: "final",
+          stream: mkStream([
+            { type: "text-delta", text: "hi" },
+            // Opens harness.tool WHILE synthesize is still true.
+            {
+              type: "tool-call",
+              toolCallId: "tc-open",
+              toolName: "search",
+              input: {},
+            },
+            // Core fires LATE (flipped below) before the result arrives, so the
+            // tool-result is skipped and the span is left open until finish.
+            { type: "tool-result", toolCallId: "tc-open", output: { ok: true } },
+          ]),
+        },
+      }),
+    );
+
+    const result = (await agent.stream({ prompt: "go" })) as {
+      stream: AsyncIterable<StreamPart>;
+    };
+    const iter = result.stream[Symbol.asyncIterator]();
+    // Pull the text part, THEN the tool-call (which opens the span).
+    await iter.next();
+    const second = await iter.next();
+    assert.equal((second.value as StreamPart).type, "tool-call");
+    // Core telemetry fires NOW — after the tool-call opened its span, before the
+    // tool-result is handled.
+    assert.ok(turnSignal, "turn signal should have been captured in stream()");
+    turnSignal.coreTelemetryFired = true;
+    while (!(await iter.next()).done) {
+      // consume the rest (tool-result is skipped while deduping)
+    }
+
+    const spans = exporter.getFinishedSpans();
+    assert.ok(spans.find((s) => s.name === "harness.stream"));
+    // The synthesized TOOL span opened before the flip must be DISCARDED — not
+    // exported alongside the real v7 tool span.
+    assert.equal(
+      spans.find((s) => s.name === "harness.tool search"),
+      undefined,
+      "a TOOL span opened before a late dedupe must be discarded, not exported",
+    );
+    assert.equal(
+      spans.find((s) => s.name === "harness.llm"),
+      undefined,
+      "must not synthesize the LLM span once Core telemetry fired",
+    );
+  });
+
   void it("dedupes when core telemetry fires LATE (after the first part)", async () => {
     // cursor[bot] "Core dedupe only first part": some harnesses emit a
     // lifecycle/text part to the user BEFORE their first Core `onStart` runs (or

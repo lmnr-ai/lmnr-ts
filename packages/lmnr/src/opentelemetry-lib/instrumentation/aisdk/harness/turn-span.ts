@@ -384,6 +384,12 @@ export const openHarnessTurnSpan = (
     registerChild: (child: Span) => {
       childSpans.push(child);
     },
+    // stream-consumer DISCARDS a synthesized TOOL span when Core telemetry fired
+    // late (dedupe) — drop it from the children so the close paths don't end it.
+    unregisterChild: (child: Span) => {
+      const idx = childSpans.indexOf(child);
+      if (idx !== -1) childSpans.splice(idx, 1);
+    },
     // Reports the abort/error-close state ONLY (not the normal result close):
     // the consumer skips child synthesis after an abort/error so it never
     // creates a span outside the already-ended parent window. The normal

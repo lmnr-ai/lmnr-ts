@@ -180,6 +180,20 @@ export const consumeHarnessStream = (
       toolSpans.clear();
       return;
     }
+    // When deduping (Core telemetry covered this turn) we must NOT emit ANY
+    // synthesized child — the v7 integration already produced the real LLM /
+    // TOOL spans, and the turn-span output already carries the assistant text.
+    // A TOOL span can be open here when Core telemetry fired LATE: a `tool-call`
+    // part opened it before the dedupe flag flipped, and the matching
+    // `tool-result` was then skipped (it lives inside the `if (synthesize)`
+    // block in `handlePart`). DISCARD it — never `.end()` it (so it's never
+    // exported) and unregister it from the turn so the close paths don't end it
+    // either (cursor[bot] "Late dedupe duplicates tool spans").
+    if (!synthesize) {
+      for (const span of toolSpans.values()) handle.unregisterChild(span);
+      toolSpans.clear();
+      return;
+    }
     // Close any still-open TOOL spans (provider never emitted a result part),
     // clamped to the (already-finished) parent endTime.
     for (const span of toolSpans.values()) {
@@ -187,10 +201,6 @@ export const consumeHarnessStream = (
       endChild(span);
     }
     toolSpans.clear();
-    // When deduping (Core telemetry covered this turn) we must NOT emit a
-    // synthesized LLM span — the v7 integration already produced the real one,
-    // and the turn-span output already carries the assistant text.
-    if (!synthesize) return;
     // Emit one LLM span carrying the accumulated assistant turn, mirroring the
     // v7 LLM-span output contract (gen_ai.output.messages only).
     if (
