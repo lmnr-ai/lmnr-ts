@@ -228,6 +228,20 @@ export const openHarnessTurnSpan = (
     ) {
       turnEndTime = latestChildEnd;
     }
+    // The `turnEndTime` snapshot reflects when the harness call RESOLVED, but
+    // `stream.error` / exception / `harness.*` marker events are recorded on the
+    // LIVE span DURING the deferred drain (by the consumer's `finally` /
+    // `handlePart`) at real `now()` — AFTER that snapshot. Ending at the
+    // backdated snapshot would leave those events outside [startTime, endTime],
+    // which strict backends drop or flag. End at the later of the snapshot and
+    // `now` so the span window covers every event recorded before this commit.
+    // Children were already clamped to the earlier `parentEndTime()` snapshot,
+    // so extending the end only RELAXES child.endTime <= parent.endTime — the
+    // invariant still holds.
+    const nowEnd = hrTime();
+    if (turnEndTime === undefined || compareHrTime(nowEnd, turnEndTime) > 0) {
+      turnEndTime = nowEnd;
+    }
     span.end(turnEndTime);
     turnEndTime = readSpanEndTime(span) ?? turnEndTime;
   };

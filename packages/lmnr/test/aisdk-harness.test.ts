@@ -604,6 +604,58 @@ void describe("AI SDK harness instrumentation", () => {
     assert.equal(turn.status.code, 1); // OK
   });
 
+  void it("ends the turn span no earlier than events recorded during a slow drain", async () => {
+    // cursor[bot] "Turn span end backdated past events": finishFromResult
+    // snapshots turnEndTime when the harness call RESOLVES, but the consumer's
+    // finally records `stream.error` / exception (and handlePart records
+    // `harness.*` markers) on the LIVE span at real now() DURING a slow,
+    // multi-macrotask drain — AFTER that snapshot. The deferred commit must end
+    // the span at the LATER of the snapshot and now, or those events fall outside
+    // [startTime, endTime] and strict backends drop/flag them. Assert every event
+    // recorded on the turn span lands within the span window.
+    const slowErrStream: AsyncIterable<StreamPart> = {
+      async *[Symbol.asyncIterator]() {
+        await new Promise((r) => setTimeout(r, 5));
+        yield { type: "text-delta", text: "partial" };
+        await new Promise((r) => setTimeout(r, 5));
+        // A dynamic provider-executed marker — recorded as a `harness.*` event on
+        // the live span during iteration (after the eager turnEndTime snapshot).
+        yield { type: "compaction", dynamic: true };
+        await new Promise((r) => setTimeout(r, 5));
+        throw new Error("delayed failure");
+      },
+    };
+    const agent = instrumentHarnessAgent(
+      mkAgent({ streamResult: { text: "ok", stream: slowErrStream } }),
+    );
+    const result = (await agent.stream({ prompt: "x" })) as {
+      stream: AsyncIterable<StreamPart>;
+    };
+    await assert.rejects(() => drain(result.stream), /delayed failure/);
+
+    const turn = exporter
+      .getFinishedSpans()
+      .find((s) => s.name === "harness.stream");
+    assert.ok(turn, "turn span missing");
+    assert.ok(turn.events.length > 0, "no events recorded on the turn span");
+    const turnStart = toHr(turn.startTime);
+    const turnEnd = toHr(turn.endTime);
+    // Every event (stream.error, exception, harness.compaction marker) must fall
+    // WITHIN the span window — the fix ends the span at max(snapshot, now).
+    for (const e of turn.events) {
+      const t = toHr(e.time);
+      assert.ok(
+        t >= turnStart && t <= turnEnd,
+        `event ${e.name} at ${t} fell outside the turn span [${turnStart}, ${turnEnd}]`,
+      );
+    }
+    // The marker event was recorded (proves a `harness.*` event landed late).
+    assert.ok(
+      turn.events.some((e) => e.name.startsWith("harness.")),
+      "expected a harness.* marker event on the turn span",
+    );
+  });
+
   void it("finishes the turn span from an absent/non-iterable stream (no leak)", async () => {
     // No async-iterable stream: consumeHarnessStream returns consumed:false, so
     // the wrapper finishes the turn eagerly from the result. There is no
