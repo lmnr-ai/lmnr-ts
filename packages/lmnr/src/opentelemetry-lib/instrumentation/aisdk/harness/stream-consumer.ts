@@ -221,63 +221,74 @@ export const consumeHarnessStream = (
       synth.text += partText(part);
       return;
     }
-    // Once the turn was closed by an abort/error, do NOT open new child spans —
-    // they would outlive the already-ended parent (issue #2). Text is still
-    // accumulated above (harmless; the turn output was already set from result).
-    if (!synthesize || handle.isFinished()) return;
-    if (type === "reasoning-delta" || type === "reasoning") {
-      synth.reasoning += partText(part);
-      return;
-    }
-    if (type === "tool-call" || type === "tool-input-available") {
-      const toolCallId = part.toolCallId;
-      const toolName = part.toolName;
-      synth.toolCalls.push({
-        toolCallId,
-        toolName,
-        args: part.input,
-      });
-      if (toolCallId && !toolSpans.has(toolCallId)) {
-        const tracer = getTracer();
-        const span = tracer.startSpan(
-          `harness.tool ${toolName ?? "unknown"}`,
-          childStartOpts(SpanKind.CLIENT),
-          handle.ctx,
-        );
-        span.setAttribute(SPAN_TYPE, "TOOL");
-        if (toolName) span.setAttribute("ai.toolCall.name", toolName);
-        span.setAttribute("ai.toolCall.id", toolCallId);
-        if (handle.recordInputs && part.input !== undefined) {
-          const serialized = serializeJSON(part.input);
-          span.setAttribute("ai.toolCall.args", serialized);
-          span.setAttribute(SPAN_INPUT, serialized);
-        }
-        handle.registerChild(span);
-        toolSpans.set(toolCallId, span);
+    // After an abort/error close the turn span is PHYSICALLY ended — OTel drops
+    // any child `.end()` or `addEvent` after that, and a new child would outlive
+    // the already-ended parent (issue #2). So do nothing further for any
+    // non-text part once the turn is finished.
+    if (handle.isFinished()) return;
+    // Child-span synthesis (reasoning accumulation + LLM / TOOL spans) is gated
+    // by `synthesize`: when Core telemetry covered this turn the v7 integration
+    // already produced the per-step spans, so re-synthesizing would double them.
+    if (synthesize) {
+      if (type === "reasoning-delta" || type === "reasoning") {
+        synth.reasoning += partText(part);
+        return;
       }
-      return;
-    }
-    if (type === "tool-result") {
-      const toolCallId = part.toolCallId;
-      if (toolCallId) {
-        const span = toolSpans.get(toolCallId);
-        if (span) {
-          const output = part.output ?? part.result;
-          if (handle.recordOutputs && output !== undefined) {
-            const serialized = serializeJSON(output);
-            span.setAttribute("ai.toolCall.result", serialized);
-            span.setAttribute(SPAN_OUTPUT, serialized);
+      if (type === "tool-call" || type === "tool-input-available") {
+        const toolCallId = part.toolCallId;
+        const toolName = part.toolName;
+        synth.toolCalls.push({
+          toolCallId,
+          toolName,
+          args: part.input,
+        });
+        if (toolCallId && !toolSpans.has(toolCallId)) {
+          const tracer = getTracer();
+          const span = tracer.startSpan(
+            `harness.tool ${toolName ?? "unknown"}`,
+            childStartOpts(SpanKind.CLIENT),
+            handle.ctx,
+          );
+          span.setAttribute(SPAN_TYPE, "TOOL");
+          if (toolName) span.setAttribute("ai.toolCall.name", toolName);
+          span.setAttribute("ai.toolCall.id", toolCallId);
+          if (handle.recordInputs && part.input !== undefined) {
+            const serialized = serializeJSON(part.input);
+            span.setAttribute("ai.toolCall.args", serialized);
+            span.setAttribute(SPAN_INPUT, serialized);
           }
-          span.setStatus({ code: SpanStatusCode.OK });
-          endChild(span);
-          toolSpans.delete(toolCallId);
+          handle.registerChild(span);
+          toolSpans.set(toolCallId, span);
         }
+        return;
       }
-      return;
+      if (type === "tool-result") {
+        const toolCallId = part.toolCallId;
+        if (toolCallId) {
+          const span = toolSpans.get(toolCallId);
+          if (span) {
+            const output = part.output ?? part.result;
+            if (handle.recordOutputs && output !== undefined) {
+              const serialized = serializeJSON(output);
+              span.setAttribute("ai.toolCall.result", serialized);
+              span.setAttribute(SPAN_OUTPUT, serialized);
+            }
+            span.setStatus({ code: SpanStatusCode.OK });
+            endChild(span);
+            toolSpans.delete(toolCallId);
+          }
+        }
+        return;
+      }
     }
     // Dynamic provider-executed parts (compaction, workspace file changes, ...)
-    // — record as a marker event on the turn span so they're visible without
-    // forcing a full TOOL span when we don't have a call/result pair.
+    // — record as a marker EVENT on the turn span so they're visible without
+    // forcing a full TOOL span when we don't have a call/result pair. These are
+    // recorded REGARDLESS of `synthesize`: they are turn-span events, not
+    // synthesized child spans, and the v7 integration never produces these
+    // harness-specific markers — so recording them on a Core-routed (deduped)
+    // turn can't double anything (the dedupe only suppresses synthesized
+    // LLM / TOOL CHILD spans).
     if (part.dynamic === true || part.providerExecuted === true) {
       handle.span.addEvent(`harness.${type || "dynamic"}`, {
         "harness.part.type": type,

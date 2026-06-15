@@ -272,6 +272,59 @@ void describe("AI SDK harness instrumentation", () => {
     );
   });
 
+  void it("records dynamic harness markers even when deduping", async () => {
+    // cursor[bot] "Dedupe skips dynamic harness events": when Core telemetry
+    // covers the turn, synthesized LLM/TOOL CHILD spans are suppressed — but the
+    // dynamic/providerExecuted lifecycle MARKERS are turn-span events, not child
+    // spans, and the v7 integration never produces them, so they must still be
+    // recorded as `harness.<type>` events on the turn span.
+    const agent = instrumentHarnessAgent(
+      mkAgent({
+        streamFiresCoreTelemetry: true,
+        streamResult: {
+          text: "final",
+          stream: mkStream([
+            { type: "text-delta", text: "hi" },
+            { type: "compaction", dynamic: true },
+            {
+              type: "tool-call",
+              toolCallId: "tc-x",
+              toolName: "search",
+              input: {},
+            },
+          ]),
+        },
+      }),
+    );
+
+    const result = (await agent.stream({ prompt: "go" })) as {
+      stream: AsyncIterable<StreamPart>;
+    };
+    await drain(result.stream);
+
+    const spans = exporter.getFinishedSpans();
+    const turn = spans.find((s) => s.name === "harness.stream");
+    assert.ok(turn, "turn span missing");
+    // The dynamic marker is recorded on the turn span despite deduping.
+    const marker = turn.events.find((e) => e.name === "harness.compaction");
+    assert.ok(
+      marker,
+      "dynamic harness marker must be recorded on the turn span even when deduping",
+    );
+    assert.equal(marker.attributes?.["harness.part.type"], "compaction");
+    // No synthesized children — Core telemetry covered the turn.
+    assert.equal(
+      spans.find((s) => s.name === "harness.llm"),
+      undefined,
+      "should not synthesize an LLM span when core telemetry fired",
+    );
+    assert.equal(
+      spans.find((s) => s.name === "harness.tool search"),
+      undefined,
+      "should not synthesize a TOOL span when core telemetry fired",
+    );
+  });
+
   void it("dedupes when core telemetry fires LATE (after the first part)", async () => {
     // cursor[bot] "Core dedupe only first part": some harnesses emit a
     // lifecycle/text part to the user BEFORE their first Core `onStart` runs (or
