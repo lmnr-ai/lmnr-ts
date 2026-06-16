@@ -937,4 +937,37 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
       [{ role: "assistant", parts: [{ type: "text", content: '{"x":1}' }] }],
     );
   });
+
+  void it("appends functionId to name and sets attributes when functionId is provided", () => {
+    const tel = new LaminarAiSdkTelemetry();
+    const callId = "call-functionid";
+
+    tel.onStart(mkStartEvent(callId, { functionId: "myFunction" }));
+    tel.onEnd(mkFinish(callId));
+
+    const spans = exporter.getFinishedSpans();
+    const op = spans.find((s) => s.name === "ai.generateText myFunction");
+    assert.ok(op, "operation span with functionId suffix missing");
+    assert.equal(op.attributes["operation.name"], "myFunction");
+    assert.equal(
+      typeof op.attributes["ai.prompt"],
+      "string",
+      "ai.prompt should be a string",
+    );
+    assert.equal(op.attributes["ai.functionId"], "myFunction");
+  });
+
+  void it("does not set operation.name or ai.prompt when functionId is absent", () => {
+    const tel = new LaminarAiSdkTelemetry();
+    const callId = "call-no-functionid";
+
+    tel.onStart(mkStartEvent(callId));
+    tel.onEnd(mkFinish(callId));
+
+    const spans = exporter.getFinishedSpans();
+    const op = spans.find((s) => s.name === "ai.generateText");
+    assert.ok(op, "operation span missing");
+    assert.equal(op.attributes["operation.name"], undefined);
+    assert.equal(op.attributes["ai.prompt"], undefined);
+  });
 });
