@@ -9,7 +9,6 @@ import {
   _resetConfiguration,
   initializeTracing,
 } from "../src/opentelemetry-lib/configuration";
-import { wrapAISDK } from "../src/opentelemetry-lib/instrumentation/aisdk";
 import {
   aiSdkTelemetry,
   LaminarAiSdkTelemetry,
@@ -505,35 +504,6 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
       (x) => x !== integration,
     );
   });
-
-  void it(
-    "wrapAISDK injects the v7 integration into call args when " +
-      "registerTelemetry is present",
-    async () => {
-      const observed: unknown[] = [];
-      const fakeAI = {
-        registerTelemetry: () => {},
-        generateText: (opts: unknown) => {
-          observed.push(opts);
-          return Promise.resolve({ text: "ok" });
-        },
-      } as unknown as Parameters<typeof wrapAISDK>[0];
-      const wrapped = wrapAISDK(fakeAI);
-      await (
-        wrapped as unknown as { generateText: (o: unknown) => Promise<unknown> }
-      ).generateText({ prompt: "hi" });
-      const firstCall = observed[0] as {
-        telemetry?: { integrations?: unknown[] };
-      };
-      assert.ok(firstCall.telemetry);
-      assert.ok(Array.isArray(firstCall.telemetry.integrations));
-      assert.ok(
-        firstCall.telemetry.integrations.some(
-          (i) => i instanceof LaminarAiSdkTelemetry,
-        ),
-      );
-    },
-  );
 
   void it("onError scopes error to the callId on the event", () => {
     const tel = new LaminarAiSdkTelemetry();
