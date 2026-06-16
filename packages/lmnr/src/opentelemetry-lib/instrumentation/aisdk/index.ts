@@ -39,7 +39,7 @@ export const wrapAISDK = (ai: typeof AI): typeof AI => {
       wrapAISDKv7WarnedOnce = true;
       logger.warn(
         "wrapAISDK() is not supported for AI SDK v7. " +
-          "Use registerAiSdkTelemetry() instead:\n" +
+          "Use LaminarAiSdkTelemetry instead:\n" +
           "  import { LaminarAiSdkTelemetry } from '@lmnr-ai/lmnr';\n" +
           "  import { registerTelemetry } from 'ai';\n" +
           "  registerTelemetry(new LaminarAiSdkTelemetry());",
