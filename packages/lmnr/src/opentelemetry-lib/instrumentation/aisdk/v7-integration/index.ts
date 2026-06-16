@@ -212,11 +212,7 @@ export class LaminarAiSdkTelemetry {
     const op = this.operationByCallId.get(callId);
     if (!op) return;
     const tracer = getTracer();
-    const span = tracer.startSpan(
-      `ai.step ${stepNumber}`,
-      { kind: SpanKind.CLIENT },
-      op.ctx,
-    );
+    const span = tracer.startSpan(`ai.step`, { kind: SpanKind.CLIENT }, op.ctx);
     const spanCtx = trace.setSpan(op.ctx, span);
     span.setAttribute(SPAN_TYPE, "DEFAULT");
     span.setAttribute("ai.step.number", stepNumber);
