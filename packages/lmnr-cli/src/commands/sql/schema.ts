@@ -25,7 +25,15 @@ Available tables:
 
   signal_events
     id (UUID), signal_id (UUID), trace_id (UUID), run_id (UUID),
-    name (String), payload (String), timestamp (DateTime64)
+    name (String), payload (String), timestamp (DateTime64),
+    severity (UInt8: 0=INFO|1=WARNING|2=CRITICAL), summary (String),
+    clusters (Array(UUID))
+
+  clusters
+    id (UUID), signal_id (UUID), name (String),
+    level (UInt8), parent_id (UUID), num_signal_events (UInt32),
+    num_children_clusters (UInt16),
+    created_at (DateTime64), updated_at (DateTime64)
 
   signal_runs
     signal_id (UUID), job_id (UUID), trigger_id (UUID), run_id (UUID),
