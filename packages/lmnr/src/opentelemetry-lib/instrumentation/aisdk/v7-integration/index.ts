@@ -36,6 +36,7 @@ import {
   trace,
 } from "@opentelemetry/api";
 
+import { Laminar, type LaminarInitializeProps } from "../../../../laminar";
 import { getTracer } from "../../../tracing";
 import {
   LaminarAttributes,
@@ -87,6 +88,12 @@ export interface LaminarAiSdkTelemetryOptions {
    * generation. Defaults to false.
    */
   createStepSpan?: boolean;
+  /**
+   * Options to pass to {@link Laminar.initialize}. If Laminar is already
+   * initialized, this is ignored. Allows all-in-one setup without a separate
+   * `Laminar.initialize()` call.
+   */
+  laminarOptions?: LaminarInitializeProps;
 }
 
 /**
@@ -122,6 +129,9 @@ export class LaminarAiSdkTelemetry {
     this.recordInputs = options.recordInputs ?? true;
     this.recordOutputs = options.recordOutputs ?? true;
     this.createStepSpan = options.createStepSpan ?? false;
+    if (!Laminar.initialized()) {
+      Laminar.initialize(options.laminarOptions ?? {});
+    }
   }
 
   // ------------------------------------------------------------------
@@ -202,11 +212,7 @@ export class LaminarAiSdkTelemetry {
     const op = this.operationByCallId.get(callId);
     if (!op) return;
     const tracer = getTracer();
-    const span = tracer.startSpan(
-      `ai.step ${stepNumber}`,
-      { kind: SpanKind.CLIENT },
-      op.ctx,
-    );
+    const span = tracer.startSpan(`ai.step`, { kind: SpanKind.CLIENT }, op.ctx);
     const spanCtx = trace.setSpan(op.ctx, span);
     span.setAttribute(SPAN_TYPE, "DEFAULT");
     span.setAttribute("ai.step.number", stepNumber);

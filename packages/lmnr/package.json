@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.8.31",
+  "version": "0.8.32",
   "description": "TypeScript SDK for Laminar AI",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -96,8 +96,8 @@
   "devDependencies": {
     "@ai-sdk/openai": "^3.0.1",
     "@ai-sdk/provider": "^3.0.0",
-    "@ai-sdk/provider-v2": "npm:@ai-sdk/provider@2.0.0",
-    "@ai-sdk/provider-v4-canary": "npm:@ai-sdk/provider@4.0.0-canary.17",
+    "@ai-sdk/provider-v2": "npm:@ai-sdk/provider@ai-v5",
+    "@ai-sdk/provider-v4-canary": "npm:@ai-sdk/provider@4.0.0-canary.18",
     "@aws-sdk/client-bedrock-runtime": "^3.1057.0",
     "@azure/openai": "^2.0.0",
     "@google/genai": "^2.0.0",
@@ -114,7 +114,7 @@
     "@types/node": "^24.12.0",
     "@types/semver": "^7.7.0",
     "ai": "^6.0.3",
-    "ai-v5": "npm:ai@5.0.116",
+    "ai-v5": "npm:ai@ai-v5",
     "chromadb": "^3.0.10",
     "nock": "^14.0.8",
     "openai": "^6.33.0",

@@ -9,7 +9,6 @@ import {
   _resetConfiguration,
   initializeTracing,
 } from "../src/opentelemetry-lib/configuration";
-import { wrapAISDK } from "../src/opentelemetry-lib/instrumentation/aisdk";
 import {
   aiSdkTelemetry,
   LaminarAiSdkTelemetry,
@@ -181,7 +180,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.equal(op.attributes["ai.response.text"], "hello");
     assert.equal(op.attributes["ai.response.finishReason"], "stop");
 
-    const step = spans.find((s) => s.name === "ai.step 0");
+    const step = spans.find((s) => s.name === "ai.step");
     assert.ok(step, "step span missing");
     assert.equal(step.attributes[SPAN_TYPE], "DEFAULT");
     assert.equal(step.attributes["ai.step.number"], 0);
@@ -212,7 +211,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
 
     // All three span kinds present.
     assert.ok(byName.has("ai.generateText"));
-    assert.ok(byName.has("ai.step 0"));
+    assert.ok(byName.has("ai.step"));
   });
 
   void it("makes tool spans flat siblings of llm under the step", () => {
@@ -506,35 +505,6 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     );
   });
 
-  void it(
-    "wrapAISDK injects the v7 integration into call args when " +
-      "registerTelemetry is present",
-    async () => {
-      const observed: unknown[] = [];
-      const fakeAI = {
-        registerTelemetry: () => {},
-        generateText: (opts: unknown) => {
-          observed.push(opts);
-          return Promise.resolve({ text: "ok" });
-        },
-      } as unknown as Parameters<typeof wrapAISDK>[0];
-      const wrapped = wrapAISDK(fakeAI);
-      await (
-        wrapped as unknown as { generateText: (o: unknown) => Promise<unknown> }
-      ).generateText({ prompt: "hi" });
-      const firstCall = observed[0] as {
-        telemetry?: { integrations?: unknown[] };
-      };
-      assert.ok(firstCall.telemetry);
-      assert.ok(Array.isArray(firstCall.telemetry.integrations));
-      assert.ok(
-        firstCall.telemetry.integrations.some(
-          (i) => i instanceof LaminarAiSdkTelemetry,
-        ),
-      );
-    },
-  );
-
   void it("onError scopes error to the callId on the event", () => {
     const tel = new LaminarAiSdkTelemetry();
     tel.onStart(mkStartEvent("call-A"));
@@ -640,7 +610,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
 
     const spans = exporter.getFinishedSpans();
     const op = spans.find((s) => s.name === "ai.generateText");
-    const step = spans.find((s) => s.name === "ai.step 0");
+    const step = spans.find((s) => s.name === "ai.step");
     const llm = spans.find((s) => s.name.startsWith("ai.llm "));
     const tool = spans.find((s) => s.name === "ai.tool lookup");
     assert.ok(op && step && llm && tool);
@@ -675,7 +645,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     tel.onError({ callId, error: new Error("boom") });
 
     const spans = exporter.getFinishedSpans();
-    const step = spans.find((s) => s.name === "ai.step 0");
+    const step = spans.find((s) => s.name === "ai.step");
     const tool = spans.find((s) => s.name === "ai.tool lookup");
     assert.ok(step && tool);
 

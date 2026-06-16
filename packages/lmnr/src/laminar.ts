@@ -71,7 +71,7 @@ loadEnv();
 
 const logger = initializeLogger();
 
-interface LaminarInitializeProps {
+export interface LaminarInitializeProps {
   projectApiKey?: string;
   baseUrl?: string;
   baseHttpUrl?: string;
