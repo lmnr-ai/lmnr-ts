@@ -143,9 +143,27 @@ export class LaminarAiSdkTelemetry {
     if (!callId) return;
     const parentCtx = LaminarContextManager.getContext();
     const tracer = getTracer();
+    let spanName = event.operationId ?? "ai.operation";
+    // If an explicit { telemetry: { functionId: "..." } } is passed
+    // rename the span to match the pre-v7 AI SDK behaviour
+    if (typeof event.functionId === "string") {
+      spanName += ` ${event.functionId}`;
+    }
     const span = tracer.startSpan(
-      event.operationId ?? "unknown",
-      { kind: SpanKind.CLIENT },
+      spanName,
+      {
+        kind: SpanKind.CLIENT,
+        attributes: {
+          [SPAN_TYPE]: "DEFAULT",
+          ...(typeof event.functionId === "string"
+            ? {
+              "operation.name": event.functionId,
+              // legacy, needed for older parsing at the backend to work
+              "ai.prompt": "_",
+            }
+            : {}),
+        },
+      },
       parentCtx,
     );
     const spanCtx = trace.setSpan(parentCtx, span);
