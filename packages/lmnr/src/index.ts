@@ -12,7 +12,7 @@ export {
   type EvaluatorFunctionReturn,
   HumanEvaluator,
 } from "./evaluations";
-export { Laminar } from "./laminar";
+export { Laminar, type LaminarInitializeProps } from "./laminar";
 export { LaminarSpanProcessor } from "./opentelemetry-lib/";
 export {
   wrapAISDK,
