@@ -6,3 +6,12 @@ allowBuilds:
   esbuild: false
   protobufjs: false
   puppeteer: false
+minimumReleaseAgeExclude:
+  - "@lmnr-ai/claude-code-proxy-darwin-arm64"
+  - "@lmnr-ai/claude-code-proxy-darwin-x64"
+  - "@lmnr-ai/claude-code-proxy-linux-arm64-gnu"
+  - "@lmnr-ai/claude-code-proxy-linux-arm64-musl"
+  - "@lmnr-ai/claude-code-proxy-linux-x64-gnu"
+  - "@lmnr-ai/claude-code-proxy-linux-x64-musl"
+  - "@lmnr-ai/claude-code-proxy-win32-x64-msvc"
+  - "@lmnr-ai/claude-code-proxy"
