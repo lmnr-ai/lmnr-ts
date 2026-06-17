@@ -119,7 +119,6 @@
     "nock": "^14.0.8",
     "openai": "^6.42.0",
     "playwright": "^1.59.1",
-    "protobufjs": "^7.6.4",
     "puppeteer": "^25.1.0",
     "puppeteer-core": "^25.1.0",
     "undici-types": "^8.0.2",
