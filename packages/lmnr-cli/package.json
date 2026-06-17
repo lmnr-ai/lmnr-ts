@@ -41,6 +41,6 @@
   "devDependencies": {
     "@lmnr-ai/client": "workspace:*",
     "@lmnr-ai/types": "workspace:*",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.9"
   }
 }
