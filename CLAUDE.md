@@ -64,6 +64,11 @@ When adding/modifying integration tests for Mastra:
 - No project-wide `prettier` binary is installed; "format" is enforced through eslint (`@stylistic/*` rules). Use `pnpm -r lint:fix` (or `pnpm --filter <pkg> lint:fix`) instead of `prettier --write`.
 - Max line length is 100 chars (`@stylistic/max-len`). Long destructured `import` lines will fail lint — break them across multiple lines.
 
+## Debug mode (`packages/lmnr/src/debug/`)
+
+- `src/debug/config.ts` is a **cross-language parity surface** with the Python SDK `src/lmnr/sdk/debug/config.py` — keep the two line-comparable.
+- **The debugger pre-run note is set with `LMNR_DEBUG_RUN_NOTES_FILE` (path to a raw-markdown file) or `LMNR_DEBUG_RUN_NOTES` (inline raw markdown), not by hand-stringifying JSON into `LMNR_TRACE_METADATA`.** `resolveDebugRunNote()` reads them ONLY when `LMNR_DEBUG` is truthy; the file wins over inline, and a missing/unreadable file logs a warning and returns `null` (never throws — a bad note path must not block init). `laminar.ts` parses `LMNR_TRACE_METADATA` as before, then overrides just the `rollout.note` key (`ROLLOUT_NOTE_KEY`) with the resolved note before merging the explicit `metadata` arg on top. The note is NOT propagated downstream via `LaminarSpanContext` (origin-only). Mirror `resolveDebugRunNote` / `ROLLOUT_NOTE_KEY` in the Python `config.py`. Tested in `test/debug/config.test.ts`.
+
 ## Temporal Instrumentation (`packages/lmnr/src/opentelemetry-lib/instrumentation/temporal/`)
 
 - Temporal workflow functions run in a **V8 deterministic sandbox** — no `crypto.randomUUID()`, no real timestamps. `observe()` / `Laminar.startActiveSpan()` cannot be called inside workflow functions (they call `crypto.randomUUID` internally). Only the client side (workflow-start calls) and worker side (activity functions) are safe to instrument.

@@ -26,6 +26,8 @@ import {
   initDebugRuntimeFromContext,
   isTruthy,
   resetDebugRuntime,
+  resolveDebugRunNote,
+  ROLLOUT_NOTE_KEY,
 } from "./debug";
 import {
   InitializeOptions,
@@ -236,6 +238,15 @@ export class Laminar {
     const envMetadata = process.env.LMNR_TRACE_METADATA
       ? (JSON.parse(process.env.LMNR_TRACE_METADATA) as Record<string, unknown>)
       : {};
+    // In debug mode, LMNR_DEBUG_RUN_NOTES_FILE / LMNR_DEBUG_RUN_NOTES carry the
+    // pre-run note as raw markdown — a formatting-friendly alternative to
+    // stringifying it into the LMNR_TRACE_METADATA JSON. When set, it overrides
+    // the `rollout.note` key on top of the parsed metadata (file path wins over
+    // inline; see resolveDebugRunNote).
+    const debugRunNote = resolveDebugRunNote();
+    if (debugRunNote !== null) {
+      envMetadata[ROLLOUT_NOTE_KEY] = debugRunNote;
+    }
     this.globalMetadata = { ...envMetadata, ...(metadata ?? {}) };
     if (inheritGlobalContext) {
       LaminarContextManager.inheritGlobalContext = true;
