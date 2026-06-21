@@ -19,10 +19,6 @@ Available tables:
     top_span_name (String), top_span_type (String), trace_type (String),
     tags (Array(String)), has_browser_session (Bool)
 
-  events
-    id (UUID), type (String), name (String), span_id (UUID),
-    timestamp (DateTime64), attributes (String)
-
   signal_events
     id (UUID), signal_id (UUID), trace_id (UUID), run_id (UUID),
     name (String), payload (String), timestamp (DateTime64),
