@@ -133,7 +133,7 @@ export class LaminarClient {
   }
 }
 
-export type { CliProject } from "./resources/cli";
+export type { CliProject, ProjectKeyProbe } from "./resources/cli";
 export type { LaminarAuth } from "./resources/index";
 export {
   type CacheOutcome,
