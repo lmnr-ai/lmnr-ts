@@ -212,7 +212,7 @@ Examples:
       "Port for the Laminar API. Defaults to 443",
       (val) => parseInt(val, 10),
     )
-    .option("--json", "Output structured JSON ({ answer, sessionId, tools }) to stdout")
+    .option("--json", "Output structured JSON ({ answer, conversationId, tools }) to stdout")
     .action(withLocalOpts(handleAsk))
     .addHelpText(
       "after",
