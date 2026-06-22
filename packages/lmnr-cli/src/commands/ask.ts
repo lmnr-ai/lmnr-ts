@@ -43,7 +43,8 @@ export const handleAsk = async (query: string, opts: GlobalOpts): Promise<void> 
       Authorization: `Bearer ${bearer}`,
       "x-lmnr-project-id": projectId,
       "Content-Type": "application/json",
-      Accept: "text/event-stream",
+      // Content negotiation: agents/scripts (`--json`) get one buffered JSON result; humans stream.
+      Accept: opts.json ? "application/json" : "text/event-stream",
     },
     body: JSON.stringify({ message: question }),
   });
@@ -54,16 +55,21 @@ export const handleAsk = async (query: string, opts: GlobalOpts): Promise<void> 
     throw new Error(`Agent request failed (HTTP ${res.status})${suffix}`);
   }
 
-  // Stream-parse the SSE frames: `delta` tokens form the answer (stdout), tool
-  // calls surface as activity (stderr), a trailing `error` frame aborts.
+  // `--json`: the server buffered the whole run into one `{ answer, sessionId, tools }` object — no
+  // stream to parse. Emit it verbatim.
+  if (opts.json) {
+    outputJson(await res.json());
+    return;
+  }
+
+  // Human mode: stream-parse the SSE frames — `delta` tokens form the answer (stdout), thoughts +
+  // tool calls surface as activity (stderr), a trailing `error` frame aborts.
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let sessionId: string | undefined;
   let answer = "";
   let streamed = false;
   let failure: string | undefined;
-  const tools: string[] = [];
 
   const onFrame = (data: string): void => {
     let frame: AgentFrame;
@@ -73,20 +79,15 @@ export const handleAsk = async (query: string, opts: GlobalOpts): Promise<void> 
       return; // ignore keep-alives / malformed lines
     }
     switch (frame.type) {
-      case "session":
-        sessionId = frame.sessionId;
-        break;
       case "delta":
         if (typeof frame.text === "string") {
           answer += frame.text;
-          if (!opts.json) {
-            process.stdout.write(frame.text);
-            streamed = true;
-          }
+          process.stdout.write(frame.text);
+          streamed = true;
         }
         break;
       case "thought":
-        if (!opts.json && typeof frame.text === "string") {
+        if (typeof frame.text === "string") {
           process.stderr.write(pc.dim(frame.text));
         }
         break;
@@ -95,8 +96,7 @@ export const handleAsk = async (query: string, opts: GlobalOpts): Promise<void> 
         if (frame.message?.role === "assistant") {
           for (const part of parts) {
             if (part.type === "toolCall" && part.name) {
-              tools.push(part.name);
-              if (!opts.json) process.stderr.write(pc.dim(`\n  → ${part.name}\n`));
+              process.stderr.write(pc.dim(`\n  → ${part.name}\n`));
             }
           }
           // Final assistant text: only used if no deltas streamed it (defensive).
@@ -143,10 +143,6 @@ export const handleAsk = async (query: string, opts: GlobalOpts): Promise<void> 
 
   if (failure) throw new Error(failure);
 
-  if (opts.json) {
-    outputJson({ answer: answer.trim(), sessionId, tools });
-    return;
-  }
   if (streamed) {
     process.stdout.write("\n");
   } else if (answer.trim()) {
