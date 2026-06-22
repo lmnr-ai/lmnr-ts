@@ -55,8 +55,8 @@ export const handleAsk = async (query: string, opts: GlobalOpts): Promise<void> 
     throw new Error(`Agent request failed (HTTP ${res.status})${suffix}`);
   }
 
-  // `--json`: the server buffered the whole run into one `{ answer, conversationId, tools }` object — no
-  // stream to parse. Emit it verbatim.
+  // `--json`: the server buffered the run into `{ answer, conversationId, tools }` — no stream
+  // to parse. Emit it verbatim.
   if (opts.json) {
     outputJson(await res.json());
     return;
