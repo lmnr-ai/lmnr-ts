@@ -9,8 +9,8 @@ import { outputJson } from "../utils/output";
  * stream stays forward-compatible.
  */
 interface AgentFrame {
-  type: "session" | "delta" | "thought" | "message" | "finish" | "error";
-  sessionId?: string;
+  type: "conversation" | "delta" | "thought" | "message" | "finish" | "error";
+  conversationId?: string;
   text?: string;
   message?: { role: string; parts?: { type: string; text?: string; name?: string }[] };
 }
@@ -55,7 +55,7 @@ export const handleAsk = async (query: string, opts: GlobalOpts): Promise<void> 
     throw new Error(`Agent request failed (HTTP ${res.status})${suffix}`);
   }
 
-  // `--json`: the server buffered the whole run into one `{ answer, sessionId, tools }` object — no
+  // `--json`: the server buffered the whole run into one `{ answer, conversationId, tools }` object — no
   // stream to parse. Emit it verbatim.
   if (opts.json) {
     outputJson(await res.json());
