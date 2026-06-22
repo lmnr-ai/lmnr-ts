@@ -45,9 +45,7 @@ export const handleAsk = async (query: string, opts: GlobalOpts): Promise<void> 
       "Content-Type": "application/json",
       Accept: "text/event-stream",
     },
-    body: JSON.stringify({
-      messages: [{ role: "user", parts: [{ type: "text", text: question }] }],
-    }),
+    body: JSON.stringify({ message: question }),
   });
 
   if (!res.ok || !res.body) {
