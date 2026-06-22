@@ -5,6 +5,7 @@ import { Command } from "commander";
 
 import { version } from "../package.json";
 import { withLocalOpts, withProjectClient, withUserToken } from "./auth/with-client";
+import { handleAsk } from "./commands/ask";
 import {
   handleDatasetsCreate,
   handleDatasetsList,
@@ -192,6 +193,40 @@ Examples:
     .action(() => {
       process.stdout.write(SQL_SCHEMA_HELP);
     });
+
+  program
+    .command("ask")
+    .description("Ask the Laminar agent a natural-language question about your project")
+    .argument("<query>", "Natural-language question")
+    .option(
+      "--project-id <id>",
+      "Target project id. Defaults to .lmnr/project.json, LMNR_PROJECT_ID, or the " +
+      "project the API key belongs to.",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option("--json", "Output structured JSON ({ answer, sessionId, tools }) to stdout")
+    .action(withLocalOpts(handleAsk))
+    .addHelpText(
+      "after",
+      `
+Authenticates with the project API key (LMNR_PROJECT_API_KEY, written by
+\`lmnr-cli setup\`). The agent answers from your project's traces/spans/evals via
+read-only SQL and trace inspection.
+
+Examples:
+  $ lmnr-cli ask "why did my latest trace fail?"
+  $ lmnr-cli ask "how many traces errored in the last day?"
+  $ lmnr-cli ask "summarize the most expensive trace today" --json
+`,
+    );
 
   const projectCmd = program.command("project").description("Work with Laminar projects");
 
