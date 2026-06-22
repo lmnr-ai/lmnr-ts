@@ -1,11 +1,7 @@
-import { probeProjectKey } from "../auth/project-id";
-import { envHttpPort, resolveBaseUrl } from "../auth/resolve";
+import { resolveAuth } from "../auth/resolve";
 import type { GlobalOpts } from "../auth/with-client";
 import { pc } from "../utils/colors";
-import { readLocalProjectFile } from "../utils/local-project-file";
 import { outputJson } from "../utils/output";
-
-const PROJECT_API_KEY_ENV = "LMNR_PROJECT_API_KEY";
 
 /**
  * One SSE frame from the app-server agent stream (`AgentEvent`, camelCase). Only
@@ -20,39 +16,12 @@ interface AgentFrame {
 }
 
 /**
- * Resolve the project the question targets: explicit `--project-id` → the linked
- * `.lmnr/project.json` → `LMNR_PROJECT_ID` → probe which project the API key owns.
- */
-async function resolveProjectId(
-  optProjectId: string | undefined,
-  projectApiKey: string,
-  baseUrl: string,
-  port: number | undefined,
-): Promise<string> {
-  const explicit =
-    optProjectId?.trim() ||
-    (await readLocalProjectFile())?.projectId ||
-    process.env.LMNR_PROJECT_ID?.trim();
-  if (explicit) return explicit;
-
-  const probe = await probeProjectKey(projectApiKey, baseUrl, port);
-  if (probe.status === "ok") return probe.projectId;
-  if (probe.status === "invalid") {
-    throw new Error(
-      "Project API key is invalid or revoked. Run `lmnr-cli setup` to mint a fresh one.",
-    );
-  }
-  throw new Error(
-    "No project resolved. Pass --project-id, set LMNR_PROJECT_ID, or run `lmnr-cli setup`.",
-  );
-}
-
-/**
  * `lmnr-cli ask "<question>"` — ask the Laminar agent a natural-language question
  * about the project. Streams the agent's answer to stdout (tool activity to
- * stderr). Authenticates with the project API key (`LMNR_PROJECT_API_KEY`, written
- * by `lmnr-cli setup`) against the project-scoped agent endpoint, tagging the run
- * as the `cli` channel. Pure handler: `withLocalOpts` owns the error envelope.
+ * stderr). User-token authed (the stored BetterAuth JWT, auto-refreshed — like the
+ * rest of the CLI) against the `/v1/cli/agent/chat` twin: the project rides in the
+ * `x-lmnr-project-id` header and the run is tagged the `cli` channel server-side.
+ * Pure handler: `withLocalOpts` owns the error envelope.
  */
 export const handleAsk = async (query: string, opts: GlobalOpts): Promise<void> => {
   const question = query?.trim();
@@ -60,33 +29,23 @@ export const handleAsk = async (query: string, opts: GlobalOpts): Promise<void> 
     throw new Error('Provide a question, e.g. lmnr-cli ask "why did my latest trace fail?"');
   }
 
-  const projectApiKey = process.env[PROJECT_API_KEY_ENV]?.trim();
-  if (!projectApiKey) {
-    throw new Error(
-      `No ${PROJECT_API_KEY_ENV}. Run \`lmnr-cli setup\` to write it to ./.env, ` +
-        "or set it in the environment.",
-    );
-  }
-
-  const baseUrl = resolveBaseUrl(opts.baseUrl);
-  const port = opts.port ?? envHttpPort();
-  const projectId = await resolveProjectId(opts.projectId, projectApiKey, baseUrl, port);
+  // User-token auth (auto-refreshed) + resolved project — same resolution `withProjectClient` uses.
+  const { bearer, baseUrl, port, projectId } = await resolveAuth(opts);
 
   // baseUrl carries no port by convention; splice the resolved port onto the URL.
   const url = new URL(baseUrl.replace(/\/+$/, ""));
   if (port) url.port = String(port);
-  url.pathname = `/api/v1/projects/${projectId}/agent/chat`;
+  url.pathname = "/v1/cli/agent/chat";
 
   const res = await fetch(url.toString(), {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${projectApiKey}`,
+      Authorization: `Bearer ${bearer}`,
+      "x-lmnr-project-id": projectId,
       "Content-Type": "application/json",
       Accept: "text/event-stream",
     },
     body: JSON.stringify({
-      context: { type: "project" },
-      channelType: "cli",
       messages: [{ role: "user", parts: [{ type: "text", text: question }] }],
     }),
   });
