@@ -10,6 +10,7 @@ import { probeProjectKey } from "../../auth/project-id";
 import { envHttpPort, refreshIfNeeded } from "../../auth/resolve";
 import { orange, pc, pcOut } from "../../utils/colors";
 import {
+  type EnvKeyLocation,
   findEnvKey,
   isPathGitIgnored,
   resolveEnvWriteTarget,
@@ -143,7 +144,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     if (link) {
       // Directory already declares the project — ignore the metadata-borne id
       // and assert the freshly-authenticated user can access the linked project.
-      await assertAccess(creds, userBaseUrl, link.projectId, isJson);
+      await assertAccess(creds, userBaseUrl, link, existingKey, isJson);
     } else if (login.projectId) {
       // Browser-selected (or just-created) project. Trust it and write the link.
       link = await writeLink(issuer, userBaseUrl, login.projectId, isJson);
@@ -157,7 +158,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     const userBaseUrl = baseUrl;
     const issuer = creds.issuer || frontendUrl;
     if (link) {
-      await assertAccess(creds, userBaseUrl, link.projectId, isJson);
+      await assertAccess(creds, userBaseUrl, link, existingKey, isJson);
     } else {
       link = await resolveProjectViaCli(creds, userBaseUrl, issuer, isJson, options);
     }
@@ -496,14 +497,18 @@ async function writeLink(
 }
 
 /**
- * Access check: the user must be a member of `projectId`. Calls
- * GET /v1/cli/projects (user JWT) and asserts the id is present; aborts
- * otherwise (SPEC: "You don't have access to the project in this directory").
+ * Access check: the logged-in user must be a member of the directory-linked
+ * project (`link.projectId`). Calls GET /v1/cli/projects (user JWT) and asserts
+ * the id is present; aborts otherwise (SPEC: "You don't have access to the
+ * project in this directory"). On failure, names the actual mismatch (linked
+ * project vs. logged-in account) and the two things that pin a stale project —
+ * `.lmnr/project.json` and any `LMNR_PROJECT_API_KEY` in the environment.
  */
 async function assertAccess(
   creds: Credentials,
   userBaseUrl: string,
-  projectId: string,
+  link: LocalProjectFile,
+  existingKey: EnvKeyLocation | null,
   isJson: boolean,
 ): Promise<void> {
   let projects: CliProject[];
@@ -516,14 +521,50 @@ async function assertAccess(
     emitError(isJson, "list_projects_failed", describeError(err));
     process.exit(EXIT_LIST_PROJECTS_FAILED);
   }
-  if (!projects.some((p) => p.id === projectId)) {
-    emitError(
-      isJson,
-      "no_access",
-      "You don't have access to the project in this directory",
-    );
+  if (!projects.some((p) => p.id === link.projectId)) {
+    emitError(isJson, "no_access", buildNoAccessDetail(link, creds, existingKey, projects));
     process.exit(EXIT_NO_ACCESS);
   }
+}
+
+/**
+ * Build the `no_access` detail: lead with the SPEC sentence (so substring
+ * matchers keep working), then explain the linked-project-vs-account mismatch
+ * and the concrete remediation steps.
+ */
+function buildNoAccessDetail(
+  link: LocalProjectFile,
+  creds: Credentials,
+  existingKey: EnvKeyLocation | null,
+  accessible: CliProject[],
+): string {
+  const project = link.projectName ? `"${link.projectName}" (${link.projectId})` : link.projectId;
+  const account = creds.userEmail ?? "the current account";
+  const workspace = link.workspaceName ? ` in workspace "${link.workspaceName}"` : "";
+  const keyWhere =
+    existingKey === null
+      ? null
+      : existingKey.source.type === "process-env"
+        ? { loc: "your environment", verb: "unset it" }
+        : { loc: relative(process.cwd(), existingKey.source.path), verb: "remove that line" };
+  const envHint = keyWhere
+    ? `\n  • A stale LMNR_PROJECT_API_KEY in ${keyWhere.loc} can pin a different project — ` +
+      `${keyWhere.verb}, then re-run setup.`
+    : "";
+  const accessLine =
+    accessible.length > 0
+      ? `You're logged in as ${account}, which has access to ${accessible.length} ` +
+        `project(s), but not this one.`
+      : `You're logged in as ${account}, which has access to no projects.`;
+
+  return (
+    `You don't have access to the project in this directory. ` +
+    `It's linked (.lmnr/project.json) to project ${project}${workspace}. ${accessLine}\n\n` +
+    `To fix, pick one:\n` +
+    `  • Wrong account? Run \`lmnr-cli login\` as someone with access, then re-run setup.\n` +
+    `  • Want a different project here? Remove the link and re-run setup: ` +
+    `\`rm .lmnr/project.json && lmnr-cli setup\`.${envHint}`
+  );
 }
 
 /** List the projects the user can access (user-JWT-authed discovery). */
