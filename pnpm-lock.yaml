@@ -271,9 +271,6 @@ importers:
       puppeteer-core:
         specifier: ^25.1.0
         version: 25.1.0
-      undici:
-        specifier: ^6.27.0
-        version: 6.27.0
       undici-types:
         specifier: ^8.0.2
         version: 8.2.0
