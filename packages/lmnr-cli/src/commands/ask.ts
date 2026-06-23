@@ -94,7 +94,9 @@ export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => 
         if (frame.conversationId) conversationId = frame.conversationId;
         break;
       case "delta":
-        if (typeof frame.text === "string") {
+        // Only a NON-EMPTY delta counts as streamed: an empty token writes nothing but would still
+        // flip `streamed`, suppressing the `message`-frame fallback that carries the full answer.
+        if (typeof frame.text === "string" && frame.text.length > 0) {
           answer += frame.text;
           process.stdout.write(frame.text);
           streamed = true;
