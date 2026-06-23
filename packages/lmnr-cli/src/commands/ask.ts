@@ -15,15 +15,20 @@ interface AgentFrame {
   message?: { role: string; parts?: { type: string; text?: string; name?: string }[] };
 }
 
+/** `ask`-specific opts on top of the shared globals. `conversation` continues a prior session. */
+type AskOpts = GlobalOpts & { conversation?: string };
+
 /**
  * `lmnr-cli ask "<question>"` — ask the Laminar agent a natural-language question
  * about the project. Streams the agent's answer to stdout (tool activity to
  * stderr). User-token authed (the stored BetterAuth JWT, auto-refreshed — like the
  * rest of the CLI) against the `/v1/cli/agent/chat` twin: the project rides in the
  * `x-lmnr-project-id` header and the run is tagged the `cli` channel server-side.
+ * Pass `--conversation <id>` to continue a prior session; the resolved id is echoed
+ * (muted, on stderr) after each answer so the next turn can reuse it.
  * Pure handler: `withLocalOpts` owns the error envelope.
  */
-export const handleAsk = async (query: string, opts: GlobalOpts): Promise<void> => {
+export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => {
   const question = query?.trim();
   if (!question) {
     throw new Error('Provide a question, e.g. lmnr-cli ask "why did my latest trace fail?"');
@@ -46,7 +51,11 @@ export const handleAsk = async (query: string, opts: GlobalOpts): Promise<void> 
       // Content negotiation: agents/scripts (`--json`) get one buffered JSON result; humans stream.
       Accept: opts.json ? "application/json" : "text/event-stream",
     },
-    body: JSON.stringify({ message: question }),
+    // `--conversation` continues a prior session; omitted → server mints a fresh one and echoes it.
+    body: JSON.stringify({
+      message: question,
+      ...(opts.conversation ? { conversationId: opts.conversation } : {}),
+    }),
   });
 
   if (!res.ok || !res.body) {
@@ -70,6 +79,8 @@ export const handleAsk = async (query: string, opts: GlobalOpts): Promise<void> 
   let answer = "";
   let streamed = false;
   let failure: string | undefined;
+  // Resolved server-side; arrives on the leading `conversation` frame (or equals `--conversation`).
+  let conversationId: string | undefined = opts.conversation;
 
   const onFrame = (data: string): void => {
     let frame: AgentFrame;
@@ -79,6 +90,9 @@ export const handleAsk = async (query: string, opts: GlobalOpts): Promise<void> 
       return; // ignore keep-alives / malformed lines
     }
     switch (frame.type) {
+      case "conversation":
+        if (frame.conversationId) conversationId = frame.conversationId;
+        break;
       case "delta":
         if (typeof frame.text === "string") {
           answer += frame.text;
@@ -149,5 +163,13 @@ export const handleAsk = async (query: string, opts: GlobalOpts): Promise<void> 
     process.stdout.write(`${answer.trim()}\n`);
   } else {
     process.stderr.write(pc.dim("(the agent returned no answer)\n"));
+  }
+
+  // Echo a ready-to-run continuation hint (muted, on stderr so stdout stays the clean answer) —
+  // copy it into the next turn's `--conversation`.
+  if (conversationId) {
+    process.stderr.write(
+      pc.dim(`\ncontinue with: lmnr-cli ask "<question>" --conversation ${conversationId}\n`),
+    );
   }
 };

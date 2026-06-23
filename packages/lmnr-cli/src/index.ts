@@ -212,6 +212,11 @@ Examples:
       "Port for the Laminar API. Defaults to 443",
       (val) => parseInt(val, 10),
     )
+    .option(
+      "--conversation <id>",
+      "Continue a previous conversation by its id (printed after each answer in human mode, " +
+      "or in the `--json` output as `conversationId`)",
+    )
     .option("--json", "Output structured JSON ({ answer, conversationId, tools }) to stdout")
     .action(withLocalOpts(handleAsk))
     .addHelpText(
@@ -225,6 +230,7 @@ Examples:
   $ lmnr-cli ask "why did my latest trace fail?"
   $ lmnr-cli ask "how many traces errored in the last day?"
   $ lmnr-cli ask "summarize the most expensive trace today" --json
+  $ lmnr-cli ask "and which model did it use?" --conversation <id>
 `,
     );
 
