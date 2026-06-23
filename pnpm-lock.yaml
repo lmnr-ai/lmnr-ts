@@ -233,7 +233,7 @@ importers:
         specifier: ^1.54.2
         version: 1.60.0
       '@qdrant/js-client-rest':
-        specifier: ^1.17.0
+        specifier: ^1.18.0
         version: 1.18.0(typescript@6.0.3)
       '@temporalio/workflow':
         specifier: ^1.18.1
@@ -271,6 +271,9 @@ importers:
       puppeteer-core:
         specifier: ^25.1.0
         version: 25.1.0
+      undici:
+        specifier: ^6.27.0
+        version: 6.27.0
       undici-types:
         specifier: ^8.0.2
         version: 8.2.0
@@ -3034,8 +3037,8 @@ packages:
   undici-types@8.2.0:
     resolution: {integrity: sha512-uciYZ5yCmf+QJb18kJw10HjquzM7K0z992vWcI+84KeBpTfXT4hfgfGJ5DQbf/mCBPACofkrjvqgcjZfuujjFA==}
 
-  undici@6.25.0:
-    resolution: {integrity: sha512-ZgpWDC5gmNiuY9CnLVXEH8rl50xhRCuLNA97fAUnKi8RRuV4E6KG31pDTsLVUKnohJE0I3XDrTeEydAXRw47xg==}
+  undici@6.27.0:
+    resolution: {integrity: sha512-YmfV3YnEDzXRC5lZ2jWtWWHKGUm1zIt8AhesR1tens+HTNv+YZlN/dp6G727LOvMJ8xjP9Be7Y2Sdr96LDm+pg==}
     engines: {node: '>=18.17'}
 
   unpipe@1.0.0:
@@ -4271,7 +4274,7 @@ snapshots:
     dependencies:
       '@qdrant/openapi-typescript-fetch': 1.2.6
       typescript: 6.0.3
-      undici: 6.25.0
+      undici: 6.27.0
 
   '@qdrant/openapi-typescript-fetch@1.2.6': {}
 
@@ -6221,7 +6224,7 @@ snapshots:
 
   undici-types@8.2.0: {}
 
-  undici@6.25.0: {}
+  undici@6.27.0: {}
 
   unpipe@1.0.0:
     optional: true
