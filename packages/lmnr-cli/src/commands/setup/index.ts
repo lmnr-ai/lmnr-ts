@@ -2,11 +2,10 @@ import { hostname } from "node:os";
 import { relative } from "node:path";
 import { createInterface } from "node:readline/promises";
 
-import { type CliProject, LaminarClient } from "@lmnr-ai/client";
+import { type CliProject, LaminarClient, type ProjectKeyProbe } from "@lmnr-ai/client";
 
 import { version } from "../../../package.json";
 import { type Credentials, readCredentials } from "../../auth/credentials";
-import { probeProjectKey } from "../../auth/project-id";
 import { envHttpPort, refreshIfNeeded } from "../../auth/resolve";
 import { orange, pc, pcOut } from "../../utils/colors";
 import {
@@ -190,7 +189,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
 
   let needMint = true;
   if (existingKey) {
-    const probe = await probeProjectKey(existingKey.value, userBaseUrl, envHttpPort());
+    const probe = await probeProjectKey(creds, existingKey.value, userBaseUrl);
     const where =
       existingKey.source.type === "process-env"
         ? "your environment"
@@ -539,6 +538,27 @@ async function listProjects(creds: Credentials, baseUrl: string): Promise<CliPro
     auth: { type: "userToken", token: updated.accessToken, projectId: "" },
   });
   return client.cli.listProjects();
+}
+
+/**
+ * Resolve which project an existing project API key belongs to, via the
+ * user-token CLI endpoint (`POST /v1/cli/project`, key in body). By setup time
+ * the CLI is already logged in, so we authenticate as the user (JWT bearer)
+ * rather than re-deriving auth from the project key itself. The server also
+ * confirms the user is a member of the resolved project.
+ */
+async function probeProjectKey(
+  creds: Credentials,
+  apiKey: string,
+  baseUrl: string,
+): Promise<ProjectKeyProbe> {
+  const updated = await refreshIfNeeded(creds);
+  const client = new LaminarClient({
+    baseUrl,
+    port: envHttpPort(),
+    auth: { type: "userToken", token: updated.accessToken, projectId: "" },
+  });
+  return client.cli.resolveProjectByApiKey(apiKey);
 }
 
 async function safeReadCredentials(): Promise<Credentials | null> {
