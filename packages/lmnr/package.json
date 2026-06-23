@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.8.34",
+  "version": "0.8.35",
   "description": "TypeScript SDK for Laminar AI",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -108,7 +108,7 @@
     "@opencode-ai/sdk": "^1.4.3",
     "@pinecone-database/pinecone": "^5.1.2",
     "@playwright/test": "^1.54.2",
-    "@qdrant/js-client-rest": "^1.17.0",
+    "@qdrant/js-client-rest": "^1.18.0",
     "@temporalio/workflow": "^1.18.1",
     "@types/cli-progress": "^3.11.6",
     "@types/node": "^24.12.0",
