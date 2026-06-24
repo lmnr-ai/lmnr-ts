@@ -19,6 +19,12 @@ export {
   wrapLanguageModel,
 } from "./opentelemetry-lib/instrumentation/aisdk";
 export {
+  type HarnessTelemetry,
+  harnessTelemetry,
+  type HarnessTelemetryOptions,
+  instrumentHarnessAgent,
+} from "./opentelemetry-lib/instrumentation/aisdk/harness/index";
+export {
   AI_SDK_TELEMETRY_DIAGNOSTIC_CHANNEL,
   aiSdkTelemetry,
   enableAiSdkTelemetryDebug,
