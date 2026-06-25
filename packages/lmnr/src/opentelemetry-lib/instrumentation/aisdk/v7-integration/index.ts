@@ -397,6 +397,11 @@ export class LaminarAiSdkTelemetry {
           llm.span.setAttribute("gen_ai.output.messages", outputMessages);
         }
       }
+      // onLanguageModelCallEnd never fired (it deletes the key on the normal
+      // path), so it never stamped usage on this LLM span. Record the step
+      // usage here so interrupted / errored flows still report cost. Safe to
+      // write on the LLM leaf — it has no children, so no double counting.
+      applyUsageToSpan(llm.span, event.usage);
       llm.span.end();
       removeActiveLlmSpan(llm.span);
       this.llmByKey.delete(key);

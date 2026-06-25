@@ -788,6 +788,36 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     );
   });
 
+  void it("records step usage on orphan LLM span when onLanguageModelCallEnd skipped", () => {
+    const tel = new LaminarAiSdkTelemetry({ createStepSpan: true });
+    const callId = "call-orphan-usage";
+
+    tel.onStart(mkStartEvent(callId));
+    tel.onStepStart(mkStepStartEvent(callId, 0));
+    tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+    // Provider skips onLanguageModelCallEnd (interrupted / errored mid-call),
+    // so onStepFinish force-closes the open LLM span. The step usage must land
+    // on the LLM leaf — otherwise cost drops to zero for this trace (LAM-1840
+    // regression).
+    tel.onStepFinish(mkStepEnd(callId, 0));
+    tel.onEnd(mkFinish(callId));
+
+    const spans = exporter.getFinishedSpans();
+    const llm = spans.find((s) => s.name.startsWith("ai.llm "));
+    assert.ok(llm, "llm span missing");
+    assert.equal(llm.attributes[SPAN_TYPE], "LLM");
+    assert.equal(llm.attributes["gen_ai.usage.input_tokens"], 10);
+    assert.equal(llm.attributes["gen_ai.usage.output_tokens"], 5);
+
+    // Usage still must NOT leak onto the DEFAULT step / operation spans.
+    const step = spans.find((s) => s.name === "ai.step");
+    assert.ok(step, "step span missing");
+    assert.equal(step.attributes["gen_ai.usage.input_tokens"], undefined);
+    const op = spans.find((s) => s.name === "ai.generateText");
+    assert.ok(op, "operation span missing");
+    assert.equal(op.attributes["gen_ai.usage.input_tokens"], undefined);
+  });
+
   void it("drops text-delta chunks that arrive without a preceding firstChunk marker", () => {
     const tel = new LaminarAiSdkTelemetry();
     const callId = "call-stream-no-marker";
