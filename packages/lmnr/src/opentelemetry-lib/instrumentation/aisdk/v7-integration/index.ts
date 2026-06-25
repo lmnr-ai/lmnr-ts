@@ -397,6 +397,11 @@ export class LaminarAiSdkTelemetry {
           llm.span.setAttribute("gen_ai.output.messages", outputMessages);
         }
       }
+      // onLanguageModelCallEnd never fired (it deletes the key on the normal
+      // path), so it never stamped usage on this LLM span. Record the step
+      // usage here so interrupted / errored flows still report cost. Safe to
+      // write on the LLM leaf — it has no children, so no double counting.
+      applyUsageToSpan(llm.span, event.usage);
       llm.span.end();
       removeActiveLlmSpan(llm.span);
       this.llmByKey.delete(key);
@@ -405,9 +410,11 @@ export class LaminarAiSdkTelemetry {
     const step = this.stepByKey.get(key);
     if (!step) return;
 
-    // Emit per-step usage + finish reason on the step span too, so a step
-    // that was interrupted mid-stream still reports correct totals.
-    applyUsageToSpan(step.span, event.usage);
+    // Emit finish reason on the step span. Do NOT write token usage here: the
+    // step span is DEFAULT-typed and the backend computes cost from
+    // gen_ai.usage.* on ANY span carrying them, so usage on the step would be
+    // summed on top of its LLM-leaf children (double counting). Usage lives on
+    // the LLM leaf spans only.
     if (typeof event.finishReason === "string") {
       applyFinishReason(step.span, event.finishReason);
     }
@@ -658,7 +665,20 @@ export class LaminarAiSdkTelemetry {
     if (typeof event.finishReason === "string") {
       applyFinishReason(op.span, event.finishReason);
     }
-    applyUsageToSpan(op.span, event.totalUsage ?? event.usage);
+    // Only write token usage on embed / embedMany / rerank operation spans —
+    // those are classified LLM in onStart and have no LLM-leaf children, so
+    // the cost belongs on them. For generateText / streamText / generateObject
+    // / streamObject the operation span is DEFAULT and its children (the LLM
+    // leaf / object-gen spans) already carry usage; the backend computes cost
+    // from gen_ai.usage.* on ANY span, so stamping the already-aggregated
+    // totalUsage here would double-count it on top of the children.
+    const isEmbedOrRerank =
+      op.operationId === "ai.embed" ||
+      op.operationId === "ai.embedMany" ||
+      op.operationId === "ai.rerank";
+    if (isEmbedOrRerank) {
+      applyUsageToSpan(op.span, event.totalUsage ?? event.usage);
+    }
 
     // Write final output content onto the operation span.
     if (this.recordOutputs) {
