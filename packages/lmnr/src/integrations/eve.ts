@@ -162,12 +162,15 @@ export class LaminarReporter implements EvalReporter {
     evaluations: readonly EveEval[],
     target: EveEvalTarget,
   ): Promise<void> {
+    // Reset up front so a reused reporter whose start fails cannot attach this
+    // run's results to a previous run's evaluation.
+    this.evalId = undefined;
+    this.index = 0;
     try {
       this.client = this.options.client ?? new LaminarClient({
         baseUrl: this.options.baseUrl,
         projectApiKey: this.options.projectApiKey,
       });
-      this.index = 0;
       this.evalId = await this.client.evals.init(
         this.options.name,
         this.options.groupName,
