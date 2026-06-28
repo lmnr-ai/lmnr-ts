@@ -52,12 +52,13 @@ void describe("LaminarReporter for eve evals", () => {
 
     const reporter = makeReporter();
     const evals: EveEval[] = [{ id: "a" }, { id: "b" }];
-    const target: EveEvalTarget = { name: "weather-agent" };
+    const target: EveEvalTarget = { kind: "local", url: "http://localhost:1234" };
     await reporter.onRunStart(evals, target);
 
     assert.strictEqual(body.name, "eve-run");
     assert.strictEqual(body.metadata.source, "eve");
-    assert.strictEqual(body.metadata.targetName, "weather-agent");
+    assert.strictEqual(body.metadata.targetKind, "local");
+    assert.strictEqual(body.metadata.targetUrl, "http://localhost:1234");
     assert.strictEqual(body.metadata.evalCount, 2);
     scope.done();
   });
@@ -85,19 +86,25 @@ void describe("LaminarReporter for eve evals", () => {
       .reply(200, {});
 
     const reporter = makeReporter();
-    await reporter.onRunStart([{ id: "a" }], { name: "agent" });
+    await reporter.onRunStart([{ id: "brooklyn-forecast" }], { kind: "local" });
 
     const result: EveEvalResult = {
       id: "brooklyn-forecast",
-      name: "Brooklyn forecast",
-      input: "What is the weather in Brooklyn?",
-      output: "It is sunny.",
-      target: "sunny",
-      status: "passed",
-      passed: true,
-      checks: [
-        { name: "relevance", score: 0.9 },
-        { name: "no-refusal", gate: true, passed: true },
+      verdict: "passed",
+      result: {
+        output: "It is sunny.",
+        finalMessage: "It is sunny.",
+        sessionId: "wrun_abc123",
+        status: "completed",
+        derived: {
+          toolCalls: [{ name: "get_weather" }],
+          toolCallCount: 1,
+        },
+        runtimeIdentity: { modelId: "gpt-4o-mini" },
+      },
+      assertions: [
+        { name: "relevance", score: 0.9, severity: "soft", passed: true },
+        { name: "no-refusal", score: 1, severity: "gate", passed: true },
       ],
     };
     await reporter.onEvalComplete(result);
@@ -106,12 +113,15 @@ void describe("LaminarReporter for eve evals", () => {
     assert.strictEqual(createBody.points.length, 1);
     const point = createBody.points[0];
     assert.ok(DATAPOINT_ID_RE.test(point.id));
-    assert.strictEqual(point.data, "What is the weather in Brooklyn?");
-    assert.strictEqual(point.target, "sunny");
+    assert.strictEqual(point.data, "brooklyn-forecast");
+    assert.strictEqual(point.target, "It is sunny.");
     assert.strictEqual(point.index, 0);
-    assert.strictEqual(point.metadata.name, "Brooklyn forecast");
-    assert.strictEqual(point.metadata.status, "passed");
-    assert.strictEqual(point.metadata.passed, true);
+    assert.strictEqual(point.metadata.name, "brooklyn-forecast");
+    assert.strictEqual(point.metadata.verdict, "passed");
+    assert.strictEqual(point.metadata.status, "completed");
+    assert.strictEqual(point.metadata.sessionId, "wrun_abc123");
+    assert.deepStrictEqual(point.metadata.toolCalls, ["get_weather"]);
+    assert.strictEqual(point.metadata.modelId, "gpt-4o-mini");
 
     // update datapoint: soft score kept, gate became binary gate:<name>
     assert.deepStrictEqual(updateBody.scores, {
@@ -140,15 +150,52 @@ void describe("LaminarReporter for eve evals", () => {
     await reporter.onRunStart([{ id: "a" }], {});
     await reporter.onEvalComplete({
       id: "a",
-      passed: false,
-      status: "failed",
-      checks: [{ name: "must-answer", gate: true, passed: false }],
+      verdict: "failed",
+      result: { status: "completed" },
+      assertions: [
+        { name: "must-answer", score: 0, severity: "gate", passed: false },
+      ],
     });
 
     assert.deepStrictEqual(updateBody.scores, { "gate:must-answer": 0 });
   });
 
-  void it("passes through pre-aggregated scores and increments index", async () => {
+  void it("surfaces failed assertions in datapoint metadata", async () => {
+    mockInit();
+    let createBody: RequestBody = {};
+    nock(NOCK_URL)
+      .post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`, (b: RequestBody) => {
+        createBody = b;
+        return true;
+      })
+      .reply(200, {});
+    nock(NOCK_URL)
+      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`))
+      .reply(200, {});
+
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    await reporter.onEvalComplete({
+      id: "a",
+      verdict: "failed",
+      result: { status: "completed" },
+      assertions: [
+        {
+          name: "must-answer",
+          score: 0,
+          severity: "gate",
+          passed: false,
+          message: "no answer produced",
+        },
+      ],
+    });
+
+    assert.deepStrictEqual(createBody.points[0].metadata.failedAssertions, [
+      { name: "must-answer", message: "no answer produced" },
+    ]);
+  });
+
+  void it("increments the datapoint index across evals", async () => {
     mockInit();
     const indices: number[] = [];
     nock(NOCK_URL)
@@ -165,8 +212,18 @@ void describe("LaminarReporter for eve evals", () => {
 
     const reporter = makeReporter();
     await reporter.onRunStart([{ id: "a" }, { id: "b" }], {});
-    await reporter.onEvalComplete({ id: "a", scores: { accuracy: 1 } });
-    await reporter.onEvalComplete({ id: "b", scores: { accuracy: 0 } });
+    await reporter.onEvalComplete({
+      id: "a",
+      verdict: "scored",
+      result: { status: "completed" },
+      assertions: [{ name: "accuracy", score: 1, severity: "soft" }],
+    });
+    await reporter.onEvalComplete({
+      id: "b",
+      verdict: "scored",
+      result: { status: "completed" },
+      assertions: [{ name: "accuracy", score: 0, severity: "soft" }],
+    });
 
     assert.deepStrictEqual(indices, [0, 1]);
   });
@@ -188,6 +245,8 @@ void describe("LaminarReporter for eve evals", () => {
 
     const reporter = makeReporter();
     await reporter.onRunStart([{ id: "a" }], {});
-    await assert.doesNotReject(() => reporter.onEvalComplete({ id: "a", scores: {} }));
+    await assert.doesNotReject(() =>
+      reporter.onEvalComplete({ id: "a", result: {}, assertions: [] }),
+    );
   });
 });

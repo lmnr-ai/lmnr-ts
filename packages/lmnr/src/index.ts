@@ -14,12 +14,17 @@ export {
 } from "./evaluations";
 export {
   type EvalReporter,
+  type EveAssertionResult,
+  type EveAssertionSeverity,
   type EveEval,
-  type EveEvalCheck,
+  type EveEvalDerivedFacts,
   type EveEvalResult,
   type EveEvalRunSummary,
-  type EveEvalStatus,
   type EveEvalTarget,
+  type EveEvalTaskResult,
+  type EveEvalToolCall,
+  type EveEvalVerdict,
+  type EveRuntimeIdentity,
   LaminarReporter,
   type LaminarReporterOptions,
 } from "./integrations/eve";
