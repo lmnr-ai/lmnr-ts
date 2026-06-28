@@ -8,68 +8,112 @@ const logger = initializeLogger();
 const GATE_SCORE_PREFIX = "gate:";
 
 /**
- * Narrow local mirrors of eve's `eve/evals/reporters` types. We intentionally
- * do NOT import from `eve` so the SDK carries no peer dependency on it (same
- * pattern as the Mastra exporter). The fields are a superset of what the eve
- * docs document, and every field a reporter reads is optional so a shape change
- * on eve's side degrades gracefully instead of throwing.
+ * Narrow local mirrors of eve's `eve/evals` types. We intentionally do NOT
+ * import from `eve` so the SDK carries no peer dependency on it (same pattern
+ * as the Mastra exporter). The fields mirror eve 0.16.x; every field a reporter
+ * reads is optional so a shape change on eve's side degrades gracefully instead
+ * of throwing.
  */
 export interface EveEval {
   /** Path-derived stable id of the eval, e.g. "brooklyn-forecast". */
   id?: string;
-  name?: string;
+  description?: string;
   metadata?: Record<string, any>;
 }
 
 export interface EveEvalTarget {
+  /** "local" for a dev server the runner boots, "remote" for a deployment. */
+  kind?: string;
+  /** Base HTTP URL the eval client connects to. */
+  url?: string;
+  [key: string]: any;
+}
+
+/** How a failing assertion affects the verdict. */
+export type EveAssertionSeverity = "gate" | "soft";
+
+/** The recorded outcome of one assertion eve ran against an eval. */
+export interface EveAssertionResult {
+  name?: string;
+  /** Score in [0, 1]; boolean assertions score exactly 0 or 1. */
+  score?: number;
+  /** "gate" (hard) or "soft" (tracked / thresholded). */
+  severity?: EveAssertionSeverity;
+  threshold?: number;
+  passed?: boolean;
+  /** Human-readable failure detail. */
+  message?: string;
+  metadata?: Record<string, any>;
+}
+
+/** One tool call eve extracted from the captured stream. */
+export interface EveEvalToolCall {
   name?: string;
   [key: string]: any;
 }
 
-/** A single check / assertion eve ran against an eval's output. */
-export interface EveEvalCheck {
-  name?: string;
-  /** Soft score in [0, 1]; present for graded checks. */
-  score?: number;
-  /** Pass/fail flag; present for gate assertions. */
-  passed?: boolean;
-  /** Whether this check is a hard gate (vs. a soft score). */
-  gate?: boolean;
+/** Execution facts eve derives from a completed session's stream. */
+export interface EveEvalDerivedFacts {
+  toolCalls?: EveEvalToolCall[];
+  toolCallCount?: number;
+  subagentCallCount?: number;
+  messageCount?: number;
+  reasoningBlockCount?: number;
+  parked?: boolean;
+  failureCode?: string;
 }
 
-export type EveEvalStatus = "passed" | "failed" | "skipped" | "errored";
+/** Runtime identity eve captures from the `session.started` stream event. */
+export interface EveRuntimeIdentity {
+  agentId?: string;
+  agentName?: string;
+  eveVersion?: string;
+  modelId?: string;
+}
 
-export interface EveEvalResult {
-  /** Stable id of the eval that produced this result. */
-  id?: string;
-  name?: string;
-  /** What was sent to the target. */
-  input?: any;
-  /** What the target produced. */
+/** Result of executing one eval against an eve agent. */
+export interface EveEvalTaskResult {
+  /** Final structured data, or the last assistant message when absent. */
   output?: any;
-  /** Expected / reference value, if the eval declared one. */
-  target?: any;
-  /** Pre-aggregated scores, when eve hands them over directly. */
-  scores?: Record<string, number>;
-  /** Individual checks; gates and soft scores both arrive here. */
-  checks?: EveEvalCheck[];
-  status?: EveEvalStatus;
-  /** Overall verdict; true when the eval passed all gates. */
-  passed?: boolean;
-  /** Reason supplied to `t.skip(reason)`. */
-  skipReason?: string;
+  /** The agent's last assistant message, or null when none was produced. */
+  finalMessage?: string | null;
+  /** eve session id after the first successful send. */
+  sessionId?: string;
+  /** How the run's final turn ended. */
+  status?: "completed" | "failed" | "waiting";
+  logs?: string[];
+  derived?: EveEvalDerivedFacts;
+  runtimeIdentity?: EveRuntimeIdentity;
+}
+
+/** Per-eval verdict computed by the runner. */
+export type EveEvalVerdict = "passed" | "failed" | "scored" | "skipped";
+
+/** Result of executing and asserting one eval. eve hands this to reporters. */
+export interface EveEvalResult {
+  /** Path-derived eval id (e.g. "weather"). */
+  id?: string;
+  /** Execution result (output, session, derived facts). */
+  result?: EveEvalTaskResult;
+  /** Every assertion recorded by the eval's `test(t)`, in record order. */
+  assertions?: EveAssertionResult[];
+  /** Per-eval verdict. */
+  verdict?: EveEvalVerdict;
   /** Execution error message, when the eval threw. */
   error?: string;
-  metadata?: Record<string, any>;
-  /** OTel trace id (32-char hex) if eve traced the run. */
-  traceId?: string;
+  /** Reason supplied to `t.skip(reason)`. */
+  skipReason?: string;
+  startedAt?: string;
+  completedAt?: string;
 }
 
 export interface EveEvalRunSummary {
   total?: number;
   passed?: number;
   failed?: number;
+  scored?: number;
   skipped?: number;
+  errored?: number;
   [key: string]: any;
 }
 
@@ -104,32 +148,35 @@ export interface LaminarReporterOptions {
 }
 
 /**
- * Maps each individual eve check onto a Laminar score. Gate assertions become
- * binary `gate:<name>` scores (so Laminar diffs gate regressions the same way
- * it diffs soft-score regressions), graded checks keep their numeric score.
+ * Maps each eve assertion onto a Laminar score. Gate assertions become binary
+ * `gate:<name>` scores (so Laminar diffs gate regressions the same way it diffs
+ * soft-score regressions), soft assertions keep their numeric score. Mirrors
+ * eve's own Braintrust reporter, which prefixes gate scores the same way.
  */
-const checksToScores = (checks: EveEvalCheck[]): Record<string, number> => {
+const assertionsToScores = (
+  assertions: readonly EveAssertionResult[],
+): Record<string, number> => {
   const scores: Record<string, number> = {};
-  for (const check of checks) {
-    if (!check.name) {
+  for (const assertion of assertions) {
+    if (!assertion.name || typeof assertion.score !== "number") {
       continue;
     }
-    if (check.gate || typeof check.score !== "number") {
-      scores[`${GATE_SCORE_PREFIX}${check.name}`] = check.passed ? 1 : 0;
-    } else {
-      scores[check.name] = check.score;
-    }
+    const key = assertion.severity === "gate"
+      ? `${GATE_SCORE_PREFIX}${assertion.name}`
+      : assertion.name;
+    scores[key] = assertion.score;
   }
   return scores;
 };
 
-/** Collapses an eve result into the flat `Record<string, number>` Laminar stores. */
-const resultToScores = (result: EveEvalResult): Record<string, number> => {
-  const scores: Record<string, number> = { ...(result.scores ?? {}) };
-  if (result.checks?.length) {
-    Object.assign(scores, checksToScores(result.checks));
-  }
-  return scores;
+/** Surface failed assertions in metadata so a failing run is debuggable. */
+const failedAssertionsMetadata = (
+  assertions: readonly EveAssertionResult[],
+): Record<string, any> => {
+  const failed = assertions
+    .filter((assertion) => assertion.passed === false)
+    .map((assertion) => ({ name: assertion.name, message: assertion.message }));
+  return failed.length > 0 ? { failedAssertions: failed } : {};
 };
 
 /**
@@ -137,6 +184,12 @@ const resultToScores = (result: EveEvalResult): Record<string, number> => {
  * or per-eval via the `reporters` field — eve runs and grades each eval, then
  * hands the graded result here, and this reporter ships it to Laminar as an
  * evaluation run with one datapoint per eval.
+ *
+ * Trace correlation: eve exports its own AI SDK OTel spans (configured in the
+ * agent's `instrumentation.ts`). Those spans carry the eve session id as
+ * `eve.session.id`; this reporter stores the same id on each datapoint's
+ * `sessionId` metadata, so an eval datapoint can be matched back to the trace
+ * eve produced for that session.
  *
  * @example
  * ```ts
@@ -176,7 +229,8 @@ export class LaminarReporter implements EvalReporter {
         this.options.groupName,
         {
           source: "eve",
-          targetName: target?.name,
+          targetKind: target?.kind,
+          targetUrl: target?.url,
           evalCount: evaluations.length,
           ...(this.options.metadata ?? {}),
         },
@@ -192,33 +246,45 @@ export class LaminarReporter implements EvalReporter {
       return;
     }
     const index = this.index++;
+    const task = result.result ?? {};
+    const derived = task.derived ?? {};
+    const assertions = result.assertions ?? [];
     try {
       const datapointId = await this.client.evals.createDatapoint({
         evalId: this.evalId,
-        data: result.input ?? null,
-        target: result.target,
+        // eve drives the agent itself; the eval id is the closest thing to an
+        // input the reporter is handed (the prompt lives inside `test(t)`).
+        data: result.id ?? null,
+        target: task.finalMessage ?? null,
         index,
-        traceId: result.traceId,
         metadata: {
-          name: result.name ?? result.id,
-          status: result.status,
-          passed: result.passed,
+          name: result.id,
+          verdict: result.verdict,
+          status: task.status,
+          sessionId: task.sessionId,
           skipReason: result.skipReason,
           error: result.error,
-          ...(result.metadata ?? {}),
+          toolCalls: (derived.toolCalls ?? [])
+            .map((call) => call.name)
+            .filter((name): name is string => typeof name === "string"),
+          toolCallCount: derived.toolCallCount,
+          parked: derived.parked,
+          failureCode: derived.failureCode,
+          modelId: task.runtimeIdentity?.modelId,
+          ...failedAssertionsMetadata(assertions),
         },
       });
 
       await this.client.evals.updateDatapoint({
         evalId: this.evalId,
         datapointId,
-        scores: resultToScores(result),
-        executorOutput: result.output,
+        scores: assertionsToScores(assertions),
+        executorOutput: task.output ?? task.finalMessage ?? null,
       });
     } catch (error) {
       logger.error(
         `Laminar eve reporter: failed to report eval ` +
-        `"${result.name ?? result.id ?? index}": ${errorMessage(error)}`,
+        `"${result.id ?? index}": ${errorMessage(error)}`,
       );
     }
   }
