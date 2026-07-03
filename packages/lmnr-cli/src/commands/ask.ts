@@ -19,14 +19,10 @@ interface AgentFrame {
 type AskOpts = GlobalOpts & { conversation?: string };
 
 /**
- * `lmnr-cli ask "<question>"` — ask the Laminar agent a natural-language question
- * about the project. Streams the agent's answer to stdout (tool activity to
- * stderr). User-token authed (the stored BetterAuth JWT, auto-refreshed — like the
- * rest of the CLI) against the `/v1/cli/agent/chat` twin: the project rides in the
- * `x-lmnr-project-id` header and the run is tagged the `cli` channel server-side.
- * Pass `--conversation <id>` to continue a prior session; the resolved id is echoed
- * (muted, on stderr) after each answer so the next turn can reuse it.
- * Pure handler: `withLocalOpts` owns the error envelope.
+ * `lmnr-cli ask "<question>"` — ask the Laminar agent a natural-language question.
+ * User-token authed (like the rest of the CLI) against `/v1/cli/agent/chat`, project
+ * in the `x-lmnr-project-id` header; streams the answer to stdout (activity to stderr).
+ * `--conversation <id>` continues a prior session (its id is echoed on stderr).
  */
 export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => {
   const question = query?.trim();

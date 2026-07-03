@@ -200,8 +200,8 @@ Examples:
     .argument("<query>", "Natural-language question")
     .option(
       "--project-id <id>",
-      "Target project id. Defaults to .lmnr/project.json, LMNR_PROJECT_ID, or the " +
-      "project the API key belongs to.",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+      "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -222,9 +222,9 @@ Examples:
     .addHelpText(
       "after",
       `
-Authenticates with the project API key (LMNR_PROJECT_API_KEY, written by
-\`lmnr-cli setup\`). The agent answers from your project's traces/spans/evals via
-read-only SQL and trace inspection.
+Runs on your logged-in user session (\`lmnr-cli login\`) and targets a project via
+--project-id or the linked .lmnr/project.json. The agent answers from your
+project's traces/spans/evals via read-only SQL and trace inspection.
 
 Examples:
   $ lmnr-cli ask "why did my latest trace fail?"
