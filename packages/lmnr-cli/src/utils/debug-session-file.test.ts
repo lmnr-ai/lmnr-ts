@@ -9,7 +9,6 @@ import {
   readDebugSessionFile,
   resolveDebugSessionDir,
   resolveSessionId,
-  resolveTraceId,
   writeDebugSessionFile,
 } from './debug-session-file';
 
@@ -122,20 +121,3 @@ describe('resolveSessionId', () => {
   });
 });
 
-describe('resolveTraceId', () => {
-  it('prefers the explicit argument over the file', () => {
-    writeRaw({ session_id: SESSION_ID, trace_id: TRACE_ID });
-    expect(resolveTraceId('explicit-id', dir)).toBe('explicit-id');
-  });
-
-  it('falls back to the file trace_id', () => {
-    writeRaw({ session_id: SESSION_ID, trace_id: TRACE_ID });
-    expect(resolveTraceId(undefined, dir)).toBe(TRACE_ID);
-  });
-
-  it('throws when the file exists but has no trace_id', () => {
-    writeRaw({ session_id: SESSION_ID });
-    expect(() => resolveTraceId(undefined, dir))
-      .toThrow('No trace id given');
-  });
-});

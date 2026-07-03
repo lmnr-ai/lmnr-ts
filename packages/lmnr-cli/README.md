@@ -123,27 +123,29 @@ lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a data
 lmnr-cli dataset create my-dataset data.jsonl -o out.jsonl
 ```
 
-### `trace` / `debug` - Annotate and inspect agent runs
+### `debug` - Annotate and inspect agent runs
 
-Record findings on a trace and review/name agent debug sessions.
+Record findings on a debug session and review/name agent debug sessions.
 
 ```bash
 lmnr-cli debug session new                               # Mint a fresh debug session
 lmnr-cli debug session open                              # Open the session in the browser
-lmnr-cli trace append-note "note text"                   # Markdown note on the latest debug trace
+lmnr-cli debug session add-note "note text"              # Markdown note on the current session
 lmnr-cli debug session set-name "title"                  # Rename the current debug session
-lmnr-cli debug session summary                           # Every trace in the session + its note
+lmnr-cli debug session summary                           # Every block in the session, oldest first
 ```
 
-These commands default to the session/trace recorded in
-`.lmnr/debug-session.json` (written by `debug session new` and `LMNR_DEBUG=1`
-runs; the nearest one walking up from the current directory, so subdirectories
-of a project work too); target another one with an explicit id flag
-(e.g. `lmnr-cli debug session summary --session-id <session-id>`,
-`lmnr-cli trace append-note "note" --trace-id <trace-id>`).
+These commands default to the session recorded in
+`.lmnr/debug-session.json` (written by `debug session new` and any `LMNR_DEBUG=1`
+run — including evals; the nearest one walking up from the current directory, so
+subdirectories of a project work too); target another one with
+`--session-id <session-id>`.
 
-`trace append-note` accumulates (each call appends a paragraph). See the Laminar
-debugger docs: https://laminar.sh/docs/platform/debugger
+`debug session add-note` writes a standalone text block keyed by session id (not
+tied to a trace or evaluation), so it works the same for agent runs and evals
+(any `LMNR_DEBUG=1` program). Each call appends a new block, interleaved by time
+with the session's traces and evaluations. See the Laminar debugger docs:
+https://laminar.sh/docs/platform/debugger
 
 ### `setup` - One-shot onboarding
 

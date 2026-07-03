@@ -1,4 +1,10 @@
-import { type CachedSpan, errorMessage } from "@lmnr-ai/types";
+import {
+  type CachedSpan,
+  errorMessage,
+  type SessionBlock,
+  type SessionBlockContent,
+  type SessionBlockType,
+} from "@lmnr-ai/types";
 
 import { initializeLogger } from "../utils";
 import { BaseResource, type LaminarAuth } from "./index";
@@ -113,6 +119,105 @@ export class RolloutSessionsResource extends BaseResource {
 
     if (!response.ok) {
       await this.handleError(response);
+    }
+  }
+
+  /**
+   * Append a block to a debug session (debugger session blocks).
+   *
+   * A debug session renders as an ordered list of blocks; this writes one to the
+   * backend keyed by session id. The CLI uses it for `text` blocks — standalone
+   * agent notes attached post-factum via `lmnr-cli debug session add-note` — so
+   * a note is tied to the SESSION, not to a specific trace / evaluation (those
+   * blocks are written at ingest from `rollout.session_id` metadata).
+   *
+   * A 404 (the session is unknown for the project) is logged and swallowed
+   * unless `failOnNotFound` is set — CLI callers pass it so an exit 0 means the
+   * block actually landed. Any other non-OK status throws.
+   *
+   * Returns the created block id, or null when the response body can't be parsed.
+   */
+  public async addBlock({
+    sessionId,
+    type,
+    content,
+    failOnNotFound,
+  }: {
+    sessionId: string;
+    type: SessionBlockType;
+    content: SessionBlockContent;
+    failOnNotFound?: boolean;
+  }): Promise<string | null> {
+    const response = await fetch(
+      `${this.baseHttpUrl}${this.apiPrefix}/rollouts/${sessionId}/blocks`,
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({ type, content }),
+      },
+    );
+
+    if (response.status === 404) {
+      const message =
+        `Could not add a note: HTTP 404 for session ${sessionId}. Either the ` +
+        "session isn't registered in this project (mint one with `lmnr-cli " +
+        "debug session new`, or run under LMNR_DEBUG=1), or this Laminar server " +
+        "doesn't expose the session-blocks write endpoint " +
+        "(POST /v1/rollouts/{sessionId}/blocks) yet.";
+      if (failOnNotFound) {
+        throw new Error(message);
+      }
+      logger.warn(message);
+      return null;
+    }
+
+    if (!response.ok) {
+      await this.handleError(response);
+    }
+
+    try {
+      const body = (await response.json()) as { id?: string };
+      return body.id ?? null;
+    } catch (e) {
+      logger.warn(`Failed to parse add-block response: ${errorMessage(e)}`);
+      return null;
+    }
+  }
+
+  /**
+   * List a debug session's blocks in creation order.
+   *
+   * Returns every `trace` / `evaluation` / `text` block on the session — the
+   * same data the debugger UI renders. Used by `lmnr-cli debug session summary`
+   * to print a chronological digest of the session. Returns an empty array when
+   * the session has no blocks or the body can't be parsed.
+   */
+  public async listBlocks({
+    sessionId,
+  }: {
+    sessionId: string;
+  }): Promise<SessionBlock[]> {
+    const response = await fetch(
+      `${this.baseHttpUrl}${this.apiPrefix}/rollouts/${sessionId}/blocks`,
+      {
+        method: "GET",
+        headers: this.headers(),
+      },
+    );
+
+    if (!response.ok) {
+      await this.handleError(response);
+    }
+
+    try {
+      const body = (await response.json()) as
+        | { blocks?: SessionBlock[] }
+        | SessionBlock[];
+      const blocks = Array.isArray(body) ? body : body.blocks;
+      return blocks ?? [];
+    } catch (e) {
+      logger.warn(`Failed to parse list-blocks response: ${errorMessage(e)}`);
+      return [];
     }
   }
 

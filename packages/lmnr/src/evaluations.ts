@@ -4,6 +4,7 @@ import { trace } from "@opentelemetry/api";
 import * as cliProgress from "cli-progress";
 
 import { EvaluationDataset, LaminarDataset } from "./datasets";
+import { getRuntime } from "./debug";
 import { observe } from "./decorators";
 import { Laminar } from "./laminar";
 import { InitializeOptions } from "./opentelemetry-lib/interfaces";
@@ -47,6 +48,35 @@ const getEvaluationUrl = (
 ): string => {
   const url = getFrontendUrl(baseUrl, frontendPort);
   return `${url}/project/${projectId}/evaluations/${evaluationId}`;
+};
+
+// Evaluation-metadata key that links an eval run to its debug session. Kept as
+// `rollout.session_id` (matching the trace-metadata key the debugger stamps) so
+// the eval and its debug session cross-reference under one identifier.
+const SESSION_METADATA_KEY = "rollout.session_id";
+
+/**
+ * When this eval runs under a debug session, auto-stamp the session id into the
+ * evaluation metadata so the created evaluation links back to it with no extra
+ * step. The session id is resolved by the debug runtime EXACTLY like traces —
+ * `LMNR_DEBUG_SESSION_ID` env → `.lmnr/debug-session.json` → freshly minted — so
+ * a plain `LMNR_DEBUG=1 <run-your-eval>` groups the eval under the current debug
+ * session (no CLI wrapper needed). `getRuntime()` is null when debug mode is off,
+ * so the metadata is returned unchanged.
+ *
+ * The backend writes the `evaluation` block from this key at eval creation; notes
+ * are attached separately as `text` blocks keyed by the same session id
+ * (`lmnr-cli debug session add-note`). Called after `Laminar.initialize()`, so
+ * the runtime (and its resolved session id) already exist.
+ */
+const withSessionMetadata = (
+  metadata: Record<string, any> | undefined,
+): Record<string, any> | undefined => {
+  const sessionId = getRuntime()?.sessionId ?? null;
+  if (sessionId === null) {
+    return metadata;
+  }
+  return { ...(metadata ?? {}), [SESSION_METADATA_KEY]: sessionId };
 };
 
 const getAverageScores = <D, T, O>(
@@ -456,7 +486,7 @@ export class Evaluation<D, T, O> {
       const evaluation = await this.client.evals.init(
         this.name,
         this.groupName,
-        this.metadata,
+        withSessionMetadata(this.metadata),
       );
       const url = getEvaluationUrl(
         evaluation.projectId,

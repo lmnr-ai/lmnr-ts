@@ -78,24 +78,6 @@ export const resolveSessionId = (explicit?: string, startDir?: string): string =
 };
 
 /**
- * Resolve the trace id a trace command should act on: the explicit `--trace-id`
- * value when given, else the `trace_id` of the nearest
- * `.lmnr/debug-session.json` (the root trace of the most recent debug run,
- * walking up from `startDir`). Throws an actionable error when neither exists;
- * the command wrapper's error envelope formats it.
- */
-export const resolveTraceId = (explicit?: string, startDir?: string): string => {
-  if (explicit) return explicit;
-  const traceId = readDebugSessionFile(resolveDebugSessionDir(startDir))?.trace_id;
-  if (traceId) return traceId;
-  throw new Error(
-    "No trace id given and .lmnr/debug-session.json has no trace_id (no debug " +
-    "run has completed in this directory yet). Pass --trace-id <id> or run " +
-    "your program with LMNR_DEBUG=1 first.",
-  );
-};
-
-/**
  * Write `${dir ?? cwd}/.lmnr/debug-session.json` (mkdir -p first). Best-effort:
  * swallows IO errors. Shares the `DebugSessionFile` contract + filename consts
  * with the SDK (`@lmnr-ai/types`), so the SDK reads this same file at init to
