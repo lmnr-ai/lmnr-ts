@@ -175,7 +175,7 @@ void describe("RolloutSessions Resource Tests", () => {
           content: { text: "x" },
           failOnNotFound: true,
         }),
-      /not found/,
+      /Could not add a note: HTTP 404/,
     );
   });
 
