@@ -79,6 +79,28 @@ const withSessionMetadata = (
   return { ...(metadata ?? {}), [SESSION_METADATA_KEY]: sessionId };
 };
 
+/**
+ * Keep `rollout.session_id` OFF the eval's per-datapoint spans.
+ *
+ * A debug run stamps `rollout.session_id` onto global metadata, which
+ * `LaminarSpanProcessor.onStart` then puts on EVERY span — so without this an
+ * eval's N datapoint traces would each carry it and the backend would emit a
+ * `trace` block per datapoint, cluttering the debug session. For an eval we want
+ * the session link on the evaluation ENTITY only (via {@link withSessionMetadata}
+ * → one `evaluation` block), so we strip the key from global metadata before any
+ * datapoint span is created. The debug runtime still holds `sessionId`, so
+ * `withSessionMetadata` is unaffected. No-op when debug mode is off (the key was
+ * never set).
+ */
+const stripSessionIdFromSpanMetadata = (): void => {
+  const globalMetadata = LaminarContextManager.getGlobalMetadata();
+  if (globalMetadata && SESSION_METADATA_KEY in globalMetadata) {
+    const next = { ...globalMetadata };
+    delete next[SESSION_METADATA_KEY];
+    LaminarContextManager.setGlobalMetadata(next);
+  }
+};
+
 const getAverageScores = <D, T, O>(
   results: EvaluationDatapoint<D, T, O>[],
 ): Record<string, number> => {
@@ -459,6 +481,11 @@ export class Evaluation<D, T, O> {
     if (this.isFinished) {
       throw new Error("Evaluation is already finished");
     }
+    // The session link belongs on the evaluation entity only (via
+    // withSessionMetadata → one `evaluation` block), never on the per-datapoint
+    // spans — otherwise each datapoint trace becomes its own `trace` block in the
+    // session. Strip it from global span metadata before any datapoint runs.
+    stripSessionIdFromSpanMetadata();
     if (this.data instanceof LaminarDataset) {
       this.data.setClient(this.client);
       // Fetch dataset ID if not already set
