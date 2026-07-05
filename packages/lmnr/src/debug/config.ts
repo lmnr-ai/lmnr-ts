@@ -8,9 +8,8 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 
-import { type DebugContext, errorMessage } from "@lmnr-ai/types";
+import { type DebugContext } from "@lmnr-ai/types";
 
 import { initializeLogger } from "../utils";
 import { readDebugSessionFile, resolveDebugSessionDir } from "./debug-session-file";
@@ -97,39 +96,6 @@ export interface DebugConfig {
  */
 export const replayEnabledForConfig = (config: DebugConfig): boolean =>
   config.replayTraceId !== null && config.cacheUntilSpanId !== null;
-
-// Metadata key that carries the pre-run note attached to a debug run's trace.
-// The backend reads this key and renders its markdown value in the UI.
-export const ROLLOUT_NOTE_KEY = "rollout.note";
-
-/**
- * Resolve the debug run note from the environment.
- *
- * Only read when debug mode is enabled (LMNR_DEBUG truthy). `LMNR_DEBUG_RUN_NOTES_FILE`
- * (a path to a file holding raw markdown) takes precedence over `LMNR_DEBUG_RUN_NOTES`
- * (inline raw markdown). A missing / unreadable file is logged and skipped (returns
- * null) rather than throwing — a bad note path must never block SDK init.
- *
- * Returns the raw note string, or null when debug is off or no note var is set.
- */
-export const resolveDebugRunNote = (): string | null => {
-  if (!isTruthy(process.env.LMNR_DEBUG)) {
-    return null;
-  }
-  const file = process.env.LMNR_DEBUG_RUN_NOTES_FILE;
-  if (file) {
-    try {
-      return readFileSync(file, "utf-8");
-    } catch (err) {
-      logger.warn(
-        `LMNR_DEBUG_RUN_NOTES_FILE=${JSON.stringify(file)} could not be read; ` +
-          `ignoring run note: ${errorMessage(err)}`,
-      );
-      return null;
-    }
-  }
-  return process.env.LMNR_DEBUG_RUN_NOTES ?? null;
-};
 
 /**
  * Build the debug config from the environment.

@@ -40,18 +40,40 @@ This is a CLI for the Laminar agent observability platform.
   with the full `debugger_url`. The next `LMNR_DEBUG=1 <run>` in the directory
   reads the file and rejoins this session silently (no browser) — "new session" is
   owned by this command; the SDK only mints when no file exists.
-- **All session/trace-scoped commands default their id from
+- **All session-scoped commands default their id from
   `.lmnr/debug-session.json`, and explicit ids are ALWAYS flags, never
   positionals**: `debug session summary [--session-id <id>]`,
   `debug session open [--session-id <id>]`,
   `debug session set-name <name> [--session-id <id>]`, and
-  `trace append-note <note> [--trace-id <id>]` (falls back to the file's
-  `trace_id` — the root trace of the most recent debug run). Positionals are
-  payload only (name / note), so a stray extra positional fails fast at
-  commander instead of being silently treated as an id. Resolution lives in
-  `src/utils/debug-session-file.ts` (`resolveSessionId` / `resolveTraceId`),
-  which throws an actionable error when neither the argument nor the file is
-  available — the wrapper's error envelope formats it.
+  `debug session add-note <note> [--session-id <id>]`. Positionals are payload
+  only (name / note), so a stray extra positional fails fast at commander
+  instead of being silently treated as an id. Resolution lives in
+  `src/utils/debug-session-file.ts` (`resolveSessionId`), which throws an
+  actionable error when neither the argument nor the file is available — the
+  wrapper's error envelope formats it.
+- **Notes are session `text` blocks, not trace/eval metadata.**
+  `debug session add-note` posts a standalone `text` block to the session via
+  `client.rolloutSessions.addBlock({ sessionId, type: "text", content: { text } })`
+  (`POST /v1/cli/rollouts/{sessionId}/blocks`), keyed only by session id — there
+  is no `trace append-note` / `eval note` any more. `rollout.session_id` still
+  links traces (LMNR_DEBUG runs) and evals (`withSessionMetadata` in the SDK) to
+  the session so the backend writes `trace` / `evaluation` blocks at ingest;
+  `debug session summary` reads the whole block list back via
+  `client.rolloutSessions.listBlocks` (`GET .../blocks`) and prints
+  trace/eval/text blocks oldest-first. `SessionBlock` + content shapes live in
+  `@lmnr-ai/types` (`session-block.ts`).
+- **There is NO `lmnr-cli eval` command.** Evals are just normal
+  Laminar-instrumented programs — run them directly under `LMNR_DEBUG=1`. The SDK
+  resolves the session id the same way it does for traces (`buildDebugConfig`:
+  `LMNR_DEBUG_SESSION_ID` env → `.lmnr/debug-session.json` → minted) and
+  `withSessionMetadata` (`packages/lmnr/src/evaluations.ts`) stamps
+  `getRuntime()?.sessionId` into the eval's `evals.init` metadata as
+  `rollout.session_id`, so the backend writes the `evaluation` block. Because the
+  session was resolved FROM `debug-session.json`, the SDK's `emitPointer`
+  shutdown write is NOT skipped by the clobber guard, so `debug-session.json`
+  stays pointed at the current session for `add-note` / `summary` / `open` — no
+  CLI wrapper, no `eval-sessions.json`, no parent-process pointer write. Start a
+  fresh session with `lmnr-cli debug session new` (same as for traces).
 - **The session file is found by walking UP from cwd** (`findDebugSessionDir` /
   `resolveDebugSessionDir`, mirrored in the SDK's
   `src/debug/debug-session-file.ts`): the nearest ancestor with a usable

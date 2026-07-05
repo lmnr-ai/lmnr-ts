@@ -8,7 +8,6 @@ import {
   buildDebugConfig,
   buildDebugConfigFromContext,
   replayEnabledForConfig,
-  resolveDebugRunNote,
 } from '../../src/debug/config';
 import { deserializeLaminarSpanContext } from '../../src/utils';
 
@@ -341,56 +340,5 @@ void describe('LaminarSpanContext debug block parsing', () => {
       assert.ok(ctx.debug !== undefined);
       assert.strictEqual(ctx.debug.enabled, false);
     }
-  });
-});
-
-void describe('resolveDebugRunNote', () => {
-  const NOTE_ENV_KEYS = ['LMNR_DEBUG', 'LMNR_DEBUG_RUN_NOTES', 'LMNR_DEBUG_RUN_NOTES_FILE'];
-  const clearNoteEnv = () => {
-    for (const key of NOTE_ENV_KEYS) {
-      delete process.env[key];
-    }
-  };
-
-  let tmp: string;
-  beforeEach(() => {
-    clearNoteEnv();
-    tmp = mkdtempSync(join(tmpdir(), 'lmnr-note-'));
-  });
-  afterEach(() => {
-    rmSync(tmp, { recursive: true, force: true });
-    clearNoteEnv();
-  });
-
-  void it('returns null when debug is off, even with note vars set', () => {
-    process.env.LMNR_DEBUG_RUN_NOTES = 'inline note';
-    assert.strictEqual(resolveDebugRunNote(), null);
-  });
-
-  void it('reads inline LMNR_DEBUG_RUN_NOTES when debug is on', () => {
-    process.env.LMNR_DEBUG = 'true';
-    process.env.LMNR_DEBUG_RUN_NOTES = '## inline\nbody';
-    assert.strictEqual(resolveDebugRunNote(), '## inline\nbody');
-  });
-
-  void it('LMNR_DEBUG_RUN_NOTES_FILE wins over inline', () => {
-    const file = join(tmp, 'note.md');
-    writeFileSync(file, '## from file\nbody');
-    process.env.LMNR_DEBUG = 'true';
-    process.env.LMNR_DEBUG_RUN_NOTES = 'inline note';
-    process.env.LMNR_DEBUG_RUN_NOTES_FILE = file;
-    assert.strictEqual(resolveDebugRunNote(), '## from file\nbody');
-  });
-
-  void it('returns null (no inline fallback) when the file is unreadable', () => {
-    process.env.LMNR_DEBUG = 'true';
-    process.env.LMNR_DEBUG_RUN_NOTES = 'inline note';
-    process.env.LMNR_DEBUG_RUN_NOTES_FILE = join(tmp, 'missing.md');
-    assert.strictEqual(resolveDebugRunNote(), null);
-  });
-
-  void it('returns null when no note var is set', () => {
-    process.env.LMNR_DEBUG = 'true';
-    assert.strictEqual(resolveDebugRunNote(), null);
   });
 });

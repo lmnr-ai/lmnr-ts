@@ -3,27 +3,42 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The debug handlers are now pure: the wrapper resolves a user-token client and
 // owns the error envelope. We pass a stub client with the surfaces it uses.
-const mockQuery = vi.fn();
+const mockListBlocks = vi.fn();
+const mockAddBlock = vi.fn();
 const mockSetName = vi.fn();
 
 const stubClient = {
-  sql: { query: mockQuery },
-  rolloutSessions: { setName: mockSetName },
+  rolloutSessions: {
+    setName: mockSetName,
+    listBlocks: mockListBlocks,
+    addBlock: mockAddBlock,
+  },
 } as unknown as LaminarClient;
 
-import { handleDebugSessionSummary } from './index';
+import { handleDebugSessionAddNote, handleDebugSessionSummary } from './index';
 
 const baseOpts = { projectId: 'fake-project', baseUrl: 'http://localhost', port: 8080 };
 const SESSION_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-const NOTE_KEY = 'rollout.note';
 
-const traceRow = (id: string, endTime: string, note?: string) => ({
+const traceBlock = (id: string, traceId: string, createdAt: string) => ({
   id,
-  end_time: endTime,
-  metadata: JSON.stringify({
-    'rollout.session_id': SESSION_ID,
-    ...(note === undefined ? {} : { [NOTE_KEY]: note }),
-  }),
+  createdAt,
+  type: 'trace',
+  content: { traceId },
+});
+
+const textBlock = (id: string, text: string, createdAt: string) => ({
+  id,
+  createdAt,
+  type: 'text',
+  content: { text },
+});
+
+const evalBlock = (id: string, evaluationId: string, createdAt: string) => ({
+  id,
+  createdAt,
+  type: 'evaluation',
+  content: { evaluationId },
 });
 
 let logSpy: ReturnType<typeof vi.spyOn>;
@@ -38,94 +53,115 @@ afterEach(() => {
 });
 
 describe('handleDebugSessionSummary', () => {
-  it('prints note + trace tag blocks in text mode', async () => {
-    mockQuery.mockResolvedValue([
-      traceRow('trace-1', '2026-06-01T10:00:00.000Z', 'first run note'),
-      traceRow('trace-2', '2026-06-01T11:00:00.000Z', 'second run note'),
+  it('renders trace / text / eval blocks oldest-first in text mode', async () => {
+    mockListBlocks.mockResolvedValue([
+      textBlock('b2', 'a finding', '2026-06-01T10:30:00.000Z'),
+      traceBlock('b1', 'trace-1', '2026-06-01T10:00:00.000Z'),
+      evalBlock('b3', 'eval-9', '2026-06-01T11:00:00.000Z'),
     ]);
 
     await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID });
 
     expect(logSpy).toHaveBeenCalledWith(
-      'first run note\n<trace id="trace-1" end-time="2026-06-01T10:00:00.000Z"/>' +
-        '\n\n' +
-        'second run note\n<trace id="trace-2" end-time="2026-06-01T11:00:00.000Z"/>',
+      '<trace id="trace-1"/>\n\na finding\n\n<evaluation id="eval-9"/>',
     );
   });
 
-  it('prints only the trace tag when a trace has no note', async () => {
-    mockQuery.mockResolvedValue([traceRow('trace-1', '2026-06-01T10:00:00.000Z')]);
+  it('skips blocks with missing ids / empty text', async () => {
+    mockListBlocks.mockResolvedValue([
+      traceBlock('b1', 'trace-1', '2026-06-01T10:00:00.000Z'),
+      { id: 'b2', createdAt: '2026-06-01T10:30:00.000Z', type: 'text', content: { text: '' } },
+    ]);
 
     await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID });
 
-    expect(logSpy).toHaveBeenCalledWith(
-      '<trace id="trace-1" end-time="2026-06-01T10:00:00.000Z"/>',
-    );
+    expect(logSpy).toHaveBeenCalledWith('<trace id="trace-1"/>');
   });
 
-  it('outputs an array of {note, traceId, endTime} in json mode', async () => {
-    mockQuery.mockResolvedValue([
-      traceRow('trace-1', '2026-06-01T10:00:00.000Z', 'a note'),
-      traceRow('trace-2', '2026-06-01T11:00:00.000Z'),
-    ]);
+  it('outputs the ordered blocks array in json mode', async () => {
+    const blocks = [
+      textBlock('b2', 'note', '2026-06-01T11:00:00.000Z'),
+      traceBlock('b1', 'trace-1', '2026-06-01T10:00:00.000Z'),
+    ];
+    mockListBlocks.mockResolvedValue(blocks);
 
     await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID, json: true });
 
     expect(logSpy).toHaveBeenCalledWith(JSON.stringify([
-      { note: 'a note', traceId: 'trace-1', endTime: '2026-06-01T10:00:00.000Z' },
-      { note: '', traceId: 'trace-2', endTime: '2026-06-01T11:00:00.000Z' },
+      traceBlock('b1', 'trace-1', '2026-06-01T10:00:00.000Z'),
+      textBlock('b2', 'note', '2026-06-01T11:00:00.000Z'),
     ]));
   });
 
-  it('filters by session id and orders chronologically', async () => {
-    mockQuery.mockResolvedValue([]);
+  it('passes the session id to listBlocks', async () => {
+    mockListBlocks.mockResolvedValue([]);
 
     await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID, json: true });
 
-    const [sql, params] = mockQuery.mock.calls[0];
-    expect(sql).toContain("simpleJSONExtractString(metadata, 'rollout.session_id')");
-    expect(sql).toContain('ORDER BY start_time');
-    expect(sql).toContain('formatDateTime(end_time');
-    expect(params).toMatchObject({ session_id: SESSION_ID });
-  });
-
-  it('fetches all rows in a single un-paged query', async () => {
-    const rows = Array.from({ length: 1500 }, (_, i) =>
-      traceRow(`trace-${i}`, '2026-06-01T10:00:00.000Z'),
-    );
-    mockQuery.mockResolvedValue(rows);
-
-    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID, json: true });
-
-    expect(mockQuery).toHaveBeenCalledTimes(1);
-    const [sql, params] = mockQuery.mock.calls[0];
-    expect(sql).not.toContain('LIMIT');
-    expect(sql).not.toContain('OFFSET');
-    expect(params).toEqual({ session_id: SESSION_ID });
-    const output = JSON.parse(String(logSpy.mock.calls[0][0])) as unknown[];
-    expect(output).toHaveLength(1500);
+    expect(mockListBlocks).toHaveBeenCalledWith({ sessionId: SESSION_ID });
   });
 
   it('prints a friendly message for an empty session in text mode', async () => {
-    mockQuery.mockResolvedValue([]);
+    mockListBlocks.mockResolvedValue([]);
 
     await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID });
 
-    expect(logSpy).toHaveBeenCalledWith(`No traces found for session ${SESSION_ID}.`);
+    expect(logSpy).toHaveBeenCalledWith(`No blocks found for session ${SESSION_ID}.`);
   });
 
   it('outputs [] for an empty session in json mode', async () => {
-    mockQuery.mockResolvedValue([]);
+    mockListBlocks.mockResolvedValue([]);
 
     await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID, json: true });
 
     expect(logSpy).toHaveBeenCalledWith('[]');
   });
 
-  it('propagates query failures to the wrapper', async () => {
-    mockQuery.mockRejectedValue(new Error('boom'));
+  it('propagates listBlocks failures to the wrapper', async () => {
+    mockListBlocks.mockRejectedValue(new Error('boom'));
 
     const opts = { ...baseOpts, sessionId: SESSION_ID, json: true };
     await expect(handleDebugSessionSummary(stubClient, opts)).rejects.toThrow('boom');
+  });
+});
+
+describe('handleDebugSessionAddNote', () => {
+  it('adds a text block to the session', async () => {
+    mockAddBlock.mockResolvedValue('block-1');
+
+    await handleDebugSessionAddNote(
+      stubClient,
+      'a finding',
+      { ...baseOpts, sessionId: SESSION_ID },
+    );
+
+    expect(mockAddBlock).toHaveBeenCalledWith({
+      sessionId: SESSION_ID,
+      type: 'text',
+      content: { text: 'a finding' },
+      failOnNotFound: true,
+    });
+  });
+
+  it('outputs {sessionId, blockId, note} in json mode', async () => {
+    mockAddBlock.mockResolvedValue('block-1');
+
+    await handleDebugSessionAddNote(
+      stubClient,
+      'a finding',
+      { ...baseOpts, sessionId: SESSION_ID, json: true },
+    );
+
+    expect(logSpy).toHaveBeenCalledWith(
+      JSON.stringify({ sessionId: SESSION_ID, blockId: 'block-1', note: 'a finding' }),
+    );
+  });
+
+  it('propagates addBlock failures to the wrapper', async () => {
+    mockAddBlock.mockRejectedValue(new Error('404 not found'));
+
+    await expect(
+      handleDebugSessionAddNote(stubClient, 'x', { ...baseOpts, sessionId: SESSION_ID }),
+    ).rejects.toThrow('not found');
   });
 });

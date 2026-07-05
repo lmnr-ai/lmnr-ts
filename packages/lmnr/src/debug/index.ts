@@ -28,12 +28,10 @@ import {
   DebugConfig,
   isTruthy,
   replayEnabledForConfig,
-  resolveDebugRunNote,
-  ROLLOUT_NOTE_KEY,
 } from "./config";
 import { buildDebugSessionFile, emitPointer } from "./pointer";
 
-export { isTruthy, resolveDebugRunNote, ROLLOUT_NOTE_KEY };
+export { isTruthy };
 
 /**
  * Holds the immutable debug config plus the handle used to look up the

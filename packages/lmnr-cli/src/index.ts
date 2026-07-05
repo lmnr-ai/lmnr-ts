@@ -12,6 +12,7 @@ import {
   handleDatasetsPush,
 } from "./commands/dataset";
 import {
+  handleDebugSessionAddNote,
   handleDebugSessionNew,
   handleDebugSessionOpen,
   handleDebugSessionSetName,
@@ -23,7 +24,6 @@ import { handleProjectsList } from "./commands/project";
 import { handleSetup } from "./commands/setup";
 import { handleSqlQuery } from "./commands/sql";
 import { SQL_SCHEMA_HELP } from "./commands/sql/schema";
-import { handleTraceAppendNote } from "./commands/trace";
 import { pc } from "./utils/colors";
 import { loadLocalEnv } from "./utils/env-file";
 
@@ -263,51 +263,6 @@ Examples:
       await handleSetup(options);
     });
 
-  const traceCmd = program
-    .command("trace")
-    .description("Inspect and operate on traces")
-    .option(
-      "--project-id <id>",
-      "Target project id. Defaults to the linked .lmnr/project.json. " +
-      "Run `lmnr-cli login` first.",
-    )
-    .option(
-      "--base-url <url>",
-      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
-    )
-    .option(
-      "--port <port>",
-      "Port for the Laminar API. Defaults to 443",
-      (val) => parseInt(val, 10),
-    )
-    .option("--json", "Output structured JSON to stdout");
-
-  traceCmd
-    .command("append-note")
-    .description("Append a free-text note to a trace (stored in trace metadata)")
-    .argument("<note>", "Note text (may contain markdown)")
-    .option(
-      "--trace-id <id>",
-      "Trace ID (UUID or 32-char OTel hex trace id). Defaults to the trace_id " +
-      "of .lmnr/debug-session.json (the most recent debug run here)",
-    )
-    .action(withProjectClient(handleTraceAppendNote))
-    .addHelpText(
-      "after",
-      `
-Notes accumulate: each call appends a new paragraph to the trace's existing
-note rather than overwriting it.
-
-Without --trace-id, the note goes to the trace_id recorded in
-.lmnr/debug-session.json — the root trace of the most recent LMNR_DEBUG=1 run
-in this directory.
-
-Examples:
-  $ lmnr-cli trace append-note "Reproduced the timeout on the search tool."
-  $ lmnr-cli trace append-note "Reproduced the timeout." --trace-id <trace-id>
-`,
-    );
-
   const debugCmd = program
     .command("debug")
     .description("Operate on debug sessions")
@@ -365,8 +320,36 @@ Examples:
     );
 
   debugSessionCmd
+    .command("add-note")
+    .description("Attach a free-text note to a debug session (a standalone text block)")
+    .argument("<note>", "Note text (may contain markdown)")
+    .option(
+      "--session-id <id>",
+      "Debug session ID. Defaults to the session in .lmnr/debug-session.json",
+    )
+    .action(withProjectClient(handleDebugSessionAddNote))
+    .addHelpText(
+      "after",
+      `
+The note is stored as a standalone text block on the session (not on any trace
+or evaluation), keyed by session id. Each call appends a new block, interleaved
+by time with the session's traces / evals. Works for any LMNR_DEBUG=1 run,
+including evaluations — all of them keep .lmnr/debug-session.json pointed at the
+current session.
+
+Without --session-id, the note goes to the session recorded in
+.lmnr/debug-session.json (written by \`debug session new\` or any LMNR_DEBUG=1
+run, including evals).
+
+Examples:
+  $ lmnr-cli debug session add-note "Reproduced the timeout on the search tool."
+  $ lmnr-cli debug session add-note "Fixed after bumping the timeout." --session-id <session-id>
+`,
+    );
+
+  debugSessionCmd
     .command("summary")
-    .description("Print every trace in a debug session with its note, oldest first")
+    .description("Print every block in a debug session (traces, evals, notes), oldest first")
     .option(
       "--session-id <id>",
       "Debug session ID. Defaults to the session in .lmnr/debug-session.json",
@@ -376,15 +359,17 @@ Examples:
       "after",
       `
 Without --session-id, summarizes the session recorded in
-.lmnr/debug-session.json (written by \`debug session new\` / LMNR_DEBUG=1 runs).
+.lmnr/debug-session.json (written by \`debug session new\` or any LMNR_DEBUG=1
+run, including evals).
 
-Output is one block per trace (oldest first), the trace's note followed by a
-self-closing tag carrying the trace id and end time:
+Output is one entry per block (oldest first): traces and evaluations as
+self-closing tags, text notes as their raw markdown:
 
+  <trace id="{trace-id}"/>
   {note}
-  <trace id="{trace-id}" end-time="{end-time}"/>
+  <evaluation id="{evaluation-id}"/>
 
-With --json, prints an array of {"note", "traceId", "endTime"} objects.
+With --json, prints an array of {"id", "createdAt", "type", "content"} blocks.
 
 Examples:
   $ lmnr-cli debug session summary
@@ -443,7 +428,7 @@ Authentication:
   Run \`lmnr-cli setup\` to login, link this directory, write a project API key to
   ./.env, and install the Laminar skill 
   \`lmnr-cli login\` authenticates as a user. Every project command
-  (sql / dataset / project / trace / debug) runs on that user session and
+  (sql / dataset / project / debug) runs on that user session and
   targets a project via --project-id or the linked .lmnr/project.json.
 
 Examples:
@@ -456,11 +441,11 @@ Examples:
   lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a dataset
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json # Query spans
   lmnr-cli sql schema                                      # Show available tables
-  lmnr-cli trace append-note "note text"                   # Note on the latest debug trace
   lmnr-cli debug session new                               # Mint a fresh debug session
   lmnr-cli debug session open                              # Open the session in the browser
   lmnr-cli debug session set-name "title"                  # Rename the current debug session
-  lmnr-cli debug session summary                           # Notes for each trace in the session
+  lmnr-cli debug session add-note "note text"              # Add a note to the current session
+  lmnr-cli debug session summary                           # All blocks in the session, oldest first
 
 For more information about the Laminar platfrom:
   Documentation: https://laminar.sh/docs

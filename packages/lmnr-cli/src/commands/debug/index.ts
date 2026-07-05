@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { LaminarClient } from "@lmnr-ai/client";
-import { errorMessage } from "@lmnr-ai/types";
+import { errorMessage, type SessionBlock } from "@lmnr-ai/types";
 import open from "open";
 
 import type { GlobalOpts } from "../../auth/with-client";
@@ -15,7 +15,6 @@ import {
 import { readLocalProjectFile } from "../../utils/local-project-file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
-import { readNoteFromMetadata } from "../../utils/trace-note";
 
 const logger = initializeLogger();
 
@@ -55,18 +54,79 @@ export const handleDebugSessionSetName = async (
   logger.info(`Set name of session ${sessionId} to "${name}".`);
 };
 
-interface SessionTraceSummary {
-  note: string;
-  traceId: string;
-  // Trace `end_time` — the closest thing to "last updated" on a trace (it
-  // advances as spans keep arriving for the trace).
-  endTime: string;
+/** Options accepted by `debug session add-note` (extends the shared globals). */
+export interface DebugSessionAddNoteOpts extends GlobalOpts {
+  /** Set by `--session-id`; omitted → the debug-session.json `session_id`. */
+  sessionId?: string;
 }
 
 /**
- * Print a per-trace summary of a debug session: every trace whose metadata
- * groups it to the session (`rollout.session_id`), oldest first, with the
- * agent-authored note (`rollout.note`) attached to each.
+ * Attach a free-text note to a debug session as a standalone `text` block.
+ *
+ * The note is written to the session's block list (`debugger_session_blocks`)
+ * keyed by session id — NOT to any trace / evaluation metadata. Each call
+ * appends a new block, interleaved by time with the session's trace / evaluation
+ * blocks in the debugger UI (and in `debug session summary`). This is the
+ * unified note path for both debug runs and evals: `rollout.session_id` links
+ * traces / evals to the session; the note only needs the session id.
+ *
+ * The target session is the optional `--session-id` flag; when omitted the
+ * session comes from `.lmnr/debug-session.json` (see `resolveSessionId`) — which
+ * every LMNR_DEBUG=1 run (agents and evals alike) keeps pointed at the current
+ * session via the SDK's shutdown pointer write.
+ *
+ * Pure handler: the command wrapper (`withProjectClient`) resolves a user-token
+ * {@link LaminarClient} (routes to `/v1/cli/*` with the resolved project) and
+ * owns the error envelope.
+ */
+export const handleDebugSessionAddNote = async (
+  client: LaminarClient,
+  note: string,
+  opts: DebugSessionAddNoteOpts,
+): Promise<void> => {
+  const sessionId = resolveSessionId(opts.sessionId);
+  // failOnNotFound: a CLI exit 0 must mean the note actually landed.
+  const blockId = await client.rolloutSessions.addBlock({
+    sessionId,
+    type: "text",
+    content: { text: note },
+    failOnNotFound: true,
+  });
+
+  if (opts.json) {
+    outputJson({ sessionId, blockId, note });
+    return;
+  }
+
+  logger.info(`Added note to session ${sessionId}.`);
+};
+
+/** Render one session block into the summary's text form. */
+const renderBlock = (block: SessionBlock): string | null => {
+  const content = block.content ?? {};
+  switch (block.type) {
+    case "trace": {
+      const traceId = typeof content.traceId === "string" ? content.traceId : "";
+      return traceId ? `<trace id="${traceId}"/>` : null;
+    }
+    case "evaluation": {
+      const evaluationId =
+        typeof content.evaluationId === "string" ? content.evaluationId : "";
+      return evaluationId ? `<evaluation id="${evaluationId}"/>` : null;
+    }
+    case "text": {
+      const text = typeof content.text === "string" ? content.text : "";
+      return text || null;
+    }
+    default:
+      return null;
+  }
+};
+
+/**
+ * Print a chronological digest of a debug session: every block (trace /
+ * evaluation / text note) on the session, oldest first — the same data the
+ * debugger UI renders.
  *
  * The target session is the optional `--session-id` flag; when omitted the
  * session comes from `.lmnr/debug-session.json` (see `resolveSessionId`).
@@ -80,38 +140,27 @@ export const handleDebugSessionSummary = async (
   opts: DebugSessionScopedOpts,
 ): Promise<void> => {
   const sessionId = resolveSessionId(opts.sessionId);
-  // formatDateTime pins end_time to unambiguous ISO-8601 UTC — the raw
-  // column serializes as ClickHouse's space-separated local-looking format.
-  const rows = await client.sql.query(
-    "SELECT id, " +
-    "formatDateTime(end_time, '%Y-%m-%dT%H:%i:%S.%fZ') AS end_time, " +
-    "metadata FROM traces " +
-    "WHERE simpleJSONExtractString(metadata, 'rollout.session_id') " +
-    "= {session_id:String} " +
-    "ORDER BY start_time",
-    { session_id: sessionId },
+  const blocks = await client.rolloutSessions.listBlocks({ sessionId });
+  // Sort oldest-first defensively — the backend returns creation order, but the
+  // summary's contract is chronological regardless.
+  const ordered = [...blocks].sort((a, b) =>
+    String(a.createdAt).localeCompare(String(b.createdAt)),
   );
-  const traces: SessionTraceSummary[] = rows.map((row) => ({
-    note: readNoteFromMetadata(row.metadata),
-    traceId: String(row.id ?? ""),
-    endTime: String(row.end_time ?? ""),
-  }));
 
   if (opts.json) {
-    outputJson(traces);
+    outputJson(ordered);
     return;
   }
 
-  if (traces.length === 0) {
-    console.log(`No traces found for session ${sessionId}.`);
+  if (ordered.length === 0) {
+    console.log(`No blocks found for session ${sessionId}.`);
     return;
   }
 
-  const blocks = traces.map((trace) => {
-    const tag = `<trace id="${trace.traceId}" end-time="${trace.endTime}"/>`;
-    return trace.note ? `${trace.note}\n${tag}` : tag;
-  });
-  console.log(blocks.join("\n\n"));
+  const rendered = ordered
+    .map(renderBlock)
+    .filter((b): b is string => b !== null);
+  console.log(rendered.join("\n\n"));
 };
 
 /**
