@@ -67,7 +67,7 @@ When adding/modifying integration tests for Mastra:
 ## Debug mode (`packages/lmnr/src/debug/`)
 
 - `src/debug/config.ts` is a **cross-language parity surface** with the Python SDK `src/lmnr/sdk/debug/config.py` — keep the two line-comparable.
-- **The debugger pre-run note is set with `LMNR_DEBUG_RUN_NOTES_FILE` (path to a raw-markdown file) or `LMNR_DEBUG_RUN_NOTES` (inline raw markdown), not by hand-stringifying JSON into `LMNR_TRACE_METADATA`.** `resolveDebugRunNote()` reads them ONLY when `LMNR_DEBUG` is truthy; the file wins over inline, and a missing/unreadable file logs a warning and returns `null` (never throws — a bad note path must not block init). `laminar.ts` parses `LMNR_TRACE_METADATA` as before, then overrides just the `rollout.note` key (`ROLLOUT_NOTE_KEY`) with the resolved note before merging the explicit `metadata` arg on top. The note is NOT propagated downstream via `LaminarSpanContext` (origin-only). Mirror `resolveDebugRunNote` / `ROLLOUT_NOTE_KEY` in the Python `config.py`. Tested in `test/debug/config.test.ts`.
+- **The SDK does NOT stamp a debugger pre-run note onto traces.** There is no `resolveDebugRunNote` / `ROLLOUT_NOTE_KEY` and the `LMNR_DEBUG_RUN_NOTES` / `LMNR_DEBUG_RUN_NOTES_FILE` env vars are not read — notes are created separately as session `text` blocks (see the CLI's `debug session add-note` and `RolloutSessionsResource.addBlock`), not as `rollout.note` trace metadata. `laminar.ts` builds `globalMetadata` purely from `LMNR_TRACE_METADATA` + the explicit `metadata` arg. (The Python SDK still had this stamping as of last check — a parity follow-up should remove it there too.)
 
 ## Temporal Instrumentation (`packages/lmnr/src/opentelemetry-lib/instrumentation/temporal/`)
 
