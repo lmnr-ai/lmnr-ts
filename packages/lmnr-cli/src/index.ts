@@ -5,6 +5,7 @@ import { Command } from "commander";
 
 import { version } from "../package.json";
 import { withLocalOpts, withProjectClient, withUserToken } from "./auth/with-client";
+import { handleAsk } from "./commands/ask";
 import {
   handleDatasetsCreate,
   handleDatasetsList,
@@ -192,6 +193,46 @@ Examples:
     .action(() => {
       process.stdout.write(SQL_SCHEMA_HELP);
     });
+
+  program
+    .command("ask")
+    .description("Ask the Laminar agent a natural-language question about your project")
+    .argument("<query>", "Natural-language question")
+    .option(
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+      "Run `lmnr-cli login` first.",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option(
+      "--conversation <id>",
+      "Continue a previous conversation by its id (printed after each answer in human mode, " +
+      "or in the `--json` output as `conversationId`)",
+    )
+    .option("--json", "Output structured JSON ({ answer, conversationId, tools }) to stdout")
+    .action(withLocalOpts(handleAsk))
+    .addHelpText(
+      "after",
+      `
+Runs on your logged-in user session (\`lmnr-cli login\`) and targets a project via
+--project-id or the linked .lmnr/project.json. The agent answers from your
+project's traces/spans/evals via read-only SQL and trace inspection.
+
+Examples:
+  $ lmnr-cli ask "why did my latest trace fail?"
+  $ lmnr-cli ask "how many traces errored in the last day?"
+  $ lmnr-cli ask "summarize the most expensive trace today" --json
+  $ lmnr-cli ask "and which model did it use?" --conversation <id>
+`,
+    );
 
   const projectCmd = program.command("project").description("Work with Laminar projects");
 
