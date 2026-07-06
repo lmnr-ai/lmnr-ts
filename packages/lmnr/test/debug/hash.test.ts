@@ -272,6 +272,57 @@ void describe("extractInputMessages", () => {
     assert.match(debugInputHash(reshaped), /^[0-9a-f]{64}$/);
   });
 
+  void it("strips server-unparsable parts before the reshape (recording-side parity)", () => {
+    // The recording path (`standardizedPromptToMessages`) drops parts the server
+    // enum can't deserialize (reasoning, custom, ...) BEFORE `ai.prompt.messages`
+    // is stored, so the server reshapes structured parts — never the Text-blob
+    // fallback. The replay prompt still carries those parts (thinking models emit
+    // `reasoning` on assistant history turns); without the same strip here the
+    // reshape would collapse the whole content to a stringified blob and the
+    // hash would diverge from the server's on every multi-step thinking run.
+    const withReasoning = [
+      { role: "user", content: [{ type: "text", text: "hi" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "reasoning", text: "thinking..." },
+          { type: "text", text: "ok" },
+          {
+            type: "tool-call",
+            toolCallId: "tc-1",
+            toolName: "lookup",
+            input: { q: "x" },
+          },
+        ],
+      },
+    ];
+    const withoutReasoning = [
+      { role: "user", content: [{ type: "text", text: "hi" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "ok" },
+          {
+            type: "tool-call",
+            toolCallId: "tc-1",
+            toolName: "lookup",
+            input: { q: "x" },
+          },
+        ],
+      },
+    ];
+    const a = extractInputMessages({ prompt: withReasoning as never });
+    const b = extractInputMessages({ prompt: withoutReasoning as never });
+    assert.ok(Array.isArray(a) && Array.isArray(b));
+    assert.deepStrictEqual(a, b);
+    // The assistant content stays a structured part list, not a Text blob.
+    const assistant = a.find(
+      (m) => (m as { role: string }).role === "assistant",
+    ) as { content: unknown };
+    assert.ok(Array.isArray(assistant.content));
+    assert.strictEqual(debugInputHash(a), debugInputHash(b));
+  });
+
   void it("returns null when the prompt cannot be stringified", () => {
     // A circular content object makes stringifyPromptForTelemetry's JSON.stringify
     // throw. The caller must see null (run live, no latch) rather than a hash over

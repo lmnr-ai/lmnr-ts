@@ -31,6 +31,9 @@ import { type LanguageModelV3Prompt } from "@ai-sdk/provider";
 import { type LanguageModelV2Prompt } from "@ai-sdk/provider-v2";
 
 import { stringifyPromptForTelemetry } from "../opentelemetry-lib/instrumentation/aisdk/utils";
+import {
+  isServerParsablePart,
+} from "../opentelemetry-lib/instrumentation/aisdk/v7-integration/utils";
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v);
@@ -340,6 +343,38 @@ export const inputChatMessagesFromJson = (input: unknown): unknown[] => {
 };
 
 /**
+ * Mirror of the RECORDING-side strip in `standardizedPromptToMessages`
+ * (`v7-integration/utils.ts`): parts the server enum can't deserialize
+ * (`reasoning`, `reasoning-file`, `custom`, `tool-approval-*`, ...) are removed
+ * before the span input is recorded, so the server never sees them. The replay
+ * prompt (LanguageModel-level) still carries them (e.g. `reasoning` parts on
+ * assistant history turns of thinking models), so apply the same strip here or
+ * the reshape falls into the whole-content Text fallback and the hash diverges.
+ * Kept OUTSIDE `inputChatMessagesFromJson` — that function stays a faithful
+ * byte-comparable port of the Rust primitive.
+ *
+ * Known parity gap (v6 + reasoning history only, same class as the URL-image
+ * gap above): v6 recordings store the UN-stripped prompt (the server blob-
+ * fallbacks it), so a v6-recorded thinking-model multi-step turn now MISSes
+ * on replay (degrading safely to a live call). The wrapper has no signal for
+ * which SDK version recorded the span, and v7 is the primary replay path.
+ */
+const stripUnsupportedParts = (input: unknown): unknown => {
+  if (!Array.isArray(input)) {
+    return input;
+  }
+  return input.map((message: unknown) => {
+    if (!isRecord(message) || !Array.isArray(message.content)) {
+      return message;
+    }
+    return {
+      ...message,
+      content: message.content.filter(isServerParsablePart),
+    };
+  });
+};
+
+/**
  * Reshape an AI SDK call's `options.prompt` into the reconstructed message array
  * the server hashes. Version-agnostic: `stringifyPromptForTelemetry` already
  * normalizes V2/V3/V4 prompts (Uint8Array file `data` → base64) into the stored
@@ -361,5 +396,5 @@ export const extractInputMessages = (options: {
   } catch {
     return null;
   }
-  return inputChatMessagesFromJson(aiPromptMessages);
+  return inputChatMessagesFromJson(stripUnsupportedParts(aiPromptMessages));
 };

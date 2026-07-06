@@ -493,6 +493,71 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.equal(outMsgs[0].parts[1].content, "42");
   });
 
+  void it("strips server-unparsable parts from assistant history in ai.prompt.messages", () => {
+    // Thinking models put `reasoning` parts into the assistant messages of
+    // `messagesForNextStep`. The app-server's InstrumentationChatMessageContentPart
+    // enum has no variant for them, and one bad part makes it stringify the WHOLE
+    // content array (double-stringified assistant content, LAM-1912). The
+    // integration must drop such parts at recording time.
+    const tel = new LaminarAiSdkTelemetry();
+    const callId = "call-hist";
+
+    tel.onStart(mkStartEvent(callId));
+    tel.onLanguageModelCallStart(
+      mkLlmCallStart(callId, {
+        stepNumber: 1,
+        messages: [
+          { role: "user", content: "hi" },
+          {
+            role: "assistant",
+            content: [
+              { type: "reasoning", text: "thinking...", providerOptions: {} },
+              { type: "text", text: "let me check" },
+              {
+                type: "tool-call",
+                toolCallId: "tc-1",
+                toolName: "lookup",
+                input: { q: "x" },
+              },
+              { type: "custom", kind: "vendor-extension" },
+            ],
+          },
+          {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "tc-1",
+                toolName: "lookup",
+                output: "found",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    tel.onLanguageModelCallEnd(mkLlmCallEnd(callId, { stepNumber: 1 }));
+    tel.onEnd(mkFinish(callId));
+
+    const spans = exporter.getFinishedSpans();
+    const llm = spans.find((s) => s.name.startsWith("ai.llm "));
+    assert.ok(llm);
+    const prompt = JSON.parse(llm.attributes["ai.prompt.messages"] as string);
+    const assistant = prompt.find(
+      (m: { role: string }) => m.role === "assistant",
+    );
+    assert.ok(assistant);
+    assert.deepEqual(
+      assistant.content.map((p: { type: string }) => p.type),
+      ["text", "tool-call"],
+    );
+    // Input attribute mirrors the same stripped shape.
+    assert.equal(llm.attributes[SPAN_INPUT], JSON.stringify(prompt));
+    // The tool message is untouched.
+    const tool = prompt.find((m: { role: string }) => m.role === "tool");
+    assert.equal(tool.content[0].type, "tool-result");
+  });
+
   void it("factory helpers create independent integrations", () => {
     const a = aiSdkTelemetry();
     const b = aiSdkTelemetry();

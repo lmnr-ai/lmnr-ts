@@ -60,6 +60,38 @@ export const applyUsage = (
   }
 };
 
+// Content-part `type` tags the app-server's `InstrumentationChatMessageContentPart`
+// enum (`app-server/src/language_model/chat_message.rs`) can deserialize. A part
+// with any other tag — v7 history parts like `reasoning`, `reasoning-file`,
+// `custom`, `tool-approval-request`/`-response` — fails the server's all-or-nothing
+// `Vec<...>` parse, which then stringifies the ENTIRE content array into one Text
+// blob (the double-stringified assistant history of LAM-1912; thinking models are
+// the trigger because only they put `reasoning` parts into `messagesForNextStep`).
+// Strip such parts at recording time so the stored input always parses as
+// structured parts. The debugger replay reshape (`src/debug/aisdk-normalize.ts`)
+// applies the SAME strip before hashing — keep the two in sync.
+const SERVER_PARSABLE_PART_TYPES = new Set([
+  "text",
+  "image",
+  "image_url",
+  "document",
+  "file",
+  "tool-call",
+  "tool-result",
+]);
+
+export const isServerParsablePart = (part: unknown): boolean =>
+  part !== null &&
+  typeof part === "object" &&
+  SERVER_PARSABLE_PART_TYPES.has((part as { type?: unknown }).type as string);
+
+const stripUnsupportedParts = (
+  m: LooseMessageNoStringContent,
+): LooseMessageNoStringContent =>
+  Array.isArray(m.content)
+    ? { ...m, content: m.content.filter(isServerParsablePart) }
+    : m;
+
 // Convert a StandardizedPrompt-shaped object (`system` + `messages`) to an
 // array of `ModelMessage`-like entries. Laminar's backend parses
 // `ai.prompt.messages` as an array of AI SDK messages.
@@ -79,7 +111,11 @@ export const standardizedPromptToMessages = (event: {
   }
   if (Array.isArray(event.messages)) {
     for (const m of event.messages)
-      messages.push(convertRawStringTextToTextBlock(m as LooseMessage));
+      messages.push(
+        stripUnsupportedParts(
+          convertRawStringTextToTextBlock(m as LooseMessage),
+        ),
+      );
   }
   return messages;
 };
