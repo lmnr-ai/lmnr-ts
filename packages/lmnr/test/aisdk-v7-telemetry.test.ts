@@ -47,6 +47,14 @@ const mkStartEvent = (
   ...overrides,
 });
 
+// The LanguageModel-level prompt the runtime attaches to onStepStart events
+// (`event.promptMessages`). This is what the integration records verbatim as
+// `gen_ai.input.messages` on the LLM span.
+const defaultPromptMessages = [
+  { role: "system", content: "you are helpful" },
+  { role: "user", content: [{ type: "text", text: "hi" }] },
+];
+
 const mkStepStartEvent = (
   callId: string,
   stepNumber: number,
@@ -66,6 +74,7 @@ const mkStepStartEvent = (
   toolsContext: undefined,
   system: "you are helpful",
   messages: [{ role: "user", content: "hi" }],
+  promptMessages: defaultPromptMessages,
   ...overrides,
 });
 
@@ -177,7 +186,12 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.equal(op.attributes["ai.operation"], "ai.generateText");
     assert.equal(op.attributes["gen_ai.system"], "openai");
     assert.equal(op.attributes["gen_ai.request.model"], "gpt-4.1-nano");
-    assert.equal(op.attributes["ai.response.text"], "hello");
+    // Verbatim operation output: the final content wrapped as one assistant
+    // message — no legacy `ai.response.text` write.
+    assert.deepEqual(JSON.parse(op.attributes[SPAN_OUTPUT] as string), [
+      { role: "assistant", content: [{ type: "text", text: "hello" }] },
+    ]);
+    assert.equal(op.attributes["ai.response.text"], undefined);
     assert.equal(op.attributes["ai.response.finishReason"], "stop");
     // Usage must NOT be stamped on the DEFAULT operation span — the backend
     // computes cost from gen_ai.usage.* on any span, so usage here would
@@ -204,22 +218,51 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.equal(llm.attributes["gen_ai.response.finish_reason"], "stop");
     assert.equal(llm.attributes["gen_ai.usage.input_tokens"], 10);
     assert.equal(llm.attributes["gen_ai.usage.output_tokens"], 5);
+    // Verbatim output: event.content untouched, wrapped in one assistant
+    // message (`{role, content}`, NOT the old `{role, parts}` shape).
     assert.deepEqual(
       JSON.parse(llm.attributes["gen_ai.output.messages"] as string),
-      [{ role: "assistant", parts: [{ type: "text", content: "hello" }] }],
+      [{ role: "assistant", content: [{ type: "text", text: "hello" }] }],
     );
     assert.equal(llm.parentSpanContext?.spanId, step.spanContext().spanId);
 
-    // Hybrid attribute check: ai.prompt.messages includes the system prompt.
-    const promptMessages = JSON.parse(
-      step.attributes["ai.prompt.messages"] as string,
+    // Verbatim input: the LanguageModel-level prompt from
+    // onStepStart.promptMessages, recorded byte-for-byte as
+    // gen_ai.input.messages. `ai.prompt.messages` is NOT written on v7 spans.
+    assert.deepEqual(
+      JSON.parse(llm.attributes["gen_ai.input.messages"] as string),
+      defaultPromptMessages,
     );
-    assert.equal(promptMessages[0].role, "system");
-    assert.equal(promptMessages[0].content, "you are helpful");
+    assert.equal(llm.attributes["ai.prompt.messages"], undefined);
+    assert.equal(step.attributes["ai.prompt.messages"], undefined);
 
     // All three span kinds present.
     assert.ok(byName.has("ai.generateText"));
     assert.ok(byName.has("ai.step"));
+  });
+
+  void it("records verbatim gen_ai.input.messages even when step spans are disabled", () => {
+    // createStepSpan defaults to false — onStepStart must still stash
+    // event.promptMessages BEFORE its early return so the following
+    // onLanguageModelCallStart can stamp the verbatim prompt on the LLM span.
+    const tel = new LaminarAiSdkTelemetry();
+    const callId = "call-no-step";
+
+    tel.onStart(mkStartEvent(callId));
+    tel.onStepStart(mkStepStartEvent(callId, 0));
+    tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+    tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
+    tel.onStepFinish(mkStepEnd(callId, 0));
+    tel.onEnd(mkFinish(callId));
+
+    const spans = exporter.getFinishedSpans();
+    assert.ok(!spans.some((s) => s.name === "ai.step"), "no step span");
+    const llm = spans.find((s) => s.name.startsWith("ai.llm "));
+    assert.ok(llm, "llm span missing");
+    assert.deepEqual(
+      JSON.parse(llm.attributes["gen_ai.input.messages"] as string),
+      defaultPromptMessages,
+    );
   });
 
   void it("makes tool spans flat siblings of llm under the step", () => {
@@ -486,11 +529,17 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     const outMsgs = JSON.parse(
       llm.attributes["gen_ai.output.messages"] as string,
     );
-    assert.equal(outMsgs[0].role, "assistant");
-    assert.equal(outMsgs[0].parts[0].type, "thinking");
-    assert.equal(outMsgs[0].parts[0].content, "Let me think...");
-    assert.equal(outMsgs[0].parts[1].type, "text");
-    assert.equal(outMsgs[0].parts[1].content, "42");
+    // Verbatim: the reasoning/text parts survive exactly as the provider
+    // returned them.
+    assert.deepEqual(outMsgs, [
+      {
+        role: "assistant",
+        content: [
+          { type: "reasoning", text: "Let me think..." },
+          { type: "text", text: "42" },
+        ],
+      },
+    ]);
   });
 
   void it("factory helpers create independent integrations", () => {
@@ -664,17 +713,23 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     );
   });
 
-  void it("onFinish falls back SPAN_OUTPUT to tool calls when text is empty", () => {
+  void it("onFinish records tool-call-only content verbatim on SPAN_OUTPUT", () => {
     const tel = new LaminarAiSdkTelemetry();
     const callId = "call-tool-only";
+    const toolCallContent = [
+      {
+        type: "tool-call",
+        toolCallId: "tc-1",
+        toolName: "lookup",
+        input: '{"q":"x"}',
+      },
+    ];
     tel.onStart(mkStartEvent(callId));
     tel.onEnd(
       mkFinish(callId, {
         text: "",
-        content: [],
-        toolCalls: [
-          { toolCallId: "tc-1", toolName: "lookup", input: { q: "x" } },
-        ],
+        content: toolCallContent,
+        toolCalls: toolCallContent,
         finishReason: "tool-calls",
       }),
     );
@@ -682,15 +737,12 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     const spans = exporter.getFinishedSpans();
     const op = spans.find((s) => s.name === "ai.generateText");
     assert.ok(op);
-    const serialized = op.attributes[SPAN_OUTPUT];
-    assert.ok(
-      typeof serialized === "string" && serialized.includes("lookup"),
-      "operation span SPAN_OUTPUT should fall back to serialized tool calls",
-    );
-    assert.ok(
-      typeof op.attributes["ai.response.toolCalls"] === "string",
-      "ai.response.toolCalls should still be set on the op span",
-    );
+    // Tool-call-only operations record the verbatim content — the tool-call
+    // part untouched, `input` still the raw JSON string the provider emitted.
+    assert.deepEqual(JSON.parse(op.attributes[SPAN_OUTPUT] as string), [
+      { role: "assistant", content: toolCallContent },
+    ]);
+    assert.equal(op.attributes["ai.response.toolCalls"], undefined);
   });
 
   void it("onFinish honors finishReason === 'error' and marks the op ERROR", () => {
@@ -779,12 +831,12 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     const llm = spans.find((s) => s.name.startsWith("ai.llm "));
     assert.ok(llm, "llm span missing");
     // The streaming fallback mirrors onLanguageModelCallEnd: it emits the
-    // single gen_ai.output.messages shape (no legacy ai.response.text /
-    // SPAN_OUTPUT), so the backend stores one consistent output format that
-    // the debugger can replay.
+    // single verbatim gen_ai.output.messages shape (no legacy
+    // ai.response.text / SPAN_OUTPUT), so the backend stores one consistent
+    // output format that the debugger can replay.
     assert.deepEqual(
       JSON.parse(llm.attributes["gen_ai.output.messages"] as string),
-      [{ role: "assistant", parts: [{ type: "text", content: "hello" }] }],
+      [{ role: "assistant", content: [{ type: "text", text: "hello" }] }],
     );
   });
 
@@ -838,7 +890,7 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     // "hello" comes from onLanguageModelCallEnd, NOT from the ghost delta.
     assert.deepEqual(
       JSON.parse(llm.attributes["gen_ai.output.messages"] as string),
-      [{ role: "assistant", parts: [{ type: "text", content: "hello" }] }],
+      [{ role: "assistant", content: [{ type: "text", text: "hello" }] }],
     );
   });
 
@@ -893,13 +945,13 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     const spans = exporter.getFinishedSpans();
     const llmSpans = spans.filter((s) => s.name.startsWith("ai.llm "));
     assert.equal(llmSpans.length, 2);
-    // The ambiguous delta must NOT appear on either span's buffered text.
+    // The ambiguous delta must NOT appear on either span's buffered output.
     for (const s of llmSpans) {
-      const text = s.attributes["ai.response.text"];
-      if (typeof text === "string") {
+      const out = s.attributes["gen_ai.output.messages"];
+      if (typeof out === "string") {
         assert.ok(
-          !text.includes("ambiguous"),
-          `ambiguous delta misattributed: ${text}`,
+          !out.includes("ambiguous"),
+          `ambiguous delta misattributed: ${out}`,
         );
       }
     }
@@ -972,7 +1024,13 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.equal(llm.attributes["gen_ai.response.finish_reason"], "stop");
     assert.deepEqual(
       JSON.parse(llm.attributes["gen_ai.output.messages"] as string),
-      [{ role: "assistant", parts: [{ type: "text", content: '{"x":1}' }] }],
+      [{ role: "assistant", content: [{ type: "text", text: '{"x":1}' }] }],
+    );
+    // Object-gen spans record the verbatim prompt from
+    // onObjectStepStart.promptMessages.
+    assert.deepEqual(
+      JSON.parse(llm.attributes["gen_ai.input.messages"] as string),
+      [{ role: "user", content: "hi" }],
     );
   });
 

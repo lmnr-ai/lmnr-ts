@@ -216,6 +216,47 @@ void describe('Stream Caching', () => {
     assert.deepStrictEqual(parsed.content, []);
   });
 
+  void it('rebuilds content from verbatim v7 gen_ai.output.messages (LAM-1922)', () => {
+    const wrappedModel = new LaminarLanguageModelV3(createMockModelV3() as any);
+    // The v7 integration now stores the assistant turn VERBATIM as
+    // `[{role:"assistant", content: LanguageModelContent[]}]` — parts keep the
+    // provider field names (`text`, `toolCallId`, `toolName`, `input`) and
+    // tool-call `input` is already a JSON string. Rebuild must not rename keys
+    // or double-stringify the input.
+    const output = JSON.stringify([
+      {
+        role: 'assistant',
+        content: [
+          { type: 'reasoning', text: 'Let me think...' },
+          { type: 'text', text: 'Hello world' },
+          {
+            type: 'tool-call',
+            toolCallId: 'call-123',
+            toolName: 'get_weather',
+            input: '{"location":"SF"}',
+          },
+        ],
+      },
+    ]);
+    const parsed = (wrappedModel as any).parseCachedSpan({
+      name: '',
+      input: '',
+      output,
+      attributes: { 'ai.response.finishReason': 'tool-calls' },
+    });
+    assert.deepStrictEqual(parsed.content, [
+      { type: 'reasoning', text: 'Let me think...' },
+      { type: 'text', text: 'Hello world' },
+      {
+        type: 'tool-call',
+        toolCallId: 'call-123',
+        toolName: 'get_weather',
+        input: '{"location":"SF"}',
+      },
+    ]);
+    assert.strictEqual(parsed.finishReason, 'tool-calls');
+  });
+
   void it('rebuilds content from v7 gen_ai.output.messages parts', () => {
     const wrappedModel = new LaminarLanguageModelV3(createMockModelV3() as any);
     // v7 stores the assistant turn verbatim as `[{role, parts:[...]}]` where

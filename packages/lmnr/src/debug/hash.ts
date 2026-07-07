@@ -4,13 +4,13 @@
  * Computes the per-LLM-call `input_hash` the server-side debugger cache (v2) is
  * keyed by. The SDK and the Rust app-server MUST produce byte-identical hashes,
  * so this is a faithful port of the app-server primitives:
- *   - `canonical_json`        — `app-server/src/traces/input_dedup.rs`
- *   - `extract_system_message`— `app-server/src/traces/prompt_hash.rs`
- *   - `debug_input_hash`      — `app-server/src/traces/debug_cache.rs` (plan 01 §3)
+ *   - `canonical_json`     — `app-server/src/traces/input_dedup.rs`
+ *   - `debug_input_hash`   — `app-server/src/traces/input_dedup.rs`
  *
- * The whole non-system message array is hashed as ONE blob: strip the first
- * `role === "system"` message (when its text is non-empty), canonicalize the
- * remaining array, then blake3 over its UTF-8 bytes and hex-encode the digest.
+ * The whole non-system message array is hashed as ONE blob: strip EVERY
+ * `role === "system"` message (regardless of content or position), canonicalize
+ * the remaining array, then blake3 over its UTF-8 bytes and hex-encode the
+ * digest.
  *
  * Keep this file line-comparable with the Python `debug/hash.py`.
  */
@@ -52,84 +52,34 @@ export const canonicalJson = (value: unknown): string => {
 };
 
 /**
- * Extract the system prompt text from a system-role message, or "" when none.
+ * Drop EVERY `role === "system"` message, matching the server.
  *
- * Faithful port of Rust `extract_system_message`'s text resolution: a plain
- * string content, else an array of `{text}` blocks joined by a space (only when
- * the join is non-empty), else `parts[0].text` / `parts[0].content`.
+ * Content and position are irrelevant: an empty system string, a block-array
+ * system, or repeated/trailing system messages are all stripped. The coding
+ * agent may add/remove/edit its own system prompt(s) between iterations and
+ * those edits must not change the cache key.
  */
-const systemMessageText = (sysMsg: Record<string, unknown>): string => {
-  const content = sysMsg.content;
-  // "content": "plain string" (OpenAI format) — wins even when empty.
-  if (typeof content === "string") {
-    return content;
-  }
-  // "content": [{"text": "...", "type": "text"}, ...] (Anthropic format).
-  if (Array.isArray(content)) {
-    const joined = content
-      .map((block) =>
-        block !== null && typeof block === "object"
-          ? (block as Record<string, unknown>).text
-          : undefined,
-      )
-      .filter((t): t is string => typeof t === "string")
-      .join(" ");
-    if (joined.length > 0) {
-      return joined;
-    }
-  }
-  // "parts" shapes — only the first part is inspected (Gemini `{text}` /
-  // OTel GenAI `{type, content}`).
-  const parts = sysMsg.parts;
-  if (Array.isArray(parts) && parts.length > 0) {
-    const first = parts[0];
-    if (first !== null && typeof first === "object") {
-      const f = first as Record<string, unknown>;
-      const t = typeof f.text === "string" ? f.text : f.content;
-      if (typeof t === "string") {
-        return t;
-      }
-    }
-  }
-  return "";
-};
-
-/**
- * Drop the first `role === "system"` message, matching the server.
- *
- * Returns the array unchanged when there is no system message OR when the system
- * message's resolved text is empty (Rust `extract_system_message` returns `None`
- * in both cases, leaving the system message in the hashed array).
- */
-const stripSystemMessage = (messages: unknown[]): unknown[] => {
-  const sysIdx = messages.findIndex(
+const stripSystemMessages = (messages: unknown[]): unknown[] =>
+  messages.filter(
     (m) =>
-      m !== null &&
-      typeof m === "object" &&
-      (m as Record<string, unknown>).role === "system",
+      !(
+        m !== null &&
+        typeof m === "object" &&
+        (m as Record<string, unknown>).role === "system"
+      ),
   );
-  if (sysIdx === -1) {
-    return messages;
-  }
-  const sysText = systemMessageText(
-    messages[sysIdx] as Record<string, unknown>,
-  );
-  if (sysText.length === 0) {
-    return messages;
-  }
-  return messages.filter((_, i) => i !== sysIdx);
-};
 
 /**
- * Compute the hex blake3 `input_hash` for a reconstructed message array.
+ * Compute the hex blake3 `input_hash` for a message array.
  *
- * `messages` must already be the server's reconstructed shape (the SDK reshapes
- * provider-specific prompts via `aisdk-normalize.ts` so the hashed bytes match
- * what `spans_v0` stores). The system message is stripped, the remainder
- * canonicalized, and the digest hex-encoded (64 chars).
+ * `messages` is the verbatim LanguageModel-level prompt
+ * (`JSON.parse(stringifyPromptForTelemetry(options.prompt))`) — the same bytes
+ * the SDK records as `gen_ai.input.messages` and the server hashes on ingest.
+ * System messages are stripped, the remainder canonicalized, and the digest
+ * hex-encoded (64 chars).
  */
 export const debugInputHash = (messages: unknown[]): string => {
-  const stripped = stripSystemMessage(messages);
+  const stripped = stripSystemMessages(messages);
   const canonical = canonicalJson(stripped);
   const digest = blake3(new TextEncoder().encode(canonical));
   return bytesToHex(digest);

@@ -1,6 +1,6 @@
 import type { HrTime, Span } from "@opentelemetry/api";
 
-import { LaminarAttributes, SPAN_INPUT } from "../../../tracing/attributes";
+import { LaminarAttributes } from "../../../tracing/attributes";
 
 export const serializeJSON = (value: unknown): string => {
   if (typeof value === "string") return value;
@@ -60,10 +60,12 @@ export const applyUsage = (
   }
 };
 
-// Convert a StandardizedPrompt-shaped object (`system` + `messages`) to an
-// array of `ModelMessage`-like entries. Laminar's backend parses
-// `ai.prompt.messages` as an array of AI SDK messages.
-export const standardizedPromptToMessages = (event: {
+// Convert a StandardizedPrompt-shaped event (`system`/`instructions` +
+// `messages`) into a verbatim message array: the system prompt becomes a
+// leading system message and `messages` are appended UNCHANGED — no key
+// renames, no part filtering, no string→text-block rewriting. Used as the
+// input fallback when the LanguageModel-level prompt is unavailable.
+export const verbatimStandardizedMessages = (event: {
   system?: any;
   instructions?: any;
   messages?: any[];
@@ -78,99 +80,36 @@ export const standardizedPromptToMessages = (event: {
     messages.push(sys);
   }
   if (Array.isArray(event.messages)) {
-    for (const m of event.messages)
-      messages.push(convertRawStringTextToTextBlock(m as LooseMessage));
+    for (const m of event.messages) messages.push(m);
   }
   return messages;
 };
 
-type LooseMessage = {
-  role: string;
-  content: string | Record<string, any>[];
-  [k: string]: unknown;
-};
-type LooseMessageNoStringContent = {
-  role: string;
-  content: Record<string, any>[];
-  [k: string]: unknown;
-};
-const convertRawStringTextToTextBlock = (
-  m: LooseMessage,
-): LooseMessageNoStringContent => ({
-  ...m,
-  content:
-    typeof m?.content === "string"
-      ? [{ type: "text", text: m.content }]
-      : m?.content,
-});
-
-// Build a concise `ai.response.toolCalls`-shaped array from v7 `toolCalls`.
-export const normalizeToolCalls = (toolCalls: any[] | undefined): any[] => {
-  if (!Array.isArray(toolCalls)) return [];
-  return toolCalls.map((tc) => ({
-    toolCallType: "function",
-    toolCallId: tc?.toolCallId,
-    toolName: tc?.toolName,
-    args:
-      typeof tc?.input === "string" ? tc.input : serializeJSON(tc?.input ?? {}),
-  }));
-};
-
-// Build the OTel GenAI `gen_ai.output.messages` payload from a single
-// assistant turn's reasoning / text / tool calls. The backend stores this
-// verbatim on the span output and the debugger replays from it, so this is the
-// single output shape for v7 — no legacy `ai.response.*` / `SPAN_OUTPUT` writes.
-// `toolCalls` are the `normalizeToolCalls` output (`{toolCallId, toolName, args}`).
-// Returns the JSON string, or `undefined` when there is nothing to emit.
-export const buildGenAiOutputMessages = (args: {
-  text?: string;
-  reasoningText?: string;
-  toolCalls?: any[];
-}): string | undefined => {
-  const parts: any[] = [];
-  if (args.reasoningText && args.reasoningText.length > 0) {
-    parts.push({ type: "thinking", content: args.reasoningText });
-  }
-  if (args.text && args.text.length > 0) {
-    parts.push({ type: "text", content: args.text });
-  }
-  for (const tc of args.toolCalls ?? []) {
-    let argsObj: unknown = tc.args;
-    if (typeof argsObj === "string") {
-      try {
-        argsObj = JSON.parse(argsObj);
-      } catch {
-        // leave string — backend tolerates both
-      }
-    }
-    parts.push({
-      type: "tool_call",
-      id: tc.toolCallId,
-      name: tc.toolName,
-      arguments: argsObj,
-    });
-  }
-  if (parts.length === 0) return undefined;
-  return JSON.stringify([{ role: "assistant", parts }]);
-};
-
-export const extractTextFromContent = (content: any[] | undefined): string => {
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((p) => p && p.type === "text" && typeof p.text === "string")
-    .map((p) => p.text as string)
-    .join("");
-};
-
-export const extractReasoningFromContent = (
+// Build the verbatim `gen_ai.output.messages` payload from an assistant
+// turn's `LanguageModelContent` array (`event.content` on
+// onLanguageModelCallEnd). The content parts are recorded EXACTLY as the
+// provider returned them — no key renames, no part filtering — wrapped in a
+// single assistant message. The backend stores this verbatim on the span
+// output and the debugger replays from it. Returns the JSON string, or
+// `undefined` when there is nothing to emit.
+export const buildVerbatimOutputMessages = (
   content: any[] | undefined,
-): string => {
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((p) => p && p.type === "reasoning" && typeof p.text === "string")
-    .map((p) => p.text as string)
-    .join("");
+): string | undefined => {
+  if (!Array.isArray(content) || content.length === 0) return undefined;
+  try {
+    return JSON.stringify([{ role: "assistant", content }]);
+  } catch {
+    return undefined;
+  }
 };
+
+// Fallback output shape for paths where the verbatim provider content is not
+// available (buffered stream deltas on aborted/errored streams, objectText on
+// generateObject/streamObject): a single verbatim-style text part.
+export const buildTextOutputMessages = (text: string): string | undefined =>
+  text.length > 0
+    ? buildVerbatimOutputMessages([{ type: "text", text }])
+    : undefined;
 
 // Apply `applyUsage` output directly onto a span, skipping undefined values.
 export const applyUsageToSpan = (span: Span, usage: any): void => {
@@ -198,17 +137,6 @@ export const applyRequestModelAttributes = (span: Span, event: any): void => {
     span.setAttribute(LaminarAttributes.REQUEST_MODEL, event.modelId);
     span.setAttribute("ai.model.id", event.modelId);
   }
-};
-
-// Serialize prompt messages from a StandardizedPrompt-shaped event and set
-// `ai.prompt.messages` + `SPAN_INPUT` on the span. No-ops when the event
-// carries no messages.
-export const applyPromptMessages = (span: Span, event: any): void => {
-  const msgs = standardizedPromptToMessages(event);
-  if (msgs.length === 0) return;
-  const serialized = serializeJSON(msgs);
-  span.setAttribute("ai.prompt.messages", serialized);
-  span.setAttribute(SPAN_INPUT, serialized);
 };
 
 export const compareHrTime = (a: HrTime, b: HrTime): number => {

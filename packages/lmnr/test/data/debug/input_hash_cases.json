@@ -1,83 +1,154 @@
 {
-  "_comment": [
-    "Debug-replay v2 input_hash parity vectors. Each `expected_hash` is hex(blake3(UTF-8(canonical_hashed))),",
-    "where `canonical_hashed` is canonicalJson(messages) AFTER stripping a non-empty leading system message.",
-    "Every `expected_hash` here was independently validated against the Rust `blake3` crate (v1) fed the same",
-    "`canonical_hashed` string — i.e. the same primitive app-server uses (canonical_json in",
-    "app-server/src/traces/input_dedup.rs + blake3). The full app-server debug_cache.rs pipeline does not exist",
-    "yet, so end-to-end Rust-oracle parity of the reconstruction step is still pending; the hash primitive itself",
-    "is locked here. This file is the cross-language parity surface — the Python SDK debug/hash.py test consumes",
-    "the same vectors."
-  ],
+  "description": "Cross-language parity vectors for the debugger-replay input hash (debug_input_hash / debugInputHash, LAM-1715). For each case the SDK and app-server must produce the same `expected_hash`: hex(blake3(canonical_json(messages_without_system))). EVERY message with `role == \"system\"` is stripped first — regardless of its content (empty string, no text blocks, any shape) or position (leading, trailing, or repeated) — because the coding agent may add/remove/edit its own system prompt(s) between iterations and those edits must not change the cache key. The remaining array is canonicalized with object keys sorted recursively and array order preserved; no number canonicalization in v1. Object key order in `input` here is deliberately scrambled to prove canonicalization — the hash must not depend on it.",
   "cases": [
     {
-      "name": "single user text",
-      "messages": [{ "role": "user", "content": "hello world" }],
-      "canonical_hashed": "[{\"content\":\"hello world\",\"role\":\"user\"}]",
-      "expected_hash": "e35dd17654654dc1912f7ebcafdd5e7b1de67c2bf4c3309dea86752efd8c3e9b"
-    },
-    {
-      "name": "system stripped, user kept",
-      "messages": [
-        { "role": "system", "content": "you are a helpful assistant" },
-        { "role": "user", "content": "hi" }
+      "name": "openai-system-stripped",
+      "input": [
+        {
+          "role": "system",
+          "content": "You are a helpful assistant."
+        },
+        {
+          "content": "Hello",
+          "role": "user"
+        }
       ],
-      "canonical_hashed": "[{\"content\":\"hi\",\"role\":\"user\"}]",
-      "expected_hash": "6bec174af3c9655d4dfb3e09a5c2866a500d841139b14322f2ec23ac08db6755"
+      "expected_hash": "d45bd7cd4db1cfbcc1316d4ccebcbd904adabd2c915c155c404f1d48cc940166"
     },
     {
-      "name": "empty system not stripped",
-      "messages": [
-        { "role": "system", "content": "" },
-        { "role": "user", "content": "hi" }
-      ],
-      "canonical_hashed": "[{\"content\":\"\",\"role\":\"system\"},{\"content\":\"hi\",\"role\":\"user\"}]",
-      "expected_hash": "ddf7458ab04fd0de1af103a39e5502355ecd9c64c18254fae3482338cae01db0"
-    },
-    {
-      "name": "anthropic-style system blocks stripped",
-      "messages": [
-        { "role": "system", "content": [{ "type": "text", "text": "be terse" }] },
-        { "role": "user", "content": [{ "type": "text", "text": "ok" }] }
-      ],
-      "canonical_hashed": "[{\"content\":[{\"text\":\"ok\",\"type\":\"text\"}],\"role\":\"user\"}]",
-      "expected_hash": "3331abd42f44dbfbcc891e5a16e410660393924468fdafcbb56176e8f723f20c"
-    },
-    {
-      "name": "key order independence",
-      "messages": [{ "content": "x", "role": "user", "extra": { "b": 2, "a": 1 } }],
-      "canonical_hashed": "[{\"content\":\"x\",\"extra\":{\"a\":1,\"b\":2},\"role\":\"user\"}]",
-      "expected_hash": "177962ed4e499d352879c028796e915b1eb5361602339d3cdef522ebe66645b9"
-    },
-    {
-      "name": "multi-turn with tool call and result",
-      "messages": [
-        { "role": "user", "content": "weather?" },
+      "name": "no-system-message",
+      "input": [
+        {
+          "role": "user",
+          "content": "What is 2 + 2?"
+        },
         {
           "role": "assistant",
+          "content": "4"
+        }
+      ],
+      "expected_hash": "2c2e8470c108a2eac5a195113bd225f77e3c55d689bfeafbffad24f01dbc29bf"
+    },
+    {
+      "name": "anthropic-system-block-array-stripped",
+      "input": [
+        {
+          "role": "system",
           "content": [
-            { "type": "tool_call", "name": "get_weather", "id": "call_1", "arguments": { "city": "SF" } }
+            {
+              "type": "text",
+              "text": "Be terse."
+            }
           ]
         },
         {
-          "role": "tool",
-          "tool_call_id": "call_1",
+          "role": "user",
+          "content": "Hi"
+        }
+      ],
+      "expected_hash": "5af900befc8e4c75b51fca6e43d0eb11ef8ab5f6677966b87ab72f55010e1df7"
+    },
+    {
+      "name": "nested-keys-canonicalized",
+      "input": [
+        {
+          "role": "user",
           "content": [
-            { "type": "tool-result", "toolCallId": "call_1", "toolName": "get_weather", "output": "72F" }
+            {
+              "type": "text",
+              "text": "look",
+              "meta": {
+                "z": 1,
+                "a": 2
+              }
+            }
           ]
         }
       ],
-      "canonical_hashed": "[{\"content\":\"weather?\",\"role\":\"user\"},{\"content\":[{\"arguments\":{\"city\":\"SF\"},\"id\":\"call_1\",\"name\":\"get_weather\",\"type\":\"tool_call\"}],\"role\":\"assistant\"},{\"content\":[{\"output\":\"72F\",\"toolCallId\":\"call_1\",\"toolName\":\"get_weather\",\"type\":\"tool-result\"}],\"role\":\"tool\",\"tool_call_id\":\"call_1\"}]",
-      "expected_hash": "b056085948ecbefc5d3b283070abf78d298d0980c6a8de220615cf46e3872be6"
+      "expected_hash": "9f5064a6709a9141606c05cca53895327671e6e99dca76e9b1b48c39f1658e41"
     },
     {
-      "name": "no system message",
-      "messages": [
-        { "role": "user", "content": "a" },
-        { "role": "assistant", "content": "b" }
+      "name": "system-empty-string-content-stripped",
+      "input": [
+        {
+          "role": "system",
+          "content": ""
+        },
+        {
+          "role": "user",
+          "content": "Hi"
+        }
       ],
-      "canonical_hashed": "[{\"content\":\"a\",\"role\":\"user\"},{\"content\":\"b\",\"role\":\"assistant\"}]",
-      "expected_hash": "49d1193533990d6f74f89838b1119753930da0b9b9967857a7508d9f02215314"
+      "expected_hash": "5af900befc8e4c75b51fca6e43d0eb11ef8ab5f6677966b87ab72f55010e1df7"
+    },
+    {
+      "name": "multiple-system-messages-all-stripped",
+      "input": [
+        {
+          "role": "system",
+          "content": "first system prompt"
+        },
+        {
+          "role": "user",
+          "content": "Hi"
+        },
+        {
+          "role": "system",
+          "content": [
+            {
+              "type": "image",
+              "url": "https://example.com/x.png"
+            }
+          ]
+        }
+      ],
+      "expected_hash": "5af900befc8e4c75b51fca6e43d0eb11ef8ab5f6677966b87ab72f55010e1df7"
+    },
+    {
+      "name": "verbatim-ai-sdk-language-model-prompt",
+      "input": [
+        {
+          "content": "You are a helpful assistant.",
+          "role": "system"
+        },
+        {
+          "content": [
+            {
+              "text": "What is in this image?",
+              "type": "text"
+            },
+            {
+              "mediaType": "image/png",
+              "data": "https://example.com/pic.png",
+              "type": "file"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "providerOptions": {
+                "anthropic": {
+                  "signature": "sig"
+                }
+              },
+              "text": "Let me look.",
+              "type": "reasoning"
+            },
+            {
+              "toolName": "describe_image",
+              "input": {
+                "detail": "high"
+              },
+              "toolCallId": "call_1",
+              "type": "tool-call"
+            }
+          ],
+          "role": "assistant"
+        }
+      ],
+      "expected_hash": "7749b03aeba2fd3500bdabde7d88bdb6fe1270d96947b4b87e63e8e31650609a"
     }
   ]
 }

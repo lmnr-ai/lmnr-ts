@@ -29,6 +29,8 @@ Work inside a specific package with `pnpm --filter @lmnr-ai/lmnr ...` or `cd pac
 
 Laminar ships its own `MastraExporter` (implements `ObservabilityExporter` from `@mastra/core/ai-tracing`) instead of relying on the `@mastra/laminar` package. Key non-obvious facts:
 
+- **The Mastra exporter was intentionally left OUT of the LAM-1922 verbatim-attributes migration.** It still emits the old shapes (`ai.prompt.messages` / `ai.response.text` / `ai.response.toolCalls` on LLM spans, `gen_ai.output.messages` with `{type:"thinking", content}` parts) — do not "modernize" it to the verbatim `gen_ai.input.messages` / `[{role:"assistant", content}]` shapes used by the AI SDK v7 integration without a dedicated task; the backend parses both.
+
 - **Span-type mapping**:
   - `MODEL_STEP` → Laminar LLM span (one LLM turn; produces `ai.prompt.messages` / `ai.response.text` / `ai.response.toolCalls`).
   - `TOOL_CALL` / `MCP_TOOL_CALL` → Laminar TOOL span.

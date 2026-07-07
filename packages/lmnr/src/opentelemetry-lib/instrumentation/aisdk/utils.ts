@@ -28,6 +28,33 @@ export const stringifyPromptForTelemetry =
       })),
     );
 
+// The recorded `gen_ai.input.messages` attribute (v7 integration) and the
+// debugger-replay input hash (base-language-model.ts) MUST be computed from
+// the same serialized bytes, or record-time and replay-time cache keys drift.
+// Both go through these two helpers — do NOT serialize the prompt any other
+// way on either path.
+export const verbatimPromptString = (prompt: unknown): string | null => {
+  try {
+    const serialized = stringifyPromptForTelemetry(
+      prompt as LanguageModelV3Prompt,
+    );
+    return typeof serialized === "string" ? serialized : null;
+  } catch {
+    return null;
+  }
+};
+
+export const verbatimPromptMessages = (prompt: unknown): unknown[] | null => {
+  const serialized = verbatimPromptString(prompt);
+  if (serialized === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(serialized);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
 // https://github.com/vercel/ai/blob/main/packages/ai/src/prompt/data-content.ts
 /**
 Converts data content to a base64-encoded string.

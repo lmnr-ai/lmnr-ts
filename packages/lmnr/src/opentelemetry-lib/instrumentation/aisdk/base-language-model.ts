@@ -33,12 +33,12 @@ import {
 } from "@ai-sdk/provider-v4-canary";
 import { CachedSpan } from "@lmnr-ai/types";
 
-import { extractInputMessages } from "../../../debug/aisdk-normalize";
 import { debugInputHash } from "../../../debug/hash";
 import { getRuntime } from "../../../debug/index";
 import { markSpanCached, replayEnabled } from "../../../debug/replay";
 import { Laminar } from "../../../laminar";
 import { peekActiveLlmSpan } from "./active-llm-span";
+import { verbatimPromptMessages } from "./utils";
 
 type CacheResponse =
   | {
@@ -318,14 +318,17 @@ export abstract class BaseLaminarLanguageModel {
     // live `doGenerate` LLM span on context, so `getCurrentSpan()` is correct.
     const spanToMark = peekActiveLlmSpan() ?? Laminar.getCurrentSpan();
 
-    // Reshape the prompt into the message array the server hashes, then hash it
-    // (system message excluded) so the SDK and server key the cache identically.
-    // A null/empty reshape means we could not reconstruct the prompt at all (a
-    // stringify/JSON.parse failure, or no extractable messages). Hashing that
-    // would key the lookup off the wrong bytes and force a spurious MISS, which
-    // would wrongly latch live mode for the whole replay — so degrade to a live
-    // call WITHOUT latching, exactly like a transport error in the lookup.
-    const messages = extractInputMessages(options as { prompt: any });
+    // Hash the verbatim LanguageModel-level prompt (system messages excluded)
+    // through the SAME serializer the v7 integration used to record
+    // `gen_ai.input.messages`, so the SDK and server key the cache identically.
+    // A null/empty result means we could not serialize the prompt at all (a
+    // stringify/JSON.parse failure, or an empty prompt). Hashing that would key
+    // the lookup off the wrong bytes and force a spurious MISS, which would
+    // wrongly latch live mode for the whole replay — so degrade to a live call
+    // WITHOUT latching, exactly like a transport error in the lookup.
+    const messages = verbatimPromptMessages(
+      (options as { prompt: unknown }).prompt,
+    );
     if (messages === null || messages.length === 0) {
       return originalFn(options);
     }
@@ -431,11 +434,14 @@ export abstract class BaseLaminarLanguageModel {
       return [];
     }
 
-    // Handles a single content part. Covers both the v6 legacy shape
-    // (`{type:"text", text}` / `{type:"tool_call", name, id, arguments}`) and the
-    // v7 `gen_ai.output.messages` part shape (`{type:"text"|"thinking", content}` /
-    // `{type:"tool_call", id, name, arguments}`), so `text` and `content` are both
-    // accepted for the textual fields.
+    // Handles a single content part. Covers the verbatim v7 shape recorded on
+    // `gen_ai.output.messages` (`{type:"text"|"reasoning", text}` /
+    // `{type:"tool-call", toolCallId, toolName, input}` — `input` is usually
+    // already a JSON string, straight from `LanguageModelContent`), the older
+    // v7-hybrid part shape (`{type:"text"|"thinking", content}` /
+    // `{type:"tool_call", id, name, arguments}`), and the v6 legacy shape
+    // (`{type:"text", text}` / `{type:"tool_call", name, id, arguments}`), so
+    // `text` and `content` are both accepted for the textual fields.
     const handleItem = (
       item: Record<string, any>,
     ): LanguageModelV3Content[] => {
@@ -448,12 +454,18 @@ export abstract class BaseLaminarLanguageModel {
         ];
       }
       if (["tool-call", "tool_call"].includes(item.type)) {
+        const rawInput = item.input ?? item.arguments;
         return [
           {
             type: "tool-call",
             toolCallId: item.toolCallId ?? item.id,
             toolName: item.toolName ?? item.name,
-            input: JSON.stringify(item.input ?? item.arguments),
+            // Verbatim v7 content carries `input` as an already-serialized JSON
+            // string — re-stringifying would double-encode it.
+            input:
+              typeof rawInput === "string"
+                ? rawInput
+                : JSON.stringify(rawInput),
           },
         ];
       }
@@ -492,11 +504,13 @@ export abstract class BaseLaminarLanguageModel {
       outputContent = [output];
     }
     return outputContent.flatMap((item) => {
-      // v7 `gen_ai.output.messages` shape: `{role, parts:[...]}` (already an
-      // object array, never a JSON string). Map each part through handleItem.
+      // Older v7-hybrid `gen_ai.output.messages` shape: `{role, parts:[...]}`
+      // (already an object array, never a JSON string). Map each part through
+      // handleItem.
       if (item.role && Array.isArray(item.parts)) {
         return item.parts.flatMap(handleItem);
       }
+      // Verbatim v7 shape (`{role, content: LanguageModelContent[]}`) and the
       // v6 legacy shape: `{role, content}` where content is either an array of
       // parts or a JSON-encoded string of them.
       if (item.role && item.content) {
