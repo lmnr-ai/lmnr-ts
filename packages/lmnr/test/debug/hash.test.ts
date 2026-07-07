@@ -129,8 +129,42 @@ void describe("inputChatMessagesFromJson", () => {
     );
   });
 
-  void it("falls back to a Text blob when any part is unrecognized", () => {
-    const content = [{ type: "mystery", foo: 1 }];
+  void it("preserves unknown typed parts verbatim (server Raw variant, LAM-1912)", () => {
+    // Mirrors the server's `#[serde(untagged)] Raw(RawContentPart)` catch-all:
+    // an unknown `type` no longer collapses the whole array to a Text blob.
+    const reasoning = {
+      type: "reasoning",
+      text: "thinking...",
+      providerOptions: { anthropic: { signature: "sig-1" } },
+    };
+    assert.deepStrictEqual(
+      inputChatMessagesFromJson([
+        {
+          role: "assistant",
+          content: [reasoning, { type: "text", text: "Calling uppercase." }],
+        },
+      ]),
+      [
+        {
+          role: "assistant",
+          content: [reasoning, { type: "text", text: "Calling uppercase." }],
+        },
+      ],
+    );
+  });
+
+  void it("preserves a known tag with a malformed payload as a raw part", () => {
+    // A `text` part without a string text field fails the tagged variant and
+    // lands in the server's Raw catch-all — mirror that, don't blob.
+    const malformed = { type: "text", value: 42 };
+    assert.deepStrictEqual(
+      inputChatMessagesFromJson([{ role: "user", content: [malformed] }]),
+      [{ role: "user", content: [malformed] }],
+    );
+  });
+
+  void it("falls back to a Text blob when a part has no string type", () => {
+    const content = [{ foo: 1 }, "loose string"];
     assert.deepStrictEqual(
       inputChatMessagesFromJson([{ role: "user", content }]),
       [{ role: "user", content: JSON.stringify(content) }],

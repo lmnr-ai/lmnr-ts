@@ -218,17 +218,30 @@ const parseFile = (
 /**
  * Port of `serde_json::from_value::<InstrumentationChatMessageContentPart>` for a
  * single part, returning the mapped output `ChatMessageContentPart` object or
- * `null` when no variant matches (an unrecognized `type`, or a recognized tag
- * whose inner shape fails). `null` propagates to an all-or-nothing Text fallback.
+ * `null` when no variant matches. Since the server enum gained a trailing
+ * `#[serde(untagged)] Raw(RawContentPart)` variant (LAM-1912), any object with a
+ * string `type` that fails every tagged variant — an unknown tag OR a known tag
+ * whose inner shape fails — lands in `Raw` and is preserved verbatim (`Raw`
+ * round-trips byte-identically; `canonicalJson` re-sorts keys later, so the
+ * `type`-first re-serialization order is irrelevant). Only non-objects and
+ * objects without a string `type` still return `null`, which propagates to the
+ * all-or-nothing Text-blob fallback.
  *
  * Output objects carry serde's serialized field names; `skip_serializing_if` is
  * reproduced by omitting the field (ChatMessage.tool_call_id only), and `Option`
  * fields WITHOUT skip (`detail`, tool-call `id`/`arguments`) always emit `null`.
  */
 const parsePart = (el: unknown): Record<string, unknown> | null => {
-  if (!isRecord(el)) {
+  if (!isRecord(el) || typeof el.type !== "string") {
     return null;
   }
+  return parseTaggedPart(el) ?? el;
+};
+
+/** The tagged variants of the server enum; `null` when none matches. */
+const parseTaggedPart = (
+  el: Record<string, unknown>,
+): Record<string, unknown> | null => {
   switch (el.type) {
     case "text": {
       const text = firstString(el.text, el.input_text, el.output_text);
