@@ -129,12 +129,16 @@ export class LaminarAiSdkTelemetry {
   // stepNumber themselves.
   private readonly activeStreamStepByCallId = new Map<string, number>();
   // Serialized verbatim LanguageModel-level prompt (`event.promptMessages`
-  // through `stringifyPromptForTelemetry`), stashed by onStepStart /
-  // onObjectStepStart for the immediately-following LLM call. Keyed by
-  // `${callId}:${stepNumber}`; consumed by onLanguageModelCallStart and swept
-  // on operation close. This is the SAME serialization the replay wrapper
-  // hashes, so recording level == replay level for the debugger cache.
-  private readonly promptByStepKey = new Map<string, string>();
+  // through `stringifyPromptForTelemetry`), stashed by onStepStart for the
+  // immediately-following LLM call. Keyed by callId ALONE — v7's
+  // languageModelCallStartEvent carries NO stepNumber (verified against
+  // ai@7.0.17), and steps within one call are strictly sequential with no
+  // await between onStepStart and onLanguageModelCallStart, so one slot per
+  // callId is unambiguous. Consumed by onLanguageModelCallStart; swept on
+  // llm-call end, step finish, and operation close. This is the SAME
+  // serialization the replay wrapper hashes, so recording level == replay
+  // level for the debugger cache.
+  private readonly promptByCallId = new Map<string, string>();
 
   constructor(options: LaminarAiSdkTelemetryOptions = {}) {
     this.recordInputs = options.recordInputs ?? true;
@@ -242,15 +246,15 @@ export class LaminarAiSdkTelemetry {
     if (!callId) return;
 
     // ALWAYS stash the verbatim LanguageModel-level prompt for the LLM call
-    // that follows this step start (same callId/stepNumber, no await in
-    // between) — even when step spans are disabled. onLanguageModelCallStart
-    // only carries the ModelMessage-level `instructions`+`messages`, not the
-    // provider prompt, so this stash is the only source for verbatim
-    // `gen_ai.input.messages` on the LLM span.
+    // that follows this step start (same callId, no await in between) — even
+    // when step spans are disabled. onLanguageModelCallStart only carries the
+    // ModelMessage-level `instructions`+`messages`, not the provider prompt,
+    // so this stash is the ONLY source for verbatim `gen_ai.input.messages`
+    // on the LLM span.
     if (Array.isArray(event?.promptMessages)) {
       const serialized = verbatimPromptString(event.promptMessages);
       if (serialized !== null) {
-        this.promptByStepKey.set(stepKey(callId, stepNumber), serialized);
+        this.promptByCallId.set(callId, serialized);
       }
     }
 
@@ -281,9 +285,12 @@ export class LaminarAiSdkTelemetry {
     const callId: string | undefined = event?.callId;
     if (!callId) return;
     // When createStepSpan is true, LLM calls attach to the latest open step
-    // span. When false (no step spans registered), use event.stepNumber directly
-    // so each step's LLM span is keyed correctly and multi-step runs don't
-    // collide on stepKey(callId, 0). Fall back to the operation span as parent.
+    // span; its stepNumber keys llmByKey. When false (no step spans
+    // registered), fall back to event.stepNumber — v7's
+    // languageModelCallStartEvent does NOT carry it (verified against
+    // ai@7.0.17) so this usually resolves to 0, which is still safe: LLM
+    // calls within one callId are strictly sequential, so at most one entry
+    // is live per callId at a time and start/end resolve the same key.
     const step = this.findLatestStep(callId);
     const stepNumber =
       step?.stepNumber ?? (event?.stepNumber as number | undefined) ?? 0;
@@ -301,15 +308,15 @@ export class LaminarAiSdkTelemetry {
     if (this.recordInputs) {
       // Verbatim LanguageModel-level prompt, stashed by onStepStart. This is
       // the exact serialization the replay wrapper hashes, so the server-side
-      // debugger cache keys match at record and replay time. Fall back to the
-      // ModelMessage-level StandardizedPrompt on this event when no stash is
-      // available (degenerate providers that skip onStepStart).
-      const serialized =
-        this.promptByStepKey.get(stepKey(callId, stepNumber)) ??
-        (() => {
-          const msgs = verbatimStandardizedMessages(event);
-          return msgs.length > 0 ? serializeJSON(msgs) : undefined;
-        })();
+      // debugger cache keys match at record and replay time. There is NO
+      // fallback to this event's ModelMessage-level `instructions`+`messages`:
+      // those bytes differ structurally from `options.prompt` (e.g. a raw
+      // string user message stays a string at ModelMessage level but is a
+      // `[{type:"text",text}]` parts array at LanguageModel level), so a
+      // fallback-recorded input can never hash-match at replay time — a wrong
+      // cache key silently degrades the whole debug run to live. Omitting the
+      // attribute is the safer failure mode.
+      const serialized = this.promptByCallId.get(callId);
       if (serialized !== undefined) {
         span.setAttribute("gen_ai.input.messages", serialized);
       }
@@ -364,7 +371,7 @@ export class LaminarAiSdkTelemetry {
     span.end();
     removeActiveLlmSpan(span);
     this.llmByKey.delete(stepKey(callId, stepNumber));
-    this.promptByStepKey.delete(stepKey(callId, stepNumber));
+    this.promptByCallId.delete(callId);
   };
 
   onChunk = (event: any): void => {
@@ -442,7 +449,7 @@ export class LaminarAiSdkTelemetry {
       removeActiveLlmSpan(llm.span);
       this.llmByKey.delete(key);
     }
-    this.promptByStepKey.delete(key);
+    this.promptByCallId.delete(callId);
 
     const step = this.stepByKey.get(key);
     if (!step) return;
@@ -942,9 +949,7 @@ export class LaminarAiSdkTelemetry {
     for (const key of this.stepByKey.keys()) {
       if (key.startsWith(prefix)) this.stepByKey.delete(key);
     }
-    for (const key of this.promptByStepKey.keys()) {
-      if (key.startsWith(prefix)) this.promptByStepKey.delete(key);
-    }
+    this.promptByCallId.delete(callId);
     return latest;
   }
 }

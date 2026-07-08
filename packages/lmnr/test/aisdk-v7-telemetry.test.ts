@@ -265,6 +265,70 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     );
   });
 
+  void it("routes each step's stashed prompt to its own LLM span without step spans", () => {
+    // Multi-step run with createStepSpan=false. v7's
+    // languageModelCallStartEvent carries NO stepNumber, so the stash must be
+    // keyed by callId alone — a stepKey(callId, stepNumber) key would make
+    // step 1's lookup miss (callId:0 vs callId:1) and previously fired the
+    // ModelMessage-level fallback, recording bytes that can never hash-match
+    // the debugger replay cache.
+    const tel = new LaminarAiSdkTelemetry();
+    const callId = "call-multi-step";
+    const step1PromptMessages = [
+      ...defaultPromptMessages,
+      { role: "assistant", content: [{ type: "text", text: "hello" }] },
+      { role: "user", content: [{ type: "text", text: "more" }] },
+    ];
+
+    tel.onStart(mkStartEvent(callId));
+    tel.onStepStart(mkStepStartEvent(callId, 0));
+    tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+    tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
+    tel.onStepFinish(mkStepEnd(callId, 0));
+    tel.onStepStart(
+      mkStepStartEvent(callId, 1, { promptMessages: step1PromptMessages }),
+    );
+    tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+    tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
+    tel.onStepFinish(mkStepEnd(callId, 1));
+    tel.onEnd(mkFinish(callId));
+
+    const llmSpans = exporter
+      .getFinishedSpans()
+      .filter((s) => s.name.startsWith("ai.llm "));
+    assert.equal(llmSpans.length, 2);
+    assert.deepEqual(
+      JSON.parse(llmSpans[0].attributes["gen_ai.input.messages"] as string),
+      defaultPromptMessages,
+    );
+    assert.deepEqual(
+      JSON.parse(llmSpans[1].attributes["gen_ai.input.messages"] as string),
+      step1PromptMessages,
+    );
+  });
+
+  void it("omits gen_ai.input.messages when no prompt was stashed", () => {
+    // If onStepStart never fired (degenerate emitter), the LanguageModel-level
+    // prompt is unavailable. The integration must OMIT gen_ai.input.messages
+    // rather than fall back to the ModelMessage-level `instructions`+`messages`
+    // on the call-start event: those bytes differ structurally from
+    // `options.prompt` (raw string user content vs text-part arrays), so a
+    // fallback-recorded input can never hash-match at replay time and would
+    // silently degrade the whole debug run to live.
+    const tel = new LaminarAiSdkTelemetry();
+    const callId = "call-no-stash";
+
+    tel.onStart(mkStartEvent(callId));
+    tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+    tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
+    tel.onEnd(mkFinish(callId));
+
+    const spans = exporter.getFinishedSpans();
+    const llm = spans.find((s) => s.name.startsWith("ai.llm "));
+    assert.ok(llm, "llm span missing");
+    assert.equal(llm.attributes["gen_ai.input.messages"], undefined);
+  });
+
   void it("makes tool spans flat siblings of llm under the step", () => {
     const tel = new LaminarAiSdkTelemetry();
     const callId = "call-2";
