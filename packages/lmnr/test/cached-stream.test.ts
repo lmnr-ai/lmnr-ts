@@ -257,6 +257,95 @@ void describe('Stream Caching', () => {
     assert.strictEqual(parsed.finishReason, 'tool-calls');
   });
 
+  void it('preserves provider fields on verbatim v7 parts (LAM-1922)', () => {
+    const wrappedModel = new LaminarLanguageModelV3(createMockModelV3() as any);
+    // Provider fields (`providerMetadata`, `providerExecuted`) must survive
+    // the rebuild verbatim: the AI SDK echoes them into the next step's
+    // prompt as `providerOptions`, and the replay cache hashes that prompt —
+    // dropping them causes a spurious MISS on the following step.
+    const output = JSON.stringify([
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: 'text',
+            text: 'Checking the weather.',
+            providerMetadata: { anthropic: { signature: 'sig-1' } },
+          },
+          {
+            type: 'tool-call',
+            toolCallId: 'call-123',
+            toolName: 'get_weather',
+            input: '{"location":"SF"}',
+            providerExecuted: false,
+            providerMetadata: { anthropic: { caller: { type: 'direct' } } },
+          },
+        ],
+      },
+    ]);
+    const parsed = (wrappedModel as any).parseCachedSpan({
+      name: '',
+      input: '',
+      output,
+      attributes: { 'ai.response.finishReason': 'tool-calls' },
+    });
+    assert.deepStrictEqual(parsed.content, [
+      {
+        type: 'text',
+        text: 'Checking the weather.',
+        providerMetadata: { anthropic: { signature: 'sig-1' } },
+      },
+      {
+        type: 'tool-call',
+        toolCallId: 'call-123',
+        toolName: 'get_weather',
+        input: '{"location":"SF"}',
+        providerExecuted: false,
+        providerMetadata: { anthropic: { caller: { type: 'direct' } } },
+      },
+    ]);
+  });
+
+  void it('threads provider fields onto rebuilt stream parts (LAM-1922)', async () => {
+    const wrappedModel = new LaminarLanguageModelV3(createMockModelV3() as any);
+    const content = [
+      {
+        type: 'text' as const,
+        text: 'Hello',
+        providerMetadata: { anthropic: { signature: 'sig-1' } },
+      },
+      {
+        type: 'tool-call' as const,
+        toolCallId: 'call-123',
+        toolName: 'get_weather',
+        input: '{"location":"SF"}',
+        providerExecuted: false,
+        providerMetadata: { anthropic: { caller: { type: 'direct' } } },
+      },
+    ];
+    const stream = (wrappedModel as any).createStreamFromCachedResponse(
+      content,
+      'tool-calls',
+      createV3Usage(),
+    );
+    const parts = await consumeStream(stream);
+
+    const textStart = parts.find(p => p.type === 'text-start');
+    assert.deepStrictEqual(
+      textStart.providerMetadata,
+      { anthropic: { signature: 'sig-1' } },
+    );
+    const toolCall = parts.find(p => p.type === 'tool-call');
+    assert.deepStrictEqual(toolCall, {
+      type: 'tool-call',
+      toolCallId: 'call-123',
+      toolName: 'get_weather',
+      input: '{"location":"SF"}',
+      providerExecuted: false,
+      providerMetadata: { anthropic: { caller: { type: 'direct' } } },
+    });
+  });
+
   void it('rebuilds content from v7 gen_ai.output.messages parts', () => {
     const wrappedModel = new LaminarLanguageModelV3(createMockModelV3() as any);
     // v7 stores the assistant turn verbatim as `[{role, parts:[...]}]` where

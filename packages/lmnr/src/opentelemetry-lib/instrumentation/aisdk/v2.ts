@@ -81,10 +81,14 @@ export class LaminarLanguageModelV2 extends BaseLaminarLanguageModel implements 
     let toolIndex = 0;
     let reasoningIndex = 0;
 
+    // `providerMetadata` (and `providerExecuted` on tool calls) must survive
+    // the rebuild: the AI SDK echoes these into the next step's prompt, and
+    // the replay cache hashes that prompt — dropping them causes a spurious
+    // MISS on the following step.
     for (const block of content) {
       if (block.type === 'text') {
         const id = `text-${textIndex++}`;
-        parts.push({ type: 'text-start', id });
+        parts.push({ type: 'text-start', id, providerMetadata: block.providerMetadata });
         parts.push({ type: 'text-delta', id, delta: block.text });
         parts.push({ type: 'text-end', id });
       } else if (block.type === 'tool-call') {
@@ -100,15 +104,10 @@ export class LaminarLanguageModelV2 extends BaseLaminarLanguageModel implements 
           delta: block.input,
         });
         parts.push({ type: 'tool-input-end', id });
-        parts.push({
-          type: 'tool-call',
-          toolCallId: block.toolCallId,
-          toolName: block.toolName,
-          input: block.input,
-        });
+        parts.push({ ...block, type: 'tool-call' });
       } else if (block.type === 'reasoning') {
         const id = `reasoning-${reasoningIndex++}`;
-        parts.push({ type: 'reasoning-start', id });
+        parts.push({ type: 'reasoning-start', id, providerMetadata: block.providerMetadata });
         parts.push({ type: 'reasoning-delta', id, delta: block.text });
         parts.push({ type: 'reasoning-end', id });
       }

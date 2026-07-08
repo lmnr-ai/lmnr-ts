@@ -442,26 +442,54 @@ export abstract class BaseLaminarLanguageModel {
     // `{type:"tool_call", id, name, arguments}`), and the v6 legacy shape
     // (`{type:"text", text}` / `{type:"tool_call", name, id, arguments}`), so
     // `text` and `content` are both accepted for the textual fields.
+    //
+    // Parts already in the verbatim v7 shape are SPREAD through, not rebuilt
+    // field-by-field. The AI SDK echoes provider fields from the replayed
+    // content into the NEXT step's prompt (`toResponseMessages` copies
+    // `providerMetadata` onto every part as `providerOptions`; tool-results
+    // inherit the tool-call's providerMetadata), and the server hashed the
+    // record-run step-N input WITH those fields. Dropping `providerMetadata` /
+    // `providerExecuted` here makes the replayed step-(N+1) prompt hash to
+    // different bytes → spurious MISS → the whole run latches live. Legacy
+    // shapes must NOT be spread (their `id`/`name`/`arguments`/`content` keys
+    // would leak into the rebuilt part) — they keep the field-by-field rebuild.
     const handleItem = (
       item: Record<string, any>,
     ): LanguageModelV3Content[] => {
       if (item.type === "text") {
+        if (typeof item.text === "string") {
+          return [{ ...item, type: "text", text: item.text }];
+        }
         return [
           {
             type: "text",
-            text: item.text ?? item.content ?? "",
+            text: item.content ?? "",
           },
         ];
       }
-      if (["tool-call", "tool_call"].includes(item.type)) {
+      if (item.type === "tool-call") {
+        return [
+          {
+            ...item,
+            type: "tool-call",
+            toolCallId: item.toolCallId ?? item.id,
+            toolName: item.toolName ?? item.name,
+            // Verbatim v7 content carries `input` as an already-serialized JSON
+            // string — re-stringifying would double-encode it.
+            input:
+              typeof item.input === "string"
+                ? item.input
+                : JSON.stringify(item.input ?? item.arguments),
+          },
+        ];
+      }
+      if (item.type === "tool_call") {
         const rawInput = item.input ?? item.arguments;
         return [
           {
             type: "tool-call",
             toolCallId: item.toolCallId ?? item.id,
             toolName: item.toolName ?? item.name,
-            // Verbatim v7 content carries `input` as an already-serialized JSON
-            // string — re-stringifying would double-encode it.
             input:
               typeof rawInput === "string"
                 ? rawInput
@@ -469,7 +497,18 @@ export abstract class BaseLaminarLanguageModel {
           },
         ];
       }
-      if (["reasoning", "thinking"].includes(item.type)) {
+      if (item.type === "reasoning") {
+        if (typeof item.text === "string") {
+          return [{ ...item, type: "reasoning", text: item.text }];
+        }
+        return [
+          {
+            type: "reasoning",
+            text: item.content ?? "",
+          },
+        ];
+      }
+      if (item.type === "thinking") {
         return [
           {
             type: "reasoning",
