@@ -18,8 +18,13 @@
 // For embed / embedMany / rerank we create a single LLM span directly under
 // the operation span — there are no step or tool spans.
 //
-// Attribute strategy: hybrid. Emit both `ai.*` (what v6 wrote) and `gen_ai.*`
-// (OTel GenAI semconv). Laminar's backend parser reads both families.
+// Attribute strategy: verbatim. LLM spans carry `gen_ai.input.messages`
+// (the LanguageModel-level prompt through `stringifyPromptForTelemetry` —
+// the ONLY transformation is Uint8Array file data → base64) and
+// `gen_ai.output.messages` (`[{role:"assistant", content: event.content}]`,
+// the provider's LanguageModelContent array untouched). `ai.prompt.messages`
+// is NOT written on v7 LLM spans. Metadata attributes (model, usage,
+// finish reason) still use both `ai.*` and `gen_ai.*` families.
 //
 // Sub-agent nesting works because `executeTool` wraps the tool's execute in
 // an OTel context that has the tool span set as the active span. Nested
@@ -46,6 +51,7 @@ import {
 } from "../../../tracing/attributes";
 import { LaminarContextManager } from "../../../tracing/context";
 import { pushActiveLlmSpan, removeActiveLlmSpan } from "../active-llm-span";
+import { verbatimPromptString } from "../utils";
 import {
   type LlmState,
   type OperationState,
@@ -55,17 +61,15 @@ import {
 } from "./types";
 import {
   applyFinishReason,
-  applyPromptMessages,
   applyRequestModelAttributes,
   applyUsageToSpan,
-  buildGenAiOutputMessages,
+  buildTextOutputMessages,
+  buildVerbatimOutputMessages,
   compareHrTime,
-  extractReasoningFromContent,
-  extractTextFromContent,
   normalizeProvider,
-  normalizeToolCalls,
   readSpanEndTime,
   serializeJSON,
+  verbatimStandardizedMessages,
 } from "./utils";
 
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
@@ -124,6 +128,17 @@ export class LaminarAiSdkTelemetry {
   // right LLM span — individual text-delta chunks don't carry callId or
   // stepNumber themselves.
   private readonly activeStreamStepByCallId = new Map<string, number>();
+  // Serialized verbatim LanguageModel-level prompt (`event.promptMessages`
+  // through `stringifyPromptForTelemetry`), stashed by onStepStart for the
+  // immediately-following LLM call. Keyed by callId ALONE — v7's
+  // languageModelCallStartEvent carries NO stepNumber (verified against
+  // ai@7.0.17), and steps within one call are strictly sequential with no
+  // await between onStepStart and onLanguageModelCallStart, so one slot per
+  // callId is unambiguous. Consumed by onLanguageModelCallStart; swept on
+  // llm-call end, step finish, and operation close. This is the SAME
+  // serialization the replay wrapper hashes, so recording level == replay
+  // level for the debugger cache.
+  private readonly promptByCallId = new Map<string, string>();
 
   constructor(options: LaminarAiSdkTelemetryOptions = {}) {
     this.recordInputs = options.recordInputs ?? true;
@@ -202,7 +217,10 @@ export class LaminarAiSdkTelemetry {
         event.system !== undefined ||
         event.instructions !== undefined
       ) {
-        applyPromptMessages(span, event);
+        const msgs = verbatimStandardizedMessages(event);
+        if (msgs.length > 0) {
+          span.setAttribute(SPAN_INPUT, serializeJSON(msgs));
+        }
       } else if (event.value !== undefined) {
         span.setAttribute(SPAN_INPUT, serializeJSON(event.value));
       } else if (event.query !== undefined || event.documents !== undefined) {
@@ -223,10 +241,24 @@ export class LaminarAiSdkTelemetry {
   };
 
   onStepStart = (event: any): void => {
-    if (!this.createStepSpan) return;
     const callId: string | undefined = event?.callId;
     const stepNumber: number = event?.stepNumber ?? 0;
     if (!callId) return;
+
+    // ALWAYS stash the verbatim LanguageModel-level prompt for the LLM call
+    // that follows this step start (same callId, no await in between) — even
+    // when step spans are disabled. onLanguageModelCallStart only carries the
+    // ModelMessage-level `instructions`+`messages`, not the provider prompt,
+    // so this stash is the ONLY source for verbatim `gen_ai.input.messages`
+    // on the LLM span.
+    if (Array.isArray(event?.promptMessages)) {
+      const serialized = verbatimPromptString(event.promptMessages);
+      if (serialized !== null) {
+        this.promptByCallId.set(callId, serialized);
+      }
+    }
+
+    if (!this.createStepSpan) return;
     const op = this.operationByCallId.get(callId);
     if (!op) return;
     const tracer = getTracer();
@@ -236,7 +268,10 @@ export class LaminarAiSdkTelemetry {
     span.setAttribute("ai.step.number", stepNumber);
 
     if (this.recordInputs) {
-      applyPromptMessages(span, event);
+      const msgs = verbatimStandardizedMessages(event);
+      if (msgs.length > 0) {
+        span.setAttribute(SPAN_INPUT, serializeJSON(msgs));
+      }
     }
 
     this.stepByKey.set(stepKey(callId, stepNumber), {
@@ -250,9 +285,12 @@ export class LaminarAiSdkTelemetry {
     const callId: string | undefined = event?.callId;
     if (!callId) return;
     // When createStepSpan is true, LLM calls attach to the latest open step
-    // span. When false (no step spans registered), use event.stepNumber directly
-    // so each step's LLM span is keyed correctly and multi-step runs don't
-    // collide on stepKey(callId, 0). Fall back to the operation span as parent.
+    // span; its stepNumber keys llmByKey. When false (no step spans
+    // registered), fall back to event.stepNumber — v7's
+    // languageModelCallStartEvent does NOT carry it (verified against
+    // ai@7.0.17) so this usually resolves to 0, which is still safe: LLM
+    // calls within one callId are strictly sequential, so at most one entry
+    // is live per callId at a time and start/end resolve the same key.
     const step = this.findLatestStep(callId);
     const stepNumber =
       step?.stepNumber ?? (event?.stepNumber as number | undefined) ?? 0;
@@ -268,7 +306,20 @@ export class LaminarAiSdkTelemetry {
     span.setAttribute(SPAN_TYPE, "LLM");
     applyRequestModelAttributes(span, event);
     if (this.recordInputs) {
-      applyPromptMessages(span, event);
+      // Verbatim LanguageModel-level prompt, stashed by onStepStart. This is
+      // the exact serialization the replay wrapper hashes, so the server-side
+      // debugger cache keys match at record and replay time. There is NO
+      // fallback to this event's ModelMessage-level `instructions`+`messages`:
+      // those bytes differ structurally from `options.prompt` (e.g. a raw
+      // string user message stays a string at ModelMessage level but is a
+      // `[{type:"text",text}]` parts array at LanguageModel level), so a
+      // fallback-recorded input can never hash-match at replay time — a wrong
+      // cache key silently degrades the whole debug run to live. Omitting the
+      // attribute is the safer failure mode.
+      const serialized = this.promptByCallId.get(callId);
+      if (serialized !== undefined) {
+        span.setAttribute("gen_ai.input.messages", serialized);
+      }
     }
 
     this.llmByKey.set(stepKey(callId, stepNumber), {
@@ -306,21 +357,11 @@ export class LaminarAiSdkTelemetry {
     applyUsageToSpan(span, event.usage);
 
     if (this.recordOutputs) {
-      const content: any[] | undefined = Array.isArray(event.content)
-        ? (event.content as any[])
-        : undefined;
-      const text = extractTextFromContent(content);
-      const reasoningText = extractReasoningFromContent(content);
-      const toolCallsRaw = content
-        ? content.filter((p: any) => p && p.type === "tool-call")
-        : [];
-      const normalizedToolCallsList = normalizeToolCalls(toolCallsRaw);
-
-      const outputMessages = buildGenAiOutputMessages({
-        text,
-        reasoningText,
-        toolCalls: normalizedToolCallsList,
-      });
+      // Verbatim provider content: `event.content` is the LanguageModelContent
+      // array exactly as returned, wrapped in one assistant message.
+      const outputMessages = buildVerbatimOutputMessages(
+        Array.isArray(event.content) ? (event.content as any[]) : undefined,
+      );
       if (outputMessages) {
         span.setAttribute("gen_ai.output.messages", outputMessages);
       }
@@ -330,6 +371,7 @@ export class LaminarAiSdkTelemetry {
     span.end();
     removeActiveLlmSpan(span);
     this.llmByKey.delete(stepKey(callId, stepNumber));
+    this.promptByCallId.delete(callId);
   };
 
   onChunk = (event: any): void => {
@@ -386,13 +428,14 @@ export class LaminarAiSdkTelemetry {
     const llm = this.llmByKey.get(key);
     if (llm) {
       // Flush any buffered stream deltas as the text output if we haven't
-      // already set one via onLanguageModelCallEnd. Use the same
-      // gen_ai.output.messages shape that path emits, so the backend stores a
-      // single consistent output format and the debugger can replay it.
+      // already set one via onLanguageModelCallEnd. Use the same verbatim
+      // gen_ai.output.messages shape that path emits (a single text part), so
+      // the backend stores one consistent output format and the debugger can
+      // replay it.
       if (this.recordOutputs && llm.textDeltas.length > 0) {
-        const outputMessages = buildGenAiOutputMessages({
-          text: llm.textDeltas.join(""),
-        });
+        const outputMessages = buildTextOutputMessages(
+          llm.textDeltas.join(""),
+        );
         if (outputMessages) {
           llm.span.setAttribute("gen_ai.output.messages", outputMessages);
         }
@@ -406,6 +449,7 @@ export class LaminarAiSdkTelemetry {
       removeActiveLlmSpan(llm.span);
       this.llmByKey.delete(key);
     }
+    this.promptByCallId.delete(callId);
 
     const step = this.stepByKey.get(key);
     if (!step) return;
@@ -419,21 +463,13 @@ export class LaminarAiSdkTelemetry {
       applyFinishReason(step.span, event.finishReason);
     }
     if (this.recordOutputs) {
-      const outputPayload: Record<string, unknown> = {};
-      if (typeof event.text === "string" && event.text.length > 0) {
-        outputPayload.text = event.text;
-        step.span.setAttribute("ai.response.text", event.text);
-      }
-      const normalizedToolCallsList = normalizeToolCalls(event.toolCalls);
-      if (normalizedToolCallsList.length > 0) {
-        outputPayload.toolCalls = normalizedToolCallsList;
-        step.span.setAttribute(
-          "ai.response.toolCalls",
-          serializeJSON(normalizedToolCallsList),
-        );
-      }
-      if (Object.keys(outputPayload).length > 0) {
-        step.span.setAttribute(SPAN_OUTPUT, serializeJSON(outputPayload));
+      // Verbatim step content (StepResult.content — the same parts the LLM
+      // span records), wrapped in one assistant message.
+      const outputMessages = buildVerbatimOutputMessages(
+        Array.isArray(event.content) ? (event.content as any[]) : undefined,
+      );
+      if (outputMessages) {
+        step.span.setAttribute(SPAN_OUTPUT, outputMessages);
       }
     }
 
@@ -468,6 +504,14 @@ export class LaminarAiSdkTelemetry {
     );
     span.setAttribute(SPAN_TYPE, "LLM");
     applyRequestModelAttributes(span, event);
+    if (this.recordInputs && Array.isArray(event?.promptMessages)) {
+      // Same verbatim serialization the replay wrapper hashes — see
+      // onLanguageModelCallStart.
+      const serialized = verbatimPromptString(event.promptMessages);
+      if (serialized !== null) {
+        span.setAttribute("gen_ai.input.messages", serialized);
+      }
+    }
     this.llmByKey.set(stepKey(callId, 0), { span, textDeltas: [] });
     pushActiveLlmSpan(span);
   };
@@ -498,9 +542,7 @@ export class LaminarAiSdkTelemetry {
     }
     applyUsageToSpan(llm.span, event.usage);
     if (this.recordOutputs && typeof event.objectText === "string") {
-      const outputMessages = buildGenAiOutputMessages({
-        text: event.objectText,
-      });
+      const outputMessages = buildTextOutputMessages(event.objectText);
       if (outputMessages) {
         llm.span.setAttribute("gen_ai.output.messages", outputMessages);
       }
@@ -682,22 +724,14 @@ export class LaminarAiSdkTelemetry {
 
     // Write final output content onto the operation span.
     if (this.recordOutputs) {
-      // Text generation: final text.
-      const hasText = typeof event.text === "string" && event.text.length > 0;
-      if (hasText) {
-        op.span.setAttribute("ai.response.text", event.text);
-        op.span.setAttribute(SPAN_OUTPUT, event.text);
-      }
-      const normalizedToolCallsList = normalizeToolCalls(event.toolCalls);
-      if (normalizedToolCallsList.length > 0) {
-        const serialized = serializeJSON(normalizedToolCallsList);
-        op.span.setAttribute("ai.response.toolCalls", serialized);
-        // Fall back to serialized tool calls for SPAN_OUTPUT when text is
-        // empty — mirrors `onLanguageModelCallEnd` so tool-call-only
-        // operation spans (single-step tool use) render in the Laminar UI.
-        if (!hasText) {
-          op.span.setAttribute(SPAN_OUTPUT, serialized);
-        }
+      // Text generation: verbatim content across all steps (StepResult parts
+      // exactly as the provider returned them), wrapped in one assistant
+      // message — the same shape the LLM / step spans record.
+      const outputMessages = buildVerbatimOutputMessages(
+        Array.isArray(event.content) ? (event.content as any[]) : undefined,
+      );
+      if (outputMessages) {
+        op.span.setAttribute(SPAN_OUTPUT, outputMessages);
       }
 
       // Embed: final embedding(s).
@@ -870,13 +904,14 @@ export class LaminarAiSdkTelemetry {
         // Flush any buffered stream deltas as the text output before force-
         // closing. This is the only place the buffered-deltas fallback is
         // consumed for aborted / errored streams where onLanguageModelCallEnd
-        // never fired (see onChunk). Use the same gen_ai.output.messages shape
-        // as onStepFinish / onLanguageModelCallEnd so partial output still
-        // renders and the debugger can replay it.
+        // never fired (see onChunk). Use the same verbatim
+        // gen_ai.output.messages shape as onStepFinish /
+        // onLanguageModelCallEnd so partial output still renders and the
+        // debugger can replay it.
         if (this.recordOutputs && llm.textDeltas.length > 0) {
-          const outputMessages = buildGenAiOutputMessages({
-            text: llm.textDeltas.join(""),
-          });
+          const outputMessages = buildTextOutputMessages(
+            llm.textDeltas.join(""),
+          );
           if (outputMessages) {
             llm.span.setAttribute("gen_ai.output.messages", outputMessages);
           }
@@ -914,6 +949,7 @@ export class LaminarAiSdkTelemetry {
     for (const key of this.stepByKey.keys()) {
       if (key.startsWith(prefix)) this.stepByKey.delete(key);
     }
+    this.promptByCallId.delete(callId);
     return latest;
   }
 }

@@ -3,16 +3,15 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 
-import {
-  extractInputMessages,
-  inputChatMessagesFromJson,
-} from "../../src/debug/aisdk-normalize";
 import { canonicalJson, debugInputHash } from "../../src/debug/hash";
+import {
+  verbatimPromptMessages,
+  verbatimPromptString,
+} from "../../src/opentelemetry-lib/instrumentation/aisdk/utils";
 
 interface HashCase {
   name: string;
-  messages: unknown[];
-  canonical_hashed: string;
+  input: unknown[];
   expected_hash: string;
 }
 
@@ -26,15 +25,16 @@ const vectors: HashCase[] = JSON.parse(
 void describe("debug input hash (parity vectors)", () => {
   for (const testCase of vectors) {
     void it(testCase.name, () => {
-      // Locked digest: byte-identical to the Rust `blake3` crate over the same
-      // canonical string (see input_hash_cases.json header). A regression in
-      // canonicalization or system-stripping breaks this.
+      // Locked digest: byte-identical to the Rust app-server over the same
+      // input (the fixture mirrors app-server/test/data/debug/
+      // input_hash_vectors.json). A regression in canonicalization or
+      // system-stripping breaks this.
       assert.strictEqual(
-        debugInputHash(testCase.messages),
+        debugInputHash(testCase.input),
         testCase.expected_hash,
       );
       // A hex blake3 digest is exactly 64 lowercase hex chars.
-      assert.match(debugInputHash(testCase.messages), /^[0-9a-f]{64}$/);
+      assert.match(debugInputHash(testCase.input), /^[0-9a-f]{64}$/);
     });
   }
 });
@@ -79,16 +79,26 @@ void describe("debugInputHash system stripping", () => {
     );
   });
 
-  void it("keeps an empty system message in the hashed array", () => {
+  void it("strips an empty system message too (all-by-role semantics)", () => {
+    // The coding agent may add/remove/edit its own system prompt(s) between
+    // iterations — those edits must not change the cache key, so EVERY
+    // role=="system" message is stripped regardless of content.
     const emptySystem = [
       { role: "system", content: "" },
       { role: "user", content: "hi" },
     ];
     const userOnly = [{ role: "user", content: "hi" }];
-    assert.notStrictEqual(
-      debugInputHash(emptySystem),
-      debugInputHash(userOnly),
-    );
+    assert.strictEqual(debugInputHash(emptySystem), debugInputHash(userOnly));
+  });
+
+  void it("strips repeated and trailing system messages", () => {
+    const messy = [
+      { role: "system", content: "first" },
+      { role: "user", content: "hi" },
+      { role: "system", content: [{ type: "text", text: "second" }] },
+    ];
+    const userOnly = [{ role: "user", content: "hi" }];
+    assert.strictEqual(debugInputHash(messy), debugInputHash(userOnly));
   });
 
   void it("is insensitive to message-object key order", () => {
@@ -98,187 +108,106 @@ void describe("debugInputHash system stripping", () => {
   });
 });
 
-void describe("inputChatMessagesFromJson", () => {
-  void it("keeps a plain-string content message", () => {
-    assert.deepStrictEqual(
-      inputChatMessagesFromJson([{ role: "user", content: "hi" }]),
-      [{ role: "user", content: "hi" }],
-    );
-  });
-
-  void it("keeps a multi-part text array as a content-part list", () => {
-    assert.deepStrictEqual(
-      inputChatMessagesFromJson([
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "hi" },
-            { type: "text", text: "there" },
-          ],
-        },
-      ]),
-      [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "hi" },
-            { type: "text", text: "there" },
-          ],
-        },
-      ],
-    );
-  });
-
-  void it("falls back to a Text blob when any part is unrecognized", () => {
-    const content = [{ type: "mystery", foo: 1 }];
-    assert.deepStrictEqual(
-      inputChatMessagesFromJson([{ role: "user", content }]),
-      [{ role: "user", content: JSON.stringify(content) }],
-    );
-  });
-
-  void it("reshapes camelCase AI SDK tool-call/tool-result parts (no Text-blob fallback)", () => {
-    // AI SDK prompt parts are camelCase (toolName/toolCallId), matching the
-    // server's `#[serde(rename_all = "camelCase")]`. They must parse into the
-    // normalized content-part shape, NOT collapse to a stringified Text blob.
-    assert.deepStrictEqual(
-      inputChatMessagesFromJson([
-        {
-          role: "assistant",
-          content: [
-            {
-              type: "tool-call",
-              toolName: "get_weather",
-              toolCallId: "call_1",
-              input: { city: "SF" },
-            },
-          ],
-        },
-        {
-          role: "tool",
-          content: [
-            {
-              type: "tool-result",
-              toolCallId: "call_1",
-              toolName: "get_weather",
-              output: "72F",
-            },
-          ],
-        },
-      ]),
-      [
-        {
-          role: "assistant",
-          content: [
-            {
-              type: "tool_call",
-              name: "get_weather",
-              id: "call_1",
-              arguments: { city: "SF" },
-            },
-          ],
-        },
-        {
-          role: "tool",
-          content: [
-            {
-              type: "tool-result",
-              toolCallId: "call_1",
-              output: "72F",
-              toolName: "get_weather",
-            },
-          ],
-        },
-      ],
-    );
-  });
-
-  void it("accepts AI SDK v4 args/result aliases for tool parts", () => {
-    assert.deepStrictEqual(
-      inputChatMessagesFromJson([
-        {
-          role: "assistant",
-          content: [
-            {
-              type: "tool-call",
-              toolName: "t",
-              toolCallId: "c",
-              args: { a: 1 },
-            },
-          ],
-        },
-        {
-          role: "tool",
-          content: [
-            {
-              type: "tool-result",
-              toolCallId: "c",
-              toolName: "t",
-              result: "ok",
-            },
-          ],
-        },
-      ]),
-      [
-        {
-          role: "assistant",
-          content: [
-            { type: "tool_call", name: "t", id: "c", arguments: { a: 1 } },
-          ],
-        },
-        {
-          role: "tool",
-          content: [
-            {
-              type: "tool-result",
-              toolCallId: "c",
-              output: "ok",
-              toolName: "t",
-            },
-          ],
-        },
-      ],
-    );
-  });
-
-  void it("preserves tool_call_id and skips malformed messages", () => {
-    assert.deepStrictEqual(
-      inputChatMessagesFromJson([
-        { role: "tool", tool_call_id: "c1", content: "ok" },
-        { notAMessage: true },
-        { role: "user" },
-      ]),
-      [{ role: "tool", content: "ok", tool_call_id: "c1" }],
-    );
-  });
-
-  void it("returns [] for non-array input", () => {
-    assert.deepStrictEqual(inputChatMessagesFromJson({ role: "user" }), []);
-  });
-});
-
-void describe("extractInputMessages", () => {
-  void it("reshapes an AI SDK prompt and hashes identically to the reconstructed array", () => {
+void describe("verbatimPromptMessages", () => {
+  void it("passes the LanguageModel-level prompt through unchanged", () => {
     const prompt = [
-      { role: "system" as const, content: "be terse" },
+      { role: "system", content: "be terse" },
       {
-        role: "user" as const,
-        content: [{ type: "text" as const, text: "hello" }],
+        role: "user",
+        content: [
+          { type: "text", text: "hello", providerOptions: { openai: {} } },
+        ],
       },
     ];
-    const reshaped = extractInputMessages({ prompt: prompt });
-    assert.ok(Array.isArray(reshaped) && reshaped.length > 0);
-    // The same bytes the server would hash flow through debugInputHash.
-    assert.match(debugInputHash(reshaped), /^[0-9a-f]{64}$/);
+    assert.deepStrictEqual(verbatimPromptMessages(prompt), prompt);
+  });
+
+  void it("base64-encodes Uint8Array file data (the only transformation)", () => {
+    const prompt = [
+      {
+        role: "user",
+        content: [
+          {
+            type: "file",
+            mediaType: "image/png",
+            data: new Uint8Array([1, 2, 3]),
+          },
+        ],
+      },
+    ];
+    const messages = verbatimPromptMessages(prompt) as any[];
+    assert.strictEqual(
+      messages[0].content[0].data,
+      Buffer.from([1, 2, 3]).toString("base64"),
+    );
   });
 
   void it("returns null when the prompt cannot be stringified", () => {
-    // A circular content object makes stringifyPromptForTelemetry's JSON.stringify
-    // throw. The caller must see null (run live, no latch) rather than a hash over
-    // a default payload that would force a spurious MISS.
+    // A circular content object makes stringifyPromptForTelemetry's
+    // JSON.stringify throw. The caller must see null (run live, no latch)
+    // rather than a hash over a default payload that would force a spurious
+    // MISS.
     const circular: Record<string, unknown> = { type: "text", text: "hi" };
     circular.self = circular;
     const prompt = [{ role: "user", content: [circular] }];
-    assert.strictEqual(extractInputMessages({ prompt: prompt as never }), null);
+    assert.strictEqual(verbatimPromptMessages(prompt), null);
+    assert.strictEqual(verbatimPromptString(prompt), null);
+  });
+});
+
+void describe("record-time vs replay-time hash equality", () => {
+  void it("recorded gen_ai.input.messages bytes hash equals replay-entry prompt hash", () => {
+    // End-to-end pin: the v7 integration records
+    // `gen_ai.input.messages = verbatimPromptString(promptMessages)` and the
+    // replay wrapper computes
+    // `debugInputHash(verbatimPromptMessages(options.prompt))`. Both flow
+    // through the same serializer, so the hashes must be identical — this is
+    // what keys the server-side debugger cache consistently across record and
+    // replay.
+    const prompt = [
+      { role: "system", content: "You are a helpful assistant." },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "What is in this image?" },
+          {
+            type: "file",
+            mediaType: "image/png",
+            data: new Uint8Array([137, 80, 78, 71]),
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "reasoning",
+            text: "Let me look.",
+            providerOptions: { anthropic: { signature: "sig" } },
+          },
+          {
+            type: "tool-call",
+            toolCallId: "call_1",
+            toolName: "describe_image",
+            input: { detail: "high" },
+          },
+        ],
+      },
+    ];
+
+    // Record time: the attribute the SDK stamps on the LLM span.
+    const recordedAttribute = verbatimPromptString(prompt);
+    assert.ok(recordedAttribute !== null);
+    const recordTimeHash = debugInputHash(
+      JSON.parse(recordedAttribute) as unknown[],
+    );
+
+    // Replay time: the wrapper hashes the same prompt at doGenerate entry.
+    const replayMessages = verbatimPromptMessages(prompt);
+    assert.ok(replayMessages !== null);
+    const replayTimeHash = debugInputHash(replayMessages);
+
+    assert.strictEqual(recordTimeHash, replayTimeHash);
+    assert.match(recordTimeHash, /^[0-9a-f]{64}$/);
   });
 });
