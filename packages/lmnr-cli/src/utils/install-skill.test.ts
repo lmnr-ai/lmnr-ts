@@ -6,7 +6,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SKILL_NAME } from "../skill/laminar-skill";
-import { installSkill } from "./install-skill";
+import {
+  findInstalledSkillDirs,
+  installSkill,
+  installSkillInto,
+  resolveInstallTargets,
+} from "./install-skill";
 
 // Mock giget: instead of hitting the network, write a small fixture skill tree
 // (SKILL.md + references/quickstart-node.md) into the dir giget was asked to
@@ -90,5 +95,52 @@ describe("installSkill", () => {
     expect(result.written).toEqual([]);
     expect(result.defaulted).toBe(false);
     expect(existsSync(join(scratch, ".claude", "skills", SKILL_NAME))).toBe(false);
+  });
+});
+
+describe("resolveInstallTargets", () => {
+  it("returns present agent dirs", async () => {
+    mkdirSync(join(scratch, ".cursor"));
+    mkdirSync(join(scratch, ".agents"));
+    const result = await resolveInstallTargets(scratch);
+    expect(result.defaulted).toBe(false);
+    expect([...result.targets].sort()).toEqual([".agents", ".cursor"]);
+  });
+
+  it("defaults to .claude + .agents when none are present", async () => {
+    const result = await resolveInstallTargets(scratch);
+    expect(result.defaulted).toBe(true);
+    expect(result.targets).toEqual([".claude", ".agents"]);
+  });
+});
+
+describe("findInstalledSkillDirs", () => {
+  it("returns only agent dirs that hold an installed skill", async () => {
+    mkdirSync(join(scratch, ".claude", "skills", SKILL_NAME), { recursive: true });
+    mkdirSync(join(scratch, ".cursor")); // present, but no skill installed
+    expect(await findInstalledSkillDirs(scratch)).toEqual([".claude"]);
+  });
+
+  it("returns [] when nothing is installed", async () => {
+    mkdirSync(join(scratch, ".claude"));
+    expect(await findInstalledSkillDirs(scratch)).toEqual([]);
+  });
+});
+
+describe("installSkillInto", () => {
+  it("replaces the installed tree, removing files deleted upstream", async () => {
+    const stale = join(scratch, ".claude", "skills", SKILL_NAME, "references", "removed.md");
+    mkdirSync(join(scratch, ".claude", "skills", SKILL_NAME, "references"), { recursive: true });
+    writeFileSync(stale, "stale\n");
+
+    const written = await installSkillInto(scratch, [".claude"]);
+    expect([...written].sort()).toEqual(skillPaths(join(scratch, ".claude")));
+    expect(existsSync(stale)).toBe(false);
+    expect(downloadTemplate).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws when the download fails", async () => {
+    downloadTemplate.mockRejectedValueOnce(new Error("network down"));
+    await expect(installSkillInto(scratch, [".claude"])).rejects.toThrow("network down");
   });
 });

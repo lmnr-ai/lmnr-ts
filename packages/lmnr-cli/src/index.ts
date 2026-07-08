@@ -23,6 +23,7 @@ import { handleLogin } from "./commands/login";
 import { handleLogout } from "./commands/logout";
 import { handleProjectsList } from "./commands/project";
 import { handleSetup } from "./commands/setup";
+import { handleSkillAdd, handleSkillUpdate } from "./commands/skill";
 import { handleSqlQuery } from "./commands/sql";
 import { SQL_SCHEMA_HELP } from "./commands/sql/schema";
 import { pc } from "./utils/colors";
@@ -304,6 +305,47 @@ Examples:
       await handleSetup(options);
     });
 
+  const skillCmd = program
+    .command("skill")
+    .description("Manage the Laminar agent skill in this directory")
+    .option("--json", "Output structured JSON to stdout");
+
+  skillCmd
+    .command("add")
+    .description("Install the Laminar agent skill into this directory's agent dirs")
+    .action(withLocalOpts(handleSkillAdd))
+    .addHelpText(
+      "after",
+      `
+Fetches the latest Laminar skill and writes it into skills/laminar/ under every
+present agent dir (.claude, .cursor, .codex, .agents). When none exist, it is
+written into both .claude/ and .agents/. Re-running replaces the installed copy.
+Local-only: no login needed.
+
+Examples:
+  $ lmnr-cli skill add
+  $ lmnr-cli skill add --json
+`,
+    );
+
+  skillCmd
+    .command("update")
+    .description("Replace every installed Laminar agent skill with the latest version")
+    .action(withLocalOpts(handleSkillUpdate))
+    .addHelpText(
+      "after",
+      `
+Fetches the latest Laminar skill and replaces every installed copy
+(<agent dir>/skills/laminar) under this directory. Fails when no copy is
+installed — use \`lmnr-cli skill add\` for a first install. Local-only: no
+login needed.
+
+Examples:
+  $ lmnr-cli skill update
+  $ lmnr-cli skill update --json
+`,
+    );
+
   const debugCmd = program
     .command("debug")
     .description("Operate on debug sessions")
@@ -487,6 +529,8 @@ Examples:
   lmnr-cli debug session set-name "title"                  # Rename the current debug session
   lmnr-cli debug session add-note "note text"              # Add a note to the current session
   lmnr-cli debug session summary                           # All blocks in the session, oldest first
+  lmnr-cli skill add                                       # Install the Laminar agent skill
+  lmnr-cli skill update                                    # Update installed Laminar skills
 
 For more information about the Laminar platfrom:
   Documentation: https://laminar.sh/docs
