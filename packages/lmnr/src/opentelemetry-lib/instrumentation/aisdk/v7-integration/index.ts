@@ -53,7 +53,6 @@ import {
 } from "../../../tracing/attributes";
 import { LaminarContextManager } from "../../../tracing/context";
 import { pushActiveLlmSpan, removeActiveLlmSpan } from "../active-llm-span";
-import { verbatimPromptString } from "../utils";
 import { buildAiSdkInstrumentationAttributes } from "./package-versions";
 import {
   type LlmState,
@@ -72,6 +71,7 @@ import {
   normalizeProvider,
   readSpanEndTime,
   serializeJSON,
+  verbatimPromptString,
   verbatimStandardizedMessages,
 } from "./utils";
 

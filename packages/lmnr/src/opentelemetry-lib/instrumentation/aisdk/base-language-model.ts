@@ -38,7 +38,7 @@ import { getRuntime } from "../../../debug/index";
 import { markSpanCached, replayEnabled } from "../../../debug/replay";
 import { Laminar } from "../../../laminar";
 import { peekActiveLlmSpan } from "./active-llm-span";
-import { verbatimPromptMessages } from "./utils";
+import { verbatimPromptMessages } from "./v7-integration/utils";
 
 type CacheResponse =
   | {
