@@ -12,10 +12,10 @@ export async function POST(request: NextRequest) {
 
     // Create system message with therapeutic instructions
     const systemMessage = {
-      role: 'system',
+      role: "system",
       content: `You are an AI-powered therapist assistant. Respond with empathy, understanding, and professionalism.
 Your goal is to provide supportive responses that help the user process their feelings and thoughts.
-Never give medical advice or diagnose conditions.`
+Never give medical advice or diagnose conditions.`,
     };
 
     let response;
@@ -33,16 +33,16 @@ Never give medical advice or diagnose conditions.`
         messages: messages,
         max_tokens: 1000,
       });
-      response = completion.content[0].type === "text" ? completion.content[0].text : "";
+      response =
+        completion.content[0].type === "text" ? completion.content[0].text : "";
     } else {
       throw new Error(`Unsupported provider: ${llmProvider}`);
     }
     return NextResponse.json({ message: response });
-
   } catch (error) {
     return NextResponse.json(
-      { error: "Failed to process request" },
-      { status: 500 }
+      { error: `Failed to process request. ${error}` },
+      { status: 500 },
     );
   }
 }

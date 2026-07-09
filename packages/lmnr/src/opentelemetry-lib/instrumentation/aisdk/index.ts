@@ -1,6 +1,6 @@
-import { type LanguageModelV3 } from "@ai-sdk/provider";
+import { type LanguageModelV4 } from "@ai-sdk/provider";
 import { type LanguageModelV2 } from "@ai-sdk/provider-v2";
-import { type LanguageModelV4 } from "@ai-sdk/provider-v4-canary";
+import { type LanguageModelV3 } from "@ai-sdk/provider-v3";
 import type * as AI from "ai";
 
 import { initializeLogger } from "../../../utils";

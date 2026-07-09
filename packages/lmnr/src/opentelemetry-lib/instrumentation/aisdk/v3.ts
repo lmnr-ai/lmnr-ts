@@ -9,12 +9,15 @@ import {
   type SharedV3Headers,
   type SharedV3ProviderMetadata,
   type SharedV3Warning,
-} from "@ai-sdk/provider";
+} from "@ai-sdk/provider-v3";
 
 import { BaseLaminarLanguageModel } from "./base-language-model";
 
-export class LaminarLanguageModelV3 extends BaseLaminarLanguageModel implements LanguageModelV3 {
-  readonly specificationVersion = 'v3';
+export class LaminarLanguageModelV3
+  extends BaseLaminarLanguageModel
+  implements LanguageModelV3
+{
+  readonly specificationVersion = "v3";
 
   protected readonly innerLanguageModel: LanguageModelV3;
 
@@ -53,9 +56,8 @@ export class LaminarLanguageModelV3 extends BaseLaminarLanguageModel implements 
     };
     warnings: Array<SharedV3Warning>;
   }> {
-    return this.doGenerateWithCaching(
-      options,
-      (opts) => this.innerLanguageModel.doGenerate(opts),
+    return this.doGenerateWithCaching(options, (opts) =>
+      this.innerLanguageModel.doGenerate(opts),
     );
   }
 
@@ -68,9 +70,8 @@ export class LaminarLanguageModelV3 extends BaseLaminarLanguageModel implements 
       headers?: SharedV3Headers;
     };
   }> {
-    return this.doStreamWithCaching(
-      options,
-      (opts) => this.innerLanguageModel.doStream(opts),
+    return this.doStreamWithCaching(options, (opts) =>
+      this.innerLanguageModel.doStream(opts),
     );
   }
 
@@ -82,7 +83,7 @@ export class LaminarLanguageModelV3 extends BaseLaminarLanguageModel implements 
     const parts: LanguageModelV3StreamPart[] = [];
 
     // Stream start
-    parts.push({ type: 'stream-start', warnings: [] });
+    parts.push({ type: "stream-start", warnings: [] });
 
     // Process each content block
     let textIndex = 0;
@@ -94,35 +95,43 @@ export class LaminarLanguageModelV3 extends BaseLaminarLanguageModel implements 
     // the replay cache hashes that prompt — dropping them causes a spurious
     // MISS on the following step.
     for (const block of content) {
-      if (block.type === 'text') {
+      if (block.type === "text") {
         const id = `text-${textIndex++}`;
-        parts.push({ type: 'text-start', id, providerMetadata: block.providerMetadata });
-        parts.push({ type: 'text-delta', id, delta: block.text });
-        parts.push({ type: 'text-end', id });
-      } else if (block.type === 'tool-call') {
+        parts.push({
+          type: "text-start",
+          id,
+          providerMetadata: block.providerMetadata,
+        });
+        parts.push({ type: "text-delta", id, delta: block.text });
+        parts.push({ type: "text-end", id });
+      } else if (block.type === "tool-call") {
         const id = `tool-${toolIndex++}`;
         parts.push({
-          type: 'tool-input-start',
+          type: "tool-input-start",
           id,
           toolName: block.toolName,
         });
         parts.push({
-          type: 'tool-input-delta',
+          type: "tool-input-delta",
           id,
           delta: block.input,
         });
-        parts.push({ type: 'tool-input-end', id });
-        parts.push({ ...block, type: 'tool-call' });
-      } else if (block.type === 'reasoning') {
+        parts.push({ type: "tool-input-end", id });
+        parts.push({ ...block, type: "tool-call" });
+      } else if (block.type === "reasoning") {
         const id = `reasoning-${reasoningIndex++}`;
-        parts.push({ type: 'reasoning-start', id, providerMetadata: block.providerMetadata });
-        parts.push({ type: 'reasoning-delta', id, delta: block.text });
-        parts.push({ type: 'reasoning-end', id });
+        parts.push({
+          type: "reasoning-start",
+          id,
+          providerMetadata: block.providerMetadata,
+        });
+        parts.push({ type: "reasoning-delta", id, delta: block.text });
+        parts.push({ type: "reasoning-end", id });
       }
     }
 
     // Finish event
-    parts.push({ type: 'finish', usage, finishReason });
+    parts.push({ type: "finish", usage, finishReason });
 
     // Create readable stream from the parts array
     return new ReadableStream({
