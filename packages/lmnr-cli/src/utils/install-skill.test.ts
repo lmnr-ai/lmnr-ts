@@ -96,6 +96,19 @@ describe("installSkill", () => {
     expect(result.defaulted).toBe(false);
     expect(existsSync(join(scratch, ".claude", "skills", SKILL_NAME))).toBe(false);
   });
+
+  it("reports files written before a mid-run failure (partial install)", async () => {
+    mkdirSync(join(scratch, ".claude"));
+    // A regular FILE at .cursor/skills makes mkdir(.cursor/skills/laminar) fail
+    // AFTER .claude was already replaced — the partial-install case.
+    mkdirSync(join(scratch, ".cursor"));
+    writeFileSync(join(scratch, ".cursor", "skills"), "not a dir\n");
+
+    const result = await installSkill(scratch);
+    expect(result.skipped).toBe(true);
+    expect([...result.written].sort()).toEqual(skillPaths(join(scratch, ".claude")));
+    expect(existsSync(join(scratch, ".claude", "skills", SKILL_NAME, "SKILL.md"))).toBe(true);
+  });
 });
 
 describe("resolveInstallTargets", () => {

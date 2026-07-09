@@ -45,14 +45,31 @@ export const findInstalledSkillDirs = (cwd: string): Promise<string[]> =>
   findDirs(cwd, ["skills", SKILL_NAME]);
 
 /**
+ * Thrown by {@link installSkillInto} when the install fails midway: targets are
+ * replaced sequentially, so `written` carries the files of every agent dir that
+ * WAS already updated before the failure. Callers use it to report partial
+ * state instead of pretending nothing was touched.
+ */
+export class SkillInstallError extends Error {
+  constructor(
+    cause: unknown,
+    /** Absolute paths of files written before the failure (may be empty). */
+    readonly written: string[],
+  ) {
+    super(describeError(cause));
+    this.name = "SkillInstallError";
+  }
+}
+
+/**
  * Fetch the pinned Laminar skill (`SKILL_NAME`) from the lmnr-skills repo and
  * REPLACE `<dir>/skills/<SKILL_NAME>` in each given agent dir with its full
  * tree (`SKILL.md`, `references/*.md`, ...). Downloads ONCE into a temp staging
  * dir (one network hit) and copies it into each target.
  *
- * Throws on download / copy failure — callers own the failure policy (`setup`
- * is best-effort via {@link installSkill}; `skill add` / `skill update` let the
- * error envelope surface it).
+ * Throws {@link SkillInstallError} on download / copy failure — callers own the
+ * failure policy (`setup` is best-effort via {@link installSkill}; `skill add`
+ * / `skill update` let the error envelope surface it).
  *
  * Returns the absolute paths of every written file.
  */
@@ -61,6 +78,7 @@ export const installSkillInto = async (
   agentDirs: string[],
 ): Promise<string[]> => {
   const staging = await mkdtemp(join(tmpdir(), "lmnr-skill-"));
+  const written: string[] = [];
   try {
     await downloadSkill(staging);
 
@@ -69,7 +87,6 @@ export const installSkillInto = async (
       .filter((d) => d.isFile())
       .map((d) => relative(staging, join(d.parentPath, d.name)));
 
-    const written: string[] = [];
     for (const dir of agentDirs) {
       const skillRoot = join(cwd, dir, "skills", SKILL_NAME);
       // Replace, don't merge: `cp` alone would leave behind files that were
@@ -80,6 +97,8 @@ export const installSkillInto = async (
       for (const rel of relFiles) written.push(join(skillRoot, rel));
     }
     return written;
+  } catch (err) {
+    throw new SkillInstallError(err, written);
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
@@ -91,8 +110,10 @@ export interface InstallSkillResult {
   /** True when no agent dir existed and we defaulted to `.claude/` + `.agents/`. */
   defaulted: boolean;
   /**
-   * True when the skill could not be installed (network failure) and install
-   * was skipped. `written` is empty and `defaulted` is false.
+   * True when the install failed (e.g. network failure) and was aborted.
+   * `written` still lists any files written before the failure (targets are
+   * replaced sequentially, so a mid-run failure leaves earlier agent dirs
+   * updated); `defaulted` is false.
    */
   skipped: boolean;
 }
@@ -103,8 +124,8 @@ export interface InstallSkillResult {
  * are present. Idempotent — overwrites on rerun.
  *
  * Skill install is the last, best-effort step of `setup`: a failure MUST NOT
- * break setup — on error we log a warning and return
- * `{ written: [], defaulted: false, skipped: true }`.
+ * break setup — on error we log a warning and return `skipped: true`, with
+ * `written` still carrying any files a mid-run failure left in place.
  *
  * For .cursor/.codex the skills layout is not guaranteed to match CC; we write
  * the CC-guaranteed `skills/<SKILL_NAME>/` shape there too rather than
@@ -118,11 +139,18 @@ export async function installSkill(
     const written = await installSkillInto(cwd, targets);
     return { written, defaulted, skipped: false };
   } catch (err) {
+    const written = err instanceof SkillInstallError ? err.written : [];
     process.stderr.write(
       `Warning: could not install the Laminar skill (${skillSource()}): ` +
       `${describeError(err)}; skipping skill install.\n`,
     );
-    return { written: [], defaulted: false, skipped: true };
+    if (written.length > 0) {
+      process.stderr.write(
+        `Warning: the skill was partially installed (${written.length} file(s) ` +
+        "written before the failure); re-run `lmnr-cli skill add` to finish.\n",
+      );
+    }
+    return { written, defaulted: false, skipped: true };
   }
 }
 
