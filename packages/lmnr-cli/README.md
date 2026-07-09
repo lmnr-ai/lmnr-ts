@@ -161,6 +161,21 @@ Re-running setup in the same repo reuses the same project but mints a fresh API
 key each time. Old keys remain visible in the dashboard under "API keys" until
 you revoke them.
 
+### `skill` - Laminar agent skill
+
+Install or update the Laminar agent skill (the same one `setup` installs)
+without re-running onboarding. Local-only: no login needed.
+
+```bash
+lmnr-cli skill add                          # Install into present agent dirs
+lmnr-cli skill update                       # Replace every installed copy with the latest
+```
+
+`skill add` writes the skill into `skills/laminar/` under every present agent
+dir (`.claude`, `.cursor`, `.codex`, `.agents`), defaulting to `.claude/` +
+`.agents/` when none exist. `skill update` only replaces copies that are
+already installed. Both accept `--json`.
+
 ### `login` / `logout` - Authentication
 
 See [Authentication](#authentication) above.
