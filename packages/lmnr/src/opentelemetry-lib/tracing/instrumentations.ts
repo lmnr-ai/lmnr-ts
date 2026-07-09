@@ -10,10 +10,6 @@ import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
 import { PineconeInstrumentation } from "@traceloop/instrumentation-pinecone";
 import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
 import { TogetherInstrumentation } from "@traceloop/instrumentation-together";
-import {
-  AIPlatformInstrumentation,
-  VertexAIInstrumentation,
-} from "@traceloop/instrumentation-vertexai";
 
 import { PlaywrightInstrumentation } from "../../browser";
 import { PuppeteerInstrumentation } from "../../browser/puppeteer";
@@ -165,18 +161,6 @@ const initInstrumentations = (
   );
 
   instrumentations.push(
-    new VertexAIInstrumentation({
-      traceContent: !suppressContentTracing,
-    }),
-  );
-
-  instrumentations.push(
-    new AIPlatformInstrumentation({
-      traceContent: !suppressContentTracing,
-    }),
-  );
-
-  instrumentations.push(
     new BedrockInstrumentation({
       traceContent: !suppressContentTracing,
     }),
@@ -286,9 +270,7 @@ const manuallyInitInstrumentations = (
       traceContent: !suppressContentTracing,
     });
     instrumentations.push(anthropicInstrumentation);
-    anthropicInstrumentation.manuallyInstrument(
-      instrumentModules.anthropic,
-    );
+    anthropicInstrumentation.manuallyInstrument(instrumentModules.anthropic);
   }
 
   if (instrumentModules?.azureOpenAI) {
@@ -303,26 +285,6 @@ const manuallyInitInstrumentations = (
     });
     instrumentations.push(cohereInstrumentation);
     cohereInstrumentation.manuallyInstrument(instrumentModules.cohere);
-  }
-
-  if (instrumentModules?.google_vertexai) {
-    const vertexaiInstrumentation = new VertexAIInstrumentation({
-      traceContent: !suppressContentTracing,
-    });
-    instrumentations.push(vertexaiInstrumentation);
-    vertexaiInstrumentation.manuallyInstrument(
-      instrumentModules.google_vertexai,
-    );
-  }
-
-  if (instrumentModules?.google_aiplatform) {
-    const aiplatformInstrumentation = new AIPlatformInstrumentation({
-      traceContent: !suppressContentTracing,
-    });
-    instrumentations.push(aiplatformInstrumentation);
-    aiplatformInstrumentation.manuallyInstrument(
-      instrumentModules.google_aiplatform,
-    );
   }
 
   if (instrumentModules?.bedrock) {
@@ -374,9 +336,7 @@ const manuallyInitInstrumentations = (
       traceContent: !suppressContentTracing,
     });
     instrumentations.push(togetherInstrumentation);
-    togetherInstrumentation.manuallyInstrument(
-      instrumentModules.together,
-    );
+    togetherInstrumentation.manuallyInstrument(instrumentModules.together);
   }
 
   if (instrumentModules?.playwright && client) {

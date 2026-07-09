@@ -142,30 +142,6 @@ export interface InitializeOptions {
     /**
      * @example
      * ```javascript
-     * import vertexAI from "@google-cloud/vertexai";
-     * import Laminar from "@lmnr-ai/lmnr";
-     *
-     * Laminar.initialize({
-     *   instrumentModules: { vertexAI },
-     * });
-     * ```
-     */
-    google_vertexai?: any;
-    /**
-     * @example
-     * ```javascript
-     * import aiplatform from "@google-cloud/aiplatform";
-     * import Laminar from "@lmnr-ai/lmnr";
-     *
-     * Laminar.initialize({
-     *   instrumentModules: { aiplatform },
-     * });
-     * ```
-     */
-    google_aiplatform?: any;
-    /**
-     * @example
-     * ```javascript
      * import pinecone from "@pinecone-database/pinecone";
      * import Laminar from "@lmnr-ai/lmnr";
      *
@@ -191,16 +167,7 @@ export interface InitializeOptions {
      * ```
      */
     langchain?: {
-      // import type * as ChainsModule from "@langchain/classic/chains";
-      // import type * as AgentsModule from "@langchain/core/agents";
-      // import type * as RunnableModule from "@langchain/core/runnables";
-      // import type * as ToolsModule from "@langchain/core/tools";
-      // import type * as VectorStoreModule from "@langchain/core/vectorstores";
-      agentsModule?: any;
-      chainsModule?: any;
-      runnablesModule?: any;
-      toolsModule?: any;
-      vectorStoreModule?: any;
+      callbackManagerModule?: any;
     };
     /**
      * @deprecated llamaIndex JS package is deprecated. This is a no-op and will be removed
