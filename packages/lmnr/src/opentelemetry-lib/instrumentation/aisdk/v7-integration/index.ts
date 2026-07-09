@@ -54,6 +54,7 @@ import {
 import { LaminarContextManager } from "../../../tracing/context";
 import { pushActiveLlmSpan, removeActiveLlmSpan } from "../active-llm-span";
 import { verbatimPromptString } from "../utils";
+import { buildAiSdkInstrumentationAttributes } from "./package-versions";
 import {
   type LlmState,
   type OperationState,
@@ -174,6 +175,7 @@ export class LaminarAiSdkTelemetry {
         kind: SpanKind.CLIENT,
         attributes: {
           [SPAN_TYPE]: "DEFAULT",
+          ...buildAiSdkInstrumentationAttributes(),
           ...(typeof event.functionId === "string"
             ? {
               "operation.name": event.functionId,
@@ -269,6 +271,7 @@ export class LaminarAiSdkTelemetry {
     const span = tracer.startSpan(`ai.step`, { kind: SpanKind.CLIENT }, op.ctx);
     const spanCtx = trace.setSpan(op.ctx, span);
     span.setAttribute(SPAN_TYPE, "DEFAULT");
+    span.setAttributes(buildAiSdkInstrumentationAttributes());
     span.setAttribute("ai.step.number", stepNumber);
 
     if (this.recordInputs) {
@@ -308,6 +311,7 @@ export class LaminarAiSdkTelemetry {
       parentCtx,
     );
     span.setAttribute(SPAN_TYPE, "LLM");
+    span.setAttributes(buildAiSdkInstrumentationAttributes());
     applyRequestModelAttributes(span, event);
     if (this.recordInputs) {
       if (event.tools) {
@@ -517,6 +521,7 @@ export class LaminarAiSdkTelemetry {
       op.ctx,
     );
     span.setAttribute(SPAN_TYPE, "LLM");
+    span.setAttributes(buildAiSdkInstrumentationAttributes());
     applyRequestModelAttributes(span, event);
     if (this.recordInputs && Array.isArray(event?.promptMessages)) {
       // Same verbatim serialization the replay wrapper hashes — see
@@ -592,6 +597,7 @@ export class LaminarAiSdkTelemetry {
     );
     const spanCtx = trace.setSpan(parentCtx, span);
     span.setAttribute(SPAN_TYPE, "TOOL");
+    span.setAttributes(buildAiSdkInstrumentationAttributes());
     if (toolName) span.setAttribute("ai.toolCall.name", toolName);
     span.setAttribute("ai.toolCall.id", toolCallId);
     if (this.recordInputs && toolCall?.input !== undefined) {
