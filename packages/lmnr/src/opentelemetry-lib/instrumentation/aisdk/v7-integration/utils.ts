@@ -1,4 +1,3 @@
-
 import { LanguageModelV4Prompt } from "@ai-sdk/provider";
 import type { HrTime, Span } from "@opentelemetry/api";
 
@@ -168,8 +167,6 @@ export const readSpanEndTime = (span: Span): HrTime | undefined => {
 // way on either path.
 export const verbatimPromptString = (prompt: unknown): string | null => {
   try {
-    console.log(Array.isArray(prompt));
-    console.log((prompt as any[])?.[0]?.content?.[0]?.data);
     const serialized = stringifyPromptForTelemetry(
       prompt as LanguageModelV4Prompt,
     );
