@@ -1,6 +1,8 @@
+import { LanguageModelV4Prompt } from "@ai-sdk/provider";
 import type { HrTime, Span } from "@opentelemetry/api";
 
 import { LaminarAttributes } from "../../../tracing/attributes";
+import { stringifyPromptForTelemetry } from "../utils";
 
 export const serializeJSON = (value: unknown): string => {
   if (typeof value === "string") return value;
@@ -156,4 +158,31 @@ export const readSpanEndTime = (span: Span): HrTime | undefined => {
   const outerEnd = (span as unknown as { endTime?: HrTime }).endTime;
   if (outerEnd && (outerEnd[0] !== 0 || outerEnd[1] !== 0)) return outerEnd;
   return undefined;
+};
+
+// The recorded `gen_ai.input.messages` attribute (v7 integration) and the
+// debugger-replay input hash (base-language-model.ts) MUST be computed from
+// the same serialized bytes, or record-time and replay-time cache keys drift.
+// Both go through these two helpers — do NOT serialize the prompt any other
+// way on either path.
+export const verbatimPromptString = (prompt: unknown): string | null => {
+  try {
+    const serialized = stringifyPromptForTelemetry(
+      prompt as LanguageModelV4Prompt,
+    );
+    return typeof serialized === "string" ? serialized : null;
+  } catch {
+    return null;
+  }
+};
+
+export const verbatimPromptMessages = (prompt: unknown): unknown[] | null => {
+  const serialized = verbatimPromptString(prompt);
+  if (serialized === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(serialized);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 };

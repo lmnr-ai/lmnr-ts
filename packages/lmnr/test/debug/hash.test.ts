@@ -7,7 +7,7 @@ import { canonicalJson, debugInputHash } from "../../src/debug/hash";
 import {
   verbatimPromptMessages,
   verbatimPromptString,
-} from "../../src/opentelemetry-lib/instrumentation/aisdk/utils";
+} from "../../src/opentelemetry-lib/instrumentation/aisdk/v7-integration/utils";
 
 interface HashCase {
   name: string;

@@ -1,4 +1,8 @@
 import {
+  type LanguageModelV4Message,
+  type LanguageModelV4Prompt,
+} from "@ai-sdk/provider";
+import {
   type LanguageModelV2Message,
   type LanguageModelV2Prompt,
 } from "@ai-sdk/provider-v2";
@@ -9,58 +13,50 @@ import {
 import { errorMessage } from "@lmnr-ai/types";
 import { type DataContent } from "ai";
 
-// Mirrors https://github.com/vercel/ai/blob/main/packages/ai/src/telemetry/stringify-for-telemetry.ts
+// Mirrors https://github.com/vercel/ai/blob/ai@6.0.221/packages/ai/src/telemetry/stringify-for-telemetry.ts
 // This function is initially implemented by us, and is not exported from the ai sdk.
 // We copy it here for our own use.
 export const stringifyPromptForTelemetry = (
-  prompt: LanguageModelV2Prompt | LanguageModelV3Prompt,
+  prompt: LanguageModelV2Prompt | LanguageModelV3Prompt | LanguageModelV4Prompt,
 ): string =>
   JSON.stringify(
-    prompt.map((message: LanguageModelV2Message | LanguageModelV3Message) => ({
-      ...message,
-      content:
-        typeof message.content === "string"
-          ? message.content
-          : message.content.map((part) =>
-            part.type === "file"
-              ? {
-                ...part,
-                data:
-                      part.data instanceof Uint8Array
-                        ? convertDataContentToBase64String(part.data)
-                        : part.data,
-              }
-              : part,
-          ),
-    })),
+    prompt.map(
+      (
+        message:
+          | LanguageModelV2Message
+          | LanguageModelV3Message
+          | LanguageModelV4Message,
+      ) => ({
+        ...message,
+        content:
+          typeof message.content === "string"
+            ? message.content
+            : message.content.map((part) =>
+              part.type === "file"
+                ? {
+                  ...part,
+                  data:
+                        part.data instanceof Uint8Array
+                          ? convertDataContentToBase64String(part.data)
+                          : part.data &&
+                              typeof part.data === "object" &&
+                              (part.data as { type?: string }).type ===
+                                "data" &&
+                              (part.data as { data?: unknown }).data instanceof
+                                Uint8Array
+                            ? {
+                              ...part.data,
+                              data: convertDataContentToBase64String(
+                                (part.data as { data: Uint8Array }).data,
+                              ),
+                            }
+                            : part.data,
+                }
+                : part,
+            ),
+      }),
+    ),
   );
-
-// The recorded `gen_ai.input.messages` attribute (v7 integration) and the
-// debugger-replay input hash (base-language-model.ts) MUST be computed from
-// the same serialized bytes, or record-time and replay-time cache keys drift.
-// Both go through these two helpers — do NOT serialize the prompt any other
-// way on either path.
-export const verbatimPromptString = (prompt: unknown): string | null => {
-  try {
-    const serialized = stringifyPromptForTelemetry(
-      prompt as LanguageModelV3Prompt,
-    );
-    return typeof serialized === "string" ? serialized : null;
-  } catch {
-    return null;
-  }
-};
-
-export const verbatimPromptMessages = (prompt: unknown): unknown[] | null => {
-  const serialized = verbatimPromptString(prompt);
-  if (serialized === null) return null;
-  try {
-    const parsed: unknown = JSON.parse(serialized);
-    return Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-};
 
 // https://github.com/vercel/ai/blob/main/packages/ai/src/prompt/data-content.ts
 /**
