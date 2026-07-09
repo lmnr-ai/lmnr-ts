@@ -241,6 +241,51 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.ok(byName.has("ai.step"));
   });
 
+  void it("records gen_ai.tool.definitions on the LLM span when tools are present", () => {
+    const tel = new LaminarAiSdkTelemetry({ createStepSpan: true });
+    const callId = "call-tools";
+    const tools = [
+      {
+        type: "function",
+        name: "get_weather",
+        description: "Get the weather for a city",
+        inputSchema: { type: "object", properties: { city: { type: "string" } } },
+      },
+    ];
+
+    tel.onStart(mkStartEvent(callId, { tools }));
+    tel.onStepStart(mkStepStartEvent(callId, 0));
+    tel.onLanguageModelCallStart(mkLlmCallStart(callId, { tools }));
+    tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
+    tel.onStepFinish(mkStepEnd(callId, 0));
+    tel.onEnd(mkFinish(callId));
+
+    const spans = exporter.getFinishedSpans();
+    const llm = spans.find((s) => s.name.startsWith("ai.llm "));
+    assert.ok(llm, "llm span missing");
+    assert.deepEqual(
+      JSON.parse(llm.attributes["gen_ai.tool.definitions"] as string),
+      tools,
+    );
+  });
+
+  void it("omits gen_ai.tool.definitions when no tools are present", () => {
+    const tel = new LaminarAiSdkTelemetry({ createStepSpan: true });
+    const callId = "call-no-tools";
+
+    tel.onStart(mkStartEvent(callId));
+    tel.onStepStart(mkStepStartEvent(callId, 0));
+    tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+    tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
+    tel.onStepFinish(mkStepEnd(callId, 0));
+    tel.onEnd(mkFinish(callId));
+
+    const spans = exporter.getFinishedSpans();
+    const llm = spans.find((s) => s.name.startsWith("ai.llm "));
+    assert.ok(llm, "llm span missing");
+    assert.equal(llm.attributes["gen_ai.tool.definitions"], undefined);
+  });
+
   void it("records verbatim gen_ai.input.messages even when step spans are disabled", () => {
     // createStepSpan defaults to false — onStepStart must still stash
     // event.promptMessages BEFORE its early return so the following
