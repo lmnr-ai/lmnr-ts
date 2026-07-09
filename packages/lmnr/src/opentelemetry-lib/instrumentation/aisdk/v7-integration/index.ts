@@ -33,6 +33,7 @@
 
 import * as diagnosticsChannel from "node:diagnostics_channel";
 
+import { errorMessage } from "@lmnr-ai/types";
 import {
   context as contextApi,
   type HrTime,
@@ -42,6 +43,7 @@ import {
 } from "@opentelemetry/api";
 
 import { Laminar, type LaminarInitializeProps } from "../../../../laminar";
+import { initializeLogger } from "../../../../utils";
 import { getTracer } from "../../../tracing";
 import {
   LaminarAttributes,
@@ -139,6 +141,8 @@ export class LaminarAiSdkTelemetry {
   // serialization the replay wrapper hashes, so recording level == replay
   // level for the debugger cache.
   private readonly promptByCallId = new Map<string, string>();
+
+  private readonly logger = initializeLogger();
 
   constructor(options: LaminarAiSdkTelemetryOptions = {}) {
     this.recordInputs = options.recordInputs ?? true;
@@ -306,6 +310,18 @@ export class LaminarAiSdkTelemetry {
     span.setAttribute(SPAN_TYPE, "LLM");
     applyRequestModelAttributes(span, event);
     if (this.recordInputs) {
+      if (event.tools) {
+        try {
+          span.setAttribute(
+            "gen_ai.tool.definitions",
+            JSON.stringify(event.tools),
+          );
+        } catch (e) {
+          this.logger.debug(
+            `Failed to record span tool definitions: ${errorMessage(e)}`,
+          );
+        }
+      }
       // Verbatim LanguageModel-level prompt, stashed by onStepStart. This is
       // the exact serialization the replay wrapper hashes, so the server-side
       // debugger cache keys match at record and replay time. There is NO
@@ -433,9 +449,7 @@ export class LaminarAiSdkTelemetry {
       // the backend stores one consistent output format and the debugger can
       // replay it.
       if (this.recordOutputs && llm.textDeltas.length > 0) {
-        const outputMessages = buildTextOutputMessages(
-          llm.textDeltas.join(""),
-        );
+        const outputMessages = buildTextOutputMessages(llm.textDeltas.join(""));
         if (outputMessages) {
           llm.span.setAttribute("gen_ai.output.messages", outputMessages);
         }
