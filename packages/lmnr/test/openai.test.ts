@@ -8,7 +8,10 @@ import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import nock from "nock";
 import OpenAI from "openai";
 
-import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import {
+  _resetConfiguration,
+  initializeTracing,
+} from "../src/opentelemetry-lib/configuration";
 import { decompressRecordingResponse } from "./utils";
 
 void describe("openai instrumentation", () => {
@@ -16,14 +19,15 @@ void describe("openai instrumentation", () => {
     apiKey: process.env.OPENAI_API_KEY || "dummy-key",
   });
   const exporter = new InMemorySpanExporter();
-  const dirname = typeof __dirname !== 'undefined'
-    ? __dirname
-    : path.dirname(fileURLToPath(import.meta.url));
+  const dirname =
+    typeof __dirname !== "undefined"
+      ? __dirname
+      : path.dirname(fileURLToPath(import.meta.url));
   const recordingsDir = path.join(dirname, "recordings");
 
   // Function to get test-specific recording file
   const getRecordingFile = (testName: string) => {
-    const sanitizedName = testName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+    const sanitizedName = testName.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
     return path.join(recordingsDir, `openai-${sanitizedName}.json`);
   };
 
@@ -51,12 +55,14 @@ void describe("openai instrumentation", () => {
     } else if (fs.existsSync(recordingsFile)) {
       // Replay mode - load recorded responses
       nock.cleanAll();
-      const recordings = JSON.parse(await fs.promises.readFile(recordingsFile, "utf8"));
+      const recordings = JSON.parse(
+        await fs.promises.readFile(recordingsFile, "utf8"),
+      );
       recordings.forEach((recording: nock.Definition) => {
         const response = decompressRecordingResponse(recording);
 
         nock(recording.scope)
-          .intercept(recording.path, recording.method ?? 'POST', recording.body)
+          .intercept(recording.path, recording.method ?? "POST", recording.body)
           .reply(recording.status, response, recording.headers);
       });
     } else {
@@ -89,14 +95,15 @@ void describe("openai instrumentation", () => {
   void it("creates an openai span", async () => {
     await client.chat.completions.create({
       model: "gpt-4.1-nano",
-      messages: [
-        { role: "user", content: "What is the capital of France?" },
-      ],
+      messages: [{ role: "user", content: "What is the capital of France?" }],
     });
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
-    assert.strictEqual(spans[0].name, "openai.chat");
-    assert.strictEqual(spans[0].attributes['gen_ai.request.model'], "gpt-4.1-nano");
+    assert.strictEqual(spans[0].name, "chat gpt-4.1-nano");
+    assert.strictEqual(
+      spans[0].attributes["gen_ai.request.model"],
+      "gpt-4.1-nano",
+    );
   });
 });

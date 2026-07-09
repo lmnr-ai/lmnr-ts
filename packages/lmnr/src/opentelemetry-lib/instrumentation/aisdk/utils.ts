@@ -1,32 +1,39 @@
-import { type LanguageModelV3Message, type LanguageModelV3Prompt } from "@ai-sdk/provider";
-import { type LanguageModelV2Message, type LanguageModelV2Prompt } from "@ai-sdk/provider-v2";
+import {
+  type LanguageModelV2Message,
+  type LanguageModelV2Prompt,
+} from "@ai-sdk/provider-v2";
+import {
+  type LanguageModelV3Message,
+  type LanguageModelV3Prompt,
+} from "@ai-sdk/provider-v3";
 import { errorMessage } from "@lmnr-ai/types";
 import { type DataContent } from "ai";
 
 // Mirrors https://github.com/vercel/ai/blob/main/packages/ai/src/telemetry/stringify-for-telemetry.ts
 // This function is initially implemented by us, and is not exported from the ai sdk.
 // We copy it here for our own use.
-export const stringifyPromptForTelemetry =
-  (prompt: LanguageModelV2Prompt | LanguageModelV3Prompt): string =>
-    JSON.stringify(
-      prompt.map((message: LanguageModelV2Message | LanguageModelV3Message) => ({
-        ...message,
-        content:
-          typeof message.content === 'string'
-            ? message.content
-            : message.content.map(part =>
-              part.type === 'file'
-                ? {
-                  ...part,
-                  data:
-                    part.data instanceof Uint8Array
-                      ? convertDataContentToBase64String(part.data)
-                      : part.data,
-                }
-                : part,
-            ),
-      })),
-    );
+export const stringifyPromptForTelemetry = (
+  prompt: LanguageModelV2Prompt | LanguageModelV3Prompt,
+): string =>
+  JSON.stringify(
+    prompt.map((message: LanguageModelV2Message | LanguageModelV3Message) => ({
+      ...message,
+      content:
+        typeof message.content === "string"
+          ? message.content
+          : message.content.map((part) =>
+            part.type === "file"
+              ? {
+                ...part,
+                data:
+                      part.data instanceof Uint8Array
+                        ? convertDataContentToBase64String(part.data)
+                        : part.data,
+              }
+              : part,
+          ),
+    })),
+  );
 
 // The recorded `gen_ai.input.messages` attribute (v7 integration) and the
 // debugger-replay input hash (base-language-model.ts) MUST be computed from
@@ -63,7 +70,7 @@ Converts data content to a base64-encoded string.
 @returns Base64-encoded string.
 */
 const convertDataContentToBase64String = (content: DataContent): string => {
-  if (typeof content === 'string') {
+  if (typeof content === "string") {
     return content;
   }
 
@@ -76,7 +83,7 @@ const convertDataContentToBase64String = (content: DataContent): string => {
 
 // https://github.com/vercel/ai/blob/main/packages/provider-utils/src/uint8-utils.ts
 export function convertUint8ArrayToBase64(array: Uint8Array): string {
-  let latin1string = '';
+  let latin1string = "";
 
   // Note: regular for loop to support older JavaScript versions that
   // do not support for..of on Uint8Array
@@ -91,10 +98,10 @@ export function convertUint8ArrayToBase64(array: Uint8Array): string {
  * Information about a detected stream
  */
 export type StreamInfo =
-  | { type: 'aisdk-result'; result: any }
-  | { type: 'readable-stream'; stream: ReadableStream<unknown> }
-  | { type: 'async-iterable'; iterable: AsyncIterable<unknown> }
-  | { type: 'response'; response: Response }
+  | { type: "aisdk-result"; result: any }
+  | { type: "readable-stream"; stream: ReadableStream<unknown> }
+  | { type: "async-iterable"; iterable: AsyncIterable<unknown> }
+  | { type: "response"; response: Response }
   | { type: null };
 
 /**
@@ -105,28 +112,34 @@ export type StreamInfo =
  * @returns - StreamInfo object describing the stream type, or { type: null } if not a stream.
  */
 export const getStream = (response: unknown): StreamInfo => {
-  if (!response || typeof response !== 'object') {
+  if (!response || typeof response !== "object") {
     return { type: null };
   }
 
   // Check for AI SDK StreamTextResult (has textStream or fullStream property)
-  if ('textStream' in response || 'fullStream' in response) {
-    return { type: 'aisdk-result', result: response };
+  if ("textStream" in response || "fullStream" in response) {
+    return { type: "aisdk-result", result: response };
   }
 
   // Check for Response object (from createUIMessageStreamResponse, createTextStreamResponse, etc.)
   if (response instanceof Response) {
-    return { type: 'response', response };
+    return { type: "response", response };
   }
 
   // Check for ReadableStream
   if (response instanceof ReadableStream) {
-    return { type: 'readable-stream', stream: response };
+    return { type: "readable-stream", stream: response };
   }
 
   // Check for AsyncIterable (but not ReadableStream, which also implements AsyncIterable)
-  if (Symbol.asyncIterator in response && !(response instanceof ReadableStream)) {
-    return { type: 'async-iterable', iterable: response as AsyncIterable<unknown> };
+  if (
+    Symbol.asyncIterator in response &&
+    !(response instanceof ReadableStream)
+  ) {
+    return {
+      type: "async-iterable",
+      iterable: response as AsyncIterable<unknown>,
+    };
   }
 
   return { type: null };
@@ -153,13 +166,16 @@ export const consumeAISDKResult = async (result: any): Promise<any> => {
   // Collect all the promise properties in parallel
   const promises: Promise<void>[] = [];
 
-  if ('text' in result) promises.push(safeAwait('text', result.text));
-  if ('toolCalls' in result) promises.push(safeAwait('toolCalls', result.toolCalls));
-  if ('reasoning' in result) promises.push(safeAwait('reasoning', result.reasoning));
-  if ('finishReason' in result) promises.push(safeAwait('finishReason', result.finishReason));
-  if ('usage' in result) promises.push(safeAwait('usage', result.usage));
-  if ('files' in result) promises.push(safeAwait('files', result.files));
-  if ('sources' in result) promises.push(safeAwait('sources', result.sources));
+  if ("text" in result) promises.push(safeAwait("text", result.text));
+  if ("toolCalls" in result)
+    promises.push(safeAwait("toolCalls", result.toolCalls));
+  if ("reasoning" in result)
+    promises.push(safeAwait("reasoning", result.reasoning));
+  if ("finishReason" in result)
+    promises.push(safeAwait("finishReason", result.finishReason));
+  if ("usage" in result) promises.push(safeAwait("usage", result.usage));
+  if ("files" in result) promises.push(safeAwait("files", result.files));
+  if ("sources" in result) promises.push(safeAwait("sources", result.sources));
 
   await Promise.all(promises);
 
@@ -177,7 +193,10 @@ export const consumeAISDKResult = async (result: any): Promise<any> => {
  */
 export const consumeAndTeeReadableStream = <T>(
   stream: ReadableStream<T>,
-): { stream: ReadableStream<T>; dataPromise: Promise<{ chunks: T[]; error?: any }> } => {
+): {
+  stream: ReadableStream<T>;
+  dataPromise: Promise<{ chunks: T[]; error?: any }>;
+} => {
   const [stream1, stream2] = stream.tee();
 
   const dataPromise = (async () => {
@@ -212,7 +231,10 @@ export const consumeAndTeeReadableStream = <T>(
  */
 export const consumeAndTeeAsyncIterable = <T>(
   iterable: AsyncIterable<T>,
-): { iterable: AsyncIterable<T>; dataPromise: Promise<{ chunks: T[]; error?: any }> } => {
+): {
+  iterable: AsyncIterable<T>;
+  dataPromise: Promise<{ chunks: T[]; error?: any }>;
+} => {
   const chunks: T[] = [];
   let error: any = undefined;
   let resolveData!: (value: { chunks: T[]; error?: any }) => void;
@@ -242,8 +264,9 @@ export const consumeAndTeeAsyncIterable = <T>(
  * @param response - The Response object to consume
  * @returns Promise that resolves to the consumed data
  */
-export const consumeResponse = async (response: Response):
-Promise<{ chunks: any[]; error?: any }> => {
+export const consumeResponse = async (
+  response: Response,
+): Promise<{ chunks: any[]; error?: any }> => {
   const chunks: any[] = [];
   let error: any = undefined;
 

@@ -1,13 +1,13 @@
 import {
-  type LanguageModelV3,
-  type LanguageModelV3CallOptions,
-  type LanguageModelV3Content,
-  type LanguageModelV3FinishReason,
-  type LanguageModelV3ResponseMetadata,
-  type LanguageModelV3Usage,
-  type SharedV3Headers,
-  type SharedV3ProviderMetadata,
-  type SharedV3Warning,
+  type LanguageModelV4,
+  type LanguageModelV4CallOptions,
+  type LanguageModelV4Content,
+  type LanguageModelV4FinishReason,
+  type LanguageModelV4ResponseMetadata,
+  type LanguageModelV4Usage,
+  type SharedV4Headers,
+  type SharedV4ProviderMetadata,
+  type SharedV4Warning,
 } from "@ai-sdk/provider";
 import {
   type LanguageModelV2,
@@ -21,16 +21,16 @@ import {
   type SharedV2ProviderMetadata,
 } from "@ai-sdk/provider-v2";
 import {
-  type LanguageModelV4,
-  type LanguageModelV4CallOptions,
-  type LanguageModelV4Content,
-  type LanguageModelV4FinishReason,
-  type LanguageModelV4ResponseMetadata,
-  type LanguageModelV4Usage,
-  type SharedV4Headers,
-  type SharedV4ProviderMetadata,
-  type SharedV4Warning,
-} from "@ai-sdk/provider-v4-canary";
+  type LanguageModelV3,
+  type LanguageModelV3CallOptions,
+  type LanguageModelV3Content,
+  type LanguageModelV3FinishReason,
+  type LanguageModelV3ResponseMetadata,
+  type LanguageModelV3Usage,
+  type SharedV3Headers,
+  type SharedV3ProviderMetadata,
+  type SharedV3Warning,
+} from "@ai-sdk/provider-v3";
 import { CachedSpan } from "@lmnr-ai/types";
 
 import { debugInputHash } from "../../../debug/hash";
@@ -533,8 +533,11 @@ export abstract class BaseLaminarLanguageModel {
     let outputContent: Record<string, any>[];
     if (Array.isArray(output)) {
       outputContent = output;
-    } else if (output.type === "genAi" && Array.isArray(output.messages)) {
-      outputContent = output.messages;
+    } else if (
+      output.type === "genAi" &&
+      Array.isArray((output as any).messages)
+    ) {
+      outputContent = (output as any).messages;
     } else if (output.type === "raw" && "response" in output) {
       outputContent = Array.isArray(output.response)
         ? output.response

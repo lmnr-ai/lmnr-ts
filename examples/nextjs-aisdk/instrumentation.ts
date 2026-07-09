@@ -10,9 +10,10 @@ export async function register() {
   // });
 
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { Laminar } = await import("@lmnr-ai/lmnr");
+    const { LaminarAiSdkTelemetry } = await import("@lmnr-ai/lmnr");
+    const { registerTelemetry } = await import("ai");
 
     // Make sure this happens after any other OpenTelemetry initialization.
-    Laminar.initialize();
+    registerTelemetry(new LaminarAiSdkTelemetry());
   }
 }

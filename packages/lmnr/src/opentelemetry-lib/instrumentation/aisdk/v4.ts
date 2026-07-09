@@ -9,7 +9,7 @@ import {
   type SharedV4Headers,
   type SharedV4ProviderMetadata,
   type SharedV4Warning,
-} from "@ai-sdk/provider-v4-canary";
+} from "@ai-sdk/provider";
 
 import { BaseLaminarLanguageModel } from "./base-language-model";
 
