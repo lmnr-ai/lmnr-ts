@@ -1,13 +1,13 @@
 import { spawn, spawnSync } from "node:child_process";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { homedir, hostname } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 
 import { type CliProject, LaminarClient } from "@lmnr-ai/client";
 
 import { version } from "../../../package.json";
-import { type Credentials, readCredentials } from "../../auth/credentials";
+import { type Credentials, globalLmnrDirectory, readCredentials } from "../../auth/credentials";
 import { envHttpPort, refreshIfNeeded } from "../../auth/resolve";
 import { DEFAULT_BASE_URL, DEFAULT_FRONTEND_URL } from "../../constants";
 import { orange, pc } from "../../utils/colors";
@@ -17,52 +17,58 @@ import { handleLogin } from "../login";
 //   4  no_access          — user lacks access to the requested --project-id
 //   6  login_failed       — device-flow login failed / no creds after login
 //   7  no_project         — no project to select (create one first)
+//   8  config_write_failed — minted a key but couldn't write the plugin config file
 //   9  mint_failed        — POST /api/cli/api-key failed
 //   13 unsupported_agent  — unknown <agent> argument
-//   14 install_failed     — a host plugin install command exited non-zero
+//   14 install_failed     — a host `plugin` command exited non-zero
 const EXIT_NO_ACCESS = 4;
 const EXIT_LOGIN_FAILED = 6;
 const EXIT_NO_PROJECT = 7;
+const EXIT_CONFIG_WRITE_FAILED = 8;
 const EXIT_MINT_FAILED = 9;
 const EXIT_UNSUPPORTED_AGENT = 13;
 const EXIT_INSTALL_FAILED = 14;
 
 /**
- * Registry of agents `plugin add <agent>` can wire up. Keyed by the CLI argument
- * the user types. Adding a new coding agent (cursor, codex, …) is a matter of
- * appending an entry here plus its install-command shape.
+ * Registry of agents `plugin add <agent>` can wire up, keyed by the CLI argument
+ * the user types. Both supported agents now use the same shape: a host CLI with
+ * a native plugin marketplace (`<cli> plugin marketplace add` + an install verb),
+ * and a shared per-agent config file under `~/.config/lmnr/` that carries the
+ * project API key. Neither agent has a per-plugin secret store, so the key lives
+ * in that file and the plugin's hook reads it (see the plugin repos' config.ts).
+ * Adding a new agent (cursor, …) is a matter of appending an entry here.
  */
-export interface AgentSpec {
-  /** Human-facing label (banners, key name). */
+interface AgentSpec {
+  /** Human-facing label (banners, minted-key name). */
   label: string;
-  installer: "claude-plugin" | "codex-hook";
-  /** `claude plugin marketplace add <ref>` argument. */
-  marketplaceRef?: string;
-  /** `claude plugin install <ref>` argument (plugin@marketplace). */
-  pluginRef?: string;
-  /** userConfig/env key the project API key is delivered under. */
-  keyEnvName: string;
-  /** The host CLI binary (`claude`, `codex`) that activates the plugin. */
+  /** Host CLI binary that owns the plugin system (`claude`, `codex`). */
   hostCli: string;
-  /** Bundled hook artifact used by host CLIs without plugin config secrets. */
-  bundleUrl?: string;
+  /** `<cli> plugin marketplace add <ref>` argument (owner/repo or Git URL). */
+  marketplaceRef: string;
+  /** `<cli> plugin <install-verb> <ref>` argument (plugin@marketplace). */
+  pluginRef: string;
+  /** The install subcommand + trailing flags this host uses (after `plugin`). */
+  installArgv: string[];
+  /** Per-user config file (under ~/.config/lmnr) the plugin reads the key from. */
+  configFile: string;
 }
 
 const AGENTS: Record<string, AgentSpec> = {
   "claude-code": {
     label: "Claude Code",
-    installer: "claude-plugin",
+    hostCli: "claude",
     marketplaceRef: "lmnr-ai/lmnr-claude-code-plugin",
     pluginRef: "laminar@laminar",
-    keyEnvName: "LMNR_PROJECT_API_KEY",
-    hostCli: "claude",
+    installArgv: ["install", "laminar@laminar", "--scope", "user"],
+    configFile: "claude-code-plugin.json",
   },
   codex: {
     label: "Codex",
-    installer: "codex-hook",
-    keyEnvName: "LMNR_PROJECT_API_KEY",
     hostCli: "codex",
-    bundleUrl: "https://raw.githubusercontent.com/lmnr-ai/lmnr-codex-plugin/main/dist/hook.cjs",
+    marketplaceRef: "lmnr-ai/lmnr-codex-plugin",
+    pluginRef: "laminar@laminar",
+    installArgv: ["add", "laminar@laminar"],
+    configFile: "codex-plugin.json",
   },
 };
 
@@ -82,9 +88,11 @@ interface PluginAddResult {
   workspaceName: string | null;
   apiKey: string;
   apiKeyId: string | null;
+  /** Path to the per-agent config file the key was written to. */
+  configPath: string;
   /** true when we ran the host-CLI install; false when we only printed commands. */
   installed: boolean;
-  /** The `claude plugin ...` commands, as copy-pasteable strings (key shown). */
+  /** The `<cli> plugin ...` commands, as copy-pasteable strings. */
   commands: string[];
   restartRequired: boolean;
 }
@@ -94,14 +102,15 @@ interface PluginAddResult {
  *
  * Flow: log in (device flow) if needed → pick the project that should receive
  * this agent's traces (deliberately NOT the directory-linked app project) →
- * mint a project API key named after the plugin+host → install the plugin via
- * the host's native activation path, or print recovery commands when the host
- * CLI is missing / too old / `--print-only` was passed.
+ * mint a project API key named after the plugin+host → write it to
+ * `~/.config/lmnr/<agent>-plugin.json` (where the plugin's hook reads it) →
+ * install the plugin natively (`<cli> plugin marketplace add` + install), or
+ * print those commands when the host CLI is missing / `--print-only`.
  *
- * Unlike `setup`, this is a GLOBAL, directory-independent operation: it never
- * reads or writes `.lmnr/project.json` and never writes `.env`. The key lives
- * only in the host's own configuration. Claude Code stores it in plugin config;
- * Codex stores it in a private launcher file referenced by user-level hooks.
+ * Unlike `setup`, this is GLOBAL and directory-independent: it never reads or
+ * writes `.lmnr/project.json` or `.env`. The key never passes through the host
+ * CLI's argv — it lives only in the per-agent config file (both agents lack a
+ * per-plugin secret store), so the install commands carry no secret.
  */
 export async function handlePluginAdd(agent: string, options: PluginAddOptions): Promise<void> {
   const isJson = options.json === true;
@@ -176,52 +185,40 @@ export async function handlePluginAdd(agent: string, options: PluginAddOptions):
     );
   }
 
-  // --- 4. Install via the host activation path, or print commands ----------
-  let installed = false;
-  let commands: string[];
-  if (spec.installer === "claude-plugin") {
-    const hostCommands = buildInstallCommands(spec, key.apiKey);
-    commands = hostCommands.map((c) => renderCommand(spec.hostCli, c.argv, false));
-    const canRun = !options.printOnly && hostCliSupportsConfig(spec.hostCli);
-
-    if (canRun) {
-      installed = await runInstall(spec, hostCommands, isJson);
-      if (!installed) {
-        // A hard install failure (not the lenient marketplace-add path). Fall back
-        // to printing so the user can finish by hand.
-        printCommands(spec, hostCommands, isJson, "install-failed");
-        emitError(
-          isJson,
-          "install_failed",
-          `A \`${spec.hostCli} plugin\` command failed; commands printed above.`,
-        );
-        // Non-fatal-to-JSON: still emit the result below? No — exit with the code
-        // so automation sees the failure. The printed commands remain the recovery.
-        process.exit(EXIT_INSTALL_FAILED);
-      }
-    } else {
-      printCommands(spec, hostCommands, isJson, options.printOnly ? "print-only" : "no-host-cli");
-    }
-  } else {
-    const codexPlan = getCodexInstallPlan(spec, key.apiKey, baseUrl);
-    commands = codexPlan.commands;
-    if (options.printOnly) {
-      printCodexCommands(spec, codexPlan, isJson, "print-only");
-    } else if (!hostCliExists(spec.hostCli)) {
-      printCodexCommands(spec, codexPlan, isJson, "no-host-cli");
-    } else {
-      try {
-        await installCodexHook(codexPlan);
-        installed = true;
-      } catch (err) {
-        printCodexCommands(spec, codexPlan, isJson, "install-failed");
-        emitError(isJson, "install_failed", describeError(err));
-        process.exit(EXIT_INSTALL_FAILED);
-      }
-    }
+  // --- 4. Write the per-agent config file the plugin reads -----------------
+  let configPath: string;
+  try {
+    configPath = writeAgentConfig(spec, key.apiKey, baseUrl);
+  } catch (err) {
+    emitError(isJson, "config_write_failed", describeError(err));
+    process.exit(EXIT_CONFIG_WRITE_FAILED);
+  }
+  if (!isJson) {
+    process.stderr.write(`${pc.green("✓")} Wrote ${configPath}\n`);
   }
 
-  // --- 5. Summary ----------------------------------------------------------
+  // --- 5. Install via the host's native plugin system, or print commands ----
+  const hostCommands = buildInstallCommands(spec);
+  const commands = hostCommands.map((c) => renderCommand(spec.hostCli, c.argv));
+  const canRun = !options.printOnly && hostCliHasPlugins(spec.hostCli);
+
+  let installed = false;
+  if (canRun) {
+    installed = await runInstall(spec, hostCommands, isJson);
+    if (!installed) {
+      printCommands(spec, hostCommands, isJson, "install-failed");
+      emitError(
+        isJson,
+        "install_failed",
+        `A \`${spec.hostCli} plugin\` command failed; commands printed above.`,
+      );
+      process.exit(EXIT_INSTALL_FAILED);
+    }
+  } else {
+    printCommands(spec, hostCommands, isJson, options.printOnly ? "print-only" : "no-host-cli");
+  }
+
+  // --- 6. Summary ----------------------------------------------------------
   const result: PluginAddResult = {
     agent,
     projectId: project.id,
@@ -229,6 +226,7 @@ export async function handlePluginAdd(agent: string, options: PluginAddOptions):
     workspaceName: project.workspaceName ?? null,
     apiKey: key.apiKey,
     apiKeyId: key.apiKeyId ?? null,
+    configPath,
     installed,
     commands,
     restartRequired: installed,
@@ -356,7 +354,7 @@ async function promptProjectChoice(projects: CliProject[]): Promise<CliProject> 
 }
 
 // ---------------------------------------------------------------------------
-// Key minting
+// Key minting + config file
 // ---------------------------------------------------------------------------
 
 interface MintResponse {
@@ -391,8 +389,23 @@ async function mintApiKey(
   throw new Error(body.error ?? `api-key request failed (${res.status})`);
 }
 
+/**
+ * Write the per-agent Laminar plugin config (`~/.config/lmnr/<agent>-plugin.json`,
+ * mode 0600). This is the sole delivery channel for the project API key: both
+ * plugins read it from here (neither agent has a per-plugin secret store), so
+ * the key never has to pass through the host CLI's argv. Returns the path.
+ */
+export function writeAgentConfig(spec: AgentSpec, apiKey: string, baseUrl: string): string {
+  const dir = globalLmnrDirectory();
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const filePath = join(dir, spec.configFile);
+  const body = JSON.stringify({ projectApiKey: apiKey, baseUrl }, null, 2) + "\n";
+  writeFileSync(filePath, body, { mode: 0o600 });
+  return filePath;
+}
+
 // ---------------------------------------------------------------------------
-// Host-CLI (claude) install
+// Host-CLI native install
 // ---------------------------------------------------------------------------
 
 interface HostCommand {
@@ -402,10 +415,7 @@ interface HostCommand {
   lenient: boolean;
 }
 
-export function buildInstallCommands(spec: AgentSpec, apiKey: string): HostCommand[] {
-  if (!spec.marketplaceRef || !spec.pluginRef) {
-    throw new Error(`${spec.label} does not use host plugin install commands`);
-  }
+export function buildInstallCommands(spec: AgentSpec): HostCommand[] {
   return [
     {
       label: "Add the Laminar marketplace",
@@ -414,41 +424,32 @@ export function buildInstallCommands(spec: AgentSpec, apiKey: string): HostComma
     },
     {
       label: "Install the plugin",
-      argv: [
-        "plugin",
-        "install",
-        spec.pluginRef,
-        "--config",
-        `${spec.keyEnvName}=${apiKey}`,
-        "--scope",
-        "user",
-      ],
+      argv: ["plugin", ...spec.installArgv],
       lenient: false,
     },
   ];
 }
 
 /**
- * Probe whether the host CLI is present AND its `plugin install` supports
- * `--config`. A single `--help` call covers both: a missing binary throws /
- * non-zero, and older versions won't list `--config`. Cheaper and more robust
- * than parsing a version string.
+ * Probe whether the host CLI is present AND exposes a `plugin` subcommand. A
+ * single `plugin --help` call covers both: a missing binary throws / non-zero,
+ * and a too-old CLI without plugins won't succeed. Cheaper and more robust than
+ * parsing a version string.
  */
-export function hostCliSupportsConfig(hostCli: string): boolean {
+export function hostCliHasPlugins(hostCli: string): boolean {
   try {
-    const r = spawnSync(hostCli, ["plugin", "install", "--help"], { encoding: "utf-8" });
-    if (r.error || r.status !== 0) return false;
-    return (r.stdout ?? "").includes("--config");
+    const r = spawnSync(hostCli, ["plugin", "--help"], { encoding: "utf-8" });
+    return !r.error && r.status === 0;
   } catch {
     return false;
   }
 }
 
 /**
- * Run the install commands in order, narrating each. The API key is masked in
- * the echoed command line (it's still passed to the child). A lenient step's
- * non-zero exit is warned-and-continued (e.g. marketplace already added);
- * a non-lenient failure returns false.
+ * Run the install commands in order, narrating each. A lenient step's non-zero
+ * exit is warned-and-continued (e.g. marketplace already added); a non-lenient
+ * failure returns false. No secret is on the command line (the key is in the
+ * config file), so the commands are echoed verbatim.
  */
 async function runInstall(
   spec: AgentSpec,
@@ -458,7 +459,7 @@ async function runInstall(
   if (!isJson) process.stderr.write("\n");
   for (const cmd of commands) {
     if (!isJson) {
-      process.stderr.write(`${pc.dim(`$ ${renderCommand(spec.hostCli, cmd.argv, true)}`)}\n`);
+      process.stderr.write(`${pc.dim(`$ ${renderCommand(spec.hostCli, cmd.argv)}`)}\n`);
     }
     const code = await runChild(spec.hostCli, cmd.argv);
     if (code !== 0) {
@@ -487,8 +488,8 @@ function runChild(cmd: string, argv: string[]): Promise<number> {
 
 /**
  * Print the install commands for the user to run by hand. Used when the host CLI
- * is absent / too old / `--print-only`, or as recovery after an install failure.
- * The key IS shown here (copy-paste must be complete) — the one place we print it.
+ * is absent / `--print-only`, or as recovery after an install failure. The key
+ * is NOT here (it's in the config file), so these are safe to show verbatim.
  */
 function printCommands(
   spec: AgentSpec,
@@ -499,203 +500,21 @@ function printCommands(
   if (isJson) return;
   const preamble =
     reason === "no-host-cli"
-      ? `${pc.yellow("⚠")} \`${spec.hostCli}\` not found (or too old for --config). ` +
+      ? `${pc.yellow("⚠")} \`${spec.hostCli}\` not found (or has no plugin support). ` +
         `Run these yourself:`
       : reason === "install-failed"
         ? `${pc.yellow("⚠")} Install failed. Finish by running these yourself:`
         : `Run these to install the ${spec.label} plugin:`;
   process.stderr.write(`\n${preamble}\n\n`);
   for (const cmd of commands) {
-    process.stderr.write(`  ${renderCommand(spec.hostCli, cmd.argv, false)}\n`);
+    process.stderr.write(`  ${renderCommand(spec.hostCli, cmd.argv)}\n`);
   }
   process.stderr.write("\n");
 }
 
-/**
- * Render a host-CLI command line. When `mask`, replace the secret value in a
- * `--config KEY=secret` pair with `***` so it doesn't hit terminal scrollback.
- */
-export function renderCommand(hostCli: string, argv: string[], mask: boolean): string {
-  const parts = argv.map((arg, i) => {
-    if (mask && i > 0 && argv[i - 1] === "--config") {
-      const eq = arg.indexOf("=");
-      return eq === -1 ? arg : `${arg.slice(0, eq + 1)}***`;
-    }
-    return arg;
-  });
-  return `${hostCli} ${parts.join(" ")}`;
-}
-
-// ---------------------------------------------------------------------------
-// Codex hook install
-// ---------------------------------------------------------------------------
-
-interface CodexInstallPlan {
-  codexHome: string;
-  installDir: string;
-  hookPath: string;
-  launcherPath: string;
-  configPath: string;
-  bundleUrl: string;
-  apiKey: string;
-  baseUrl: string;
-  commands: string[];
-}
-
-function getCodexInstallPlan(spec: AgentSpec, apiKey: string, baseUrl: string): CodexInstallPlan {
-  const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
-  const installDir = join(codexHome, "lmnr");
-  const hookPath = join(installDir, "hook.cjs");
-  const launcherPath = join(installDir, "hook-launcher.cjs");
-  const configPath = join(codexHome, "config.toml");
-  const bundleUrl = process.env.LMNR_CODEX_PLUGIN_BUNDLE_URL || spec.bundleUrl || "";
-  const hookCommand = `node ${shellQuote(launcherPath)}`;
-  return {
-    codexHome,
-    installDir,
-    hookPath,
-    launcherPath,
-    configPath,
-    bundleUrl,
-    apiKey,
-    baseUrl,
-    commands: [
-      `mkdir -p ${shellQuote(installDir)}`,
-      `curl -fsSL ${shellQuote(bundleUrl)} -o ${shellQuote(hookPath)}`,
-      `write ${shellQuote(launcherPath)} with ${spec.keyEnvName}=<api-key> ` +
-        `and LMNR_BASE_URL=${baseUrl}`,
-      `add a Codex Stop hook to ${shellQuote(configPath)}: ${hookCommand}`,
-    ],
-  };
-}
-
-async function installCodexHook(plan: CodexInstallPlan): Promise<void> {
-  if (!plan.bundleUrl) {
-    throw new Error("missing Codex plugin bundle URL");
-  }
-  await mkdir(plan.installDir, { recursive: true });
-  const hook = await fetchText(plan.bundleUrl);
-  await writeFile(plan.hookPath, hook, { encoding: "utf-8", mode: 0o600 });
-  await chmod(plan.hookPath, 0o600).catch(() => undefined);
-  await writeFile(plan.launcherPath, buildCodexLauncherSource(plan), {
-    encoding: "utf-8",
-    mode: 0o600,
-  });
-  await chmod(plan.launcherPath, 0o600).catch(() => undefined);
-
-  let config: string;
-  try {
-    config = await readFile(plan.configPath, "utf-8");
-  } catch {
-    config = "";
-  }
-  const next = upsertCodexHookConfig(config, plan.launcherPath);
-  await writeFile(plan.configPath, next, { encoding: "utf-8", mode: 0o600 });
-  await chmod(plan.configPath, 0o600).catch(() => undefined);
-}
-
-async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`failed to download Codex plugin bundle (${res.status}) from ${url}`);
-  }
-  return res.text();
-}
-
-export function buildCodexLauncherSource(plan: {
-  hookPath: string;
-  apiKey: string;
-  baseUrl: string;
-}): string {
-  return (
-    "// Generated by `lmnr-cli plugin add codex`. Do not commit this file; " +
-    "it contains a project API key.\n" +
-    `process.env.LMNR_PROJECT_API_KEY = ${JSON.stringify(plan.apiKey)};\n` +
-    `process.env.LMNR_BASE_URL = ${JSON.stringify(plan.baseUrl)};\n` +
-    `require(${JSON.stringify(plan.hookPath)});\n`
-  );
-}
-
-const CODEX_HOOK_START = "# >>> Laminar Codex plugin";
-const CODEX_HOOK_END = "# <<< Laminar Codex plugin";
-
-export function upsertCodexHookConfig(config: string, launcherPath: string): string {
-  let text = removeCodexHookBlock(config).trimEnd();
-  text = ensureCodexHooksFeature(text).trimEnd();
-  const block = [
-    CODEX_HOOK_START,
-    "[[hooks.Stop]]",
-    "[[hooks.Stop.hooks]]",
-    'type = "command"',
-    `command = ${JSON.stringify(`node ${launcherPath}`)}`,
-    "timeout = 30",
-    CODEX_HOOK_END,
-  ].join("\n");
-  return `${text ? `${text}\n\n` : ""}${block}\n`;
-}
-
-function removeCodexHookBlock(config: string): string {
-  const pattern = new RegExp(
-    `${escapeRegExp(CODEX_HOOK_START)}[\\s\\S]*?${escapeRegExp(CODEX_HOOK_END)}\\n?`,
-    "g",
-  );
-  return config.replace(pattern, "");
-}
-
-function ensureCodexHooksFeature(config: string): string {
-  const featuresMatch = /^\[features\]\s*$/m.exec(config);
-  if (!featuresMatch) {
-    return `${config.trimEnd()}${config.trimEnd() ? "\n\n" : ""}[features]\nhooks = true\n`;
-  }
-
-  const start = featuresMatch.index;
-  const afterHeader = start + featuresMatch[0].length;
-  const nextTableRel = config.slice(afterHeader).search(/^\[/m);
-  const end = nextTableRel === -1 ? config.length : afterHeader + nextTableRel;
-  const table = config.slice(start, end);
-  const nextTable = config.slice(end);
-  const updatedTable = /^hooks\s*=/m.test(table)
-    ? table.replace(/^hooks\s*=.*$/m, "hooks = true")
-    : table.replace(/^\[features\]\s*$/m, "[features]\nhooks = true");
-  return `${config.slice(0, start)}${updatedTable}${nextTable}`;
-}
-
-function printCodexCommands(
-  spec: AgentSpec,
-  plan: CodexInstallPlan,
-  isJson: boolean,
-  reason: "print-only" | "no-host-cli" | "install-failed",
-): void {
-  if (isJson) return;
-  const preamble =
-    reason === "no-host-cli"
-      ? `${pc.yellow("⚠")} \`${spec.hostCli}\` not found. ` +
-        "Run these equivalent setup steps yourself:"
-      : reason === "install-failed"
-        ? `${pc.yellow("⚠")} Codex hook install failed. Equivalent setup steps:`
-        : `Equivalent setup steps for the ${spec.label} plugin:`;
-  process.stderr.write(`\n${preamble}\n\n`);
-  for (const cmd of plan.commands) {
-    process.stderr.write(`  ${cmd}\n`);
-  }
-  process.stderr.write("\n");
-}
-
-function hostCliExists(hostCli: string): boolean {
-  try {
-    const r = spawnSync(hostCli, ["--version"], { encoding: "utf-8" });
-    return !r.error && (r.status === 0 || r.status === null);
-  } catch {
-    return false;
-  }
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'"'"'`)}'`;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** Render a host-CLI command line for display / copy-paste. */
+export function renderCommand(hostCli: string, argv: string[]): string {
+  return `${hostCli} ${argv.join(" ")}`;
 }
 
 // ---------------------------------------------------------------------------

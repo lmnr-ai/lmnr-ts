@@ -1,119 +1,92 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import {
-  type AgentSpec,
-  buildCodexLauncherSource,
-  buildInstallCommands,
-  renderCommand,
-  upsertCodexHookConfig,
-} from "./index";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-// AgentSpec is not exported (internal registry shape); reconstruct the minimal
-// fields buildInstallCommands reads. Kept in sync with the claude-code entry.
-const spec = {
+import { buildInstallCommands, renderCommand, writeAgentConfig } from "./index";
+
+// AgentSpec is internal; reconstruct the fields the exported helpers read.
+const claudeSpec = {
   label: "Claude Code",
+  hostCli: "claude",
   marketplaceRef: "lmnr-ai/lmnr-claude-code-plugin",
   pluginRef: "laminar@laminar",
-  keyEnvName: "LMNR_PROJECT_API_KEY",
-  hostCli: "claude",
-  installer: "claude-plugin",
-} satisfies AgentSpec;
+  installArgv: ["install", "laminar@laminar", "--scope", "user"],
+  configFile: "claude-code-plugin.json",
+} as any;
+
+const codexSpec = {
+  label: "Codex",
+  hostCli: "codex",
+  marketplaceRef: "lmnr-ai/lmnr-codex-plugin",
+  pluginRef: "laminar@laminar",
+  installArgv: ["add", "laminar@laminar"],
+  configFile: "codex-plugin.json",
+} as any;
 
 describe("buildInstallCommands", () => {
-  it("emits marketplace-add then install, with the key in --config and user scope", () => {
-    const cmds = buildInstallCommands(spec, "SECRET_KEY");
+  it("claude: marketplace add (lenient) then `plugin install ... --scope user` (fatal)", () => {
+    const cmds = buildInstallCommands(claudeSpec);
     expect(cmds).toHaveLength(2);
-
     expect(cmds[0].argv).toEqual([
-      "plugin",
-      "marketplace",
-      "add",
-      "lmnr-ai/lmnr-claude-code-plugin",
+      "plugin", "marketplace", "add", "lmnr-ai/lmnr-claude-code-plugin",
     ]);
-    // marketplace-add is lenient: re-running (already added) must not fail the flow.
     expect(cmds[0].lenient).toBe(true);
-
-    expect(cmds[1].argv).toEqual([
-      "plugin",
-      "install",
-      "laminar@laminar",
-      "--config",
-      "LMNR_PROJECT_API_KEY=SECRET_KEY",
-      "--scope",
-      "user",
-    ]);
-    // install failure IS fatal.
+    expect(cmds[1].argv).toEqual(["plugin", "install", "laminar@laminar", "--scope", "user"]);
     expect(cmds[1].lenient).toBe(false);
   });
-});
 
-describe("codex hook install helpers", () => {
-  it("writes a private launcher that injects Laminar config before loading the hook", () => {
-    const source = buildCodexLauncherSource({
-      hookPath: "/Users/me/.codex/lmnr/hook.cjs",
-      apiKey: "SECRET_KEY",
-      baseUrl: "https://api.lmnr.ai",
-    });
-
-    expect(source).toContain('process.env.LMNR_PROJECT_API_KEY = "SECRET_KEY";');
-    expect(source).toContain('process.env.LMNR_BASE_URL = "https://api.lmnr.ai";');
-    expect(source).toContain('require("/Users/me/.codex/lmnr/hook.cjs");');
+  it("codex: marketplace add then `plugin add` (no scope flag)", () => {
+    const cmds = buildInstallCommands(codexSpec);
+    expect(cmds[0].argv).toEqual(["plugin", "marketplace", "add", "lmnr-ai/lmnr-codex-plugin"]);
+    expect(cmds[1].argv).toEqual(["plugin", "add", "laminar@laminar"]);
   });
 
-  it("adds hooks=true and a single Laminar Stop hook block", () => {
-    const input = `model = "openai.gpt-5.5"
-
-[features]
-shell_tool = true
-
-# >>> Laminar Codex plugin
-old block
-# <<< Laminar Codex plugin
-`;
-
-    const output = upsertCodexHookConfig(input, "/Users/me/.codex/lmnr/hook-launcher.cjs");
-
-    expect(output).toContain("[features]\nhooks = true\nshell_tool = true");
-    expect(output).toContain("[[hooks.Stop]]");
-    expect(output).toContain("[[hooks.Stop.hooks]]");
-    expect(output).toContain('type = "command"');
-    expect(output).toContain(
-      'command = "node /Users/me/.codex/lmnr/hook-launcher.cjs"',
-    );
-    expect(output.match(/Laminar Codex plugin/g)).toHaveLength(2);
-    expect(output).not.toContain("old block");
+  it("no secret ever appears in the install commands (key is file-delivered)", () => {
+    for (const spec of [claudeSpec, codexSpec]) {
+      const joined = buildInstallCommands(spec)
+        .map((c) => c.argv.join(" "))
+        .join(" ");
+      expect(joined).not.toContain("--config");
+      expect(joined.toLowerCase()).not.toContain("api");
+    }
   });
 });
 
 describe("renderCommand", () => {
-  const argv = [
-    "plugin",
-    "install",
-    "laminar@laminar",
-    "--config",
-    "LMNR_PROJECT_API_KEY=SECRET_KEY",
-    "--scope",
-    "user",
-  ];
-
-  it("shows the full key when not masking (copy-paste path)", () => {
-    expect(renderCommand("claude", argv, false)).toBe(
-      "claude plugin install laminar@laminar --config LMNR_PROJECT_API_KEY=SECRET_KEY --scope user",
+  it("prefixes the host CLI and joins argv", () => {
+    const claudeArgv = ["plugin", "install", "laminar@laminar", "--scope", "user"];
+    expect(renderCommand("claude", claudeArgv)).toBe(
+      "claude plugin install laminar@laminar --scope user",
+    );
+    expect(renderCommand("codex", ["plugin", "add", "laminar@laminar"])).toBe(
+      "codex plugin add laminar@laminar",
     );
   });
+});
 
-  it("masks only the --config value when masking (echo-to-terminal path)", () => {
-    const out = renderCommand("claude", argv, true);
-    expect(out).toBe(
-      "claude plugin install laminar@laminar --config LMNR_PROJECT_API_KEY=*** --scope user",
-    );
-    expect(out).not.toContain("SECRET_KEY");
+describe("writeAgentConfig", () => {
+  let home: string;
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "lmnr-cfg-"));
+    saved.XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = home;
+  });
+  afterEach(() => {
+    if (saved.XDG_CONFIG_HOME === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = saved.XDG_CONFIG_HOME;
+    rmSync(home, { recursive: true, force: true });
   });
 
-  it("leaves a bare --config token untouched when it has no '='", () => {
-    // Defensive: a value-less --config shouldn't throw or mangle.
-    expect(renderCommand("claude", ["--config", "NOEQUALS"], true)).toBe(
-      "claude --config NOEQUALS",
-    );
+  it("writes {projectApiKey, baseUrl} to ~/.config/lmnr/<agent>-plugin.json at mode 0600", () => {
+    const p = writeAgentConfig(codexSpec, "SECRET_KEY", "https://api.lmnr.ai");
+    expect(p).toBe(join(home, "lmnr", "codex-plugin.json"));
+    const parsed = JSON.parse(readFileSync(p, "utf-8"));
+    expect(parsed).toEqual({ projectApiKey: "SECRET_KEY", baseUrl: "https://api.lmnr.ai" });
+    // 0600: owner read/write only.
+    expect(statSync(p).mode & 0o777).toBe(0o600);
   });
 });

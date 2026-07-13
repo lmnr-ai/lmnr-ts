@@ -379,12 +379,13 @@ Examples:
       "after",
       `
 Global, directory-independent setup: it does NOT touch .lmnr/project.json or
-.env. The project API key is stored in the host agent's own config/launcher,
-named after the plugin so you can find and revoke it in the dashboard. Restart
-the agent after install to activate it.
+.env. The minted key is named after the plugin (find/revoke it in the dashboard)
+and written to ~/.config/lmnr/<agent>-plugin.json, where the plugin reads it. The
+plugin is installed via the agent's native plugin marketplace. Restart the agent
+after install to activate it.
 
-When the host CLI isn't found (or is too old for native plugin config), or with
---print-only, equivalent setup commands are printed for you to run by hand.
+When the host CLI isn't found (or has no plugin support), or with --print-only,
+the install commands are printed for you to run by hand.
 
 Examples:
   $ lmnr-cli plugin add claude-code
