@@ -10,9 +10,11 @@ const GATE_SCORE_PREFIX = "gate:";
 /**
  * Narrow local mirrors of eve's `eve/evals` types. We intentionally do NOT
  * import from `eve` so the SDK carries no peer dependency on it (same pattern
- * as the Mastra exporter). The fields mirror eve 0.16.x; every field a reporter
+ * as the Mastra exporter). The fields mirror eve 0.22.x; every field a reporter
  * reads is optional so a shape change on eve's side degrades gracefully instead
- * of throwing.
+ * of throwing. Array fields must stay `readonly` — eve's own types are
+ * readonly, and a mutable mirror is not assignable to them (TS2322 for users
+ * registering the reporter).
  */
 export interface EveEval {
   /** Path-derived stable id of the eval, e.g. "brooklyn-forecast". */
@@ -54,7 +56,7 @@ export interface EveEvalToolCall {
 
 /** Execution facts eve derives from a completed session's stream. */
 export interface EveEvalDerivedFacts {
-  toolCalls?: EveEvalToolCall[];
+  toolCalls?: readonly EveEvalToolCall[];
   toolCallCount?: number;
   subagentCallCount?: number;
   messageCount?: number;
@@ -81,7 +83,7 @@ export interface EveEvalTaskResult {
   sessionId?: string;
   /** How the run's final turn ended. */
   status?: "completed" | "failed" | "waiting";
-  logs?: string[];
+  logs?: readonly string[];
   derived?: EveEvalDerivedFacts;
   runtimeIdentity?: EveRuntimeIdentity;
 }
@@ -96,7 +98,7 @@ export interface EveEvalResult {
   /** Execution result (output, session, derived facts). */
   result?: EveEvalTaskResult;
   /** Every assertion recorded by the eval's `test(t)`, in record order. */
-  assertions?: EveAssertionResult[];
+  assertions?: readonly EveAssertionResult[];
   /** Per-eval verdict. */
   verdict?: EveEvalVerdict;
   /** Execution error message, when the eval threw. */
