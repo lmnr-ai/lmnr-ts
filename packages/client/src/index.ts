@@ -56,11 +56,12 @@ export class LaminarClient {
   } = {}) {
     loadEnv();
     this.auth = LaminarClient.normalizeAuth(auth, projectApiKey, cliUserProjectId);
+    const resolvedBaseUrl = baseUrl ?? process.env.LMNR_BASE_URL;
     const httpPort = port ?? (
-      baseUrl?.match(/:\d{1,5}$/g)
-        ? parseInt(baseUrl.match(/:\d{1,5}$/g)![0].slice(1))
+      resolvedBaseUrl?.match(/:\d{1,5}$/g)
+        ? parseInt(resolvedBaseUrl.match(/:\d{1,5}$/g)![0].slice(1))
         : 443);
-    const baseUrlNoPort = (baseUrl ?? process.env.LMNR_BASE_URL)
+    const baseUrlNoPort = resolvedBaseUrl
       ?.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
     this.baseUrl = `${baseUrlNoPort ?? 'https://api.lmnr.ai'}:${httpPort}`;
     this._browserEvents = new BrowserEventsResource(this.baseUrl, this.auth);
