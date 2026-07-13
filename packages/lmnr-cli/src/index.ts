@@ -356,7 +356,7 @@ Examples:
     .description(
       "Log in, pick a project, mint a key, and install the Laminar plugin for a coding agent",
     )
-    .argument("<agent>", "Which agent to set up (currently: claude-code)")
+    .argument("<agent>", "Which agent to set up (currently: claude-code, codex)")
     .option(
       "--project-id <id>",
       "Project to send this agent's traces to (skips the interactive picker)",
@@ -379,16 +379,17 @@ Examples:
       "after",
       `
 Global, directory-independent setup: it does NOT touch .lmnr/project.json or
-.env. The project API key is stored in the host CLI's own config (via
-\`claude plugin install --config\`), named after the plugin so you can find and
-revoke it in the dashboard. Restart the agent after install to activate it.
+.env. The project API key is stored in the host agent's own config/launcher,
+named after the plugin so you can find and revoke it in the dashboard. Restart
+the agent after install to activate it.
 
-When \`claude\` isn't found (or is too old for --config), or with --print-only,
-the exact commands are printed for you to run by hand.
+When the host CLI isn't found (or is too old for native plugin config), or with
+--print-only, equivalent setup commands are printed for you to run by hand.
 
 Examples:
   $ lmnr-cli plugin add claude-code
-  $ lmnr-cli plugin add claude-code --project-id <id>
+  $ lmnr-cli plugin add codex
+  $ lmnr-cli plugin add codex --project-id <id>
   $ lmnr-cli plugin add claude-code --print-only
 `,
     );
@@ -579,6 +580,7 @@ Examples:
   lmnr-cli skill add                                       # Install the Laminar agent skill
   lmnr-cli skill update                                    # Update installed Laminar skills
   lmnr-cli plugin add claude-code                          # Install the Claude Code plugin
+  lmnr-cli plugin add codex                                # Install the Codex hook
 
 For more information about the Laminar platfrom:
   Documentation: https://laminar.sh/docs

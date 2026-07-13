@@ -1,5 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
-import { hostname } from "node:os";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir, hostname } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 
 import { type CliProject, LaminarClient } from "@lmnr-ai/client";
@@ -17,7 +19,7 @@ import { handleLogin } from "../login";
 //   7  no_project         — no project to select (create one first)
 //   9  mint_failed        — POST /api/cli/api-key failed
 //   13 unsupported_agent  — unknown <agent> argument
-//   14 install_failed     — a `claude plugin ...` command exited non-zero
+//   14 install_failed     — a host plugin install command exited non-zero
 const EXIT_NO_ACCESS = 4;
 const EXIT_LOGIN_FAILED = 6;
 const EXIT_NO_PROJECT = 7;
@@ -30,26 +32,37 @@ const EXIT_INSTALL_FAILED = 14;
  * the user types. Adding a new coding agent (cursor, codex, …) is a matter of
  * appending an entry here plus its install-command shape.
  */
-interface AgentSpec {
+export interface AgentSpec {
   /** Human-facing label (banners, key name). */
   label: string;
+  installer: "claude-plugin" | "codex-hook";
   /** `claude plugin marketplace add <ref>` argument. */
-  marketplaceRef: string;
+  marketplaceRef?: string;
   /** `claude plugin install <ref>` argument (plugin@marketplace). */
-  pluginRef: string;
-  /** userConfig key the project API key is delivered under. */
+  pluginRef?: string;
+  /** userConfig/env key the project API key is delivered under. */
   keyEnvName: string;
-  /** The host CLI binary (`claude`) that installs the plugin. */
+  /** The host CLI binary (`claude`, `codex`) that activates the plugin. */
   hostCli: string;
+  /** Bundled hook artifact used by host CLIs without plugin config secrets. */
+  bundleUrl?: string;
 }
 
 const AGENTS: Record<string, AgentSpec> = {
   "claude-code": {
     label: "Claude Code",
+    installer: "claude-plugin",
     marketplaceRef: "lmnr-ai/lmnr-claude-code-plugin",
     pluginRef: "laminar@laminar",
     keyEnvName: "LMNR_PROJECT_API_KEY",
     hostCli: "claude",
+  },
+  codex: {
+    label: "Codex",
+    installer: "codex-hook",
+    keyEnvName: "LMNR_PROJECT_API_KEY",
+    hostCli: "codex",
+    bundleUrl: "https://raw.githubusercontent.com/lmnr-ai/lmnr-codex-plugin/main/dist/hook.cjs",
   },
 };
 
@@ -82,12 +95,13 @@ interface PluginAddResult {
  * Flow: log in (device flow) if needed → pick the project that should receive
  * this agent's traces (deliberately NOT the directory-linked app project) →
  * mint a project API key named after the plugin+host → install the plugin via
- * the host CLI (`claude plugin ...`), or print those commands when the host CLI
- * is missing / lacks `--config` / `--print-only` was passed.
+ * the host's native activation path, or print recovery commands when the host
+ * CLI is missing / too old / `--print-only` was passed.
  *
  * Unlike `setup`, this is a GLOBAL, directory-independent operation: it never
  * reads or writes `.lmnr/project.json` and never writes `.env`. The key lives
- * only in the host CLI's own (keychain-backed) config via `--config`.
+ * only in the host's own configuration. Claude Code stores it in plugin config;
+ * Codex stores it in a private launcher file referenced by user-level hooks.
  */
 export async function handlePluginAdd(agent: string, options: PluginAddOptions): Promise<void> {
   const isJson = options.json === true;
@@ -162,28 +176,49 @@ export async function handlePluginAdd(agent: string, options: PluginAddOptions):
     );
   }
 
-  // --- 4. Install via the host CLI, or print the commands ------------------
-  const commands = buildInstallCommands(spec, key.apiKey);
-  const canRun = !options.printOnly && hostCliSupportsConfig(spec.hostCli);
-
+  // --- 4. Install via the host activation path, or print commands ----------
   let installed = false;
-  if (canRun) {
-    installed = await runInstall(spec, commands, isJson);
-    if (!installed) {
-      // A hard install failure (not the lenient marketplace-add path). Fall back
-      // to printing so the user can finish by hand.
-      printCommands(spec, commands, isJson, "install-failed");
-      emitError(
-        isJson,
-        "install_failed",
-        `A \`${spec.hostCli} plugin\` command failed; commands printed above.`,
-      );
-      // Non-fatal-to-JSON: still emit the result below? No — exit with the code
-      // so automation sees the failure. The printed commands remain the recovery.
-      process.exit(EXIT_INSTALL_FAILED);
+  let commands: string[];
+  if (spec.installer === "claude-plugin") {
+    const hostCommands = buildInstallCommands(spec, key.apiKey);
+    commands = hostCommands.map((c) => renderCommand(spec.hostCli, c.argv, false));
+    const canRun = !options.printOnly && hostCliSupportsConfig(spec.hostCli);
+
+    if (canRun) {
+      installed = await runInstall(spec, hostCommands, isJson);
+      if (!installed) {
+        // A hard install failure (not the lenient marketplace-add path). Fall back
+        // to printing so the user can finish by hand.
+        printCommands(spec, hostCommands, isJson, "install-failed");
+        emitError(
+          isJson,
+          "install_failed",
+          `A \`${spec.hostCli} plugin\` command failed; commands printed above.`,
+        );
+        // Non-fatal-to-JSON: still emit the result below? No — exit with the code
+        // so automation sees the failure. The printed commands remain the recovery.
+        process.exit(EXIT_INSTALL_FAILED);
+      }
+    } else {
+      printCommands(spec, hostCommands, isJson, options.printOnly ? "print-only" : "no-host-cli");
     }
   } else {
-    printCommands(spec, commands, isJson, options.printOnly ? "print-only" : "no-host-cli");
+    const codexPlan = getCodexInstallPlan(spec, key.apiKey, baseUrl);
+    commands = codexPlan.commands;
+    if (options.printOnly) {
+      printCodexCommands(spec, codexPlan, isJson, "print-only");
+    } else if (!hostCliExists(spec.hostCli)) {
+      printCodexCommands(spec, codexPlan, isJson, "no-host-cli");
+    } else {
+      try {
+        await installCodexHook(codexPlan);
+        installed = true;
+      } catch (err) {
+        printCodexCommands(spec, codexPlan, isJson, "install-failed");
+        emitError(isJson, "install_failed", describeError(err));
+        process.exit(EXIT_INSTALL_FAILED);
+      }
+    }
   }
 
   // --- 5. Summary ----------------------------------------------------------
@@ -195,7 +230,7 @@ export async function handlePluginAdd(agent: string, options: PluginAddOptions):
     apiKey: key.apiKey,
     apiKeyId: key.apiKeyId ?? null,
     installed,
-    commands: commands.map((c) => renderCommand(spec.hostCli, c.argv, false)),
+    commands,
     restartRequired: installed,
   };
 
@@ -368,6 +403,9 @@ interface HostCommand {
 }
 
 export function buildInstallCommands(spec: AgentSpec, apiKey: string): HostCommand[] {
+  if (!spec.marketplaceRef || !spec.pluginRef) {
+    throw new Error(`${spec.label} does not use host plugin install commands`);
+  }
   return [
     {
       label: "Add the Laminar marketplace",
@@ -486,6 +524,178 @@ export function renderCommand(hostCli: string, argv: string[], mask: boolean): s
     return arg;
   });
   return `${hostCli} ${parts.join(" ")}`;
+}
+
+// ---------------------------------------------------------------------------
+// Codex hook install
+// ---------------------------------------------------------------------------
+
+interface CodexInstallPlan {
+  codexHome: string;
+  installDir: string;
+  hookPath: string;
+  launcherPath: string;
+  configPath: string;
+  bundleUrl: string;
+  apiKey: string;
+  baseUrl: string;
+  commands: string[];
+}
+
+function getCodexInstallPlan(spec: AgentSpec, apiKey: string, baseUrl: string): CodexInstallPlan {
+  const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
+  const installDir = join(codexHome, "lmnr");
+  const hookPath = join(installDir, "hook.cjs");
+  const launcherPath = join(installDir, "hook-launcher.cjs");
+  const configPath = join(codexHome, "config.toml");
+  const bundleUrl = process.env.LMNR_CODEX_PLUGIN_BUNDLE_URL || spec.bundleUrl || "";
+  const hookCommand = `node ${shellQuote(launcherPath)}`;
+  return {
+    codexHome,
+    installDir,
+    hookPath,
+    launcherPath,
+    configPath,
+    bundleUrl,
+    apiKey,
+    baseUrl,
+    commands: [
+      `mkdir -p ${shellQuote(installDir)}`,
+      `curl -fsSL ${shellQuote(bundleUrl)} -o ${shellQuote(hookPath)}`,
+      `write ${shellQuote(launcherPath)} with ${spec.keyEnvName}=<api-key> ` +
+        `and LMNR_BASE_URL=${baseUrl}`,
+      `add a Codex Stop hook to ${shellQuote(configPath)}: ${hookCommand}`,
+    ],
+  };
+}
+
+async function installCodexHook(plan: CodexInstallPlan): Promise<void> {
+  if (!plan.bundleUrl) {
+    throw new Error("missing Codex plugin bundle URL");
+  }
+  await mkdir(plan.installDir, { recursive: true });
+  const hook = await fetchText(plan.bundleUrl);
+  await writeFile(plan.hookPath, hook, { encoding: "utf-8", mode: 0o600 });
+  await chmod(plan.hookPath, 0o600).catch(() => undefined);
+  await writeFile(plan.launcherPath, buildCodexLauncherSource(plan), {
+    encoding: "utf-8",
+    mode: 0o600,
+  });
+  await chmod(plan.launcherPath, 0o600).catch(() => undefined);
+
+  let config: string;
+  try {
+    config = await readFile(plan.configPath, "utf-8");
+  } catch {
+    config = "";
+  }
+  const next = upsertCodexHookConfig(config, plan.launcherPath);
+  await writeFile(plan.configPath, next, { encoding: "utf-8", mode: 0o600 });
+  await chmod(plan.configPath, 0o600).catch(() => undefined);
+}
+
+async function fetchText(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`failed to download Codex plugin bundle (${res.status}) from ${url}`);
+  }
+  return res.text();
+}
+
+export function buildCodexLauncherSource(plan: {
+  hookPath: string;
+  apiKey: string;
+  baseUrl: string;
+}): string {
+  return (
+    "// Generated by `lmnr-cli plugin add codex`. Do not commit this file; " +
+    "it contains a project API key.\n" +
+    `process.env.LMNR_PROJECT_API_KEY = ${JSON.stringify(plan.apiKey)};\n` +
+    `process.env.LMNR_BASE_URL = ${JSON.stringify(plan.baseUrl)};\n` +
+    `require(${JSON.stringify(plan.hookPath)});\n`
+  );
+}
+
+const CODEX_HOOK_START = "# >>> Laminar Codex plugin";
+const CODEX_HOOK_END = "# <<< Laminar Codex plugin";
+
+export function upsertCodexHookConfig(config: string, launcherPath: string): string {
+  let text = removeCodexHookBlock(config).trimEnd();
+  text = ensureCodexHooksFeature(text).trimEnd();
+  const block = [
+    CODEX_HOOK_START,
+    "[[hooks.Stop]]",
+    "[[hooks.Stop.hooks]]",
+    'type = "command"',
+    `command = ${JSON.stringify(`node ${launcherPath}`)}`,
+    "timeout = 30",
+    CODEX_HOOK_END,
+  ].join("\n");
+  return `${text ? `${text}\n\n` : ""}${block}\n`;
+}
+
+function removeCodexHookBlock(config: string): string {
+  const pattern = new RegExp(
+    `${escapeRegExp(CODEX_HOOK_START)}[\\s\\S]*?${escapeRegExp(CODEX_HOOK_END)}\\n?`,
+    "g",
+  );
+  return config.replace(pattern, "");
+}
+
+function ensureCodexHooksFeature(config: string): string {
+  const featuresMatch = /^\[features\]\s*$/m.exec(config);
+  if (!featuresMatch) {
+    return `${config.trimEnd()}${config.trimEnd() ? "\n\n" : ""}[features]\nhooks = true\n`;
+  }
+
+  const start = featuresMatch.index;
+  const afterHeader = start + featuresMatch[0].length;
+  const nextTableRel = config.slice(afterHeader).search(/^\[/m);
+  const end = nextTableRel === -1 ? config.length : afterHeader + nextTableRel;
+  const table = config.slice(start, end);
+  const nextTable = config.slice(end);
+  const updatedTable = /^hooks\s*=/m.test(table)
+    ? table.replace(/^hooks\s*=.*$/m, "hooks = true")
+    : table.replace(/^\[features\]\s*$/m, "[features]\nhooks = true");
+  return `${config.slice(0, start)}${updatedTable}${nextTable}`;
+}
+
+function printCodexCommands(
+  spec: AgentSpec,
+  plan: CodexInstallPlan,
+  isJson: boolean,
+  reason: "print-only" | "no-host-cli" | "install-failed",
+): void {
+  if (isJson) return;
+  const preamble =
+    reason === "no-host-cli"
+      ? `${pc.yellow("⚠")} \`${spec.hostCli}\` not found. ` +
+        "Run these equivalent setup steps yourself:"
+      : reason === "install-failed"
+        ? `${pc.yellow("⚠")} Codex hook install failed. Equivalent setup steps:`
+        : `Equivalent setup steps for the ${spec.label} plugin:`;
+  process.stderr.write(`\n${preamble}\n\n`);
+  for (const cmd of plan.commands) {
+    process.stderr.write(`  ${cmd}\n`);
+  }
+  process.stderr.write("\n");
+}
+
+function hostCliExists(hostCli: string): boolean {
+  try {
+    const r = spawnSync(hostCli, ["--version"], { encoding: "utf-8" });
+    return !r.error && (r.status === 0 || r.status === null);
+  } catch {
+    return false;
+  }
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // ---------------------------------------------------------------------------

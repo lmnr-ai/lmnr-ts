@@ -176,6 +176,21 @@ dir (`.claude`, `.cursor`, `.codex`, `.agents`), defaulting to `.claude/` +
 `.agents/` when none exist. `skill update` only replaces copies that are
 already installed. Both accept `--json`.
 
+### `plugin` - Agent observability plugins
+
+Install Laminar tracing hooks/plugins for coding agents. This is global and does
+not touch `.lmnr/project.json` or `.env`.
+
+```bash
+lmnr-cli plugin add claude-code             # Claude Code plugin marketplace install
+lmnr-cli plugin add codex                   # Codex Stop hook install
+lmnr-cli plugin add codex --project-id <uuid>
+lmnr-cli plugin add codex --print-only      # Show equivalent manual steps
+```
+
+The command logs in if needed, lets you pick a project, mints a plugin-named
+project API key, and stores it in the host agent's own config/launcher.
+
 ### `login` / `logout` - Authentication
 
 See [Authentication](#authentication) above.
