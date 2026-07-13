@@ -230,11 +230,13 @@ export class LaminarReporter implements EvalReporter {
         this.options.name,
         this.options.groupName,
         {
+          // User metadata first so the run facts below always win on key
+          // collisions — `source: "eve"` etc. are used for attribution.
+          ...(this.options.metadata ?? {}),
           source: "eve",
           targetKind: target?.kind,
           targetUrl: target?.url,
           evalCount: evaluations.length,
-          ...(this.options.metadata ?? {}),
         },
       ).then((response) => response.id);
     } catch (error) {
