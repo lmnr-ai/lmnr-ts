@@ -2,21 +2,24 @@ import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
-import { createInterface } from "node:readline/promises";
 
-import { type CliProject, LaminarClient } from "@lmnr-ai/client";
+import { type CliProject } from "@lmnr-ai/client";
+import { errorMessage } from "@lmnr-ai/types";
 
 import { version } from "../../../package.json";
-import { type Credentials, globalLmnrDirectory, readCredentials } from "../../auth/credentials";
-import { envHttpPort, refreshIfNeeded } from "../../auth/resolve";
+import { mintProjectApiKey } from "../../auth/api-key";
+import { type Credentials, globalLmnrDirectory, safeReadCredentials } from "../../auth/credentials";
 import { DEFAULT_BASE_URL, DEFAULT_FRONTEND_URL } from "../../constants";
 import { orange, pc } from "../../utils/colors";
+import { emitError } from "../../utils/output";
+import { listProjects, promptProjectChoice } from "../../utils/projects";
+import { firstNonEmpty } from "../../utils/text";
 import { handleLogin } from "../login";
 
 // Exit codes (machine-readable; distinct so automation can branch on the mode):
 //   4  no_access          — user lacks access to the requested --project-id
 //   6  login_failed       — device-flow login failed / no creds after login
-//   7  no_project         — no project to select (create one first)
+//   7  no_project         — no project to select / ambiguous (see error string)
 //   8  config_write_failed — minted a key but couldn't write the plugin config file
 //   9  mint_failed        — POST /api/cli/api-key failed
 //   13 unsupported_agent  — unknown <agent> argument
@@ -31,14 +34,13 @@ const EXIT_INSTALL_FAILED = 14;
 
 /**
  * Registry of agents `plugin add <agent>` can wire up, keyed by the CLI argument
- * the user types. Both supported agents now use the same shape: a host CLI with
- * a native plugin marketplace (`<cli> plugin marketplace add` + an install verb),
+ * the user types. Both supported agents use the same shape: a host CLI with a
+ * native plugin marketplace (`<cli> plugin marketplace add` + an install verb),
  * and a shared per-agent config file under `~/.config/lmnr/` that carries the
  * project API key. Neither agent has a per-plugin secret store, so the key lives
- * in that file and the plugin's hook reads it (see the plugin repos' config.ts).
- * Adding a new agent (cursor, …) is a matter of appending an entry here.
+ * in that file and the plugin's hook reads it. Adding an agent = one entry.
  */
-interface AgentSpec {
+export interface AgentSpec {
   /** Human-facing label (banners, minted-key name). */
   label: string;
   /** Host CLI binary that owns the plugin system (`claude`, `codex`). */
@@ -112,7 +114,7 @@ interface PluginAddResult {
  * CLI's argv — it lives only in the per-agent config file (both agents lack a
  * per-plugin secret store), so the install commands carry no secret.
  */
-export async function handlePluginAdd(agent: string, options: PluginAddOptions): Promise<void> {
+export const handlePluginAdd = async (agent: string, options: PluginAddOptions): Promise<void> => {
   const isJson = options.json === true;
   const spec = AGENTS[agent];
   if (!spec) {
@@ -124,12 +126,12 @@ export async function handlePluginAdd(agent: string, options: PluginAddOptions):
     process.exit(EXIT_UNSUPPORTED_AGENT);
   }
 
-  const frontendUrl = pick(
+  const frontendUrl = firstNonEmpty(
     options.frontendUrl,
     process.env.LMNR_FRONTEND_URL,
     DEFAULT_FRONTEND_URL,
   );
-  const baseUrl = pick(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
+  const baseUrl = firstNonEmpty(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
 
   if (!isJson) {
     process.stderr.write(`\n${orange("Laminar CLI")} ${pc.dim(`v${version}`)}\n`);
@@ -144,7 +146,7 @@ export async function handlePluginAdd(agent: string, options: PluginAddOptions):
     try {
       login = await handleLogin({ frontendUrl, noBrowser: options.noBrowser });
     } catch (err) {
-      emitError(isJson, "login_failed", describeError(err));
+      emitError(isJson, "login_failed", errorMessage(err));
       process.exit(EXIT_LOGIN_FAILED);
     }
     loginProjectId = login.projectId;
@@ -164,7 +166,7 @@ export async function handlePluginAdd(agent: string, options: PluginAddOptions):
   const project = await resolveProject(creds, baseUrl, options, loginProjectId, isJson);
   if (!isJson) {
     process.stderr.write(
-      `${pc.green("✓")} Traces will go to project ${project.name ?? project.id}` +
+      `${pc.green("✓")} Traces will go to project ${project.name || project.id}` +
         (project.workspaceName ? pc.dim(` (${project.workspaceName})`) : "") +
         "\n",
     );
@@ -172,17 +174,15 @@ export async function handlePluginAdd(agent: string, options: PluginAddOptions):
 
   // --- 3. Mint a plugin-named key ------------------------------------------
   const keyName = `${spec.label} plugin @ ${hostname()}`;
-  let key: MintResponse;
+  let key;
   try {
-    key = await mintApiKey(issuer, creds.sessionToken, project.id, keyName);
+    key = await mintProjectApiKey(issuer, creds.sessionToken, project.id, keyName);
   } catch (err) {
-    emitError(isJson, "mint_failed", describeError(err));
+    emitError(isJson, "mint_failed", errorMessage(err));
     process.exit(EXIT_MINT_FAILED);
   }
   if (!isJson) {
-    process.stderr.write(
-      `${pc.green("✓")} Minted a project API key named "${pc.bold(keyName)}"\n`,
-    );
+    process.stderr.write(`${pc.green("✓")} Minted a project API key named "${pc.bold(keyName)}"\n`);
   }
 
   // --- 4. Write the per-agent config file the plugin reads -----------------
@@ -190,7 +190,7 @@ export async function handlePluginAdd(agent: string, options: PluginAddOptions):
   try {
     configPath = writeAgentConfig(spec, key.apiKey, baseUrl);
   } catch (err) {
-    emitError(isJson, "config_write_failed", describeError(err));
+    emitError(isJson, "config_write_failed", errorMessage(err));
     process.exit(EXIT_CONFIG_WRITE_FAILED);
   }
   if (!isJson) {
@@ -222,8 +222,8 @@ export async function handlePluginAdd(agent: string, options: PluginAddOptions):
   const result: PluginAddResult = {
     agent,
     projectId: project.id,
-    projectName: project.name ?? null,
-    workspaceName: project.workspaceName ?? null,
+    projectName: project.name || null,
+    workspaceName: project.workspaceName || null,
     apiKey: key.apiKey,
     apiKeyId: key.apiKeyId ?? null,
     configPath,
@@ -249,7 +249,7 @@ export async function handlePluginAdd(agent: string, options: PluginAddOptions):
       `\nRun the commands above to finish, then ${pc.bold(`restart ${spec.label}`)}.\n`,
     );
   }
-}
+};
 
 // ---------------------------------------------------------------------------
 // Project selection
@@ -264,13 +264,13 @@ export async function handlePluginAdd(agent: string, options: PluginAddOptions):
  * project. When we just logged in and the browser handed back a selected/created
  * project (loginProjectId), that's honored as the deliberate choice.
  */
-async function resolveProject(
+const resolveProject = async (
   creds: Credentials,
   baseUrl: string,
   options: PluginAddOptions,
   loginProjectId: string | null,
   isJson: boolean,
-): Promise<CliProject> {
+): Promise<CliProject> => {
   const projects = await listProjects(creds, baseUrl);
 
   if (options.projectId) {
@@ -315,79 +315,17 @@ async function resolveProject(
     );
     process.exit(EXIT_NO_PROJECT);
   }
-  return promptProjectChoice(projects);
-}
-
-/** List the projects the user can access (user-JWT discovery). */
-async function listProjects(creds: Credentials, baseUrl: string): Promise<CliProject[]> {
-  const updated = await refreshIfNeeded(creds);
-  const client = new LaminarClient({
-    baseUrl,
-    port: envHttpPort(),
-    auth: { type: "userToken", token: updated.accessToken, projectId: "" },
-  });
-  return client.cli.listProjects();
-}
-
-async function promptProjectChoice(projects: CliProject[]): Promise<CliProject> {
-  process.stderr.write(
+  return promptProjectChoice(
+    projects,
     "\nPick the project to send this agent's traces to " +
       pc.dim("(a dedicated project keeps agent traces separate from your app traces)") +
       ":\n",
   );
-  projects.forEach((p, i) => {
-    process.stderr.write(`  ${i + 1}) ${p.workspaceName} / ${p.name}\n`);
-  });
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  try {
-    while (true) {
-      const answer = (await rl.question(`Select [1-${projects.length}]: `)).trim();
-      const idx = Number.parseInt(answer, 10);
-      if (Number.isInteger(idx) && idx >= 1 && idx <= projects.length) {
-        return projects[idx - 1];
-      }
-      process.stderr.write(`${pc.red("Invalid selection.")}\n`);
-    }
-  } finally {
-    rl.close();
-  }
-}
+};
 
 // ---------------------------------------------------------------------------
-// Key minting + config file
+// Per-agent config file
 // ---------------------------------------------------------------------------
-
-interface MintResponse {
-  apiKey: string;
-  apiKeyId?: string;
-  projectId?: string;
-  projectName?: string;
-  workspaceName?: string;
-}
-
-/**
- * POST /api/cli/api-key with the session bearer for an explicit project.
- * `deviceName` is the human-visible name the key shows under in the dashboard —
- * we pass a plugin-evident label so the key is recognizable and revocable.
- */
-async function mintApiKey(
-  issuer: string,
-  sessionToken: string,
-  projectId: string,
-  deviceName: string,
-): Promise<MintResponse> {
-  const url = `${trimSlash(issuer)}/api/cli/api-key`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { authorization: `Bearer ${sessionToken}`, "content-type": "application/json" },
-    body: JSON.stringify({ deviceName, projectId }),
-  });
-  if (res.ok) {
-    return (await res.json()) as MintResponse;
-  }
-  const body = (await res.json().catch(() => ({}))) as { error?: string };
-  throw new Error(body.error ?? `api-key request failed (${res.status})`);
-}
 
 /**
  * Write the per-agent Laminar plugin config (`~/.config/lmnr/<agent>-plugin.json`,
@@ -395,14 +333,14 @@ async function mintApiKey(
  * plugins read it from here (neither agent has a per-plugin secret store), so
  * the key never has to pass through the host CLI's argv. Returns the path.
  */
-export function writeAgentConfig(spec: AgentSpec, apiKey: string, baseUrl: string): string {
+export const writeAgentConfig = (spec: AgentSpec, apiKey: string, baseUrl: string): string => {
   const dir = globalLmnrDirectory();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const filePath = join(dir, spec.configFile);
   const body = JSON.stringify({ projectApiKey: apiKey, baseUrl }, null, 2) + "\n";
   writeFileSync(filePath, body, { mode: 0o600 });
   return filePath;
-}
+};
 
 // ---------------------------------------------------------------------------
 // Host-CLI native install
@@ -415,20 +353,18 @@ interface HostCommand {
   lenient: boolean;
 }
 
-export function buildInstallCommands(spec: AgentSpec): HostCommand[] {
-  return [
-    {
-      label: "Add the Laminar marketplace",
-      argv: ["plugin", "marketplace", "add", spec.marketplaceRef],
-      lenient: true,
-    },
-    {
-      label: "Install the plugin",
-      argv: ["plugin", ...spec.installArgv],
-      lenient: false,
-    },
-  ];
-}
+export const buildInstallCommands = (spec: AgentSpec): HostCommand[] => [
+  {
+    label: "Add the Laminar marketplace",
+    argv: ["plugin", "marketplace", "add", spec.marketplaceRef],
+    lenient: true,
+  },
+  {
+    label: "Install the plugin",
+    argv: ["plugin", ...spec.installArgv],
+    lenient: false,
+  },
+];
 
 /**
  * Probe whether the host CLI is present AND exposes a `plugin` subcommand. A
@@ -436,14 +372,14 @@ export function buildInstallCommands(spec: AgentSpec): HostCommand[] {
  * and a too-old CLI without plugins won't succeed. Cheaper and more robust than
  * parsing a version string.
  */
-export function hostCliHasPlugins(hostCli: string): boolean {
+export const hostCliHasPlugins = (hostCli: string): boolean => {
   try {
     const r = spawnSync(hostCli, ["plugin", "--help"], { encoding: "utf-8" });
     return !r.error && r.status === 0;
   } catch {
     return false;
   }
-}
+};
 
 /**
  * Run the install commands in order, narrating each. A lenient step's non-zero
@@ -451,11 +387,11 @@ export function hostCliHasPlugins(hostCli: string): boolean {
  * failure returns false. No secret is on the command line (the key is in the
  * config file), so the commands are echoed verbatim.
  */
-async function runInstall(
+const runInstall = async (
   spec: AgentSpec,
   commands: HostCommand[],
   isJson: boolean,
-): Promise<boolean> {
+): Promise<boolean> => {
   if (!isJson) process.stderr.write("\n");
   for (const cmd of commands) {
     if (!isJson) {
@@ -476,27 +412,26 @@ async function runInstall(
     }
   }
   return true;
-}
+};
 
-function runChild(cmd: string, argv: string[]): Promise<number> {
-  return new Promise((resolve) => {
+const runChild = (cmd: string, argv: string[]): Promise<number> =>
+  new Promise((resolve) => {
     const child = spawn(cmd, argv, { stdio: "inherit" });
     child.on("error", () => resolve(-1));
     child.on("close", (code) => resolve(code ?? -1));
   });
-}
 
 /**
  * Print the install commands for the user to run by hand. Used when the host CLI
  * is absent / `--print-only`, or as recovery after an install failure. The key
  * is NOT here (it's in the config file), so these are safe to show verbatim.
  */
-function printCommands(
+const printCommands = (
   spec: AgentSpec,
   commands: HostCommand[],
   isJson: boolean,
   reason: "print-only" | "no-host-cli" | "install-failed",
-): void {
+): void => {
   if (isJson) return;
   const preamble =
     reason === "no-host-cli"
@@ -510,44 +445,8 @@ function printCommands(
     process.stderr.write(`  ${renderCommand(spec.hostCli, cmd.argv)}\n`);
   }
   process.stderr.write("\n");
-}
+};
 
 /** Render a host-CLI command line for display / copy-paste. */
-export function renderCommand(hostCli: string, argv: string[]): string {
-  return `${hostCli} ${argv.join(" ")}`;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-async function safeReadCredentials(): Promise<Credentials | null> {
-  try {
-    return await readCredentials();
-  } catch {
-    return null;
-  }
-}
-
-function pick(...candidates: (string | undefined)[]): string {
-  for (const c of candidates) {
-    if (c && c.length > 0) return c;
-  }
-  return "";
-}
-
-function trimSlash(url: string): string {
-  return url.replace(/\/+$/, "");
-}
-
-function describeError(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-function emitError(json: boolean, code: string, detail: string): void {
-  if (json) {
-    process.stdout.write(JSON.stringify({ error: code, detail }) + "\n");
-  } else {
-    process.stderr.write(`\n${pc.red(`ERROR (${code})`)}: ${detail}\n`);
-  }
-}
+export const renderCommand = (hostCli: string, argv: string[]): string =>
+  `${hostCli} ${argv.join(" ")}`;

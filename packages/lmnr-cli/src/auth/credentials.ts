@@ -71,6 +71,15 @@ export async function readCredentials(): Promise<Credentials | null> {
   return null;
 }
 
+/** Read credentials, treating any read/parse error as "not logged in" (null). */
+export async function safeReadCredentials(): Promise<Credentials | null> {
+  try {
+    return await readCredentials();
+  } catch {
+    return null;
+  }
+}
+
 export async function writeCredentials(creds: Credentials): Promise<void> {
   const path = credentialsPath();
   const parent = dirname(path);
