@@ -63,6 +63,23 @@ void describe("LaminarReporter for eve evals", () => {
     scope.done();
   });
 
+  void it("keeps eve run facts when user metadata collides", async () => {
+    let body: RequestBody = {};
+    const scope = mockInit((b) => (body = b));
+
+    const reporter = new LaminarReporter({
+      name: "eve-run",
+      projectApiKey: PROJECT_API_KEY,
+      metadata: { source: "custom", evalCount: 999, suite: "smoke" },
+    });
+    await reporter.onRunStart([{ id: "a" }], { kind: "local" });
+
+    assert.strictEqual(body.metadata.source, "eve");
+    assert.strictEqual(body.metadata.evalCount, 1);
+    assert.strictEqual(body.metadata.suite, "smoke");
+    scope.done();
+  });
+
   void it("reports a graded eval as create + update datapoint calls", async () => {
     const initScope = mockInit();
 
