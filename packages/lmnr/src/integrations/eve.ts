@@ -245,7 +245,12 @@ export class LaminarReporter implements EvalReporter {
   }
 
   async onEvalComplete(result: EveEvalResult): Promise<void> {
-    if (!this.client || !this.evalId) {
+    // Capture both in locals: `this.evalId` is cleared by onRunComplete and
+    // replaced by a later onRunStart, so re-reading it after the await below
+    // could pair this run's datapoint with another run's evaluation.
+    const client = this.client;
+    const evalId = this.evalId;
+    if (!client || !evalId) {
       // onRunStart failed; nothing to attach this result to.
       return;
     }
@@ -254,8 +259,8 @@ export class LaminarReporter implements EvalReporter {
     const derived = task.derived ?? {};
     const assertions = result.assertions ?? [];
     try {
-      const datapointId = await this.client.evals.createDatapoint({
-        evalId: this.evalId,
+      const datapointId = await client.evals.createDatapoint({
+        evalId,
         // eve drives the agent itself; the eval id is the closest thing to an
         // input the reporter is handed (the prompt lives inside `test(t)`).
         data: result.id ?? null,
@@ -279,8 +284,8 @@ export class LaminarReporter implements EvalReporter {
         },
       });
 
-      await this.client.evals.updateDatapoint({
-        evalId: this.evalId,
+      await client.evals.updateDatapoint({
+        evalId,
         datapointId,
         scores: assertionsToScores(assertions),
         executorOutput: task.output ?? task.finalMessage ?? null,
