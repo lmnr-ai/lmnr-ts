@@ -16,13 +16,13 @@ export function outputJson(data: unknown): void {
  * envelope for the interactive device-flow commands (`setup`, `plugin add`),
  * which manage their own exit codes rather than using the with-client wrapper.
  */
-export function emitError(json: boolean, code: string, detail: string): void {
+export const emitError = (json: boolean, code: string, detail: string): void => {
   if (json) {
     process.stdout.write(JSON.stringify({ error: code, detail }) + '\n');
   } else {
     process.stderr.write(`\n${pc.red(`ERROR (${code})`)}: ${detail}\n`);
   }
-}
+};
 
 /**
  * Write a JSON error to stdout and exit with code 1.

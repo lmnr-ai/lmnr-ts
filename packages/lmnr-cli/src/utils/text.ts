@@ -5,6 +5,3 @@ export const firstNonEmpty = (...candidates: (string | undefined)[]): string => 
   }
   return "";
 };
-
-/** Strip trailing slashes from a URL. */
-export const trimTrailingSlashes = (url: string): string => url.replace(/\/+$/, "");

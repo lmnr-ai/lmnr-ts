@@ -183,13 +183,14 @@ not touch `.lmnr/project.json` or `.env`.
 
 ```bash
 lmnr-cli plugin add claude-code             # Claude Code plugin marketplace install
-lmnr-cli plugin add codex                   # Codex Stop hook install
+lmnr-cli plugin add codex                   # Codex plugin marketplace install
 lmnr-cli plugin add codex --project-id <uuid>
 lmnr-cli plugin add codex --print-only      # Show equivalent manual steps
 ```
 
 The command logs in if needed, lets you pick a project, mints a plugin-named
-project API key, and stores it in the host agent's own config/launcher.
+project API key, and writes it to `~/.config/lmnr/<agent>-plugin.json`, which
+the plugin reads.
 
 ### `login` / `logout` - Authentication
 

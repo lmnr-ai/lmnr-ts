@@ -11,8 +11,7 @@ const claudeSpec = {
   label: "Claude Code",
   hostCli: "claude",
   marketplaceRef: "lmnr-ai/lmnr-claude-code-plugin",
-  pluginRef: "laminar@laminar",
-  installArgv: ["install", "laminar@laminar", "--scope", "user"],
+  installArgv: ["install", "lmnr@lmnr", "--scope", "user"],
   configFile: "claude-code-plugin.json",
 } as any;
 
@@ -20,8 +19,7 @@ const codexSpec = {
   label: "Codex",
   hostCli: "codex",
   marketplaceRef: "lmnr-ai/lmnr-codex-plugin",
-  pluginRef: "laminar@laminar",
-  installArgv: ["add", "laminar@laminar"],
+  installArgv: ["add", "lmnr@lmnr"],
   configFile: "codex-plugin.json",
 } as any;
 
@@ -33,14 +31,14 @@ describe("buildInstallCommands", () => {
       "plugin", "marketplace", "add", "lmnr-ai/lmnr-claude-code-plugin",
     ]);
     expect(cmds[0].lenient).toBe(true);
-    expect(cmds[1].argv).toEqual(["plugin", "install", "laminar@laminar", "--scope", "user"]);
+    expect(cmds[1].argv).toEqual(["plugin", "install", "lmnr@lmnr", "--scope", "user"]);
     expect(cmds[1].lenient).toBe(false);
   });
 
   it("codex: marketplace add then `plugin add` (no scope flag)", () => {
     const cmds = buildInstallCommands(codexSpec);
     expect(cmds[0].argv).toEqual(["plugin", "marketplace", "add", "lmnr-ai/lmnr-codex-plugin"]);
-    expect(cmds[1].argv).toEqual(["plugin", "add", "laminar@laminar"]);
+    expect(cmds[1].argv).toEqual(["plugin", "add", "lmnr@lmnr"]);
   });
 
   it("no secret ever appears in the install commands (key is file-delivered)", () => {
@@ -56,12 +54,12 @@ describe("buildInstallCommands", () => {
 
 describe("renderCommand", () => {
   it("prefixes the host CLI and joins argv", () => {
-    const claudeArgv = ["plugin", "install", "laminar@laminar", "--scope", "user"];
+    const claudeArgv = ["plugin", "install", "lmnr@lmnr", "--scope", "user"];
     expect(renderCommand("claude", claudeArgv)).toBe(
-      "claude plugin install laminar@laminar --scope user",
+      "claude plugin install lmnr@lmnr --scope user",
     );
-    expect(renderCommand("codex", ["plugin", "add", "laminar@laminar"])).toBe(
-      "codex plugin add laminar@laminar",
+    expect(renderCommand("codex", ["plugin", "add", "lmnr@lmnr"])).toBe(
+      "codex plugin add lmnr@lmnr",
     );
   });
 });

@@ -581,7 +581,7 @@ Examples:
   lmnr-cli skill add                                       # Install the Laminar agent skill
   lmnr-cli skill update                                    # Update installed Laminar skills
   lmnr-cli plugin add claude-code                          # Install the Claude Code plugin
-  lmnr-cli plugin add codex                                # Install the Codex hook
+  lmnr-cli plugin add codex                                # Install the Codex plugin
 
 For more information about the Laminar platfrom:
   Documentation: https://laminar.sh/docs

@@ -19,7 +19,9 @@ import { handleLogin } from "../login";
 // Exit codes (machine-readable; distinct so automation can branch on the mode):
 //   4  no_access          — user lacks access to the requested --project-id
 //   6  login_failed       — device-flow login failed / no creds after login
-//   7  no_project         — no project to select / ambiguous (see error string)
+//   7  no_project         — no project to select, or (as `project_ambiguous`)
+//                            more than one matched in --json mode
+
 //   8  config_write_failed — minted a key but couldn't write the plugin config file
 //   9  mint_failed        — POST /api/cli/api-key failed
 //   13 unsupported_agent  — unknown <agent> argument
@@ -47,12 +49,16 @@ export interface AgentSpec {
   hostCli: string;
   /** `<cli> plugin marketplace add <ref>` argument (owner/repo or Git URL). */
   marketplaceRef: string;
-  /** `<cli> plugin <install-verb> <ref>` argument (plugin@marketplace). */
-  pluginRef: string;
   /** The install subcommand + trailing flags this host uses (after `plugin`). */
   installArgv: string[];
   /** Per-user config file (under ~/.config/lmnr) the plugin reads the key from. */
   configFile: string;
+  /**
+   * Host-specific imperative for activating the freshly installed plugin.
+   * Claude Code exposes `/reload-plugins` (reloads hooks in-session, no restart);
+   * Codex has no in-session reload, so it restarts.
+   */
+  activationHint: string;
 }
 
 const AGENTS: Record<string, AgentSpec> = {
@@ -60,17 +66,17 @@ const AGENTS: Record<string, AgentSpec> = {
     label: "Claude Code",
     hostCli: "claude",
     marketplaceRef: "lmnr-ai/lmnr-claude-code-plugin",
-    pluginRef: "laminar@laminar",
-    installArgv: ["install", "laminar@laminar", "--scope", "user"],
+    installArgv: ["install", "lmnr@lmnr", "--scope", "user"],
     configFile: "claude-code-plugin.json",
+    activationHint: "Run `/reload-plugins`",
   },
   codex: {
     label: "Codex",
     hostCli: "codex",
     marketplaceRef: "lmnr-ai/lmnr-codex-plugin",
-    pluginRef: "laminar@laminar",
-    installArgv: ["add", "laminar@laminar"],
+    installArgv: ["add", "lmnr@lmnr"],
     configFile: "codex-plugin.json",
+    activationHint: "Restart Codex",
   },
 };
 
@@ -241,12 +247,13 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
     process.stdout.write(
       `\n${pc.green("✓")} ${spec.label} plugin installed.\n\n` +
         `Next steps:\n` +
-        `  1. ${pc.bold(`Restart ${spec.label}`)} to activate the plugin.\n` +
+        `  1. ${pc.bold(spec.activationHint)} to activate the plugin.\n` +
         `  2. Use ${spec.label} as usual — each turn becomes a Laminar trace.\n`,
     );
   } else {
     process.stdout.write(
-      `\nRun the commands above to finish, then ${pc.bold(`restart ${spec.label}`)}.\n`,
+      `\nRun the commands above to finish, then activate the plugin ` +
+        `(${pc.bold(spec.activationHint)}).\n`,
     );
   }
 };
