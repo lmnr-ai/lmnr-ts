@@ -1,11 +1,12 @@
 import { hostname } from "node:os";
 import { relative } from "node:path";
-import { createInterface } from "node:readline/promises";
 
 import { type CliProject, LaminarClient, type ProjectKeyProbe } from "@lmnr-ai/client";
+import { errorMessage } from "@lmnr-ai/types";
 
 import { version } from "../../../package.json";
-import { type Credentials, readCredentials } from "../../auth/credentials";
+import { type MintedApiKey, mintProjectApiKey } from "../../auth/api-key";
+import { type Credentials, safeReadCredentials } from "../../auth/credentials";
 import { envHttpPort, refreshIfNeeded } from "../../auth/resolve";
 import { orange, pc, pcOut } from "../../utils/colors";
 import {
@@ -21,6 +22,9 @@ import {
   readLocalProjectFile,
   writeLocalProjectFile,
 } from "../../utils/local-project-file";
+import { emitError } from "../../utils/output";
+import { listProjects, promptProjectChoice } from "../../utils/projects";
+import { firstNonEmpty } from "../../utils/text";
 import { handleLogin } from "../login";
 
 const DEFAULT_FRONTEND_URL = "https://laminar.sh";
@@ -48,7 +52,8 @@ const EXIT_KEY_MISMATCH = 12;
 export interface SetupOptions {
   writeEnv?: boolean;
   json?: boolean;
-  noBrowser?: boolean;
+  /** Set by commander's `--no-browser`; false suppresses the device-flow open. */
+  browser?: boolean;
   frontendUrl?: string;
   baseUrl?: string;
   /**
@@ -57,15 +62,6 @@ export interface SetupOptions {
    * user's accessible projects before linking.
    */
   projectId?: string;
-}
-
-interface SetupKeyResponse {
-  apiKey: string;
-  apiKeyId: string;
-  projectId: string;
-  projectName: string;
-  workspaceId: string;
-  workspaceName: string;
 }
 
 export interface SetupResult {
@@ -99,12 +95,12 @@ export interface SetupResult {
  */
 export async function handleSetup(options: SetupOptions): Promise<void> {
   const writeEnv = options.writeEnv !== false;
-  const frontendUrl = pick(
+  const frontendUrl = firstNonEmpty(
     options.frontendUrl,
     process.env.LMNR_FRONTEND_URL,
     DEFAULT_FRONTEND_URL,
   );
-  const baseUrl = pick(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
+  const baseUrl = firstNonEmpty(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
   const isJson = options.json === true;
 
   if (!isJson) {
@@ -126,9 +122,9 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     // the device-token metadata (parseProjectFromMetadata).
     let login;
     try {
-      login = await handleLogin({ frontendUrl, noBrowser: options.noBrowser });
+      login = await handleLogin({ frontendUrl, noBrowser: options.browser === false });
     } catch (err) {
-      emitError(isJson, "login_failed", describeError(err));
+      emitError(isJson, "login_failed", errorMessage(err));
       process.exit(EXIT_LOGIN_FAILED);
     }
     creds = await safeReadCredentials();
@@ -146,7 +142,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
       await assertAccess(creds, userBaseUrl, link, existingKey, isJson);
     } else if (login.projectId) {
       // Browser-selected (or just-created) project. Trust it and write the link.
-      link = await writeLink(issuer, userBaseUrl, login.projectId, isJson);
+      link = await writeLink(userBaseUrl, login.projectId, isJson);
     } else {
       // Defensive: fall back to the CLI picker if the browser didn't attach a
       // project via metadata.
@@ -186,7 +182,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
 
   let apiKey: string | null = null;
   let envPath: string | null = null;
-  let keyMeta: SetupKeyResponse | null = null;
+  let keyMeta: MintedApiKey | null = null;
 
   let needMint = true;
   if (existingKey) {
@@ -234,9 +230,9 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
 
   if (needMint) {
     try {
-      keyMeta = await mintSetupKey(issuer, creds.sessionToken, link.projectId);
+      keyMeta = await mintProjectApiKey(issuer, creds.sessionToken, link.projectId, hostname());
     } catch (err) {
-      emitError(isJson, "setup_key_failed", describeError(err));
+      emitError(isJson, "setup_key_failed", errorMessage(err));
       process.exit(EXIT_SETUP_KEY_FAILED);
     }
     apiKey = keyMeta.apiKey;
@@ -268,7 +264,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
         }
       } catch (err) {
         process.stderr.write(
-          `\n${pc.red("ERROR")}: failed to write ${target}: ${describeError(err)}\n` +
+          `\n${pc.red("ERROR")}: failed to write ${target}: ${errorMessage(err)}\n` +
           pc.dim("Your API key (set it manually):") +
           `\n  LMNR_PROJECT_API_KEY=${apiKey}\n\n`,
         );
@@ -278,7 +274,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
               error: "env_write_failed",
               apiKey,
               projectId: link.projectId,
-              message: describeError(err),
+              message: errorMessage(err),
             }) + "\n",
           );
         }
@@ -310,7 +306,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   } catch (err) {
     if (!isJson) {
       process.stderr.write(
-        `${pc.yellow("Warning")}: could not install Laminar skill (${describeError(err)}).\n`,
+        `${pc.yellow("Warning")}: could not install Laminar skill (${errorMessage(err)}).\n`,
       );
     }
   }
@@ -371,7 +367,7 @@ async function resolveProjectViaCli(
   try {
     projects = await listProjects(creds, userBaseUrl);
   } catch (err) {
-    emitError(isJson, "list_projects_failed", describeError(err));
+    emitError(isJson, "list_projects_failed", errorMessage(err));
     process.exit(EXIT_LIST_PROJECTS_FAILED);
   }
 
@@ -395,10 +391,10 @@ async function resolveProjectViaCli(
     try {
       login = await handleLogin({
         frontendUrl: issuer,
-        noBrowser: options.noBrowser,
+        noBrowser: options.browser === false,
       });
     } catch (err) {
-      emitError(isJson, "login_failed", describeError(err));
+      emitError(isJson, "login_failed", errorMessage(err));
       process.exit(EXIT_LOGIN_FAILED);
     }
     if (!login.projectId) {
@@ -409,7 +405,7 @@ async function resolveProjectViaCli(
       );
       process.exit(EXIT_NO_PROJECT);
     }
-    return writeLink(issuer, userBaseUrl, login.projectId, isJson);
+    return writeLink(userBaseUrl, login.projectId, isJson);
   }
 
   let chosen: CliProject;
@@ -438,7 +434,7 @@ async function resolveProjectViaCli(
       );
       process.exit(EXIT_NO_PROJECT);
     }
-    chosen = await promptProjectChoice(projects);
+    chosen = await promptProjectChoice(projects, "\nMultiple projects available. Choose one:\n");
   }
 
   const linkPath = await writeLocalProjectFile({
@@ -458,7 +454,6 @@ async function resolveProjectViaCli(
 
 /** Write `.lmnr/project.json`, enriching display details from listProjects when possible. */
 async function writeLink(
-  issuer: string,
   userBaseUrl: string,
   projectId: string,
   isJson: boolean,
@@ -487,7 +482,7 @@ async function writeLink(
   } catch (err) {
     if (!isJson) {
       process.stderr.write(
-        `${pc.yellow("Warning")}: could not write .lmnr/project.json (${describeError(err)}). ` +
+        `${pc.yellow("Warning")}: could not write .lmnr/project.json (${errorMessage(err)}). ` +
         `CLI commands will need --project-id ${projectId}.\n`,
       );
     }
@@ -517,7 +512,7 @@ async function assertAccess(
     // Discovery FAILED (network/5xx) — we couldn't determine access. Report it
     // as a transient list failure (exit 10), NOT no_access (exit 4): automation
     // must be able to retry instead of concluding the user lacks access.
-    emitError(isJson, "list_projects_failed", describeError(err));
+    emitError(isJson, "list_projects_failed", errorMessage(err));
     process.exit(EXIT_LIST_PROJECTS_FAILED);
   }
   if (!projects.some((p) => p.id === link.projectId)) {
@@ -566,21 +561,6 @@ function buildNoAccessDetail(
   );
 }
 
-/** List the projects the user can access (user-JWT-authed discovery). */
-async function listProjects(creds: Credentials, baseUrl: string): Promise<CliProject[]> {
-  const updated = await refreshIfNeeded(creds);
-  // Discovery client: CliResource hits /v1/cli/projects with the bare bearer,
-  // no project id needed (it overrides BaseResource's headers/prefix).
-  const client = new LaminarClient({
-    baseUrl,
-    // setup has no --port flag, so honor LMNR_HTTP_PORT for local self-host
-    // (baseUrl carries no port by convention). Cloud falls back to 443.
-    port: envHttpPort(),
-    auth: { type: "userToken", token: updated.accessToken, projectId: "" },
-  });
-  return client.cli.listProjects();
-}
-
 /**
  * Resolve which project an existing project API key belongs to, via the
  * user-token CLI endpoint (`POST /v1/cli/project`, key in body). By setup time
@@ -602,77 +582,6 @@ async function probeProjectKey(
   return client.cli.resolveProjectByApiKey(apiKey);
 }
 
-async function safeReadCredentials(): Promise<Credentials | null> {
-  try {
-    return await readCredentials();
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Key minting
-// ---------------------------------------------------------------------------
-
-/** POST /api/cli/api-key with the session bearer for an explicit project. */
-async function mintSetupKey(
-  issuer: string,
-  sessionToken: string,
-  projectId: string,
-): Promise<SetupKeyResponse> {
-  const url = `${trimSlash(issuer)}/api/cli/api-key`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { authorization: `Bearer ${sessionToken}`, "content-type": "application/json" },
-    body: JSON.stringify({ deviceName: hostname(), projectId }),
-  });
-  if (res.ok) {
-    return (await res.json()) as SetupKeyResponse;
-  }
-  const body = (await res.json().catch(() => ({}))) as { error?: string };
-  throw new Error(body.error ?? `api-key request failed (${res.status})`);
-}
-
-async function promptProjectChoice(projects: CliProject[]): Promise<CliProject> {
-  process.stderr.write("\nMultiple projects available. Choose one:\n");
-  projects.forEach((p, i) => {
-    process.stderr.write(`  ${i + 1}) ${p.workspaceName} / ${p.name}\n`);
-  });
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  try {
-    while (true) {
-      const answer = (await rl.question(`Select [1-${projects.length}]: `)).trim();
-      const idx = Number.parseInt(answer, 10);
-      if (Number.isInteger(idx) && idx >= 1 && idx <= projects.length) {
-        return projects[idx - 1];
-      }
-      process.stderr.write(`${pc.red("Invalid selection.")}\n`);
-    }
-  } finally {
-    rl.close();
-  }
-}
-
-function pick(...candidates: (string | undefined)[]): string {
-  for (const c of candidates) {
-    if (c && c.length > 0) return c;
-  }
-  return "";
-}
-
 function trimSlash(url: string): string {
   return url.replace(/\/+$/, "");
-}
-
-function describeError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return String(err);
-}
-
-function emitError(json: boolean, code: string, detail: string): void {
-  if (json) {
-    process.stdout.write(JSON.stringify({ error: code, detail }) + "\n");
-  } else {
-    process.stderr.write(`\n${pc.red(`ERROR (${code})`)}: ${detail}\n`);
-  }
 }

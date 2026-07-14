@@ -1,6 +1,6 @@
 {
   "name": "lmnr-cli",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "CLI for the Laminar agent observability platform",
   "main": "dist/index.cjs",
   "bin": {
@@ -30,6 +30,7 @@
   "dependencies": {
     "cli-table3": "^0.6.5",
     "commander": "^14.0.2",
+    "cross-spawn": "^7.0.6",
     "csv-parser": "^3.2.0",
     "export-to-csv": "^1.4.0",
     "giget": "^3.2.0",
@@ -41,6 +42,7 @@
   "devDependencies": {
     "@lmnr-ai/client": "workspace:*",
     "@lmnr-ai/types": "workspace:*",
+    "@types/cross-spawn": "^6.0.6",
     "vitest": "^4.1.9"
   }
 }

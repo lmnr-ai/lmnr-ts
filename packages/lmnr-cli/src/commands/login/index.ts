@@ -12,6 +12,7 @@ import {
 } from "../../auth/device";
 import { DEFAULT_FRONTEND_URL } from "../../constants";
 import { pc } from "../../utils/colors";
+import { firstNonEmpty } from "../../utils/text";
 
 export interface LoginOptions {
   frontendUrl?: string;
@@ -32,7 +33,11 @@ export interface LoginResult {
 }
 
 export async function handleLogin(options: LoginOptions): Promise<LoginResult> {
-  const issuer = pick(options.frontendUrl, process.env.LMNR_FRONTEND_URL, DEFAULT_FRONTEND_URL);
+  const issuer = firstNonEmpty(
+    options.frontendUrl,
+    process.env.LMNR_FRONTEND_URL,
+    DEFAULT_FRONTEND_URL,
+  );
   // NOTE: login does NOT resolve/store a data-API baseUrl — the device flow,
   // JWT mint and session fetch all hit `issuer` (frontend). `--base-url` on
   // login is accepted but inert (candidate for removal); data commands resolve
@@ -93,11 +98,4 @@ export async function handleLogin(options: LoginOptions): Promise<LoginResult> {
     userEmail: session.email || null,
     projectId: parseProjectFromMetadata(token.metadata),
   };
-}
-
-function pick(...candidates: (string | undefined)[]): string {
-  for (const c of candidates) {
-    if (c && c.length > 0) return c;
-  }
-  return "";
 }

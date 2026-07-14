@@ -21,6 +21,7 @@ import {
 } from "./commands/debug";
 import { handleLogin } from "./commands/login";
 import { handleLogout } from "./commands/logout";
+import { handlePluginAdd } from "./commands/plugin";
 import { handleProjectsList } from "./commands/project";
 import { handleSetup } from "./commands/setup";
 import { handleSkillAdd, handleSkillUpdate } from "./commands/skill";
@@ -346,6 +347,54 @@ Examples:
 `,
     );
 
+  const pluginCmd = program
+    .command("plugin")
+    .description("Set up the Laminar plugin for a coding agent");
+
+  pluginCmd
+    .command("add")
+    .description(
+      "Log in, pick a project, mint a key, and install the Laminar plugin for a coding agent",
+    )
+    .argument("<agent>", "Which agent to set up (currently: claude-code, codex)")
+    .option(
+      "--project-id <id>",
+      "Project to send this agent's traces to (skips the interactive picker)",
+    )
+    .option("--print-only", "Print the install commands instead of running them")
+    .option("--json", "Emit a machine-readable JSON line on stdout")
+    .option("--no-browser", "Do not auto-open the device-flow URL")
+    .option(
+      "--frontend-url <url>",
+      "Frontend URL (issuer). Defaults to LMNR_FRONTEND_URL or https://laminar.sh",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to LMNR_BASE_URL or https://api.lmnr.ai",
+    )
+    .action(async (agent: string, options) => {
+      await handlePluginAdd(agent, options);
+    })
+    .addHelpText(
+      "after",
+      `
+Global, directory-independent setup: it does NOT touch .lmnr/project.json or
+.env. The minted key is named after the plugin (find/revoke it in the dashboard)
+and written to ~/.config/lmnr/<agent>-plugin.json, where the plugin reads it. The
+plugin is installed via the agent's native plugin marketplace. Restart the agent
+after install to activate it.
+
+When the host CLI isn't found (or has no plugin support), or with --print-only,
+the install commands are printed for you to run by hand.
+
+Examples:
+  $ lmnr-cli plugin add claude-code
+  $ lmnr-cli plugin add codex
+  $ lmnr-cli plugin add codex --project-id <id>
+  $ lmnr-cli plugin add claude-code --print-only
+`,
+    );
+
   const debugCmd = program
     .command("debug")
     .description("Operate on debug sessions")
@@ -531,6 +580,8 @@ Examples:
   lmnr-cli debug session summary                           # All blocks in the session, oldest first
   lmnr-cli skill add                                       # Install the Laminar agent skill
   lmnr-cli skill update                                    # Update installed Laminar skills
+  lmnr-cli plugin add claude-code                          # Install the Claude Code plugin
+  lmnr-cli plugin add codex                                # Install the Codex plugin
 
 For more information about the Laminar platfrom:
   Documentation: https://laminar.sh/docs
