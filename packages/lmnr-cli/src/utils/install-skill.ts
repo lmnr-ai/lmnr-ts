@@ -2,6 +2,8 @@ import { access, cp, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
+import { errorMessage } from "@lmnr-ai/types";
+
 import { downloadSkill } from "../skill/fetch-skill";
 import { SKILL_NAME, skillSource } from "../skill/laminar-skill";
 
@@ -56,7 +58,7 @@ export class SkillInstallError extends Error {
     /** Absolute paths of files written before the failure (may be empty). */
     readonly written: string[],
   ) {
-    super(describeError(cause));
+    super(errorMessage(cause));
     this.name = "SkillInstallError";
   }
 }
@@ -142,7 +144,7 @@ export async function installSkill(
     const written = err instanceof SkillInstallError ? err.written : [];
     process.stderr.write(
       `Warning: could not install the Laminar skill (${skillSource()}): ` +
-      `${describeError(err)}; skipping skill install.\n`,
+      `${errorMessage(err)}; skipping skill install.\n`,
     );
     if (written.length > 0) {
       process.stderr.write(
@@ -161,8 +163,4 @@ async function dirExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function describeError(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

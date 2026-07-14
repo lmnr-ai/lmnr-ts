@@ -2,6 +2,7 @@ import { hostname } from "node:os";
 import { relative } from "node:path";
 
 import { type CliProject, LaminarClient, type ProjectKeyProbe } from "@lmnr-ai/client";
+import { errorMessage } from "@lmnr-ai/types";
 
 import { version } from "../../../package.json";
 import { type MintedApiKey, mintProjectApiKey } from "../../auth/api-key";
@@ -123,7 +124,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     try {
       login = await handleLogin({ frontendUrl, noBrowser: options.browser === false });
     } catch (err) {
-      emitError(isJson, "login_failed", describeError(err));
+      emitError(isJson, "login_failed", errorMessage(err));
       process.exit(EXIT_LOGIN_FAILED);
     }
     creds = await safeReadCredentials();
@@ -231,7 +232,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     try {
       keyMeta = await mintProjectApiKey(issuer, creds.sessionToken, link.projectId, hostname());
     } catch (err) {
-      emitError(isJson, "setup_key_failed", describeError(err));
+      emitError(isJson, "setup_key_failed", errorMessage(err));
       process.exit(EXIT_SETUP_KEY_FAILED);
     }
     apiKey = keyMeta.apiKey;
@@ -263,7 +264,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
         }
       } catch (err) {
         process.stderr.write(
-          `\n${pc.red("ERROR")}: failed to write ${target}: ${describeError(err)}\n` +
+          `\n${pc.red("ERROR")}: failed to write ${target}: ${errorMessage(err)}\n` +
           pc.dim("Your API key (set it manually):") +
           `\n  LMNR_PROJECT_API_KEY=${apiKey}\n\n`,
         );
@@ -273,7 +274,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
               error: "env_write_failed",
               apiKey,
               projectId: link.projectId,
-              message: describeError(err),
+              message: errorMessage(err),
             }) + "\n",
           );
         }
@@ -305,7 +306,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   } catch (err) {
     if (!isJson) {
       process.stderr.write(
-        `${pc.yellow("Warning")}: could not install Laminar skill (${describeError(err)}).\n`,
+        `${pc.yellow("Warning")}: could not install Laminar skill (${errorMessage(err)}).\n`,
       );
     }
   }
@@ -366,7 +367,7 @@ async function resolveProjectViaCli(
   try {
     projects = await listProjects(creds, userBaseUrl);
   } catch (err) {
-    emitError(isJson, "list_projects_failed", describeError(err));
+    emitError(isJson, "list_projects_failed", errorMessage(err));
     process.exit(EXIT_LIST_PROJECTS_FAILED);
   }
 
@@ -393,7 +394,7 @@ async function resolveProjectViaCli(
         noBrowser: options.browser === false,
       });
     } catch (err) {
-      emitError(isJson, "login_failed", describeError(err));
+      emitError(isJson, "login_failed", errorMessage(err));
       process.exit(EXIT_LOGIN_FAILED);
     }
     if (!login.projectId) {
@@ -481,7 +482,7 @@ async function writeLink(
   } catch (err) {
     if (!isJson) {
       process.stderr.write(
-        `${pc.yellow("Warning")}: could not write .lmnr/project.json (${describeError(err)}). ` +
+        `${pc.yellow("Warning")}: could not write .lmnr/project.json (${errorMessage(err)}). ` +
         `CLI commands will need --project-id ${projectId}.\n`,
       );
     }
@@ -511,7 +512,7 @@ async function assertAccess(
     // Discovery FAILED (network/5xx) — we couldn't determine access. Report it
     // as a transient list failure (exit 10), NOT no_access (exit 4): automation
     // must be able to retry instead of concluding the user lacks access.
-    emitError(isJson, "list_projects_failed", describeError(err));
+    emitError(isJson, "list_projects_failed", errorMessage(err));
     process.exit(EXIT_LIST_PROJECTS_FAILED);
   }
   if (!projects.some((p) => p.id === link.projectId)) {
@@ -583,9 +584,4 @@ async function probeProjectKey(
 
 function trimSlash(url: string): string {
   return url.replace(/\/+$/, "");
-}
-
-function describeError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return String(err);
 }
