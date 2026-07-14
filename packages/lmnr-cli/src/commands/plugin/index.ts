@@ -354,6 +354,8 @@ const resolveProject = async (
  */
 export const writeAgentConfig = (spec: AgentSpec, apiKey: string, baseUrl: string): string => {
   const dir = globalLmnrDirectory();
+  // recursive == `mkdir -p` (no error if it exists). 0700 not 0600: a dir needs the
+  // execute bit to traverse into it; the key file itself is written 0600 below.
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const filePath = join(dir, spec.configFile);
   const body = JSON.stringify({ projectApiKey: apiKey, baseUrl }, null, 2) + "\n";

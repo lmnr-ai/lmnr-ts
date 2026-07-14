@@ -23,6 +23,7 @@ import {
 } from "../../utils/local-project-file";
 import { emitError } from "../../utils/output";
 import { listProjects, promptProjectChoice } from "../../utils/projects";
+import { firstNonEmpty } from "../../utils/text";
 import { handleLogin } from "../login";
 
 const DEFAULT_FRONTEND_URL = "https://laminar.sh";
@@ -93,12 +94,12 @@ export interface SetupResult {
  */
 export async function handleSetup(options: SetupOptions): Promise<void> {
   const writeEnv = options.writeEnv !== false;
-  const frontendUrl = pick(
+  const frontendUrl = firstNonEmpty(
     options.frontendUrl,
     process.env.LMNR_FRONTEND_URL,
     DEFAULT_FRONTEND_URL,
   );
-  const baseUrl = pick(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
+  const baseUrl = firstNonEmpty(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
   const isJson = options.json === true;
 
   if (!isJson) {
@@ -578,13 +579,6 @@ async function probeProjectKey(
     auth: { type: "userToken", token: updated.accessToken, projectId: "" },
   });
   return client.cli.resolveProjectByApiKey(apiKey);
-}
-
-function pick(...candidates: (string | undefined)[]): string {
-  for (const c of candidates) {
-    if (c && c.length > 0) return c;
-  }
-  return "";
 }
 
 function trimSlash(url: string): string {
