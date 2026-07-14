@@ -1,10 +1,12 @@
-import { spawn, spawnSync, type StdioOptions } from "node:child_process";
+import { type StdioOptions } from "node:child_process";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 
 import { type CliProject } from "@lmnr-ai/client";
 import { errorMessage } from "@lmnr-ai/types";
+// cross-spawn: resolves Windows .cmd/.ps1 shims that node:child_process can't run by bare name.
+import spawn from "cross-spawn";
 
 import { version } from "../../../package.json";
 import { mintProjectApiKey } from "../../auth/api-key";
@@ -24,6 +26,7 @@ import { handleLogin } from "../login";
 
 //   8  config_write_failed — minted a key but couldn't write the plugin config file
 //   9  mint_failed        — POST /api/cli/api-key failed
+//   10 list_projects_failed — GET /v1/cli/projects (discovery) failed
 //   13 unsupported_agent  — unknown <agent> argument
 //   14 install_failed     — a host `plugin` command exited non-zero
 const EXIT_NO_ACCESS = 4;
@@ -31,6 +34,7 @@ const EXIT_LOGIN_FAILED = 6;
 const EXIT_NO_PROJECT = 7;
 const EXIT_CONFIG_WRITE_FAILED = 8;
 const EXIT_MINT_FAILED = 9;
+const EXIT_LIST_PROJECTS_FAILED = 10;
 const EXIT_UNSUPPORTED_AGENT = 13;
 const EXIT_INSTALL_FAILED = 14;
 
@@ -290,7 +294,15 @@ const resolveProject = async (
   loginProjectId: string | null,
   isJson: boolean,
 ): Promise<CliProject> => {
-  const projects = await listProjects(creds, baseUrl);
+  // Mirror setup: a discovery failure gets the coded envelope + exit, not a bare
+  // main().catch stderr line (which --json callers can't parse).
+  let projects: CliProject[];
+  try {
+    projects = await listProjects(creds, baseUrl);
+  } catch (err) {
+    emitError(isJson, "list_projects_failed", errorMessage(err));
+    process.exit(EXIT_LIST_PROJECTS_FAILED);
+  }
 
   if (options.projectId) {
     const match = projects.find((p) => p.id === options.projectId);
@@ -397,7 +409,7 @@ export const buildInstallCommands = (spec: AgentSpec): HostCommand[] => [
  */
 export const hostCliHasPlugins = (hostCli: string): boolean => {
   try {
-    const r = spawnSync(hostCli, ["plugin", "--help"], { encoding: "utf-8" });
+    const r = spawn.sync(hostCli, ["plugin", "--help"], { encoding: "utf-8" });
     return !r.error && r.status === 0;
   } catch {
     return false;
