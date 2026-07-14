@@ -21,6 +21,7 @@ import {
   readLocalProjectFile,
   writeLocalProjectFile,
 } from "../../utils/local-project-file";
+import { emitError } from "../../utils/output";
 import { listProjects, promptProjectChoice } from "../../utils/projects";
 import { handleLogin } from "../login";
 
@@ -49,7 +50,8 @@ const EXIT_KEY_MISMATCH = 12;
 export interface SetupOptions {
   writeEnv?: boolean;
   json?: boolean;
-  noBrowser?: boolean;
+  /** Set by commander's `--no-browser`; false suppresses the device-flow open. */
+  browser?: boolean;
   frontendUrl?: string;
   baseUrl?: string;
   /**
@@ -118,7 +120,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     // the device-token metadata (parseProjectFromMetadata).
     let login;
     try {
-      login = await handleLogin({ frontendUrl, noBrowser: options.noBrowser });
+      login = await handleLogin({ frontendUrl, noBrowser: options.browser === false });
     } catch (err) {
       emitError(isJson, "login_failed", describeError(err));
       process.exit(EXIT_LOGIN_FAILED);
@@ -387,7 +389,7 @@ async function resolveProjectViaCli(
     try {
       login = await handleLogin({
         frontendUrl: issuer,
-        noBrowser: options.noBrowser,
+        noBrowser: options.browser === false,
       });
     } catch (err) {
       emitError(isJson, "login_failed", describeError(err));
@@ -592,12 +594,4 @@ function trimSlash(url: string): string {
 function describeError(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
-}
-
-function emitError(json: boolean, code: string, detail: string): void {
-  if (json) {
-    process.stdout.write(JSON.stringify({ error: code, detail }) + "\n");
-  } else {
-    process.stderr.write(`\n${pc.red(`ERROR (${code})`)}: ${detail}\n`);
-  }
 }

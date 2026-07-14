@@ -1,5 +1,5 @@
-import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync, type StdioOptions } from "node:child_process";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 
@@ -84,7 +84,8 @@ export interface PluginAddOptions {
   projectId?: string;
   printOnly?: boolean;
   json?: boolean;
-  noBrowser?: boolean;
+  /** Set by commander's `--no-browser`; false suppresses the device-flow open. */
+  browser?: boolean;
   frontendUrl?: string;
   baseUrl?: string;
 }
@@ -102,7 +103,9 @@ interface PluginAddResult {
   installed: boolean;
   /** The `<cli> plugin ...` commands, as copy-pasteable strings. */
   commands: string[];
-  restartRequired: boolean;
+  /** Coded error when install failed (JSON still emits the full result so a
+   *  caller can recover the key + commands); absent on success. */
+  error?: string;
 }
 
 /**
@@ -150,7 +153,7 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
   if (!creds) {
     let login;
     try {
-      login = await handleLogin({ frontendUrl, noBrowser: options.noBrowser });
+      login = await handleLogin({ frontendUrl, noBrowser: options.browser === false });
     } catch (err) {
       emitError(isJson, "login_failed", errorMessage(err));
       process.exit(EXIT_LOGIN_FAILED);
@@ -208,24 +211,9 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
   const commands = hostCommands.map((c) => renderCommand(spec.hostCli, c.argv));
   const canRun = !options.printOnly && hostCliHasPlugins(spec.hostCli);
 
-  let installed = false;
-  if (canRun) {
-    installed = await runInstall(spec, hostCommands, isJson);
-    if (!installed) {
-      printCommands(spec, hostCommands, isJson, "install-failed");
-      emitError(
-        isJson,
-        "install_failed",
-        `A \`${spec.hostCli} plugin\` command failed; commands printed above.`,
-      );
-      process.exit(EXIT_INSTALL_FAILED);
-    }
-  } else {
-    printCommands(spec, hostCommands, isJson, options.printOnly ? "print-only" : "no-host-cli");
-  }
-
-  // --- 6. Summary ----------------------------------------------------------
-  const result: PluginAddResult = {
+  // Shared by the success summary and the JSON failure path, so a caller always
+  // gets the minted key + commands regardless of outcome.
+  const makeResult = (didInstall: boolean, error?: string): PluginAddResult => ({
     agent,
     projectId: project.id,
     projectName: project.name || null,
@@ -233,10 +221,34 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
     apiKey: key.apiKey,
     apiKeyId: key.apiKeyId ?? null,
     configPath,
-    installed,
+    installed: didInstall,
     commands,
-    restartRequired: installed,
-  };
+    ...(error ? { error } : {}),
+  });
+
+  let installed = false;
+  if (canRun) {
+    installed = await runInstall(spec, hostCommands, isJson);
+    if (!installed) {
+      if (isJson) {
+        // Key is already minted/on disk — emit the full result so a caller can recover it.
+        process.stdout.write(JSON.stringify(makeResult(false, "install_failed")) + "\n");
+      } else {
+        printCommands(spec, hostCommands, false, "install-failed");
+        emitError(
+          false,
+          "install_failed",
+          `A \`${spec.hostCli} plugin\` command failed; commands printed above.`,
+        );
+      }
+      process.exit(EXIT_INSTALL_FAILED);
+    }
+  } else {
+    printCommands(spec, hostCommands, isJson, options.printOnly ? "print-only" : "no-host-cli");
+  }
+
+  // --- 6. Summary ----------------------------------------------------------
+  const result = makeResult(installed);
 
   if (isJson) {
     process.stdout.write(JSON.stringify(result) + "\n");
@@ -346,6 +358,8 @@ export const writeAgentConfig = (spec: AgentSpec, apiKey: string, baseUrl: strin
   const filePath = join(dir, spec.configFile);
   const body = JSON.stringify({ projectApiKey: apiKey, baseUrl }, null, 2) + "\n";
   writeFileSync(filePath, body, { mode: 0o600 });
+  // `mode` only applies on create; chmod so a re-run can't leave an existing file looser.
+  chmodSync(filePath, 0o600);
   return filePath;
 };
 
@@ -404,7 +418,7 @@ const runInstall = async (
     if (!isJson) {
       process.stderr.write(`${pc.dim(`$ ${renderCommand(spec.hostCli, cmd.argv)}`)}\n`);
     }
-    const code = await runChild(spec.hostCli, cmd.argv);
+    const code = await runChild(spec.hostCli, cmd.argv, isJson);
     if (code !== 0) {
       if (cmd.lenient) {
         if (!isJson) {
@@ -421,9 +435,12 @@ const runInstall = async (
   return true;
 };
 
-const runChild = (cmd: string, argv: string[]): Promise<number> =>
+// In --json mode the child's stdout goes to our stderr (fd 2) so its chatter
+// can't pollute the single JSON line we print on stdout.
+const runChild = (cmd: string, argv: string[], isJson: boolean): Promise<number> =>
   new Promise((resolve) => {
-    const child = spawn(cmd, argv, { stdio: "inherit" });
+    const stdio: StdioOptions = isJson ? ["inherit", 2, "inherit"] : "inherit";
+    const child = spawn(cmd, argv, { stdio });
     child.on("error", () => resolve(-1));
     child.on("close", (code) => resolve(code ?? -1));
   });
