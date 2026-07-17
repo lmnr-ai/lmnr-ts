@@ -55,6 +55,25 @@ const runGit = (args: string, cwd?: string): string | undefined => {
   }
 };
 
+// Process-level opt-out recorded by `Laminar.initialize({ disableGitMetadata:
+// true })`. Kept here (not on the Laminar class) so EVERY collection point —
+// global trace metadata AND eval run metadata — honors the same flag without
+// re-plumbing the init option through each call site.
+let optedOut = false;
+
+/** Record the initialize()-time opt-out for later collection points. */
+export const setGitMetadataDisabled = (disabled: boolean) => {
+  optedOut = disabled;
+};
+
+const gitMetadataDisabled = (): boolean => {
+  if (optedOut) {
+    return true;
+  }
+  const disabled = process?.env?.LMNR_DISABLE_GIT_METADATA;
+  return disabled !== undefined && TRUTHY.has(disabled.trim().toLowerCase());
+};
+
 let cached: Record<string, string | boolean> | undefined = undefined;
 
 /** Reset the process-level cache. Exposed for tests only. */
@@ -65,10 +84,15 @@ export const resetGitMetadataCache = () => {
 /**
  * Collect `git.commit` / `git.branch` / `git.dirty`, best-effort.
  *
- * Cached for the process lifetime (git state is fixed once the process is
- * running; re-running subprocesses per initialize()/evaluate() call would only
- * add latency). Tests that vary cwd or env must call
- * {@link resetGitMetadataCache}.
+ * Returns {} when collection is disabled — via the `disableGitMetadata`
+ * option to `Laminar.initialize()` or the LMNR_DISABLE_GIT_METADATA env var.
+ * The disabled check runs on every call (NOT inside the cache) so an opt-out
+ * recorded after a prior collection still applies.
+ *
+ * Collection itself is cached for the process lifetime (git state is fixed
+ * once the process is running; re-running subprocesses per
+ * initialize()/evaluate() call would only add latency). Tests that vary cwd
+ * or env must call {@link resetGitMetadataCache}.
  *
  * `git.branch` is omitted on a detached HEAD, and `git.dirty` counts only
  * tracked-file changes (untracked build artifacts should not flip it).
@@ -78,6 +102,9 @@ export const resetGitMetadataCache = () => {
 export const collectGitMetadata = (
   cwd?: string,
 ): Record<string, string | boolean> => {
+  if (gitMetadataDisabled()) {
+    return {};
+  }
   if (cached !== undefined) {
     return cached;
   }
@@ -86,10 +113,6 @@ export const collectGitMetadata = (
 };
 
 const doCollect = (cwd?: string): Record<string, string | boolean> => {
-  const disabled = process?.env?.LMNR_DISABLE_GIT_METADATA;
-  if (disabled !== undefined && TRUTHY.has(disabled.trim().toLowerCase())) {
-    return {};
-  }
   // execSync only exists on Node-compatible runtimes; edge/browser bundles may
   // stub node:child_process, so guard like getLangVersion does.
   if (!process?.versions?.node || typeof execSync !== "function") {

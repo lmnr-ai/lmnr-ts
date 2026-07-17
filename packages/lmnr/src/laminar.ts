@@ -27,7 +27,10 @@ import {
   isTruthy,
   resetDebugRuntime,
 } from "./debug";
-import { collectGitMetadata } from "./git-metadata";
+import {
+  collectGitMetadata,
+  setGitMetadataDisabled,
+} from "./git-metadata";
 import {
   InitializeOptions,
   initializeTracing,
@@ -244,9 +247,11 @@ export class Laminar {
       : {};
     // Git state merges at the LOWEST precedence so both LMNR_TRACE_METADATA
     // and the explicit `metadata` argument can override any git.* key.
-    const gitMetadata = disableGitMetadata ? {} : collectGitMetadata();
+    // The opt-out is recorded process-wide so eval run metadata
+    // (`withGitMetadata` in evaluations.ts) honors it too.
+    setGitMetadataDisabled(disableGitMetadata ?? false);
     this.globalMetadata = {
-      ...gitMetadata,
+      ...collectGitMetadata(),
       ...envMetadata,
       ...(metadata ?? {}),
     };

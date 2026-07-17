@@ -11,6 +11,7 @@ import {
   GIT_COMMIT_METADATA_KEY,
   GIT_DIRTY_METADATA_KEY,
   resetGitMetadataCache,
+  setGitMetadataDisabled,
 } from "../src/git-metadata";
 
 const git = (cwd: string, args: string): string =>
@@ -52,10 +53,12 @@ void describe("collectGitMetadata", () => {
     delete process.env.VERCEL_GIT_COMMIT_SHA;
     // Stop git discovery from walking up from the temp dir into a real repo.
     process.env.GIT_CEILING_DIRECTORIES = tmpdir();
+    setGitMetadataDisabled(false);
     resetGitMetadataCache();
   });
   void afterEach(() => {
     process.env = originalEnv;
+    setGitMetadataDisabled(false);
     resetGitMetadataCache();
     for (const dir of tempDirs.splice(0)) {
       rmSync(dir, { recursive: true, force: true });
@@ -136,6 +139,29 @@ void describe("collectGitMetadata", () => {
     tempDirs.push(repo);
     process.env.LMNR_DISABLE_GIT_METADATA = "true";
 
+    assert.deepStrictEqual(collectGitMetadata(repo), {});
+  });
+
+  void it("is disabled by setGitMetadataDisabled (init-option opt-out)", () => {
+    // The disableGitMetadata initialize() option records a process-wide
+    // opt-out that ALL collection points honor — including eval run metadata,
+    // which calls collectGitMetadata() outside initialize() (Bugbot finding
+    // on PR #280).
+    const repo = makeGitRepo();
+    tempDirs.push(repo);
+    setGitMetadataDisabled(true);
+
+    assert.deepStrictEqual(collectGitMetadata(repo), {});
+  });
+
+  void it("applies an opt-out recorded after a prior collection", () => {
+    // The disabled check runs per call, outside the cache — a collection
+    // cached BEFORE the opt-out was recorded must not resurface after it.
+    const repo = makeGitRepo();
+    tempDirs.push(repo);
+    assert.strictEqual(collectGitMetadata(repo)[GIT_BRANCH_METADATA_KEY], "main");
+
+    setGitMetadataDisabled(true);
     assert.deepStrictEqual(collectGitMetadata(repo), {});
   });
 
