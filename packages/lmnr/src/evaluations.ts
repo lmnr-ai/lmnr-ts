@@ -6,6 +6,7 @@ import * as cliProgress from "cli-progress";
 import { EvaluationDataset, LaminarDataset } from "./datasets";
 import { getRuntime } from "./debug";
 import { observe } from "./decorators";
+import { collectGitMetadata } from "./git-metadata";
 import { Laminar } from "./laminar";
 import { InitializeOptions } from "./opentelemetry-lib/interfaces";
 import {
@@ -77,6 +78,23 @@ const withSessionMetadata = (
     return metadata;
   }
   return { ...(metadata ?? {}), [SESSION_METADATA_KEY]: sessionId };
+};
+
+/**
+ * Stamp git state (`git.commit` / `git.branch` / `git.dirty`) into eval run
+ * metadata, so the evaluation entity itself — not just its traces — records
+ * which code produced it. Collection is best-effort and cached at the process
+ * level (see `git-metadata.ts`); explicit user metadata wins on key collision.
+ * Returns the metadata unchanged when nothing was collected.
+ */
+const withGitMetadata = (
+  metadata: Record<string, any> | undefined,
+): Record<string, any> | undefined => {
+  const gitMetadata = collectGitMetadata();
+  if (Object.keys(gitMetadata).length === 0) {
+    return metadata;
+  }
+  return { ...gitMetadata, ...(metadata ?? {}) };
 };
 
 const getAverageScores = <D, T, O>(
@@ -486,7 +504,7 @@ export class Evaluation<D, T, O> {
       const evaluation = await this.client.evals.init(
         this.name,
         this.groupName,
-        withSessionMetadata(this.metadata),
+        withGitMetadata(withSessionMetadata(this.metadata)),
       );
       const url = getEvaluationUrl(
         evaluation.projectId,

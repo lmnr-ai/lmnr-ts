@@ -69,7 +69,7 @@ When adding/modifying integration tests for Mastra:
 ## Debug mode (`packages/lmnr/src/debug/`)
 
 - `src/debug/config.ts` is a **cross-language parity surface** with the Python SDK `src/lmnr/sdk/debug/config.py` — keep the two line-comparable.
-- **The SDK does NOT stamp a debugger pre-run note onto traces.** There is no `resolveDebugRunNote` / `ROLLOUT_NOTE_KEY` and the `LMNR_DEBUG_RUN_NOTES` / `LMNR_DEBUG_RUN_NOTES_FILE` env vars are not read — notes are created separately as session `text` blocks (see the CLI's `debug session add-note` and `RolloutSessionsResource.addBlock`), not as `rollout.note` trace metadata. `laminar.ts` builds `globalMetadata` purely from `LMNR_TRACE_METADATA` + the explicit `metadata` arg. (The Python SDK still had this stamping as of last check — a parity follow-up should remove it there too.)
+- **The SDK does NOT stamp a debugger pre-run note onto traces.** There is no `resolveDebugRunNote` / `ROLLOUT_NOTE_KEY` and the `LMNR_DEBUG_RUN_NOTES` / `LMNR_DEBUG_RUN_NOTES_FILE` env vars are not read — notes are created separately as session `text` blocks (see the CLI's `debug session add-note` and `RolloutSessionsResource.addBlock`), not as `rollout.note` trace metadata. `laminar.ts` builds `globalMetadata` from auto-collected git state (`src/git-metadata.ts`, lowest precedence — see `packages/lmnr/CLAUDE.md`) + `LMNR_TRACE_METADATA` + the explicit `metadata` arg. (The Python SDK still had the note stamping as of last check — a parity follow-up should remove it there too.)
 
 ## Temporal Instrumentation (`packages/lmnr/src/opentelemetry-lib/instrumentation/temporal/`)
 

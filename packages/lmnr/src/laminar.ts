@@ -28,6 +28,10 @@ import {
   resetDebugRuntime,
 } from "./debug";
 import {
+  collectGitMetadata,
+  setGitMetadataDisabled,
+} from "./git-metadata";
+import {
   InitializeOptions,
   initializeTracing,
   LaminarSpanProcessor,
@@ -87,6 +91,7 @@ export interface LaminarInitializeProps {
   metadata?: Record<string, any>;
   inheritGlobalContext?: boolean;
   spanProcessor?: SpanProcessor;
+  disableGitMetadata?: boolean;
 }
 
 type LaminarAttributesProp = Record<
@@ -157,6 +162,9 @@ export class Laminar {
    * @param {Record<string, any>} props.metadata - Global metadata to associate with all spans.
    * This metadata will be associated with all spans, and merged with any metadata passed to
    * each span. Must be JSON serializable.
+   * @param {boolean} props.disableGitMetadata - If true, git state (`git.commit`,
+   * `git.branch`, `git.dirty`) is not collected into the global trace metadata. Can also be
+   * disabled with the LMNR_DISABLE_GIT_METADATA environment variable. Defaults to false.
    * @param {boolean} props.inheritGlobalContext - Whether to inherit the global OpenTelemetry
    * context. Defaults to false. This is useful if your library is instrumented with OpenTelemetry
    * and you want Laminar spans to be children of the existing spans.
@@ -197,6 +205,7 @@ export class Laminar {
     metadata,
     inheritGlobalContext,
     spanProcessor,
+    disableGitMetadata,
   }: LaminarInitializeProps = {}) {
     if (this.isInitialized) {
       logger.warn(
@@ -236,7 +245,16 @@ export class Laminar {
     const envMetadata = process.env.LMNR_TRACE_METADATA
       ? (JSON.parse(process.env.LMNR_TRACE_METADATA) as Record<string, unknown>)
       : {};
-    this.globalMetadata = { ...envMetadata, ...(metadata ?? {}) };
+    // Git state merges at the LOWEST precedence so both LMNR_TRACE_METADATA
+    // and the explicit `metadata` argument can override any git.* key.
+    // The opt-out is recorded process-wide so eval run metadata
+    // (`withGitMetadata` in evaluations.ts) honors it too.
+    setGitMetadataDisabled(disableGitMetadata ?? false);
+    this.globalMetadata = {
+      ...collectGitMetadata(),
+      ...envMetadata,
+      ...(metadata ?? {}),
+    };
     if (inheritGlobalContext) {
       LaminarContextManager.inheritGlobalContext = true;
     }
