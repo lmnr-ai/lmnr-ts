@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import { afterEach, describe, it } from "node:test";
 
 import nock from "nock";
@@ -68,6 +69,29 @@ void describe("LaminarClient base URL resolution", () => {
 
     await client.evals.create({ name: "test" });
     scope.done();
+  });
+
+  void it("exposes the configured base URL and API key", () => {
+    const client = new LaminarClient({
+      baseUrl: "http://localhost:8000",
+      projectApiKey,
+    });
+    assert.strictEqual(client.configuredBaseUrl, "http://localhost:8000");
+    assert.strictEqual(client.apiKey, projectApiKey);
+
+    const defaultClient = new LaminarClient({ projectApiKey });
+    assert.strictEqual(defaultClient.configuredBaseUrl, undefined);
+
+    const envClient = (() => {
+      process.env.LMNR_BASE_URL = "http://localhost:9000";
+      return new LaminarClient({ projectApiKey });
+    })();
+    assert.strictEqual(envClient.configuredBaseUrl, "http://localhost:9000");
+
+    const userTokenClient = new LaminarClient({
+      auth: { type: "userToken", token: "jwt", projectId: "p1" },
+    });
+    assert.strictEqual(userTokenClient.apiKey, undefined);
   });
 
   void it("defaults env-derived baseUrl without port to 443", async () => {
