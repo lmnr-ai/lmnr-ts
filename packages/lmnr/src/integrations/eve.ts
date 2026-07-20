@@ -306,8 +306,10 @@ export class LaminarReporter implements EvalReporter {
       this.tracerProvider = new BasicTracerProvider({
         spanProcessors: [
           this.options.spanProcessor ?? new LaminarSpanProcessor({
-            apiKey: this.options.projectApiKey,
-            baseUrl: this.options.baseUrl,
+            // Derive from the client so a pre-constructed `client` option and
+            // the fallback-trace exporter share auth and base URL.
+            apiKey: this.client.apiKey ?? this.options.projectApiKey,
+            baseUrl: this.client.configuredBaseUrl ?? this.options.baseUrl,
             disableBatch: true,
           }),
         ],

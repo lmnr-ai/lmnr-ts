@@ -14,6 +14,7 @@ import { loadEnv } from "./utils";
 export class LaminarClient {
   private baseUrl: string;
   private auth: LaminarAuth;
+  private configuredUrl?: string;
   private _browserEvents: BrowserEventsResource;
   private _cli: CliResource;
   private _datasets: DatasetsResource;
@@ -59,6 +60,7 @@ export class LaminarClient {
     loadEnv();
     this.auth = LaminarClient.normalizeAuth(auth, projectApiKey, cliUserProjectId);
     const resolvedBaseUrl = baseUrl ?? process.env.LMNR_BASE_URL;
+    this.configuredUrl = resolvedBaseUrl;
     const httpPort = port ?? (
       resolvedBaseUrl?.match(/:\d{1,5}$/g)
         ? parseInt(resolvedBaseUrl.match(/:\d{1,5}$/g)![0].slice(1))
@@ -111,6 +113,25 @@ export class LaminarClient {
       return { type: "userToken", token: key, projectId: cliUserProjectId };
     }
     return { type: "apiKey", key };
+  }
+
+  /**
+   * The base URL this client was configured with (constructor arg or
+   * `LMNR_BASE_URL`), before port normalization; `undefined` when the client
+   * fell back to the default Laminar Cloud URL. Lets integrations that accept
+   * a pre-constructed client derive companion transports (e.g. a span
+   * exporter) from the same connection settings.
+   */
+  public get configuredBaseUrl(): string | undefined {
+    return this.configuredUrl;
+  }
+
+  /**
+   * The project API key this client authenticates with, or `undefined` when
+   * it uses user-token auth.
+   */
+  public get apiKey(): string | undefined {
+    return this.auth.type === "apiKey" ? this.auth.key : undefined;
   }
 
   public get browserEvents() {
