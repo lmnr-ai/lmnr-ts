@@ -25,6 +25,14 @@ pnpm check-versions             # Verify package versions are aligned
 
 Work inside a specific package with `pnpm --filter @lmnr-ai/lmnr ...` or `cd packages/lmnr && pnpm ...`.
 
+## Eve Reporter (`packages/lmnr/src/integrations/eve.ts`)
+
+`LaminarReporter` implements eve's `EvalReporter` (`eve/evals/reporters`) via local type mirrors — no peer dep on `eve` (same pattern as the Mastra exporter). Non-obvious facts:
+
+- The reporter contract (`onRunStart` / `onEvalComplete` / `onRunComplete`) is stable across eve versions (verified 0.16.x → 0.22.x); the local mirrors use optional fields and `readonly` arrays so they stay assignable to eve's real types.
+- **E2E testing against a real eve project requires `npm pack` tarballs, not `file:` installs.** Eve bundles `evals.config.ts` with Rolldown/Nitro; a `file:` install symlinks the package without its dep tree (pino etc. missing) and bundling fails with "Failed to bundle authored module evals.config.ts". Pack `types`, `client`, and `lmnr` and install all three tarballs.
+- `LaminarClient` resolves `baseUrl ?? process.env.LMNR_BASE_URL` BEFORE port extraction — port parsing must run on the resolved value, or `LMNR_BASE_URL=http://localhost:8000` silently becomes `http://localhost:443`. Regression covered in `packages/client/test/client-base-url.test.ts`.
+
 ## Mastra Exporter (`packages/lmnr/src/opentelemetry-lib/instrumentation/mastra/`)
 
 Laminar ships its own `MastraExporter` (implements `ObservabilityExporter` from `@mastra/core/ai-tracing`) instead of relying on the `@mastra/laminar` package. Key non-obvious facts:
