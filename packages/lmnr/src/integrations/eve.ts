@@ -174,11 +174,17 @@ const didAssertionPass = (assertion: EveAssertionResult): boolean => {
   if (typeof assertion.passed === "boolean") {
     return assertion.passed;
   }
-  if (
-    typeof assertion.score === "number" &&
-    typeof assertion.threshold === "number"
-  ) {
-    return assertion.score >= assertion.threshold;
+  // Degradation path: eve's real AssertionResult always carries `passed`, so
+  // this only runs when eve's shape drifted. Infer from score semantics rather
+  // than defaulting to passed — a failed gate must never read as a pass.
+  if (typeof assertion.score === "number") {
+    if (typeof assertion.threshold === "number") {
+      return assertion.score >= assertion.threshold;
+    }
+    if (assertion.severity === "gate") {
+      // Gates score exactly 0 or 1.
+      return assertion.score > 0;
+    }
   }
   return true;
 };
@@ -192,11 +198,11 @@ const didAssertionPass = (assertion: EveAssertionResult): boolean => {
 const resultToScores = (result: EveEvalResult): Record<string, number> => {
   const assertions = result.assertions ?? [];
   const gateAssertions = assertions.filter((assertion) =>
-    assertion.severity === "gate"
+    assertion.severity === "gate",
   );
   const thresholdedSoftAssertions = assertions.filter((assertion) =>
     assertion.severity === "soft" &&
-    typeof assertion.threshold === "number"
+    typeof assertion.threshold === "number",
   );
 
   return {
@@ -226,7 +232,7 @@ const failedAssertionsMetadata = (
   assertions: readonly EveAssertionResult[],
 ): Record<string, any> => {
   const failed = assertions
-    .filter((assertion) => assertion.passed === false)
+    .filter((assertion) => !didAssertionPass(assertion))
     .map((assertion) => ({ name: assertion.name, message: assertion.message }));
   return failed.length > 0 ? { failedAssertions: failed } : {};
 };

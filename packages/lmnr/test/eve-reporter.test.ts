@@ -376,6 +376,44 @@ void describe("LaminarReporter for eve evals", () => {
     ]);
   });
 
+  void it("treats a zero-score gate without a passed flag as failed", async () => {
+    mockInit();
+    let createBody: RequestBody = {};
+    nock(NOCK_URL)
+      .post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`, (b: RequestBody) => {
+        createBody = b;
+        return true;
+      })
+      .reply(200, {});
+    let updateBody: RequestBody = {};
+    nock(NOCK_URL)
+      .post(
+        new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`),
+        (b: RequestBody) => {
+          updateBody = b;
+          return true;
+        },
+      )
+      .reply(200, {});
+
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    // Degraded eve shape: no `passed` flag on the assertion.
+    await reporter.onEvalComplete({
+      id: "a",
+      verdict: "failed",
+      result: { status: "completed" },
+      assertions: [
+        { name: "must-answer", score: 0, severity: "gate", message: "no answer" },
+      ],
+    });
+
+    assert.strictEqual(updateBody.scores["eve.gates.passed"], 0);
+    assert.deepStrictEqual(createBody.points[0].metadata.failedAssertions, [
+      { name: "must-answer", message: "no answer" },
+    ]);
+  });
+
   void it("increments the datapoint index across evals", async () => {
     mockInit();
     const indices: number[] = [];
