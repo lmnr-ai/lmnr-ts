@@ -1,11 +1,19 @@
 import { LaminarClient } from "@lmnr-ai/client";
 import { errorMessage } from "@lmnr-ai/types";
+import { type Span, trace } from "@opentelemetry/api";
+import {
+  BasicTracerProvider,
+  type SpanProcessor,
+} from "@opentelemetry/sdk-trace-base";
 
-import { initializeLogger } from "../utils";
+import { LaminarSpanProcessor } from "../opentelemetry-lib";
+import { initializeLogger, otelTraceIdToUUID } from "../utils";
 
 const logger = initializeLogger();
 
-const GATE_SCORE_PREFIX = "gate:";
+const EVE_REPORTER_TRACER_NAME = "@lmnr-ai/lmnr/eve-reporter";
+const DEFAULT_TRACE_LOOKUP_ATTEMPTS = 8;
+const DEFAULT_TRACE_LOOKUP_DELAY_MS = 1_000;
 
 /**
  * Narrow local mirrors of eve's `eve/evals` types. We intentionally do NOT
@@ -147,29 +155,71 @@ export interface LaminarReporterOptions {
    * When set, `projectApiKey` / `baseUrl` are ignored.
    */
   client?: LaminarClient;
+  /**
+   * Override the reporter's span processor. Intended for tests; production
+   * defaults to a Laminar span processor using the reporter credentials.
+   */
+  spanProcessor?: SpanProcessor;
+  /**
+   * How many times to query Laminar for eve's agent trace before falling back to
+   * a reporter-created trace. Eve hands reporters the result only after the
+   * session finishes, but OTel ingest can still lag the datapoint write.
+   */
+  traceLookupAttempts?: number;
+  /** Delay between trace lookup attempts, in milliseconds. */
+  traceLookupDelayMs?: number;
 }
 
-/**
- * Maps each eve assertion onto a Laminar score. Gate assertions become binary
- * `gate:<name>` scores (so Laminar diffs gate regressions the same way it diffs
- * soft-score regressions), soft assertions keep their numeric score. Mirrors
- * eve's own Braintrust reporter, which prefixes gate scores the same way.
- */
-const assertionsToScores = (
-  assertions: readonly EveAssertionResult[],
-): Record<string, number> => {
-  const scores: Record<string, number> = {};
-  for (const assertion of assertions) {
-    if (!assertion.name || typeof assertion.score !== "number") {
-      continue;
-    }
-    const key = assertion.severity === "gate"
-      ? `${GATE_SCORE_PREFIX}${assertion.name}`
-      : assertion.name;
-    scores[key] = assertion.score;
+const didAssertionPass = (assertion: EveAssertionResult): boolean => {
+  if (typeof assertion.passed === "boolean") {
+    return assertion.passed;
   }
-  return scores;
+  if (
+    typeof assertion.score === "number" &&
+    typeof assertion.threshold === "number"
+  ) {
+    return assertion.score >= assertion.threshold;
+  }
+  return true;
 };
+
+/**
+ * Keep Laminar's top-level score columns stable across heterogeneous eve evals.
+ * Detailed assertion outcomes live in metadata; sparse per-assertion score keys
+ * make Laminar's eval UI look incomplete when different eval files assert
+ * different things.
+ */
+const resultToScores = (result: EveEvalResult): Record<string, number> => {
+  const assertions = result.assertions ?? [];
+  const gateAssertions = assertions.filter((assertion) =>
+    assertion.severity === "gate"
+  );
+  const thresholdedSoftAssertions = assertions.filter((assertion) =>
+    assertion.severity === "soft" &&
+    typeof assertion.threshold === "number"
+  );
+
+  return {
+    "eve.verdict.passed": result.verdict === "passed" ? 1 : 0,
+    "eve.gates.passed": gateAssertions.every(didAssertionPass) ? 1 : 0,
+    "eve.soft_thresholds.passed": thresholdedSoftAssertions.every(didAssertionPass)
+      ? 1
+      : 0,
+  };
+};
+
+const assertionsMetadata = (
+  assertions: readonly EveAssertionResult[],
+): Array<Record<string, any>> =>
+  assertions.map((assertion) => ({
+    name: assertion.name,
+    score: assertion.score,
+    severity: assertion.severity,
+    threshold: assertion.threshold,
+    passed: assertion.passed,
+    message: assertion.message,
+    metadata: assertion.metadata,
+  }));
 
 /** Surface failed assertions in metadata so a failing run is debuggable. */
 const failedAssertionsMetadata = (
@@ -180,6 +230,16 @@ const failedAssertionsMetadata = (
     .map((assertion) => ({ name: assertion.name, message: assertion.message }));
   return failed.length > 0 ? { failedAssertions: failed } : {};
 };
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+const traceIdFromSpan = (span: Span) =>
+  otelTraceIdToUUID(span.spanContext().traceId);
+
+type TraceResolution =
+  | { traceId: string; source: "eve-session"; attempt: number }
+  | { traceId: string; source: "reporter-fallback"; attempt: number; span: Span };
 
 /**
  * A Laminar reporter for eve evals. Register it globally in `evals.config.ts`
@@ -207,7 +267,9 @@ export class LaminarReporter implements EvalReporter {
   private readonly options: LaminarReporterOptions;
   private client?: LaminarClient;
   private evalId?: string;
+  private evalsById = new Map<string, EveEval>();
   private index = 0;
+  private tracerProvider?: BasicTracerProvider;
 
   constructor(options: LaminarReporterOptions = {}) {
     this.options = options;
@@ -220,11 +282,26 @@ export class LaminarReporter implements EvalReporter {
     // Reset up front so a reused reporter whose start fails cannot attach this
     // run's results to a previous run's evaluation.
     this.evalId = undefined;
+    this.evalsById = new Map(
+      evaluations
+        .filter((evaluation): evaluation is EveEval & { id: string } =>
+          typeof evaluation.id === "string")
+        .map((evaluation) => [evaluation.id, evaluation]),
+    );
     this.index = 0;
     try {
       this.client = this.options.client ?? new LaminarClient({
         baseUrl: this.options.baseUrl,
         projectApiKey: this.options.projectApiKey,
+      });
+      this.tracerProvider = new BasicTracerProvider({
+        spanProcessors: [
+          this.options.spanProcessor ?? new LaminarSpanProcessor({
+            apiKey: this.options.projectApiKey,
+            baseUrl: this.options.baseUrl,
+            disableBatch: true,
+          }),
+        ],
       });
       this.evalId = await this.client.evals.init(
         this.options.name,
@@ -258,6 +335,17 @@ export class LaminarReporter implements EvalReporter {
     const task = result.result ?? {};
     const derived = task.derived ?? {};
     const assertions = result.assertions ?? [];
+    const evalDefinition = typeof result.id === "string"
+      ? this.evalsById.get(result.id)
+      : undefined;
+    const evalDescription = evalDefinition?.description;
+    const traceResolution = await this.resolveDatapointTrace({
+      client,
+      evalId: result.id ?? String(index),
+      verdict: result.verdict,
+      sessionId: task.sessionId,
+    });
+    let reported = false;
     try {
       const datapointId = await client.evals.createDatapoint({
         evalId,
@@ -266,11 +354,15 @@ export class LaminarReporter implements EvalReporter {
         data: result.id ?? null,
         target: task.finalMessage ?? null,
         index,
+        traceId: traceResolution.traceId,
         metadata: {
           name: result.id,
           verdict: result.verdict,
           status: task.status,
+          description: evalDescription,
           sessionId: task.sessionId,
+          traceResolution: traceResolution.source,
+          traceResolutionAttempt: traceResolution.attempt,
           skipReason: result.skipReason,
           error: result.error,
           toolCalls: (derived.toolCalls ?? [])
@@ -280,27 +372,153 @@ export class LaminarReporter implements EvalReporter {
           parked: derived.parked,
           failureCode: derived.failureCode,
           modelId: task.runtimeIdentity?.modelId,
+          assertions: assertionsMetadata(assertions),
           ...failedAssertionsMetadata(assertions),
         },
       });
 
+      const executorOutput = task.output ?? task.finalMessage ?? null;
       await client.evals.updateDatapoint({
         evalId,
         datapointId,
-        scores: assertionsToScores(assertions),
-        executorOutput: task.output ?? task.finalMessage ?? null,
+        scores: resultToScores(result),
+        executorOutput,
       });
+      reported = true;
     } catch (error) {
+      traceResolution.source === "reporter-fallback" &&
+        traceResolution.span.recordException(error as Error);
       logger.error(
         `Laminar eve reporter: failed to report eval ` +
         `"${result.id ?? index}": ${errorMessage(error)}`,
       );
+    } finally {
+      if (traceResolution.source === "reporter-fallback") {
+        traceResolution.span.end();
+      }
+      await this.tracerProvider?.forceFlush();
+      if (reported && evalDescription) {
+        await this.pushEvalTraceMetadata({
+          client,
+          traceId: traceResolution.traceId,
+          description: evalDescription,
+          evalId: result.id,
+          verdict: result.verdict,
+          sessionId: task.sessionId,
+        });
+      }
     }
   }
 
-  onRunComplete(): void {
+  async onRunComplete(): Promise<void> {
     // Laminar derives average scores server-side from the datapoints, so there
     // is nothing to push here. Datapoint writes are awaited per-eval already.
+    await this.tracerProvider?.forceFlush();
+    this.tracerProvider = undefined;
     this.evalId = undefined;
+    this.evalsById.clear();
+  }
+
+  private async pushEvalTraceMetadata({
+    client,
+    traceId,
+    description,
+    evalId,
+    verdict,
+    sessionId,
+  }: {
+    client: LaminarClient;
+    traceId: string;
+    description: string;
+    evalId?: string;
+    verdict?: EveEvalVerdict;
+    sessionId?: string;
+  }): Promise<void> {
+    try {
+      await client.traces.pushMetadata(traceId, {
+        source: "eve",
+        eveEvalId: evalId,
+        eveEvalDescription: description,
+        eveEvalVerdict: verdict,
+        eveSessionId: sessionId,
+      });
+    } catch (error) {
+      logger.warn(
+        `Laminar eve reporter: failed to attach eval metadata to trace ` +
+        `"${traceId}": ${errorMessage(error)}`,
+      );
+    }
+  }
+
+  private async resolveDatapointTrace({
+    client,
+    evalId,
+    verdict,
+    sessionId,
+  }: {
+    client: LaminarClient;
+    evalId: string;
+    verdict?: EveEvalVerdict;
+    sessionId?: string;
+  }): Promise<TraceResolution> {
+    const attempts = this.options.traceLookupAttempts ??
+      DEFAULT_TRACE_LOOKUP_ATTEMPTS;
+    const delayMs = this.options.traceLookupDelayMs ??
+      DEFAULT_TRACE_LOOKUP_DELAY_MS;
+
+    if (sessionId) {
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+          const rows = await client.sql.query(
+            "SELECT trace_id, count() AS span_count " +
+            "FROM spans " +
+            "WHERE span_type != 'EVALUATION' " +
+            "AND (" +
+            "simpleJSONExtractString(attributes, 'workflow.run.id') = {session_id:String} " +
+            "OR simpleJSONExtractString(attributes, 'lmnr.eve.session.id') = {session_id:String} " +
+            "OR simpleJSONExtractString(attributes, 'eve.session.id') = {session_id:String}" +
+            ") " +
+            "GROUP BY trace_id " +
+            "ORDER BY span_count DESC " +
+            "LIMIT 1",
+            { session_id: sessionId },
+          );
+          const traceId = rows[0]?.trace_id;
+          if (typeof traceId === "string" && traceId.length > 0) {
+            return { traceId, source: "eve-session", attempt };
+          }
+        } catch (error) {
+          logger.warn(
+            `Laminar eve reporter: trace lookup failed for session ` +
+            `"${sessionId}" on attempt ${attempt}: ${errorMessage(error)}`,
+          );
+        }
+        if (attempt < attempts) {
+          await sleep(delayMs);
+        }
+      }
+    }
+
+    const tracer = this.tracerProvider?.getTracer(EVE_REPORTER_TRACER_NAME) ??
+      trace.getTracer(EVE_REPORTER_TRACER_NAME);
+    const span = tracer.startSpan(
+      `eve eval ${evalId}`,
+      {
+        attributes: {
+          "lmnr.span.type": "EVALUATION",
+          "lmnr.eve.reporter": EVE_REPORTER_TRACER_NAME,
+          "lmnr.eve.eval.id": evalId,
+          "lmnr.eve.eval.verdict": verdict ?? "",
+          ...(sessionId ? { "lmnr.eve.session.id": sessionId } : {}),
+          "lmnr.eve.trace_resolution": "reporter-fallback",
+        },
+      },
+    );
+    return {
+      traceId: traceIdFromSpan(span),
+      source: "reporter-fallback",
+      attempt: attempts,
+      span,
+    };
   }
 }
