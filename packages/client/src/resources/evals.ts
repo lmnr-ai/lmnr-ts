@@ -128,7 +128,7 @@ export class EvalsResource extends BaseResource {
    * @param {Object} options - Update datapoint options
    * @param {string} options.evalId - The evaluation ID
    * @param {string} options.datapointId - The datapoint ID
-   * @param {Record<string, number>} options.scores - The scores
+   * @param {Record<string, number | null>} options.scores - The scores
    * @param {O} [options.executorOutput] - The executor output
    * @returns {Promise<void>}
    */
@@ -140,7 +140,7 @@ export class EvalsResource extends BaseResource {
   }: {
     evalId: string;
     datapointId: string;
-    scores: Record<string, number>;
+    scores: Record<string, number | null>;
     executorOutput?: O;
   }): Promise<void> {
     const response = await fetch(
