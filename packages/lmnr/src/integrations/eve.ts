@@ -295,6 +295,9 @@ export class LaminarReporter implements EvalReporter {
         .map((evaluation) => [evaluation.id, evaluation]),
     );
     this.index = 0;
+    // A leftover provider means the previous run never reached onRunComplete
+    // (eve crashed mid-run); release its exporter before replacing it.
+    await this.shutdownTracerProvider();
     try {
       this.client = this.options.client ?? new LaminarClient({
         baseUrl: this.options.baseUrl,
@@ -419,10 +422,27 @@ export class LaminarReporter implements EvalReporter {
   async onRunComplete(): Promise<void> {
     // Laminar derives average scores server-side from the datapoints, so there
     // is nothing to push here. Datapoint writes are awaited per-eval already.
-    await this.tracerProvider?.forceFlush();
-    this.tracerProvider = undefined;
+    await this.shutdownTracerProvider();
     this.evalId = undefined;
     this.evalsById.clear();
+  }
+
+  /**
+   * Flush and release the run's tracer provider. shutdown() flushes
+   * registered processors itself; without it the exporter (and its HTTP
+   * resources) stays open when the same reporter instance is reused.
+   */
+  private async shutdownTracerProvider(): Promise<void> {
+    const tracerProvider = this.tracerProvider;
+    this.tracerProvider = undefined;
+    try {
+      await tracerProvider?.shutdown();
+    } catch (error) {
+      logger.error(
+        `Laminar eve reporter: failed to shut down tracer provider: ` +
+        errorMessage(error),
+      );
+    }
   }
 
   private async pushEvalTraceMetadata({
