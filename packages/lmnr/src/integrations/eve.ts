@@ -333,11 +333,14 @@ export class LaminarReporter implements EvalReporter {
   }
 
   async onEvalComplete(result: EveEvalResult): Promise<void> {
-    // Capture both in locals: `this.evalId` is cleared by onRunComplete and
-    // replaced by a later onRunStart, so re-reading it after the await below
-    // could pair this run's datapoint with another run's evaluation.
+    // Capture run state in locals: `this.evalId` and `this.tracerProvider`
+    // are cleared by onRunComplete and replaced by a later onRunStart, so
+    // re-reading them after an await could pair this run's datapoint with
+    // another run's evaluation, or record fallback spans on a provider that
+    // was already shut down.
     const client = this.client;
     const evalId = this.evalId;
+    const tracerProvider = this.tracerProvider;
     if (!client || !evalId) {
       // onRunStart failed; nothing to attach this result to.
       return;
@@ -352,6 +355,7 @@ export class LaminarReporter implements EvalReporter {
     const evalDescription = evalDefinition?.description;
     const traceResolution = await this.resolveDatapointTrace({
       client,
+      tracerProvider,
       evalId: result.id ?? String(index),
       verdict: result.verdict,
       sessionId: task.sessionId,
@@ -407,7 +411,7 @@ export class LaminarReporter implements EvalReporter {
       if (traceResolution.source === "reporter-fallback") {
         traceResolution.span.end();
       }
-      await this.tracerProvider?.forceFlush();
+      await tracerProvider?.forceFlush();
       if (reported && evalDescription) {
         await this.pushEvalTraceMetadata({
           client,
@@ -480,11 +484,13 @@ export class LaminarReporter implements EvalReporter {
 
   private async resolveDatapointTrace({
     client,
+    tracerProvider,
     evalId,
     verdict,
     sessionId,
   }: {
     client: LaminarClient;
+    tracerProvider?: BasicTracerProvider;
     evalId: string;
     verdict?: EveEvalVerdict;
     sessionId?: string;
@@ -527,7 +533,7 @@ export class LaminarReporter implements EvalReporter {
       }
     }
 
-    const tracer = this.tracerProvider?.getTracer(EVE_REPORTER_TRACER_NAME) ??
+    const tracer = tracerProvider?.getTracer(EVE_REPORTER_TRACER_NAME) ??
       trace.getTracer(EVE_REPORTER_TRACER_NAME);
     const span = tracer.startSpan(
       `eve eval ${evalId}`,
