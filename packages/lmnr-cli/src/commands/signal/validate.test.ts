@@ -174,6 +174,10 @@ describe("parseTrigger", () => {
       JSON.stringify({ filters: [{ column: "total_token_count", operator: "gt", value: "abc" }] }),
     ],
     [
+      "token count whitespace-only string",
+      JSON.stringify({ filters: [{ column: "total_token_count", operator: "gt", value: " " }] }),
+    ],
+    [
       "filter extra key",
       JSON.stringify({
         filters: [{ column: "status", operator: "eq", value: "error", dataType: "enum" }],

@@ -198,9 +198,13 @@ const TRIGGER_COLUMNS: Record<
   total_token_count: {
     operators: NUMBER_OPS,
     validateValue: (value) => {
+      // Number(" ") is 0, so trim before the length check or a whitespace-only
+      // string would pass as a valid numeric threshold.
       const ok =
         typeof value === "number" ||
-        (typeof value === "string" && value.length > 0 && Number.isFinite(Number(value)));
+        (typeof value === "string" &&
+          value.trim().length > 0 &&
+          Number.isFinite(Number(value)));
       if (!ok) {
         throw new Error('Trigger filter "total_token_count" value must be a number');
       }
