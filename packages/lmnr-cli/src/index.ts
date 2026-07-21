@@ -24,6 +24,7 @@ import { handleLogout } from "./commands/logout";
 import { handlePluginAdd } from "./commands/plugin";
 import { handleProjectsList } from "./commands/project";
 import { handleSetup } from "./commands/setup";
+import { handleSignalCreate } from "./commands/signal";
 import { handleSkillAdd, handleSkillUpdate } from "./commands/skill";
 import { handleSqlQuery } from "./commands/sql";
 import { SQL_SCHEMA_HELP } from "./commands/sql/schema";
@@ -195,6 +196,84 @@ Examples:
     .action(() => {
       process.stdout.write(SQL_SCHEMA_HELP);
     });
+
+  const signalCmd = program
+    .command("signal")
+    .alias("signals")
+    .description("Manage Signals (LLM-powered trace analyzers)")
+    .option(
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+      "Run `lmnr-cli login` first.",
+    )
+    .option(
+      "--frontend-url <url>",
+      "Frontend URL. Defaults to LMNR_FRONTEND_URL, the login issuer, or https://laminar.sh",
+    )
+    .option("--json", "Output structured JSON to stdout");
+
+  signalCmd
+    .command("create")
+    .description("Create a Signal with a payload schema and trigger filters")
+    .argument("<name>", "Signal name (unique per project, max 255 chars)")
+    .requiredOption(
+      "--prompt <prompt>",
+      "LLM instruction describing what the signal should detect in a trace",
+    )
+    .requiredOption(
+      "--schema <json>",
+      "Payload schema as a JSON string: " +
+      '\'{"properties":{"<field>":{"type":"string|number|boolean",' +
+      '"description":"...","enum":["..."]}}}\'',
+    )
+    .option(
+      "--trigger <json>",
+      "Trigger as a JSON string (repeatable): " +
+      '\'{"filters":[{"column":"...","operator":"...","value":"..."}],"mode":1}\'. ' +
+      "Omitted → a default trigger (root span finished AND total tokens > 1000) is created",
+      (val: string, prev: string[]) => [...prev, val],
+      [] as string[],
+    )
+    .option(
+      "--no-default-trigger",
+      "With no --trigger, create the signal without any trigger " +
+      "(it will never fire until one is added)",
+    )
+    .option(
+      "--sample-rate <percent>",
+      "Sampling rate: integer percent of matching traces to evaluate (1-95). Omitted → no sampling",
+    )
+    .option("--disabled", "Create the signal deactivated")
+    .action(withLocalOpts(handleSignalCreate))
+    .addHelpText(
+      "after",
+      `
+Creates a Signal — an LLM prompt that runs on matching traces and extracts a
+structured payload — identically to the UI's "Create signal" flow (including
+the auto-created critical-severity alert subscribed to your email).
+
+The payload schema uses JSON Schema shape with these UI-identical constraints:
+  - field names must be identifiers: ^[a-zA-Z_][a-zA-Z0-9_]*$
+  - field types: "string", "number", "boolean" (enums: "string" + "enum": [...])
+  - every field is required
+Trigger filter columns (all conditions in one trigger are ANDed):
+  - span_name          (eq|ne, string)        trace has a span with this name
+  - status             (eq|ne, only "error")  trace status
+  - root_span_finished (eq|ne, only "true")   root span has finished
+  - total_token_count  (eq|ne|gt|gte|lt|lte, number)
+
+Examples:
+  $ lmnr-cli signal create "Refund requests" \\
+      --prompt "Detect when the user asks for a refund. Extract the reason." \\
+      --schema '{"properties":{"reason":{"type":"string","description":"Refund reason"}}}'
+
+  $ lmnr-cli signal create "Severe failures" \\
+      --prompt "Find failures. Rate severity." \\
+      --schema '{"properties":{"how":{"type":"string","enum":["low","high"]}}}' \\
+      --trigger '{"filters":[{"column":"status","operator":"eq","value":"error"}]}' \\
+      --sample-rate 25 --json
+`,
+    );
 
   program
     .command("ask")
