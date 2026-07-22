@@ -18,6 +18,28 @@ This is a CLI for the Laminar agent observability platform.
   `src/commands/setup/index.ts`. The old standalone `GET /v1/project` probe
   (`src/auth/project-id.ts`) was DELETED — do not reintroduce a key-authed probe.
 
+# Signal create (`src/commands/signal/`)
+- `lmnr-cli signal create` POSTs the **frontend** (issuer) `/api/cli/signals` with the
+  BetterAuth SESSION token as bearer — the same auth pattern as the api-key mint in
+  `setup` — NOT the app-server `/v1/cli/*` JWT surface. Signal creation lives in
+  Next.js (`createSignal`'s Drizzle transaction auto-creates the alert + email
+  target), so there is no Rust twin. It uses `withLocalOpts` (not
+  `withProjectClient`) because `@lmnr-ai/client` targets the app-server; the
+  handler resolves credentials/project itself. Frontend URL resolution:
+  `--frontend-url` → `LMNR_FRONTEND_URL` → `credentials.issuer` → cloud default.
+- `src/commands/signal/validate.ts` mirrors the UI create-signal drawer's
+  constraints EXACTLY (field-name regex `^[a-zA-Z_][a-zA-Z0-9_]*$`,
+  string/number/boolean types + `enum` on string only, all fields required, the
+  four trigger columns with pinned operators — never `includes`). The frontend
+  route re-validates the same rules server-side; when the UI drawer's constraints
+  change, update BOTH this file and `frontend/app/api/cli/signals/route.ts` in
+  the lmnr repo.
+- Omitting `--trigger` omits `triggers` from the request body → the server seeds
+  the UI's default trigger (root_span_finished + total_token_count > 1000,
+  realtime). `--no-default-trigger` sends `triggers: []` (signal never fires
+  until one is added). Commander maps `--no-default-trigger` to
+  `opts.defaultTrigger === false`.
+
 # Package Boundaries
 - `lmnr-cli` is the standalone CLI (`npx lmnr-cli@latest`). It depends on
   `@lmnr-ai/client` for API calls, not the full `@lmnr-ai/lmnr` SDK.
