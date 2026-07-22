@@ -16,17 +16,18 @@ const PROJECT_ID = '11111111-2222-3333-4444-555555555555';
 
 let credsDir: string;
 
-// The signal endpoint lives on the FRONTEND (issuer), authed with the session
-// token — the fixture's issuer must point at the mock server, so it is written
-// per-server rather than once.
-function writeCredentialsFixture(issuer: string): string {
+// The signal endpoint lives on the APP-SERVER (`/v1/cli/signals`), authed with
+// the user JWT and scoped by the `x-lmnr-project-id` header. `accessTokenExpiresAt`
+// is far in the future so `resolveAuth` never tries to refresh (no issuer call),
+// and the app-server URL is supplied per-test via `--base-url`.
+function writeCredentialsFixture(): string {
   const dir = mkdtempSync(path.join(tmpdir(), 'lmnr-cli-signal-test-'));
   mkdirSync(path.join(dir, 'lmnr'), { recursive: true });
   writeFileSync(
     path.join(dir, 'lmnr', 'credentials.json'),
     JSON.stringify({
       version: 1,
-      issuer,
+      issuer: 'http://localhost:1',
       sessionToken: 'fake-session',
       accessToken: 'fake-jwt',
       accessTokenExpiresAt: '2099-01-01T00:00:00.000Z',
@@ -61,9 +62,10 @@ async function runCli(args: string[]): Promise<CliResult> {
   }
 }
 
-describe('signal create CLI integration — with mock frontend', () => {
+describe('signal create CLI integration — with mock app-server', () => {
   let mockServer: http.Server;
-  let requests: { url: string; auth?: string; body: any }[] = [];
+  let baseUrl: string;
+  let requests: { url: string; auth?: string; projectId?: string; body: any }[] = [];
 
   beforeAll(async () => {
     mockServer = http.createServer((req, res) => {
@@ -71,13 +73,14 @@ describe('signal create CLI integration — with mock frontend', () => {
       req.on('data', (chunk) => { raw += chunk; });
       req.on('end', () => {
         res.setHeader('Content-Type', 'application/json');
-        if (req.method === 'POST' && req.url === '/api/cli/signals') {
+        if (req.method === 'POST' && req.url === '/v1/cli/signals') {
           const body = JSON.parse(raw || '{}');
-          requests.push({ url: req.url, auth: req.headers.authorization, body });
+          const projectId = req.headers['x-lmnr-project-id'] as string | undefined;
+          requests.push({ url: req.url, auth: req.headers.authorization, projectId, body });
           res.writeHead(200);
           res.end(JSON.stringify({
             id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-            projectId: body.projectId,
+            projectId,
             name: body.name,
             prompt: body.prompt,
             structuredOutput: body.structuredOutput,
@@ -102,7 +105,8 @@ describe('signal create CLI integration — with mock frontend', () => {
     const port = await new Promise<number>((resolve) => {
       mockServer.listen(0, () => resolve((mockServer.address() as any).port));
     });
-    credsDir = writeCredentialsFixture(`http://localhost:${port}`);
+    baseUrl = `http://localhost:${port}`;
+    credsDir = writeCredentialsFixture();
   });
 
   afterAll(async () => {
@@ -126,6 +130,7 @@ describe('signal create CLI integration — with mock frontend', () => {
       }),
       '--sample-rate', '25',
       '--project-id', PROJECT_ID,
+      '--base-url', baseUrl,
       '--json',
     ]);
 
@@ -136,8 +141,10 @@ describe('signal create CLI integration — with mock frontend', () => {
 
     expect(requests).toHaveLength(1);
     const sent = requests[0];
-    expect(sent.auth).toBe('Bearer fake-session');
-    expect(sent.body.projectId).toBe(PROJECT_ID);
+    // User JWT bearer + project in the header (not the body).
+    expect(sent.auth).toBe('Bearer fake-jwt');
+    expect(sent.projectId).toBe(PROJECT_ID);
+    expect('projectId' in sent.body).toBe(false);
     expect(sent.body.structuredOutput).toEqual({
       type: 'object',
       properties: {
@@ -159,6 +166,7 @@ describe('signal create CLI integration — with mock frontend', () => {
       '--prompt', 'p',
       '--schema', JSON.stringify({ properties: { a: { type: 'string', description: '' } } }),
       '--project-id', PROJECT_ID,
+      '--base-url', baseUrl,
       '--json',
     ]);
     expect(exitCode).toBe(0);
@@ -175,6 +183,7 @@ describe('signal create CLI integration — with mock frontend', () => {
       '--schema', JSON.stringify({ properties: { a: { type: 'string', description: '' } } }),
       '--no-default-trigger',
       '--project-id', PROJECT_ID,
+      '--base-url', baseUrl,
       '--json',
     ]);
     expect(exitCode).toBe(0);
@@ -228,7 +237,7 @@ describe('signal create CLI integration — with mock frontend', () => {
       '--prompt', 'p',
       '--schema', JSON.stringify({ properties: { a: { type: 'string', description: '' } } }),
       '--project-id', PROJECT_ID,
-      '--frontend-url', `http://localhost:${errorPort}`,
+      '--base-url', `http://localhost:${errorPort}`,
       '--json',
     ]);
     await new Promise<void>((resolve) => errorServer.close(() => resolve()));

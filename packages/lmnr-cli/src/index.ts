@@ -207,8 +207,13 @@ Examples:
       "Run `lmnr-cli login` first.",
     )
     .option(
-      "--frontend-url <url>",
-      "Frontend URL. Defaults to LMNR_FRONTEND_URL, the login issuer, or https://laminar.sh",
+      "--base-url <url>",
+      "App-server base URL. Defaults to LMNR_BASE_URL or https://api.lmnr.ai",
+    )
+    .option(
+      "--port <port>",
+      "App-server HTTP port. Defaults to LMNR_HTTP_PORT.",
+      (v) => parseInt(v, 10),
     )
     .option("--json", "Output structured JSON to stdout");
 

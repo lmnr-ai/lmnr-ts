@@ -1,8 +1,6 @@
-import { readCredentials } from "../../auth/credentials";
-import { refreshIfNeeded } from "../../auth/resolve";
+import { resolveAuth } from "../../auth/resolve";
 import type { GlobalOpts } from "../../auth/with-client";
-import { DEFAULT_FRONTEND_URL } from "../../constants";
-import { readLocalProjectFile } from "../../utils/local-project-file";
+import { DEFAULT_BASE_URL } from "../../constants";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
 import {
@@ -23,7 +21,14 @@ type SignalCreateOpts = GlobalOpts & {
   defaultTrigger?: boolean;
   sampleRate?: string;
   disabled?: boolean;
-  frontendUrl?: string;
+};
+
+/** Compose the app-server URL from a port-less base URL + optional port. */
+const buildAppServerUrl = (baseUrl: string, port: number | undefined, path: string): string => {
+  const url = new URL(baseUrl);
+  if (port !== undefined) url.port = String(port);
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}${path}`;
+  return url.toString();
 };
 
 interface CreatedSignal {
@@ -38,21 +43,19 @@ interface CreatedSignal {
   triggers: { id: string; filters: unknown[]; mode: number }[];
 }
 
-const trimTrailingSlashes = (url: string): string => url.replace(/\/+$/, "");
-
 /**
  * `lmnr-cli signal create <name>` — create a Signal with a validated payload
  * schema and trigger filters.
  *
- * Signal creation lives in the Laminar frontend (Next.js) — the same
- * transaction that auto-creates the signal's alert — so this command POSTs
- * `/api/cli/signals` on the FRONTEND (issuer) with the BetterAuth session
- * token as bearer, exactly like the api-key mint in `setup`. This is unlike
- * `sql`/`dataset`, which hit the app-server `/v1/cli/*` twins with the JWT.
+ * Signal creation is owned by the app-server (shared with the browser drawer),
+ * so this command POSTs `/v1/cli/signals` on the APP-SERVER with the user JWT as
+ * bearer and the resolved project in `x-lmnr-project-id` — exactly like `sql` /
+ * `dataset`. `resolveAuth` handles JWT refresh + project resolution (flag →
+ * linked `.lmnr/project.json`).
  *
  * All payload-schema and trigger constraints the UI drawer imposes are
  * validated locally first (see ./validate.ts) so agents get fast, actionable
- * errors before any network call.
+ * errors before any network call. The app-server re-validates the same rules.
  */
 export const handleSignalCreate = async (name: string, opts: SignalCreateOpts): Promise<void> => {
   const validatedName = validateName(name);
@@ -71,40 +74,23 @@ export const handleSignalCreate = async (name: string, opts: SignalCreateOpts): 
         : undefined;
   const sampleRate = opts.sampleRate !== undefined ? parseSampleRate(opts.sampleRate) : undefined;
 
-  const creds = await readCredentials();
-  if (!creds) {
-    throw new Error("Not authenticated. Run `lmnr-cli login`.");
-  }
-  // The endpoint is session-bearer authed; refresh keeps the stored session
-  // usable and surfaces a clear "run login" error when it expired.
-  await refreshIfNeeded(creds);
+  // Resolves the user JWT (auto-refreshed) + the target project, or throws a
+  // clear "run login" / "no project" error.
+  const auth = await resolveAuth({
+    projectId: opts.projectId,
+    baseUrl: opts.baseUrl,
+    port: opts.port,
+  });
 
-  let projectId = opts.projectId;
-  if (!projectId || projectId.length === 0) {
-    projectId = (await readLocalProjectFile())?.projectId;
-  }
-  if (!projectId || projectId.length === 0) {
-    throw new Error(
-      "No project for this directory. Run `lmnr-cli setup` here, or pass --project-id <id>.",
-    );
-  }
-
-  // The frontend (issuer) URL — same resolution as login: flag → env → the
-  // issuer stored at login → cloud default.
-  const issuer =
-    opts.frontendUrl?.trim() ||
-    process.env.LMNR_FRONTEND_URL?.trim() ||
-    creds.issuer ||
-    DEFAULT_FRONTEND_URL;
-
-  const res = await fetch(`${trimTrailingSlashes(issuer)}/api/cli/signals`, {
+  const url = buildAppServerUrl(auth.baseUrl ?? DEFAULT_BASE_URL, auth.port, "/v1/cli/signals");
+  const res = await fetch(url, {
     method: "POST",
     headers: {
-      authorization: `Bearer ${creds.sessionToken}`,
+      authorization: `Bearer ${auth.bearer}`,
+      "x-lmnr-project-id": auth.projectId,
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      projectId,
       name: validatedName,
       prompt,
       structuredOutput,
