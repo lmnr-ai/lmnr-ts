@@ -54,6 +54,16 @@ export interface CommandBlockContent {
   args: string[];
   /** The process exit code observed at post-action time (0 on the success path). */
   exitCode: number;
+  /**
+   * Captured stdout (the command's data output), truncated to a bounded prefix.
+   * Omitted / null when the command produced no stdout.
+   */
+  output?: string | null;
+  /**
+   * Captured stderr (diagnostics + the fatal error on failure), truncated to a
+   * bounded prefix. Omitted / null when the command produced no stderr.
+   */
+  stderr?: string | null;
 }
 
 /** Union of the known block content shapes. */

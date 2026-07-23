@@ -69,8 +69,10 @@ function runWithEnvelope(
     },
     async (error: unknown) => {
       const code = exitCodeFor(error);
-      // Record the failure with its real exit code BEFORE we exit the process.
-      await maybeTrackCommand(command, code);
+      // Record the failure with its real exit code BEFORE we exit the process,
+      // passing the fatal error text so it lands in the block's stderr (the
+      // logger.error below runs after this, so the tee wouldn't capture it).
+      await maybeTrackCommand(command, code, errorMessage(error));
       if (opts.json) {
         // outputJsonError exits with `code` (never returns).
         outputJsonError(error, code);

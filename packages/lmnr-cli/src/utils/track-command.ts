@@ -3,6 +3,7 @@ import type { Command } from "commander";
 
 import { buildLaminarClient } from "../auth/client";
 import type { GlobalOpts } from "../auth/with-client";
+import { getCapturedOutput } from "./command-capture";
 import { readDebugSessionFile, resolveDebugSessionDir } from "./debug-session-file";
 import { initializeLogger } from "./logger";
 
@@ -62,11 +63,19 @@ export const trackingDisabled = (opts: TrackOpts): boolean => {
  * tracking must NEVER change the wrapped command's outcome, output, or exit
  * code. On the no-session path it returns silently with no output at all.
  *
+ * Captured stdout/stderr (via the `emitData`/`emitErr` sinks + the logger tee)
+ * ride along so a reviewer sees not just which command ran but what it produced.
+ * The fatal error on a failure is logged AFTER this runs (the envelope's terminal
+ * output is intentionally last), so the tee can't have it yet — the envelope
+ * passes it explicitly as `errorText`, appended to whatever the tee captured.
+ *
  * @param exitCode the resolved exit code of the wrapped command (0 = success).
+ * @param errorText the fatal error message on the failure path, else undefined.
  */
 export const maybeTrackCommand = async (
   actionCommand: Command,
   exitCode: number,
+  errorText?: string,
 ): Promise<void> => {
   try {
     const opts = actionCommand.optsWithGlobals();
@@ -83,10 +92,15 @@ export const maybeTrackCommand = async (
       baseUrl: opts.baseUrl,
       port: opts.port,
     });
+    // Fold the explicit fatal error into the teed diagnostics (either may be
+    // empty). `getCapturedOutput` already caps each field.
+    const { stdout, stderr: capturedStderr } = getCapturedOutput();
+    const stderr = [capturedStderr, errorText].filter(Boolean).join("\n") || null;
+
     await client.rolloutSessions.addBlock({
       sessionId,
       type: "command",
-      content: { command: path, args: actionCommand.args ?? [], exitCode },
+      content: { command: path, args: actionCommand.args ?? [], exitCode, output: stdout, stderr },
       // Best-effort: a missing session / unsupported endpoint (404) is logged and
       // swallowed, never thrown — an exit 0 from the real command stays exit 0.
       failOnNotFound: false,

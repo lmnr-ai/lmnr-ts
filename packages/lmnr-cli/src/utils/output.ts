@@ -1,13 +1,41 @@
 import { errorMessage } from '@lmnr-ai/types';
 
 import { pc } from './colors';
+import { recordStderr, recordStdout } from './command-capture';
+
+/**
+ * stdout data sink: write-through to stdout AND record into the command-capture
+ * buffer, so an investigative command's real output lands in its session block.
+ * Prefer this (and `printData`) over raw `process.stdout.write` / `console.log`
+ * in commands whose output is worth recording.
+ */
+export function emitData(text: string): void {
+  recordStdout(text);
+  process.stdout.write(text);
+}
+
+/** `console.log`-equivalent (space-joined args, trailing newline) that records. */
+export function printData(...args: unknown[]): void {
+  emitData(args.map((a) => (typeof a === 'string' ? a : String(a))).join(' ') + '\n');
+}
+
+/**
+ * stderr diagnostics sink for DIRECT (non-logger) writes — e.g. streamed agent
+ * activity. Write-through to stderr AND record. Logger output is teed into the
+ * same buffer separately (see `utils/logger.ts`), so only raw
+ * `process.stderr.write` sites need this.
+ */
+export function emitErr(text: string): void {
+  recordStderr(text);
+  process.stderr.write(text);
+}
 
 /**
  * Write structured JSON to stdout. Use this for machine-readable output
  * when --json is set.
  */
 export function outputJson(data: unknown): void {
-  console.log(JSON.stringify(data));
+  emitData(JSON.stringify(data) + '\n');
 }
 
 /**

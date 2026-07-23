@@ -98,6 +98,9 @@ describe("maybeTrackCommand", () => {
         command: "sql query",
         args: ["SELECT * FROM spans LIMIT 1"],
         exitCode: 0,
+        // No emit/log happened in this unit context, so capture is empty.
+        output: null,
+        stderr: null,
       },
       failOnNotFound: false,
     });
@@ -110,6 +113,21 @@ describe("maybeTrackCommand", () => {
 
     expect(h.addBlock).toHaveBeenCalledWith(
       expect.objectContaining({ content: expect.objectContaining({ exitCode: 9 }) }),
+    );
+  });
+
+  it("folds the explicit fatal error text into stderr on the failure path", async () => {
+    const query = makeCmd("query", makeCmd("sql", root), {}, ["BAD SQL"]);
+
+    await maybeTrackCommand(query, 1, "relation \"nonexistent_table\" does not exist");
+
+    expect(h.addBlock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.objectContaining({
+          exitCode: 1,
+          stderr: 'relation "nonexistent_table" does not exist',
+        }),
+      }),
     );
   });
 
