@@ -142,6 +142,32 @@ void describe("RolloutSessions Resource Tests", () => {
     assert.deepStrictEqual(body, { type: "text", content: { text: "a note" } });
   });
 
+  void it("addBlock POSTs a `command` block (new block type)", async () => {
+    const mockFetch = mock.fn(() => ({
+      ok: true,
+      json: () => Promise.resolve({ id: "block-2" }),
+    }));
+    global.fetch = mockFetch as any;
+
+    const resource = new RolloutSessionsResource(
+      "https://api.test.com:443",
+      { type: "apiKey", key: "test-api-key" },
+    );
+    const id = await resource.addBlock({
+      sessionId: "sess-cmd",
+      type: "command",
+      content: { command: "sql query", args: ["SELECT 1"], exitCode: 0 },
+    });
+
+    assert.strictEqual(id, "block-2");
+    const requestOptions = (mockFetch.mock.calls[0].arguments as any)[1] as RequestInit;
+    const body = JSON.parse(requestOptions.body as string);
+    assert.deepStrictEqual(body, {
+      type: "command",
+      content: { command: "sql query", args: ["SELECT 1"], exitCode: 0 },
+    });
+  });
+
   void it("addBlock returns null and warns on 404 by default", async () => {
     const mockFetch = mock.fn(() => ({ ok: false, status: 404, text: () => "nope" }));
     global.fetch = mockFetch as any;

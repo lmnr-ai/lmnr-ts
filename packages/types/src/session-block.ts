@@ -12,13 +12,16 @@
  *  - `text`       — a free-text note the agent attaches post-factum via
  *    `lmnr-cli debug session add-note` (keyed by session id, not tied to any
  *    trace / eval).
+ *  - `command`    — an investigative CLI command (e.g. `sql query`, `ask`) the
+ *    CLI records into the active session so a reviewer sees which commands ran
+ *    during the investigation (best-effort, opt-out).
  *
  * `type` is a plain string on the wire so new block types can be added without
  * a client bump; the union below is the set this SDK knows how to render.
  */
 
 /** Block type the CLI knows how to render. `type` is a plain string on the wire. */
-export type SessionBlockType = "trace" | "evaluation" | "text";
+export type SessionBlockType = "trace" | "evaluation" | "text" | "command";
 
 /** `content` of a `trace` block. */
 export interface TraceBlockContent {
@@ -39,11 +42,26 @@ export interface TextBlockContent {
   text: string;
 }
 
+/**
+ * `content` of a `command` block — an investigative CLI command recorded into
+ * the active debug session. The raw command string is uploaded so a reviewer can
+ * see exactly what ran.
+ */
+export interface CommandBlockContent {
+  /** The command path, e.g. `"sql query"` or `"ask"`. */
+  command: string;
+  /** The command's positional arguments (raw — may contain the query text). */
+  args: string[];
+  /** The process exit code observed at post-action time (0 on the success path). */
+  exitCode: number;
+}
+
 /** Union of the known block content shapes. */
 export type SessionBlockContent =
   | TraceBlockContent
   | EvaluationBlockContent
-  | TextBlockContent;
+  | TextBlockContent
+  | CommandBlockContent;
 
 /**
  * One block in a debugger session, as returned by
