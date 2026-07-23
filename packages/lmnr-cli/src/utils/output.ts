@@ -14,9 +14,14 @@ export function emitData(text: string): void {
   process.stdout.write(text);
 }
 
-/** `console.log`-equivalent (space-joined args, trailing newline) that records. */
+/**
+ * `console.log`-equivalent that also records into the capture buffer. Writes via
+ * `console.log` (NOT the raw `emitData` stream) so it keeps console.log's exact
+ * observable behavior — the recording is a parallel side-channel.
+ */
 export function printData(...args: unknown[]): void {
-  emitData(args.map((a) => (typeof a === 'string' ? a : String(a))).join(' ') + '\n');
+  recordStdout(args.map((a) => (typeof a === 'string' ? a : String(a))).join(' ') + '\n');
+  console.log(...args);
 }
 
 /**
@@ -32,10 +37,13 @@ export function emitErr(text: string): void {
 
 /**
  * Write structured JSON to stdout. Use this for machine-readable output
- * when --json is set.
+ * when --json is set. Writes via `console.log` (its long-standing behavior) and
+ * records the payload into the capture buffer as a parallel side-channel.
  */
 export function outputJson(data: unknown): void {
-  emitData(JSON.stringify(data) + '\n');
+  const serialized = JSON.stringify(data);
+  recordStdout(serialized + '\n');
+  console.log(serialized);
 }
 
 /**
