@@ -4,6 +4,7 @@ import type { Command } from "commander";
 
 import { initializeLogger } from "../utils/logger";
 import { outputJsonError } from "../utils/output";
+import { maybeTrackCommand } from "../utils/track-command";
 import { buildLaminarClient } from "./client";
 import { resolveUserToken } from "./resolve";
 
@@ -46,24 +47,40 @@ function splitCommanderArgs(cmdArgs: unknown[]): {
 }
 
 /**
- * The error envelope shared by both wrappers: in `--json` mode emit a structured
+ * The error envelope shared by every wrapper: in `--json` mode emit a structured
  * error line and exit with the mapped code; otherwise log and exit. Owning this
  * here lets handlers stay pure `(client, ...args) => work` with no try/catch.
+ *
+ * It's also the one place that knows a command has finished AND its real exit
+ * code, so it records the command into the active debug session here (best-effort
+ * via `maybeTrackCommand`) — 0 on success, the mapped code on failure. Commander
+ * has no on-error hook, so this is the only spot that can track failures too.
  */
 function runWithEnvelope(
   work: () => Promise<void>,
   opts: GlobalOpts,
   exitCodeFor: ExitCodeMapper,
+  command: Command,
 ): Promise<void> {
-  return work().catch((error: unknown) => {
-    const code = exitCodeFor(error);
-    if (opts.json) {
-      // outputJsonError exits with `code` (never returns).
-      outputJsonError(error, code);
-    }
-    logger.error(errorMessage(error));
-    process.exit(code);
-  });
+  return work().then(
+    async () => {
+      // Success — record with exit 0 (swallows its own errors; never throws).
+      await maybeTrackCommand(command, 0);
+    },
+    async (error: unknown) => {
+      const code = exitCodeFor(error);
+      // Record the failure with its real exit code BEFORE we exit the process,
+      // passing the fatal error text so it lands in the block's stderr (the
+      // logger.error below runs after this, so the tee wouldn't capture it).
+      await maybeTrackCommand(command, code, errorMessage(error));
+      if (opts.json) {
+        // outputJsonError exits with `code` (never returns).
+        outputJsonError(error, code);
+      }
+      logger.error(errorMessage(error));
+      process.exit(code);
+    },
+  );
 }
 
 /**
@@ -97,11 +114,12 @@ export const withLocalOpts =
     exitCodeFor: ExitCodeMapper = defaultExitCode,
   ) =>
     async (...cmdArgs: unknown[]): Promise<void> => {
-      const { positionals, opts } = splitCommanderArgs(cmdArgs);
+      const { positionals, command, opts } = splitCommanderArgs(cmdArgs);
       await runWithEnvelope(
         () => action(...(positionals as A), opts),
         opts,
         exitCodeFor,
+        command,
       );
     };
 
@@ -122,7 +140,7 @@ export const withProjectClient =
     exitCodeFor: ExitCodeMapper = defaultExitCode,
   ) =>
     async (...cmdArgs: unknown[]): Promise<void> => {
-      const { positionals, opts } = splitCommanderArgs(cmdArgs);
+      const { positionals, command, opts } = splitCommanderArgs(cmdArgs);
       await runWithEnvelope(
         async () => {
           const client = await buildLaminarClient({
@@ -134,6 +152,7 @@ export const withProjectClient =
         },
         opts,
         exitCodeFor,
+        command,
       );
     };
 
@@ -149,7 +168,7 @@ export const withUserToken =
     exitCodeFor: ExitCodeMapper = defaultExitCode,
   ) =>
     async (...cmdArgs: unknown[]): Promise<void> => {
-      const { positionals, opts } = splitCommanderArgs(cmdArgs);
+      const { positionals, command, opts } = splitCommanderArgs(cmdArgs);
       await runWithEnvelope(
         async () => {
           const token = await resolveUserToken({
@@ -169,5 +188,6 @@ export const withUserToken =
         },
         opts,
         exitCodeFor,
+        command,
       );
     };

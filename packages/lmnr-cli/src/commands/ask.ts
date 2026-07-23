@@ -1,7 +1,7 @@
 import { resolveAuth } from "../auth/resolve";
 import type { GlobalOpts } from "../auth/with-client";
 import { pc } from "../utils/colors";
-import { outputJson } from "../utils/output";
+import { emitData, emitErr, outputJson } from "../utils/output";
 
 /**
  * One SSE frame from the app-server agent stream (`AgentEvent`, camelCase). Only
@@ -94,13 +94,13 @@ export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => 
         // flip `streamed`, suppressing the `message`-frame fallback that carries the full answer.
         if (typeof frame.text === "string" && frame.text.length > 0) {
           answer += frame.text;
-          process.stdout.write(frame.text);
+          emitData(frame.text);
           streamed = true;
         }
         break;
       case "thought":
         if (typeof frame.text === "string") {
-          process.stderr.write(pc.dim(frame.text));
+          emitErr(pc.dim(frame.text));
         }
         break;
       case "message": {
@@ -108,7 +108,7 @@ export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => 
         if (frame.message?.role === "assistant") {
           for (const part of parts) {
             if (part.type === "toolCall" && part.name) {
-              process.stderr.write(pc.dim(`\n  → ${part.name}\n`));
+              emitErr(pc.dim(`\n  → ${part.name}\n`));
             }
           }
           // Final assistant text: only used if no deltas streamed it (defensive).
@@ -156,17 +156,17 @@ export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => 
   if (failure) throw new Error(failure);
 
   if (streamed) {
-    process.stdout.write("\n");
+    emitData("\n");
   } else if (answer.trim()) {
-    process.stdout.write(`${answer.trim()}\n`);
+    emitData(`${answer.trim()}\n`);
   } else {
-    process.stderr.write(pc.dim("(the agent returned no answer)\n"));
+    emitErr(pc.dim("(the agent returned no answer)\n"));
   }
 
   // Echo a ready-to-run continuation hint (muted, on stderr so stdout stays the clean answer) —
   // copy it into the next turn's `--conversation`.
   if (conversationId) {
-    process.stderr.write(
+    emitErr(
       pc.dim(`\ncontinue with: lmnr-cli ask "<question>" --conversation ${conversationId}\n`),
     );
   }

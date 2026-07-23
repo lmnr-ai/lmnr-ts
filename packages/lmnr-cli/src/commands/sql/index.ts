@@ -1,7 +1,7 @@
 import { LaminarClient } from "@lmnr-ai/client";
 
 import type { GlobalOpts } from "../../auth/with-client";
-import { outputJson } from "../../utils/output";
+import { outputJson, printData } from "../../utils/output";
 import { renderTable } from "../../utils/table";
 
 /**
@@ -22,7 +22,7 @@ export const handleSqlQuery = async (
   }
 
   if (rows.length === 0) {
-    console.log("No rows returned.");
+    printData("No rows returned.");
     return;
   }
 
@@ -31,6 +31,6 @@ export const handleSqlQuery = async (
     columns.map((col) => String(row[col] ?? "")),
   );
 
-  console.log(renderTable(columns, tableRows));
-  console.log(`\n${rows.length} row(s)\n`);
+  printData(renderTable(columns, tableRows));
+  printData(`\n${rows.length} row(s)\n`);
 };

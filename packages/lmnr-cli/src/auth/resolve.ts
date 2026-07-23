@@ -8,6 +8,15 @@ import { type AuthInputs, type ResolvedAuth } from "./types";
 const REFRESH_SKEW_MS = 30_000;
 
 /**
+ * The stored BetterAuth session's durable grant is no longer valid (the refresh
+ * endpoint answered `invalid_grant`), so a fresh access JWT can't be minted —
+ * the user must re-authenticate. A distinct type (not a bare `Error`) so callers
+ * can absorb an expiry (e.g. `setup` re-runs the device flow) without matching
+ * on the message string. Thrown by {@link refreshIfNeeded}.
+ */
+export class SessionExpiredError extends Error {}
+
+/**
  * HTTP port from `LMNR_HTTP_PORT`. The Laminar convention is that `baseUrl`
  * carries NO port and the port is supplied separately (mirrors the SDK's
  * `LMNR_HTTP_PORT` / `LMNR_GRPC_PORT`). Returns undefined when unset/invalid so
@@ -111,7 +120,7 @@ export async function refreshIfNeeded(creds: Credentials): Promise<Credentials> 
     next.accessTokenExpiresAt = decodeJwtExp(jwt) ?? new Date().toISOString();
   } catch (e) {
     if (e instanceof DeviceFlowError && e.code === "invalid_grant") {
-      throw new Error("Session expired — run `lmnr-cli login`.");
+      throw new SessionExpiredError("Session expired — run `lmnr-cli login`.");
     }
     throw e;
   }

@@ -5,3 +5,6 @@ export const firstNonEmpty = (...candidates: (string | undefined)[]): string => 
   }
   return "";
 };
+
+/** Strip any trailing slashes from a URL (so path suffixes don't double up). */
+export const trimSlash = (url: string): string => url.replace(/\/+$/, "");
