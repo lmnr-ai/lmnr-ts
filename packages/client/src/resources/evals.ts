@@ -63,6 +63,41 @@ export class EvalsResource extends BaseResource {
   }
 
   /**
+   * Update an evaluation's name and/or metadata. The group ID is immutable.
+   * Fields left undefined are kept unchanged.
+   *
+   * @param {Object} options - Update evaluation options
+   * @param {string} options.evalId - The evaluation ID
+   * @param {string} [options.name] - New name of the evaluation
+   * @param {Record<string, any>} [options.metadata] - New metadata for the evaluation
+   * @returns {Promise<InitEvaluationResponse>} The updated evaluation
+   */
+  public async update({
+    evalId,
+    name,
+    metadata,
+  }: {
+    evalId: string;
+    name?: string;
+    metadata?: Record<string, any>;
+  }): Promise<InitEvaluationResponse> {
+    const response = await fetch(this.baseHttpUrl + `/v1/evals/${evalId}`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({
+        name: name ?? null,
+        metadata: metadata ?? null,
+      }),
+    });
+
+    if (!response.ok) {
+      await this.handleError(response);
+    }
+
+    return response.json() as Promise<InitEvaluationResponse>;
+  }
+
+  /**
    * Create a new evaluation and return its ID.
    * @deprecated use `create` instead.
    */
