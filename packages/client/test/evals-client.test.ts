@@ -95,6 +95,75 @@ void describe("EvalsResource Client Methods", () => {
     });
   });
 
+  void describe("update", () => {
+    void it("updates an evaluation's name and metadata", async () => {
+      const mockEvalId: StringUUID = "12345678-1234-1234-1234-123456789abc";
+      const newName = "Renamed Evaluation";
+      const newMetadata = { revision: 2 };
+
+      const scope = nock(baseUrl)
+        .post(`/v1/evals/${mockEvalId}`, {
+          name: newName,
+          metadata: newMetadata,
+        })
+        .reply(200, {
+          id: mockEvalId,
+          createdAt: new Date().toISOString(),
+          groupId: "group-123",
+          name: newName,
+          metadata: newMetadata,
+          projectId: "project-123",
+        });
+
+      const result = await client.evals.update({
+        evalId: mockEvalId,
+        name: newName,
+        metadata: newMetadata,
+      });
+
+      assert.strictEqual(result.id, mockEvalId);
+      assert.strictEqual(result.name, newName);
+      scope.done();
+    });
+
+    void it("sends null for omitted fields", async () => {
+      const mockEvalId: StringUUID = "12345678-1234-1234-1234-123456789abc";
+
+      const scope = nock(baseUrl)
+        .post(`/v1/evals/${mockEvalId}`, {
+          name: "Only Name",
+          metadata: null,
+        })
+        .reply(200, {
+          id: mockEvalId,
+          createdAt: new Date().toISOString(),
+          groupId: "group-123",
+          name: "Only Name",
+          metadata: null,
+          projectId: "project-123",
+        });
+
+      await client.evals.update({ evalId: mockEvalId, name: "Only Name" });
+      scope.done();
+    });
+
+    void it("handles API errors", async () => {
+      const scope = nock(baseUrl)
+        .post('/v1/evals/eval-404')
+        .reply(404, "Evaluation not found");
+
+      await assert.rejects(
+        () => client.evals.update({ evalId: "eval-404", name: "New Name" }),
+        (error: Error) => {
+          assert.ok(error.message.includes("404"));
+          return true;
+        },
+      );
+
+      scope.done();
+    });
+  });
+
   void describe("createDatapoint", () => {
     void it("creates a datapoint and returns the ID", async () => {
       const evalId = "eval-123";
