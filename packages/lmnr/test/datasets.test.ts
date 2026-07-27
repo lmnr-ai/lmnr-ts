@@ -108,7 +108,9 @@ void describe("EvaluationDataset subsampling", () => {
     void it("throws on an out-of-range get, naming the index and size", async () => {
       const ds = indexed(10).take(3);
       await assert.rejects(
-        () => ds.get(5),
+        async () => {
+          await ds.get(5);
+        },
         /Index 5 is out of range for dataset of size 3/,
       );
     });
@@ -116,7 +118,9 @@ void describe("EvaluationDataset subsampling", () => {
     void it("throws on a negative get", async () => {
       const ds = indexed(10).take(3);
       await assert.rejects(
-        () => ds.get(-1),
+        async () => {
+          await ds.get(-1);
+        },
         /Index -1 is out of range for dataset of size 3/,
       );
     });
@@ -126,7 +130,9 @@ void describe("EvaluationDataset subsampling", () => {
       const taken = base.take(3);
       await dataOf(taken);
       base.getCalls.length = 0;
-      await assert.rejects(() => taken.get(5), /out of range/);
+      await assert.rejects(async () => {
+        await taken.get(5);
+      }, /out of range/);
       // No base.get delegation happened for the invalid index.
       assert.deepStrictEqual(base.getCalls, []);
     });
