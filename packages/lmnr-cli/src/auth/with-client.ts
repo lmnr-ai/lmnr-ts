@@ -2,6 +2,7 @@ import { LaminarClient } from "@lmnr-ai/client";
 import { errorMessage } from "@lmnr-ai/types";
 import type { Command } from "commander";
 
+import { CliError } from "../errors";
 import { initializeLogger } from "../utils/logger";
 import { outputJsonError } from "../utils/output";
 import { maybeTrackCommand } from "../utils/track-command";
@@ -27,12 +28,15 @@ export interface GlobalOpts {
 }
 
 /**
- * Map a thrown error to a process exit code. The default is 1; pass a custom
- * mapper to a wrapper to surface distinct machine-readable codes (Phase 6).
+ * Map a thrown error to a process exit code. Pass a custom mapper to a wrapper
+ * to override; the default reads `CliError.exitCode` (so a wrapped handler can
+ * `throw loginFailed(...)` and get exit 6) and falls back to 1 for anything
+ * else — mirroring oclif's `err.oclif?.exit ?? 1`.
  */
 export type ExitCodeMapper = (error: unknown) => number;
 
-const defaultExitCode: ExitCodeMapper = () => 1;
+const defaultExitCode: ExitCodeMapper = (error) =>
+  error instanceof CliError ? error.exitCode : 1;
 
 /**
  * Pull the commander positionals out of an `.action(...)` argument list.
