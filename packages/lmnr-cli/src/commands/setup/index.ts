@@ -271,6 +271,12 @@ async function resolveProjectViaCli(
   try {
     projects = await listProjects(creds, userBaseUrl);
   } catch (err) {
+    // Expiry can surface here (listProjects → refreshIfNeeded) if the up-front
+    // gate hit a transient error and swallowed it: keep it login_failed (6), not
+    // list_projects_failed (10) — same 6-vs-10 contract as link / plugin.
+    if (err instanceof SessionExpiredError) {
+      failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
+    }
     failWith(isJson, listProjectsFailed(errorMessage(err)));
   }
 
@@ -412,6 +418,11 @@ async function assertAccess(
   try {
     projects = await listProjects(creds, userBaseUrl);
   } catch (err) {
+    // An expired grant (listProjects → refreshIfNeeded) is an auth failure, not a
+    // transient one: login_failed (6), consistent with the resolve path above.
+    if (err instanceof SessionExpiredError) {
+      failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
+    }
     // Discovery FAILED (network/5xx) — we couldn't determine access. Report it
     // as a transient list failure (exit 10), NOT no_access (exit 4): automation
     // must be able to retry instead of concluding the user lacks access.

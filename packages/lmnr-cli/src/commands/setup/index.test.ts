@@ -118,4 +118,18 @@ describe("handleSetup — expired session recovery", () => {
     expect(out).toContain('"projectId":"proj-1"');
     expect(out).not.toContain("list_projects_failed");
   });
+
+  it("maps a late listProjects expiry to login_failed (6), not (10)", async () => {
+    // Gate refresh SUCCEEDS (session live here), so expiry isn't absorbed...
+    h.safeReadCredentials.mockResolvedValue(VALID_CREDS);
+    h.refreshIfNeeded.mockResolvedValue(VALID_CREDS);
+    h.readLocalProjectFile.mockResolvedValue(null); // no link → resolve via CLI
+    // ...it only surfaces on the later discovery call.
+    h.listProjects.mockRejectedValue(new SessionExpiredError("Session expired"));
+
+    await expect(
+      handleSetup({ json: true, writeEnv: false, browser: false }),
+    ).rejects.toThrow("process.exit(6)");
+    expect(h.handleLogin).not.toHaveBeenCalled();
+  });
 });
