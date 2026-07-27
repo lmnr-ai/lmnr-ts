@@ -4,12 +4,19 @@ const h = vi.hoisted(() => ({
   safeReadCredentials: vi.fn(),
   readLocalProjectFile: vi.fn(),
   mintProjectApiKey: vi.fn(),
+  refreshIfNeeded: vi.fn(),
 }));
 
 vi.mock("../../auth/credentials", () => ({ safeReadCredentials: h.safeReadCredentials }));
 vi.mock("../../utils/local-project-file", () => ({ readLocalProjectFile: h.readLocalProjectFile }));
 vi.mock("../../auth/api-key", () => ({ mintProjectApiKey: h.mintProjectApiKey }));
+// Keep the real SessionExpiredError (so `instanceof` works); stub only the probe.
+vi.mock("../../auth/resolve", async (orig) => {
+  const actual = await orig<typeof import("../../auth/resolve")>();
+  return { ...actual, refreshIfNeeded: h.refreshIfNeeded };
+});
 
+import { SessionExpiredError } from "../../auth/resolve";
 import { handleProjectMintKey } from "./mint-key";
 
 const CREDS = { issuer: "https://laminar.sh", sessionToken: "sess", userEmail: "u@x.io" };
@@ -35,6 +42,7 @@ beforeEach(() => {
   h.safeReadCredentials.mockResolvedValue(CREDS);
   h.readLocalProjectFile.mockResolvedValue({ projectId: "p1" });
   h.mintProjectApiKey.mockResolvedValue({ apiKey: "lmnr-minted", apiKeyId: "k1" });
+  h.refreshIfNeeded.mockResolvedValue(CREDS); // session live by default
 });
 
 afterEach(() => {
@@ -92,5 +100,12 @@ describe("handleProjectMintKey", () => {
     h.mintProjectApiKey.mockRejectedValue(new Error("api-key request failed (500)"));
 
     await expect(handleProjectMintKey({ json: true })).rejects.toMatchObject({ code: 9 });
+  });
+
+  it("expired session exits login_failed (6), not setup_key_failed (9)", async () => {
+    h.refreshIfNeeded.mockRejectedValue(new SessionExpiredError("expired"));
+
+    await expect(handleProjectMintKey({ json: true })).rejects.toMatchObject({ code: 6 });
+    expect(h.mintProjectApiKey).not.toHaveBeenCalled();
   });
 });

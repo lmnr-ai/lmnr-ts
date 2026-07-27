@@ -4,6 +4,7 @@ import { errorMessage } from "@lmnr-ai/types";
 
 import { mintProjectApiKey } from "../../auth/api-key";
 import { safeReadCredentials } from "../../auth/credentials";
+import { refreshIfNeeded, SessionExpiredError } from "../../auth/resolve";
 import { DEFAULT_FRONTEND_URL } from "../../constants";
 import { failWith, loginFailed, noProject, setupKeyFailed } from "../../errors";
 import { pc } from "../../utils/colors";
@@ -52,6 +53,18 @@ export async function handleProjectMintKey(options: ProjectMintKeyOptions): Prom
   }
 
   const issuer = creds.issuer || DEFAULT_FRONTEND_URL;
+
+  // Validate the session up-front (no-op unless the access token is near expiry).
+  // An expired grant maps to login_failed (6) — the same code setup / project
+  // link report — instead of surfacing as setup_key_failed (9) from a doomed mint.
+  try {
+    await refreshIfNeeded(creds);
+  } catch (err) {
+    if (err instanceof SessionExpiredError) {
+      failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
+    }
+    throw err;
+  }
 
   let minted;
   try {

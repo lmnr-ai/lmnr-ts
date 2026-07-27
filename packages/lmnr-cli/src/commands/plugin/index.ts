@@ -11,6 +11,7 @@ import spawn from "cross-spawn";
 import { version } from "../../../package.json";
 import { mintProjectApiKey } from "../../auth/api-key";
 import { type Credentials, globalLmnrDirectory, safeReadCredentials } from "../../auth/credentials";
+import { SessionExpiredError } from "../../auth/resolve";
 import { DEFAULT_BASE_URL, DEFAULT_FRONTEND_URL } from "../../constants";
 import {
   configWriteFailed,
@@ -293,6 +294,11 @@ const resolveProject = async (
   try {
     projects = await listProjects(creds, baseUrl);
   } catch (err) {
+    // An expired grant surfaces here via listProjects → refreshIfNeeded. Map it
+    // to login_failed (6), like setup / project link — not a discovery failure.
+    if (err instanceof SessionExpiredError) {
+      failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
+    }
     failWith(isJson, listProjectsFailed(errorMessage(err)));
   }
 

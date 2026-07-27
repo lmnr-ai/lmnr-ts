@@ -118,6 +118,23 @@ const renderBlock = (block: SessionBlock): string | null => {
       const text = typeof content.text === "string" ? content.text : "";
       return text || null;
     }
+    case "command": {
+      // One digest line per recorded command: what ran + how it exited (+ the
+      // agent's reasoning, when supplied). Full stdout/stderr stay in `--json` —
+      // dumping them here would bury the chronology under command output.
+      const command = typeof content.command === "string" ? content.command : "";
+      if (!command) return null;
+      const args = Array.isArray(content.args)
+        ? content.args.map((a) => (typeof a === "string" ? a : String(a)))
+        : [];
+      const exitCode = typeof content.exitCode === "number" ? content.exitCode : 0;
+      const reasoning =
+        typeof content.reasoning === "string" && content.reasoning
+          ? ` reasoning="${content.reasoning}"`
+          : "";
+      const invocation = args.length ? `${command} ${args.join(" ")}` : command;
+      return `<command exitCode="${exitCode}"${reasoning}>${invocation}</command>`;
+    }
     default:
       return null;
   }

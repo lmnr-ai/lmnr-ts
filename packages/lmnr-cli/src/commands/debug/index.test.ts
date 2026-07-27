@@ -41,6 +41,12 @@ const evalBlock = (id: string, evaluationId: string, createdAt: string) => ({
   content: { evaluationId },
 });
 
+const commandBlock = (
+  id: string,
+  content: Record<string, unknown>,
+  createdAt: string,
+) => ({ id, createdAt, type: 'command', content });
+
 let logSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
@@ -64,6 +70,34 @@ describe('handleDebugSessionSummary', () => {
 
     expect(logSpy).toHaveBeenCalledWith(
       '<trace id="trace-1"/>\n\na finding\n\n<evaluation id="eval-9"/>',
+    );
+  });
+
+  it('renders command blocks (invocation + exit code + reasoning)', async () => {
+    mockListBlocks.mockResolvedValue([
+      commandBlock(
+        'c1',
+        {
+          command: 'sql query',
+          args: ['SELECT 1'],
+          exitCode: 0,
+          reasoning: 'checking error rate',
+          output: 'ignored in human summary',
+        },
+        '2026-06-01T10:00:00.000Z',
+      ),
+      commandBlock(
+        'c2',
+        { command: 'ask', args: ['why?'], exitCode: 9 },
+        '2026-06-01T10:05:00.000Z',
+      ),
+    ]);
+
+    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      '<command exitCode="0" reasoning="checking error rate">sql query SELECT 1</command>' +
+      '\n\n<command exitCode="9">ask why?</command>',
     );
   });
 
