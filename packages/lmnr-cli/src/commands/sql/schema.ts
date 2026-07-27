@@ -38,7 +38,7 @@ Available tables:
   evaluation_datapoints
     id (UUID), evaluation_id (UUID), data (String), target (String),
     metadata (String), executor_output (String), index (UInt64),
-    trace_id (UUID), group_id (String), scores (String),
+    trace_id (UUID), scores (String),
     created_at (DateTime64), dataset_id (UUID),
     dataset_datapoint_id (UUID), dataset_datapoint_created_at (DateTime64)
 
