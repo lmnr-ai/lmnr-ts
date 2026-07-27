@@ -5,10 +5,9 @@ import { errorMessage } from "@lmnr-ai/types";
 import { mintProjectApiKey } from "../../auth/api-key";
 import { safeReadCredentials } from "../../auth/credentials";
 import { DEFAULT_FRONTEND_URL } from "../../constants";
+import { failWith, loginFailed, noProject, setupKeyFailed } from "../../errors";
 import { pc } from "../../utils/colors";
 import { readLocalProjectFile } from "../../utils/local-project-file";
-import { emitError } from "../../utils/output";
-import { EXIT_LOGIN_FAILED, EXIT_NO_PROJECT, EXIT_SETUP_KEY_FAILED } from "./link-core";
 
 export interface ProjectMintKeyOptions {
   /** Project to mint for. Defaults to the linked `.lmnr/project.json`. */
@@ -38,18 +37,18 @@ export async function handleProjectMintKey(options: ProjectMintKeyOptions): Prom
 
   const creds = await safeReadCredentials();
   if (!creds) {
-    emitError(isJson, "login_failed", "Not authenticated. Run `lmnr-cli login` first.");
-    process.exit(EXIT_LOGIN_FAILED);
+    failWith(isJson, loginFailed("Not authenticated. Run `lmnr-cli login` first."));
   }
 
   const projectId = options.projectId || (await readLocalProjectFile())?.projectId;
   if (!projectId) {
-    emitError(
+    failWith(
       isJson,
-      "no_project",
-      "No project for this directory. Run `lmnr-cli project link` here, or pass --project-id <id>.",
+      noProject(
+        "No project for this directory. Run `lmnr-cli project link` here, " +
+        "or pass --project-id <id>.",
+      ),
     );
-    process.exit(EXIT_NO_PROJECT);
   }
 
   const issuer = creds.issuer || DEFAULT_FRONTEND_URL;
@@ -58,8 +57,7 @@ export async function handleProjectMintKey(options: ProjectMintKeyOptions): Prom
   try {
     minted = await mintProjectApiKey(issuer, creds.sessionToken, projectId, hostname());
   } catch (err) {
-    emitError(isJson, "setup_key_failed", errorMessage(err));
-    process.exit(EXIT_SETUP_KEY_FAILED);
+    failWith(isJson, setupKeyFailed(errorMessage(err)));
   }
 
   const result: ProjectMintKeyResult = {

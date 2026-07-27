@@ -4,19 +4,20 @@ import { errorMessage } from "@lmnr-ai/types";
 import { safeReadCredentials } from "../../auth/credentials";
 import { SessionExpiredError } from "../../auth/resolve";
 import { DEFAULT_BASE_URL, DEFAULT_FRONTEND_URL } from "../../constants";
+import {
+  failWith,
+  listProjectsFailed,
+  loginFailed,
+  noAccess,
+  noProject,
+  projectAmbiguous,
+} from "../../errors";
 import { pc } from "../../utils/colors";
 import { findEnvKey } from "../../utils/env-file";
 import { type LocalProjectFile, writeLocalProjectFile } from "../../utils/local-project-file";
-import { emitError } from "../../utils/output";
 import { listProjects, promptProjectChoice } from "../../utils/projects";
 import { firstNonEmpty, trimSlash } from "../../utils/text";
-import {
-  ensureProjectKey,
-  EXIT_LIST_PROJECTS_FAILED,
-  EXIT_LOGIN_FAILED,
-  EXIT_NO_ACCESS,
-  EXIT_NO_PROJECT,
-} from "./link-core";
+import { ensureProjectKey } from "./link-core";
 
 export interface ProjectLinkOptions {
   /** Explicit target project id — skips the interactive picker. */
@@ -63,8 +64,7 @@ export async function handleProjectLink(options: ProjectLinkOptions): Promise<vo
 
   const creds = await safeReadCredentials();
   if (!creds) {
-    emitError(isJson, "login_failed", "Not authenticated. Run `lmnr-cli login` first.");
-    process.exit(EXIT_LOGIN_FAILED);
+    failWith(isJson, loginFailed("Not authenticated. Run `lmnr-cli login` first."));
   }
   const issuer = creds.issuer || DEFAULT_FRONTEND_URL;
 
@@ -78,20 +78,18 @@ export async function handleProjectLink(options: ProjectLinkOptions): Promise<vo
     // distinct from a discovery failure: it's an auth problem (exit 6), not a
     // list_projects_failed (exit 10) — same distinction setup makes.
     if (err instanceof SessionExpiredError) {
-      emitError(isJson, "login_failed", "Session expired. Run `lmnr-cli login` first.");
-      process.exit(EXIT_LOGIN_FAILED);
+      failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
     }
-    emitError(isJson, "list_projects_failed", errorMessage(err));
-    process.exit(EXIT_LIST_PROJECTS_FAILED);
+    failWith(isJson, listProjectsFailed(errorMessage(err)));
   }
 
   if (projects.length === 0) {
-    emitError(
+    failWith(
       isJson,
-      "no_project",
-      `No projects to link. Create one at ${trimSlash(issuer)}/onboarding, then re-run.`,
+      noProject(
+        `No projects to link. Create one at ${trimSlash(issuer)}/onboarding, then re-run.`,
+      ),
     );
-    process.exit(EXIT_NO_PROJECT);
   }
 
   // Choose the target project (mirrors setup's resolution semantics).
@@ -99,26 +97,26 @@ export async function handleProjectLink(options: ProjectLinkOptions): Promise<vo
   if (options.projectId) {
     const match = projects.find((p) => p.id === options.projectId);
     if (!match) {
-      emitError(
+      failWith(
         isJson,
-        "no_access",
-        `You don't have access to project ${options.projectId}. Accessible: ` +
-        projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+        noAccess(
+          `You don't have access to project ${options.projectId}. Accessible: ` +
+          projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+        ),
       );
-      process.exit(EXIT_NO_ACCESS);
     }
     chosen = match;
   } else if (projects.length === 1) {
     chosen = projects[0];
   } else if (isJson) {
     // No id and >1 project: can't prompt in --json mode.
-    emitError(
+    failWith(
       isJson,
-      "project_ambiguous",
-      `Multiple projects: pass --project-id <id>. ` +
-      projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+      projectAmbiguous(
+        `Multiple projects: pass --project-id <id>. ` +
+        projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+      ),
     );
-    process.exit(EXIT_NO_PROJECT);
   } else {
     chosen = await promptProjectChoice(
       projects,

@@ -7,6 +7,7 @@ import { errorMessage } from "@lmnr-ai/types";
 import { type MintedApiKey, mintProjectApiKey } from "../../auth/api-key";
 import { type Credentials } from "../../auth/credentials";
 import { envHttpPort, refreshIfNeeded } from "../../auth/resolve";
+import { failWith, keyMismatch, keyProbeFailed, setupKeyFailed } from "../../errors";
 import { pc } from "../../utils/colors";
 import {
   type EnvKeyLocation,
@@ -15,30 +16,12 @@ import {
   writeEnvFile,
 } from "../../utils/env-file";
 import { type LocalProjectFile } from "../../utils/local-project-file";
-import { emitError } from "../../utils/output";
 
-/**
- * Onboarding exit codes (machine-readable contract — each distinct so
- * automation can branch on the failure mode). Shared by `setup` and
- * `project link` so both commands report identical codes for the same failures.
- *
- *   4  no_access            — user lacks access to the target project
- *   6  login_failed         — device-flow login failed / no creds after login
- *   7  no_project           — no project to select (and none could be created)
- *   8  env_write_failed     — minted a key but couldn't write ./.env
- *   9  setup_key_failed     — POST /api/cli/api-key failed
- *   10 list_projects_failed — GET /v1/cli/projects (discovery) failed
- *   11 key_probe_failed     — couldn't verify the existing key (network/server)
- *   12 key_mismatch         — existing key belongs to a different project
- */
-export const EXIT_NO_ACCESS = 4;
-export const EXIT_LOGIN_FAILED = 6;
-export const EXIT_NO_PROJECT = 7;
-export const EXIT_ENV_WRITE_FAILED = 8;
-export const EXIT_SETUP_KEY_FAILED = 9;
-export const EXIT_LIST_PROJECTS_FAILED = 10;
-export const EXIT_KEY_PROBE_FAILED = 11;
-export const EXIT_KEY_MISMATCH = 12;
+// The onboarding exit-code contract now lives in ../../errors (one factory per
+// code). The env-write failure is the one site that stays a manual exit — it
+// emits a bespoke JSON payload (the minted key + projectId) that `failWith`'s
+// generic `{error, detail}` envelope can't carry — so its code (8) is kept here.
+const EXIT_ENV_WRITE_FAILED = 8;
 
 /**
  * Resolve which project an existing project API key belongs to, via the
@@ -126,13 +109,13 @@ export async function ensureProjectKey(params: {
     if (probe.status === "unverifiable") {
       // Couldn't verify the key (network/server error). Do NOT mint — that would
       // clobber a possibly-valid key on a transient blip. Abort so the user retries.
-      emitError(
+      failWith(
         isJson,
-        "key_probe_failed",
-        `Couldn't verify the existing Project API Key in ${where} (network or server error). ` +
-        "Check your connection and re-run.",
+        keyProbeFailed(
+          `Couldn't verify the existing Project API Key in ${where} (network or server error). ` +
+          "Check your connection and re-run.",
+        ),
       );
-      process.exit(EXIT_KEY_PROBE_FAILED);
     } else if (probe.status === "ok" && probe.projectId === link.projectId) {
       // Already configured for this project. Respect the user's setup: no mint,
       // no write (option a) — including when the key only lives in process.env.
@@ -157,13 +140,13 @@ export async function ensureProjectKey(params: {
     } else if (probe.status === "ok") {
       // Valid key, but for a DIFFERENT project. Refuse to clobber it — abort so the
       // user resolves the conflict deliberately rather than silently overwriting.
-      emitError(
+      failWith(
         isJson,
-        "key_mismatch",
-        `The Project API Key in ${where} belongs to a different project (${probe.projectId}), ` +
-        `not the one linked here (${link.projectId}). Remove or update it, then re-run.`,
+        keyMismatch(
+          `The Project API Key in ${where} belongs to a different project (${probe.projectId}), ` +
+          `not the one linked here (${link.projectId}). Remove or update it, then re-run.`,
+        ),
       );
-      process.exit(EXIT_KEY_MISMATCH);
     } else if (!isJson) {
       // invalid / revoked (401) — minting a fresh key is the correct recovery.
       process.stderr.write(
@@ -177,8 +160,7 @@ export async function ensureProjectKey(params: {
     try {
       keyMeta = await mintProjectApiKey(issuer, creds.sessionToken, link.projectId, hostname());
     } catch (err) {
-      emitError(isJson, "setup_key_failed", errorMessage(err));
-      process.exit(EXIT_SETUP_KEY_FAILED);
+      failWith(isJson, setupKeyFailed(errorMessage(err)));
     }
     apiKey = keyMeta.apiKey;
 

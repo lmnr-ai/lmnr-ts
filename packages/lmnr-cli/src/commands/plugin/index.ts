@@ -12,30 +12,29 @@ import { version } from "../../../package.json";
 import { mintProjectApiKey } from "../../auth/api-key";
 import { type Credentials, globalLmnrDirectory, safeReadCredentials } from "../../auth/credentials";
 import { DEFAULT_BASE_URL, DEFAULT_FRONTEND_URL } from "../../constants";
+import {
+  configWriteFailed,
+  failWith,
+  listProjectsFailed,
+  loginFailed,
+  mintFailed,
+  noAccess,
+  noProject,
+  projectAmbiguous,
+  unsupportedAgent,
+} from "../../errors";
 import { orange, pc } from "../../utils/colors";
+// emitError is still used by the one bespoke install-failure site (below), which
+// emits a full result JSON rather than the generic failWith envelope.
 import { emitError } from "../../utils/output";
 import { listProjects, promptProjectChoice } from "../../utils/projects";
 import { firstNonEmpty } from "../../utils/text";
 import { handleLogin } from "../login";
 
-// Exit codes (machine-readable; distinct so automation can branch on the mode):
-//   4  no_access          — user lacks access to the requested --project-id
-//   6  login_failed       — device-flow login failed / no creds after login
-//   7  no_project         — no project to select, or (as `project_ambiguous`)
-//                            more than one matched in --json mode
-
-//   8  config_write_failed — minted a key but couldn't write the plugin config file
-//   9  mint_failed        — POST /api/cli/api-key failed
-//   10 list_projects_failed — GET /v1/cli/projects (discovery) failed
-//   13 unsupported_agent  — unknown <agent> argument
-//   14 install_failed     — a host `plugin` command exited non-zero
-const EXIT_NO_ACCESS = 4;
-const EXIT_LOGIN_FAILED = 6;
-const EXIT_NO_PROJECT = 7;
-const EXIT_CONFIG_WRITE_FAILED = 8;
-const EXIT_MINT_FAILED = 9;
-const EXIT_LIST_PROJECTS_FAILED = 10;
-const EXIT_UNSUPPORTED_AGENT = 13;
+// The onboarding exit-code contract now lives in ../../errors (one factory per
+// code). The install failure is the one site that stays a manual exit — in
+// --json it emits a bespoke full result payload (see makeResult) that failWith's
+// generic `{error, detail}` envelope can't carry — so its code (14) is kept here.
 const EXIT_INSTALL_FAILED = 14;
 
 /**
@@ -131,12 +130,10 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
   const isJson = options.json === true;
   const spec = AGENTS[agent];
   if (!spec) {
-    emitError(
+    failWith(
       isJson,
-      "unsupported_agent",
-      `Unknown agent "${agent}". Supported: ${Object.keys(AGENTS).join(", ")}.`,
+      unsupportedAgent(`Unknown agent "${agent}". Supported: ${Object.keys(AGENTS).join(", ")}.`),
     );
-    process.exit(EXIT_UNSUPPORTED_AGENT);
   }
 
   const frontendUrl = firstNonEmpty(
@@ -159,14 +156,12 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
     try {
       login = await handleLogin({ frontendUrl, noBrowser: options.browser === false });
     } catch (err) {
-      emitError(isJson, "login_failed", errorMessage(err));
-      process.exit(EXIT_LOGIN_FAILED);
+      failWith(isJson, loginFailed(errorMessage(err)));
     }
     loginProjectId = login.projectId;
     creds = await safeReadCredentials();
     if (!creds) {
-      emitError(isJson, "login_failed", "credentials missing after login");
-      process.exit(EXIT_LOGIN_FAILED);
+      failWith(isJson, loginFailed("credentials missing after login"));
     }
   }
 
@@ -191,8 +186,7 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
   try {
     key = await mintProjectApiKey(issuer, creds.sessionToken, project.id, keyName);
   } catch (err) {
-    emitError(isJson, "mint_failed", errorMessage(err));
-    process.exit(EXIT_MINT_FAILED);
+    failWith(isJson, mintFailed(errorMessage(err)));
   }
   if (!isJson) {
     process.stderr.write(`${pc.green("✓")} Minted a project API key named "${pc.bold(keyName)}"\n`);
@@ -203,8 +197,7 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
   try {
     configPath = writeAgentConfig(spec, key.apiKey, baseUrl);
   } catch (err) {
-    emitError(isJson, "config_write_failed", errorMessage(err));
-    process.exit(EXIT_CONFIG_WRITE_FAILED);
+    failWith(isJson, configWriteFailed(errorMessage(err)));
   }
   if (!isJson) {
     process.stderr.write(`${pc.green("✓")} Wrote ${configPath}\n`);
@@ -300,20 +293,19 @@ const resolveProject = async (
   try {
     projects = await listProjects(creds, baseUrl);
   } catch (err) {
-    emitError(isJson, "list_projects_failed", errorMessage(err));
-    process.exit(EXIT_LIST_PROJECTS_FAILED);
+    failWith(isJson, listProjectsFailed(errorMessage(err)));
   }
 
   if (options.projectId) {
     const match = projects.find((p) => p.id === options.projectId);
     if (!match) {
-      emitError(
+      failWith(
         isJson,
-        "no_access",
-        `You don't have access to project ${options.projectId}. Accessible: ` +
-          projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+        noAccess(
+          `You don't have access to project ${options.projectId}. Accessible: ` +
+            projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+        ),
       );
-      process.exit(EXIT_NO_ACCESS);
     }
     return match;
   }
@@ -327,24 +319,24 @@ const resolveProject = async (
   }
 
   if (projects.length === 0) {
-    emitError(
+    failWith(
       isJson,
-      "no_project",
-      `No projects found. Create one in the dashboard, then re-run \`lmnr-cli plugin add\`.`,
+      noProject(
+        `No projects found. Create one in the dashboard, then re-run \`lmnr-cli plugin add\`.`,
+      ),
     );
-    process.exit(EXIT_NO_PROJECT);
   }
   if (projects.length === 1) {
     return projects[0];
   }
   if (isJson) {
-    emitError(
+    failWith(
       isJson,
-      "project_ambiguous",
-      `Multiple projects: pass --project-id <id>. ` +
-        projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+      projectAmbiguous(
+        `Multiple projects: pass --project-id <id>. ` +
+          projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+      ),
     );
-    process.exit(EXIT_NO_PROJECT);
   }
   return promptProjectChoice(
     projects,

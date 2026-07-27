@@ -56,8 +56,14 @@ export const unsupportedAgent = (m: string) => new CliError("unsupported_agent",
  * envelope. Uses a direct `process.exit` — same control flow the audited
  * setup/link flows already rely on, so no exception unwinds through code that
  * wasn't written to catch it.
+ *
+ * Intentionally a `function` declaration, NOT an arrow (which the style guide
+ * otherwise prefers): TypeScript only applies `never`-return control-flow
+ * narrowing to a call statement when the callee is a function declaration, so
+ * `if (!creds) failWith(...)` narrows `creds` afterward. A `const` arrow would
+ * force `return failWith(...)` at every call site to get the same narrowing.
  */
-export const failWith = (isJson: boolean, err: CliError): never => {
+export function failWith(isJson: boolean, err: CliError): never {
   emitError(isJson, err.code, err.message);
   process.exit(err.exitCode);
-};
+}

@@ -7,6 +7,15 @@ import { version } from "../../../package.json";
 import { type Credentials, safeReadCredentials } from "../../auth/credentials";
 import { refreshIfNeeded, SessionExpiredError } from "../../auth/resolve";
 import { DEFAULT_BASE_URL, DEFAULT_FRONTEND_URL } from "../../constants";
+import {
+  failWith,
+  listProjectsFailed,
+  loginFailed,
+  noAccess,
+  noProjects,
+  projectAmbiguous,
+  setupInvariant,
+} from "../../errors";
 import { orange, pc, pcOut } from "../../utils/colors";
 import { type EnvKeyLocation, findEnvKey } from "../../utils/env-file";
 import { installSkill } from "../../utils/install-skill";
@@ -15,17 +24,10 @@ import {
   readLocalProjectFile,
   writeLocalProjectFile,
 } from "../../utils/local-project-file";
-import { emitError } from "../../utils/output";
 import { listProjects, promptProjectChoice } from "../../utils/projects";
 import { firstNonEmpty, trimSlash } from "../../utils/text";
 import { handleLogin } from "../login";
-import {
-  ensureProjectKey,
-  EXIT_LIST_PROJECTS_FAILED,
-  EXIT_LOGIN_FAILED,
-  EXIT_NO_ACCESS,
-  EXIT_NO_PROJECT,
-} from "../project/link-core";
+import { ensureProjectKey } from "../project/link-core";
 
 export interface SetupOptions {
   writeEnv?: boolean;
@@ -121,13 +123,11 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     try {
       login = await handleLogin({ frontendUrl, noBrowser: options.browser === false });
     } catch (err) {
-      emitError(isJson, "login_failed", errorMessage(err));
-      process.exit(EXIT_LOGIN_FAILED);
+      failWith(isJson, loginFailed(errorMessage(err)));
     }
     creds = await safeReadCredentials();
     if (!creds) {
-      emitError(isJson, "login_failed", "credentials missing after login");
-      process.exit(EXIT_LOGIN_FAILED);
+      failWith(isJson, loginFailed("credentials missing after login"));
     }
 
     const issuer = creds.issuer || frontendUrl;
@@ -168,8 +168,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   // --- 2. Assert invariants -------------------------------------------------
 
   if (!creds || !link.projectId) {
-    emitError(isJson, "setup_invariant", "missing credentials or project after resolution");
-    process.exit(EXIT_NO_PROJECT);
+    failWith(isJson, setupInvariant("missing credentials or project after resolution"));
   }
 
   const issuer = creds.issuer || frontendUrl;
@@ -272,8 +271,7 @@ async function resolveProjectViaCli(
   try {
     projects = await listProjects(creds, userBaseUrl);
   } catch (err) {
-    emitError(isJson, "list_projects_failed", errorMessage(err));
-    process.exit(EXIT_LIST_PROJECTS_FAILED);
+    failWith(isJson, listProjectsFailed(errorMessage(err)));
   }
 
   if (projects.length === 0) {
@@ -281,13 +279,13 @@ async function resolveProjectViaCli(
     // browser create flow — same path the not-logged-in 0-project user takes —
     // so project creation lives in ONE place (the /device picker).
     if (isJson) {
-      emitError(
+      failWith(
         isJson,
-        "no_projects",
-        `No projects found. Run \`lmnr-cli setup\` interactively (it opens the browser ` +
-        `to create your first project) or create one at ${trimSlash(issuer)}/onboarding.`,
+        noProjects(
+          `No projects found. Run \`lmnr-cli setup\` interactively (it opens the browser ` +
+          `to create your first project) or create one at ${trimSlash(issuer)}/onboarding.`,
+        ),
       );
-      process.exit(EXIT_NO_PROJECT);
     }
     process.stderr.write(
       "\nYou have no projects yet. Opening the browser to create your first one...\n",
@@ -299,16 +297,16 @@ async function resolveProjectViaCli(
         noBrowser: options.browser === false,
       });
     } catch (err) {
-      emitError(isJson, "login_failed", errorMessage(err));
-      process.exit(EXIT_LOGIN_FAILED);
+      failWith(isJson, loginFailed(errorMessage(err)));
     }
     if (!login.projectId) {
-      emitError(
+      failWith(
         isJson,
-        "no_projects",
-        `No project was created. Create one at ${trimSlash(issuer)}/onboarding then re-run setup.`,
+        noProjects(
+          `No project was created. Create one at ${trimSlash(issuer)}/onboarding ` +
+          `then re-run setup.`,
+        ),
       );
-      process.exit(EXIT_NO_PROJECT);
     }
     return writeLink(userBaseUrl, login.projectId, isJson);
   }
@@ -318,26 +316,26 @@ async function resolveProjectViaCli(
     // Explicit --project-id disambiguates. Validate against the accessible set.
     const match = projects.find((p) => p.id === options.projectId);
     if (!match) {
-      emitError(
+      failWith(
         isJson,
-        "no_access",
-        `You don't have access to project ${options.projectId}. Accessible: ` +
-        projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+        noAccess(
+          `You don't have access to project ${options.projectId}. Accessible: ` +
+          projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+        ),
       );
-      process.exit(EXIT_NO_ACCESS);
     }
     chosen = match;
   } else if (projects.length === 1) {
     chosen = projects[0];
   } else {
     if (isJson) {
-      emitError(
+      failWith(
         isJson,
-        "project_ambiguous",
-        `Multiple projects: pass --project-id <id>, or run setup interactively. ` +
-        projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+        projectAmbiguous(
+          `Multiple projects: pass --project-id <id>, or run setup interactively. ` +
+          projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+        ),
       );
-      process.exit(EXIT_NO_PROJECT);
     }
     chosen = await promptProjectChoice(projects, "\nMultiple projects available. Choose one:\n");
   }
@@ -417,12 +415,10 @@ async function assertAccess(
     // Discovery FAILED (network/5xx) — we couldn't determine access. Report it
     // as a transient list failure (exit 10), NOT no_access (exit 4): automation
     // must be able to retry instead of concluding the user lacks access.
-    emitError(isJson, "list_projects_failed", errorMessage(err));
-    process.exit(EXIT_LIST_PROJECTS_FAILED);
+    failWith(isJson, listProjectsFailed(errorMessage(err)));
   }
   if (!projects.some((p) => p.id === link.projectId)) {
-    emitError(isJson, "no_access", buildNoAccessDetail(link, creds, existingKey, projects));
-    process.exit(EXIT_NO_ACCESS);
+    failWith(isJson, noAccess(buildNoAccessDetail(link, creds, existingKey, projects)));
   }
 }
 
