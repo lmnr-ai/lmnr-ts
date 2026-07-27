@@ -24,6 +24,7 @@ vi.mock("./link-core", async (importActual) => {
   return { ...actual, ensureProjectKey: h.ensureProjectKey };
 });
 
+import { SessionExpiredError } from "../../auth/resolve";
 import { handleProjectLink } from "./link";
 
 const CREDS = { issuer: "https://laminar.sh", sessionToken: "s", userEmail: "u@x.io" };
@@ -142,6 +143,18 @@ describe("handleProjectLink", () => {
 
     await expect(handleProjectLink({ json: true })).rejects.toMatchObject({ code: 6 });
     expect(h.listProjects).not.toHaveBeenCalled();
+  });
+
+  it("an expired session during discovery exits login_failed (6), not (10)", async () => {
+    h.listProjects.mockRejectedValue(new SessionExpiredError("expired"));
+
+    await expect(handleProjectLink({ json: true })).rejects.toMatchObject({ code: 6 });
+  });
+
+  it("a non-expiry discovery error still exits list_projects_failed (10)", async () => {
+    h.listProjects.mockRejectedValue(new Error("network down"));
+
+    await expect(handleProjectLink({ json: true })).rejects.toMatchObject({ code: 10 });
   });
 
   it("--json with multiple projects and no id exits (project_ambiguous)", async () => {

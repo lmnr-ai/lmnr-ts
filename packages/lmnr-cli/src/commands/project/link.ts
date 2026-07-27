@@ -2,6 +2,7 @@ import { type CliProject } from "@lmnr-ai/client";
 import { errorMessage } from "@lmnr-ai/types";
 
 import { safeReadCredentials } from "../../auth/credentials";
+import { SessionExpiredError } from "../../auth/resolve";
 import { DEFAULT_BASE_URL, DEFAULT_FRONTEND_URL } from "../../constants";
 import { pc } from "../../utils/colors";
 import { findEnvKey } from "../../utils/env-file";
@@ -73,6 +74,13 @@ export async function handleProjectLink(options: ProjectLinkOptions): Promise<vo
   try {
     projects = await listProjects(creds, baseUrl);
   } catch (err) {
+    // An expired grant surfaces here via listProjects → refreshIfNeeded. Keep it
+    // distinct from a discovery failure: it's an auth problem (exit 6), not a
+    // list_projects_failed (exit 10) — same distinction setup makes.
+    if (err instanceof SessionExpiredError) {
+      emitError(isJson, "login_failed", "Session expired. Run `lmnr-cli login` first.");
+      process.exit(EXIT_LOGIN_FAILED);
+    }
     emitError(isJson, "list_projects_failed", errorMessage(err));
     process.exit(EXIT_LIST_PROJECTS_FAILED);
   }
