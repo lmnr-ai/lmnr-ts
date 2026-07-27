@@ -6,12 +6,19 @@ const h = vi.hoisted(() => ({
   readDebugSessionFile: vi.fn(),
   resolveDebugSessionDir: vi.fn(() => "/repo"),
   addBlock: vi.fn(),
+  logWarn: vi.fn(),
+  logDebug: vi.fn(),
 }));
 
 vi.mock("../auth/client", () => ({ buildLaminarClient: h.buildLaminarClient }));
 vi.mock("./debug-session-file", () => ({
   readDebugSessionFile: h.readDebugSessionFile,
   resolveDebugSessionDir: h.resolveDebugSessionDir,
+}));
+// track-command binds its logger at module load, so stub the factory here (not
+// mid-test) to capture the module-scope `logger.warn` / `logger.debug`.
+vi.mock("./logger", () => ({
+  initializeLogger: () => ({ warn: h.logWarn, debug: h.logDebug }),
 }));
 
 import {
@@ -101,9 +108,28 @@ describe("maybeTrackCommand", () => {
         // No emit/log happened in this unit context, so capture is empty.
         output: null,
         stderr: null,
+        // No --reasoning passed → null.
+        reasoning: null,
       },
       failOnNotFound: false,
     });
+  });
+
+  it("records --reasoning on the command block when provided", async () => {
+    const query = makeCmd(
+      "query",
+      makeCmd("sql", root),
+      { reasoning: "checking error rate" },
+      ["SELECT 1"],
+    );
+
+    await maybeTrackCommand(query, 0);
+
+    expect(h.addBlock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.objectContaining({ reasoning: "checking error rate" }),
+      }),
+    );
   });
 
   it("records the real exit code on a failed command", async () => {
@@ -145,6 +171,20 @@ describe("maybeTrackCommand", () => {
 
     expect(h.buildLaminarClient).not.toHaveBeenCalled();
     expect(h.addBlock).not.toHaveBeenCalled();
+    // No reasoning → stays silent (no session is the normal case).
+    expect(h.logWarn).not.toHaveBeenCalled();
+  });
+
+  it("warns (but posts nothing) when --reasoning is given with no active session", async () => {
+    h.readDebugSessionFile.mockReturnValue(null);
+
+    await maybeTrackCommand(
+      makeCmd("ask", root, { reasoning: "triaging the failure" }, ["why?"]),
+      0,
+    );
+
+    expect(h.addBlock).not.toHaveBeenCalled();
+    expect(h.logWarn).toHaveBeenCalledWith(expect.stringContaining("no active debug session"));
   });
 
   it("swallows a write failure — never throws", async () => {
