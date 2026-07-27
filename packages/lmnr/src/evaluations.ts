@@ -3,7 +3,7 @@ import { errorMessage, EvaluationDatapoint } from "@lmnr-ai/types";
 import { trace } from "@opentelemetry/api";
 import * as cliProgress from "cli-progress";
 
-import { EvaluationDataset, LaminarDataset } from "./datasets";
+import { EvaluationDataset } from "./datasets";
 import { getRuntime } from "./debug";
 import { observe } from "./decorators";
 import { Laminar } from "./laminar";
@@ -459,23 +459,26 @@ export class Evaluation<D, T, O> {
     if (this.isFinished) {
       throw new Error("Evaluation is already finished");
     }
-    if (this.data instanceof LaminarDataset) {
+    if (this.data instanceof EvaluationDataset) {
+      // Inject the client and resolve the source dataset id through any depth
+      // of chaining (take/select/filter/shuffle wrappers forward both down).
       this.data.setClient(this.client);
+      const source = this.data.sourceDataset();
       // Fetch dataset ID if not already set
-      if (!this.data.id) {
+      if (source && !source.id) {
         try {
           const datasets = await this.client.datasets.getDatasetByName(
-            (this.data as any).name,
+            source.name!,
           );
           if (datasets.length > 0) {
-            this.data.id = datasets[0].id;
+            source.id = datasets[0].id;
           } else {
-            logger.warn(`Dataset ${(this.data as any).name} not found`);
+            logger.warn(`Dataset ${source.name} not found`);
           }
         } catch (error) {
           // Backward compatibility with old Laminar API (self-hosted)
           logger.warn(
-            `Error getting dataset ${this.data.name}: ` + errorMessage(error),
+            `Error getting dataset ${source.name}: ` + errorMessage(error),
           );
         }
       }
@@ -613,15 +616,19 @@ export class Evaluation<D, T, O> {
           index,
         } as EvaluationDatapoint<D, T, O>;
 
-        // Add dataset link if data is from LaminarDataset
+        // Add dataset link if data comes from a (possibly chained) remote
+        // dataset. The source is resolved through any depth of wrappers.
+        const partialSource =
+          this.data instanceof EvaluationDataset
+            ? this.data.sourceDataset()
+            : undefined;
         if (
-          this.data instanceof LaminarDataset &&
-          this.data.id &&
+          partialSource?.id &&
           datapoint.id &&
           datapoint.createdAt
         ) {
           partialDatapoint.datasetLink = {
-            datasetId: this.data.id,
+            datasetId: partialSource.id,
             datapointId: datapoint.id,
             createdAt: datapoint.createdAt,
           };
@@ -711,15 +718,19 @@ export class Evaluation<D, T, O> {
           index,
         } as EvaluationDatapoint<D, T, O>;
 
-        // Add dataset link if data is from LaminarDataset
+        // Add dataset link if data comes from a (possibly chained) remote
+        // dataset. The source is resolved through any depth of wrappers.
+        const resultSource =
+          this.data instanceof EvaluationDataset
+            ? this.data.sourceDataset()
+            : undefined;
         if (
-          this.data instanceof LaminarDataset &&
-          this.data.id &&
+          resultSource?.id &&
           datapoint.id &&
           datapoint.createdAt
         ) {
           resultDatapoint.datasetLink = {
-            datasetId: this.data.id,
+            datasetId: resultSource.id,
             datapointId: datapoint.id,
             createdAt: datapoint.createdAt,
           };
