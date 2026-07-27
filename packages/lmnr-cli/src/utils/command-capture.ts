@@ -33,8 +33,13 @@ const stripAnsi = (s: string): string => s.replace(ANSI_SGR, "");
 let stdoutBuf = "";
 let stderrBuf = "";
 
-const append = (buf: string, chunk: string): string =>
-  buf.length >= HARD_LIMIT ? buf : buf + stripAnsi(chunk);
+// Slice the raw chunk to remaining headroom BEFORE stripping, so `stripAnsi`
+// never processes (nor copies) more than HARD_LIMIT chars for a huge chunk.
+const append = (buf: string, chunk: string): string => {
+  if (buf.length >= HARD_LIMIT) return buf;
+  const room = HARD_LIMIT - buf.length;
+  return buf + stripAnsi(chunk.slice(0, room));
+};
 
 export const recordStdout = (chunk: string): void => {
   stdoutBuf = append(stdoutBuf, chunk);
