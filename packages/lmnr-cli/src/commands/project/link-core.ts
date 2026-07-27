@@ -6,8 +6,8 @@ import { errorMessage } from "@lmnr-ai/types";
 
 import { type MintedApiKey, mintProjectApiKey } from "../../auth/api-key";
 import { type Credentials } from "../../auth/credentials";
-import { envHttpPort, refreshIfNeeded } from "../../auth/resolve";
-import { failWith, keyMismatch, keyProbeFailed, setupKeyFailed } from "../../errors";
+import { envHttpPort, refreshIfNeeded, SessionExpiredError } from "../../auth/resolve";
+import { failWith, keyMismatch, keyProbeFailed, loginFailed, setupKeyFailed } from "../../errors";
 import { pc } from "../../utils/colors";
 import {
   type EnvKeyLocation,
@@ -100,7 +100,19 @@ export async function ensureProjectKey(params: {
 
   let needMint = true;
   if (existingKey) {
-    const probe = await probeProjectKey(creds, existingKey.value, userBaseUrl);
+    let probe: ProjectKeyProbe;
+    try {
+      probe = await probeProjectKey(creds, existingKey.value, userBaseUrl);
+    } catch (err) {
+      // probeProjectKey → refreshIfNeeded can surface an expired grant here.
+      // Map it to login_failed (6) instead of letting it fall through to the
+      // top-level handler as an uncoded exit 1 — same 6-vs-10 contract the
+      // callers (setup / project link / mint-key) already follow.
+      if (err instanceof SessionExpiredError) {
+        failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
+      }
+      throw err;
+    }
     const where =
       existingKey.source.type === "process-env"
         ? "your environment"
