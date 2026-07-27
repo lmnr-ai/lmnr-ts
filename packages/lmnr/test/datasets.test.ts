@@ -104,6 +104,34 @@ void describe("EvaluationDataset subsampling", () => {
     });
   });
 
+  void describe("out-of-range access on a transformed dataset", () => {
+    void it("throws on an out-of-range get, naming the index and size", async () => {
+      const ds = indexed(10).take(3);
+      await assert.rejects(
+        () => ds.get(5),
+        /Index 5 is out of range for dataset of size 3/,
+      );
+    });
+
+    void it("throws on a negative get", async () => {
+      const ds = indexed(10).take(3);
+      await assert.rejects(
+        () => ds.get(-1),
+        /Index -1 is out of range for dataset of size 3/,
+      );
+    });
+
+    void it("does not read from the base for an out-of-range index", async () => {
+      const base = indexed(10);
+      const taken = base.take(3);
+      await dataOf(taken);
+      base.getCalls.length = 0;
+      await assert.rejects(() => taken.get(5), /out of range/);
+      // No base.get delegation happened for the invalid index.
+      assert.deepStrictEqual(base.getCalls, []);
+    });
+  });
+
   void describe("filter", () => {
     void it("keeps only matching datapoints, order preserved", async () => {
       const ds = indexed(10).filter((dp) => dp.data % 2 === 0);
@@ -272,6 +300,40 @@ void describe("LaminarDataset page-cached random access", () => {
     const ds = new LaminarDataset<number, number>("d", { fetchSize: 4 });
     ds.setClient(makeFakeClient(5, counter));
     await assert.rejects(() => ds.get(10), /out of range/);
+  });
+
+  void it("does not fetch a page for an out-of-range index once the length is known", async () => {
+    const counter = { n: 0 };
+    const ds = new LaminarDataset<number, number>("d", { fetchSize: 3 });
+    ds.setClient(makeFakeClient(10, counter));
+    // size() fetches page 0 and backfills len=10 (one pull).
+    assert.strictEqual(await ds.size(), 10);
+    assert.strictEqual(counter.n, 1);
+    // An out-of-range index now rejects without issuing another pull.
+    await assert.rejects(
+      () => ds.get(10),
+      /Index 10 is out of range for dataset of size 10/,
+    );
+    assert.strictEqual(counter.n, 1);
+  });
+
+  // Issue-05 acceptance: a plain, unchained remote dataset is unchanged — its
+  // source resolves to itself, so the dataset-link resolution path still fires.
+  void it("resolves sourceDataset to itself when unchained", () => {
+    const ds = new LaminarDataset<number, number>("d", { fetchSize: 3 });
+    assert.strictEqual(ds.sourceDataset(), ds);
+  });
+
+  // Issue-05 acceptance: an in-memory array dataset has no remote source, so no
+  // dataset-link is ever produced (sourceDataset() is undefined) and setClient
+  // is a harmless no-op.
+  void it("in-memory array dataset has no source and no dataset-link", () => {
+    const ds = indexed(5);
+    assert.strictEqual(ds.sourceDataset(), undefined);
+    // A subsampled in-memory dataset also resolves to no source.
+    assert.strictEqual(ds.take(2).sourceDataset(), undefined);
+    // setClient is a no-op on a source-less dataset (must not throw).
+    assert.doesNotThrow(() => ds.setClient(undefined as unknown as LaminarClient));
   });
 
   void it("forwards setClient and sourceDataset through a chain", async () => {

@@ -159,6 +159,11 @@ export class Transformed<D, T> extends EvaluationDataset<D, T> {
 
   public async get(index: number): Promise<Datapoint<D, T>> {
     const indices = await this.resolveIndices();
+    if (index < 0 || index >= indices.length) {
+      throw new Error(
+        `Index ${index} is out of range for dataset of size ${indices.length}`,
+      );
+    }
     return await this.base.get(indices[index]);
   }
 
@@ -244,6 +249,13 @@ export class LaminarDataset<D, T> extends EvaluationDataset<D, T> {
   public async get(index: number): Promise<Datapoint<D, T>> {
     if (index < 0) {
       throw new Error(`Index ${index} is out of range`);
+    }
+    // When the length is already known, reject an out-of-range index without
+    // a wasted page fetch.
+    if (this.len !== null && index >= this.len) {
+      throw new Error(
+        `Index ${index} is out of range for dataset of size ${this.len}`,
+      );
     }
     const offset = Math.floor(index / this.fetchSize) * this.fetchSize;
     const page = await this.fetchPage(offset);
