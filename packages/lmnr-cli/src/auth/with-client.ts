@@ -20,6 +20,10 @@ export interface GlobalOpts {
   baseUrl?: string;
   port?: number;
   json?: boolean;
+  // `--pretty` selects the human table over the default CSV output. Only the
+  // `sql query` command wires this flag today; it lives on the shared type
+  // (like `json`) so pure handlers can read it without a per-command opts type.
+  pretty?: boolean;
 }
 
 /**

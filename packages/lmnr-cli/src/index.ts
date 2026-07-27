@@ -180,7 +180,11 @@ async function main() {
       "Port for the Laminar API. Defaults to 443",
       (val) => parseInt(val, 10),
     )
-    .option("--json", "Output structured JSON to stdout");
+    .option("--json", "Output structured JSON to stdout")
+    .option(
+      "--pretty",
+      "Render results as a human-readable table (default is CSV to stdout)",
+    );
 
   sqlCmd
     .command("query")
@@ -201,10 +205,14 @@ recorded into that session as a \`command\` block so a reviewer sees what ran.
 The raw query string is uploaded. Disable with --no-track or
 LMNR_NO_COMMAND_TRACKING=1.
 
+Output defaults to CSV on stdout (one record per line, agent-parseable). Use
+--json for a JSON array, or --pretty for a human-readable table.
+
 Examples:
   $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10"
   $ lmnr-cli sql query "SELECT id, total_cost, status FROM traces LIMIT 20"
   $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json
+  $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --pretty
   $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --no-track
 `,
     );
