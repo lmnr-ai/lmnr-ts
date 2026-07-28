@@ -1,4 +1,4 @@
-import { errorMessage } from "@lmnr-ai/types";
+import { type CommandBlockContent, errorMessage } from "@lmnr-ai/types";
 import type { Command } from "commander";
 
 import { buildLaminarClient } from "../auth/client";
@@ -136,17 +136,21 @@ export const maybeTrackCommand = async (
     const { stdout, stderr: capturedStderr } = getCapturedOutput();
     const stderr = [capturedStderr, errorText].filter(Boolean).join("\n") || null;
 
+    // Typed against the shared contract so a field rename that drifts from
+    // @lmnr-ai/types (e.g. thinking → …) is a compile error, not a silent drop.
+    const content: CommandBlockContent = {
+      command: path,
+      args: actionCommand.args ?? [],
+      exitCode,
+      output: stdout,
+      stderr,
+      thinking: opts.thinking ?? null,
+    };
+
     await client.rolloutSessions.addBlock({
       sessionId,
       type: "command",
-      content: {
-        command: path,
-        args: actionCommand.args ?? [],
-        exitCode,
-        output: stdout,
-        stderr,
-        thinking: opts.thinking ?? null,
-      },
+      content,
       // Best-effort: a missing session / unsupported endpoint (404) is logged and
       // swallowed, never thrown — an exit 0 from the real command stays exit 0.
       failOnNotFound: false,
