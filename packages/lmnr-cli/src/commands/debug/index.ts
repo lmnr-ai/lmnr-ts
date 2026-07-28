@@ -80,6 +80,16 @@ export const handleDebugSessionAddNote = async (
   logger.info(`Added note to session ${sessionId}.`);
 };
 
+// Escape the five XML entities so user-controlled reasoning / invocation text
+// can't break the `<command …>` digest that agents and reviewers parse.
+const escapeXml = (s: string): string =>
+  s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+
 /** Render one session block into the summary's text form. */
 const renderBlock = (block: SessionBlock): string | null => {
   const content = block.content ?? {};
@@ -108,10 +118,10 @@ const renderBlock = (block: SessionBlock): string | null => {
       const exitCode = typeof content.exitCode === "number" ? content.exitCode : 0;
       const reasoning =
         typeof content.reasoning === "string" && content.reasoning
-          ? ` reasoning="${content.reasoning}"`
+          ? ` reasoning="${escapeXml(content.reasoning)}"`
           : "";
       const invocation = args.length ? `${command} ${args.join(" ")}` : command;
-      return `<command exitCode="${exitCode}"${reasoning}>${invocation}</command>`;
+      return `<command exitCode="${exitCode}"${reasoning}>${escapeXml(invocation)}</command>`;
     }
     default:
       return null;

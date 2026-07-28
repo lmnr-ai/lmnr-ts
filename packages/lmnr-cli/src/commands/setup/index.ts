@@ -86,11 +86,13 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   // now: an expired grant is absorbed (drop creds so the login branch re-runs
   // the device flow); a non-expiry error is left for the downstream authed call
   // to surface, so a transient blip is never conflated with an expiry.
+  let expiredIssuer: string | undefined;
   if (creds) {
     try {
       creds = await refreshIfNeeded(creds);
     } catch (err) {
       if (err instanceof SessionExpiredError) {
+        expiredIssuer = creds.issuer;
         creds = null;
       }
     }
@@ -102,8 +104,14 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     // Not logged in: run the device flow. The browser picks/creates the project
     // (when there's no link) and its id rides back on the device-token metadata.
     let login;
+    // On expiry recovery, fall back to the expired creds' issuer over the cloud
+    // default — an explicit --frontend-url / LMNR_FRONTEND_URL still wins.
+    const loginUrl =
+      !options.frontendUrl && !process.env.LMNR_FRONTEND_URL && expiredIssuer
+        ? expiredIssuer
+        : frontendUrl;
     try {
-      login = await handleLogin({ frontendUrl, noBrowser: options.browser === false });
+      login = await handleLogin({ frontendUrl: loginUrl, noBrowser: options.browser === false });
     } catch (err) {
       failWith(isJson, loginFailed(errorMessage(err)));
     }
