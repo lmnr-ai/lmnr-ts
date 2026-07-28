@@ -98,21 +98,25 @@ describe("maybeTrackCommand", () => {
     expect(h.buildLaminarClient).toHaveBeenCalledWith(
       expect.objectContaining({ projectId: "p1" }),
     );
-    expect(h.addBlock).toHaveBeenCalledWith({
-      sessionId: "sess-1",
-      type: "command",
-      content: {
-        command: "sql query",
-        args: ["SELECT * FROM spans LIMIT 1"],
-        exitCode: 0,
-        // No emit/log happened in this unit context, so capture is empty.
-        output: null,
-        stderr: null,
-        // No --reasoning passed → null.
-        reasoning: null,
-      },
-      failOnNotFound: false,
-    });
+    expect(h.addBlock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "sess-1",
+        type: "command",
+        content: {
+          command: "sql query",
+          args: ["SELECT * FROM spans LIMIT 1"],
+          exitCode: 0,
+          // No emit/log happened in this unit context, so capture is empty.
+          output: null,
+          stderr: null,
+          // No --reasoning passed → null.
+          reasoning: null,
+        },
+        failOnNotFound: false,
+        // A cancellation signal is threaded through for the tracking deadline.
+        signal: expect.any(AbortSignal),
+      }),
+    );
   });
 
   it("records --reasoning on the command block when provided", async () => {

@@ -17,15 +17,29 @@ const TRACKED_COMMANDS = new Set(["sql query", "ask"]);
 // already-decided exit code; on timeout we abandon the request and move on.
 const TRACKING_TIMEOUT_MS = 3_000;
 
-/** Race `work` against a timer, clearing (and unref-ing) it so it never holds the loop. */
-const withTimeout = async <T>(work: Promise<T>, ms: number): Promise<T> => {
+/**
+ * Run `work(signal)` under a deadline. On timeout we do two things: abort the
+ * signal — so an in-flight `fetch` is cancelled and its socket torn down, not
+ * merely abandoned (a leaked socket would keep the process alive past exit) —
+ * and reject, so the await stops even if `work` was blocked somewhere the signal
+ * doesn't reach (e.g. a token refresh). The timer is unref'd so it never holds
+ * the loop itself.
+ */
+const withDeadline = async <T>(
+  ms: number,
+  work: (signal: AbortSignal) => Promise<T>,
+): Promise<T> => {
+  const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`timed out after ${ms}ms`));
+    }, ms);
     timer.unref?.();
   });
   try {
-    return await Promise.race([work, timeout]);
+    return await Promise.race([work(controller.signal), timeout]);
   } finally {
     clearTimeout(timer);
   }
@@ -115,39 +129,38 @@ export const maybeTrackCommand = async (
       return;
     }
 
-    // Cap the whole round-trip so a stalled server can't delay the command's exit.
-    await withTimeout(
-      (async () => {
-        const client = await buildLaminarClient({
-          projectId: opts.projectId,
-          baseUrl: opts.baseUrl,
-          port: opts.port,
-        });
-        // Fold the fatal error into the teed diagnostics (either may be empty).
-        const { stdout, stderr: capturedStderr } = getCapturedOutput();
-        const stderr = [capturedStderr, errorText].filter(Boolean).join("\n") || null;
+    // Cap the whole round-trip so a stalled server can't delay the command's
+    // exit; on timeout the signal aborts the in-flight block POST.
+    await withDeadline(TRACKING_TIMEOUT_MS, async (signal) => {
+      const client = await buildLaminarClient({
+        projectId: opts.projectId,
+        baseUrl: opts.baseUrl,
+        port: opts.port,
+      });
+      // Fold the fatal error into the teed diagnostics (either may be empty).
+      const { stdout, stderr: capturedStderr } = getCapturedOutput();
+      const stderr = [capturedStderr, errorText].filter(Boolean).join("\n") || null;
 
-        // Typed against the shared contract so a field rename in @lmnr-ai/types
-        // is a compile error, not a silent drop.
-        const content: CommandBlockContent = {
-          command: path,
-          args: actionCommand.args ?? [],
-          exitCode,
-          output: stdout,
-          stderr,
-          reasoning: opts.reasoning ?? null,
-        };
+      // Typed against the shared contract so a field rename in @lmnr-ai/types
+      // is a compile error, not a silent drop.
+      const content: CommandBlockContent = {
+        command: path,
+        args: actionCommand.args ?? [],
+        exitCode,
+        output: stdout,
+        stderr,
+        reasoning: opts.reasoning ?? null,
+      };
 
-        await client.rolloutSessions.addBlock({
-          sessionId,
-          type: "command",
-          content,
-          // A 404 (unsupported endpoint) is swallowed, never thrown.
-          failOnNotFound: false,
-        });
-      })(),
-      TRACKING_TIMEOUT_MS,
-    );
+      await client.rolloutSessions.addBlock({
+        sessionId,
+        type: "command",
+        content,
+        // A 404 (unsupported endpoint) is swallowed, never thrown.
+        failOnNotFound: false,
+        signal,
+      });
+    });
   } catch (err) {
     // Debug-level so tracking stays invisible on a normal run.
     logger.debug(`Command tracking skipped: ${errorMessage(err)}`);

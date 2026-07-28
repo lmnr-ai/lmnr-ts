@@ -142,11 +142,16 @@ export class RolloutSessionsResource extends BaseResource {
     type,
     content,
     failOnNotFound,
+    signal,
   }: {
     sessionId: string;
     type: SessionBlockType;
     content: SessionBlockContent;
     failOnNotFound?: boolean;
+    // Optional cancellation: aborting tears down the in-flight request so a
+    // best-effort caller (e.g. the CLI's command tracking) can bound its own
+    // deadline without a leaked socket keeping the process alive.
+    signal?: AbortSignal;
   }): Promise<string | null> {
     const response = await fetch(
       `${this.baseHttpUrl}${this.apiPrefix}/rollouts/${sessionId}/blocks`,
@@ -154,6 +159,7 @@ export class RolloutSessionsResource extends BaseResource {
         method: "POST",
         headers: this.headers(),
         body: JSON.stringify({ type, content }),
+        signal,
       },
     );
 
