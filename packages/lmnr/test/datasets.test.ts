@@ -187,6 +187,13 @@ void describe("EvaluationDataset subsampling", () => {
       const b = indexed(20).shuffle({ seed: 8 });
       assert.notDeepStrictEqual(await dataOf(a), await dataOf(b));
     });
+
+    void it("defaults seed to 0 when called with no argument", async () => {
+      const noArg = indexed(15).shuffle();
+      const zero = indexed(15).shuffle({ seed: 0 });
+      assert.deepStrictEqual(await dataOf(noArg), seededPerm(15, 0));
+      assert.deepStrictEqual(await dataOf(noArg), await dataOf(zero));
+    });
   });
 
   void describe("chain composition", () => {

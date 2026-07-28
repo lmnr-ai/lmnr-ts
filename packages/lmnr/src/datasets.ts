@@ -9,16 +9,16 @@ const DEFAULT_FETCH_SIZE = 25;
 
 const logger = initializeLogger();
 
-// One-time (per process) debug note that `filter` scans the whole dataset.
-let filterMaterializeNoted = false;
-const noteFilterMaterializes = () => {
-  if (filterMaterializeNoted) {
-    return;
-  }
-  filterMaterializeNoted = true;
-  logger.debug(
-    'EvaluationDataset.filter materializes the full dataset: it scans every ' +
-      'datapoint (in pages) to evaluate the predicate.',
+// `filter` has no way to honor the by-index contract without testing every
+// datapoint, so it fetches the whole dataset (all pages) into memory. Warn once
+// per process so callers on large remote datasets aren't surprised by the cost.
+let filterMaterializeWarned = false;
+const warnFilterMaterializesOnce = (): void => {
+  if (filterMaterializeWarned) return;
+  filterMaterializeWarned = true;
+  logger.warn(
+    'EvaluationDataset.filter scans every datapoint to evaluate the predicate, '
+    + 'fetching the whole dataset (all pages) into memory.',
   );
 };
 
@@ -97,7 +97,7 @@ export abstract class EvaluationDataset<D, T> {
     predicate: (datapoint: Datapoint<D, T>) => boolean | Promise<boolean>,
   ): EvaluationDataset<D, T> {
     return new Transformed<D, T>(this, async (base) => {
-      noteFilterMaterializes();
+      warnFilterMaterializesOnce();
       const size = await base.size();
       const kept: number[] = [];
       for (let i = 0; i < size; i++) {
@@ -113,7 +113,7 @@ export abstract class EvaluationDataset<D, T> {
    * A reproducible random permutation. The order is a pure function of
    * `(size, seed)` — the same seed always yields the same order.
    */
-  public shuffle({ seed }: { seed: number }): EvaluationDataset<D, T> {
+  public shuffle({ seed = 0 }: { seed?: number } = {}): EvaluationDataset<D, T> {
     return new Transformed<D, T>(this, async (base) => seededPerm(await base.size(), seed));
   }
 }
