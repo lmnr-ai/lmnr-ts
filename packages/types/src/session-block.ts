@@ -65,12 +65,12 @@ export interface CommandBlockContent {
    */
   stderr?: string | null;
   /**
-   * Free-text agent reasoning for this step, recorded alongside the command so a
+   * Free-text agent thinking for this step, recorded alongside the command so a
    * reviewer sees what the agent was thinking when it ran it. Supplied via
-   * `--reasoning`; omitted / null when not provided. Additive on the wire — no
+   * `--thinking`; omitted / null when not provided. Additive on the wire — no
    * client bump (same as `output` / `stderr`).
    */
-  reasoning?: string | null;
+  thinking?: string | null;
 }
 
 /** Union of the known block content shapes. */
