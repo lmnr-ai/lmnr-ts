@@ -13,8 +13,9 @@ import { Writable } from "node:stream";
 // the UI never has to trim what we send.
 const MAX_CAPTURE_CHARS = 20_000;
 
-// Buffer a bit past the display cap: enough to detect truncation and absorb a
-// final chunk straddling the boundary.
+// Buffer up to double the ship cap. The extra 20k is headroom so a large final
+// chunk is still captured in full past what we ship, and so exceeding the ship
+// cap reliably signals truncation; `append` drops anything beyond this.
 const HARD_LIMIT = MAX_CAPTURE_CHARS * 2;
 
 // SGR color/style escapes (from `pc.*` / pino-pretty), stripped so captured
