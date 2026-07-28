@@ -199,7 +199,7 @@ async function main() {
       `
 When a debug session is active in this directory, the command (and its args) is
 recorded into that session as a \`command\` block so a reviewer sees what ran.
-The raw query string is uploaded. Attach agent reasoning with --reasoning.
+The raw query string is uploaded. Attach agent thinking with --thinking.
 Disable recording with --no-track or LMNR_NO_COMMAND_TRACKING=1.
 
 Output defaults to CSV on stdout (one record per line, agent-parseable). Use
@@ -210,7 +210,7 @@ Examples:
   $ lmnr-cli sql query "SELECT id, total_cost, status FROM traces LIMIT 20"
   $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json
   $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --pretty
-  $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --reasoning "checking error rate"
+  $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --thinking "checking error rate"
   $ lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --no-track
 `,
     );
@@ -257,7 +257,7 @@ project's traces/spans/evals via read-only SQL and trace inspection.
 
 When a debug session is active in this directory, the command (and its args) is
 recorded into that session as a \`command\` block. The raw question is uploaded.
-Attach agent reasoning with --reasoning. Disable recording with --no-track or
+Attach agent thinking with --thinking. Disable recording with --no-track or
 LMNR_NO_COMMAND_TRACKING=1.
 
 Examples:
@@ -265,7 +265,7 @@ Examples:
   $ lmnr-cli ask "how many traces errored in the last day?"
   $ lmnr-cli ask "summarize the most expensive trace today" --json
   $ lmnr-cli ask "and which model did it use?" --conversation <id>
-  $ lmnr-cli ask "why did my latest trace fail?" --reasoning "triaging the failure"
+  $ lmnr-cli ask "why did my latest trace fail?" --thinking "triaging the failure"
   $ lmnr-cli ask "why did my latest trace fail?" --no-track
 `,
     );

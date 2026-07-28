@@ -120,7 +120,7 @@ const renderBlock = (block: SessionBlock): string | null => {
     }
     case "command": {
       // One digest line per recorded command: what ran + how it exited (+ the
-      // agent's reasoning, when supplied). Full stdout/stderr stay in `--json` —
+      // agent's thinking, when supplied). Full stdout/stderr stay in `--json` —
       // dumping them here would bury the chronology under command output.
       const command = typeof content.command === "string" ? content.command : "";
       if (!command) return null;
@@ -128,12 +128,12 @@ const renderBlock = (block: SessionBlock): string | null => {
         ? content.args.map((a) => (typeof a === "string" ? a : String(a)))
         : [];
       const exitCode = typeof content.exitCode === "number" ? content.exitCode : 0;
-      const reasoning =
-        typeof content.reasoning === "string" && content.reasoning
-          ? ` reasoning="${content.reasoning}"`
+      const thinking =
+        typeof content.thinking === "string" && content.thinking
+          ? ` thinking="${content.thinking}"`
           : "";
       const invocation = args.length ? `${command} ${args.join(" ")}` : command;
-      return `<command exitCode="${exitCode}"${reasoning}>${invocation}</command>`;
+      return `<command exitCode="${exitCode}"${thinking}>${invocation}</command>`;
     }
     default:
       return null;

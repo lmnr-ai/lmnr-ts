@@ -20,14 +20,14 @@ const TRACKED_COMMANDS = new Set(["sql query", "ask"]);
 
 /**
  * Extra opts the tracked commands carry: commander's `--no-track` → `track:false`,
- * and `--reasoning <text>` → `reasoning`. Both are attached via
+ * and `--thinking <text>` → `thinking`. Both are attached via
  * {@link withTrackingOptions} rather than per-command.
  */
-type TrackOpts = GlobalOpts & { track?: boolean; reasoning?: string };
+type TrackOpts = GlobalOpts & { track?: boolean; thinking?: string };
 
 /**
  * Attach the flags shared by every tracked command (see {@link TRACKED_COMMANDS}):
- * the `--no-track` opt-out and `--reasoning` capture. Applying this in one place —
+ * the `--no-track` opt-out and `--thinking` capture. Applying this in one place —
  * rather than re-declaring the flags per command — keeps the tracked-command flag
  * surface in sync with the allowlist it pairs with. Returns the same command for
  * chaining (`.action(...)`, `.addHelpText(...)`).
@@ -40,10 +40,10 @@ export const withTrackingOptions = (cmd: Command): Command =>
       "(also: LMNR_NO_COMMAND_TRACKING=1)",
     )
     .option(
-      "--reasoning <text>",
+      "--thinking <text>",
       // The "15 words maximum" is guidance to keep agents terse — it is NOT
       // enforced; any-length text is accepted and recorded verbatim.
-      "Agent reasoning to track with the Debugger session. Why are you calling " +
+      "Agent thinking to track with the Debugger session. Why are you calling " +
       "this command? Limit 15 words maximum.",
     );
 
@@ -87,9 +87,9 @@ export const trackingDisabled = (opts: TrackOpts): boolean => {
  * Every failure mode is swallowed — no active session, no linked project, a
  * network error, a 404 from a server that doesn't know the block type — because
  * tracking must NEVER change the wrapped command's outcome, output, or exit
- * code. On the no-session path it returns silently — EXCEPT when `--reasoning`
- * was supplied, where it warns that the reasoning went unrecorded (a caller that
- * bothered to pass reasoning expected it to land somewhere).
+ * code. On the no-session path it returns silently — EXCEPT when `--thinking`
+ * was supplied, where it warns that the thinking went unrecorded (a caller that
+ * bothered to pass thinking expected it to land somewhere).
  *
  * Captured stdout/stderr (via the `emitData`/`emitErr` sinks + the logger tee)
  * ride along so a reviewer sees not just which command ran but what it produced.
@@ -114,11 +114,11 @@ export const maybeTrackCommand = async (
 
     const sessionId = readDebugSessionFile(resolveDebugSessionDir())?.session_id;
     if (!sessionId) {
-      // No session is the normal case, so stay silent — unless reasoning was
+      // No session is the normal case, so stay silent — unless thinking was
       // passed, which the caller clearly expected to be recorded somewhere.
-      if (opts.reasoning) {
+      if (opts.thinking) {
         logger.warn(
-          "--reasoning was provided but there is no active debug session in " +
+          "--thinking was provided but there is no active debug session in " +
           "this directory, so it was not recorded. Start one with " +
           "`lmnr-cli debug session new`.",
         );
@@ -145,7 +145,7 @@ export const maybeTrackCommand = async (
         exitCode,
         output: stdout,
         stderr,
-        reasoning: opts.reasoning ?? null,
+        thinking: opts.thinking ?? null,
       },
       // Best-effort: a missing session / unsupported endpoint (404) is logged and
       // swallowed, never thrown — an exit 0 from the real command stays exit 0.
