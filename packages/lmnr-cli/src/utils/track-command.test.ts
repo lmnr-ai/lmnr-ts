@@ -108,18 +108,18 @@ describe("maybeTrackCommand", () => {
         // No emit/log happened in this unit context, so capture is empty.
         output: null,
         stderr: null,
-        // No --thinking passed → null.
-        thinking: null,
+        // No --reasoning passed → null.
+        reasoning: null,
       },
       failOnNotFound: false,
     });
   });
 
-  it("records --thinking on the command block when provided", async () => {
+  it("records --reasoning on the command block when provided", async () => {
     const query = makeCmd(
       "query",
       makeCmd("sql", root),
-      { thinking: "checking error rate" },
+      { reasoning: "checking error rate" },
       ["SELECT 1"],
     );
 
@@ -127,7 +127,7 @@ describe("maybeTrackCommand", () => {
 
     expect(h.addBlock).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: expect.objectContaining({ thinking: "checking error rate" }),
+        content: expect.objectContaining({ reasoning: "checking error rate" }),
       }),
     );
   });
@@ -171,15 +171,15 @@ describe("maybeTrackCommand", () => {
 
     expect(h.buildLaminarClient).not.toHaveBeenCalled();
     expect(h.addBlock).not.toHaveBeenCalled();
-    // No thinking → stays silent (no session is the normal case).
+    // No reasoning → stays silent (no session is the normal case).
     expect(h.logWarn).not.toHaveBeenCalled();
   });
 
-  it("warns (but posts nothing) when --thinking is given with no active session", async () => {
+  it("warns (but posts nothing) when --reasoning is given with no active session", async () => {
     h.readDebugSessionFile.mockReturnValue(null);
 
     await maybeTrackCommand(
-      makeCmd("ask", root, { thinking: "triaging the failure" }, ["why?"]),
+      makeCmd("ask", root, { reasoning: "triaging the failure" }, ["why?"]),
       0,
     );
 

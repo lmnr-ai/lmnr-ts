@@ -7,7 +7,14 @@ import { errorMessage } from "@lmnr-ai/types";
 import { type MintedApiKey, mintProjectApiKey } from "../../auth/api-key";
 import { type Credentials } from "../../auth/credentials";
 import { envHttpPort, refreshIfNeeded, SessionExpiredError } from "../../auth/resolve";
-import { failWith, keyMismatch, keyProbeFailed, loginFailed, setupKeyFailed } from "../../errors";
+import {
+  EXIT_ENV_WRITE_FAILED,
+  failWith,
+  keyMismatch,
+  keyProbeFailed,
+  loginFailed,
+  setupKeyFailed,
+} from "../../errors";
 import { pc } from "../../utils/colors";
 import {
   type EnvKeyLocation,
@@ -16,10 +23,6 @@ import {
   writeEnvFile,
 } from "../../utils/env-file";
 import { type LocalProjectFile } from "../../utils/local-project-file";
-
-// Manual exit code because this path emits a bespoke JSON payload (minted key +
-// projectId) that `failWith`'s generic `{error, detail}` envelope can't carry.
-const EXIT_ENV_WRITE_FAILED = 8;
 
 /**
  * Resolve which project a project API key belongs to (`POST /v1/cli/project`).

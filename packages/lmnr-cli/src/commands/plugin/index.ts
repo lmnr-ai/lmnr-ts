@@ -15,6 +15,7 @@ import { SessionExpiredError } from "../../auth/resolve";
 import { DEFAULT_BASE_URL, DEFAULT_FRONTEND_URL } from "../../constants";
 import {
   configWriteFailed,
+  EXIT_INSTALL_FAILED,
   failWith,
   listProjectsFailed,
   loginFailed,
@@ -31,12 +32,6 @@ import { emitError } from "../../utils/output";
 import { listProjects, promptProjectChoice } from "../../utils/projects";
 import { firstNonEmpty } from "../../utils/text";
 import { handleLogin } from "../login";
-
-// The onboarding exit-code contract now lives in ../../errors (one factory per
-// code). The install failure is the one site that stays a manual exit — in
-// --json it emits a bespoke full result payload (see makeResult) that failWith's
-// generic `{error, detail}` envelope can't carry — so its code (14) is kept here.
-const EXIT_INSTALL_FAILED = 14;
 
 /**
  * Registry of agents `plugin add <agent>` can wire up, keyed by the CLI argument

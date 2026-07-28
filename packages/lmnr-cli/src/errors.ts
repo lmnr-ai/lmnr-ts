@@ -39,6 +39,15 @@ export const configWriteFailed = (m: string) => new CliError("config_write_faile
 export const unsupportedAgent = (m: string) => new CliError("unsupported_agent", 13, m);
 
 /**
+ * Bare exit codes for the two sites that DON'T go through `failWith`: each emits
+ * a bespoke `--json` payload the generic `{error, detail}` envelope can't carry,
+ * so it `process.exit`s directly. The numbers live here so the whole exit-code
+ * contract stays in one place (8 is the same code as `config_write_failed`).
+ */
+export const EXIT_ENV_WRITE_FAILED = 8;
+export const EXIT_INSTALL_FAILED = 14;
+
+/**
  * Render a {@link CliError} through the shared `emitError` envelope and exit.
  * For the bare-action onboarding commands that own their --json contract.
  *

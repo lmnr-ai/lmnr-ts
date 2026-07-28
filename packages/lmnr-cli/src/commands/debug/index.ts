@@ -98,7 +98,7 @@ const renderBlock = (block: SessionBlock): string | null => {
       return text || null;
     }
     case "command": {
-      // One digest line per command: what ran + how it exited (+ thinking, when
+      // One digest line per command: what ran + how it exited (+ reasoning, when
       // supplied). Full stdout/stderr stay in `--json`.
       const command = typeof content.command === "string" ? content.command : "";
       if (!command) return null;
@@ -106,12 +106,12 @@ const renderBlock = (block: SessionBlock): string | null => {
         ? content.args.map((a) => (typeof a === "string" ? a : String(a)))
         : [];
       const exitCode = typeof content.exitCode === "number" ? content.exitCode : 0;
-      const thinking =
-        typeof content.thinking === "string" && content.thinking
-          ? ` thinking="${content.thinking}"`
+      const reasoning =
+        typeof content.reasoning === "string" && content.reasoning
+          ? ` reasoning="${content.reasoning}"`
           : "";
       const invocation = args.length ? `${command} ${args.join(" ")}` : command;
-      return `<command exitCode="${exitCode}"${thinking}>${invocation}</command>`;
+      return `<command exitCode="${exitCode}"${reasoning}>${invocation}</command>`;
     }
     default:
       return null;

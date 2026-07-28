@@ -73,7 +73,7 @@ describe('handleDebugSessionSummary', () => {
     );
   });
 
-  it('renders command blocks (invocation + exit code + thinking)', async () => {
+  it('renders command blocks (invocation + exit code + reasoning)', async () => {
     mockListBlocks.mockResolvedValue([
       commandBlock(
         'c1',
@@ -81,7 +81,7 @@ describe('handleDebugSessionSummary', () => {
           command: 'sql query',
           args: ['SELECT 1'],
           exitCode: 0,
-          thinking: 'checking error rate',
+          reasoning: 'checking error rate',
           output: 'ignored in human summary',
         },
         '2026-06-01T10:00:00.000Z',
@@ -96,7 +96,7 @@ describe('handleDebugSessionSummary', () => {
     await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID });
 
     expect(logSpy).toHaveBeenCalledWith(
-      '<command exitCode="0" thinking="checking error rate">sql query SELECT 1</command>' +
+      '<command exitCode="0" reasoning="checking error rate">sql query SELECT 1</command>' +
       '\n\n<command exitCode="9">ask why?</command>',
     );
   });

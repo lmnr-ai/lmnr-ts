@@ -45,8 +45,8 @@ export interface CommandBlockContent {
   output?: string | null;
   /** Captured stderr, truncated to a bounded prefix. Null when empty. */
   stderr?: string | null;
-  /** Agent thinking for this step, via `--thinking`. Null when not provided. */
-  thinking?: string | null;
+  /** Agent reasoning for this step, via `--reasoning`. Null when not provided. */
+  reasoning?: string | null;
 }
 
 /** Union of the known block content shapes. */
