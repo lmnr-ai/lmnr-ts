@@ -36,11 +36,7 @@ export interface SetupOptions {
   browser?: boolean;
   frontendUrl?: string;
   baseUrl?: string;
-  /**
-   * Explicit project id. Disambiguates when the user can access >1 project
-   * (otherwise --json setup errors `project_ambiguous`). Validated against the
-   * user's accessible projects before linking.
-   */
+  /** Explicit project id; disambiguates when >1 is accessible. Validated before linking. */
   projectId?: string;
 }
 
@@ -59,19 +55,11 @@ export interface SetupResult {
 }
 
 /**
- * Directory-scoped onboarding (SPEC decision tree):
- *  - log in if needed (browser picks/creates the project; its id rides back on
- *    the device-token metadata, see parseProjectFromMetadata),
- *  - resolve a project for this directory (`.lmnr/project.json`), enforcing
- *    access,
- *  - mint a project API key only when one isn't already configured for this
- *    project (checked across process.env → .env.local → .env), then write it to
- *    an existing .env.local or else .env,
- *  - install the Laminar skill into present agent dirs,
- *  - print a summary.
- *
- * The minted key goes ONLY into the project's env file, never into
- * credentials.json (which stores user-scoped BetterAuth tokens).
+ * Directory-scoped onboarding: log in if needed, resolve the project for this
+ * directory (`.lmnr/project.json`) and enforce access, mint a project API key
+ * only when one isn't already configured, install the Laminar skill, print a
+ * summary. The minted key goes only into the project's env file, never into
+ * credentials.json (which stores user-scoped tokens).
  */
 export async function handleSetup(options: SetupOptions): Promise<void> {
   const writeEnv = options.writeEnv !== false;
@@ -88,21 +76,16 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   }
 
   const cwd = process.cwd();
-  // Detect an already-configured key across process.env → .env.local → .env.
+  // Already-configured key across process.env, .env.local, .env.
   const existingKey = await findEnvKey(cwd);
 
   let creds: Credentials | null = await safeReadCredentials();
   let link = await readLocalProjectFile();
 
-  // Expiry gate: an expired session still leaves a valid-shaped credentials.json
-  // on disk, so without this setup would take the "already logged in" branch and
-  // then dead-end on the first authed call (list_projects → list_projects_failed).
-  // Validate the session now; an expired grant is ABSORBED — we drop the creds so
-  // the not-logged-in branch below re-runs the device flow (honoring --no-browser)
-  // and onboarding continues. A non-expiry error (network/5xx / server blip) is
-  // deliberately left for the downstream authed call to surface through its coded
-  // path (list_projects_failed, exit 10) so a transient failure is never
-  // conflated with an expiry.
+  // An expired session leaves a valid-shaped credentials.json on disk. Validate
+  // now: an expired grant is absorbed (drop creds so the login branch re-runs
+  // the device flow); a non-expiry error is left for the downstream authed call
+  // to surface, so a transient blip is never conflated with an expiry.
   if (creds) {
     try {
       creds = await refreshIfNeeded(creds);
@@ -116,9 +99,8 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   // --- 1. Login + project resolution ---------------------------------------
 
   if (!creds) {
-    // Not logged in: run the device flow. The browser is where the project is
-    // chosen/created (when there's no link), and the chosen id rides back on
-    // the device-token metadata (parseProjectFromMetadata).
+    // Not logged in: run the device flow. The browser picks/creates the project
+    // (when there's no link) and its id rides back on the device-token metadata.
     let login;
     try {
       login = await handleLogin({ frontendUrl, noBrowser: options.browser === false });
@@ -134,15 +116,14 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     const userBaseUrl = baseUrl;
 
     if (link) {
-      // Directory already declares the project — ignore the metadata-borne id
-      // and assert the freshly-authenticated user can access the linked project.
+      // Directory already declares the project — ignore the metadata id and
+      // check the user can access the linked project.
       await assertAccess(creds, userBaseUrl, link, existingKey, isJson);
     } else if (login.projectId) {
       // Browser-selected (or just-created) project. Trust it and write the link.
       link = await writeLink(userBaseUrl, login.projectId, isJson);
     } else {
-      // Defensive: fall back to the CLI picker if the browser didn't attach a
-      // project via metadata.
+      // Defensive: fall back to the CLI picker if the browser attached no project.
       link = await resolveProjectViaCli(creds, userBaseUrl, issuer, isJson, options);
     }
   } else {
@@ -174,8 +155,8 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   const issuer = creds.issuer || frontendUrl;
   const userBaseUrl = baseUrl;
 
-  // --- 3. Key handling (SPEC 36-42) -----------------------------------------
-  // Shared with `project link` — the whole probe/mint/write is `ensureProjectKey`.
+  // --- 3. Key handling ------------------------------------------------------
+  // Shared with `project link` — probe/mint/write is `ensureProjectKey`.
   const { apiKey, envFileUpdated: envPath } = await ensureProjectKey({
     creds,
     link,
@@ -191,16 +172,15 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
 
   let skillsInstalled: string[] = [];
   try {
-    // installSkill fetches the skill from the lmnr-skills repo and is
-    // best-effort: it logs + returns `skipped: true` on network/codeload
-    // failure rather than throwing, so setup never breaks here.
+    // Best-effort: returns skipped: true on failure rather than throwing, so
+    // setup never breaks here.
     const skillResult = await installSkill(process.cwd());
     skillsInstalled = skillResult.written;
     if (!isJson) {
       if (skillResult.skipped) {
         process.stderr.write(pc.dim("  Laminar skill install skipped\n"));
       } else if (skillResult.written.length > 0) {
-        // One mark for the whole skill, not one per file (SKILL.md + references).
+        // One mark for the whole skill, not one per file.
         const note = skillResult.defaulted
           ? pc.dim(" (no agent dir found; defaulted to .claude and .agents)")
           : "";
@@ -255,10 +235,8 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve a project via the CLI (logged-in, no link). 0 projects routes to the
- * browser create flow (gap A): we re-run the device flow, which lands on the
- * /device picker → first-project create UI, and the new project's id rides back
- * on the device-token metadata. >1 prompts a CLI choice; ==1 auto-selects.
+ * Resolve a project via the CLI (logged-in, no link). 0 projects re-runs the
+ * device flow (browser create UI); >1 prompts a CLI choice; ==1 auto-selects.
  */
 async function resolveProjectViaCli(
   creds: Credentials,
@@ -271,9 +249,8 @@ async function resolveProjectViaCli(
   try {
     projects = await listProjects(creds, userBaseUrl);
   } catch (err) {
-    // Expiry can surface here (listProjects → refreshIfNeeded) if the up-front
-    // gate hit a transient error and swallowed it: keep it login_failed (6), not
-    // list_projects_failed (10) — same 6-vs-10 contract as link / plugin.
+    // Expiry can surface here if the up-front gate swallowed a transient error:
+    // keep it login_failed (6), not list_projects_failed (10).
     if (err instanceof SessionExpiredError) {
       failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
     }
@@ -281,9 +258,8 @@ async function resolveProjectViaCli(
   }
 
   if (projects.length === 0) {
-    // Gap A: no project to select and the CLI can't create one. Drive the
-    // browser create flow — same path the not-logged-in 0-project user takes —
-    // so project creation lives in ONE place (the /device picker).
+    // No project to select and the CLI can't create one. Drive the browser
+    // create flow so project creation lives in one place (the /device picker).
     if (isJson) {
       failWith(
         isJson,
@@ -319,7 +295,7 @@ async function resolveProjectViaCli(
 
   let chosen: CliProject;
   if (options.projectId) {
-    // Explicit --project-id disambiguates. Validate against the accessible set.
+    // --project-id disambiguates. Validate against the accessible set.
     const match = projects.find((p) => p.id === options.projectId);
     if (!match) {
       failWith(
@@ -400,12 +376,8 @@ async function writeLink(
 }
 
 /**
- * Access check: the logged-in user must be a member of the directory-linked
- * project (`link.projectId`). Calls GET /v1/cli/projects (user JWT) and asserts
- * the id is present; aborts otherwise (SPEC: "You don't have access to the
- * project in this directory"). On failure, names the actual mismatch (linked
- * project vs. logged-in account) and the two things that pin a stale project —
- * `.lmnr/project.json` and any `LMNR_PROJECT_API_KEY` in the environment.
+ * Assert the logged-in user is a member of the directory-linked project.
+ * Aborts with an actionable error otherwise.
  */
 async function assertAccess(
   creds: Credentials,
@@ -418,14 +390,12 @@ async function assertAccess(
   try {
     projects = await listProjects(creds, userBaseUrl);
   } catch (err) {
-    // An expired grant (listProjects → refreshIfNeeded) is an auth failure, not a
-    // transient one: login_failed (6), consistent with the resolve path above.
+    // An expired grant is an auth failure: login_failed (6).
     if (err instanceof SessionExpiredError) {
       failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
     }
-    // Discovery FAILED (network/5xx) — we couldn't determine access. Report it
-    // as a transient list failure (exit 10), NOT no_access (exit 4): automation
-    // must be able to retry instead of concluding the user lacks access.
+    // Discovery failed (network/5xx) — report as a transient list failure
+    // (exit 10), NOT no_access (exit 4), so automation can retry.
     failWith(isJson, listProjectsFailed(errorMessage(err)));
   }
   if (!projects.some((p) => p.id === link.projectId)) {
@@ -434,9 +404,8 @@ async function assertAccess(
 }
 
 /**
- * Build the `no_access` detail: lead with the SPEC sentence (so substring
- * matchers keep working), then explain the linked-project-vs-account mismatch
- * and the concrete remediation steps.
+ * Build the `no_access` detail. Leads with the SPEC sentence (so substring
+ * matchers keep working), then explains the mismatch and remediation steps.
  */
 function buildNoAccessDetail(
   link: LocalProjectFile,

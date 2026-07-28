@@ -1,18 +1,11 @@
 import { emitError } from "./utils/output";
 
 /**
- * A CLI error that carries its own machine-readable `code` and process
- * `exitCode` — the "first-class error" shape shared by commander's
- * `CommanderError(exitCode, code, message)` and oclif's `CLIError` (`oclif.exit`
- * + `code`). Pairing the two here means a catch site can't drift them apart or
- * forget the mapping (the failure mode behind the SessionExpiredError bug).
+ * A CLI error carrying its own machine-readable `code` and process `exitCode`.
+ * Pairing them here keeps a catch site from drifting them apart.
  *
- * Two entry styles, one type:
- *  - wrapped commands (the with-client envelope) `throw` it — the envelope's
- *    `ExitCodeMapper` reads `.exitCode` (see `defaultExitCode`).
- *  - bare-action commands (`setup` / `plugin` / `link` / `mint-key`) pass it to
- *    {@link failWith}, which renders + exits inline — they own their own --json
- *    output contract and are not wrapped by the envelope.
+ * Two entry styles: wrapped commands `throw` it (the envelope's `ExitCodeMapper`
+ * reads `.exitCode`); bare-action commands pass it to {@link failWith}.
  */
 export class CliError extends Error {
   constructor(
@@ -26,14 +19,10 @@ export class CliError extends Error {
 }
 
 /**
- * Factories — the SINGLE source of truth pairing each wire `code` with its exit
- * code. These numbers were previously duplicated across `plugin/index.ts` and
- * `project/link-core.ts` (already drifting in name: `EXIT_MINT_FAILED` vs
- * `EXIT_SETUP_KEY_FAILED`, both 9); they live here exactly once now.
- *
- * The `code` strings are a wire contract (agents parse `{error: <code>}`), so
- * several distinct codes intentionally share an exit number (e.g. `no_project`,
- * `no_projects`, `project_ambiguous`, `setup_invariant` are all exit 7).
+ * Factories — the single source of truth pairing each wire `code` with its exit
+ * code. The `code` strings are a wire contract (agents parse `{error: <code>}`),
+ * so several distinct codes intentionally share an exit number (e.g. the exit-7
+ * group below).
  */
 export const loginFailed = (m: string) => new CliError("login_failed", 6, m);
 export const noAccess = (m: string) => new CliError("no_access", 4, m);
@@ -50,18 +39,12 @@ export const configWriteFailed = (m: string) => new CliError("config_write_faile
 export const unsupportedAgent = (m: string) => new CliError("unsupported_agent", 13, m);
 
 /**
- * Render a {@link CliError} through the shared `{error, detail}` envelope
- * (`emitError`) and exit with its code. For the bare-action onboarding commands
- * that own their --json contract and are NOT wrapped by the with-client
- * envelope. Uses a direct `process.exit` — same control flow the audited
- * setup/link flows already rely on, so no exception unwinds through code that
- * wasn't written to catch it.
+ * Render a {@link CliError} through the shared `emitError` envelope and exit.
+ * For the bare-action onboarding commands that own their --json contract.
  *
- * Intentionally a `function` declaration, NOT an arrow (which the style guide
- * otherwise prefers): TypeScript only applies `never`-return control-flow
- * narrowing to a call statement when the callee is a function declaration, so
- * `if (!creds) failWith(...)` narrows `creds` afterward. A `const` arrow would
- * force `return failWith(...)` at every call site to get the same narrowing.
+ * A `function` declaration (not an arrow) on purpose: TS only applies
+ * `never`-return narrowing to a call when the callee is a function declaration,
+ * so `if (!creds) failWith(...)` narrows `creds` afterward.
  */
 export function failWith(isJson: boolean, err: CliError): never {
   emitError(isJson, err.code, err.message);

@@ -48,11 +48,9 @@ async function main() {
     .description("CLI for the Laminar agent observability platform")
     .version(version, "-v, --version", "display version number");
 
-  // Auto-tracking of investigative commands (sql query / ask) into the active
-  // debug session lives in the command error envelope (`runWithEnvelope` in
-  // auth/with-client.ts), NOT a Commander hook: the envelope is the only place
-  // that sees both success AND failure with the real exit code (Commander has no
-  // on-error hook). See `maybeTrackCommand`.
+  // Command tracking runs in runWithEnvelope (auth/with-client.ts), not a
+  // Commander hook — it's the only place that sees both success and failure with
+  // the real exit code. See `maybeTrackCommand`.
 
   const datasetsCmd = program
     .command("dataset")

@@ -2,30 +2,23 @@ import { Writable } from "node:stream";
 
 /**
  * Process-lifetime capture of the current command's stdout / stderr, so
- * `maybeTrackCommand` can record what an investigative command produced into
- * its `command` session block.
- *
- * A single CLI invocation runs exactly one command action, so a
- * process-global buffer IS that command's output — there is no per-command
- * reset and no cross-command bleed to worry about. Two sinks feed it: the
- * `emitData` / `emitErr` write-through helpers (direct stdout/stderr writes)
- * and the pino logger tee (`createStderrCaptureStream`). Both strip ANSI so the
- * recorded text is clean, and appends stop at a hard cap so a command that
- * streams megabytes can't grow the buffer without bound.
+ * `maybeTrackCommand` can record it into a `command` session block. One CLI
+ * invocation runs one command, so a process-global buffer IS that command's
+ * output — no reset, no cross-command bleed. Fed by the `emitData` / `emitErr`
+ * write-through helpers and the pino logger tee; both strip ANSI and stop at a
+ * hard cap.
  */
 
-// The most we ship in a block field. The frontend renderer also truncates at
-// this size — keeping the two in step means the UI never has to trim what we
-// send. Kept as a plain number (not shared) to avoid a client/types dep here.
+// Most we ship in a block field; matches the frontend renderer's truncation so
+// the UI never has to trim what we send.
 const MAX_CAPTURE_CHARS = 20_000;
 
-// Stop appending well past the display cap: we only ever ship MAX_CAPTURE_CHARS,
-// so buffering a bit beyond it is enough to know truncation happened, and the
-// extra headroom absorbs a final chunk that straddles the boundary.
+// Buffer a bit past the display cap: enough to detect truncation and absorb a
+// final chunk straddling the boundary.
 const HARD_LIMIT = MAX_CAPTURE_CHARS * 2;
 
-// SGR color/style escapes (what `pc.*` and pino-pretty emit). Stripped before
-// recording so captured output is plain text, not terminal control codes.
+// SGR color/style escapes (from `pc.*` / pino-pretty), stripped so captured
+// output is plain text.
 // eslint-disable-next-line no-control-regex
 const ANSI_SGR = /\[[0-9;]*m/g;
 const stripAnsi = (s: string): string => s.replace(ANSI_SGR, "");
@@ -33,8 +26,8 @@ const stripAnsi = (s: string): string => s.replace(ANSI_SGR, "");
 let stdoutBuf = "";
 let stderrBuf = "";
 
-// Slice the raw chunk to remaining headroom BEFORE stripping, so `stripAnsi`
-// never processes (nor copies) more than HARD_LIMIT chars for a huge chunk.
+// Slice to remaining headroom BEFORE stripping, so `stripAnsi` never processes
+// more than HARD_LIMIT chars for a huge chunk.
 const append = (buf: string, chunk: string): string => {
   if (buf.length >= HARD_LIMIT) return buf;
   const room = HARD_LIMIT - buf.length;
@@ -49,8 +42,8 @@ export const recordStderr = (chunk: string): void => {
   stderrBuf = append(stderrBuf, chunk);
 };
 
-// Null when empty (so the block field is omitted rather than an empty string);
-// otherwise the recorded text, truncated to the display cap with a marker.
+// Null when empty (so the field is omitted); otherwise the text, truncated to
+// the display cap with a marker.
 const finalize = (buf: string): string | null => {
   if (!buf) return null;
   if (buf.length > MAX_CAPTURE_CHARS) {
@@ -65,11 +58,9 @@ export const getCapturedOutput = (): { stdout: string | null; stderr: string | n
 });
 
 /**
- * A pino multistream target that tees the logger's records into the shared
- * stderr buffer. multistream hands each stream the serialized NDJSON log line;
- * we extract `msg` so the captured stderr reads like the human diagnostics a
- * user saw, not raw JSON (falling back to the raw line if a record has no
- * string `msg` or doesn't parse).
+ * A pino multistream target that tees log records into the shared stderr buffer.
+ * We extract `msg` from each NDJSON line so captured stderr reads like the human
+ * diagnostics the user saw, falling back to the raw line if there's no string `msg`.
  */
 export const createStderrCaptureStream = (): Writable =>
   new Writable({

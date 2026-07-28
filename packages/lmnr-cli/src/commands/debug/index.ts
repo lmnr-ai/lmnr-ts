@@ -18,25 +18,16 @@ import { outputJson } from "../../utils/output";
 
 const logger = initializeLogger();
 
-/**
- * Options accepted by the session-scoped debug commands (`set-name`, `summary`,
- * `open`), extending the shared globals.
- */
+/** Options for the session-scoped debug commands (`set-name`, `summary`, `open`). */
 export interface DebugSessionScopedOpts extends GlobalOpts {
   /** Set by `--session-id`; omitted → the debug-session.json `session_id`. */
   sessionId?: string;
 }
 
 /**
- * Upsert the display name of a debug session. Update-only on the backend: a
- * session id unknown to the project 404s rather than creating a ghost session.
- *
- * The target session is the optional `--session-id` flag; when omitted the
- * session comes from `.lmnr/debug-session.json` (see `resolveSessionId`).
- *
- * Pure handler: the command wrapper (`withProjectClient`) resolves a user-token
- * {@link LaminarClient} (routes to `/v1/cli/*` with the resolved project) and
- * owns the error envelope.
+ * Upsert a debug session's display name. Update-only on the backend: an unknown
+ * session id 404s rather than creating a ghost session. Session id defaults from
+ * `.lmnr/debug-session.json` when `--session-id` is omitted.
  */
 export const handleDebugSessionSetName = async (
   client: LaminarClient,
@@ -61,23 +52,11 @@ export interface DebugSessionAddNoteOpts extends GlobalOpts {
 }
 
 /**
- * Attach a free-text note to a debug session as a standalone `text` block.
- *
- * The note is written to the session's block list (`debugger_session_blocks`)
- * keyed by session id — NOT to any trace / evaluation metadata. Each call
- * appends a new block, interleaved by time with the session's trace / evaluation
- * blocks in the debugger UI (and in `debug session summary`). This is the
- * unified note path for both debug runs and evals: `rollout.session_id` links
- * traces / evals to the session; the note only needs the session id.
- *
- * The target session is the optional `--session-id` flag; when omitted the
- * session comes from `.lmnr/debug-session.json` (see `resolveSessionId`) — which
- * every LMNR_DEBUG=1 run (agents and evals alike) keeps pointed at the current
- * session via the SDK's shutdown pointer write.
- *
- * Pure handler: the command wrapper (`withProjectClient`) resolves a user-token
- * {@link LaminarClient} (routes to `/v1/cli/*` with the resolved project) and
- * owns the error envelope.
+ * Attach a free-text note to a debug session as a standalone `text` block,
+ * keyed by session id — not to any trace / evaluation metadata. Notes interleave
+ * by time with the session's trace / evaluation blocks in the UI and in
+ * `debug session summary`. Session id defaults from `.lmnr/debug-session.json`
+ * when `--session-id` is omitted.
  */
 export const handleDebugSessionAddNote = async (
   client: LaminarClient,
@@ -85,7 +64,7 @@ export const handleDebugSessionAddNote = async (
   opts: DebugSessionAddNoteOpts,
 ): Promise<void> => {
   const sessionId = resolveSessionId(opts.sessionId);
-  // failOnNotFound: a CLI exit 0 must mean the note actually landed.
+  // failOnNotFound: exit 0 must mean the note actually landed.
   const blockId = await client.rolloutSessions.addBlock({
     sessionId,
     type: "text",
@@ -119,9 +98,8 @@ const renderBlock = (block: SessionBlock): string | null => {
       return text || null;
     }
     case "command": {
-      // One digest line per recorded command: what ran + how it exited (+ the
-      // agent's thinking, when supplied). Full stdout/stderr stay in `--json` —
-      // dumping them here would bury the chronology under command output.
+      // One digest line per command: what ran + how it exited (+ thinking, when
+      // supplied). Full stdout/stderr stay in `--json`.
       const command = typeof content.command === "string" ? content.command : "";
       if (!command) return null;
       const args = Array.isArray(content.args)
@@ -142,15 +120,8 @@ const renderBlock = (block: SessionBlock): string | null => {
 
 /**
  * Print a chronological digest of a debug session: every block (trace /
- * evaluation / text note) on the session, oldest first — the same data the
- * debugger UI renders.
- *
- * The target session is the optional `--session-id` flag; when omitted the
- * session comes from `.lmnr/debug-session.json` (see `resolveSessionId`).
- *
- * Pure handler: the command wrapper (`withProjectClient`) resolves a user-token
- * {@link LaminarClient} (routes to `/v1/cli/*` with the resolved project) and
- * owns the error envelope.
+ * evaluation / text note), oldest first. Session id defaults from
+ * `.lmnr/debug-session.json` when `--session-id` is omitted.
  */
 export const handleDebugSessionSummary = async (
   client: LaminarClient,
@@ -158,8 +129,7 @@ export const handleDebugSessionSummary = async (
 ): Promise<void> => {
   const sessionId = resolveSessionId(opts.sessionId);
   const blocks = await client.rolloutSessions.listBlocks({ sessionId });
-  // Sort oldest-first defensively — the backend returns creation order, but the
-  // summary's contract is chronological regardless.
+  // Sort oldest-first defensively; the summary's contract is chronological.
   const ordered = [...blocks].sort((a, b) =>
     String(a.createdAt).localeCompare(String(b.createdAt)),
   );
@@ -180,10 +150,7 @@ export const handleDebugSessionSummary = async (
   console.log(rendered.join("\n\n"));
 };
 
-/**
- * Build the frontend debugger-session URL. The frontend URL is its own env var
- * (LMNR_FRONTEND_URL) with a cloud default; self-host/local sets it explicitly.
- */
+/** Build the frontend debugger-session URL (LMNR_FRONTEND_URL, else cloud default). */
 const buildDebuggerUrl = (projectId: string, sessionId: string): string => {
   const frontend =
     process.env.LMNR_FRONTEND_URL?.trim().replace(/\/+$/, "") || DEFAULT_FRONTEND_URL;
@@ -191,17 +158,12 @@ const buildDebuggerUrl = (projectId: string, sessionId: string): string => {
 };
 
 /**
- * Open a debug session's debugger page in the browser.
+ * Open a debug session's debugger page in the browser. The URL is the file's
+ * stored `debugger_url` when it matches the resolved session, else it is rebuilt
+ * from the resolved project + LMNR_FRONTEND_URL. Session id defaults from
+ * `.lmnr/debug-session.json` when `--session-id` is omitted.
  *
- * The target session is the optional `--session-id` flag; when omitted the
- * session comes from `.lmnr/debug-session.json` (see `resolveSessionId`).
- * The URL is the file's stored `debugger_url` when it belongs to the resolved
- * session, else it is rebuilt from the resolved project (`--project-id` or the
- * linked `.lmnr/project.json`) + LMNR_FRONTEND_URL.
- *
- * Local-only handler (registered via `withLocalOpts`, NOT `withProjectClient`):
- * everything needed lives on disk, so no auth resolution / API call — `open`
- * works offline and before login.
+ * Local-only: everything lives on disk, so `open` works offline and before login.
  */
 export const handleDebugSessionOpen = async (
   opts: DebugSessionScopedOpts,
@@ -242,21 +204,12 @@ export interface DebugSessionNewOpts extends GlobalOpts {
 }
 
 /**
- * Mint a fresh debug session and reset `.lmnr/debug-session.json` to it.
+ * Mint a fresh debug session and reset `.lmnr/debug-session.json` to it. The next
+ * `LMNR_DEBUG=1 <run>` reads that file and rejoins the session silently.
  *
- * The next `LMNR_DEBUG=1 <run>` in this directory reads that file and rejoins the
- * minted session silently (no browser) — "new session" is owned by this command;
- * the SDK only mints when no file exists.
- *
- * Ordering matters: the local file is written FIRST (so the minted session is
- * usable for `LMNR_DEBUG=1` continuation even if the network is down / the
- * backend endpoint isn't deployed yet), THEN the session is best-effort
- * registered with the backend. A registration failure WARNS but does not fail
- * the command (exit 0) — the file is already written.
- *
- * Pure handler: the command wrapper (`withProjectClient`) resolves a user-token
- * {@link LaminarClient} (routes `register()` to `POST /v1/cli/rollouts/{id}` with
- * the resolved project) and owns the error envelope.
+ * Ordering matters: the local file is written FIRST (so the session is usable
+ * even if the backend is unreachable), THEN best-effort registered. A
+ * registration failure warns but does not fail the command (exit 0).
  */
 export const handleDebugSessionNew = async (
   client: LaminarClient,
@@ -264,14 +217,12 @@ export const handleDebugSessionNew = async (
 ): Promise<void> => {
   const sessionId = randomUUID();
 
-  // The session file is project-scoped: reset the NEAREST existing
-  // .lmnr/debug-session.json (walking up from cwd) rather than shadowing it
-  // with a nested copy; only when none exists anywhere up the tree is a fresh
-  // one created in cwd. Resolved once — both writes must hit the same file.
+  // Project-scoped: reset the nearest existing .lmnr/debug-session.json (walking
+  // up from cwd), only creating one in cwd if none exists up the tree. Resolved
+  // once — both writes must hit the same file.
   const sessionDir = resolveDebugSessionDir();
 
-  // 1. Write the file FIRST (nulls for trace/replay/cache, fresh started_at).
-  // The debugger_url is filled in once we learn the project id from register().
+  // 1. Write the file FIRST. debugger_url is filled in after register().
   writeDebugSessionFile({
     session_id: sessionId,
     trace_id: null,
@@ -281,9 +232,8 @@ export const handleDebugSessionNew = async (
     started_at: new Date().toISOString(),
   }, sessionDir);
 
-  // 2. Best-effort register. Routes to POST /v1/cli/rollouts/{id} (userToken
-  // auth). A failure (endpoint missing / offline) warns but never fails — the
-  // file is already usable for continuation.
+  // 2. Best-effort register. A failure warns but never fails — the file is
+  // already usable for continuation.
   let projectId: string | null = null;
   try {
     projectId = await client.rolloutSessions.register({ sessionId });
@@ -294,8 +244,7 @@ export const handleDebugSessionNew = async (
     );
   }
 
-  // 3. Build the per-session debugger URL once the project id is known and
-  // rewrite the file with it filled in.
+  // 3. Once the project id is known, rewrite the file with the debugger URL.
   const debuggerUrl = projectId ? buildDebuggerUrl(projectId, sessionId) : null;
   if (debuggerUrl) {
     writeDebugSessionFile({

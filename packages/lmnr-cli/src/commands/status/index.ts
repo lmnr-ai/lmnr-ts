@@ -23,19 +23,12 @@ const row = (label: string, value: string): string =>
   `  ${label.padEnd(LABEL_WIDTH)}${value}\n`;
 
 /**
- * `lmnr-cli status` — report the CLI's current context: the signed-in user, the
- * project linked to this directory, and the active debug session. Everything is
- * read from local state (credentials.json, `.lmnr/project.json`,
- * `.lmnr/debug-session.json`), so it works offline and never makes an API call.
+ * `lmnr-cli status` — report the signed-in user, linked project, and active
+ * debug session, all from local state (works offline, no API call). Missing
+ * fields render as "not set"; exits 0. Local-only handler (`withLocalOpts`).
  *
- * Each field degrades gracefully to a "not set" line when absent rather than
- * erroring — the command exits 0 as long as it ran. Local-only handler
- * (registered via `withLocalOpts`): no auth resolution, no network.
- *
- * The debug session's display NAME is intentionally omitted: it is not stored
- * locally and there is no endpoint to read it back, so `status` shows the
- * session id + debugger URL only (a backend GET-session endpoint is the
- * follow-up that would let it show the name).
+ * Session display NAME is omitted — it's not stored locally and there's no
+ * endpoint to read it back, so we show session id + debugger URL only.
  */
 export const handleStatus = async (opts: GlobalOpts): Promise<void> => {
   const creds = await safeReadCredentials();

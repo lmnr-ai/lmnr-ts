@@ -24,14 +24,9 @@ export interface ProjectMintKeyResult {
 
 /**
  * `lmnr-cli project mint-key` — mint a fresh Project API Key for the linked
- * project (or `--project-id`) and PRINT it, so the user can paste it into their
- * `.env` (or wherever). Unlike `setup` / `project link`, it deliberately does NOT
- * write `.env` — it hands you the key and stays out of your files.
- *
- * Minting goes through the shared `mintProjectApiKey` (the same call `setup` and
- * `plugin add` use). Requires an existing login. Manages its own exit codes /
- * `--json` contract like the other onboarding commands. The bare key goes to
- * stdout (pipe / copy-paste friendly); everything else is on stderr.
+ * project (or `--project-id`) and PRINT it. Unlike `setup` / `project link`, it
+ * deliberately does NOT write `.env` — the bare key goes to stdout (pipe-friendly),
+ * everything else to stderr. Requires an existing login.
  */
 export async function handleProjectMintKey(options: ProjectMintKeyOptions): Promise<void> {
   const isJson = options.json === true;
@@ -54,9 +49,8 @@ export async function handleProjectMintKey(options: ProjectMintKeyOptions): Prom
 
   const issuer = creds.issuer || DEFAULT_FRONTEND_URL;
 
-  // Validate the session up-front (no-op unless the access token is near expiry).
-  // An expired grant maps to login_failed (6) — the same code setup / project
-  // link report — instead of surfacing as setup_key_failed (9) from a doomed mint.
+  // Validate the session up-front so an expired grant maps to login_failed (6)
+  // rather than a doomed mint's setup_key_failed (9).
   try {
     await refreshIfNeeded(creds);
   } catch (err) {
@@ -84,8 +78,7 @@ export async function handleProjectMintKey(options: ProjectMintKeyOptions): Prom
     return;
   }
 
-  // The bare key is the data — stdout, so it pipes / copies cleanly. The hint
-  // for what to do with it is a message — stderr, keeping stdout just the key.
+  // Bare key to stdout (pipe-friendly); the hint goes to stderr.
   process.stdout.write(minted.apiKey + "\n");
   process.stderr.write(
     `\n${pc.dim(`Set it in your environment (it is NOT written for you):`)}\n` +

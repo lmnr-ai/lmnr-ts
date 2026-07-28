@@ -17,18 +17,14 @@ import {
 } from "../../utils/env-file";
 import { type LocalProjectFile } from "../../utils/local-project-file";
 
-// The onboarding exit-code contract now lives in ../../errors (one factory per
-// code). The env-write failure is the one site that stays a manual exit — it
-// emits a bespoke JSON payload (the minted key + projectId) that `failWith`'s
-// generic `{error, detail}` envelope can't carry — so its code (8) is kept here.
+// Manual exit code because this path emits a bespoke JSON payload (minted key +
+// projectId) that `failWith`'s generic `{error, detail}` envelope can't carry.
 const EXIT_ENV_WRITE_FAILED = 8;
 
 /**
- * Resolve which project an existing project API key belongs to, via the
- * user-token CLI endpoint (`POST /v1/cli/project`, key in body). By this point
- * the CLI is already logged in, so we authenticate as the user (JWT bearer)
- * rather than re-deriving auth from the project key itself. The server also
- * confirms the user is a member of the resolved project.
+ * Resolve which project a project API key belongs to (`POST /v1/cli/project`).
+ * Auth is the user's JWT, not the project key — the server also checks the user
+ * is a member of the resolved project.
  */
 export async function probeProjectKey(
   creds: Credentials,
@@ -52,32 +48,21 @@ export interface EnsureKeyResult {
   envFileUpdated: string | null;
   /** Full mint metadata when a key was minted, else null. */
   keyMeta: MintedApiKey | null;
-  /**
-   * When `onKeyMismatch: "warn"` and the existing key belongs to a DIFFERENT
-   * project: that project's id (so the caller can surface it in `--json`). Null
-   * otherwise. Only ever set on the "warn" path — "fail" exits instead.
-   */
+  /** On the "warn" path, the different project's id (for `--json`); null otherwise. */
   mismatchProjectId: string | null;
 }
 
 /**
- * Ensure a usable Project API Key for the directory-linked project (SPEC 36-42),
- * the shared key-handling primitive for `setup` and `project link`:
- *  - probe an existing `LMNR_PROJECT_API_KEY` (process.env → .env.local → .env),
- *  - reuse it untouched when it already points at THIS project,
- *  - refuse to clobber a valid key that belongs to a DIFFERENT project,
- *  - abort (don't mint) when the key can't be verified (network/server blip),
- *  - otherwise mint a fresh key and (when `writeEnv`) write it to .env(.local).
+ * Ensure a usable Project API Key for the linked project — shared by `setup` and
+ * `project link`. Probes an existing `LMNR_PROJECT_API_KEY`, reuses it if it
+ * already points here, and otherwise mints (and writes, when `writeEnv`). Never
+ * clobbers a valid key for a different project, and aborts rather than minting
+ * when the key can't be verified (transient blip). `link` is mutated in place to
+ * backfill display details learned while minting.
  *
- * `link` is mutated in place to backfill display details learned while minting.
- * On a hard failure it emits a coded error and exits — the SAME exit codes for
- * both callers. Returns what was minted/written on success.
- *
- * `onKeyMismatch` controls the one place the two callers differ: a valid key
- * that belongs to a DIFFERENT project. `"fail"` (default, `setup`) refuses to
- * clobber and exits `key_mismatch` (12). `"warn"` (`project link`) instead warns
- * and returns — the user asked to re-point here, so we let the re-link proceed
- * and point them at `lmnr-cli project mint-key` to replace the stale key themselves.
+ * `onKeyMismatch` is the only caller difference: for a valid key on a DIFFERENT
+ * project, `"fail"` (setup) exits `key_mismatch`; `"warn"` (`project link`) warns
+ * and proceeds so the re-link goes through.
  */
 export async function ensureProjectKey(params: {
   creds: Credentials;
@@ -104,10 +89,8 @@ export async function ensureProjectKey(params: {
     try {
       probe = await probeProjectKey(creds, existingKey.value, userBaseUrl);
     } catch (err) {
-      // probeProjectKey → refreshIfNeeded can surface an expired grant here.
-      // Map it to login_failed (6) instead of letting it fall through to the
-      // top-level handler as an uncoded exit 1 — same 6-vs-10 contract the
-      // callers (setup / project link / mint-key) already follow.
+      // An expired grant from refreshIfNeeded maps to login_failed (6), not an
+      // uncoded exit 1 — same contract the callers follow.
       if (err instanceof SessionExpiredError) {
         failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
       }
@@ -119,8 +102,7 @@ export async function ensureProjectKey(params: {
         : relative(cwd, existingKey.source.path);
 
     if (probe.status === "unverifiable") {
-      // Couldn't verify the key (network/server error). Do NOT mint — that would
-      // clobber a possibly-valid key on a transient blip. Abort so the user retries.
+      // Couldn't verify the key — abort rather than mint over a possibly-valid key.
       failWith(
         isJson,
         keyProbeFailed(
@@ -129,16 +111,14 @@ export async function ensureProjectKey(params: {
         ),
       );
     } else if (probe.status === "ok" && probe.projectId === link.projectId) {
-      // Already configured for this project. Respect the user's setup: no mint,
-      // no write (option a) — including when the key only lives in process.env.
+      // Already set for this project — no mint, no write.
       needMint = false;
       if (!isJson) {
         process.stderr.write(`${pc.green("✓")} Project API Key already set in ${where}\n`);
       }
     } else if (probe.status === "ok" && onKeyMismatch === "warn") {
-      // Valid key for a DIFFERENT project, but the caller (`project link`) asked
-      // to re-point here anyway. Don't clobber the key — warn and let the re-link
-      // proceed; the user replaces the key themselves via `lmnr-cli project mint-key`.
+      // Valid key for a different project — warn instead of clobbering and let the
+      // re-link proceed; the user replaces it via `lmnr-cli project mint-key`.
       needMint = false;
       mismatchProjectId = probe.projectId;
       if (!isJson) {
@@ -150,8 +130,7 @@ export async function ensureProjectKey(params: {
         );
       }
     } else if (probe.status === "ok") {
-      // Valid key, but for a DIFFERENT project. Refuse to clobber it — abort so the
-      // user resolves the conflict deliberately rather than silently overwriting.
+      // Valid key for a different project — abort so the user resolves it deliberately.
       failWith(
         isJson,
         keyMismatch(
@@ -176,7 +155,7 @@ export async function ensureProjectKey(params: {
     }
     apiKey = keyMeta.apiKey;
 
-    // Backfill display details onto the link if we learned them while minting.
+    // Backfill display details learned while minting.
     if (!link.projectName && keyMeta.projectName) link.projectName = keyMeta.projectName;
     if (!link.workspaceName && keyMeta.workspaceName) link.workspaceName = keyMeta.workspaceName;
     if (!link.workspaceId && keyMeta.workspaceId) link.workspaceId = keyMeta.workspaceId;

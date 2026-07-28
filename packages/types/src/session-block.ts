@@ -1,23 +1,14 @@
 /**
- * Shared contract for debugger-session blocks.
+ * Shared contract for debugger-session blocks — an ordered list of blocks (see
+ * app-server `debugger_session_blocks`), each with a `type` and type-specific
+ * `content`:
  *
- * A debug session renders as an ordered list of blocks (see the app-server
- * `debugger_session_blocks` table). Each block has a plain-text `type` and a
- * jsonb `content` whose shape depends on the type:
+ *  - `trace`      — a trace under the session; written at ingest.
+ *  - `evaluation` — an eval under the session; written at eval creation.
+ *  - `text`       — a free-text note via `debug session add-note`.
+ *  - `command`    — a CLI command (`sql query`, `ask`) recorded into the session.
  *
- *  - `trace`      — a trace produced under the session (`rollout.session_id`);
- *    written at ingest.
- *  - `evaluation` — an evaluation created under the session; written at eval
- *    creation.
- *  - `text`       — a free-text note the agent attaches post-factum via
- *    `lmnr-cli debug session add-note` (keyed by session id, not tied to any
- *    trace / eval).
- *  - `command`    — an investigative CLI command (e.g. `sql query`, `ask`) the
- *    CLI records into the active session so a reviewer sees which commands ran
- *    during the investigation (best-effort, opt-out).
- *
- * `type` is a plain string on the wire so new block types can be added without
- * a client bump; the union below is the set this SDK knows how to render.
+ * `type` is a plain string on the wire so new types need no client bump.
  */
 
 /** Block type the CLI knows how to render. `type` is a plain string on the wire. */
@@ -42,11 +33,7 @@ export interface TextBlockContent {
   text: string;
 }
 
-/**
- * `content` of a `command` block — an investigative CLI command recorded into
- * the active debug session. The raw command string is uploaded so a reviewer can
- * see exactly what ran.
- */
+/** `content` of a `command` block — a CLI command recorded into the session. */
 export interface CommandBlockContent {
   /** The command path, e.g. `"sql query"` or `"ask"`. */
   command: string;
@@ -54,22 +41,11 @@ export interface CommandBlockContent {
   args: string[];
   /** The process exit code observed at post-action time (0 on the success path). */
   exitCode: number;
-  /**
-   * Captured stdout (the command's data output), truncated to a bounded prefix.
-   * Omitted / null when the command produced no stdout.
-   */
+  /** Captured stdout, truncated to a bounded prefix. Null when empty. */
   output?: string | null;
-  /**
-   * Captured stderr (diagnostics + the fatal error on failure), truncated to a
-   * bounded prefix. Omitted / null when the command produced no stderr.
-   */
+  /** Captured stderr, truncated to a bounded prefix. Null when empty. */
   stderr?: string | null;
-  /**
-   * Free-text agent thinking for this step, recorded alongside the command so a
-   * reviewer sees what the agent was thinking when it ran it. Supplied via
-   * `--thinking`; omitted / null when not provided. Additive on the wire — no
-   * client bump (same as `output` / `stderr`).
-   */
+  /** Agent thinking for this step, via `--thinking`. Null when not provided. */
   thinking?: string | null;
 }
 
@@ -81,12 +57,9 @@ export type SessionBlockContent =
   | CommandBlockContent;
 
 /**
- * One block in a debugger session, as returned by
- * `GET /v1/cli/rollouts/{sessionId}/blocks`.
- *
- * `content` is typed loosely (`Record<string, unknown>`) because `type` is
- * open-ended on the wire; narrow it with the `*BlockContent` interfaces above
- * once `type` is known.
+ * One block in a debugger session (from `GET /v1/cli/rollouts/{sessionId}/blocks`).
+ * `content` is loose (`Record<string, unknown>`) since `type` is open-ended;
+ * narrow it with the `*BlockContent` interfaces above once `type` is known.
  */
 export interface SessionBlock {
   /** Block id (deterministic UUIDv5 for trace/eval blocks; random for text). */

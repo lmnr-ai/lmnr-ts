@@ -9,28 +9,15 @@ import { initializeLogger } from "./logger";
 
 const logger = initializeLogger();
 
-/**
- * CLI commands worth recording into an active debug session — the investigative
- * ones a reviewer wants to see the agent ran, keyed by the space-joined command
- * path. Everything else is deliberately excluded as noise / self-referential:
- * `login`, `logout`, `setup`, `skill *`, `plugin *`, `project *`, `status`, and
- * all `debug session *` (including `add-note`).
- */
+/** Allowlist of commands recorded into an active debug session, by command path. */
 const TRACKED_COMMANDS = new Set(["sql query", "ask"]);
 
-/**
- * Extra opts the tracked commands carry: commander's `--no-track` → `track:false`,
- * and `--thinking <text>` → `thinking`. Both are attached via
- * {@link withTrackingOptions} rather than per-command.
- */
+/** Extra opts on tracked commands: `--no-track` → `track`, `--thinking` → `thinking`. */
 type TrackOpts = GlobalOpts & { track?: boolean; thinking?: string };
 
 /**
- * Attach the flags shared by every tracked command (see {@link TRACKED_COMMANDS}):
- * the `--no-track` opt-out and `--thinking` capture. Applying this in one place —
- * rather than re-declaring the flags per command — keeps the tracked-command flag
- * surface in sync with the allowlist it pairs with. Returns the same command for
- * chaining (`.action(...)`, `.addHelpText(...)`).
+ * Attach the `--no-track` and `--thinking` flags shared by every tracked command.
+ * One place keeps the flags in sync with the allowlist. Returns the command for chaining.
  */
 export const withTrackingOptions = (cmd: Command): Command =>
   cmd
@@ -41,20 +28,16 @@ export const withTrackingOptions = (cmd: Command): Command =>
     )
     .option(
       "--thinking <text>",
-      // The "15 words maximum" is guidance to keep agents terse — it is NOT
-      // enforced; any-length text is accepted and recorded verbatim.
+      // "15 words maximum" is guidance only — any-length text is recorded verbatim.
       "Agent thinking to track with the Debugger session. Why are you calling " +
       "this command? Limit 15 words maximum.",
     );
 
-/**
- * The space-joined path of a command (e.g. `"sql query"`, `"ask"`), walking up
- * to — but not including — the program root, whose name isn't part of the path.
- */
+/** Space-joined command path (e.g. `"sql query"`), excluding the program root. */
 export const commandPath = (cmd: Command): string => {
   const names: string[] = [];
   let cur: Command | undefined = cmd;
-  // A command with no parent is the program root — stop before prepending it.
+  // The parent-less command is the program root — stop before prepending it.
   while (cur && cur.parent) {
     names.unshift(cur.name());
     cur = cur.parent ?? undefined;
@@ -65,10 +48,7 @@ export const commandPath = (cmd: Command): string => {
 /** Whether `path` is on the record-into-session allowlist. */
 export const isTrackedCommand = (path: string): boolean => TRACKED_COMMANDS.has(path);
 
-/**
- * Whether tracking is opted out — via the `--no-track` flag (`track === false`)
- * or the `LMNR_NO_COMMAND_TRACKING` env var (`1` / `true` / `yes`).
- */
+/** Opted out via `--no-track` or `LMNR_NO_COMMAND_TRACKING` (`1`/`true`/`yes`). */
 export const trackingDisabled = (opts: TrackOpts): boolean => {
   if (opts.track === false) return true;
   const env = process.env.LMNR_NO_COMMAND_TRACKING?.trim().toLowerCase();
@@ -76,29 +56,20 @@ export const trackingDisabled = (opts: TrackOpts): boolean => {
 };
 
 /**
- * Best-effort: record an allowlisted CLI command into the active debug session
- * as a `command` block, so a reviewer sees which investigative commands the
- * agent ran — and how each one turned out. Called from the command error
- * envelope (`runWithEnvelope`), which is the one place that knows both that a
- * command finished AND its real exit code (0 on success, the mapped code on
- * failure) — Commander itself has no on-error hook, so a plain `postAction`
- * hook would only ever see successes.
+ * Best-effort: record an allowlisted command into the active debug session as a
+ * `command` block. Called from the error envelope (`runWithEnvelope`) — the only
+ * place that knows a command finished AND its real exit code (Commander has no
+ * on-error hook, so a `postAction` hook would only see successes).
  *
- * Every failure mode is swallowed — no active session, no linked project, a
- * network error, a 404 from a server that doesn't know the block type — because
- * tracking must NEVER change the wrapped command's outcome, output, or exit
- * code. On the no-session path it returns silently — EXCEPT when `--thinking`
- * was supplied, where it warns that the thinking went unrecorded (a caller that
- * bothered to pass thinking expected it to land somewhere).
+ * Every failure is swallowed so tracking never changes the command's outcome or
+ * exit code. The no-session path is silent EXCEPT when `--thinking` was passed,
+ * which the caller clearly expected to be recorded.
  *
- * Captured stdout/stderr (via the `emitData`/`emitErr` sinks + the logger tee)
- * ride along so a reviewer sees not just which command ran but what it produced.
- * The fatal error on a failure is logged AFTER this runs (the envelope's terminal
- * output is intentionally last), so the tee can't have it yet — the envelope
- * passes it explicitly as `errorText`, appended to whatever the tee captured.
+ * The fatal error is logged AFTER this runs, so the tee doesn't have it — the
+ * envelope passes it as `errorText`, appended to the teed output.
  *
- * @param exitCode the resolved exit code of the wrapped command (0 = success).
- * @param errorText the fatal error message on the failure path, else undefined.
+ * @param exitCode resolved exit code of the wrapped command (0 = success).
+ * @param errorText fatal error message on the failure path, else undefined.
  */
 export const maybeTrackCommand = async (
   actionCommand: Command,
@@ -114,8 +85,7 @@ export const maybeTrackCommand = async (
 
     const sessionId = readDebugSessionFile(resolveDebugSessionDir())?.session_id;
     if (!sessionId) {
-      // No session is the normal case, so stay silent — unless thinking was
-      // passed, which the caller clearly expected to be recorded somewhere.
+      // No session is normal, so stay silent — unless thinking was passed.
       if (opts.thinking) {
         logger.warn(
           "--thinking was provided but there is no active debug session in " +
@@ -131,13 +101,12 @@ export const maybeTrackCommand = async (
       baseUrl: opts.baseUrl,
       port: opts.port,
     });
-    // Fold the explicit fatal error into the teed diagnostics (either may be
-    // empty). `getCapturedOutput` already caps each field.
+    // Fold the fatal error into the teed diagnostics (either may be empty).
     const { stdout, stderr: capturedStderr } = getCapturedOutput();
     const stderr = [capturedStderr, errorText].filter(Boolean).join("\n") || null;
 
-    // Typed against the shared contract so a field rename that drifts from
-    // @lmnr-ai/types (e.g. thinking → …) is a compile error, not a silent drop.
+    // Typed against the shared contract so a field rename in @lmnr-ai/types
+    // is a compile error, not a silent drop.
     const content: CommandBlockContent = {
       command: path,
       args: actionCommand.args ?? [],
@@ -151,13 +120,11 @@ export const maybeTrackCommand = async (
       sessionId,
       type: "command",
       content,
-      // Best-effort: a missing session / unsupported endpoint (404) is logged and
-      // swallowed, never thrown — an exit 0 from the real command stays exit 0.
+      // A 404 (unsupported endpoint) is swallowed, never thrown.
       failOnNotFound: false,
     });
   } catch (err) {
-    // Debug-level (below the default `info`) so tracking stays invisible unless
-    // a user opts into verbose logs; it must never surface on a normal run.
+    // Debug-level so tracking stays invisible on a normal run.
     logger.debug(`Command tracking skipped: ${errorMessage(err)}`);
   }
 };

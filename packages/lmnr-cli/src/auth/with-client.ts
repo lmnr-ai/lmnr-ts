@@ -13,25 +13,22 @@ const logger = initializeLogger();
 
 /**
  * Global options every wrapped command shares (from `cmd.optsWithGlobals()`).
- * `projectId` is consumed by the project-client path; discovery commands ignore
- * it (the user-token surface has no project to scope at discovery time).
+ * `projectId` is used by the project-client path; discovery commands ignore it.
  */
 export interface GlobalOpts {
   projectId?: string;
   baseUrl?: string;
   port?: number;
   json?: boolean;
-  // `--pretty` selects the human table over the default CSV output. Only the
-  // `sql query` command wires this flag today; it lives on the shared type
-  // (like `json`) so pure handlers can read it without a per-command opts type.
+  // `--pretty` selects the human table over the default CSV output (only `sql
+  // query` wires it today). On the shared type so handlers read it without a
+  // per-command opts type.
   pretty?: boolean;
 }
 
 /**
- * Map a thrown error to a process exit code. Pass a custom mapper to a wrapper
- * to override; the default reads `CliError.exitCode` (so a wrapped handler can
- * `throw loginFailed(...)` and get exit 6) and falls back to 1 for anything
- * else — mirroring oclif's `err.oclif?.exit ?? 1`.
+ * Map a thrown error to a process exit code. The default reads
+ * `CliError.exitCode` and falls back to 1; pass a custom mapper to override.
  */
 export type ExitCodeMapper = (error: unknown) => number;
 
@@ -40,8 +37,8 @@ const defaultExitCode: ExitCodeMapper = (error) =>
 
 /**
  * Pull the commander positionals out of an `.action(...)` argument list.
- * Commander invokes the handler as `(arg1, ..., argN, options, command)`, so
- * the positionals are everything except the trailing `(options, command)`.
+ * Commander calls the handler as `(arg1, ..., argN, options, command)`, so the
+ * positionals are everything except the trailing `(options, command)`.
  */
 function splitCommanderArgs(cmdArgs: unknown[]): {
   positionals: unknown[];
@@ -56,13 +53,13 @@ function splitCommanderArgs(cmdArgs: unknown[]): {
 
 /**
  * The error envelope shared by every wrapper: in `--json` mode emit a structured
- * error line and exit with the mapped code; otherwise log and exit. Owning this
- * here lets handlers stay pure `(client, ...args) => work` with no try/catch.
+ * error line and exit with the mapped code, else log and exit. Keeps handlers
+ * pure `(client, ...args) => work` with no try/catch.
  *
- * It's also the one place that knows a command has finished AND its real exit
- * code, so it records the command into the active debug session here (best-effort
- * via `maybeTrackCommand`) — 0 on success, the mapped code on failure. Commander
- * has no on-error hook, so this is the only spot that can track failures too.
+ * Also the one place that knows a command finished AND its exit code, so it
+ * records the command into the active debug session (best-effort) — 0 on
+ * success, the mapped code on failure. Commander has no on-error hook, so this
+ * is the only spot that can track failures.
  */
 function runWithEnvelope(
   work: () => Promise<void>,
@@ -72,14 +69,13 @@ function runWithEnvelope(
 ): Promise<void> {
   return work().then(
     async () => {
-      // Success — record with exit 0 (swallows its own errors; never throws).
+      // Success — record with exit 0 (never throws).
       await maybeTrackCommand(command, 0);
     },
     async (error: unknown) => {
       const code = exitCodeFor(error);
-      // Record the failure with its real exit code BEFORE we exit the process,
-      // passing the fatal error text so it lands in the block's stderr (the
-      // logger.error below runs after this, so the tee wouldn't capture it).
+      // Record the failure BEFORE exiting, passing the error text so it lands in
+      // the block's stderr (the logger.error below runs after, too late to tee).
       await maybeTrackCommand(command, code, errorMessage(error));
       if (opts.json) {
         // outputJsonError exits with `code` (never returns).
@@ -92,10 +88,9 @@ function runWithEnvelope(
 }
 
 /**
- * The handler shape both wrappers accept: a pure function of the resolved
- * client, the commander positionals, and the parsed options (so it can read
- * `--json` for output mode). All auth resolution + the error envelope live in
- * the wrapper, so handlers contain only the work.
+ * The handler shape both client wrappers accept: a pure function of the resolved
+ * client, the commander positionals, and the parsed options. Auth resolution and
+ * the error envelope live in the wrapper.
  */
 export type ClientAction<A extends unknown[]> = (
   client: LaminarClient,
@@ -103,8 +98,7 @@ export type ClientAction<A extends unknown[]> = (
 ) => Promise<void>;
 
 /**
- * The handler shape {@link withLocalOpts} accepts: a pure function of the
- * commander positionals and the parsed options — no client, for commands that
+ * The handler shape {@link withLocalOpts} accepts — no client, for commands that
  * only touch local state (e.g. `.lmnr/*` files) and never call the API.
  */
 export type LocalAction<A extends unknown[]> = (
@@ -112,9 +106,8 @@ export type LocalAction<A extends unknown[]> = (
 ) => Promise<void>;
 
 /**
- * Wrap a local-only command handler. No auth resolution / client build (the
- * command must not call the API), but the same positionals + options threading
- * and error envelope as the client wrappers, so handlers stay pure.
+ * Wrap a local-only command handler: no auth/client build, but the same
+ * positionals + options threading and error envelope as the client wrappers.
  */
 export const withLocalOpts =
   <A extends unknown[]>(
@@ -134,8 +127,7 @@ export const withLocalOpts =
 /**
  * Wrap a project-scoped command handler. Resolves a user-token
  * {@link LaminarClient} (routes to `/v1/cli/*` with the resolved project),
- * threads the commander positionals + options through, and owns the error
- * envelope.
+ * threads positionals + options, and owns the error envelope.
  *
  * @example
  *   sqlCmd.command("query")
@@ -166,9 +158,8 @@ export const withProjectClient =
 
 /**
  * Wrap a discovery command handler. Resolves a user-token
- * {@link LaminarClient} with NO project (the discovery surface — e.g. listing
- * projects — runs before a project is selected), threads positionals +
- * options, and owns the error envelope.
+ * {@link LaminarClient} with NO project (discovery runs before a project is
+ * selected), threads positionals + options, and owns the error envelope.
  */
 export const withUserToken =
   <A extends unknown[]>(
@@ -185,11 +176,11 @@ export const withUserToken =
           });
           const client = new LaminarClient({
             baseUrl: token.baseUrl,
-            // token.port carries the --port flag OR the LMNR_HTTP_PORT fallback
-            // (resolveUserToken applies it); using opts.port here would drop it.
+            // token.port already folds in the LMNR_HTTP_PORT fallback; opts.port
+            // would drop it.
             port: token.port,
-            // Discovery: no project id yet. CliResource overrides its own
-            // URL/headers, so the empty projectId is never sent.
+            // No project id yet. CliResource overrides its own URL/headers, so
+            // the empty projectId is never sent.
             auth: { type: "userToken", token: token.bearer, projectId: "" },
           });
           await action(client, ...(positionals as A), opts);
