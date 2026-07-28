@@ -1,53 +1,33 @@
-import { hostname } from "node:os";
 import { relative } from "node:path";
 
-import { type CliProject, LaminarClient, type ProjectKeyProbe } from "@lmnr-ai/client";
+import { type CliProject } from "@lmnr-ai/client";
 import { errorMessage } from "@lmnr-ai/types";
 
 import { version } from "../../../package.json";
-import { type MintedApiKey, mintProjectApiKey } from "../../auth/api-key";
 import { type Credentials, safeReadCredentials } from "../../auth/credentials";
-import { envHttpPort, refreshIfNeeded } from "../../auth/resolve";
-import { orange, pc, pcOut } from "../../utils/colors";
+import { refreshIfNeeded, SessionExpiredError } from "../../auth/resolve";
+import { DEFAULT_BASE_URL, DEFAULT_FRONTEND_URL } from "../../constants";
 import {
-  type EnvKeyLocation,
-  findEnvKey,
-  isPathGitIgnored,
-  resolveEnvWriteTarget,
-  writeEnvFile,
-} from "../../utils/env-file";
+  failWith,
+  listProjectsFailed,
+  loginFailed,
+  noAccess,
+  noProjects,
+  projectAmbiguous,
+  setupInvariant,
+} from "../../errors";
+import { orange, pc, pcOut } from "../../utils/colors";
+import { type EnvKeyLocation, findEnvKey } from "../../utils/env-file";
 import { installSkill } from "../../utils/install-skill";
 import {
   type LocalProjectFile,
   readLocalProjectFile,
   writeLocalProjectFile,
 } from "../../utils/local-project-file";
-import { emitError } from "../../utils/output";
 import { listProjects, promptProjectChoice } from "../../utils/projects";
-import { firstNonEmpty } from "../../utils/text";
+import { firstNonEmpty, trimSlash } from "../../utils/text";
 import { handleLogin } from "../login";
-
-const DEFAULT_FRONTEND_URL = "https://laminar.sh";
-const DEFAULT_BASE_URL = "https://api.lmnr.ai";
-
-// Exit codes (machine-readable contract — each distinct so automation can
-// branch on the failure mode):
-//   4  no_access            — user lacks access to the linked project
-//   6  login_failed         — device-flow login failed / no creds after login
-//   7  no_project           — no project to select (and none could be created)
-//   8  env_write_failed     — minted a key but couldn't write ./.env
-//   9  setup_key_failed     — POST /api/cli/api-key failed
-//   10 list_projects_failed — GET /v1/cli/projects (discovery) failed
-//   11 key_probe_failed     — couldn't verify the existing key (network/server error)
-//   12 key_mismatch         — existing key belongs to a different project
-const EXIT_NO_ACCESS = 4;
-const EXIT_LOGIN_FAILED = 6;
-const EXIT_NO_PROJECT = 7;
-const EXIT_ENV_WRITE_FAILED = 8;
-const EXIT_SETUP_KEY_FAILED = 9;
-const EXIT_LIST_PROJECTS_FAILED = 10;
-const EXIT_KEY_PROBE_FAILED = 11;
-const EXIT_KEY_MISMATCH = 12;
+import { ensureProjectKey } from "../project/link-core";
 
 export interface SetupOptions {
   writeEnv?: boolean;
@@ -56,11 +36,7 @@ export interface SetupOptions {
   browser?: boolean;
   frontendUrl?: string;
   baseUrl?: string;
-  /**
-   * Explicit project id. Disambiguates when the user can access >1 project
-   * (otherwise --json setup errors `project_ambiguous`). Validated against the
-   * user's accessible projects before linking.
-   */
+  /** Explicit project id; disambiguates when >1 is accessible. Validated before linking. */
   projectId?: string;
 }
 
@@ -79,19 +55,11 @@ export interface SetupResult {
 }
 
 /**
- * Directory-scoped onboarding (SPEC decision tree):
- *  - log in if needed (browser picks/creates the project; its id rides back on
- *    the device-token metadata, see parseProjectFromMetadata),
- *  - resolve a project for this directory (`.lmnr/project.json`), enforcing
- *    access,
- *  - mint a project API key only when one isn't already configured for this
- *    project (checked across process.env → .env.local → .env), then write it to
- *    an existing .env.local or else .env,
- *  - install the Laminar skill into present agent dirs,
- *  - print a summary.
- *
- * The minted key goes ONLY into the project's env file, never into
- * credentials.json (which stores user-scoped BetterAuth tokens).
+ * Directory-scoped onboarding: log in if needed, resolve the project for this
+ * directory (`.lmnr/project.json`) and enforce access, mint a project API key
+ * only when one isn't already configured, install the Laminar skill, print a
+ * summary. The minted key goes only into the project's env file, never into
+ * credentials.json (which stores user-scoped tokens).
  */
 export async function handleSetup(options: SetupOptions): Promise<void> {
   const writeEnv = options.writeEnv !== false;
@@ -108,44 +76,62 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   }
 
   const cwd = process.cwd();
-  // Detect an already-configured key across process.env → .env.local → .env.
+  // Already-configured key across process.env, .env.local, .env.
   const existingKey = await findEnvKey(cwd);
 
   let creds: Credentials | null = await safeReadCredentials();
   let link = await readLocalProjectFile();
 
+  // An expired session leaves a valid-shaped credentials.json on disk. Validate
+  // now: an expired grant is absorbed (drop creds so the login branch re-runs
+  // the device flow); a non-expiry error is left for the downstream authed call
+  // to surface, so a transient blip is never conflated with an expiry.
+  let expiredIssuer: string | undefined;
+  if (creds) {
+    try {
+      creds = await refreshIfNeeded(creds);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        expiredIssuer = creds.issuer;
+        creds = null;
+      }
+    }
+  }
+
   // --- 1. Login + project resolution ---------------------------------------
 
   if (!creds) {
-    // Not logged in: run the device flow. The browser is where the project is
-    // chosen/created (when there's no link), and the chosen id rides back on
-    // the device-token metadata (parseProjectFromMetadata).
+    // Not logged in: run the device flow. The browser picks/creates the project
+    // (when there's no link) and its id rides back on the device-token metadata.
     let login;
+    // On expiry recovery, fall back to the expired creds' issuer over the cloud
+    // default — an explicit --frontend-url / LMNR_FRONTEND_URL still wins.
+    const loginUrl =
+      !options.frontendUrl && !process.env.LMNR_FRONTEND_URL && expiredIssuer
+        ? expiredIssuer
+        : frontendUrl;
     try {
-      login = await handleLogin({ frontendUrl, noBrowser: options.browser === false });
+      login = await handleLogin({ frontendUrl: loginUrl, noBrowser: options.browser === false });
     } catch (err) {
-      emitError(isJson, "login_failed", errorMessage(err));
-      process.exit(EXIT_LOGIN_FAILED);
+      failWith(isJson, loginFailed(errorMessage(err)));
     }
     creds = await safeReadCredentials();
     if (!creds) {
-      emitError(isJson, "login_failed", "credentials missing after login");
-      process.exit(EXIT_LOGIN_FAILED);
+      failWith(isJson, loginFailed("credentials missing after login"));
     }
 
     const issuer = creds.issuer || frontendUrl;
     const userBaseUrl = baseUrl;
 
     if (link) {
-      // Directory already declares the project — ignore the metadata-borne id
-      // and assert the freshly-authenticated user can access the linked project.
+      // Directory already declares the project — ignore the metadata id and
+      // check the user can access the linked project.
       await assertAccess(creds, userBaseUrl, link, existingKey, isJson);
     } else if (login.projectId) {
       // Browser-selected (or just-created) project. Trust it and write the link.
       link = await writeLink(userBaseUrl, login.projectId, isJson);
     } else {
-      // Defensive: fall back to the CLI picker if the browser didn't attach a
-      // project via metadata.
+      // Defensive: fall back to the CLI picker if the browser attached no project.
       link = await resolveProjectViaCli(creds, userBaseUrl, issuer, isJson, options);
     }
   } else {
@@ -171,132 +157,38 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   // --- 2. Assert invariants -------------------------------------------------
 
   if (!creds || !link.projectId) {
-    emitError(isJson, "setup_invariant", "missing credentials or project after resolution");
-    process.exit(EXIT_NO_PROJECT);
+    failWith(isJson, setupInvariant("missing credentials or project after resolution"));
   }
 
   const issuer = creds.issuer || frontendUrl;
   const userBaseUrl = baseUrl;
 
-  // --- 3. Key handling (SPEC 36-42) -----------------------------------------
-
-  let apiKey: string | null = null;
-  let envPath: string | null = null;
-  let keyMeta: MintedApiKey | null = null;
-
-  let needMint = true;
-  if (existingKey) {
-    const probe = await probeProjectKey(creds, existingKey.value, userBaseUrl);
-    const where =
-      existingKey.source.type === "process-env"
-        ? "your environment"
-        : relative(cwd, existingKey.source.path);
-
-    if (probe.status === "unverifiable") {
-      // Couldn't verify the key (network/server error). Do NOT mint — that would
-      // clobber a possibly-valid key on a transient blip. Abort so the user retries.
-      emitError(
-        isJson,
-        "key_probe_failed",
-        `Couldn't verify the existing Project API Key in ${where} (network or server error). ` +
-        "Check your connection and re-run.",
-      );
-      process.exit(EXIT_KEY_PROBE_FAILED);
-    } else if (probe.status === "ok" && probe.projectId === link.projectId) {
-      // Already configured for this project. Respect the user's setup: no mint,
-      // no write (option a) — including when the key only lives in process.env.
-      needMint = false;
-      if (!isJson) {
-        process.stderr.write(`${pc.green("✓")} Project API Key already set in ${where}\n`);
-      }
-    } else if (probe.status === "ok") {
-      // Valid key, but for a DIFFERENT project. Refuse to clobber it — abort so the
-      // user resolves the conflict deliberately rather than silently overwriting.
-      emitError(
-        isJson,
-        "key_mismatch",
-        `The Project API Key in ${where} belongs to a different project (${probe.projectId}), ` +
-        `not the one linked here (${link.projectId}). Remove or update it, then re-run.`,
-      );
-      process.exit(EXIT_KEY_MISMATCH);
-    } else if (!isJson) {
-      // invalid / revoked (401) — minting a fresh key is the correct recovery.
-      process.stderr.write(
-        `${pc.yellow("⚠")} Existing Project API Key in ${where} is invalid or revoked, ` +
-        `minting a new one\n`,
-      );
-    }
-  }
-
-  if (needMint) {
-    try {
-      keyMeta = await mintProjectApiKey(issuer, creds.sessionToken, link.projectId, hostname());
-    } catch (err) {
-      emitError(isJson, "setup_key_failed", errorMessage(err));
-      process.exit(EXIT_SETUP_KEY_FAILED);
-    }
-    apiKey = keyMeta.apiKey;
-
-    // Backfill display details onto the link if we learned them while minting.
-    if (!link.projectName && keyMeta.projectName) link.projectName = keyMeta.projectName;
-    if (!link.workspaceName && keyMeta.workspaceName) link.workspaceName = keyMeta.workspaceName;
-    if (!link.workspaceId && keyMeta.workspaceId) link.workspaceId = keyMeta.workspaceId;
-
-    if (writeEnv) {
-      const target = await resolveEnvWriteTarget(cwd, existingKey);
-      try {
-        const result = await writeEnvFile(target, apiKey);
-        envPath = result.path;
-        if (!isJson) {
-          const rel = relative(cwd, result.path);
-          const verb = result.created
-            ? "Created"
-            : result.replaced
-              ? "Updated LMNR_PROJECT_API_KEY in"
-              : "Added LMNR_PROJECT_API_KEY to";
-          process.stderr.write(`${pc.green("✓")} ${verb} ${rel}\n`);
-          // The key is a secret; nudge if it landed in a tracked file.
-          if ((await isPathGitIgnored(result.path)) === false) {
-            process.stderr.write(
-              `${pc.yellow("⚠")} ${rel} isn't gitignored; add it so the key isn't committed\n`,
-            );
-          }
-        }
-      } catch (err) {
-        process.stderr.write(
-          `\n${pc.red("ERROR")}: failed to write ${target}: ${errorMessage(err)}\n` +
-          pc.dim("Your API key (set it manually):") +
-          `\n  LMNR_PROJECT_API_KEY=${apiKey}\n\n`,
-        );
-        if (isJson) {
-          process.stdout.write(
-            JSON.stringify({
-              error: "env_write_failed",
-              apiKey,
-              projectId: link.projectId,
-              message: errorMessage(err),
-            }) + "\n",
-          );
-        }
-        process.exit(EXIT_ENV_WRITE_FAILED);
-      }
-    }
-  }
+  // --- 3. Key handling ------------------------------------------------------
+  // Shared with `project link` — probe/mint/write is `ensureProjectKey`.
+  const { apiKey, envFileUpdated: envPath } = await ensureProjectKey({
+    creds,
+    link,
+    existingKey,
+    cwd,
+    issuer,
+    userBaseUrl,
+    writeEnv,
+    isJson,
+  });
 
   // --- 4. Skill install -----------------------------------------------------
 
   let skillsInstalled: string[] = [];
   try {
-    // installSkill fetches the skill from the lmnr-skills repo and is
-    // best-effort: it logs + returns `skipped: true` on network/codeload
-    // failure rather than throwing, so setup never breaks here.
+    // Best-effort: returns skipped: true on failure rather than throwing, so
+    // setup never breaks here.
     const skillResult = await installSkill(process.cwd());
     skillsInstalled = skillResult.written;
     if (!isJson) {
       if (skillResult.skipped) {
         process.stderr.write(pc.dim("  Laminar skill install skipped\n"));
       } else if (skillResult.written.length > 0) {
-        // One mark for the whole skill, not one per file (SKILL.md + references).
+        // One mark for the whole skill, not one per file.
         const note = skillResult.defaulted
           ? pc.dim(" (no agent dir found; defaulted to .claude and .agents)")
           : "";
@@ -351,10 +243,8 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve a project via the CLI (logged-in, no link). 0 projects routes to the
- * browser create flow (gap A): we re-run the device flow, which lands on the
- * /device picker → first-project create UI, and the new project's id rides back
- * on the device-token metadata. >1 prompts a CLI choice; ==1 auto-selects.
+ * Resolve a project via the CLI (logged-in, no link). 0 projects re-runs the
+ * device flow (browser create UI); >1 prompts a CLI choice; ==1 auto-selects.
  */
 async function resolveProjectViaCli(
   creds: Credentials,
@@ -367,22 +257,25 @@ async function resolveProjectViaCli(
   try {
     projects = await listProjects(creds, userBaseUrl);
   } catch (err) {
-    emitError(isJson, "list_projects_failed", errorMessage(err));
-    process.exit(EXIT_LIST_PROJECTS_FAILED);
+    // Expiry can surface here if the up-front gate swallowed a transient error:
+    // keep it login_failed (6), not list_projects_failed (10).
+    if (err instanceof SessionExpiredError) {
+      failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
+    }
+    failWith(isJson, listProjectsFailed(errorMessage(err)));
   }
 
   if (projects.length === 0) {
-    // Gap A: no project to select and the CLI can't create one. Drive the
-    // browser create flow — same path the not-logged-in 0-project user takes —
-    // so project creation lives in ONE place (the /device picker).
+    // No project to select and the CLI can't create one. Drive the browser
+    // create flow so project creation lives in one place (the /device picker).
     if (isJson) {
-      emitError(
+      failWith(
         isJson,
-        "no_projects",
-        `No projects found. Run \`lmnr-cli setup\` interactively (it opens the browser ` +
-        `to create your first project) or create one at ${trimSlash(issuer)}/onboarding.`,
+        noProjects(
+          `No projects found. Run \`lmnr-cli setup\` interactively (it opens the browser ` +
+          `to create your first project) or create one at ${trimSlash(issuer)}/onboarding.`,
+        ),
       );
-      process.exit(EXIT_NO_PROJECT);
     }
     process.stderr.write(
       "\nYou have no projects yet. Opening the browser to create your first one...\n",
@@ -394,45 +287,45 @@ async function resolveProjectViaCli(
         noBrowser: options.browser === false,
       });
     } catch (err) {
-      emitError(isJson, "login_failed", errorMessage(err));
-      process.exit(EXIT_LOGIN_FAILED);
+      failWith(isJson, loginFailed(errorMessage(err)));
     }
     if (!login.projectId) {
-      emitError(
+      failWith(
         isJson,
-        "no_projects",
-        `No project was created. Create one at ${trimSlash(issuer)}/onboarding then re-run setup.`,
+        noProjects(
+          `No project was created. Create one at ${trimSlash(issuer)}/onboarding ` +
+          `then re-run setup.`,
+        ),
       );
-      process.exit(EXIT_NO_PROJECT);
     }
     return writeLink(userBaseUrl, login.projectId, isJson);
   }
 
   let chosen: CliProject;
   if (options.projectId) {
-    // Explicit --project-id disambiguates. Validate against the accessible set.
+    // --project-id disambiguates. Validate against the accessible set.
     const match = projects.find((p) => p.id === options.projectId);
     if (!match) {
-      emitError(
+      failWith(
         isJson,
-        "no_access",
-        `You don't have access to project ${options.projectId}. Accessible: ` +
-        projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+        noAccess(
+          `You don't have access to project ${options.projectId}. Accessible: ` +
+          projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+        ),
       );
-      process.exit(EXIT_NO_ACCESS);
     }
     chosen = match;
   } else if (projects.length === 1) {
     chosen = projects[0];
   } else {
     if (isJson) {
-      emitError(
+      failWith(
         isJson,
-        "project_ambiguous",
-        `Multiple projects: pass --project-id <id>, or run setup interactively. ` +
-        projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+        projectAmbiguous(
+          `Multiple projects: pass --project-id <id>, or run setup interactively. ` +
+          projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+        ),
       );
-      process.exit(EXIT_NO_PROJECT);
     }
     chosen = await promptProjectChoice(projects, "\nMultiple projects available. Choose one:\n");
   }
@@ -491,12 +384,8 @@ async function writeLink(
 }
 
 /**
- * Access check: the logged-in user must be a member of the directory-linked
- * project (`link.projectId`). Calls GET /v1/cli/projects (user JWT) and asserts
- * the id is present; aborts otherwise (SPEC: "You don't have access to the
- * project in this directory"). On failure, names the actual mismatch (linked
- * project vs. logged-in account) and the two things that pin a stale project —
- * `.lmnr/project.json` and any `LMNR_PROJECT_API_KEY` in the environment.
+ * Assert the logged-in user is a member of the directory-linked project.
+ * Aborts with an actionable error otherwise.
  */
 async function assertAccess(
   creds: Credentials,
@@ -509,22 +398,22 @@ async function assertAccess(
   try {
     projects = await listProjects(creds, userBaseUrl);
   } catch (err) {
-    // Discovery FAILED (network/5xx) — we couldn't determine access. Report it
-    // as a transient list failure (exit 10), NOT no_access (exit 4): automation
-    // must be able to retry instead of concluding the user lacks access.
-    emitError(isJson, "list_projects_failed", errorMessage(err));
-    process.exit(EXIT_LIST_PROJECTS_FAILED);
+    // An expired grant is an auth failure: login_failed (6).
+    if (err instanceof SessionExpiredError) {
+      failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
+    }
+    // Discovery failed (network/5xx) — report as a transient list failure
+    // (exit 10), NOT no_access (exit 4), so automation can retry.
+    failWith(isJson, listProjectsFailed(errorMessage(err)));
   }
   if (!projects.some((p) => p.id === link.projectId)) {
-    emitError(isJson, "no_access", buildNoAccessDetail(link, creds, existingKey, projects));
-    process.exit(EXIT_NO_ACCESS);
+    failWith(isJson, noAccess(buildNoAccessDetail(link, creds, existingKey, projects)));
   }
 }
 
 /**
- * Build the `no_access` detail: lead with the SPEC sentence (so substring
- * matchers keep working), then explain the linked-project-vs-account mismatch
- * and the concrete remediation steps.
+ * Build the `no_access` detail. Leads with the SPEC sentence (so substring
+ * matchers keep working), then explains the mismatch and remediation steps.
  */
 function buildNoAccessDetail(
   link: LocalProjectFile,
@@ -556,32 +445,7 @@ function buildNoAccessDetail(
     `It's linked (.lmnr/project.json) to project ${project}${workspace}. ${accessLine}\n\n` +
     `To fix, pick one:\n` +
     `  • Wrong account? Run \`lmnr-cli login\` as someone with access, then re-run setup.\n` +
-    `  • Want a different project here? Remove the link and re-run setup: ` +
-    `\`rm .lmnr/project.json && lmnr-cli setup\`.${envHint}`
+    `  • Want a different project here? Re-point this directory: ` +
+    `\`lmnr-cli project link\`.${envHint}`
   );
-}
-
-/**
- * Resolve which project an existing project API key belongs to, via the
- * user-token CLI endpoint (`POST /v1/cli/project`, key in body). By setup time
- * the CLI is already logged in, so we authenticate as the user (JWT bearer)
- * rather than re-deriving auth from the project key itself. The server also
- * confirms the user is a member of the resolved project.
- */
-async function probeProjectKey(
-  creds: Credentials,
-  apiKey: string,
-  baseUrl: string,
-): Promise<ProjectKeyProbe> {
-  const updated = await refreshIfNeeded(creds);
-  const client = new LaminarClient({
-    baseUrl,
-    port: envHttpPort(),
-    auth: { type: "userToken", token: updated.accessToken, projectId: "" },
-  });
-  return client.cli.resolveProjectByApiKey(apiKey);
-}
-
-function trimSlash(url: string): string {
-  return url.replace(/\/+$/, "");
 }

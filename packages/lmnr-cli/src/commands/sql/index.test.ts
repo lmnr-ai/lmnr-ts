@@ -13,6 +13,9 @@ const baseOpts = { projectId: 'fake-project', baseUrl: 'http://localhost', port:
 
 let logSpy: ReturnType<typeof vi.spyOn>;
 
+const stdout = (): string =>
+  (logSpy.mock.calls as unknown[][]).map((c) => c[0]).join('\n');
+
 beforeEach(() => {
   logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.clearAllMocks();
@@ -42,31 +45,9 @@ describe('handleSqlQuery', () => {
     expect(logSpy).toHaveBeenCalledWith('[]');
   });
 
-  // --- Human mode ---
+  // --- Default (CSV) mode ---
 
-  it('prints column headers', async () => {
-    mockQuery.mockResolvedValue([{ id: '1', name: 'alice' }]);
-
-    await handleSqlQuery(stubClient, 'SELECT * FROM spans', baseOpts);
-
-    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
-    expect(output).toContain('id');
-    expect(output).toContain('name');
-  });
-
-  it('separates columns with spacing', async () => {
-    mockQuery.mockResolvedValue([{ id: '1', name: 'alice' }]);
-
-    await handleSqlQuery(stubClient, 'SELECT * FROM spans', baseOpts);
-
-    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
-    // Strip ANSI codes then check column spacing
-    // eslint-disable-next-line no-control-regex
-    const plain = output.replace(/\x1b\[[0-9;]*m/g, '');
-    expect(plain).toMatch(/id\s+name/);
-  });
-
-  it('prints each row', async () => {
+  it('outputs a CSV header row and one line per record by default', async () => {
     mockQuery.mockResolvedValue([
       { id: '1', name: 'alice' },
       { id: '2', name: 'bob' },
@@ -74,24 +55,109 @@ describe('handleSqlQuery', () => {
 
     await handleSqlQuery(stubClient, 'SELECT * FROM spans', baseOpts);
 
-    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
-    expect(output).toContain('alice');
-    expect(output).toContain('bob');
+    // Single stdout write: the whole CSV block (row count goes to stderr).
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    expect(logSpy).toHaveBeenCalledWith('id,name\n1,alice\n2,bob');
   });
 
-  it('prints row count summary', async () => {
+  it('quotes cells containing commas, quotes, or newlines', async () => {
+    mockQuery.mockResolvedValue([
+      { id: '1', text: 'hello, world' },
+      { id: '2', text: 'say "hi"' },
+      { id: '3', text: 'line1\nline2' },
+    ]);
+
+    await handleSqlQuery(stubClient, 'SELECT * FROM spans', baseOpts);
+
+    expect(stdout()).toBe(
+      'id,text\n1,"hello, world"\n2,"say ""hi"""\n3,"line1\nline2"',
+    );
+  });
+
+  it('serializes object/jsonb cells as a single JSON string cell', async () => {
+    mockQuery.mockResolvedValue([
+      { id: '1', attributes: { model: 'gpt-4', nested: { a: 1 } } },
+    ]);
+
+    await handleSqlQuery(stubClient, 'SELECT * FROM spans', baseOpts);
+
+    expect(stdout()).toBe(
+      'id,attributes\n1,"{""model"":""gpt-4"",""nested"":{""a"":1}}"',
+    );
+  });
+
+  it('renders null/undefined cells as empty fields', async () => {
+    mockQuery.mockResolvedValue([{ id: '1', name: null }]);
+
+    await handleSqlQuery(stubClient, 'SELECT * FROM spans', baseOpts);
+
+    expect(stdout()).toBe('id,name\n1,');
+  });
+
+  it('does not write a row-count summary to stdout in CSV mode', async () => {
     mockQuery.mockResolvedValue([{ id: '1' }, { id: '2' }]);
 
     await handleSqlQuery(stubClient, 'SELECT * FROM spans', baseOpts);
 
-    const output = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
-    expect(output).toContain('2 row(s)');
+    expect(stdout()).not.toContain('row(s)');
   });
 
-  it('prints "No rows returned." when result is empty', async () => {
+  it('writes nothing to stdout when no rows are returned (CSV mode)', async () => {
     mockQuery.mockResolvedValue([]);
 
     await handleSqlQuery(stubClient, 'SELECT * FROM spans', baseOpts);
+
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  // --- --pretty (table) mode ---
+
+  it('prints column headers in pretty mode', async () => {
+    mockQuery.mockResolvedValue([{ id: '1', name: 'alice' }]);
+
+    await handleSqlQuery(stubClient, 'SELECT * FROM spans', { ...baseOpts, pretty: true });
+
+    const output = stdout();
+    expect(output).toContain('id');
+    expect(output).toContain('name');
+  });
+
+  it('separates columns with spacing in pretty mode', async () => {
+    mockQuery.mockResolvedValue([{ id: '1', name: 'alice' }]);
+
+    await handleSqlQuery(stubClient, 'SELECT * FROM spans', { ...baseOpts, pretty: true });
+
+    // Strip ANSI codes then check column spacing
+    // eslint-disable-next-line no-control-regex
+    const plain = stdout().replace(/\x1b\[[0-9;]*m/g, '');
+    expect(plain).toMatch(/id\s+name/);
+  });
+
+  it('prints each row in pretty mode', async () => {
+    mockQuery.mockResolvedValue([
+      { id: '1', name: 'alice' },
+      { id: '2', name: 'bob' },
+    ]);
+
+    await handleSqlQuery(stubClient, 'SELECT * FROM spans', { ...baseOpts, pretty: true });
+
+    const output = stdout();
+    expect(output).toContain('alice');
+    expect(output).toContain('bob');
+  });
+
+  it('prints row count summary to stdout in pretty mode', async () => {
+    mockQuery.mockResolvedValue([{ id: '1' }, { id: '2' }]);
+
+    await handleSqlQuery(stubClient, 'SELECT * FROM spans', { ...baseOpts, pretty: true });
+
+    expect(stdout()).toContain('2 row(s)');
+  });
+
+  it('prints "No rows returned." to stdout in pretty mode when empty', async () => {
+    mockQuery.mockResolvedValue([]);
+
+    await handleSqlQuery(stubClient, 'SELECT * FROM spans', { ...baseOpts, pretty: true });
 
     expect(logSpy).toHaveBeenCalledWith('No rows returned.');
   });

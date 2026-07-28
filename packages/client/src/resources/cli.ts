@@ -8,6 +8,22 @@ export interface CliProject {
 }
 
 /**
+ * Locale-aware, case-insensitive comparator for the project listing. Ordering
+ * lives here — the single choke point every CLI surface (the `project list`
+ * table + its `--json`, and the interactive picker used by `setup` / `plugin
+ * add`) reads from — so the order can't drift between surfaces.
+ */
+const projectCollator = new Intl.Collator(undefined, { sensitivity: "base" });
+
+/** Sort projects by workspace name, then project name (stable, human-scannable). */
+const sortProjects = (projects: CliProject[]): CliProject[] =>
+  [...projects].sort(
+    (a, b) =>
+      projectCollator.compare(a.workspaceName ?? "", b.workspaceName ?? "") ||
+      projectCollator.compare(a.name ?? "", b.name ?? ""),
+  );
+
+/**
  * Outcome of resolving which project a project API key belongs to via the
  * user-token CLI endpoint. The states are deliberately distinct so the caller
  * doesn't conflate "key is bad" with "couldn't reach the server":
@@ -50,8 +66,9 @@ export class CliResource extends BaseResource {
     }
     // Coerce a missing/non-array `projects` to [] so callers (.length/.map)
     // don't throw. A malformed body on a 2xx is exceptional — let it surface.
+    // Sort here so every consumer inherits one stable, alphabetical order.
     const body = (await response.json()) as { projects?: CliProject[] };
-    return Array.isArray(body?.projects) ? body.projects : [];
+    return Array.isArray(body?.projects) ? sortProjects(body.projects) : [];
   }
 
   /**

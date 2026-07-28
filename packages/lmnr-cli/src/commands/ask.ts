@@ -1,13 +1,9 @@
 import { resolveAuth } from "../auth/resolve";
 import type { GlobalOpts } from "../auth/with-client";
 import { pc } from "../utils/colors";
-import { outputJson } from "../utils/output";
+import { emitData, emitErr, outputJson } from "../utils/output";
 
-/**
- * One SSE frame from the app-server agent stream (`AgentEvent`, camelCase). Only
- * the fields the CLI consumes are typed; unknown variants are ignored so the
- * stream stays forward-compatible.
- */
+/** One SSE frame from the agent stream; only the fields the CLI consumes are typed. */
 interface AgentFrame {
   type: "conversation" | "delta" | "thought" | "message" | "finish" | "error";
   conversationId?: string;
@@ -19,10 +15,9 @@ interface AgentFrame {
 type AskOpts = GlobalOpts & { conversation?: string };
 
 /**
- * `lmnr-cli ask "<question>"` — ask the Laminar agent a natural-language question.
- * User-token authed (like the rest of the CLI) against `/v1/cli/agent/chat`, project
- * in the `x-lmnr-project-id` header; streams the answer to stdout (activity to stderr).
- * `--conversation <id>` continues a prior session (its id is echoed on stderr).
+ * `lmnr-cli ask "<question>"` — ask the Laminar agent a question. Streams the
+ * answer to stdout (activity to stderr). `--conversation <id>` continues a prior
+ * session; its id is echoed on stderr.
  */
 export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => {
   const question = query?.trim();
@@ -30,10 +25,10 @@ export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => 
     throw new Error('Provide a question, e.g. lmnr-cli ask "why did my latest trace fail?"');
   }
 
-  // User-token auth (auto-refreshed) + resolved project — same resolution `withProjectClient` uses.
+  // User-token auth + resolved project — same resolution `withProjectClient` uses.
   const { bearer, baseUrl, port, projectId } = await resolveAuth(opts);
 
-  // baseUrl carries no port by convention; splice the resolved port onto the URL.
+  // baseUrl carries no port by convention; splice the resolved port on.
   const url = new URL(baseUrl.replace(/\/+$/, ""));
   if (port) url.port = String(port);
   url.pathname = "/v1/cli/agent/chat";
@@ -44,7 +39,7 @@ export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => 
       Authorization: `Bearer ${bearer}`,
       "x-lmnr-project-id": projectId,
       "Content-Type": "application/json",
-      // Content negotiation: agents/scripts (`--json`) get one buffered JSON result; humans stream.
+      // --json gets one buffered JSON result; humans stream.
       Accept: opts.json ? "application/json" : "text/event-stream",
     },
     // `--conversation` continues a prior session; omitted → server mints a fresh one and echoes it.
@@ -60,22 +55,21 @@ export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => 
     throw new Error(`Agent request failed (HTTP ${res.status})${suffix}`);
   }
 
-  // `--json`: the server buffered the run into `{ answer, conversationId, tools }` — no stream
-  // to parse. Emit it verbatim.
+  // --json: the server buffered the whole run; emit it verbatim.
   if (opts.json) {
     outputJson(await res.json());
     return;
   }
 
-  // Human mode: stream-parse the SSE frames — `delta` tokens form the answer (stdout), thoughts +
-  // tool calls surface as activity (stderr), a trailing `error` frame aborts.
+  // Human mode: stream-parse the SSE frames — `delta` tokens form the answer
+  // (stdout), thoughts + tool calls go to stderr, a trailing `error` aborts.
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let answer = "";
   let streamed = false;
   let failure: string | undefined;
-  // Resolved server-side; arrives on the leading `conversation` frame (or equals `--conversation`).
+  // Arrives on the leading `conversation` frame (or equals `--conversation`).
   let conversationId: string | undefined = opts.conversation;
 
   const onFrame = (data: string): void => {
@@ -90,17 +84,17 @@ export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => 
         if (frame.conversationId) conversationId = frame.conversationId;
         break;
       case "delta":
-        // Only a NON-EMPTY delta counts as streamed: an empty token writes nothing but would still
-        // flip `streamed`, suppressing the `message`-frame fallback that carries the full answer.
+        // Only a non-empty delta counts as streamed, else it would flip
+        // `streamed` and suppress the `message`-frame fallback for empty tokens.
         if (typeof frame.text === "string" && frame.text.length > 0) {
           answer += frame.text;
-          process.stdout.write(frame.text);
+          emitData(frame.text);
           streamed = true;
         }
         break;
       case "thought":
         if (typeof frame.text === "string") {
-          process.stderr.write(pc.dim(frame.text));
+          emitErr(pc.dim(frame.text));
         }
         break;
       case "message": {
@@ -108,10 +102,10 @@ export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => 
         if (frame.message?.role === "assistant") {
           for (const part of parts) {
             if (part.type === "toolCall" && part.name) {
-              process.stderr.write(pc.dim(`\n  → ${part.name}\n`));
+              emitErr(pc.dim(`\n  → ${part.name}\n`));
             }
           }
-          // Final assistant text: only used if no deltas streamed it (defensive).
+          // Fallback: only used if no deltas streamed the text.
           const text = parts
             .filter((p) => p.type === "text" && typeof p.text === "string")
             .map((p) => p.text)
@@ -121,8 +115,7 @@ export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => 
         break;
       }
       case "error": {
-        // The `error` frame's `message` is a string (the `message` frame's is the
-        // ChatMessage object) — read it off the raw payload.
+        // Here `message` is a string (unlike the `message` frame's object).
         const raw = (frame as unknown as { message?: unknown }).message;
         failure = typeof raw === "string" && raw.length > 0 ? raw : "Agent error";
         break;
@@ -156,17 +149,16 @@ export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => 
   if (failure) throw new Error(failure);
 
   if (streamed) {
-    process.stdout.write("\n");
+    emitData("\n");
   } else if (answer.trim()) {
-    process.stdout.write(`${answer.trim()}\n`);
+    emitData(`${answer.trim()}\n`);
   } else {
-    process.stderr.write(pc.dim("(the agent returned no answer)\n"));
+    emitErr(pc.dim("(the agent returned no answer)\n"));
   }
 
-  // Echo a ready-to-run continuation hint (muted, on stderr so stdout stays the clean answer) —
-  // copy it into the next turn's `--conversation`.
+  // Echo a ready-to-run continuation hint on stderr (stdout stays the clean answer).
   if (conversationId) {
-    process.stderr.write(
+    emitErr(
       pc.dim(`\ncontinue with: lmnr-cli ask "<question>" --conversation ${conversationId}\n`),
     );
   }

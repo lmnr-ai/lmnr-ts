@@ -16,6 +16,18 @@ These options apply to all sql subcommands:
 - `--base-url <url>` - Base URL for the Laminar API (default: https://api.lmnr.ai)
 - `--port <port>` - Port for the Laminar API (default: 443)
 - `--json` - Output structured JSON to stdout
+- `--pretty` - Render results as a human-readable table (default output is CSV)
+
+## Output format
+
+By default `sql query` prints **CSV** to stdout: a header row of column names
+followed by one record per line, so results pipe cleanly into other tools and
+are easy for agents to parse. Cells containing commas, quotes, or newlines are
+quoted per RFC 4180; object/jsonb columns are emitted as a JSON string in a
+single cell. The row-count summary is written to stderr, keeping stdout pure CSV.
+
+- `--json` emits a JSON array of row objects instead.
+- `--pretty` renders the borderless human-readable table.
 
 ## Commands
 
