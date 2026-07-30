@@ -74,16 +74,19 @@ export abstract class EvaluationDataset<D, T> {
    * clamping, no negative indices.
    */
   public select(indices: number[]): EvaluationDataset<D, T> {
+    // Snapshot the selection at call time so later mutations to the caller's
+    // array can't change which indices are validated and returned.
+    const selected = [...indices];
     return new Transformed<D, T>(this, async (base) => {
       const size = await base.size();
-      for (const index of indices) {
+      for (const index of selected) {
         if (index < 0 || index >= size) {
           throw new Error(
             `select index ${index} is out of range for dataset of size ${size}`,
           );
         }
       }
-      return [...indices];
+      return selected;
     });
   }
 
@@ -145,10 +148,18 @@ export class Transformed<D, T> extends EvaluationDataset<D, T> {
       return Promise.resolve(this.indices);
     }
     if (this.resolving === null) {
-      this.resolving = this.resolve(this.base).then((indices) => {
-        this.indices = indices;
-        return indices;
-      });
+      // Drop a failed resolve so a transient error (e.g. a blip during a
+      // `filter` scan or a `size`/`get` read) can be retried, instead of
+      // poisoning every later access. Mirrors `LaminarDataset.fetchPage`.
+      this.resolving = this.resolve(this.base)
+        .then((indices) => {
+          this.indices = indices;
+          return indices;
+        })
+        .catch((err) => {
+          this.resolving = null;
+          throw err;
+        });
     }
     return this.resolving;
   }
