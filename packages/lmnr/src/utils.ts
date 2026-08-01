@@ -328,6 +328,31 @@ export const getDirname = () => {
   return process.cwd();
 };
 
+export const MAX_MANUAL_SPAN_PAYLOAD_SIZE = 1024 * 1024 * 10; // 10MB
+export const TRUNCATION_SUFFIX = "...[Laminar: truncated]";
+
+/**
+ * Cut an oversized span payload down to the limit rather than dropping it.
+ *
+ * Keeping the leading bytes preserves the start of the value, which is the useful part when
+ * debugging. Mirrors `_truncate_payload` in the Python SDK.
+ */
+export const truncateSpanPayload = (
+  serialized: string,
+  kind: "input" | "output",
+): string => {
+  if (serialized.length <= MAX_MANUAL_SPAN_PAYLOAD_SIZE) {
+    return serialized;
+  }
+  logger.warn(
+    `Laminar: span ${kind} is ${serialized.length} bytes, which exceeds the ` +
+    `${MAX_MANUAL_SPAN_PAYLOAD_SIZE} byte limit. Truncating to the limit; ` +
+    `the recorded value will not be valid JSON.`,
+  );
+  const keep = MAX_MANUAL_SPAN_PAYLOAD_SIZE - TRUNCATION_SUFFIX.length;
+  return serialized.slice(0, keep) + TRUNCATION_SUFFIX;
+};
+
 export const slicePayload = <T>(value: T, length: number) => {
   if (value === null || value === undefined) {
     return value;

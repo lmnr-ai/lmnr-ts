@@ -6,6 +6,7 @@ import { Laminar } from "../../laminar";
 import {
   deserializeLaminarSpanContext,
   initializeLogger,
+  truncateSpanPayload,
   tryToOtelSpanContext,
 } from "../../utils";
 import { getStream, StreamInfo } from "../instrumentation/aisdk/utils";
@@ -138,7 +139,9 @@ export function observeBase<
             if (input !== undefined) {
               span.setAttribute(
                 SPAN_INPUT,
-                typeof input === 'string' ? input : serialize(input),
+                typeof input === 'string'
+                  ? truncateSpanPayload(input, "input")
+                  : serialize(input, "input"),
               );
             } else if (
               spanInput.length === 1 &&
@@ -147,7 +150,9 @@ export function observeBase<
             ) {
               span.setAttribute(
                 SPAN_INPUT,
-                typeof spanInput[0] === 'string' ? spanInput[0] : serialize(spanInput[0]),
+                typeof spanInput[0] === 'string'
+                  ? truncateSpanPayload(spanInput[0], "input")
+                  : serialize(spanInput[0], "input"),
               );
             } else {
               // pass an array of the arguments without names
@@ -155,7 +160,7 @@ export function observeBase<
               // if we figure out how to do it elegantly
               span.setAttribute(
                 SPAN_INPUT,
-                serialize(spanInput.length > 0 ? spanInput : {}),
+                serialize(spanInput.length > 0 ? spanInput : {}, "input"),
               );
             }
           } catch (error) {
@@ -243,7 +248,9 @@ export function observeBase<
           if (shouldSendTraces() && !ignoreOutput) {
             span.setAttribute(
               SPAN_OUTPUT,
-              typeof res === 'string' ? res : serialize(res),
+              typeof res === 'string'
+                ? truncateSpanPayload(res, "output")
+                : serialize(res),
             );
           }
         } catch (error) {
@@ -287,5 +294,11 @@ const normalizePayload = (payload: unknown, seen: WeakSet<any>): unknown => {
   return payload;
 };
 
-const serialize = (payload: unknown): string =>
-  JSON.stringify(normalizePayload(payload, new WeakSet()));
+const serialize = (
+  payload: unknown,
+  kind: "input" | "output" = "output",
+): string =>
+  truncateSpanPayload(
+    JSON.stringify(normalizePayload(payload, new WeakSet())),
+    kind,
+  );
