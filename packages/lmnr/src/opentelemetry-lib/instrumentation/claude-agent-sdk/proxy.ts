@@ -67,7 +67,16 @@ let globalShutdownRegistered = false;
  */
 const isTruthyEnv = (value: string | undefined): boolean => value === "1";
 
-const readSettingsFile = (filePath: string): Record<string, unknown> => {
+/**
+ * Load a Claude settings JSON file, or `null` when it could not be read.
+ *
+ * `null` (unreadable / malformed / not a JSON object) is deliberately distinct
+ * from `{}` (a valid but empty settings file): callers that would otherwise
+ * REPLACE a user's settings need to know they failed to read it.
+ */
+const loadSettingsFile = (
+  filePath: string,
+): Record<string, unknown> | null => {
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(filePath, "utf-8"));
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
@@ -76,8 +85,15 @@ const readSettingsFile = (filePath: string): Record<string, unknown> => {
   } catch {
     // Missing or malformed settings are simply absent.
   }
-  return {};
+  return null;
 };
+
+/**
+ * Read a settings file for the on-disk settings LAYERS, where an unreadable
+ * file just means we cannot see that layer and must carry on.
+ */
+const readSettingsFile = (filePath: string): Record<string, unknown> =>
+  loadSettingsFile(filePath) ?? {};
 
 const settingsEnvBlock = (
   settings: Record<string, unknown>,
@@ -156,22 +172,28 @@ export const buildProxyFlagSettings = (
   } else if (typeof existing === "string" && existing.trim()) {
     const trimmed = existing.trim();
     if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+      let parsed: unknown;
       try {
-        const parsed: unknown = JSON.parse(trimmed);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          settingsObj = parsed as Record<string, unknown>;
-        }
+        parsed = JSON.parse(trimmed);
       } catch {
         return null;
       }
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return null;
+      }
+      settingsObj = parsed as Record<string, unknown>;
     } else {
       const resolved = path.isAbsolute(trimmed)
         ? trimmed
         : path.join(cwd ?? process.cwd(), trimmed);
-      if (!fs.existsSync(resolved)) {
+      // Bail on any value we could not fully read, not just a missing file:
+      // emitting a proxy-only blob would drop every setting the user actually
+      // configured for this run.
+      const loaded = loadSettingsFile(resolved);
+      if (loaded === null) {
         return null;
       }
-      settingsObj = readSettingsFile(resolved);
+      settingsObj = loaded;
     }
   }
 

@@ -241,6 +241,52 @@ void describe("claude agent settings.json handling", () => {
     assert.equal(result, null);
   });
 
+  void it("leaves a malformed settings file untouched", () => {
+    // Emitting a proxy-only blob here would silently drop the model /
+    // permissions the user configured for this run.
+    const settingsFile = path.join(tmpDir, "trailing-comma.json");
+    fs.writeFileSync(
+      settingsFile,
+      '{"model": "sonnet", "permissions": {"allow": ["Bash(*)"]},}',
+    );
+
+    assert.equal(
+      buildProxyFlagSettings(settingsFile, PROXY_URL, sessionDir),
+      null,
+    );
+  });
+
+  void it("leaves a non-object settings file untouched", () => {
+    const settingsFile = path.join(tmpDir, "array.json");
+    fs.writeFileSync(settingsFile, '["a", "b"]');
+
+    assert.equal(
+      buildProxyFlagSettings(settingsFile, PROXY_URL, sessionDir),
+      null,
+    );
+  });
+
+  void it("leaves non-object inline settings untouched", () => {
+    assert.equal(buildProxyFlagSettings("{}[]", PROXY_URL, sessionDir), null);
+  });
+
+  void it("still applies the proxy to a valid but empty settings file", () => {
+    // A genuinely empty settings object is readable — it must NOT be skipped.
+    const settingsFile = path.join(tmpDir, "empty.json");
+    fs.writeFileSync(settingsFile, "{}");
+
+    const settings = buildProxyFlagSettings(
+      settingsFile,
+      PROXY_URL,
+      sessionDir,
+    );
+
+    assert.equal(
+      (settings?.env as Record<string, string>).ANTHROPIC_BASE_URL,
+      PROXY_URL,
+    );
+  });
+
   void it("never modifies settings files on disk", () => {
     const settingsPath = path.join(configDir, "settings.json");
     writeSettings(settingsPath, { ANTHROPIC_BASE_URL: UPSTREAM });
