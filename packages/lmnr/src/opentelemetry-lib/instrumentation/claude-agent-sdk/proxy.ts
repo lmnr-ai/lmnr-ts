@@ -49,12 +49,16 @@ const PROVIDER_BASE_URL_ENV_KEYS: [string, string][] = [
   [VERTEX_BASE_URL_ENV, VERTEX_USE_ENV],
 ];
 
+// Forward-proxy env vars in BOTH cases. Claude Code reads the lowercase spelling
+// too (and prefers it), so handling only the uppercase form lets a lowercase
+// corporate proxy divert traffic away from us.
+const PROXY_ENV_KEYS = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"];
+
 // Keys that must be blanked in the flag-settings layer: they would otherwise
 // redirect the CLI away from our proxy. Removing them from the flag layer is not
 // enough — settings layers merge per key, so a lower layer's value would win.
 const PROXY_NEUTRALIZED_ENV_KEYS = [
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
+  ...PROXY_ENV_KEYS,
   FOUNDRY_RESOURCE_ENV,
 ];
 
@@ -63,16 +67,23 @@ const PROXY_NEUTRALIZED_ENV_KEYS = [
 // layers would make a settings-defined corporate proxy shadow the gateway
 // configured right beside it. The pre-existing options.env / process.env
 // handling is unchanged; settings simply do not contribute these keys.
-const UPSTREAM_SETTINGS_EXCLUDED_ENV_KEYS = ["HTTP_PROXY", "HTTPS_PROXY"];
+const UPSTREAM_SETTINGS_EXCLUDED_ENV_KEYS = PROXY_ENV_KEYS;
 
 // Track all active proxy instances for cleanup
 const activeProxyServers = new Set<any>(); // Set<ProxyServer>
 let globalShutdownRegistered = false;
 
 /**
- * Check if environment variable value is truthy (equals '1')
+ * Check whether an env value enables a feature.
+ *
+ * Claude Code accepts `1`, `true`, `yes`, and `on` (case-insensitive) — verified
+ * against the bundled CLI. Accepting only `"1"` would miss a provider the CLI
+ * considers enabled, so we would blank its routing keys without pinning a base
+ * URL and break the run.
  */
-const isTruthyEnv = (value: string | undefined): boolean => value === "1";
+const isTruthyEnv = (value: string | undefined): boolean =>
+  value !== undefined &&
+  ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 
 /**
  * Load a Claude settings JSON file, or `null` when it could not be read.
@@ -331,13 +342,13 @@ export const resolveTargetUrlFromEnv = (
   };
 
   // 1. Check for HTTPS_PROXY (highest priority)
-  const httpsProxy = getEnvValue("HTTPS_PROXY");
+  const httpsProxy = getEnvValue("HTTPS_PROXY") || getEnvValue("https_proxy");
   if (httpsProxy) {
     return httpsProxy.replace(/\/$/, "");
   }
 
   // 2. Check for HTTP_PROXY
-  const httpProxy = getEnvValue("HTTP_PROXY");
+  const httpProxy = getEnvValue("HTTP_PROXY") || getEnvValue("http_proxy");
   if (httpProxy) {
     return httpProxy.replace(/\/$/, "");
   }
@@ -427,7 +438,7 @@ export const getEnvVarsToRemove = (
   cwd?: string,
   settingSources?: string[],
 ): string[] => {
-  const toRemove: string[] = ["HTTPS_PROXY", "HTTP_PROXY"];
+  const toRemove: string[] = [...PROXY_ENV_KEYS];
 
   const settingsEnv = readClaudeSettingsEnv(cwd, settingSources);
 

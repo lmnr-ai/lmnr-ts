@@ -27,6 +27,8 @@ const ENV_KEYS = [
   "CLAUDE_CODE_USE_VERTEX",
   "HTTP_PROXY",
   "HTTPS_PROXY",
+  "http_proxy",
+  "https_proxy",
   "CLAUDE_CONFIG_DIR",
 ];
 
@@ -164,6 +166,67 @@ void describe("claude agent settings.json handling", () => {
 
     assert.equal(url, "https://explicit");
   });
+
+  void it("blanks a lowercase proxy var from settings", () => {
+    // Claude Code reads the lowercase spelling too (and prefers it), so handling
+    // only the uppercase form lets a lowercase corporate proxy divert traffic.
+    writeSettings(path.join(configDir, "settings.json"), {
+      ANTHROPIC_BASE_URL: UPSTREAM,
+      https_proxy: "http://corp:8080",
+    });
+
+    const settings = buildProxyFlagSettings(undefined, PROXY_URL, sessionDir);
+
+    assert.equal((settings?.env as Record<string, string>).https_proxy, "");
+  });
+
+  void it("does not let a lowercase settings proxy var shadow the gateway", () => {
+    writeSettings(path.join(configDir, "settings.json"), {
+      ANTHROPIC_BASE_URL: UPSTREAM,
+      https_proxy: "http://corp:8080",
+    });
+
+    assert.equal(resolveTargetUrlFromEnv({}, undefined, sessionDir), UPSTREAM);
+  });
+
+  void it("treats a lowercase process-env proxy var as the upstream", () => {
+    process.env.https_proxy = "http://corp:8080";
+
+    assert.equal(
+      resolveTargetUrlFromEnv({}, undefined, sessionDir),
+      "http://corp:8080",
+    );
+  });
+
+  for (const value of ["1", "true", "True", " on ", "yes"]) {
+    void it(`pins the provider base URL when the flag is ${JSON.stringify(value)}`, () => {
+      // The CLI accepts 1/true/yes/on — verified against the bundled binary.
+      // Missing one would blank the Foundry resource without pinning a base URL.
+      writeSettings(path.join(configDir, "settings.json"), {
+        CLAUDE_CODE_USE_FOUNDRY: value,
+        ANTHROPIC_FOUNDRY_RESOURCE: "myres",
+      });
+
+      const env = buildProxyFlagSettings(undefined, PROXY_URL, sessionDir)
+        ?.env as Record<string, string>;
+
+      assert.equal(env.ANTHROPIC_FOUNDRY_BASE_URL, PROXY_URL);
+      assert.equal(env.ANTHROPIC_FOUNDRY_RESOURCE, "");
+    });
+  }
+
+  for (const value of ["0", "false", "no", "off", ""]) {
+    void it(`does not pin a provider base URL when the flag is ${JSON.stringify(value)}`, () => {
+      writeSettings(path.join(configDir, "settings.json"), {
+        CLAUDE_CODE_USE_VERTEX: value,
+      });
+
+      const env = buildProxyFlagSettings(undefined, PROXY_URL, sessionDir)
+        ?.env as Record<string, string>;
+
+      assert.equal(env.ANTHROPIC_VERTEX_BASE_URL, undefined);
+    });
+  }
 
   void it("does not let a settings proxy var shadow the gateway", () => {
     // HTTP_PROXY / HTTPS_PROXY are forward proxies, not API bases. They outrank
