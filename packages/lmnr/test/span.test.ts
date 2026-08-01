@@ -118,6 +118,20 @@ void describe("span interface tests", () => {
     assert.strictEqual(span.attributes['lmnr.span.input'], "small");
   });
 
+  void it("does not throw on values JSON.stringify cannot serialize", () => {
+    // JSON.stringify returns undefined (NOT a string) for a top-level undefined, function, or
+    // symbol, despite its `string` return type. Reading .length on that threw a TypeError out
+    // of setInput/setOutput; before truncation existed these were a silent setAttribute no-op.
+    Laminar.startActiveSpan({ name: "test" });
+    const span = Laminar.getCurrentSpan() as LaminarSpan;
+    for (const value of [undefined, () => 1, Symbol("s")]) {
+      assert.doesNotThrow(() => span.setInput(value));
+      assert.doesNotThrow(() => span.setOutput(value));
+    }
+    assert.strictEqual(span.attributes['lmnr.span.input'], undefined);
+    assert.strictEqual(span.attributes['lmnr.span.output'], undefined);
+  });
+
   void it("stamps global metadata on spans built without observe / startActiveSpan", () => {
     // Mirrors a pure auto-instrumentation trace: no observe / startActiveSpan,
     // so no association properties are on the OTEL context. Global metadata

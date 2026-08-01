@@ -336,11 +336,19 @@ export const TRUNCATION_SUFFIX = "...[Laminar: truncated]";
  *
  * Keeping the leading bytes preserves the start of the value, which is the useful part when
  * debugging. Mirrors `_truncate_payload` in the Python SDK.
+ *
+ * Callers pass the result of `JSON.stringify`, whose TS signature claims `string` but which
+ * actually returns `undefined` for a top-level `undefined`, function, or symbol. Guard at
+ * runtime and hand such values straight back: `setAttribute` treats them as a no-op, which is
+ * the behaviour these payloads had before truncation existed.
  */
 export const truncateSpanPayload = (
   serialized: string,
   kind: "input" | "output",
 ): string => {
+  if (typeof serialized !== "string") {
+    return serialized;
+  }
   if (serialized.length <= MAX_MANUAL_SPAN_PAYLOAD_SIZE) {
     return serialized;
   }
