@@ -167,6 +167,30 @@ void describe("claude agent settings.json handling", () => {
     assert.equal(url, "https://explicit");
   });
 
+  void it("tolerates a non-string provider flag in options.settings", () => {
+    // options.settings may carry JSON booleans / numbers, and those reach
+    // isTruthyEnv, which lowercases the value — an uncoerced bool used to throw.
+    const settings = buildProxyFlagSettings(
+      { env: { CLAUDE_CODE_USE_FOUNDRY: true } },
+      PROXY_URL,
+      sessionDir,
+    );
+    const env = settings?.env as Record<string, string>;
+
+    assert.equal(env.ANTHROPIC_FOUNDRY_BASE_URL, PROXY_URL);
+  });
+
+  void it("tolerates a numeric provider flag in options.settings", () => {
+    const settings = buildProxyFlagSettings(
+      { env: { CLAUDE_CODE_USE_VERTEX: 1 } },
+      PROXY_URL,
+      sessionDir,
+    );
+    const env = settings?.env as Record<string, string>;
+
+    assert.equal(env.ANTHROPIC_VERTEX_BASE_URL, PROXY_URL);
+  });
+
   void it("blanks a lowercase proxy var from settings", () => {
     // Claude Code reads the lowercase spelling too (and prefers it), so handling
     // only the uppercase form lets a lowercase corporate proxy divert traffic.

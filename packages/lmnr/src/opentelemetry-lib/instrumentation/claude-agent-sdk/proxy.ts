@@ -81,9 +81,14 @@ let globalShutdownRegistered = false;
  * considers enabled, so we would blank its routing keys without pinning a base
  * URL and break the run.
  */
-const isTruthyEnv = (value: string | undefined): boolean =>
-  value !== undefined &&
-  ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+const isTruthyEnv = (value: unknown): boolean => {
+  // Settings JSON can carry booleans / numbers; never crash proxy setup on a
+  // value that was not normalized to a string upstream.
+  if (typeof value !== "string") {
+    return value === true;
+  }
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+};
 
 /**
  * Load a Claude settings JSON file, or `null` when it could not be read.
