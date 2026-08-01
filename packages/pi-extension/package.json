@@ -1,0 +1,44 @@
+{
+  "name": "@lmnr-ai/pi-extension",
+  "version": "0.1.0",
+  "description": "Laminar observability extension for the pi coding agent — live in-process OTLP tracing",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "founders@lmnr.ai",
+  "homepage": "https://github.com/lmnr-ai/lmnr-ts/tree/main/packages/pi-extension#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lmnr-ai/lmnr-ts.git",
+    "directory": "packages/pi-extension"
+  },
+  "bugs": {
+    "url": "https://github.com/lmnr-ai/lmnr-ts/issues"
+  },
+  "keywords": ["pi-package", "pi", "laminar", "lmnr", "observability", "tracing", "otel", "otlp"],
+  "files": ["src", "README.md"],
+  "engines": {
+    "node": ">=18"
+  },
+  "pi": {
+    "extensions": ["src/index.ts"]
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "lint": "eslint",
+    "lint:fix": "eslint --fix"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/core": "^1.30.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.57.0",
+    "@opentelemetry/resources": "^1.30.0",
+    "@opentelemetry/sdk-trace-base": "^1.30.0"
+  },
+  "devDependencies": {
+    "@lmnr-ai/types": "workspace:*"
+  }
+}

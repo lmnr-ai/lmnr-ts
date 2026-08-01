@@ -29,7 +29,7 @@ jobs:
         run: cd packages/lmnr-cli && pnpm publish --provenance --access public --no-git-checks
 
   publish-sdk:
-    if: "!startsWith(github.event.release.tag_name, 'cli-')"
+    if: "!startsWith(github.event.release.tag_name, 'cli-') && !startsWith(github.event.release.tag_name, 'pi-extension-')"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -63,3 +63,32 @@ jobs:
 
       - name: Publish main SDK package
         run: cd packages/lmnr && pnpm publish --provenance --access public --no-git-checks
+
+  # pi-extension is versioned and released independently of the SDK (own tag
+  # prefix `pi-extension-*`). It is build-free — pi runs the TypeScript source
+  # directly — so there is no build step; we publish `src` as-is.
+  publish-pi-extension:
+    if: startsWith(github.event.release.tag_name, 'pi-extension-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      # Freeze to latest 11, because 12 / latest fails in publish
+      # https://github.com/npm/cli/issues/9722
+      - run: npm install -g npm@next-11
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm --filter @lmnr-ai/pi-extension test
+
+      - name: Publish pi-extension package
+        run: cd packages/pi-extension && pnpm publish --provenance --access public --no-git-checks
