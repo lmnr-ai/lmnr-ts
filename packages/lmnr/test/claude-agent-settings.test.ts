@@ -125,6 +125,42 @@ void describe("claude agent settings.json handling", () => {
     assert.equal(url, "https://explicit");
   });
 
+  void it("does not let a settings proxy var shadow the gateway", () => {
+    // HTTP_PROXY / HTTPS_PROXY are forward proxies, not API bases. They outrank
+    // every base URL, so taking them from settings would make a corporate proxy
+    // shadow the gateway beside it and forward API calls to the wrong host.
+    writeSettings(path.join(configDir, "settings.json"), {
+      ANTHROPIC_BASE_URL: UPSTREAM,
+      HTTPS_PROXY: "http://corp:8080",
+    });
+
+    assert.equal(resolveTargetUrlFromEnv({}, undefined, sessionDir), UPSTREAM);
+  });
+
+  void it("falls back to the default when settings define only a proxy var", () => {
+    writeSettings(path.join(configDir, "settings.json"), {
+      HTTPS_PROXY: "http://corp:8080",
+    });
+
+    assert.equal(
+      resolveTargetUrlFromEnv({}, undefined, sessionDir),
+      "https://api.anthropic.com",
+    );
+  });
+
+  void it("still treats a process-env proxy var as the upstream", () => {
+    // Pre-existing behavior: a proxy var in the real env IS the target.
+    writeSettings(path.join(configDir, "settings.json"), {
+      ANTHROPIC_BASE_URL: UPSTREAM,
+    });
+    process.env.HTTPS_PROXY = "http://corp:8080";
+
+    assert.equal(
+      resolveTargetUrlFromEnv({}, undefined, sessionDir),
+      "http://corp:8080",
+    );
+  });
+
   void it("pins the base URL to the proxy in the flag settings layer", () => {
     writeSettings(path.join(configDir, "settings.json"), {
       ANTHROPIC_BASE_URL: UPSTREAM,

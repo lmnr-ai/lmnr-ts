@@ -58,6 +58,13 @@ const PROXY_NEUTRALIZED_ENV_KEYS = [
   FOUNDRY_RESOURCE_ENV,
 ];
 
+// Transport-level forward proxies, NOT Anthropic API base URLs. They outrank
+// every base URL when resolving our upstream, so reading them from the settings
+// layers would make a settings-defined corporate proxy shadow the gateway
+// configured right beside it. The pre-existing options.env / process.env
+// handling is unchanged; settings simply do not contribute these keys.
+const UPSTREAM_SETTINGS_EXCLUDED_ENV_KEYS = ["HTTP_PROXY", "HTTPS_PROXY"];
+
 // Track all active proxy instances for cleanup
 const activeProxyServers = new Set<any>(); // Set<ProxyServer>
 let globalShutdownRegistered = false;
@@ -288,9 +295,17 @@ export const resolveTargetUrlFromEnv = (
 ): string | null => {
   const settingsEnv = readClaudeSettingsEnv(cwd);
 
-  // Helper: options.env, then process.env, then Claude settings env
-  const getEnvValue = (key: string): string | undefined =>
-    envDict[key] || process.env[key] || settingsEnv[key];
+  // Helper: options.env, then process.env, then Claude settings env.
+  // HTTP_PROXY / HTTPS_PROXY are deliberately NOT taken from settings — they are
+  // forward proxies rather than API bases and outrank every base URL below, so a
+  // settings-defined corporate proxy would shadow the gateway next to it.
+  const getEnvValue = (key: string): string | undefined => {
+    const value = envDict[key] || process.env[key];
+    if (value || UPSTREAM_SETTINGS_EXCLUDED_ENV_KEYS.includes(key)) {
+      return value;
+    }
+    return settingsEnv[key];
+  };
 
   // 1. Check for HTTPS_PROXY (highest priority)
   const httpsProxy = getEnvValue("HTTPS_PROXY");
