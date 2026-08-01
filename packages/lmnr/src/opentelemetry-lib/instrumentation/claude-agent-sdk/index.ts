@@ -14,6 +14,7 @@ import {
   createProxyInstance,
   forceReleaseProxy,
   getEnvVarsToRemove,
+  isProviderEnabledInEnv,
   PROXY_BASE_URL_ENV_KEYS,
   type ProxyInstance,
   readClaudeSettingsEnv,
@@ -141,28 +142,23 @@ export function instrumentClaudeAgentQuery(
             delete params.options.env[varName];
           }
 
-          // If Foundry is enabled, update Foundry-specific env vars
-          const foundryEnabled =
-            params.options.env.CLAUDE_CODE_USE_FOUNDRY === "1";
-          if (foundryEnabled) {
-            params.options.env.ANTHROPIC_FOUNDRY_BASE_URL =
-              proxyInstance.baseUrl;
+          // Pin each enabled provider's base URL. Truthiness MUST go through
+          // isTruthyEnv (1/true/yes/on) rather than a `=== "1"` check: the
+          // resource-stripping in getEnvVarsToRemove already uses isTruthyEnv, so
+          // a narrower check here strips ANTHROPIC_FOUNDRY_RESOURCE without
+          // leaving a base URL behind and the CLI hard-fails.
+          const subprocessEnv = params.options.env as Record<
+            string,
+            string | undefined
+          >;
+          if (isProviderEnabledInEnv(subprocessEnv, "CLAUDE_CODE_USE_FOUNDRY")) {
+            subprocessEnv.ANTHROPIC_FOUNDRY_BASE_URL = proxyInstance.baseUrl;
           }
-
-          // If Bedrock is enabled, update Bedrock-specific env vars
-          const bedrockEnabled =
-            params.options.env.CLAUDE_CODE_USE_BEDROCK === "1";
-          if (bedrockEnabled) {
-            params.options.env.ANTHROPIC_BEDROCK_BASE_URL =
-              proxyInstance.baseUrl;
+          if (isProviderEnabledInEnv(subprocessEnv, "CLAUDE_CODE_USE_BEDROCK")) {
+            subprocessEnv.ANTHROPIC_BEDROCK_BASE_URL = proxyInstance.baseUrl;
           }
-
-          // If Vertex AI is enabled, update Vertex-specific env vars
-          const vertexEnabled =
-            params.options.env.CLAUDE_CODE_USE_VERTEX === "1";
-          if (vertexEnabled) {
-            params.options.env.ANTHROPIC_VERTEX_BASE_URL =
-              proxyInstance.baseUrl;
+          if (isProviderEnabledInEnv(subprocessEnv, "CLAUDE_CODE_USE_VERTEX")) {
+            subprocessEnv.ANTHROPIC_VERTEX_BASE_URL = proxyInstance.baseUrl;
           }
 
           // Claude Code's settings `env` outranks the subprocess environment, so

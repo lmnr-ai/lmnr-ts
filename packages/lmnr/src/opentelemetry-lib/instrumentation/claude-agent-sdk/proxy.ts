@@ -91,6 +91,19 @@ const isTruthyEnv = (value: unknown): boolean => {
 };
 
 /**
+ * Whether a provider flag is enabled in the given env, using the CLI's own
+ * truthiness rules.
+ *
+ * Exported so the subprocess-env pin path shares ONE definition of "enabled"
+ * with `getEnvVarsToRemove` / `buildProxyFlagSettings`. If they disagree, the
+ * resource gets stripped without a base URL being pinned and the CLI hard-fails.
+ */
+export const isProviderEnabledInEnv = (
+  env: Record<string, string | undefined>,
+  useKey: string,
+): boolean => isTruthyEnv(env[useKey]);
+
+/**
  * Load a Claude settings JSON file, or `null` when it could not be read.
  *
  * `null` (unreadable / malformed / not a JSON object) is deliberately distinct

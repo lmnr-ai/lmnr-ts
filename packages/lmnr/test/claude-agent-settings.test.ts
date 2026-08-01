@@ -8,6 +8,7 @@ import {
   buildProxyFlagSettings,
   createProxyInstance,
   getEnvVarsToRemove,
+  isProviderEnabledInEnv,
   readClaudeSettingsEnv,
   resolveTargetUrlFromEnv,
   stopProxyInstance,
@@ -165,6 +166,34 @@ void describe("claude agent settings.json handling", () => {
     );
 
     assert.equal(url, "https://explicit");
+  });
+
+  for (const value of ["1", "true", "True", " on ", "yes"]) {
+    void it(`treats options.env flag ${JSON.stringify(value)} as enabled`, () => {
+      // The subprocess-env pin path must agree with getEnvVarsToRemove, which
+      // strips ANTHROPIC_FOUNDRY_RESOURCE for any truthy value. A narrower check
+      // there strips the resource with no base URL pinned and the CLI hard-fails
+      // ("Must provide one of the baseURL or resource arguments").
+      const env = { CLAUDE_CODE_USE_FOUNDRY: value };
+
+      assert.equal(isProviderEnabledInEnv(env, "CLAUDE_CODE_USE_FOUNDRY"), true);
+      assert.ok(
+        getEnvVarsToRemove(env, sessionDir).includes(
+          "ANTHROPIC_FOUNDRY_RESOURCE",
+        ),
+      );
+    });
+  }
+
+  void it("does not treat a falsy options.env flag as enabled", () => {
+    const env = { CLAUDE_CODE_USE_FOUNDRY: "0" };
+
+    assert.equal(isProviderEnabledInEnv(env, "CLAUDE_CODE_USE_FOUNDRY"), false);
+    assert.ok(
+      !getEnvVarsToRemove(env, sessionDir).includes(
+        "ANTHROPIC_FOUNDRY_RESOURCE",
+      ),
+    );
   });
 
   void it("tolerates a non-string provider flag in options.settings", () => {
