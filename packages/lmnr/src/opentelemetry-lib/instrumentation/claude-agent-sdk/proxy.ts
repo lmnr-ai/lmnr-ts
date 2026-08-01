@@ -39,6 +39,16 @@ export const PROXY_BASE_URL_ENV_KEYS = [
   VERTEX_BASE_URL_ENV,
 ];
 
+// Provider base-URL keys paired with the flag that turns that provider on. A
+// provider can be configured without its base-URL key (e.g. Foundry via
+// ANTHROPIC_FOUNDRY_RESOURCE alone), so the flag is what tells us the key is in
+// play and must be pinned to the proxy.
+const PROVIDER_BASE_URL_ENV_KEYS: [string, string][] = [
+  [FOUNDRY_BASE_URL_ENV, FOUNDRY_USE_ENV],
+  [BEDROCK_BASE_URL_ENV, BEDROCK_USE_ENV],
+  [VERTEX_BASE_URL_ENV, VERTEX_USE_ENV],
+];
+
 // Keys that must be blanked in the flag-settings layer: they would otherwise
 // redirect the CLI away from our proxy. Removing them from the flag layer is not
 // enough — settings layers merge per key, so a lower layer's value would win.
@@ -167,12 +177,22 @@ export const buildProxyFlagSettings = (
 
   const envDict: Record<string, string> = { ...settingsEnvBlock(settingsObj) };
   const settingsEnv = readClaudeSettingsEnv(cwd);
+  const inPlay = (key: string): boolean =>
+    key in envDict || key in settingsEnv || process.env[key] !== undefined;
 
-  for (const key of PROXY_BASE_URL_ENV_KEYS) {
-    // Only pin the keys that are actually in play, so we never introduce a
-    // provider base URL the user never configured.
-    if (key === "ANTHROPIC_BASE_URL" || key in settingsEnv || key in envDict) {
-      envDict[key] = proxyUrl;
+  envDict.ANTHROPIC_BASE_URL = proxyUrl;
+  for (const [baseUrlKey, useKey] of PROVIDER_BASE_URL_ENV_KEYS) {
+    // Pin a provider base URL when the provider is enabled OR its base URL is
+    // already set — never introduce one the user has nothing to do with. Keying
+    // only off the base-URL key would miss a provider configured by another
+    // route (e.g. Foundry via ANTHROPIC_FOUNDRY_RESOURCE), leaving it with its
+    // routing key blanked below and no proxy URL to fall back on.
+    const enabled =
+      isTruthyEnv(envDict[useKey]) ||
+      isTruthyEnv(settingsEnv[useKey]) ||
+      isTruthyEnv(process.env[useKey]);
+    if (enabled || inPlay(baseUrlKey)) {
+      envDict[baseUrlKey] = proxyUrl;
     }
   }
   for (const key of PROXY_NEUTRALIZED_ENV_KEYS) {
@@ -475,8 +495,12 @@ export interface ProxyInstance {
  */
 export const createProxyInstance = async ({
   env,
+  cwd,
+  targetUrl: resolvedTargetUrl,
 }: {
   env: Record<string, string | undefined>;
+  cwd?: string;
+  targetUrl?: string | null;
 }): Promise<ProxyInstance | null> => {
   try {
     const port = await findAvailablePort(
@@ -488,8 +512,12 @@ export const createProxyInstance = async ({
       return null;
     }
 
-    // Resolve target URL using the priority order
-    const targetUrl = resolveTargetUrlFromEnv(env);
+    // Prefer the caller's already-resolved upstream. Re-resolving here without
+    // the session cwd would miss a gateway configured only in project or local
+    // settings, and the proxy would forward to the default Anthropic API while
+    // ANTHROPIC_ORIGINAL_BASE_URL pointed at the gateway.
+    const targetUrl =
+      resolvedTargetUrl ?? resolveTargetUrlFromEnv(env, undefined, cwd);
     if (!targetUrl) {
       logger.warn(
         "Unable to resolve target URL for cc-proxy (provider misconfigured).",

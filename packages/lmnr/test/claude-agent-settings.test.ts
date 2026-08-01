@@ -6,8 +6,10 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 
 import {
   buildProxyFlagSettings,
+  createProxyInstance,
   readClaudeSettingsEnv,
   resolveTargetUrlFromEnv,
+  stopProxyInstance,
 } from "../src/opentelemetry-lib/instrumentation/claude-agent-sdk/proxy";
 
 const PROXY_URL = "http://127.0.0.1:45667";
@@ -184,6 +186,35 @@ void describe("claude agent settings.json handling", () => {
     );
   });
 
+  void it("pins the Foundry base URL when Foundry is configured by resource alone", () => {
+    // Foundry can be set up with ANTHROPIC_FOUNDRY_RESOURCE and no base-URL key.
+    // Blanking the resource without pinning a base URL would strip its only
+    // routing key and leave nothing for the CLI to talk to.
+    writeSettings(path.join(configDir, "settings.json"), {
+      CLAUDE_CODE_USE_FOUNDRY: "1",
+      ANTHROPIC_FOUNDRY_RESOURCE: "myresource",
+    });
+
+    const settings = buildProxyFlagSettings(undefined, PROXY_URL, sessionDir);
+    const env = settings?.env as Record<string, string>;
+
+    assert.equal(env.ANTHROPIC_FOUNDRY_BASE_URL, PROXY_URL);
+    assert.equal(env.ANTHROPIC_FOUNDRY_RESOURCE, "");
+  });
+
+  void it("pins a provider base URL when only the enabling flag is set", () => {
+    writeSettings(path.join(configDir, "settings.json"), {
+      CLAUDE_CODE_USE_VERTEX: "1",
+    });
+
+    const settings = buildProxyFlagSettings(undefined, PROXY_URL, sessionDir);
+
+    assert.equal(
+      (settings?.env as Record<string, string>).ANTHROPIC_VERTEX_BASE_URL,
+      PROXY_URL,
+    );
+  });
+
   void it("merges a settings file path", () => {
     const settingsFile = path.join(tmpDir, "custom.json");
     fs.writeFileSync(
@@ -218,6 +249,25 @@ void describe("claude agent settings.json handling", () => {
     buildProxyFlagSettings(undefined, PROXY_URL, sessionDir);
 
     assert.equal(fs.readFileSync(settingsPath, "utf-8"), before);
+  });
+
+  void it("forwards to a project-settings gateway when cwd differs", async () => {
+    // The proxy must forward to the same upstream the caller resolved. Without
+    // the session cwd, a gateway that lives only in project settings is missed
+    // and the proxy silently forwards to the default Anthropic API.
+    writeSettings(path.join(sessionDir, ".claude", "settings.json"), {
+      ANTHROPIC_BASE_URL: UPSTREAM,
+    });
+
+    const targetUrl = resolveTargetUrlFromEnv({}, undefined, sessionDir);
+    const instance = await createProxyInstance({ env: {}, cwd: sessionDir });
+
+    try {
+      assert.equal(targetUrl, UPSTREAM);
+      assert.equal(instance?.targetUrl, UPSTREAM);
+    } finally {
+      stopProxyInstance(instance);
+    }
   });
 
   void it("resolves the reported issue 2167 scenario", () => {

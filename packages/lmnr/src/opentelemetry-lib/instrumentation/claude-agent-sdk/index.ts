@@ -88,6 +88,8 @@ export function instrumentClaudeAgentQuery(
         // Create a dedicated proxy instance for this request
         proxyInstance = await createProxyInstance({
           env: mergedEnv,
+          cwd: sessionCwd,
+          targetUrl,
         });
 
         // Configure the request to use the proxy
