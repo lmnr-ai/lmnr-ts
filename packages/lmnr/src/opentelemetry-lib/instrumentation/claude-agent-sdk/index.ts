@@ -10,10 +10,13 @@ import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
 import { SPAN_INPUT, SPAN_OUTPUT } from "../../tracing/attributes";
 import {
+  buildProxyFlagSettings,
   createProxyInstance,
   forceReleaseProxy,
   getEnvVarsToRemove,
+  PROXY_BASE_URL_ENV_KEYS,
   type ProxyInstance,
+  readClaudeSettingsEnv,
   resolveTargetUrlFromEnv,
   setTraceToProxyInstance,
   stopProxyInstance,
@@ -72,7 +75,15 @@ export function instrumentClaudeAgentQuery(
         };
 
         // Resolve target URL before creating proxy
-        const targetUrl = resolveTargetUrlFromEnv(mergedEnv);
+        const sessionCwd: string | undefined =
+          typeof params.options?.cwd === "string"
+            ? params.options.cwd
+            : undefined;
+        const targetUrl = resolveTargetUrlFromEnv(
+          mergedEnv,
+          undefined,
+          sessionCwd,
+        );
 
         // Create a dedicated proxy instance for this request
         proxyInstance = await createProxyInstance({
@@ -136,6 +147,46 @@ export function instrumentClaudeAgentQuery(
           if (vertexEnabled) {
             params.options.env.ANTHROPIC_VERTEX_BASE_URL =
               proxyInstance.baseUrl;
+          }
+
+          // Claude Code's settings `env` outranks the subprocess environment, so
+          // options.env alone does not redirect a user whose base URL lives in
+          // ~/.claude/settings.json (lmnr#2167). `settings` is the highest
+          // user-controlled layer; their files on disk are never modified.
+          const existingSettings = params.options.settings as
+            | string
+            | Record<string, unknown>
+            | undefined;
+          const flagSettings = buildProxyFlagSettings(
+            existingSettings,
+            proxyInstance.baseUrl,
+            sessionCwd,
+          );
+          if (flagSettings === null) {
+            logger.warn(
+              `Could not read options.settings ${JSON.stringify(existingSettings)}; ` +
+                "Claude Code settings that define a base URL will bypass the " +
+                "Laminar proxy and produce no LLM spans.",
+            );
+          } else {
+            params.options.settings = flagSettings;
+
+            const conflicting = Object.entries(readClaudeSettingsEnv(sessionCwd))
+              .filter(
+                ([key, value]) =>
+                  PROXY_BASE_URL_ENV_KEYS.includes(key) &&
+                  value !== "" &&
+                  value !== proxyInstance.baseUrl,
+              )
+              .map(([key]) => key);
+            if (conflicting.length > 0) {
+              logger.info(
+                `Claude Code settings define ${conflicting.sort().join(", ")}, which ` +
+                  "outranks the subprocess environment. Injected settings so the " +
+                  `Laminar proxy at ${proxyInstance.baseUrl} still intercepts API ` +
+                  "traffic; your settings files were not modified.",
+              );
+            }
           }
         } else {
           logger.debug(
