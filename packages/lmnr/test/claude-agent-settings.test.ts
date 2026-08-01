@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import {
   buildProxyFlagSettings,
   createProxyInstance,
+  getEnvVarsToRemove,
   readClaudeSettingsEnv,
   resolveTargetUrlFromEnv,
   stopProxyInstance,
@@ -236,6 +237,40 @@ void describe("claude agent settings.json handling", () => {
 
     assert.equal(env.ANTHROPIC_FOUNDRY_BASE_URL, PROXY_URL);
     assert.equal(env.ANTHROPIC_FOUNDRY_RESOURCE, "");
+  });
+
+  void it("blanks the Foundry resource when Foundry is enabled only in settings", () => {
+    // The resource is mutually exclusive with the base URL we pin — the CLI
+    // hard-fails with "baseURL and resource are mutually exclusive" if both are
+    // live, so a resource left in the process env must still be blanked.
+    writeSettings(path.join(configDir, "settings.json"), {
+      CLAUDE_CODE_USE_FOUNDRY: "1",
+    });
+    process.env.ANTHROPIC_FOUNDRY_RESOURCE = "stray-resource";
+
+    const settings = buildProxyFlagSettings(undefined, PROXY_URL, sessionDir);
+    const env = settings?.env as Record<string, string>;
+
+    assert.equal(env.ANTHROPIC_FOUNDRY_BASE_URL, PROXY_URL);
+    assert.equal(env.ANTHROPIC_FOUNDRY_RESOURCE, "");
+  });
+
+  void it("strips the Foundry resource from options.env via settings", () => {
+    writeSettings(path.join(configDir, "settings.json"), {
+      CLAUDE_CODE_USE_FOUNDRY: "1",
+    });
+
+    assert.ok(
+      getEnvVarsToRemove({}, sessionDir).includes("ANTHROPIC_FOUNDRY_RESOURCE"),
+    );
+  });
+
+  void it("blanks a process-env proxy var in the flag settings", () => {
+    process.env.HTTPS_PROXY = "http://corp:8080";
+
+    const settings = buildProxyFlagSettings(undefined, PROXY_URL, sessionDir);
+
+    assert.equal((settings?.env as Record<string, string>).HTTPS_PROXY, "");
   });
 
   void it("pins a provider base URL when only the enabling flag is set", () => {

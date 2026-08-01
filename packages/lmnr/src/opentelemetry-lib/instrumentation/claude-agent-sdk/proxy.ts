@@ -223,9 +223,17 @@ export const buildProxyFlagSettings = (
     if (enabled || inPlay(baseUrlKey)) {
       envDict[baseUrlKey] = proxyUrl;
     }
+    // The Foundry resource is mutually exclusive with the base URL we just
+    // pinned — the CLI hard-fails ("baseURL and resource are mutually
+    // exclusive") if both are live. Blank it whenever Foundry is in play, even
+    // when the resource only exists in the process env, since the flag layer is
+    // the only place we can override it for the subprocess.
+    if (baseUrlKey === FOUNDRY_BASE_URL_ENV && envDict[baseUrlKey] === proxyUrl) {
+      envDict[FOUNDRY_RESOURCE_ENV] = "";
+    }
   }
   for (const key of PROXY_NEUTRALIZED_ENV_KEYS) {
-    if (key in settingsEnv || key in envDict) {
+    if (key in settingsEnv || key in envDict || process.env[key] !== undefined) {
       envDict[key] = "";
     }
   }
@@ -401,12 +409,18 @@ export const resolveTargetUrlFromEnv = (
  */
 export const getEnvVarsToRemove = (
   envDict: Record<string, string | undefined>,
+  cwd?: string,
 ): string[] => {
   const toRemove: string[] = ["HTTPS_PROXY", "HTTP_PROXY"];
 
-  // Helper to get value from envDict first, then process.env
+  const settingsEnv = readClaudeSettingsEnv(cwd);
+
+  // Helper: envDict, then process.env, then Claude settings env. Settings are
+  // included because Foundry is often enabled only there, and the resource is
+  // mutually exclusive with the base URL we set — leaving it in options.env
+  // makes the CLI hard-fail.
   const getEnvValue = (key: string): string | undefined =>
-    envDict[key] || process.env[key];
+    envDict[key] || process.env[key] || settingsEnv[key];
 
   // Remove FOUNDRY_RESOURCE if Foundry is enabled
   // (it's mutually exclusive with ANTHROPIC_BASE_URL which we'll set)

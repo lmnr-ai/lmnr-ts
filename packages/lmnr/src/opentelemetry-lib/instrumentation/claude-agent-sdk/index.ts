@@ -103,7 +103,7 @@ export function instrumentClaudeAgentQuery(
           });
 
           // Get environment variables that should be removed
-          const varsToRemove = getEnvVarsToRemove(mergedEnv);
+          const varsToRemove = getEnvVarsToRemove(mergedEnv, sessionCwd);
 
           // Update environment for subprocess
           if (!params.options) {
