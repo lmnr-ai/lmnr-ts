@@ -98,6 +98,45 @@ void describe("claude agent settings.json handling", () => {
     );
   });
 
+  void it("gates which layers are read on settingSources", () => {
+    // The CLI honors options.settingSources, so we must too. Reading a layer it
+    // was told to ignore would resolve an upstream the CLI never uses.
+    writeSettings(path.join(configDir, "settings.json"), {
+      ANTHROPIC_BASE_URL: "https://user",
+    });
+    writeSettings(path.join(sessionDir, ".claude", "settings.json"), {
+      ANTHROPIC_BASE_URL: "https://project",
+    });
+
+    assert.equal(
+      readClaudeSettingsEnv(sessionDir, ["user"]).ANTHROPIC_BASE_URL,
+      "https://user",
+    );
+    assert.equal(
+      readClaudeSettingsEnv(sessionDir, ["project"]).ANTHROPIC_BASE_URL,
+      "https://project",
+    );
+  });
+
+  void it("disables on-disk settings when settingSources is empty", () => {
+    writeSettings(path.join(configDir, "settings.json"), {
+      ANTHROPIC_BASE_URL: UPSTREAM,
+    });
+
+    assert.deepEqual(readClaudeSettingsEnv(sessionDir, []), {});
+  });
+
+  void it("ignores a layer the CLI will not load when resolving upstream", () => {
+    writeSettings(path.join(sessionDir, ".claude", "settings.json"), {
+      ANTHROPIC_BASE_URL: UPSTREAM,
+    });
+
+    // The CLI only loads user settings, so the project gateway must be invisible.
+    const url = resolveTargetUrlFromEnv({}, undefined, sessionDir, ["user"]);
+
+    assert.equal(url, "https://api.anthropic.com");
+  });
+
   void it("ignores missing and malformed settings files", () => {
     fs.writeFileSync(path.join(configDir, "settings.json"), "{not json");
 

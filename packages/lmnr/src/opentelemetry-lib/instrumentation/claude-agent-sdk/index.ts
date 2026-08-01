@@ -79,16 +79,26 @@ export function instrumentClaudeAgentQuery(
           typeof params.options?.cwd === "string"
             ? params.options.cwd
             : undefined;
+        // options.settingSources gates which on-disk settings layers the CLI
+        // loads; reading a layer it was told to ignore would resolve an upstream
+        // the CLI never uses.
+        const settingSources: string[] | undefined = Array.isArray(
+          params.options?.settingSources,
+        )
+          ? (params.options.settingSources as string[])
+          : undefined;
         const targetUrl = resolveTargetUrlFromEnv(
           mergedEnv,
           undefined,
           sessionCwd,
+          settingSources,
         );
 
         // Create a dedicated proxy instance for this request
         proxyInstance = await createProxyInstance({
           env: mergedEnv,
           cwd: sessionCwd,
+          settingSources,
           targetUrl,
         });
 
@@ -103,7 +113,11 @@ export function instrumentClaudeAgentQuery(
           });
 
           // Get environment variables that should be removed
-          const varsToRemove = getEnvVarsToRemove(mergedEnv, sessionCwd);
+          const varsToRemove = getEnvVarsToRemove(
+            mergedEnv,
+            sessionCwd,
+            settingSources,
+          );
 
           // Update environment for subprocess
           if (!params.options) {
@@ -163,6 +177,7 @@ export function instrumentClaudeAgentQuery(
             existingSettings,
             proxyInstance.baseUrl,
             sessionCwd,
+            settingSources,
           );
           if (flagSettings === null) {
             logger.warn(
@@ -173,7 +188,9 @@ export function instrumentClaudeAgentQuery(
           } else {
             params.options.settings = flagSettings;
 
-            const conflicting = Object.entries(readClaudeSettingsEnv(sessionCwd))
+            const conflicting = Object.entries(
+              readClaudeSettingsEnv(sessionCwd, settingSources),
+            )
               .filter(
                 ([key, value]) =>
                   PROXY_BASE_URL_ENV_KEYS.includes(key) &&

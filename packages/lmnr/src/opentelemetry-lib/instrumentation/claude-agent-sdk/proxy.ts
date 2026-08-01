@@ -131,20 +131,33 @@ const settingsEnvBlock = (
  * the real upstream and to detect conflicts.
  *
  * Precedence (highest first): local project, shared project, user.
+ *
+ * `settingSources` mirrors `options.settingSources` and gates which layers are
+ * read: `undefined` means the CLI loads all of them, an array means only those,
+ * and `[]` disables on-disk settings entirely. Honoring it matters because
+ * reading a layer the CLI was told to ignore would resolve an upstream the CLI
+ * never uses, pointing the proxy at an unintended host.
  */
 export const readClaudeSettingsEnv = (
   cwd?: string,
+  settingSources?: string[],
 ): Record<string, string> => {
   const sessionCwd = cwd ?? process.cwd();
   const userDir =
     process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
 
+  // Lowest priority first so higher layers overwrite.
+  const layers: [string, string][] = [
+    ["user", path.join(userDir, "settings.json")],
+    ["project", path.join(sessionCwd, ".claude", "settings.json")],
+    ["local", path.join(sessionCwd, ".claude", "settings.local.json")],
+  ];
+
   const merged: Record<string, string> = {};
-  for (const filePath of [
-    path.join(userDir, "settings.json"),
-    path.join(sessionCwd, ".claude", "settings.json"),
-    path.join(sessionCwd, ".claude", "settings.local.json"),
-  ]) {
+  for (const [source, filePath] of layers) {
+    if (settingSources !== undefined && !settingSources.includes(source)) {
+      continue;
+    }
     Object.assign(merged, settingsEnvBlock(readSettingsFile(filePath)));
   }
   return merged;
@@ -171,6 +184,7 @@ export const buildProxyFlagSettings = (
   existing: string | Record<string, unknown> | undefined,
   proxyUrl: string,
   cwd?: string,
+  settingSources?: string[],
 ): Record<string, unknown> | null => {
   let settingsObj: Record<string, unknown> = {};
 
@@ -205,7 +219,7 @@ export const buildProxyFlagSettings = (
   }
 
   const envDict: Record<string, string> = { ...settingsEnvBlock(settingsObj) };
-  const settingsEnv = readClaudeSettingsEnv(cwd);
+  const settingsEnv = readClaudeSettingsEnv(cwd, settingSources);
   const inPlay = (key: string): boolean =>
     key in envDict || key in settingsEnv || process.env[key] !== undefined;
 
@@ -300,8 +314,9 @@ export const resolveTargetUrlFromEnv = (
   envDict: Record<string, string | undefined>,
   fallback: string = DEFAULT_ANTHROPIC_BASE_URL,
   cwd?: string,
+  settingSources?: string[],
 ): string | null => {
-  const settingsEnv = readClaudeSettingsEnv(cwd);
+  const settingsEnv = readClaudeSettingsEnv(cwd, settingSources);
 
   // Helper: options.env, then process.env, then Claude settings env.
   // HTTP_PROXY / HTTPS_PROXY are deliberately NOT taken from settings — they are
@@ -410,10 +425,11 @@ export const resolveTargetUrlFromEnv = (
 export const getEnvVarsToRemove = (
   envDict: Record<string, string | undefined>,
   cwd?: string,
+  settingSources?: string[],
 ): string[] => {
   const toRemove: string[] = ["HTTPS_PROXY", "HTTP_PROXY"];
 
-  const settingsEnv = readClaudeSettingsEnv(cwd);
+  const settingsEnv = readClaudeSettingsEnv(cwd, settingSources);
 
   // Helper: envDict, then process.env, then Claude settings env. Settings are
   // included because Foundry is often enabled only there, and the resource is
@@ -547,10 +563,12 @@ export interface ProxyInstance {
 export const createProxyInstance = async ({
   env,
   cwd,
+  settingSources,
   targetUrl: resolvedTargetUrl,
 }: {
   env: Record<string, string | undefined>;
   cwd?: string;
+  settingSources?: string[];
   targetUrl?: string | null;
 }): Promise<ProxyInstance | null> => {
   try {
@@ -568,7 +586,8 @@ export const createProxyInstance = async ({
     // settings, and the proxy would forward to the default Anthropic API while
     // ANTHROPIC_ORIGINAL_BASE_URL pointed at the gateway.
     const targetUrl =
-      resolvedTargetUrl ?? resolveTargetUrlFromEnv(env, undefined, cwd);
+      resolvedTargetUrl ??
+      resolveTargetUrlFromEnv(env, undefined, cwd, settingSources);
     if (!targetUrl) {
       logger.warn(
         "Unable to resolve target URL for cc-proxy (provider misconfigured).",
