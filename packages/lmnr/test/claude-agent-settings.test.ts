@@ -146,6 +146,84 @@ void describe("claude agent settings.json handling", () => {
     assert.deepEqual(readClaudeSettingsEnv(sessionDir), {});
   });
 
+  void it("uses an options.settings gateway as the upstream", () => {
+    // The flag layer outranks every on-disk layer inside the CLI, and
+    // buildProxyFlagSettings is about to overwrite its base URLs with the proxy —
+    // so resolution must read it first or the gateway is silently lost.
+    const existing = { env: { ANTHROPIC_BASE_URL: UPSTREAM } };
+
+    assert.equal(
+      resolveTargetUrlFromEnv({}, undefined, sessionDir, undefined, existing),
+      UPSTREAM,
+    );
+  });
+
+  void it("uses an options.settings provider gateway as the upstream", () => {
+    const existing = {
+      env: {
+        CLAUDE_CODE_USE_BEDROCK: "1",
+        ANTHROPIC_BEDROCK_BASE_URL: UPSTREAM,
+      },
+    };
+
+    assert.equal(
+      resolveTargetUrlFromEnv({}, undefined, sessionDir, undefined, existing),
+      UPSTREAM,
+    );
+  });
+
+  void it("uses an options.settings file gateway as the upstream", () => {
+    const settingsFile = path.join(tmpDir, "caller.json");
+    fs.writeFileSync(
+      settingsFile,
+      JSON.stringify({ env: { ANTHROPIC_BASE_URL: UPSTREAM } }),
+    );
+
+    assert.equal(
+      resolveTargetUrlFromEnv({}, undefined, sessionDir, undefined, settingsFile),
+      UPSTREAM,
+    );
+  });
+
+  void it("still lets options.env outrank options.settings", () => {
+    const existing = { env: { ANTHROPIC_BASE_URL: UPSTREAM } };
+
+    const url = resolveTargetUrlFromEnv(
+      { ANTHROPIC_BASE_URL: "https://explicit" },
+      undefined,
+      sessionDir,
+      undefined,
+      existing,
+    );
+
+    assert.equal(url, "https://explicit");
+  });
+
+  void it("lets options.settings outrank the on-disk layers", () => {
+    writeSettings(path.join(configDir, "settings.json"), {
+      ANTHROPIC_BASE_URL: "https://ondisk",
+    });
+    const existing = { env: { ANTHROPIC_BASE_URL: UPSTREAM } };
+
+    assert.equal(
+      resolveTargetUrlFromEnv({}, undefined, sessionDir, undefined, existing),
+      UPSTREAM,
+    );
+  });
+
+  void it("ignores an unreadable options.settings when resolving upstream", () => {
+    writeSettings(path.join(configDir, "settings.json"), {
+      ANTHROPIC_BASE_URL: UPSTREAM,
+    });
+
+    for (const bad of ["{not json}", "/nonexistent.json"]) {
+      assert.equal(
+        resolveTargetUrlFromEnv({}, undefined, sessionDir, undefined, bad),
+        UPSTREAM,
+      );
+    }
+  });
+
   void it("uses a settings base URL as the proxy upstream", () => {
     writeSettings(path.join(configDir, "settings.json"), {
       ANTHROPIC_BASE_URL: UPSTREAM,

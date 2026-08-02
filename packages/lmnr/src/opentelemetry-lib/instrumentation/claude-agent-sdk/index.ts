@@ -88,11 +88,19 @@ export function instrumentClaudeAgentQuery(
         )
           ? (params.options.settingSources as string[])
           : undefined;
+        // The caller's own options.settings is the highest layer the CLI reads,
+        // and buildProxyFlagSettings below overwrites its base URLs with the
+        // proxy — so resolve the upstream from it before that happens.
+        const callerSettings = params.options?.settings as
+          | string
+          | Record<string, unknown>
+          | undefined;
         const targetUrl = resolveTargetUrlFromEnv(
           mergedEnv,
           undefined,
           sessionCwd,
           settingSources,
+          callerSettings,
         );
 
         // Create a dedicated proxy instance for this request
@@ -100,6 +108,7 @@ export function instrumentClaudeAgentQuery(
           env: mergedEnv,
           cwd: sessionCwd,
           settingSources,
+          settings: callerSettings,
           targetUrl,
         });
 
@@ -165,19 +174,15 @@ export function instrumentClaudeAgentQuery(
           // options.env alone does not redirect a user whose base URL lives in
           // ~/.claude/settings.json (lmnr#2167). `settings` is the highest
           // user-controlled layer; their files on disk are never modified.
-          const existingSettings = params.options.settings as
-            | string
-            | Record<string, unknown>
-            | undefined;
           const flagSettings = buildProxyFlagSettings(
-            existingSettings,
+            callerSettings,
             proxyInstance.baseUrl,
             sessionCwd,
             settingSources,
           );
           if (flagSettings === null) {
             logger.warn(
-              `Could not read options.settings ${JSON.stringify(existingSettings)}; ` +
+              `Could not read options.settings ${JSON.stringify(callerSettings)}; ` +
                 "Claude Code settings that define a base URL will bypass the " +
                 "Laminar proxy and produce no LLM spans.",
             );

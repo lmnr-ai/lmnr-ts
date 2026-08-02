@@ -187,6 +187,46 @@ export const readClaudeSettingsEnv = (
 };
 
 /**
+ * Read the `env` block out of the caller's `options.settings` (the flag layer).
+ *
+ * This layer OUTRANKS every on-disk layer, so a gateway or provider config that
+ * lives only here is what the CLI would actually use — and
+ * `buildProxyFlagSettings` is about to overwrite those keys with the proxy URL.
+ * Upstream resolution must therefore see it FIRST, or we forward to the wrong
+ * host (or to the default endpoint) while the caller's gateway is silently lost.
+ *
+ * Returns `{}` for a value we could not read; the caller's own bail-out logic in
+ * `buildProxyFlagSettings` handles that case.
+ */
+export const flagSettingsEnv = (
+  existing: string | Record<string, unknown> | undefined,
+  cwd?: string,
+): Record<string, string> => {
+  if (typeof existing === "object" && existing !== null) {
+    return settingsEnvBlock(existing);
+  }
+  if (typeof existing !== "string" || !existing.trim()) {
+    return {};
+  }
+  const trimmed = existing.trim();
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return settingsEnvBlock(parsed as Record<string, unknown>);
+      }
+    } catch {
+      // Unparseable inline JSON contributes nothing.
+    }
+    return {};
+  }
+  const resolved = path.isAbsolute(trimmed)
+    ? trimmed
+    : path.join(cwd ?? process.cwd(), trimmed);
+  return settingsEnvBlock(loadSettingsFile(resolved) ?? {});
+};
+
+/**
  * Build the `--settings` value that forces the CLI through our proxy.
  *
  * Claude Code resolves `env` from its settings layers with higher priority than
@@ -338,10 +378,16 @@ export const resolveTargetUrlFromEnv = (
   fallback: string = DEFAULT_ANTHROPIC_BASE_URL,
   cwd?: string,
   settingSources?: string[],
+  settings?: string | Record<string, unknown>,
 ): string | null => {
+  // The caller's flag layer outranks the on-disk layers inside the CLI, and we
+  // are about to overwrite its base URLs with the proxy — so read it here or a
+  // gateway configured only there is lost and we forward to the wrong host.
+  const flagEnv = flagSettingsEnv(settings, cwd);
   const settingsEnv = readClaudeSettingsEnv(cwd, settingSources);
 
-  // Helper: options.env, then process.env, then Claude settings env.
+  // Helper: options.env, then process.env, then flag settings, then on-disk
+  // Claude settings env.
   // HTTP_PROXY / HTTPS_PROXY are deliberately NOT taken from settings — they are
   // forward proxies rather than API bases and outrank every base URL below, so a
   // settings-defined corporate proxy would shadow the gateway next to it.
@@ -350,7 +396,7 @@ export const resolveTargetUrlFromEnv = (
     if (value || UPSTREAM_SETTINGS_EXCLUDED_ENV_KEYS.includes(key)) {
       return value;
     }
-    return settingsEnv[key];
+    return flagEnv[key] || settingsEnv[key];
   };
 
   // 1. Check for HTTPS_PROXY (highest priority)
@@ -587,11 +633,13 @@ export const createProxyInstance = async ({
   env,
   cwd,
   settingSources,
+  settings,
   targetUrl: resolvedTargetUrl,
 }: {
   env: Record<string, string | undefined>;
   cwd?: string;
   settingSources?: string[];
+  settings?: string | Record<string, unknown>;
   targetUrl?: string | null;
 }): Promise<ProxyInstance | null> => {
   try {
@@ -610,7 +658,7 @@ export const createProxyInstance = async ({
     // ANTHROPIC_ORIGINAL_BASE_URL pointed at the gateway.
     const targetUrl =
       resolvedTargetUrl ??
-      resolveTargetUrlFromEnv(env, undefined, cwd, settingSources);
+      resolveTargetUrlFromEnv(env, undefined, cwd, settingSources, settings);
     if (!targetUrl) {
       logger.warn(
         "Unable to resolve target URL for cc-proxy (provider misconfigured).",
