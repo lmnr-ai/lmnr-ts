@@ -124,13 +124,6 @@ const loadSettingsFile = (
   return null;
 };
 
-/**
- * Read a settings file for the on-disk settings LAYERS, where an unreadable
- * file just means we cannot see that layer and must carry on.
- */
-const readSettingsFile = (filePath: string): Record<string, unknown> =>
-  loadSettingsFile(filePath) ?? {};
-
 const settingsEnvBlock = (
   settings: Record<string, unknown>,
 ): Record<string, string> => {
@@ -187,7 +180,8 @@ export const readClaudeSettingsEnv = (
     if (settingSources !== undefined && !settingSources.includes(source)) {
       continue;
     }
-    Object.assign(merged, settingsEnvBlock(readSettingsFile(filePath)));
+    // An unreadable layer just means we cannot see it; carry on.
+    Object.assign(merged, settingsEnvBlock(loadSettingsFile(filePath) ?? {}));
   }
   return merged;
 };
