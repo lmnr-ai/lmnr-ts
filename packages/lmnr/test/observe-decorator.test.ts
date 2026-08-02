@@ -255,4 +255,20 @@ void describe("observeExperimentalDecorator", () => {
       resetDebugRuntime();
     }
   });
+
+  void it("does not warn or throw when the observed function returns void", () => {
+    // LAM-2050 regression: the decorator's serialize() ran truncateSpanPayload on
+    // JSON.stringify(undefined), which is undefined rather than a string. Reading .length threw,
+    // was swallowed as "Failed to serialize output", and logged a warning on EVERY void call.
+    // observe() forwards a sync callback's return value directly, so there is nothing to await.
+    observe({ name: "voidFn" }, () => {
+      /* returns undefined */
+    });
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "voidFn");
+    // No output attribute is recorded, which is what happened before truncation existed.
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], undefined);
+  });
 });

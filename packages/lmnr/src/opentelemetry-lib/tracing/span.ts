@@ -31,6 +31,7 @@ import {
   otelSpanIdToUUID,
   otelTraceIdToUUID,
   StringUUID,
+  truncateSpanPayload,
 } from "../../utils";
 import {
   ASSOCIATION_PROPERTIES,
@@ -235,13 +236,19 @@ export class LaminarSpan implements Span, ReadableSpan {
   public setInput(input: any): void {
     const finalInput =
       typeof input === "string" ? input : JSON.stringify(input);
-    this._span.setAttribute(SPAN_INPUT, finalInput);
+    this._span.setAttribute(
+      SPAN_INPUT,
+      truncateSpanPayload(finalInput, "input"),
+    );
   }
 
   public setOutput(output: any): void {
     const finalOutput =
       typeof output === "string" ? output : JSON.stringify(output);
-    this._span.setAttribute(SPAN_OUTPUT, finalOutput);
+    this._span.setAttribute(
+      SPAN_OUTPUT,
+      truncateSpanPayload(finalOutput, "output"),
+    );
   }
 
   public setTags(tags: string[]): void {

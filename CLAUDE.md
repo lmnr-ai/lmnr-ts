@@ -55,6 +55,14 @@ When adding/modifying integration tests for Mastra:
 - Use `await observability.shutdown()` to flush — there is no `.flush()` method on `Observability`.
 - AI SDK v6 (Mastra 1.28's dep) changes two things: tool `execute` is `(inputData) => ...` (not `({ context })`), and `maxSteps` is removed — use `stopWhen: ({ steps }) => (steps?.length ?? 0) >= N`.
 
+## Span payload size limit
+
+- `truncateSpanPayload` + `MAX_MANUAL_SPAN_PAYLOAD_SIZE` (10MB) + `TRUNCATION_SUFFIX` (`...[Laminar: truncated]`) live in `packages/lmnr/src/utils.ts`. Before LAM-2050 the TS SDK had **no span payload limit at all** (only `slicePayload`, which is for eval datapoints), so an oversized manual payload was shipped whole; Python replaced it with a placeholder. Both now truncate at the same boundary with the same suffix — this is a cross-language parity surface, change the two together.
+- Two entry points must both truncate: `LaminarSpan.setInput`/`setOutput` (`opentelemetry-lib/tracing/span.ts`) and the `observe()` decorator's `serialize` (`opentelemetry-lib/tracing/decorators.ts`). `serialize` takes a `kind` param purely so the warning names input vs output, and it is injected into `handleStreamResult`, so the streaming output paths inherit truncation for free — do NOT add a separate limit there.
+- The string fast-paths bypass `serialize` (`typeof input === 'string' ? input : serialize(input)`), so each needs its own `truncateSpanPayload` call. Missing one is the easy way to reintroduce the bug for string payloads only.
+- **`JSON.stringify` is typed `string` but returns `undefined` for a top-level `undefined`, function, or symbol** — so `truncateSpanPayload` carries a `typeof serialized !== "string"` guard and hands those back untouched (`setAttribute` treats them as a no-op, which is what they did before the limit existed). Without it, `.length` threw a `TypeError`: `setInput`/`setOutput` propagated it to the caller, and every void-returning `observe()` logged a spurious "Failed to serialize output" warning (Bugbot caught this on PR #289). Any future call site that feeds `JSON.stringify` output into a string helper needs the same guard. Pinned by `test/span.test.ts` ("does not throw on values JSON.stringify cannot serialize") + `test/observe-decorator.test.ts` ("... returns void").
+- Do NOT confuse this with `slicePayload` (same file): that one appends `'...'`, is measured against `INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH` (16MB), and exists for the evals-client 413-shrink retry — a different limit for a different wire path.
+
 ## Coding Style
 
 - Prefer arrow functions: `const foo = async (...) => { ... }` over named `function foo()`.

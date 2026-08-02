@@ -9,6 +9,7 @@ import { Laminar, observe } from "../src/index";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
 import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
 import { LaminarSpan } from "../src/opentelemetry-lib/tracing/span";
+import { MAX_MANUAL_SPAN_PAYLOAD_SIZE, TRUNCATION_SUFFIX } from "../src/utils";
 
 
 void describe("span interface tests", () => {
@@ -89,6 +90,46 @@ void describe("span interface tests", () => {
     assert.strictEqual(span?.attributes['lmnr.association.properties.metadata.key'], "value");
     assert.strictEqual(span?.attributes['lmnr.association.properties.session_id'], "123");
     assert.strictEqual(span?.attributes['lmnr.association.properties.user_id'], "456");
+  });
+
+  void it("truncates oversized span input and output instead of replacing them", () => {
+    // LAM-2050: an oversized payload used to be dropped entirely (Python replaced it with a
+    // "too large to record" placeholder; TS had no limit at all and shipped it whole).
+    const oversized = "a".repeat(MAX_MANUAL_SPAN_PAYLOAD_SIZE + 1000);
+    Laminar.startActiveSpan({ name: "test" });
+    const span = Laminar.getCurrentSpan() as LaminarSpan;
+    span.setInput({ blob: oversized });
+    span.setOutput({ blob: oversized });
+
+    const recordedInput = span.attributes['lmnr.span.input'] as string;
+    const recordedOutput = span.attributes['lmnr.span.output'] as string;
+    assert.strictEqual(recordedInput.length, MAX_MANUAL_SPAN_PAYLOAD_SIZE);
+    assert.strictEqual(recordedOutput.length, MAX_MANUAL_SPAN_PAYLOAD_SIZE);
+    assert.ok(recordedInput.endsWith(TRUNCATION_SUFFIX));
+    assert.ok(recordedOutput.endsWith(TRUNCATION_SUFFIX));
+    // The leading bytes of the real payload survive — the point of truncating.
+    assert.ok(recordedInput.startsWith('{"blob":"aaa'));
+  });
+
+  void it("leaves a payload within the limit untouched", () => {
+    Laminar.startActiveSpan({ name: "test" });
+    const span = Laminar.getCurrentSpan() as LaminarSpan;
+    span.setInput("small");
+    assert.strictEqual(span.attributes['lmnr.span.input'], "small");
+  });
+
+  void it("does not throw on values JSON.stringify cannot serialize", () => {
+    // JSON.stringify returns undefined (NOT a string) for a top-level undefined, function, or
+    // symbol, despite its `string` return type. Reading .length on that threw a TypeError out
+    // of setInput/setOutput; before truncation existed these were a silent setAttribute no-op.
+    Laminar.startActiveSpan({ name: "test" });
+    const span = Laminar.getCurrentSpan() as LaminarSpan;
+    for (const value of [undefined, () => 1, Symbol("s")]) {
+      assert.doesNotThrow(() => span.setInput(value));
+      assert.doesNotThrow(() => span.setOutput(value));
+    }
+    assert.strictEqual(span.attributes['lmnr.span.input'], undefined);
+    assert.strictEqual(span.attributes['lmnr.span.output'], undefined);
   });
 
   void it("stamps global metadata on spans built without observe / startActiveSpan", () => {
