@@ -3,32 +3,11 @@ import { type StringUUID } from '@lmnr-ai/types';
 
 import { seededPerm } from './datasets/prng';
 import { Datapoint } from './evaluations';
-import { initializeLogger } from './utils';
 
 const DEFAULT_FETCH_SIZE = 25;
 
-const logger = initializeLogger();
-
-// `filter` has no way to honor the by-index contract without testing every
-// datapoint, so it fetches the whole dataset (all pages) into memory. Warn once
-// per process so callers on large remote datasets aren't surprised by the cost.
-let filterMaterializeWarned = false;
-const warnFilterMaterializesOnce = (): void => {
-  if (filterMaterializeWarned) return;
-  filterMaterializeWarned = true;
-  logger.warn(
-    'EvaluationDataset.filter scans every datapoint to evaluate the predicate, '
-    + 'fetching the whole dataset (all pages) into memory.',
-  );
-};
-
-/**
- * A known-length, index-addressable collection of datapoints. Subsampling
- * (`take` / `select` / `filter` / `shuffle`) is expressed against this
- * abstraction, so a subsampled dataset is a drop-in wherever the full dataset
- * is accepted. Each subsampling op returns a NEW dataset (immutable), so
- * operations chain and order is preserved.
- */
+// A known-length, index-addressable collection of datapoints. Each subsampling
+// op (`take` / `select` / `shuffle`) returns a NEW dataset, so ops chain.
 export abstract class EvaluationDataset<D, T> {
   public async slice(start: number, end: number): Promise<Datapoint<D, T>[]> {
     const result = [];
@@ -40,39 +19,26 @@ export abstract class EvaluationDataset<D, T> {
   public abstract size(): Promise<number> | number;
   public abstract get(index: number): Promise<Datapoint<D, T>> | Datapoint<D, T>;
 
-  /**
-   * Inject the API client into the underlying source dataset. No-op by default;
-   * `LaminarDataset` overrides it, `Transformed` forwards it down the chain.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public setClient(_client: LaminarClient): void {
-    // no-op: only remote-backed datasets need a client.
-  }
-
-  /**
-   * The underlying remote-backed source dataset, if any, resolved through any
-   * depth of chaining. Returns `undefined` for datasets with no remote source.
-   */
+  // The underlying remote-backed source dataset, resolved through any depth of
+  // chaining. `undefined` when the dataset has no remote source.
   public sourceDataset(): LaminarDataset<D, T> | undefined {
     return undefined;
   }
 
-  /**
-   * The first `n` datapoints (or all of them if `n` exceeds the size).
-   */
+  // The first `n` datapoints (or all of them if `n` exceeds the size).
   public take(n: number): EvaluationDataset<D, T> {
     return new Transformed<D, T>(this, async (base) => {
+      if (!Number.isInteger(n)) {
+        throw new Error(`take count ${n} is not an integer`);
+      }
       const size = await base.size();
       const count = Math.max(0, Math.min(n, size));
       return Array.from({ length: count }, (_, i) => i);
     });
   }
 
-  /**
-   * Exactly these datapoints, in this order. Throws at resolve time on any
-   * out-of-range index, naming the offending index and the dataset size. No
-   * clamping, no negative indices.
-   */
+  // Exactly these datapoints, in this order. Throws at resolve time on a
+  // non-integer or out-of-range index. No clamping, no negative indices.
   public select(indices: number[]): EvaluationDataset<D, T> {
     // Snapshot the selection at call time so later mutations to the caller's
     // array can't change which indices are validated and returned.
@@ -80,6 +46,9 @@ export abstract class EvaluationDataset<D, T> {
     return new Transformed<D, T>(this, async (base) => {
       const size = await base.size();
       for (const index of selected) {
+        if (!Number.isInteger(index)) {
+          throw new Error(`select index ${index} is not an integer`);
+        }
         if (index < 0 || index >= size) {
           throw new Error(
             `select index ${index} is out of range for dataset of size ${size}`,
@@ -90,44 +59,15 @@ export abstract class EvaluationDataset<D, T> {
     });
   }
 
-  /**
-   * Only the datapoints for which `predicate` is truthy, order preserved. The
-   * predicate may be sync or async. Honoring the known-length, by-index contract
-   * requires testing every datapoint, so this scans the whole dataset once (in
-   * pages, reusing the page cache) and caches the surviving indices.
-   */
-  public filter(
-    predicate: (datapoint: Datapoint<D, T>) => boolean | Promise<boolean>,
-  ): EvaluationDataset<D, T> {
-    return new Transformed<D, T>(this, async (base) => {
-      warnFilterMaterializesOnce();
-      const size = await base.size();
-      const kept: number[] = [];
-      for (let i = 0; i < size; i++) {
-        if (await predicate(await base.get(i))) {
-          kept.push(i);
-        }
-      }
-      return kept;
-    });
-  }
-
-  /**
-   * A reproducible random permutation. The order is a pure function of
-   * `(size, seed)` — the same seed always yields the same order.
-   */
+  // A reproducible random permutation: the order is a pure function of
+  // `(size, seed)`, so the same seed always yields the same order.
   public shuffle({ seed = 0 }: { seed?: number } = {}): EvaluationDataset<D, T> {
     return new Transformed<D, T>(this, async (base) => seededPerm(await base.size(), seed));
   }
 }
 
-/**
- * An immutable subsampling wrapper: holds an immediate `base` dataset plus a
- * `resolve` function that (lazily, once) produces a list of indices into that
- * base. Element access delegates down the chain via `base.get(indices[i])`, so
- * arbitrary chain orders compose correctly — each wrapper only ever reasons
- * about indices into its own immediate base (the PyTorch `Subset` model).
- */
+// An immutable subsampling wrapper: an immediate `base` plus a lazy, once-only
+// `resolve` that produces indices into that base, so chain orders compose.
 export class Transformed<D, T> extends EvaluationDataset<D, T> {
   private base: EvaluationDataset<D, T>;
   private resolve: (base: EvaluationDataset<D, T>) => Promise<number[]>;
@@ -148,9 +88,8 @@ export class Transformed<D, T> extends EvaluationDataset<D, T> {
       return Promise.resolve(this.indices);
     }
     if (this.resolving === null) {
-      // Drop a failed resolve so a transient error (e.g. a blip during a
-      // `filter` scan or a `size`/`get` read) can be retried, instead of
-      // poisoning every later access. Mirrors `LaminarDataset.fetchPage`.
+      // Drop a failed resolve so a transient `size`/`get` error can be retried
+      // instead of poisoning every later access. Mirrors `fetchPage`.
       this.resolving = this.resolve(this.base)
         .then((indices) => {
           this.indices = indices;
@@ -176,10 +115,6 @@ export class Transformed<D, T> extends EvaluationDataset<D, T> {
       );
     }
     return await this.base.get(indices[index]);
-  }
-
-  public setClient(client: LaminarClient): void {
-    this.base.setClient(client);
   }
 
   public sourceDataset(): LaminarDataset<D, T> | undefined {

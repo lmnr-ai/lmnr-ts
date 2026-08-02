@@ -19,10 +19,12 @@ import {
 // tests can assert fetch/scan behavior without any HTTP.
 class ArrayDataset<D, T> extends EvaluationDataset<D, T> {
   public getCalls: number[] = [];
+  public sizeCalls: number = 0;
   constructor(private items: Datapoint<D, T>[]) {
     super();
   }
   public size(): number {
+    this.sizeCalls += 1;
     return this.items.length;
   }
   public get(index: number): Datapoint<D, T> {
@@ -74,6 +76,16 @@ void describe("EvaluationDataset subsampling", () => {
       base.take(2);
       assert.deepStrictEqual(await dataOf(base), [0, 1, 2, 3, 4]);
     });
+
+    void it("throws on a non-integer count", async () => {
+      const ds = indexed(10).take(2.5);
+      await assert.rejects(
+        async () => {
+          await ds.size();
+        },
+        /take count 2.5 is not an integer/,
+      );
+    });
   });
 
   void describe("select", () => {
@@ -100,6 +112,16 @@ void describe("EvaluationDataset subsampling", () => {
           await ds.size();
         },
         /select index -1 is out of range for dataset of size 5/,
+      );
+    });
+
+    void it("throws on a non-integer index, naming the index", async () => {
+      const ds = indexed(5).select([1.5]);
+      await assert.rejects(
+        async () => {
+          await ds.size();
+        },
+        /select index 1.5 is not an integer/,
       );
     });
   });
@@ -135,36 +157,6 @@ void describe("EvaluationDataset subsampling", () => {
       }, /out of range/);
       // No base.get delegation happened for the invalid index.
       assert.deepStrictEqual(base.getCalls, []);
-    });
-  });
-
-  void describe("filter", () => {
-    void it("keeps only matching datapoints, order preserved", async () => {
-      const ds = indexed(10).filter((dp) => dp.data % 2 === 0);
-      assert.deepStrictEqual(await dataOf(ds), [0, 2, 4, 6, 8]);
-    });
-
-    void it("supports an async predicate", async () => {
-      const ds = indexed(6).filter(
-        (dp) => Promise.resolve(dp.data > 2),
-      );
-      assert.deepStrictEqual(await dataOf(ds), [3, 4, 5]);
-    });
-
-    void it("scans once and caches the surviving indices", async () => {
-      const base = indexed(8);
-      const filtered = base.filter((dp) => dp.data % 2 === 0);
-      await dataOf(filtered);
-      await dataOf(filtered);
-      // One full scan (indices 0..7) plus the two survivor reads per dataOf
-      // pass. No second scan.
-      const scan = [0, 1, 2, 3, 4, 5, 6, 7];
-      const survivors = [0, 2, 4, 6];
-      assert.deepStrictEqual(base.getCalls, [
-        ...scan,
-        ...survivors,
-        ...survivors,
-      ]);
     });
   });
 
@@ -217,27 +209,20 @@ void describe("EvaluationDataset subsampling", () => {
         await dataOf(takeThenShuffle),
       );
     });
-
-    void it("filter then take composes", async () => {
-      const ds = indexed(20)
-        .filter((dp) => dp.data % 3 === 0)
-        .take(2);
-      assert.deepStrictEqual(await dataOf(ds), [0, 3]);
-    });
   });
 
   void describe("resolution caching", () => {
     void it("resolves the index list once even under concurrent access", async () => {
       const base = indexed(4);
-      const filtered = base.filter((dp) => dp.data >= 0);
+      // take's resolve reads base.size() exactly once per resolve.
+      const taken = base.take(4);
       // Two concurrent size() calls must trigger only one resolve.
-      const [s1, s2] = await Promise.all([filtered.size(), filtered.size()]);
+      const [s1, s2] = await Promise.all([taken.size(), taken.size()]);
       assert.strictEqual(s1, 4);
       assert.strictEqual(s2, 4);
-      // The base was scanned exactly once (4 reads), proving the resolve ran
-      // once despite two concurrent size() calls.
-      const scanReads = base.getCalls.filter((i) => i < 4).length;
-      assert.strictEqual(scanReads, 4);
+      // One base.size() read proves the resolve ran once despite two
+      // concurrent size() calls.
+      assert.strictEqual(base.sizeCalls, 1);
     });
   });
 });
@@ -338,27 +323,29 @@ void describe("LaminarDataset page-cached random access", () => {
   });
 
   // Issue-05 acceptance: an in-memory array dataset has no remote source, so no
-  // dataset-link is ever produced (sourceDataset() is undefined) and setClient
-  // is a harmless no-op.
+  // dataset-link is ever produced and the client injection is skipped entirely.
   void it("in-memory array dataset has no source and no dataset-link", () => {
     const ds = indexed(5);
     assert.strictEqual(ds.sourceDataset(), undefined);
     // A subsampled in-memory dataset also resolves to no source.
     assert.strictEqual(ds.take(2).sourceDataset(), undefined);
-    // setClient is a no-op on a source-less dataset (must not throw).
-    assert.doesNotThrow(() => ds.setClient(undefined as unknown as LaminarClient));
+    // The injection pattern used by Evaluation.run is a no-op with no source.
+    assert.doesNotThrow(() =>
+      ds.sourceDataset()?.setClient(undefined as unknown as LaminarClient),
+    );
   });
 
-  void it("forwards setClient and sourceDataset through a chain", async () => {
+  void it("resolves sourceDataset through a chain so the client reaches it", async () => {
     const counter = { n: 0 };
     const base = new LaminarDataset<number, number>("d", { fetchSize: 3 });
     const chained = base.shuffle({ seed: 1 }).take(2);
     // sourceDataset resolves the underlying LaminarDataset through the chain.
     assert.strictEqual(chained.sourceDataset(), base);
-    // setClient forwards down to the source so a chained dataset can fetch.
-    chained.setClient(makeFakeClient(6, counter));
+    // Injecting via the resolved source lets a chained dataset fetch.
+    chained.sourceDataset()?.setClient(makeFakeClient(6, counter));
     const out = await dataOf(chained);
     assert.strictEqual(out.length, 2);
+    assert.ok(counter.n > 0, "expected the source to have fetched a page");
   });
 });
 

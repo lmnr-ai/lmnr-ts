@@ -1,24 +1,9 @@
-// Cross-language parity surface: `seededPerm` is mirrored byte-for-byte by the
-// Python SDK's `seeded_perm`. The permutation is a PURE function of (n, seed) —
-// the same (n, seed) MUST yield the same permutation in both SDKs so a seeded
-// `dataset.shuffle({ seed })` reproduces across languages. Do NOT swap in an
-// off-the-shelf RNG: no library is byte-identical across JS and Python. Any
-// change here must be mirrored in the Python SDK and the shared vector fixture
-// `test/data/dataset/seeded_perm_cases.json`.
-//
-// Algorithm: mulberry32 (a tiny deterministic 32-bit generator) driving a
-// downward Fisher–Yates shuffle. Python emulates the uint32 wraparound and the
-// 32-bit multiply (`Math.imul`) explicitly to match.
+// Mirrors the Python SDK's `seeded_perm` byte-for-byte. Do NOT swap in an
+// off-the-shelf RNG: no library is byte-identical across JS and Python.
 
 const UINT32 = 0x100000000; // 2^32
 
-/**
- * Deterministic permutation of `[0, n)` seeded by `seed`.
- *
- * @param n - Number of indices to permute.
- * @param seed - Integer seed; reduced mod 2^32.
- * @returns A permutation of `[0, 1, ..., n-1]`.
- */
+// Deterministic permutation of `[0, n)`. `seed` is an integer, reduced mod 2^32.
 export const seededPerm = (n: number, seed: number): number[] => {
   let state = seed >>> 0; // seed mod 2^32
 
