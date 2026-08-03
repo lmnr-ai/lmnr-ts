@@ -176,9 +176,16 @@ export class LaminarSpanProcessor implements SpanProcessor {
         : undefined);
 
     const spanId = span.spanContext().spanId;
+    // A parent created in ANOTHER process (context restored from a traceparent
+    // header or a queue carrier) is not in `_spanIdLists`. Seeding the path with
+    // the parent's own id keeps this span off the head of its ids_path, which is
+    // what stops the backend from treating it as a root and discarding the
+    // parent (`is_top_span` in app-server/src/traces/utils.rs).
     const parentSpanIdsPath =
       parentIdsPathFromAttribute ??
-      (parentSpanId ? this._spanIdLists.get(parentSpanId) : []);
+      (parentSpanId
+        ? this._spanIdLists.get(parentSpanId) ?? [otelSpanIdToUUID(parentSpanId)]
+        : []);
     const spanPath = parentSpanPath
       ? [...parentSpanPath, span.name]
       : [span.name];

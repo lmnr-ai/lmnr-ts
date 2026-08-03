@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 
+import { type StringUUID } from "@lmnr-ai/types";
 import { context, type Span, trace } from "@opentelemetry/api";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
@@ -13,7 +14,7 @@ import {
   withTracingLevel,
 } from "../src/index";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
-import { clearSpanProcessor } from "../src/opentelemetry-lib/tracing";
+import { clearSpanProcessor, getTracer } from "../src/opentelemetry-lib/tracing";
 import { getParentSpanId } from "../src/opentelemetry-lib/tracing/compat";
 import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
 import { otelSpanIdToUUID } from "../src/utils";
@@ -583,6 +584,63 @@ void describe("tracing", () => {
     ];
 
     assert.deepEqual(innerSpan?.attributes['lmnr.span.ids_path'], expectedIdsPath);
+  });
+
+  void it("seeds ids_path from a remote parent the processor has never seen", () => {
+    // A parent restored from a traceparent header / queue carrier lives in
+    // another process, so it is absent from the processor's span-id caches. The
+    // ids_path must still start with the parent, otherwise the backend's
+    // `is_top_span` check treats the span as a root and discards its parent.
+    const remoteParentSpanId = "1234567890abcdef";
+    const remoteContext = trace.setSpan(
+      context.active(),
+      trace.wrapSpanContext({
+        traceId: "abcdef001234567890abcdef00000001",
+        spanId: remoteParentSpanId,
+        traceFlags: 1,
+        isRemote: true,
+      }),
+    );
+
+    // Use the tracer directly: this mirrors how a third-party instrumentation
+    // (eve, an HTTP server instrumentation, ...) starts a span under a context
+    // it extracted from request headers.
+    getTracer().startSpan("child-of-remote", undefined, remoteContext).end();
+
+    const span = exporter.getFinishedSpans().find(s => s.name === "child-of-remote");
+    assert.ok(span);
+    assert.strictEqual(getParentSpanId(span), remoteParentSpanId);
+    assert.deepEqual(span.attributes['lmnr.span.ids_path'], [
+      otelSpanIdToUUID(remoteParentSpanId),
+      otelSpanIdToUUID(span.spanContext().spanId),
+    ]);
+  });
+
+  void it("keeps the parent for a parentSpanContext carrying no ids path", () => {
+    // This is the shape Temporal's W3C-`traceparent`-only fallback produces
+    // (`restoreContextFromHeaders` -> `{ traceId, spanId, isRemote }`): a remote
+    // parent with NO spanPath/spanIdsPath, so neither `setParentPathInfo` nor
+    // the PARENT_SPAN_IDS_PATH attribute can seed the path. The ids path must
+    // still start with the parent, or the backend's `is_top_span` check treats
+    // the span as a root and throws the parent away.
+    const parentSpanIdUuid = "00000000-0000-0000-1234-567890abcdef" as StringUUID;
+    const span = Laminar.startSpan({
+      name: "activity",
+      parentSpanContext: {
+        traceId: "abcdef00-1234-5678-90ab-cdef00000001",
+        spanId: parentSpanIdUuid,
+        isRemote: true,
+      },
+    });
+    span.end();
+
+    const exported = exporter.getFinishedSpans().find(s => s.name === "activity");
+    assert.ok(exported);
+    assert.strictEqual(getParentSpanId(exported), "1234567890abcdef");
+    assert.deepEqual(exported.attributes['lmnr.span.ids_path'], [
+      parentSpanIdUuid,
+      otelSpanIdToUUID(exported.spanContext().spanId),
+    ]);
   });
 
   void it("preserves span path in serialized span context with Laminar.startSpan", () => {
