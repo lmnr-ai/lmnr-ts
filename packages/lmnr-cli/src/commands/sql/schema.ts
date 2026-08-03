@@ -40,7 +40,13 @@ Available tables:
     metadata (String), executor_output (String), index (UInt64),
     trace_id (UUID), group_id (String), scores (String),
     created_at (DateTime64), dataset_id (UUID),
-    dataset_datapoint_id (UUID), dataset_datapoint_created_at (DateTime64)
+    dataset_datapoint_id (UUID), dataset_datapoint_created_at (DateTime64),
+    duration (Float64), input_cost (Float64), output_cost (Float64),
+    total_cost (Float64), start_time (DateTime64), end_time (DateTime64),
+    input_tokens (Int64), output_tokens (Int64), total_tokens (Int64),
+    cache_read_input_tokens (UInt64), cache_creation_input_tokens (UInt64),
+    reasoning_tokens (UInt64), trace_status (String), trace_metadata (String),
+    trace_tags (Array(String)), top_span_id (UUID)
 
   dataset_datapoints
     id (UUID), created_at (DateTime64), dataset_id (UUID),
