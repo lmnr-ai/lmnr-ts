@@ -9,10 +9,12 @@ import {
 import nock from "nock";
 
 import {
+  type EveClientSessionClass,
   type EveEval,
   type EveEvalResult,
   type EveEvalTarget,
   LaminarReporter,
+  patchEveClientSession,
 } from "../src/integrations/eve";
 import { otelTraceIdToUUID } from "../src/utils";
 
@@ -530,5 +532,360 @@ void describe("LaminarReporter for eve evals", () => {
     await assert.doesNotReject(() =>
       reporter.onEvalComplete({ id: "a", result: {}, assertions: [] }),
     );
+  });
+});
+
+/**
+ * Stand-in for eve's `ClientSession`. `send` sits on the prototype and returns a
+ * `MessageResponse`-shaped object, which is all the patch touches — so the suite
+ * needs no dependency on eve. Each test builds a FRESH subclass so the
+ * double-patch WeakSet in the reporter module cannot leak across tests.
+ */
+const makeStubSessionClass = (): {
+  new(eveSessionId: string): {
+    eveSessionId: string;
+    sentInputs: unknown[];
+    send(input: unknown): Promise<{ sessionId: string }>;
+  };
+} =>
+  class StubEveClientSession {
+    public sentInputs: unknown[] = [];
+    constructor(public eveSessionId: string) {}
+    async send(input: unknown): Promise<{ sessionId: string }> {
+      this.sentInputs.push(input);
+      return Promise.resolve({ sessionId: this.eveSessionId });
+    }
+  };
+
+const parseTraceparent = (headers: Record<string, string>) => {
+  const parts = (headers.traceparent ?? "").split("-");
+  return { traceIdHex: parts[1], spanIdHex: parts[2], flags: parts[3] };
+};
+
+const headersOf = (input: unknown): Record<string, string> =>
+  (input as { headers?: Record<string, string> }).headers ?? {};
+
+void describe("LaminarReporter eve trace propagation", () => {
+  let exporter: InMemorySpanExporter;
+
+  const makeReporter = (options: Record<string, any> = {}) =>
+    new LaminarReporter({
+      name: "eve-run",
+      projectApiKey: PROJECT_API_KEY,
+      spanProcessor: new SimpleSpanProcessor(exporter),
+      traceLookupAttempts: 1,
+      traceLookupDelayMs: 0,
+      ...options,
+    });
+
+  const mockDatapointWrites = (capture?: (body: RequestBody) => void) => {
+    nock(NOCK_URL)
+      .post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`, (b: RequestBody) => {
+        capture?.(b);
+        return true;
+      })
+      .times(4)
+      .reply(200, {});
+    nock(NOCK_URL)
+      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`))
+      .times(4)
+      .reply(200, {});
+  };
+
+  void beforeEach(() => {
+    process.env.LMNR_PROJECT_API_KEY = PROJECT_API_KEY;
+    exporter = new InMemorySpanExporter();
+  });
+
+  void afterEach(() => {
+    nock.cleanAll();
+  });
+
+  void it("pushes a runner-minted traceparent into every eve send", async () => {
+    mockInit();
+    mockDatapointWrites();
+
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], { kind: "local" });
+    const SessionClass = makeStubSessionClass();
+    assert.strictEqual(
+      patchEveClientSession(SessionClass as unknown as EveClientSessionClass),
+      true,
+    );
+
+    const session = new SessionClass("wrun_1");
+    const response = await session.send("hello");
+    assert.strictEqual(response.sessionId, "wrun_1");
+
+    // A bare string input is normalized to `{ message }` exactly as eve does.
+    assert.strictEqual(
+      (session.sentInputs[0] as { message?: string }).message,
+      "hello",
+    );
+    const headers = headersOf(session.sentInputs[0]);
+    const { traceIdHex, spanIdHex, flags } = parseTraceparent(headers);
+    assert.match(traceIdHex, /^[0-9a-f]{32}$/);
+    assert.match(spanIdHex, /^[0-9a-f]{16}$/);
+    assert.strictEqual(flags, "01");
+    const laminarContext = JSON.parse(headers["laminar-span-context"]);
+    assert.strictEqual(laminarContext.traceId, otelTraceIdToUUID(traceIdHex));
+    assert.strictEqual(laminarContext.isRemote, true);
+
+    // A second turn on the same eve session reuses the same trace.
+    await session.send({ message: "again", headers: { "x-user": "kolbe" } });
+    const secondHeaders = headersOf(session.sentInputs[1]);
+    assert.strictEqual(secondHeaders.traceparent, headers.traceparent);
+    assert.strictEqual(secondHeaders["x-user"], "kolbe");
+
+    await reporter.onRunComplete();
+  });
+
+  void it("resolves the datapoint trace from the propagated session with no SQL", async () => {
+    mockInit();
+    // Defined but must stay unused: the propagated path needs no lookup.
+    const sqlScope = mockTraceLookup([{ trace_id: EVE_AGENT_TRACE_ID }]);
+    let createBody: RequestBody = {};
+    mockDatapointWrites((b) => (createBody = b));
+
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a", description: "checks a thing" }], {});
+    const SessionClass = makeStubSessionClass();
+    patchEveClientSession(SessionClass);
+    const session = new SessionClass("wrun_1");
+    await session.send("hello");
+    const { traceIdHex } = parseTraceparent(headersOf(session.sentInputs[0]));
+
+    await reporter.onEvalComplete({
+      id: "a",
+      verdict: "passed",
+      result: { sessionId: "wrun_1", status: "waiting", finalMessage: "hi" },
+      assertions: [
+        { name: "includes(/hi/)", score: 1, severity: "gate", passed: true },
+        { name: "similarity", score: 0.8, severity: "soft" },
+      ],
+    });
+
+    assert.strictEqual(sqlScope.isDone(), false, "no session-id lookup expected");
+    const point = createBody.points[0];
+    assert.strictEqual(point.traceId, otelTraceIdToUUID(traceIdHex));
+    assert.strictEqual(point.metadata.traceResolution, "propagated");
+    assert.strictEqual(point.metadata.traceResolutionAttempt, 0);
+
+    const spans = exporter.getFinishedSpans();
+    const root = spans.find((span) => span.name === "eve eval a");
+    const executor = spans.find((span) => span.name === "executor");
+    assert.ok(root, "expected a renamed EVALUATION root span");
+    assert.ok(executor, "expected an EXECUTOR span");
+    assert.strictEqual(root.attributes["lmnr.span.type"], "EVALUATION");
+    assert.strictEqual(
+      root.attributes["lmnr.association.properties.trace_type"],
+      "EVALUATION",
+    );
+    assert.deepStrictEqual(root.attributes["lmnr.span.path"], ["eve eval a"]);
+    assert.strictEqual(executor.attributes["lmnr.span.type"], "EXECUTOR");
+    assert.deepStrictEqual(executor.attributes["lmnr.span.path"], [
+      "eve eval a",
+      "executor",
+    ]);
+    // The agent's turn is parented to the executor span, not the root.
+    assert.strictEqual(
+      parseTraceparent(headersOf(session.sentInputs[0])).spanIdHex,
+      executor.spanContext().spanId,
+    );
+
+    const evaluators = spans.filter(
+      (span) => span.attributes["lmnr.span.type"] === "EVALUATOR",
+    );
+    assert.deepStrictEqual(
+      evaluators.map((span) => span.name).sort(),
+      ["includes(/hi/)", "similarity"],
+    );
+    // Evaluator children carry an explicit parent path so the span processor
+    // rebuilds the RENAMED root's path, not the placeholder one.
+    assert.deepStrictEqual(
+      evaluators[0].attributes["lmnr.span.parent_path"],
+      ["eve eval a"],
+    );
+    assert.ok(evaluators.every(
+      (span) => span.spanContext().traceId === root.spanContext().traceId,
+    ));
+
+    await reporter.onRunComplete();
+  });
+
+  void it("keeps concurrent evals on separate traces", async () => {
+    mockInit();
+    const createBodies: RequestBody[] = [];
+    mockDatapointWrites((b) => createBodies.push(b));
+
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }, { id: "b" }], {});
+    const SessionClass = makeStubSessionClass();
+    patchEveClientSession(SessionClass);
+
+    // Two evals in flight at once, as with the default maxConcurrency of 8.
+    const first = new SessionClass("wrun_a");
+    const second = new SessionClass("wrun_b");
+    await Promise.all([first.send("one"), second.send("two")]);
+
+    const firstTrace = parseTraceparent(headersOf(first.sentInputs[0]));
+    const secondTrace = parseTraceparent(headersOf(second.sentInputs[0]));
+    assert.notStrictEqual(firstTrace.traceIdHex, secondTrace.traceIdHex);
+
+    // Grade in the opposite order to the sends — attribution must follow the
+    // session id, not arrival order.
+    await reporter.onEvalComplete({
+      id: "b",
+      verdict: "passed",
+      result: { sessionId: "wrun_b", status: "waiting" },
+      assertions: [],
+    });
+    await reporter.onEvalComplete({
+      id: "a",
+      verdict: "passed",
+      result: { sessionId: "wrun_a", status: "waiting" },
+      assertions: [],
+    });
+
+    const byName = new Map(
+      createBodies.map((body) => [
+        body.points[0].metadata.name as string,
+        body.points[0] as RequestBody,
+      ]),
+    );
+    assert.strictEqual(
+      byName.get("a")?.traceId,
+      otelTraceIdToUUID(firstTrace.traceIdHex),
+    );
+    assert.strictEqual(
+      byName.get("b")?.traceId,
+      otelTraceIdToUUID(secondTrace.traceIdHex),
+    );
+    assert.strictEqual(byName.get("a")?.metadata.traceResolution, "propagated");
+    assert.strictEqual(byName.get("b")?.metadata.traceResolution, "propagated");
+
+    const roots = exporter
+      .getFinishedSpans()
+      .filter((span) => span.attributes["lmnr.span.type"] === "EVALUATION");
+    assert.deepStrictEqual(
+      roots.map((span) => span.name).sort(),
+      ["eve eval a", "eve eval b"],
+    );
+
+    await reporter.onRunComplete();
+  });
+
+  void it("wraps send only once per prototype", async () => {
+    mockInit();
+    mockDatapointWrites();
+
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    const SessionClass = makeStubSessionClass();
+    patchEveClientSession(SessionClass);
+    const patched = SessionClass.prototype.send;
+    assert.strictEqual(
+      patchEveClientSession(SessionClass as unknown as EveClientSessionClass),
+      true,
+    );
+    assert.strictEqual(SessionClass.prototype.send, patched);
+
+    const session = new SessionClass("wrun_1");
+    await session.send("hello");
+    // A double wrap would have normalized the payload twice, nesting headers.
+    assert.strictEqual(session.sentInputs.length, 1);
+    assert.match(headersOf(session.sentInputs[0]).traceparent, /^00-/);
+
+    await reporter.onRunComplete();
+  });
+
+  void it("falls back to the session-id lookup when propagation is disabled", async () => {
+    mockInit();
+    let sqlBody: RequestBody = {};
+    const sqlScope = mockTraceLookup(
+      [{ trace_id: EVE_AGENT_TRACE_ID }],
+      (b) => (sqlBody = b),
+    );
+    let createBody: RequestBody = {};
+    mockDatapointWrites((b) => (createBody = b));
+
+    const reporter = makeReporter({ propagateTraceContext: false });
+    await reporter.onRunStart([{ id: "a" }], {});
+    const SessionClass = makeStubSessionClass();
+    patchEveClientSession(SessionClass);
+    const session = new SessionClass("wrun_1");
+    await session.send("hello");
+
+    // The patch is installed but no factory is registered, so eve's payload is
+    // untouched and the reporter has to query for the agent trace.
+    assert.strictEqual(session.sentInputs[0], "hello");
+    await reporter.onEvalComplete({
+      id: "a",
+      verdict: "passed",
+      result: { sessionId: "wrun_1", status: "waiting" },
+      assertions: [],
+    });
+
+    sqlScope.done();
+    assert.doesNotMatch(sqlBody.query, /lmnr\.eve\.session\.id/);
+    assert.match(sqlBody.query, /eve\.session\.id/);
+    assert.match(sqlBody.query, /workflow\.run\.id/);
+    assert.strictEqual(createBody.points[0].traceId, EVE_AGENT_TRACE_ID);
+    assert.strictEqual(
+      createBody.points[0].metadata.traceResolution,
+      "eve-session",
+    );
+
+    await reporter.onRunComplete();
+  });
+
+  void it("falls back when the graded session id was never propagated", async () => {
+    mockInit();
+    const sqlScope = mockTraceLookup([{ trace_id: EVE_AGENT_TRACE_ID }]);
+    let createBody: RequestBody = {};
+    mockDatapointWrites((b) => (createBody = b));
+
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    // No send at all — e.g. eve talked to the agent through a path the patch
+    // does not cover, or eve was absent so the patch never installed.
+    await reporter.onEvalComplete({
+      id: "a",
+      verdict: "passed",
+      result: { sessionId: "wrun_unknown", status: "waiting" },
+      assertions: [],
+    });
+
+    sqlScope.done();
+    assert.strictEqual(
+      createBody.points[0].metadata.traceResolution,
+      "eve-session",
+    );
+
+    await reporter.onRunComplete();
+  });
+
+  void it("closes session spans that never reached onEvalComplete", async () => {
+    mockInit();
+    mockDatapointWrites();
+
+    // InMemorySpanExporter wipes itself on shutdown, and the spans under test
+    // are only exported during onRunComplete — keep them past the shutdown.
+    exporter = new (class extends InMemorySpanExporter {
+      shutdown(): Promise<void> {
+        return Promise.resolve();
+      }
+    })();
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    const SessionClass = makeStubSessionClass();
+    patchEveClientSession(SessionClass);
+    await new SessionClass("wrun_orphan").send("hello");
+
+    assert.deepStrictEqual(exporter.getFinishedSpans(), []);
+    await reporter.onRunComplete();
+
+    const names = exporter.getFinishedSpans().map((span) => span.name).sort();
+    assert.deepStrictEqual(names, ["eve eval", "executor"]);
   });
 });

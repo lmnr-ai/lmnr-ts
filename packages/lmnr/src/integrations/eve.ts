@@ -1,17 +1,50 @@
 import { LaminarClient } from "@lmnr-ai/client";
-import { errorMessage } from "@lmnr-ai/types";
-import { type Span, trace } from "@opentelemetry/api";
+import {
+  errorMessage,
+  type LaminarSpanContext,
+  type StringUUID,
+} from "@lmnr-ai/types";
+import {
+  ROOT_CONTEXT,
+  type Span,
+  trace,
+  type Tracer,
+} from "@opentelemetry/api";
 import {
   BasicTracerProvider,
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 
 import { LaminarSpanProcessor } from "../opentelemetry-lib";
-import { initializeLogger, otelTraceIdToUUID } from "../utils";
+import {
+  PARENT_SPAN_IDS_PATH,
+  PARENT_SPAN_PATH,
+  SPAN_INPUT,
+  SPAN_OUTPUT,
+  SPAN_PATH,
+  SPAN_TYPE,
+  TRACE_TYPE,
+} from "../opentelemetry-lib/tracing/attributes";
+import {
+  initializeLogger,
+  metadataToAttributes,
+  otelSpanIdToUUID,
+  otelTraceIdToUUID,
+} from "../utils";
 
 const logger = initializeLogger();
 
 const EVE_REPORTER_TRACER_NAME = "@lmnr-ai/lmnr/eve-reporter";
+const EVE_CLIENT_MODULE = "eve/client";
+const TRACEPARENT_HEADER = "traceparent";
+const LAMINAR_SPAN_CONTEXT_HEADER = "laminar-span-context";
+/**
+ * Placeholder root span name. `ClientSession.send` runs before any reporter
+ * hook that knows which eval is in flight, so the root span is renamed to
+ * `eve eval <id>` once `onEvalComplete` supplies the id.
+ */
+const ROOT_SPAN_NAME = "eve eval";
+const EXECUTOR_SPAN_NAME = "executor";
 const DEFAULT_TRACE_LOOKUP_ATTEMPTS = 8;
 const DEFAULT_TRACE_LOOKUP_DELAY_MS = 1_000;
 
@@ -164,11 +197,213 @@ export interface LaminarReporterOptions {
    * How many times to query Laminar for eve's agent trace before falling back to
    * a reporter-created trace. Eve hands reporters the result only after the
    * session finishes, but OTel ingest can still lag the datapoint write.
+   * Only used when trace-context propagation did not resolve the trace.
    */
   traceLookupAttempts?: number;
   /** Delay between trace lookup attempts, in milliseconds. */
   traceLookupDelayMs?: number;
+  /**
+   * Mint the trace in the runner and push it to the agent as a `traceparent`
+   * header (see {@link patchEveClientSession}). Defaults to `true`. Set `false`
+   * to force the session-id lookup path.
+   */
+  propagateTraceContext?: boolean;
 }
+
+// ─── Trace-context propagation ────────────────────────────────────────────────
+// The runner MINTS the trace: before eve's client sends a turn, the reporter
+// opens the eval's root Laminar span and injects its W3C `traceparent` into the
+// request headers. eve's agent adopts it as the parent of the turn when
+// `agent/instrumentation.ts` sets `traceChannelRequests: true`, so the datapoint
+// needs no lookup at all.
+
+/** The subset of eve's `MessageResponse` the patch reads. */
+interface EveMessageResponse {
+  readonly sessionId?: string;
+}
+
+/** The subset of eve's `SendTurnPayload` the patch rewrites. */
+interface EveSendTurnPayload {
+  headers?: Record<string, string>;
+  [key: string]: unknown;
+}
+
+type EveSend = (this: object, input: unknown) => Promise<EveMessageResponse>;
+
+/** The subset of eve's `ClientSession` class the patch needs. */
+export interface EveClientSessionClass {
+  prototype: object & { send?: EveSend };
+}
+
+/** One eve client session's Laminar trace, minted on its first `send`. */
+interface EveSessionTrace {
+  /** Laminar trace id every span and the datapoint share. */
+  traceId: StringUUID;
+  /** Root EVALUATION span; the Laminar trace's root. */
+  rootSpan: Span;
+  /** EXECUTOR child the agent's turn hangs off; the `traceparent` parent. */
+  executorSpan: Span;
+  /** Tracer used for the EVALUATOR children created at grade time. */
+  tracer: Tracer;
+  /** Headers merged into every `send` on this client session. */
+  headers: Record<string, string>;
+  /** eve session ids this client session reported. */
+  sessionIds: Set<string>;
+  ended: boolean;
+}
+
+/** Prototypes already patched — `send` must never be wrapped twice. */
+const patchedSendPrototypes = new WeakSet<object>();
+/**
+ * Per-eve-client-session state. Keyed off the `ClientSession` instance rather
+ * than an AsyncLocalStorage frame or a "current eval" global: eve runs up to
+ * `maxConcurrency` evals at once, and each eval builds its own `ClientSession`
+ * (`EvalSessionManager` calls `client.session()` per `EvalSessionDriver`), so
+ * the instance is the only correct correlation key available inside `send`.
+ */
+const traceByClientSession = new WeakMap<object, EveSessionTrace>();
+/** eve session id -> trace, read by `onEvalComplete` via `result.sessionId`. */
+const traceByEveSessionId = new Map<string, EveSessionTrace>();
+/** Set by the running reporter's `onRunStart`; cleared by `onRunComplete`. */
+let activeSessionTraceFactory: (() => EveSessionTrace | undefined) | null = null;
+
+/** Mirrors eve's own `normalizeSendTurnInput`, then merges the trace headers. */
+const withTraceHeaders = (
+  input: unknown,
+  headers: Record<string, string>,
+): EveSendTurnPayload => {
+  const payload: EveSendTurnPayload = typeof input === "string"
+    ? { message: input }
+    : { ...(input as EveSendTurnPayload) };
+  payload.headers = { ...(payload.headers ?? {}), ...headers };
+  return payload;
+};
+
+const openSessionTrace = (
+  clientSession: object,
+): EveSessionTrace | undefined => {
+  try {
+    const existing = traceByClientSession.get(clientSession);
+    if (existing) {
+      return existing;
+    }
+    const minted = activeSessionTraceFactory?.();
+    if (minted) {
+      traceByClientSession.set(clientSession, minted);
+    }
+    return minted;
+  } catch (error) {
+    logger.warn(
+      `Laminar eve reporter: failed to open a session trace: ` +
+      errorMessage(error),
+    );
+    return undefined;
+  }
+};
+
+/**
+ * eve assigns the session id on the POST that `send` awaits, so the returned
+ * `MessageResponse` is the earliest place the runner can bind the eve session
+ * id to the trace it minted.
+ */
+const recordEveSessionId = (
+  response: EveMessageResponse | undefined,
+  sessionTrace: EveSessionTrace,
+): void => {
+  const sessionId = response?.sessionId;
+  if (typeof sessionId !== "string" || sessionId.length === 0) {
+    return;
+  }
+  sessionTrace.sessionIds.add(sessionId);
+  traceByEveSessionId.set(sessionId, sessionTrace);
+};
+
+/**
+ * Build the propagation headers for one span. Plain HTTP strings — eve forwards
+ * `SendTurnPayload.headers` verbatim to `fetch`.
+ */
+const buildTraceHeaders = (span: Span): Record<string, string> => {
+  const spanContext = span.spanContext();
+  const laminarContext: LaminarSpanContext = {
+    traceId: otelTraceIdToUUID(spanContext.traceId),
+    spanId: otelSpanIdToUUID(spanContext.spanId) as StringUUID,
+    isRemote: true,
+    // `spanPath` / `spanIdsPath` are deliberately omitted: the root span is
+    // renamed once the eval id is known, so a path captured here would be
+    // stale by the time a downstream reader used it.
+  };
+  return {
+    // eve reads ONLY `traceparent` (see its `traceChannelRequest`).
+    [TRACEPARENT_HEADER]:
+      `00-${spanContext.traceId}-${spanContext.spanId}-01`,
+    // For Laminar-aware agents; eve ignores it.
+    [LAMINAR_SPAN_CONTEXT_HEADER]: JSON.stringify(laminarContext),
+  };
+};
+
+/**
+ * Wrap `ClientSession.prototype.send` so every eve turn carries the trace
+ * context of a runner-minted Laminar span. Idempotent per prototype.
+ *
+ * @internal Exported for tests, which drive it with a stub class so the suite
+ * keeps no dependency on eve.
+ */
+export const patchEveClientSession = (
+  sessionClass: EveClientSessionClass | undefined,
+): boolean => {
+  const prototype = sessionClass?.prototype;
+  const original = prototype?.send;
+  if (!prototype || typeof original !== "function") {
+    return false;
+  }
+  if (patchedSendPrototypes.has(prototype)) {
+    return true;
+  }
+  // A prototype method needs a real `this`, so this cannot be an arrow.
+  prototype.send = async function (this: object, input: unknown) {
+    const sessionTrace = openSessionTrace(this);
+    if (!sessionTrace) {
+      return original.call(this, input);
+    }
+    const response = await original.call(
+      this,
+      withTraceHeaders(input, sessionTrace.headers),
+    );
+    try {
+      recordEveSessionId(response, sessionTrace);
+    } catch (error) {
+      logger.warn(
+        `Laminar eve reporter: failed to record the eve session id: ` +
+        errorMessage(error),
+      );
+    }
+    return response;
+  };
+  patchedSendPrototypes.add(prototype);
+  return true;
+};
+
+/**
+ * Load eve's `ClientSession` without depending on eve. Mirrors the guarded
+ * dynamic import in eve's own Braintrust reporter (`loadBraintrustSdk`), except
+ * a missing eve degrades instead of throwing — the reporter must keep working
+ * when it is registered outside an eve run.
+ */
+const loadEveClientSession = async (): Promise<
+  EveClientSessionClass | undefined
+> => {
+  try {
+    const module = await import(EVE_CLIENT_MODULE) as {
+      ClientSession?: unknown;
+    };
+    const sessionClass = module.ClientSession;
+    return typeof sessionClass === "function"
+      ? sessionClass
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 const didAssertionPass = (assertion: EveAssertionResult): boolean => {
   if (typeof assertion.passed === "boolean") {
@@ -244,6 +479,12 @@ const traceIdFromSpan = (span: Span) =>
   otelTraceIdToUUID(span.spanContext().traceId);
 
 type TraceResolution =
+  | {
+    traceId: string;
+    source: "propagated";
+    attempt: number;
+    sessionTrace: EveSessionTrace;
+  }
   | { traceId: string; source: "eve-session"; attempt: number }
   | { traceId: string; source: "reporter-fallback"; attempt: number; span: Span };
 
@@ -253,11 +494,19 @@ type TraceResolution =
  * hands the graded result here, and this reporter ships it to Laminar as an
  * evaluation run with one datapoint per eval.
  *
- * Trace correlation: eve exports its own AI SDK OTel spans (configured in the
- * agent's `instrumentation.ts`). Those spans carry the eve session id as
- * `eve.session.id`; this reporter stores the same id on each datapoint's
- * `sessionId` metadata, so an eval datapoint can be matched back to the trace
- * eve produced for that session.
+ * Trace correlation happens in one of three ways, best first:
+ *
+ * 1. `"propagated"` — the reporter patches eve's `ClientSession.send` and mints
+ *    the trace itself, pushing it to the agent as a `traceparent` header. The
+ *    agent adopts it only when `agent/instrumentation.ts` sets
+ *    `traceChannelRequests: true`.
+ * 2. `"eve-session"` — a Laminar query matches eve's own spans by their
+ *    `eve.session.id` / `workflow.run.id` attribute. Used when propagation was
+ *    disabled, eve is absent, or the agent never saw the header.
+ * 3. `"reporter-fallback"` — a reporter-owned trace, so the datapoint still
+ *    links somewhere debuggable.
+ *
+ * The resolved path is recorded on `metadata.traceResolution`.
  *
  * @example
  * ```ts
@@ -276,6 +525,11 @@ export class LaminarReporter implements EvalReporter {
   private evalsById = new Map<string, EveEval>();
   private index = 0;
   private tracerProvider?: BasicTracerProvider;
+  /** Session traces minted this run and not yet graded. */
+  private openSessionTraces = new Set<EveSessionTrace>();
+  /** Stable identity so `onRunComplete` only clears its own registration. */
+  private readonly sessionTraceFactory = (): EveSessionTrace | undefined =>
+    this.mintSessionTrace();
 
   constructor(options: LaminarReporterOptions = {}) {
     this.options = options;
@@ -297,6 +551,7 @@ export class LaminarReporter implements EvalReporter {
     this.index = 0;
     // A leftover provider means the previous run never reached onRunComplete
     // (eve crashed mid-run); release its exporter before replacing it.
+    this.finishOpenSessionTraces();
     await this.shutdownTracerProvider();
     try {
       this.client = this.options.client ?? new LaminarClient({
@@ -314,6 +569,13 @@ export class LaminarReporter implements EvalReporter {
           }),
         ],
       });
+      // Register the factory and patch eve BEFORE `evals.init` — eve awaits
+      // `onRunStart` before the first eval, but the patch has to be in place
+      // for the very first `send`, and a slow init must not shrink that margin.
+      if (this.options.propagateTraceContext !== false) {
+        activeSessionTraceFactory = this.sessionTraceFactory;
+        patchEveClientSession(await loadEveClientSession());
+      }
       this.evalId = await this.client.evals.init(
         this.options.name,
         this.options.groupName,
@@ -401,8 +663,9 @@ export class LaminarReporter implements EvalReporter {
       });
       reported = true;
     } catch (error) {
-      traceResolution.source === "reporter-fallback" &&
+      if (traceResolution.source === "reporter-fallback") {
         traceResolution.span.recordException(error as Error);
+      }
       logger.error(
         `Laminar eve reporter: failed to report eval ` +
         `"${result.id ?? index}": ${errorMessage(error)}`,
@@ -411,8 +674,22 @@ export class LaminarReporter implements EvalReporter {
       if (traceResolution.source === "reporter-fallback") {
         traceResolution.span.end();
       }
+      if (traceResolution.source === "propagated") {
+        this.finishSessionTrace(traceResolution.sessionTrace, {
+          evalId: result.id,
+          description: evalDescription,
+          verdict: result.verdict,
+          status: task.status,
+          output: task.output ?? task.finalMessage ?? null,
+          assertions,
+        });
+      }
       await tracerProvider?.forceFlush();
-      if (reported && evalDescription) {
+      // The propagated path stamps the same facts as span metadata on the root
+      // it owns. Pushing them over HTTP as well would race the trace's own
+      // ingest — the spans are only flushed on the line above, so the trace does
+      // not exist server-side yet ("Trace ... not found").
+      if (reported && evalDescription && traceResolution.source !== "propagated") {
         await this.pushEvalTraceMetadata({
           client,
           traceId: traceResolution.traceId,
@@ -428,9 +705,160 @@ export class LaminarReporter implements EvalReporter {
   async onRunComplete(): Promise<void> {
     // Laminar derives average scores server-side from the datapoints, so there
     // is nothing to push here. Datapoint writes are awaited per-eval already.
+    // Secondary eve sessions (`t.sessions.newSession()`) and evals that threw
+    // before producing a session id never reach onEvalComplete, so their spans
+    // are closed here.
+    this.finishOpenSessionTraces();
+    if (activeSessionTraceFactory === this.sessionTraceFactory) {
+      activeSessionTraceFactory = null;
+    }
     await this.shutdownTracerProvider();
     this.evalId = undefined;
     this.evalsById.clear();
+  }
+
+  /**
+   * Open the eval's Laminar spans for one eve client session: an EVALUATION
+   * root plus the EXECUTOR child the agent's turn is parented to. Called from
+   * the patched `send`, so it must never throw into the user's eval.
+   */
+  private mintSessionTrace(): EveSessionTrace | undefined {
+    const tracerProvider = this.tracerProvider;
+    if (!tracerProvider) {
+      return undefined;
+    }
+    const tracer = tracerProvider.getTracer(EVE_REPORTER_TRACER_NAME);
+    // ROOT_CONTEXT, not the active context: concurrent evals must not nest
+    // inside whichever span happens to be active on the runner's stack.
+    const rootSpan = tracer.startSpan(ROOT_SPAN_NAME, {
+      attributes: {
+        [SPAN_TYPE]: "EVALUATION",
+        [TRACE_TYPE]: "EVALUATION",
+        "lmnr.eve.reporter": EVE_REPORTER_TRACER_NAME,
+      },
+    }, ROOT_CONTEXT);
+    const executorSpan = tracer.startSpan(EXECUTOR_SPAN_NAME, {
+      attributes: { [SPAN_TYPE]: "EXECUTOR" },
+    }, trace.setSpan(ROOT_CONTEXT, rootSpan));
+    const sessionTrace: EveSessionTrace = {
+      traceId: otelTraceIdToUUID(rootSpan.spanContext().traceId),
+      rootSpan,
+      executorSpan,
+      tracer,
+      headers: buildTraceHeaders(executorSpan),
+      sessionIds: new Set(),
+      ended: false,
+    };
+    this.openSessionTraces.add(sessionTrace);
+    return sessionTrace;
+  }
+
+  /** Grade, close and release one session trace. Idempotent. */
+  private finishSessionTrace(
+    sessionTrace: EveSessionTrace,
+    grade: {
+      evalId?: string;
+      description?: string;
+      verdict?: EveEvalVerdict;
+      status?: string;
+      output?: any;
+      assertions?: readonly EveAssertionResult[];
+    },
+  ): void {
+    if (sessionTrace.ended) {
+      return;
+    }
+    sessionTrace.ended = true;
+    this.openSessionTraces.delete(sessionTrace);
+    for (const sessionId of sessionTrace.sessionIds) {
+      traceByEveSessionId.delete(sessionId);
+    }
+    try {
+      const rootName = grade.evalId
+        ? `${ROOT_SPAN_NAME} ${grade.evalId}`
+        : ROOT_SPAN_NAME;
+      // The span processor stamped `lmnr.span.path` from the placeholder name at
+      // start time; rewrite it on both of our still-open spans so the Laminar
+      // path tree matches the final root name.
+      sessionTrace.rootSpan.updateName(rootName);
+      sessionTrace.rootSpan.setAttribute(SPAN_PATH, [rootName]);
+      sessionTrace.executorSpan.setAttribute(
+        SPAN_PATH,
+        [rootName, EXECUTOR_SPAN_NAME],
+      );
+      sessionTrace.rootSpan.setAttributes({
+        "lmnr.eve.eval.id": grade.evalId ?? "",
+        "lmnr.eve.eval.verdict": grade.verdict ?? "",
+        "lmnr.eve.eval.status": grade.status ?? "",
+        [SPAN_INPUT]: JSON.stringify({
+          evalId: grade.evalId,
+          description: grade.description,
+        }),
+        [SPAN_OUTPUT]: JSON.stringify(grade.output ?? null),
+        // Same facts `pushEvalTraceMetadata` posts on the lookup paths. Stamping
+        // them here keeps trace metadata off the HTTP path, which would race the
+        // ingest of the very spans that create this trace.
+        ...metadataToAttributes({
+          source: "eve",
+          eveEvalId: grade.evalId ?? "",
+          eveEvalDescription: grade.description ?? "",
+          eveEvalVerdict: grade.verdict ?? "",
+          eveSessionId: [...sessionTrace.sessionIds].join(","),
+        }),
+      });
+      sessionTrace.executorSpan.setAttribute(
+        SPAN_OUTPUT,
+        JSON.stringify(grade.output ?? null),
+      );
+      this.recordEvaluatorSpans(sessionTrace, rootName, grade.assertions ?? []);
+      sessionTrace.executorSpan.end();
+      sessionTrace.rootSpan.end();
+    } catch (error) {
+      logger.warn(
+        `Laminar eve reporter: failed to finish the session trace: ` +
+        errorMessage(error),
+      );
+    }
+  }
+
+  /**
+   * One EVALUATOR span per eve assertion. They are created at grade time (the
+   * assertions only exist then) as short children of the still-open root, and
+   * carry an explicit parent path so the processor rebuilds the renamed root's
+   * path rather than the cached placeholder one.
+   */
+  private recordEvaluatorSpans(
+    sessionTrace: EveSessionTrace,
+    rootName: string,
+    assertions: readonly EveAssertionResult[],
+  ): void {
+    const rootContext = trace.setSpan(ROOT_CONTEXT, sessionTrace.rootSpan);
+    const rootIdsPath = [
+      otelSpanIdToUUID(sessionTrace.rootSpan.spanContext().spanId),
+    ];
+    for (const assertion of assertions) {
+      const name = assertion.name ?? "assertion";
+      sessionTrace.tracer.startSpan(name, {
+        attributes: {
+          [SPAN_TYPE]: "EVALUATOR",
+          [PARENT_SPAN_PATH]: [rootName],
+          [PARENT_SPAN_IDS_PATH]: rootIdsPath,
+          [SPAN_OUTPUT]: JSON.stringify({
+            score: assertion.score ?? null,
+            passed: didAssertionPass(assertion),
+            severity: assertion.severity,
+            threshold: assertion.threshold,
+            message: assertion.message,
+          }),
+        },
+      }, rootContext).end();
+    }
+  }
+
+  private finishOpenSessionTraces(): void {
+    for (const sessionTrace of [...this.openSessionTraces]) {
+      this.finishSessionTrace(sessionTrace, {});
+    }
   }
 
   /**
@@ -500,16 +928,32 @@ export class LaminarReporter implements EvalReporter {
     const delayMs = this.options.traceLookupDelayMs ??
       DEFAULT_TRACE_LOOKUP_DELAY_MS;
 
+    // Best path: the runner already minted this session's trace and pushed it
+    // to the agent, so there is nothing to look up and no ingest to race.
+    const sessionTrace = sessionId
+      ? traceByEveSessionId.get(sessionId)
+      : undefined;
+    if (sessionTrace) {
+      return {
+        traceId: sessionTrace.traceId,
+        source: "propagated",
+        attempt: 0,
+        sessionTrace,
+      };
+    }
+
     if (sessionId) {
       for (let attempt = 1; attempt <= attempts; attempt++) {
         try {
+          // `eve.session.id` is what eve's own AI SDK spans carry;
+          // `workflow.run.id` is the same id under Vercel Workflow's own
+          // attribute (an eve session id IS a `wrun_…` workflow run id).
           const rows = await client.sql.query(
             "SELECT trace_id, count() AS span_count " +
             "FROM spans " +
             "WHERE span_type != 'EVALUATION' " +
             "AND (" +
             "simpleJSONExtractString(attributes, 'workflow.run.id') = {session_id:String} " +
-            "OR simpleJSONExtractString(attributes, 'lmnr.eve.session.id') = {session_id:String} " +
             "OR simpleJSONExtractString(attributes, 'eve.session.id') = {session_id:String}" +
             ") " +
             "GROUP BY trace_id " +
