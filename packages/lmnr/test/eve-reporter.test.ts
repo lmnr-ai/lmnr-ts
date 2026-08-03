@@ -2,6 +2,7 @@ import assert from "node:assert";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
 import { type StringUUID } from "@lmnr-ai/types";
+import { trace } from "@opentelemetry/api";
 import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
@@ -16,14 +17,15 @@ import {
   LaminarReporter,
   patchEveClientSession,
 } from "../src/integrations/eve";
-import { otelTraceIdToUUID } from "../src/utils";
+import { LaminarSpanProcessor } from "../src/opentelemetry-lib";
+import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
+import { otelSpanIdToUUID, otelTraceIdToUUID } from "../src/utils";
 
 type RequestBody = Record<string, any>;
 
 const NOCK_URL = "https://api.lmnr.ai:443";
 const PROJECT_API_KEY = "test-api-key";
 const MOCK_EVAL_ID: StringUUID = "12345678-1234-1234-1234-123456789abc";
-const EVE_AGENT_TRACE_ID: StringUUID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
 const DATAPOINT_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -42,25 +44,6 @@ const mockInit = (capture?: (body: RequestBody) => void) =>
       projectId: "project-123",
     });
 
-const mockTraceLookup = (
-  rows: Array<Record<string, any>>,
-  capture?: (body: RequestBody) => void,
-) =>
-  nock(NOCK_URL)
-    .post("/v1/sql/query", (body: RequestBody) => {
-      capture?.(body);
-      return true;
-    })
-    .reply(200, { data: rows });
-
-const mockTraceMetadata = (capture?: (body: RequestBody) => void) =>
-  nock(NOCK_URL)
-    .post("/v1/traces/metadata", (body: RequestBody) => {
-      capture?.(body);
-      return true;
-    })
-    .reply(200, {});
-
 void describe("LaminarReporter for eve evals", () => {
   let exporter: InMemorySpanExporter;
 
@@ -69,8 +52,6 @@ void describe("LaminarReporter for eve evals", () => {
       name: "eve-run",
       projectApiKey: PROJECT_API_KEY,
       spanProcessor: new SimpleSpanProcessor(exporter),
-      traceLookupAttempts: 1,
-      traceLookupDelayMs: 0,
     });
 
   void beforeEach(() => {
@@ -117,15 +98,8 @@ void describe("LaminarReporter for eve evals", () => {
     scope.done();
   });
 
-  void it("reports a graded eval and links it to the matching eve agent trace", async () => {
+  void it("reports a graded eval onto the reporter-owned trace", async () => {
     const initScope = mockInit();
-    let sqlBody: RequestBody = {};
-    const sqlScope = mockTraceLookup(
-      [{ trace_id: EVE_AGENT_TRACE_ID, span_count: 12 }],
-      (b) => (sqlBody = b),
-    );
-    let traceMetadataBody: RequestBody = {};
-    const traceMetadataScope = mockTraceMetadata((b) => (traceMetadataBody = b));
 
     let createBody: RequestBody = {};
     const createScope = nock(NOCK_URL)
@@ -175,15 +149,22 @@ void describe("LaminarReporter for eve evals", () => {
     };
     await reporter.onEvalComplete(result);
 
-    assert.match(sqlBody.query, /workflow\.run\.id/);
-    assert.match(sqlBody.query, /span_type != 'EVALUATION'/);
-    assert.deepStrictEqual(sqlBody.parameters, { session_id: "wrun_abc123" });
+    // No session trace was propagated, so the reporter owns an EVALUATION span
+    // and the datapoint links to ITS trace. No lookup query is ever issued —
+    // nock would throw on an unmocked request if one were.
+    const reporterSpan = exporter
+      .getFinishedSpans()
+      .find((span) => span.name === "eve eval brooklyn-forecast");
+    assert.ok(reporterSpan, "expected a reporter-owned EVALUATION span");
 
     // create datapoint
     assert.strictEqual(createBody.points.length, 1);
     const point = createBody.points[0];
     assert.ok(DATAPOINT_ID_RE.test(point.id));
-    assert.strictEqual(point.traceId, EVE_AGENT_TRACE_ID);
+    assert.strictEqual(
+      point.traceId,
+      otelTraceIdToUUID(reporterSpan.spanContext().traceId),
+    );
     assert.strictEqual(point.data, "brooklyn-forecast");
     assert.strictEqual(point.target, "It is sunny.");
     assert.strictEqual(point.index, 0);
@@ -197,9 +178,7 @@ void describe("LaminarReporter for eve evals", () => {
     assert.strictEqual(point.metadata.sessionId, "wrun_abc123");
     assert.deepStrictEqual(point.metadata.toolCalls, ["get_weather"]);
     assert.strictEqual(point.metadata.modelId, "gpt-4o-mini");
-    assert.strictEqual(point.metadata.traceResolution, "eve-session");
-    assert.strictEqual(point.metadata.traceResolutionAttempt, 1);
-    assert.deepStrictEqual(exporter.getFinishedSpans(), []);
+    assert.strictEqual(point.metadata.traceResolution, "reporter-fallback");
 
     assert.deepStrictEqual(updateBody.scores, {
       "eve.verdict.passed": 1,
@@ -222,96 +201,23 @@ void describe("LaminarReporter for eve evals", () => {
       },
     ]);
 
-    assert.strictEqual(traceMetadataBody.traceId, EVE_AGENT_TRACE_ID);
-    assert.strictEqual(traceMetadataBody.metadata.source, "eve");
-    assert.strictEqual(traceMetadataBody.metadata.eveEvalId, "brooklyn-forecast");
+    // Eval metadata rides on the span, never on a `/v1/traces/metadata` POST.
+    const meta = "lmnr.association.properties.metadata";
+    assert.strictEqual(reporterSpan.attributes[`${meta}.source`], "eve");
     assert.strictEqual(
-      traceMetadataBody.metadata.eveEvalDescription,
+      reporterSpan.attributes[`${meta}.eveEvalId`],
+      "brooklyn-forecast",
+    );
+    assert.strictEqual(
+      reporterSpan.attributes[`${meta}.eveEvalDescription`],
       "Checks that the agent can answer with local weather.",
     );
-    assert.strictEqual(traceMetadataBody.metadata.eveEvalVerdict, "passed");
-    assert.strictEqual(traceMetadataBody.metadata.eveSessionId, "wrun_abc123");
+    assert.strictEqual(reporterSpan.attributes[`${meta}.eveEvalVerdict`], "passed");
+    assert.strictEqual(reporterSpan.attributes[`${meta}.eveSessionId`], "wrun_abc123");
 
     initScope.done();
-    sqlScope.done();
     createScope.done();
     updateScope.done();
-    traceMetadataScope.done();
-  });
-
-  void it("retries eve trace lookup before creating the datapoint", async () => {
-    mockInit();
-    mockTraceLookup([]);
-    const secondLookupScope = mockTraceLookup([
-      { trace_id: EVE_AGENT_TRACE_ID, span_count: 3 },
-    ]);
-    let createBody: RequestBody = {};
-    nock(NOCK_URL)
-      .post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`, (b: RequestBody) => {
-        createBody = b;
-        return true;
-      })
-      .reply(200, {});
-    nock(NOCK_URL)
-      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`))
-      .reply(200, {});
-
-    const reporter = new LaminarReporter({
-      name: "eve-run",
-      projectApiKey: PROJECT_API_KEY,
-      spanProcessor: new SimpleSpanProcessor(exporter),
-      traceLookupAttempts: 2,
-      traceLookupDelayMs: 0,
-    });
-    await reporter.onRunStart([{ id: "a" }], {});
-    await reporter.onEvalComplete({
-      id: "a",
-      verdict: "passed",
-      result: { sessionId: "wrun_retry", status: "completed" },
-      assertions: [],
-    });
-
-    assert.strictEqual(createBody.points[0].traceId, EVE_AGENT_TRACE_ID);
-    assert.strictEqual(createBody.points[0].metadata.traceResolutionAttempt, 2);
-    secondLookupScope.done();
-  });
-
-  void it("falls back to a reporter trace when no eve agent trace is found", async () => {
-    mockInit();
-    const sqlScope = mockTraceLookup([]);
-    let createBody: RequestBody = {};
-    nock(NOCK_URL)
-      .post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`, (b: RequestBody) => {
-        createBody = b;
-        return true;
-      })
-      .reply(200, {});
-    nock(NOCK_URL)
-      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`))
-      .reply(200, {});
-
-    const reporter = makeReporter();
-    await reporter.onRunStart([{ id: "a" }], {});
-    await reporter.onEvalComplete({
-      id: "a",
-      verdict: "failed",
-      result: { sessionId: "wrun_missing", status: "failed" },
-      assertions: [],
-    });
-
-    const reporterSpan = exporter
-      .getFinishedSpans()
-      .find((span) => span.name === "eve eval a");
-    assert.ok(reporterSpan, "expected a fallback reporter trace span");
-    assert.strictEqual(
-      createBody.points[0].traceId,
-      otelTraceIdToUUID(reporterSpan.spanContext().traceId),
-    );
-    assert.strictEqual(
-      createBody.points[0].metadata.traceResolution,
-      "reporter-fallback",
-    );
-    sqlScope.done();
   });
 
   void it("encodes a failed gate in stable summary scores", async () => {
@@ -573,8 +479,6 @@ void describe("LaminarReporter eve trace propagation", () => {
       name: "eve-run",
       projectApiKey: PROJECT_API_KEY,
       spanProcessor: new SimpleSpanProcessor(exporter),
-      traceLookupAttempts: 1,
-      traceLookupDelayMs: 0,
       ...options,
     });
 
@@ -630,6 +534,13 @@ void describe("LaminarReporter eve trace propagation", () => {
     const laminarContext = JSON.parse(headers["laminar-span-context"]);
     assert.strictEqual(laminarContext.traceId, otelTraceIdToUUID(traceIdHex));
     assert.strictEqual(laminarContext.isRemote, true);
+    // The path must travel with the ids. Laminar nests by `lmnr.span.ids_path`,
+    // so a receiver that adopts only the ids lands as a second root instead of
+    // under the executor. Both names are constant, so the path is exact.
+    assert.strictEqual(laminarContext.spanId, otelSpanIdToUUID(spanIdHex));
+    assert.deepStrictEqual(laminarContext.spanPath, ["eve eval", "executor"]);
+    assert.strictEqual(laminarContext.spanIdsPath.length, 2);
+    assert.strictEqual(laminarContext.spanIdsPath[1], laminarContext.spanId);
 
     // A second turn on the same eve session reuses the same trace.
     await session.send({ message: "again", headers: { "x-user": "kolbe" } });
@@ -640,10 +551,8 @@ void describe("LaminarReporter eve trace propagation", () => {
     await reporter.onRunComplete();
   });
 
-  void it("resolves the datapoint trace from the propagated session with no SQL", async () => {
+  void it("resolves the datapoint trace from the propagated session", async () => {
     mockInit();
-    // Defined but must stay unused: the propagated path needs no lookup.
-    const sqlScope = mockTraceLookup([{ trace_id: EVE_AGENT_TRACE_ID }]);
     let createBody: RequestBody = {};
     mockDatapointWrites((b) => (createBody = b));
 
@@ -665,28 +574,24 @@ void describe("LaminarReporter eve trace propagation", () => {
       ],
     });
 
-    assert.strictEqual(sqlScope.isDone(), false, "no session-id lookup expected");
     const point = createBody.points[0];
     assert.strictEqual(point.traceId, otelTraceIdToUUID(traceIdHex));
     assert.strictEqual(point.metadata.traceResolution, "propagated");
-    assert.strictEqual(point.metadata.traceResolutionAttempt, 0);
 
     const spans = exporter.getFinishedSpans();
-    const root = spans.find((span) => span.name === "eve eval a");
+    // The root keeps the name it was minted with — eve cannot tell us the eval
+    // id before the first send, so the id rides on attributes, not the name.
+    const root = spans.find((span) => span.name === "eve eval");
     const executor = spans.find((span) => span.name === "executor");
-    assert.ok(root, "expected a renamed EVALUATION root span");
+    assert.ok(root, "expected an EVALUATION root span");
     assert.ok(executor, "expected an EXECUTOR span");
     assert.strictEqual(root.attributes["lmnr.span.type"], "EVALUATION");
     assert.strictEqual(
       root.attributes["lmnr.association.properties.trace_type"],
       "EVALUATION",
     );
-    assert.deepStrictEqual(root.attributes["lmnr.span.path"], ["eve eval a"]);
+    assert.strictEqual(root.attributes["lmnr.eve.eval.id"], "a");
     assert.strictEqual(executor.attributes["lmnr.span.type"], "EXECUTOR");
-    assert.deepStrictEqual(executor.attributes["lmnr.span.path"], [
-      "eve eval a",
-      "executor",
-    ]);
     // The agent's turn is parented to the executor span, not the root.
     assert.strictEqual(
       parseTraceparent(headersOf(session.sentInputs[0])).spanIdHex,
@@ -700,15 +605,105 @@ void describe("LaminarReporter eve trace propagation", () => {
       evaluators.map((span) => span.name).sort(),
       ["includes(/hi/)", "similarity"],
     );
-    // Evaluator children carry an explicit parent path so the span processor
-    // rebuilds the RENAMED root's path, not the placeholder one.
-    assert.deepStrictEqual(
+    // No explicit parent path is declared any more — see the span-path test
+    // below, which runs a real LaminarSpanProcessor and checks the tree.
+    assert.strictEqual(
       evaluators[0].attributes["lmnr.span.parent_path"],
-      ["eve eval a"],
+      undefined,
     );
     assert.ok(evaluators.every(
       (span) => span.spanContext().traceId === root.spanContext().traceId,
     ));
+
+    await reporter.onRunComplete();
+  });
+
+  void it("builds the span path tree without rewriting any path", async () => {
+    mockInit();
+    mockDatapointWrites();
+
+    // The real processor, not the SimpleSpanProcessor the other cases inject:
+    // `lmnr.span.path` is stamped in its `onStart`, and the whole point of
+    // keeping the root's name stable is that those stamps stay correct.
+    const reporter = new LaminarReporter({
+      name: "eve-run",
+      projectApiKey: PROJECT_API_KEY,
+      spanProcessor: new LaminarSpanProcessor({ exporter, disableBatch: true }),
+    });
+    await reporter.onRunStart([{ id: "a" }], {});
+    const SessionClass = makeStubSessionClass();
+    patchEveClientSession(SessionClass);
+    await new SessionClass("wrun_1").send("hello");
+
+    await reporter.onEvalComplete({
+      id: "a",
+      verdict: "passed",
+      result: { sessionId: "wrun_1", status: "waiting", finalMessage: "hi" },
+      assertions: [{ name: "judge.autoevals.closedQA", score: 1, severity: "soft" }],
+    });
+
+    const pathOf = (name: string) =>
+      exporter.getFinishedSpans()
+        .find((span) => span.name === name)
+        ?.attributes["lmnr.span.path"];
+    assert.deepStrictEqual(pathOf("eve eval"), ["eve eval"]);
+    assert.deepStrictEqual(pathOf("executor"), ["eve eval", "executor"]);
+    // Inherited from the processor's cache for the root — nothing declares it.
+    assert.deepStrictEqual(pathOf("judge.autoevals.closedQA"), [
+      "eve eval",
+      "judge.autoevals.closedQA",
+    ]);
+
+    await reporter.onRunComplete();
+  });
+
+  void it("binds the eval's async context to the root, not to one judge span", async () => {
+    mockInit();
+    mockDatapointWrites();
+
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    const SessionClass = makeStubSessionClass();
+    patchEveClientSession(SessionClass);
+    const session = new SessionClass("wrun_1");
+    await session.send("hello");
+
+    // What `t.judge.autoevals.*` sees: eve runs the judge's model call in the
+    // runner, and Laminar's AI SDK integration parents it to whatever this
+    // resolves to. Every judge in the eval reads the SAME context, so the bound
+    // span must be the root — a per-judge parent would collect judge B's model
+    // call under judge A.
+    const boundSpan = trace.getSpan(LaminarContextManager.getContext());
+    assert.ok(boundSpan, "expected the eval's async context to carry a span");
+    const boundSpanId = boundSpan.spanContext().spanId;
+
+    await reporter.onEvalComplete({
+      id: "a",
+      verdict: "passed",
+      result: { sessionId: "wrun_1", status: "waiting", finalMessage: "hi" },
+      assertions: [
+        { name: "judge.autoevals.closedQA", score: 1, severity: "soft" },
+        { name: "judge.autoevals.factuality", score: 0.9, severity: "soft" },
+      ],
+    });
+
+    const spans = exporter.getFinishedSpans();
+    const root = spans.find((span) => span.name === "eve eval");
+    const executor = spans.find((span) => span.name === "executor");
+    assert.ok(root);
+    assert.ok(executor);
+    assert.strictEqual(boundSpanId, root.spanContext().spanId);
+    assert.notStrictEqual(boundSpanId, executor.spanContext().spanId);
+
+    // Two judges in one eval each get their own EVALUATOR span. Nothing is
+    // pre-opened and nothing is claimed, so neither judge can crowd out the other.
+    const evaluators = spans.filter(
+      (span) => span.attributes["lmnr.span.type"] === "EVALUATOR",
+    );
+    assert.deepStrictEqual(
+      evaluators.map((span) => span.name).sort(),
+      ["judge.autoevals.closedQA", "judge.autoevals.factuality"],
+    );
 
     await reporter.onRunComplete();
   });
@@ -764,12 +759,22 @@ void describe("LaminarReporter eve trace propagation", () => {
     assert.strictEqual(byName.get("a")?.metadata.traceResolution, "propagated");
     assert.strictEqual(byName.get("b")?.metadata.traceResolution, "propagated");
 
+    // Both roots share one name; the eval id is what tells them apart, and each
+    // sits on its own trace.
     const roots = exporter
       .getFinishedSpans()
       .filter((span) => span.attributes["lmnr.span.type"] === "EVALUATION");
     assert.deepStrictEqual(
-      roots.map((span) => span.name).sort(),
-      ["eve eval a", "eve eval b"],
+      roots.map((span) => span.name),
+      ["eve eval", "eve eval"],
+    );
+    assert.deepStrictEqual(
+      roots.map((span) => span.attributes["lmnr.eve.eval.id"]).sort(),
+      ["a", "b"],
+    );
+    assert.strictEqual(
+      new Set(roots.map((span) => span.spanContext().traceId)).size,
+      2,
     );
 
     await reporter.onRunComplete();
@@ -799,13 +804,8 @@ void describe("LaminarReporter eve trace propagation", () => {
     await reporter.onRunComplete();
   });
 
-  void it("falls back to the session-id lookup when propagation is disabled", async () => {
+  void it("leaves eve's payload alone when propagation is disabled", async () => {
     mockInit();
-    let sqlBody: RequestBody = {};
-    const sqlScope = mockTraceLookup(
-      [{ trace_id: EVE_AGENT_TRACE_ID }],
-      (b) => (sqlBody = b),
-    );
     let createBody: RequestBody = {};
     mockDatapointWrites((b) => (createBody = b));
 
@@ -817,7 +817,7 @@ void describe("LaminarReporter eve trace propagation", () => {
     await session.send("hello");
 
     // The patch is installed but no factory is registered, so eve's payload is
-    // untouched and the reporter has to query for the agent trace.
+    // untouched and no trace is minted for the session.
     assert.strictEqual(session.sentInputs[0], "hello");
     await reporter.onEvalComplete({
       id: "a",
@@ -826,14 +826,9 @@ void describe("LaminarReporter eve trace propagation", () => {
       assertions: [],
     });
 
-    sqlScope.done();
-    assert.doesNotMatch(sqlBody.query, /lmnr\.eve\.session\.id/);
-    assert.match(sqlBody.query, /eve\.session\.id/);
-    assert.match(sqlBody.query, /workflow\.run\.id/);
-    assert.strictEqual(createBody.points[0].traceId, EVE_AGENT_TRACE_ID);
     assert.strictEqual(
       createBody.points[0].metadata.traceResolution,
-      "eve-session",
+      "reporter-fallback",
     );
 
     await reporter.onRunComplete();
@@ -841,7 +836,6 @@ void describe("LaminarReporter eve trace propagation", () => {
 
   void it("falls back when the graded session id was never propagated", async () => {
     mockInit();
-    const sqlScope = mockTraceLookup([{ trace_id: EVE_AGENT_TRACE_ID }]);
     let createBody: RequestBody = {};
     mockDatapointWrites((b) => (createBody = b));
 
@@ -856,10 +850,17 @@ void describe("LaminarReporter eve trace propagation", () => {
       assertions: [],
     });
 
-    sqlScope.done();
+    const fallback = exporter
+      .getFinishedSpans()
+      .find((span) => span.name === "eve eval a");
+    assert.ok(fallback, "expected a reporter-owned EVALUATION span");
+    assert.strictEqual(
+      createBody.points[0].traceId,
+      otelTraceIdToUUID(fallback.spanContext().traceId),
+    );
     assert.strictEqual(
       createBody.points[0].metadata.traceResolution,
-      "eve-session",
+      "reporter-fallback",
     );
 
     await reporter.onRunComplete();
