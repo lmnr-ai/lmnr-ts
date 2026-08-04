@@ -4,28 +4,11 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { buildInstallCommands, renderCommand, writeAgentConfig } from "./index";
+import { AGENTS, renderCommand, writeAgentConfig } from "./index";
 
-// AgentSpec is internal; reconstruct the fields the exported helpers read.
-const claudeSpec = {
-  label: "Claude Code",
-  hostCli: "claude",
-  marketplaceRef: "lmnr-ai/lmnr-claude-code-plugin",
-  installArgv: ["install", "lmnr@lmnr", "--scope", "user"],
-  configFile: "claude-code-plugin.json",
-} as any;
-
-const codexSpec = {
-  label: "Codex",
-  hostCli: "codex",
-  marketplaceRef: "lmnr-ai/lmnr-codex-plugin",
-  installArgv: ["add", "lmnr@lmnr"],
-  configFile: "codex-plugin.json",
-} as any;
-
-describe("buildInstallCommands", () => {
+describe("AGENTS install commands", () => {
   it("claude: marketplace add (lenient) then `plugin install ... --scope user` (fatal)", () => {
-    const cmds = buildInstallCommands(claudeSpec);
+    const cmds = AGENTS["claude-code"].installCommands;
     expect(cmds).toHaveLength(2);
     expect(cmds[0].argv).toEqual([
       "plugin", "marketplace", "add", "lmnr-ai/lmnr-claude-code-plugin",
@@ -36,19 +19,41 @@ describe("buildInstallCommands", () => {
   });
 
   it("codex: marketplace add then `plugin add` (no scope flag)", () => {
-    const cmds = buildInstallCommands(codexSpec);
+    const cmds = AGENTS.codex.installCommands;
     expect(cmds[0].argv).toEqual(["plugin", "marketplace", "add", "lmnr-ai/lmnr-codex-plugin"]);
     expect(cmds[1].argv).toEqual(["plugin", "add", "lmnr@lmnr"]);
   });
 
+  it("pi: one fatal `pi install npm:@lmnr-ai/pi-extension` (no marketplace, global)", () => {
+    const cmds = AGENTS.pi.installCommands;
+    expect(cmds).toHaveLength(1);
+    expect(cmds[0].argv).toEqual(["install", "npm:@lmnr-ai/pi-extension"]);
+    expect(cmds[0].lenient).toBe(false);
+    // `-l` would scope the install to .pi/settings.json, breaking the
+    // directory-independent contract of `plugin add`.
+    expect(cmds[0].argv).not.toContain("-l");
+  });
+
   it("no secret ever appears in the install commands (key is file-delivered)", () => {
-    for (const spec of [claudeSpec, codexSpec]) {
-      const joined = buildInstallCommands(spec)
-        .map((c) => c.argv.join(" "))
-        .join(" ");
+    for (const spec of Object.values(AGENTS)) {
+      const joined = spec.installCommands.map((c) => c.argv.join(" ")).join(" ");
       expect(joined).not.toContain("--config");
       expect(joined.toLowerCase()).not.toContain("api");
     }
+  });
+
+  it("every agent has a non-empty probe and a config file", () => {
+    for (const [agent, spec] of Object.entries(AGENTS)) {
+      expect(spec.probeArgv.length, agent).toBeGreaterThan(0);
+      expect(spec.installCommands.length, agent).toBeGreaterThan(0);
+      expect(spec.configFile, agent).toMatch(/\.json$/);
+      expect(["plugin", "extension"], agent).toContain(spec.noun);
+    }
+  });
+
+  it("config file names are unique per agent (no cross-agent key clobbering)", () => {
+    const files = Object.values(AGENTS).map((s) => s.configFile);
+    expect(new Set(files).size).toBe(files.length);
   });
 });
 
@@ -60,6 +65,9 @@ describe("renderCommand", () => {
     );
     expect(renderCommand("codex", ["plugin", "add", "lmnr@lmnr"])).toBe(
       "codex plugin add lmnr@lmnr",
+    );
+    expect(renderCommand("pi", ["install", "npm:@lmnr-ai/pi-extension"])).toBe(
+      "pi install npm:@lmnr-ai/pi-extension",
     );
   });
 });
@@ -80,11 +88,19 @@ describe("writeAgentConfig", () => {
   });
 
   it("writes {projectApiKey, baseUrl} to ~/.config/lmnr/<agent>-plugin.json at mode 0600", () => {
-    const p = writeAgentConfig(codexSpec, "SECRET_KEY", "https://api.lmnr.ai");
+    const p = writeAgentConfig(AGENTS.codex, "SECRET_KEY", "https://api.lmnr.ai");
     expect(p).toBe(join(home, "lmnr", "codex-plugin.json"));
     const parsed = JSON.parse(readFileSync(p, "utf-8"));
     expect(parsed).toEqual({ projectApiKey: "SECRET_KEY", baseUrl: "https://api.lmnr.ai" });
     // 0600: owner read/write only.
+    expect(statSync(p).mode & 0o777).toBe(0o600);
+  });
+
+  it("writes pi's key to pi-extension.json, where the pi extension reads it", () => {
+    const p = writeAgentConfig(AGENTS.pi, "SECRET_KEY", "http://localhost:8000");
+    expect(p).toBe(join(home, "lmnr", "pi-extension.json"));
+    const parsed = JSON.parse(readFileSync(p, "utf-8"));
+    expect(parsed).toEqual({ projectApiKey: "SECRET_KEY", baseUrl: "http://localhost:8000" });
     expect(statSync(p).mode & 0o777).toBe(0o600);
   });
 });
