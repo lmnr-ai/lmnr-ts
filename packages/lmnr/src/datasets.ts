@@ -1,10 +1,13 @@
 import { LaminarClient } from '@lmnr-ai/client';
 import { type StringUUID } from '@lmnr-ai/types';
 
+import { seededPerm } from './datasets/prng';
 import { Datapoint } from './evaluations';
 
 const DEFAULT_FETCH_SIZE = 25;
 
+// A known-length, index-addressable collection of datapoints. Each subsampling
+// op (`take` / `select` / `shuffle`) returns a NEW dataset, so ops chain.
 export abstract class EvaluationDataset<D, T> {
   public async slice(start: number, end: number): Promise<Datapoint<D, T>[]> {
     const result = [];
@@ -15,12 +18,115 @@ export abstract class EvaluationDataset<D, T> {
   }
   public abstract size(): Promise<number> | number;
   public abstract get(index: number): Promise<Datapoint<D, T>> | Datapoint<D, T>;
+
+  // The underlying remote-backed source dataset, resolved through any depth of
+  // chaining. `undefined` when the dataset has no remote source.
+  public sourceDataset(): LaminarDataset<D, T> | undefined {
+    return undefined;
+  }
+
+  // The first `n` datapoints (or all of them if `n` exceeds the size).
+  public take(n: number): EvaluationDataset<D, T> {
+    return new Transformed<D, T>(this, async (base) => {
+      if (!Number.isInteger(n)) {
+        throw new Error(`take count ${n} is not an integer`);
+      }
+      const size = await base.size();
+      const count = Math.max(0, Math.min(n, size));
+      return Array.from({ length: count }, (_, i) => i);
+    });
+  }
+
+  // Exactly these datapoints, in this order. Throws at resolve time on a
+  // non-integer or out-of-range index. No clamping, no negative indices.
+  public select(indices: number[]): EvaluationDataset<D, T> {
+    // Snapshot the selection at call time so later mutations to the caller's
+    // array can't change which indices are validated and returned.
+    const selected = [...indices];
+    return new Transformed<D, T>(this, async (base) => {
+      const size = await base.size();
+      for (const index of selected) {
+        if (!Number.isInteger(index)) {
+          throw new Error(`select index ${index} is not an integer`);
+        }
+        if (index < 0 || index >= size) {
+          throw new Error(
+            `select index ${index} is out of range for dataset of size ${size}`,
+          );
+        }
+      }
+      return selected;
+    });
+  }
+
+  // A reproducible random permutation: the order is a pure function of
+  // `(size, seed)`, so the same seed always yields the same order.
+  public shuffle({ seed = 0 }: { seed?: number } = {}): EvaluationDataset<D, T> {
+    return new Transformed<D, T>(this, async (base) => seededPerm(await base.size(), seed));
+  }
+}
+
+// An immutable subsampling wrapper: an immediate `base` plus a lazy, once-only
+// `resolve` that produces indices into that base, so chain orders compose.
+export class Transformed<D, T> extends EvaluationDataset<D, T> {
+  private base: EvaluationDataset<D, T>;
+  private resolve: (base: EvaluationDataset<D, T>) => Promise<number[]>;
+  private indices: number[] | null = null;
+  private resolving: Promise<number[]> | null = null;
+
+  constructor(
+    base: EvaluationDataset<D, T>,
+    resolve: (base: EvaluationDataset<D, T>) => Promise<number[]>,
+  ) {
+    super();
+    this.base = base;
+    this.resolve = resolve;
+  }
+
+  private resolveIndices(): Promise<number[]> {
+    if (this.indices !== null) {
+      return Promise.resolve(this.indices);
+    }
+    if (this.resolving === null) {
+      // Drop a failed resolve so a transient `size`/`get` error can be retried
+      // instead of poisoning every later access. Mirrors `fetchPage`.
+      this.resolving = this.resolve(this.base)
+        .then((indices) => {
+          this.indices = indices;
+          return indices;
+        })
+        .catch((err) => {
+          this.resolving = null;
+          throw err;
+        });
+    }
+    return this.resolving;
+  }
+
+  public async size(): Promise<number> {
+    return (await this.resolveIndices()).length;
+  }
+
+  public async get(index: number): Promise<Datapoint<D, T>> {
+    const indices = await this.resolveIndices();
+    if (index < 0 || index >= indices.length) {
+      throw new Error(
+        `Index ${index} is out of range for dataset of size ${indices.length}`,
+      );
+    }
+    return await this.base.get(indices[index]);
+  }
+
+  public sourceDataset(): LaminarDataset<D, T> | undefined {
+    return this.base.sourceDataset();
+  }
 }
 
 export class LaminarDataset<D, T> extends EvaluationDataset<D, T> {
-  private fetchedItems: Datapoint<D, T>[] = [];
+  // Page cache keyed by page offset. Each page's in-flight/settled fetch is
+  // stored so a page is fetched at most once even under concurrent access.
+  private pages: Map<number, Promise<Datapoint<D, T>[]>> = new Map();
   private len: number | null = null;
-  private offset: number = 0;
   private fetchSize: number;
   private client: LaminarClient | undefined = undefined;
 
@@ -44,35 +150,68 @@ export class LaminarDataset<D, T> extends EvaluationDataset<D, T> {
     this.client = client;
   }
 
-  private async fetchBatch() {
+  public sourceDataset(): LaminarDataset<D, T> | undefined {
+    return this;
+  }
+
+  private fetchPage(offset: number): Promise<Datapoint<D, T>[]> {
+    const existing = this.pages.get(offset);
+    if (existing) {
+      return existing;
+    }
+    // Drop a failed fetch from the cache so it can be retried; a successful
+    // page stays cached and is never fetched again.
+    const pending = this.doFetchPage(offset).catch((err) => {
+      this.pages.delete(offset);
+      throw err;
+    });
+    this.pages.set(offset, pending);
+    return pending;
+  }
+
+  private async doFetchPage(offset: number): Promise<Datapoint<D, T>[]> {
     if (!this.client) {
       throw new Error('Client not set');
     }
     const identifier = this.id ? { id: this.id } : { name: this.name! };
     const resp = await this.client.datasets.pull<D, T>({
       ...identifier,
-      offset: this.offset,
+      offset,
       limit: this.fetchSize,
     });
-    this.fetchedItems = this.fetchedItems.concat(resp.items);
-    this.offset = this.fetchedItems.length;
     if (this.len === null) {
       this.len = resp.totalCount;
     }
+    return resp.items;
   }
 
   public async size(): Promise<number> {
     if (this.len === null) {
-      await this.fetchBatch();
+      await this.fetchPage(0);
     }
     return this.len!;
   }
 
   public async get(index: number): Promise<Datapoint<D, T>> {
-    if (index >= this.fetchedItems.length) {
-      await this.fetchBatch();
+    if (index < 0) {
+      throw new Error(`Index ${index} is out of range`);
     }
-    return this.fetchedItems[index];
+    // When the length is already known, reject an out-of-range index without
+    // a wasted page fetch.
+    if (this.len !== null && index >= this.len) {
+      throw new Error(
+        `Index ${index} is out of range for dataset of size ${this.len}`,
+      );
+    }
+    const offset = Math.floor(index / this.fetchSize) * this.fetchSize;
+    const page = await this.fetchPage(offset);
+    const local = index - offset;
+    if (local >= page.length) {
+      throw new Error(
+        `Index ${index} is out of range for dataset of size ${this.len ?? 'unknown'}`,
+      );
+    }
+    return page[local];
   }
 
   /**

@@ -344,6 +344,8 @@ export class Evaluation<D, T, O> {
   private traceExportBatchSize: number = MAX_EXPORT_BATCH_SIZE;
   private uploadPromises: Promise<any>[] = [];
   private client: LaminarClient;
+  // The remote source behind `data`, resolved once — it is invariant per run.
+  private datasetSource: LaminarDataset<D, T> | undefined;
 
   constructor({
     data,
@@ -375,6 +377,8 @@ export class Evaluation<D, T, O> {
       config?.frontendPort,
     );
     this.data = data;
+    this.datasetSource =
+      data instanceof EvaluationDataset ? data.sourceDataset() : undefined;
     this.executor = executor;
     this.evaluators = evaluators;
     this.groupName = groupName;
@@ -459,23 +463,26 @@ export class Evaluation<D, T, O> {
     if (this.isFinished) {
       throw new Error("Evaluation is already finished");
     }
-    if (this.data instanceof LaminarDataset) {
-      this.data.setClient(this.client);
+    if (this.data instanceof EvaluationDataset) {
+      // The remote source is resolved through any depth of chaining, so a
+      // subsampled dataset still gets the client injected.
+      const source = this.datasetSource;
+      source?.setClient(this.client);
       // Fetch dataset ID if not already set
-      if (!this.data.id) {
+      if (source && !source.id) {
         try {
           const datasets = await this.client.datasets.getDatasetByName(
-            (this.data as any).name,
+            source.name!,
           );
           if (datasets.length > 0) {
-            this.data.id = datasets[0].id;
+            source.id = datasets[0].id;
           } else {
-            logger.warn(`Dataset ${(this.data as any).name} not found`);
+            logger.warn(`Dataset ${source.name} not found`);
           }
         } catch (error) {
           // Backward compatibility with old Laminar API (self-hosted)
           logger.warn(
-            `Error getting dataset ${this.data.name}: ` + errorMessage(error),
+            `Error getting dataset ${source.name}: ` + errorMessage(error),
           );
         }
       }
@@ -483,6 +490,9 @@ export class Evaluation<D, T, O> {
 
     let resultDatapoints: EvaluationDatapoint<D, T, O>[];
     try {
+      // Resolve the length first: a resolve-time failure (bad `select` index, a
+      // failed fetch) must not leave an orphan evaluation on the server.
+      const length = await this.getLength();
       const evaluation = await this.client.evals.init(
         this.name,
         this.groupName,
@@ -495,7 +505,7 @@ export class Evaluation<D, T, O> {
         this.frontendPort,
       );
       process.stdout.write(`\nCheck results at ${url}\n`);
-      this.progressReporter.start({ length: await this.getLength() });
+      this.progressReporter.start({ length });
 
       resultDatapoints = await this.evaluateInBatches(evaluation.id);
       const averageScores = getAverageScores(resultDatapoints);
@@ -613,15 +623,15 @@ export class Evaluation<D, T, O> {
           index,
         } as EvaluationDatapoint<D, T, O>;
 
-        // Add dataset link if data is from LaminarDataset
+        // Add dataset link if data comes from a (possibly chained) remote
+        // dataset.
         if (
-          this.data instanceof LaminarDataset &&
-          this.data.id &&
+          this.datasetSource?.id &&
           datapoint.id &&
           datapoint.createdAt
         ) {
           partialDatapoint.datasetLink = {
-            datasetId: this.data.id,
+            datasetId: this.datasetSource.id,
             datapointId: datapoint.id,
             createdAt: datapoint.createdAt,
           };
@@ -711,15 +721,15 @@ export class Evaluation<D, T, O> {
           index,
         } as EvaluationDatapoint<D, T, O>;
 
-        // Add dataset link if data is from LaminarDataset
+        // Add dataset link if data comes from a (possibly chained) remote
+        // dataset.
         if (
-          this.data instanceof LaminarDataset &&
-          this.data.id &&
+          this.datasetSource?.id &&
           datapoint.id &&
           datapoint.createdAt
         ) {
           resultDatapoint.datasetLink = {
-            datasetId: this.data.id,
+            datasetId: this.datasetSource.id,
             datapointId: datapoint.id,
             createdAt: datapoint.createdAt,
           };
