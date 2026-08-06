@@ -15,7 +15,7 @@ describe("AGENTS install commands", () => {
     ]);
     expect(cmds[0].lenient).toBe(true);
     expect(cmds[1].argv).toEqual(["plugin", "install", "lmnr@lmnr", "--scope", "user"]);
-    expect(cmds[1].lenient).toBe(false);
+    expect(cmds[1].lenient).toBeFalsy();
   });
 
   it("codex: marketplace add then `plugin add` (no scope flag)", () => {
@@ -28,7 +28,7 @@ describe("AGENTS install commands", () => {
     const cmds = AGENTS.pi.installCommands;
     expect(cmds).toHaveLength(1);
     expect(cmds[0].argv).toEqual(["install", "npm:@lmnr-ai/pi-extension"]);
-    expect(cmds[0].lenient).toBe(false);
+    expect(cmds[0].lenient).toBeFalsy();
     // `-l` would scope the install to .pi/settings.json, breaking the
     // directory-independent contract of `plugin add`.
     expect(cmds[0].argv).not.toContain("-l");

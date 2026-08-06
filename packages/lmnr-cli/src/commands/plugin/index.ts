@@ -35,10 +35,13 @@ import { handleLogin } from "../login";
 
 /** One install step: argv after the host CLI, plus how to treat a non-zero exit. */
 export interface HostCommand {
-  label: string;
   argv: string[];
-  /** true for steps whose non-zero exit is benign (e.g. marketplace already added). */
-  lenient: boolean;
+  /**
+   * Non-zero exit is benign — warn and keep going. Set on `marketplace add`,
+   * which fails when the marketplace is already registered. Omit (the default)
+   * for steps whose failure must abort the install.
+   */
+  lenient?: boolean;
 }
 
 /**
@@ -50,9 +53,8 @@ export interface HostCommand {
  * keeps it out of argv, terminal scrollback, and shell history.
  *
  * How the install itself happens varies: Claude Code and Codex have native plugin
- * marketplaces, Pi installs an npm package. So a spec supplies its install steps
- * verbatim (see `marketplaceInstall` for the marketplace shape). Adding an agent
- * = one entry.
+ * marketplaces, Pi installs an npm package. So a spec just lists the commands to
+ * run, verbatim. Adding an agent = one entry.
  */
 export interface AgentSpec {
   /** Human-facing label (banners, minted-key name). */
@@ -79,35 +81,16 @@ export interface AgentSpec {
   activationHint: string;
 }
 
-/** The two-step install shape used by hosts with a native plugin marketplace. */
-const marketplaceInstall = (marketplaceRef: string, installArgv: string[]): HostCommand[] => [
-  {
-    label: "Add the Laminar marketplace",
-    argv: ["plugin", "marketplace", "add", marketplaceRef],
-    lenient: true,
-  },
-  {
-    label: "Install the plugin",
-    argv: ["plugin", ...installArgv],
-    lenient: false,
-  },
-];
-
-/** npm package holding the Laminar Pi extension (a Pi "package"). */
-const PI_PACKAGE = "npm:@lmnr-ai/pi-extension";
-
 export const AGENTS: Record<string, AgentSpec> = {
   "claude-code": {
     label: "Claude Code",
     noun: "plugin",
     hostCli: "claude",
     probeArgv: ["plugin", "--help"],
-    installCommands: marketplaceInstall("lmnr-ai/lmnr-claude-code-plugin", [
-      "install",
-      "lmnr@lmnr",
-      "--scope",
-      "user",
-    ]),
+    installCommands: [
+      { argv: ["plugin", "marketplace", "add", "lmnr-ai/lmnr-claude-code-plugin"], lenient: true },
+      { argv: ["plugin", "install", "lmnr@lmnr", "--scope", "user"] },
+    ],
     configFile: "claude-code-plugin.json",
     activationHint: "Run `/reload-plugins`",
   },
@@ -116,7 +99,10 @@ export const AGENTS: Record<string, AgentSpec> = {
     noun: "plugin",
     hostCli: "codex",
     probeArgv: ["plugin", "--help"],
-    installCommands: marketplaceInstall("lmnr-ai/lmnr-codex-plugin", ["add", "lmnr@lmnr"]),
+    installCommands: [
+      { argv: ["plugin", "marketplace", "add", "lmnr-ai/lmnr-codex-plugin"], lenient: true },
+      { argv: ["plugin", "add", "lmnr@lmnr"] },
+    ],
     configFile: "codex-plugin.json",
     activationHint: "Restart Codex",
   },
@@ -130,9 +116,7 @@ export const AGENTS: Record<string, AgentSpec> = {
     // Pi has no marketplace: `pi install` adds the package to ~/.pi/agent/settings.json
     // and installs it under ~/.pi/agent/npm/. Global by default (no `-l`), matching
     // this command's directory-independent contract.
-    installCommands: [
-      { label: "Install the extension", argv: ["install", PI_PACKAGE], lenient: false },
-    ],
+    installCommands: [{ argv: ["install", "npm:@lmnr-ai/pi-extension"] }],
     configFile: "pi-extension.json",
     activationHint: "Restart Pi",
   },
@@ -468,7 +452,7 @@ const runInstall = async (
       if (cmd.lenient) {
         if (!isJson) {
           process.stderr.write(
-            `${pc.yellow("⚠")} "${cmd.label}" exited ${code} ` +
+            `${pc.yellow("⚠")} \`${renderCommand(spec.hostCli, cmd.argv)}\` exited ${code} ` +
               `(continuing — usually means already configured)\n`,
           );
         }
