@@ -33,49 +33,92 @@ import { listProjects, promptProjectChoice } from "../../utils/projects";
 import { firstNonEmpty } from "../../utils/text";
 import { handleLogin } from "../login";
 
+/** One install step: argv after the host CLI, plus how to treat a non-zero exit. */
+export interface HostCommand {
+  argv: string[];
+  /**
+   * Non-zero exit is benign — warn and keep going. Set on `marketplace add`,
+   * which fails when the marketplace is already registered. Omit (the default)
+   * for steps whose failure must abort the install.
+   */
+  lenient?: boolean;
+}
+
 /**
  * Registry of agents `plugin add <agent>` can wire up, keyed by the CLI argument
- * the user types. Both supported agents use the same shape: a host CLI with a
- * native plugin marketplace (`<cli> plugin marketplace add` + an install verb),
- * and a shared per-agent config file under `~/.config/lmnr/` that carries the
- * project API key. Neither agent has a per-plugin secret store, so the key lives
- * in that file and the plugin's hook reads it. Adding an agent = one entry.
+ * the user types. Every agent shares one shape: a host CLI that can install the
+ * Laminar add-on non-interactively, and a per-agent config file under
+ * `~/.config/lmnr/` that carries the project API key. No agent has a per-add-on
+ * secret store, so the key lives in that file and the add-on reads it, which
+ * keeps it out of argv, terminal scrollback, and shell history.
+ *
+ * How the install itself happens varies: Claude Code and Codex have native plugin
+ * marketplaces, Pi installs an npm package. So a spec just lists the commands to
+ * run, verbatim. Adding an agent = one entry.
  */
 export interface AgentSpec {
   /** Human-facing label (banners, minted-key name). */
   label: string;
-  /** Host CLI binary that owns the plugin system (`claude`, `codex`). */
+  /** What this host calls a Laminar add-on: "plugin" or "extension". */
+  noun: string;
+  /** Host CLI binary that performs the install (`claude`, `codex`, `pi`). */
   hostCli: string;
-  /** `<cli> plugin marketplace add <ref>` argument (owner/repo or Git URL). */
-  marketplaceRef: string;
-  /** The install subcommand + trailing flags this host uses (after `plugin`). */
-  installArgv: string[];
-  /** Per-user config file (under ~/.config/lmnr) the plugin reads the key from. */
+  /**
+   * Argv proving the host CLI exists AND is new enough to speak the install verb.
+   * A missing binary or an unknown subcommand both exit non-zero, so one `--help`
+   * call covers both. Cheaper and more robust than parsing a version string.
+   */
+  probeArgv: string[];
+  /** Install steps, run in order. */
+  installCommands: HostCommand[];
+  /** Per-user config file (under ~/.config/lmnr) the add-on reads the key from. */
   configFile: string;
   /**
-   * Host-specific imperative for activating the freshly installed plugin.
+   * Host-specific imperative for activating the freshly installed add-on.
    * Claude Code exposes `/reload-plugins` (reloads hooks in-session, no restart);
-   * Codex has no in-session reload, so it restarts.
+   * Codex and Pi have no in-session reload, so they restart.
    */
   activationHint: string;
 }
 
-const AGENTS: Record<string, AgentSpec> = {
+export const AGENTS: Record<string, AgentSpec> = {
   "claude-code": {
     label: "Claude Code",
+    noun: "plugin",
     hostCli: "claude",
-    marketplaceRef: "lmnr-ai/lmnr-claude-code-plugin",
-    installArgv: ["install", "lmnr@lmnr", "--scope", "user"],
+    probeArgv: ["plugin", "--help"],
+    installCommands: [
+      { argv: ["plugin", "marketplace", "add", "lmnr-ai/lmnr-claude-code-plugin"], lenient: true },
+      { argv: ["plugin", "install", "lmnr@lmnr", "--scope", "user"] },
+    ],
     configFile: "claude-code-plugin.json",
     activationHint: "Run `/reload-plugins`",
   },
   codex: {
     label: "Codex",
+    noun: "plugin",
     hostCli: "codex",
-    marketplaceRef: "lmnr-ai/lmnr-codex-plugin",
-    installArgv: ["add", "lmnr@lmnr"],
+    probeArgv: ["plugin", "--help"],
+    installCommands: [
+      { argv: ["plugin", "marketplace", "add", "lmnr-ai/lmnr-codex-plugin"], lenient: true },
+      { argv: ["plugin", "add", "lmnr@lmnr"] },
+    ],
     configFile: "codex-plugin.json",
     activationHint: "Restart Codex",
+  },
+  // Registry key, `hostCli`, and the package name stay lowercase (they are literal
+  // argv); only the display label is capitalized.
+  pi: {
+    label: "Pi",
+    noun: "extension",
+    hostCli: "pi",
+    probeArgv: ["install", "--help"],
+    // Pi has no marketplace: `pi install` adds the package to ~/.pi/agent/settings.json
+    // and installs it under ~/.pi/agent/npm/. Global by default (no `-l`), matching
+    // this command's directory-independent contract.
+    installCommands: [{ argv: ["install", "npm:@lmnr-ai/pi-extension"] }],
+    configFile: "pi-extension.json",
+    activationHint: "Restart Pi",
   },
 };
 
@@ -108,19 +151,19 @@ interface PluginAddResult {
 }
 
 /**
- * `plugin add <agent>`: onboard the Laminar plugin for a coding agent.
+ * `plugin add <agent>`: onboard the Laminar add-on for a coding agent.
  *
  * Flow: log in (device flow) if needed → pick the project that should receive
  * this agent's traces (deliberately NOT the directory-linked app project) →
- * mint a project API key named after the plugin+host → write it to
- * `~/.config/lmnr/<agent>-plugin.json` (where the plugin's hook reads it) →
- * install the plugin natively (`<cli> plugin marketplace add` + install), or
- * print those commands when the host CLI is missing / `--print-only`.
+ * mint a project API key named after the add-on+host → write it to
+ * `~/.config/lmnr/<agent>-{plugin,extension}.json` (where the add-on reads it) →
+ * run the spec's install commands, or print them when the host CLI is missing /
+ * `--print-only`.
  *
  * Unlike `setup`, this is GLOBAL and directory-independent: it never reads or
  * writes `.lmnr/project.json` or `.env`. The key never passes through the host
- * CLI's argv — it lives only in the per-agent config file (both agents lack a
- * per-plugin secret store), so the install commands carry no secret.
+ * CLI's argv — it lives only in the per-agent config file (no agent has a
+ * per-add-on secret store), so the install commands carry no secret.
  */
 export const handlePluginAdd = async (agent: string, options: PluginAddOptions): Promise<void> => {
   const isJson = options.json === true;
@@ -141,7 +184,7 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
 
   if (!isJson) {
     process.stderr.write(`\n${orange("Laminar CLI")} ${pc.dim(`v${version}`)}\n`);
-    process.stderr.write(pc.dim(`Setting up the Laminar plugin for ${spec.label}.\n\n`));
+    process.stderr.write(pc.dim(`Setting up the Laminar ${spec.noun} for ${spec.label}.\n\n`));
   }
 
   // --- 1. Login ------------------------------------------------------------
@@ -176,8 +219,8 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
     );
   }
 
-  // --- 3. Mint a plugin-named key ------------------------------------------
-  const keyName = `${spec.label} plugin @ ${hostname()}`;
+  // --- 3. Mint an add-on-named key -----------------------------------------
+  const keyName = `${spec.label} ${spec.noun} @ ${hostname()}`;
   let key;
   try {
     key = await mintProjectApiKey(issuer, creds.sessionToken, project.id, keyName);
@@ -199,10 +242,10 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
     process.stderr.write(`${pc.green("✓")} Wrote ${configPath}\n`);
   }
 
-  // --- 5. Install via the host's native plugin system, or print commands ----
-  const hostCommands = buildInstallCommands(spec);
+  // --- 5. Install via the host CLI, or print the commands ------------------
+  const hostCommands = spec.installCommands;
   const commands = hostCommands.map((c) => renderCommand(spec.hostCli, c.argv));
-  const canRun = !options.printOnly && hostCliHasPlugins(spec.hostCli);
+  const canRun = !options.printOnly && hostCliCanInstall(spec);
 
   // Shared by the success summary and the JSON failure path, so a caller always
   // gets the minted key + commands regardless of outcome.
@@ -231,7 +274,7 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
         emitError(
           false,
           "install_failed",
-          `A \`${spec.hostCli} plugin\` command failed; commands printed above.`,
+          `A \`${spec.hostCli}\` command failed; commands printed above.`,
         );
       }
       process.exit(EXIT_INSTALL_FAILED);
@@ -250,14 +293,14 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
 
   if (installed) {
     process.stdout.write(
-      `\n${pc.green("✓")} ${spec.label} plugin installed.\n\n` +
+      `\n${pc.green("✓")} ${spec.label} ${spec.noun} installed.\n\n` +
         `Next steps:\n` +
-        `  1. ${pc.bold(spec.activationHint)} to activate the plugin.\n` +
-        `  2. Use ${spec.label} as usual — each turn becomes a Laminar trace.\n`,
+        `  1. ${pc.bold(spec.activationHint)} to activate the ${spec.noun}.\n` +
+        `  2. Use ${spec.label} as usual — every run becomes a Laminar trace.\n`,
     );
   } else {
     process.stdout.write(
-      `\nRun the commands above to finish, then activate the plugin ` +
+      `\nRun the commands above to finish, then activate the ${spec.noun} ` +
         `(${pc.bold(spec.activationHint)}).\n`,
     );
   }
@@ -352,10 +395,10 @@ const resolveProject = async (
 // ---------------------------------------------------------------------------
 
 /**
- * Write the per-agent Laminar plugin config (`~/.config/lmnr/<agent>-plugin.json`,
- * mode 0600). This is the sole delivery channel for the project API key: both
- * plugins read it from here (neither agent has a per-plugin secret store), so
- * the key never has to pass through the host CLI's argv. Returns the path.
+ * Write the per-agent Laminar config (`~/.config/lmnr/<spec.configFile>`, mode
+ * 0600). This is the sole delivery channel for the project API key: every add-on
+ * reads it from here (no agent has a per-add-on secret store), so the key never
+ * has to pass through the host CLI's argv. Returns the path.
  */
 export const writeAgentConfig = (spec: AgentSpec, apiKey: string, baseUrl: string): string => {
   const dir = globalLmnrDirectory();
@@ -374,35 +417,14 @@ export const writeAgentConfig = (spec: AgentSpec, apiKey: string, baseUrl: strin
 // Host-CLI native install
 // ---------------------------------------------------------------------------
 
-interface HostCommand {
-  label: string;
-  argv: string[];
-  /** true for steps whose non-zero exit is benign (e.g. marketplace already added). */
-  lenient: boolean;
-}
-
-export const buildInstallCommands = (spec: AgentSpec): HostCommand[] => [
-  {
-    label: "Add the Laminar marketplace",
-    argv: ["plugin", "marketplace", "add", spec.marketplaceRef],
-    lenient: true,
-  },
-  {
-    label: "Install the plugin",
-    argv: ["plugin", ...spec.installArgv],
-    lenient: false,
-  },
-];
-
 /**
- * Probe whether the host CLI is present AND exposes a `plugin` subcommand. A
- * single `plugin --help` call covers both: a missing binary throws / non-zero,
- * and a too-old CLI without plugins won't succeed. Cheaper and more robust than
- * parsing a version string.
+ * Probe whether the host CLI is present AND speaks its install verb, by running
+ * the spec's `probeArgv`. A missing binary throws / exits non-zero, and so does a
+ * CLI too old for the subcommand.
  */
-export const hostCliHasPlugins = (hostCli: string): boolean => {
+export const hostCliCanInstall = (spec: AgentSpec): boolean => {
   try {
-    const r = spawn.sync(hostCli, ["plugin", "--help"], { encoding: "utf-8" });
+    const r = spawn.sync(spec.hostCli, spec.probeArgv, { encoding: "utf-8" });
     return !r.error && r.status === 0;
   } catch {
     return false;
@@ -430,7 +452,7 @@ const runInstall = async (
       if (cmd.lenient) {
         if (!isJson) {
           process.stderr.write(
-            `${pc.yellow("⚠")} "${cmd.label}" exited ${code} ` +
+            `${pc.yellow("⚠")} \`${renderCommand(spec.hostCli, cmd.argv)}\` exited ${code} ` +
               `(continuing — usually means already configured)\n`,
           );
         }
@@ -454,8 +476,8 @@ const runChild = (cmd: string, argv: string[], isJson: boolean): Promise<number>
 
 /**
  * Print the install commands for the user to run by hand. Used when the host CLI
- * is absent / `--print-only`, or as recovery after an install failure. The key
- * is NOT here (it's in the config file), so these are safe to show verbatim.
+ * is absent or too old / `--print-only`, or as recovery after an install failure.
+ * The key is NOT here (it's in the config file), so these are safe to show verbatim.
  */
 const printCommands = (
   spec: AgentSpec,
@@ -466,11 +488,11 @@ const printCommands = (
   if (isJson) return;
   const preamble =
     reason === "no-host-cli"
-      ? `${pc.yellow("⚠")} \`${spec.hostCli}\` not found (or has no plugin support). ` +
+      ? `${pc.yellow("⚠")} \`${spec.hostCli}\` not found (or too old to install this). ` +
         `Run these yourself:`
       : reason === "install-failed"
         ? `${pc.yellow("⚠")} Install failed. Finish by running these yourself:`
-        : `Run these to install the ${spec.label} plugin:`;
+        : `Run these to install the ${spec.label} ${spec.noun}:`;
   process.stderr.write(`\n${preamble}\n\n`);
   for (const cmd of commands) {
     process.stderr.write(`  ${renderCommand(spec.hostCli, cmd.argv)}\n`);

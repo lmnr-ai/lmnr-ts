@@ -21,7 +21,7 @@ import {
 } from "./commands/debug";
 import { handleLogin } from "./commands/login";
 import { handleLogout } from "./commands/logout";
-import { handlePluginAdd } from "./commands/plugin";
+import { AGENTS, handlePluginAdd } from "./commands/plugin";
 import { handleProjectsList } from "./commands/project";
 import { handleProjectLink } from "./commands/project/link";
 import { handleProjectMintKey } from "./commands/project/mint-key";
@@ -464,14 +464,14 @@ Examples:
 
   const pluginCmd = program
     .command("plugin")
-    .description("Set up the Laminar plugin for a coding agent");
+    .description("Set up the Laminar plugin or extension for a coding agent");
 
   pluginCmd
     .command("add")
     .description(
       "Log in, pick a project, mint a key, and install the Laminar plugin for a coding agent",
     )
-    .argument("<agent>", "Which agent to set up (currently: claude-code, codex)")
+    .argument("<agent>", `Which agent to set up (currently: ${Object.keys(AGENTS).join(", ")})`)
     .option(
       "--project-id <id>",
       "Project to send this agent's traces to (skips the interactive picker)",
@@ -495,16 +495,17 @@ Examples:
       `
 Global, directory-independent setup: it does NOT touch .lmnr/project.json or
 .env. The minted key is named after the plugin (find/revoke it in the dashboard)
-and written to ~/.config/lmnr/<agent>-plugin.json, where the plugin reads it. The
-plugin is installed via the agent's native plugin marketplace. Restart the agent
-after install to activate it.
+and written to a file under ~/.config/lmnr/, where the plugin reads it. Claude
+Code and Codex install from their native plugin marketplace; Pi installs the
+npm package @lmnr-ai/pi-extension. Restart the agent after install to activate it.
 
-When the host CLI isn't found (or has no plugin support), or with --print-only,
+When the host CLI isn't found (or is too old to install), or with --print-only,
 the install commands are printed for you to run by hand.
 
 Examples:
   $ lmnr-cli plugin add claude-code
   $ lmnr-cli plugin add codex
+  $ lmnr-cli plugin add pi
   $ lmnr-cli plugin add codex --project-id <id>
   $ lmnr-cli plugin add claude-code --print-only
 `,
@@ -700,6 +701,7 @@ Examples:
   lmnr-cli skill update                                    # Update installed Laminar skills
   lmnr-cli plugin add claude-code                          # Install the Claude Code plugin
   lmnr-cli plugin add codex                                # Install the Codex plugin
+  lmnr-cli plugin add pi                                   # Install the Pi extension
 
 For more information about the Laminar platfrom:
   Documentation: https://laminar.sh/docs
