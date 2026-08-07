@@ -10,10 +10,14 @@ import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
 import { SPAN_INPUT, SPAN_OUTPUT } from "../../tracing/attributes";
 import {
+  buildProxyFlagSettings,
   createProxyInstance,
   forceReleaseProxy,
   getEnvVarsToRemove,
+  isProviderEnabledInEnv,
+  PROXY_BASE_URL_ENV_KEYS,
   type ProxyInstance,
+  readClaudeSettingsEnv,
   resolveTargetUrlFromEnv,
   setTraceToProxyInstance,
   stopProxyInstance,
@@ -72,11 +76,40 @@ export function instrumentClaudeAgentQuery(
         };
 
         // Resolve target URL before creating proxy
-        const targetUrl = resolveTargetUrlFromEnv(mergedEnv);
+        const sessionCwd: string | undefined =
+          typeof params.options?.cwd === "string"
+            ? params.options.cwd
+            : undefined;
+        // options.settingSources gates which on-disk settings layers the CLI
+        // loads; reading a layer it was told to ignore would resolve an upstream
+        // the CLI never uses.
+        const settingSources: string[] | undefined = Array.isArray(
+          params.options?.settingSources,
+        )
+          ? (params.options.settingSources as string[])
+          : undefined;
+        // The caller's own options.settings is the highest layer the CLI reads,
+        // and buildProxyFlagSettings below overwrites its base URLs with the
+        // proxy — so resolve the upstream from it before that happens.
+        const callerSettings = params.options?.settings as
+          | string
+          | Record<string, unknown>
+          | undefined;
+        const targetUrl = resolveTargetUrlFromEnv(
+          mergedEnv,
+          undefined,
+          sessionCwd,
+          settingSources,
+          callerSettings,
+        );
 
         // Create a dedicated proxy instance for this request
         proxyInstance = await createProxyInstance({
           env: mergedEnv,
+          cwd: sessionCwd,
+          settingSources,
+          settings: callerSettings,
+          targetUrl,
         });
 
         // Configure the request to use the proxy
@@ -90,7 +123,11 @@ export function instrumentClaudeAgentQuery(
           });
 
           // Get environment variables that should be removed
-          const varsToRemove = getEnvVarsToRemove(mergedEnv);
+          const varsToRemove = getEnvVarsToRemove(
+            mergedEnv,
+            sessionCwd,
+            settingSources,
+          );
 
           // Update environment for subprocess
           if (!params.options) {
@@ -114,28 +151,62 @@ export function instrumentClaudeAgentQuery(
             delete params.options.env[varName];
           }
 
-          // If Foundry is enabled, update Foundry-specific env vars
-          const foundryEnabled =
-            params.options.env.CLAUDE_CODE_USE_FOUNDRY === "1";
-          if (foundryEnabled) {
-            params.options.env.ANTHROPIC_FOUNDRY_BASE_URL =
-              proxyInstance.baseUrl;
+          // Pin each enabled provider's base URL. Truthiness MUST go through
+          // isTruthyEnv (1/true/yes/on) rather than a `=== "1"` check: the
+          // resource-stripping in getEnvVarsToRemove already uses isTruthyEnv, so
+          // a narrower check here strips ANTHROPIC_FOUNDRY_RESOURCE without
+          // leaving a base URL behind and the CLI hard-fails.
+          const subprocessEnv = params.options.env as Record<
+            string,
+            string | undefined
+          >;
+          if (isProviderEnabledInEnv(subprocessEnv, "CLAUDE_CODE_USE_FOUNDRY")) {
+            subprocessEnv.ANTHROPIC_FOUNDRY_BASE_URL = proxyInstance.baseUrl;
+          }
+          if (isProviderEnabledInEnv(subprocessEnv, "CLAUDE_CODE_USE_BEDROCK")) {
+            subprocessEnv.ANTHROPIC_BEDROCK_BASE_URL = proxyInstance.baseUrl;
+          }
+          if (isProviderEnabledInEnv(subprocessEnv, "CLAUDE_CODE_USE_VERTEX")) {
+            subprocessEnv.ANTHROPIC_VERTEX_BASE_URL = proxyInstance.baseUrl;
           }
 
-          // If Bedrock is enabled, update Bedrock-specific env vars
-          const bedrockEnabled =
-            params.options.env.CLAUDE_CODE_USE_BEDROCK === "1";
-          if (bedrockEnabled) {
-            params.options.env.ANTHROPIC_BEDROCK_BASE_URL =
-              proxyInstance.baseUrl;
-          }
+          // Claude Code's settings `env` outranks the subprocess environment, so
+          // options.env alone does not redirect a user whose base URL lives in
+          // ~/.claude/settings.json (lmnr#2167). `settings` is the highest
+          // user-controlled layer; their files on disk are never modified.
+          const flagSettings = buildProxyFlagSettings(
+            callerSettings,
+            proxyInstance.baseUrl,
+            sessionCwd,
+            settingSources,
+          );
+          if (flagSettings === null) {
+            logger.warn(
+              `Could not read options.settings ${JSON.stringify(callerSettings)}; ` +
+                "Claude Code settings that define a base URL will bypass the " +
+                "Laminar proxy and produce no LLM spans.",
+            );
+          } else {
+            params.options.settings = flagSettings;
 
-          // If Vertex AI is enabled, update Vertex-specific env vars
-          const vertexEnabled =
-            params.options.env.CLAUDE_CODE_USE_VERTEX === "1";
-          if (vertexEnabled) {
-            params.options.env.ANTHROPIC_VERTEX_BASE_URL =
-              proxyInstance.baseUrl;
+            const conflicting = Object.entries(
+              readClaudeSettingsEnv(sessionCwd, settingSources),
+            )
+              .filter(
+                ([key, value]) =>
+                  PROXY_BASE_URL_ENV_KEYS.includes(key) &&
+                  value !== "" &&
+                  value !== proxyInstance.baseUrl,
+              )
+              .map(([key]) => key);
+            if (conflicting.length > 0) {
+              logger.info(
+                `Claude Code settings define ${conflicting.sort().join(", ")}, which ` +
+                  "outranks the subprocess environment. Injected settings so the " +
+                  `Laminar proxy at ${proxyInstance.baseUrl} still intercepts API ` +
+                  "traffic; your settings files were not modified.",
+              );
+            }
           }
         } else {
           logger.debug(

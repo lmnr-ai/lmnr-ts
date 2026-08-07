@@ -31,14 +31,292 @@ const BEDROCK_AWS_REGION_ENV = "AWS_REGION";
 const VERTEX_BASE_URL_ENV = "ANTHROPIC_VERTEX_BASE_URL";
 const VERTEX_USE_ENV = "CLAUDE_CODE_USE_VERTEX";
 
+// Base-URL keys that must point at our proxy in the flag-settings layer.
+export const PROXY_BASE_URL_ENV_KEYS = [
+  "ANTHROPIC_BASE_URL",
+  FOUNDRY_BASE_URL_ENV,
+  BEDROCK_BASE_URL_ENV,
+  VERTEX_BASE_URL_ENV,
+];
+
+// Provider base-URL keys paired with the flag that turns that provider on. A
+// provider can be configured without its base-URL key (e.g. Foundry via
+// ANTHROPIC_FOUNDRY_RESOURCE alone), so the flag is what tells us the key is in
+// play and must be pinned to the proxy.
+const PROVIDER_BASE_URL_ENV_KEYS: [string, string][] = [
+  [FOUNDRY_BASE_URL_ENV, FOUNDRY_USE_ENV],
+  [BEDROCK_BASE_URL_ENV, BEDROCK_USE_ENV],
+  [VERTEX_BASE_URL_ENV, VERTEX_USE_ENV],
+];
+
+// Forward-proxy env vars in BOTH cases. Claude Code reads the lowercase spelling
+// too (and prefers it), so handling only the uppercase form lets a lowercase
+// corporate proxy divert traffic away from us.
+const PROXY_ENV_KEYS = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"];
+
+// Keys that must be blanked in the flag-settings layer: they would otherwise
+// redirect the CLI away from our proxy. Removing them from the flag layer is not
+// enough — settings layers merge per key, so a lower layer's value would win.
+const PROXY_NEUTRALIZED_ENV_KEYS = [
+  ...PROXY_ENV_KEYS,
+  FOUNDRY_RESOURCE_ENV,
+];
+
+// Transport-level forward proxies, NOT Anthropic API base URLs. They outrank
+// every base URL when resolving our upstream, so reading them from the settings
+// layers would make a settings-defined corporate proxy shadow the gateway
+// configured right beside it. The pre-existing options.env / process.env
+// handling is unchanged; settings simply do not contribute these keys.
+const UPSTREAM_SETTINGS_EXCLUDED_ENV_KEYS = PROXY_ENV_KEYS;
+
 // Track all active proxy instances for cleanup
 const activeProxyServers = new Set<any>(); // Set<ProxyServer>
 let globalShutdownRegistered = false;
 
 /**
- * Check if environment variable value is truthy (equals '1')
+ * Check whether an env value enables a feature.
+ *
+ * Claude Code accepts `1`, `true`, `yes`, and `on` (case-insensitive) — verified
+ * against the bundled CLI. Accepting only `"1"` would miss a provider the CLI
+ * considers enabled, so we would blank its routing keys without pinning a base
+ * URL and break the run.
  */
-const isTruthyEnv = (value: string | undefined): boolean => value === "1";
+const isTruthyEnv = (value: unknown): boolean => {
+  // Settings JSON can carry booleans / numbers; never crash proxy setup on a
+  // value that was not normalized to a string upstream.
+  if (typeof value !== "string") {
+    return value === true;
+  }
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+};
+
+/**
+ * Whether a provider flag is enabled in the given env, using the CLI's own
+ * truthiness rules.
+ *
+ * Exported so the subprocess-env pin path shares ONE definition of "enabled"
+ * with `getEnvVarsToRemove` / `buildProxyFlagSettings`. If they disagree, the
+ * resource gets stripped without a base URL being pinned and the CLI hard-fails.
+ */
+export const isProviderEnabledInEnv = (
+  env: Record<string, string | undefined>,
+  useKey: string,
+): boolean => isTruthyEnv(env[useKey]);
+
+/**
+ * Load a Claude settings JSON file, or `null` when it could not be read.
+ *
+ * `null` (unreadable / malformed / not a JSON object) is deliberately distinct
+ * from `{}` (a valid but empty settings file): callers that would otherwise
+ * REPLACE a user's settings need to know they failed to read it.
+ */
+const loadSettingsFile = (
+  filePath: string,
+): Record<string, unknown> | null => {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Missing or malformed settings are simply absent.
+  }
+  return null;
+};
+
+const settingsEnvBlock = (
+  settings: Record<string, unknown>,
+): Record<string, string> => {
+  const env = settings.env;
+  if (!env || typeof env !== "object" || Array.isArray(env)) {
+    return {};
+  }
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env as Record<string, unknown>)) {
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      result[key] = String(value);
+    }
+  }
+  return result;
+};
+
+/**
+ * Read the merged `env` block from Claude Code's on-disk settings layers.
+ *
+ * Claude Code applies these to the CLI session with HIGHER priority than the
+ * subprocess environment, so a user with `ANTHROPIC_BASE_URL` in
+ * `~/.claude/settings.json` silently bypasses our proxy. We read them to resolve
+ * the real upstream and to detect conflicts.
+ *
+ * Precedence (highest first): local project, shared project, user.
+ *
+ * `settingSources` mirrors `options.settingSources` and gates which layers are
+ * read: `undefined` means the CLI loads all of them, an array means only those,
+ * and `[]` disables on-disk settings entirely. Honoring it matters because
+ * reading a layer the CLI was told to ignore would resolve an upstream the CLI
+ * never uses, pointing the proxy at an unintended host.
+ */
+export const readClaudeSettingsEnv = (
+  cwd?: string,
+  settingSources?: string[],
+): Record<string, string> => {
+  const sessionCwd = cwd ?? process.cwd();
+  const userDir =
+    process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+
+  // Lowest priority first so higher layers overwrite.
+  const layers: [string, string][] = [
+    ["user", path.join(userDir, "settings.json")],
+    ["project", path.join(sessionCwd, ".claude", "settings.json")],
+    ["local", path.join(sessionCwd, ".claude", "settings.local.json")],
+  ];
+
+  const merged: Record<string, string> = {};
+  for (const [source, filePath] of layers) {
+    if (settingSources !== undefined && !settingSources.includes(source)) {
+      continue;
+    }
+    // An unreadable layer just means we cannot see it; carry on.
+    Object.assign(merged, settingsEnvBlock(loadSettingsFile(filePath) ?? {}));
+  }
+  return merged;
+};
+
+/**
+ * Read the `env` block out of the caller's `options.settings` (the flag layer).
+ *
+ * This layer OUTRANKS every on-disk layer, so a gateway or provider config that
+ * lives only here is what the CLI would actually use — and
+ * `buildProxyFlagSettings` is about to overwrite those keys with the proxy URL.
+ * Upstream resolution must therefore see it FIRST, or we forward to the wrong
+ * host (or to the default endpoint) while the caller's gateway is silently lost.
+ *
+ * Returns `{}` for a value we could not read; the caller's own bail-out logic in
+ * `buildProxyFlagSettings` handles that case.
+ */
+export const flagSettingsEnv = (
+  existing: string | Record<string, unknown> | undefined,
+  cwd?: string,
+): Record<string, string> => {
+  if (typeof existing === "object" && existing !== null) {
+    return settingsEnvBlock(existing);
+  }
+  if (typeof existing !== "string" || !existing.trim()) {
+    return {};
+  }
+  const trimmed = existing.trim();
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return settingsEnvBlock(parsed as Record<string, unknown>);
+      }
+    } catch {
+      // Unparseable inline JSON contributes nothing.
+    }
+    return {};
+  }
+  const resolved = path.isAbsolute(trimmed)
+    ? trimmed
+    : path.join(cwd ?? process.cwd(), trimmed);
+  return settingsEnvBlock(loadSettingsFile(resolved) ?? {});
+};
+
+/**
+ * Build the `--settings` value that forces the CLI through our proxy.
+ *
+ * Claude Code resolves `env` from its settings layers with higher priority than
+ * the subprocess environment, so rewriting `options.env` alone leaves a user with
+ * `ANTHROPIC_BASE_URL` in `~/.claude/settings.json` talking straight to their
+ * upstream while the proxy sees zero traffic (lmnr#2167). `--settings` is the
+ * highest user-controlled layer, so writing the proxy URL there wins without ever
+ * touching the user's files on disk.
+ *
+ * Layers merge per key, so keys we simply omit keep their lower-layer value.
+ * Redirecting keys are therefore blanked rather than dropped.
+ *
+ * Returns the value to assign to `options.settings`, or `null` when the caller's
+ * existing value is a file path we could not read (in that case the path must be
+ * left alone so the CLI can still resolve it itself).
+ */
+export const buildProxyFlagSettings = (
+  existing: string | Record<string, unknown> | undefined,
+  proxyUrl: string,
+  cwd?: string,
+  settingSources?: string[],
+): Record<string, unknown> | null => {
+  let settingsObj: Record<string, unknown> = {};
+
+  if (typeof existing === "object" && existing !== null) {
+    settingsObj = { ...existing };
+  } else if (typeof existing === "string" && existing.trim()) {
+    const trimmed = existing.trim();
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        return null;
+      }
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return null;
+      }
+      settingsObj = parsed as Record<string, unknown>;
+    } else {
+      const resolved = path.isAbsolute(trimmed)
+        ? trimmed
+        : path.join(cwd ?? process.cwd(), trimmed);
+      // Bail on any value we could not fully read, not just a missing file:
+      // emitting a proxy-only blob would drop every setting the user actually
+      // configured for this run.
+      const loaded = loadSettingsFile(resolved);
+      if (loaded === null) {
+        return null;
+      }
+      settingsObj = loaded;
+    }
+  }
+
+  const envDict: Record<string, string> = { ...settingsEnvBlock(settingsObj) };
+  const settingsEnv = readClaudeSettingsEnv(cwd, settingSources);
+  const inPlay = (key: string): boolean =>
+    key in envDict || key in settingsEnv || process.env[key] !== undefined;
+
+  envDict.ANTHROPIC_BASE_URL = proxyUrl;
+  for (const [baseUrlKey, useKey] of PROVIDER_BASE_URL_ENV_KEYS) {
+    // Pin a provider base URL when the provider is enabled OR its base URL is
+    // already set — never introduce one the user has nothing to do with. Keying
+    // only off the base-URL key would miss a provider configured by another
+    // route (e.g. Foundry via ANTHROPIC_FOUNDRY_RESOURCE), leaving it with its
+    // routing key blanked below and no proxy URL to fall back on.
+    const enabled =
+      isTruthyEnv(envDict[useKey]) ||
+      isTruthyEnv(settingsEnv[useKey]) ||
+      isTruthyEnv(process.env[useKey]);
+    if (enabled || inPlay(baseUrlKey)) {
+      envDict[baseUrlKey] = proxyUrl;
+    }
+    // The Foundry resource is mutually exclusive with the base URL we just
+    // pinned — the CLI hard-fails ("baseURL and resource are mutually
+    // exclusive") if both are live. Blank it whenever Foundry is in play, even
+    // when the resource only exists in the process env, since the flag layer is
+    // the only place we can override it for the subprocess.
+    if (baseUrlKey === FOUNDRY_BASE_URL_ENV && envDict[baseUrlKey] === proxyUrl) {
+      envDict[FOUNDRY_RESOURCE_ENV] = "";
+    }
+  }
+  for (const key of PROXY_NEUTRALIZED_ENV_KEYS) {
+    if (key in settingsEnv || key in envDict || process.env[key] !== undefined) {
+      envDict[key] = "";
+    }
+  }
+
+  return { ...settingsObj, env: envDict };
+};
 
 /**
  * Read region for a given profile from ~/.aws/config.
@@ -85,28 +363,50 @@ const getRegionFromAwsConfig = (profile: string): string | null => {
  * 4. ANTHROPIC_BASE_URL - standard Anthropic API base URL
  * 5. Fall back to default (https://api.anthropic.com)
  *
- * For each environment variable, checks envDict first, then process.env as fallback.
+ * For each environment variable, checks envDict first, then process.env, then
+ * Claude Code's on-disk settings `env` block. The settings layer is checked last
+ * as a source for the *upstream* URL, but note it wins over process env inside
+ * the CLI itself — see `buildProxyFlagSettings`.
  *
  * @param envDict - Dictionary of environment variables (e.g., from options.env)
  * @param fallback - Fallback URL if no other source found (default: DEFAULT_ANTHROPIC_BASE_URL)
+ * @param cwd - Session root used to locate project settings (`options.cwd`)
  * @returns Resolved target URL, or null if provider is misconfigured
  */
 export const resolveTargetUrlFromEnv = (
   envDict: Record<string, string | undefined>,
   fallback: string = DEFAULT_ANTHROPIC_BASE_URL,
+  cwd?: string,
+  settingSources?: string[],
+  settings?: string | Record<string, unknown>,
 ): string | null => {
-  // Helper to get value from envDict first, then process.env
-  const getEnvValue = (key: string): string | undefined =>
-    envDict[key] || process.env[key];
+  // The caller's flag layer outranks the on-disk layers inside the CLI, and we
+  // are about to overwrite its base URLs with the proxy — so read it here or a
+  // gateway configured only there is lost and we forward to the wrong host.
+  const flagEnv = flagSettingsEnv(settings, cwd);
+  const settingsEnv = readClaudeSettingsEnv(cwd, settingSources);
+
+  // Helper: options.env, then process.env, then flag settings, then on-disk
+  // Claude settings env.
+  // HTTP_PROXY / HTTPS_PROXY are deliberately NOT taken from settings — they are
+  // forward proxies rather than API bases and outrank every base URL below, so a
+  // settings-defined corporate proxy would shadow the gateway next to it.
+  const getEnvValue = (key: string): string | undefined => {
+    const value = envDict[key] || process.env[key];
+    if (value || UPSTREAM_SETTINGS_EXCLUDED_ENV_KEYS.includes(key)) {
+      return value;
+    }
+    return flagEnv[key] || settingsEnv[key];
+  };
 
   // 1. Check for HTTPS_PROXY (highest priority)
-  const httpsProxy = getEnvValue("HTTPS_PROXY");
+  const httpsProxy = getEnvValue("HTTPS_PROXY") || getEnvValue("https_proxy");
   if (httpsProxy) {
     return httpsProxy.replace(/\/$/, "");
   }
 
   // 2. Check for HTTP_PROXY
-  const httpProxy = getEnvValue("HTTP_PROXY");
+  const httpProxy = getEnvValue("HTTP_PROXY") || getEnvValue("http_proxy");
   if (httpProxy) {
     return httpProxy.replace(/\/$/, "");
   }
@@ -193,12 +493,19 @@ export const resolveTargetUrlFromEnv = (
  */
 export const getEnvVarsToRemove = (
   envDict: Record<string, string | undefined>,
+  cwd?: string,
+  settingSources?: string[],
 ): string[] => {
-  const toRemove: string[] = ["HTTPS_PROXY", "HTTP_PROXY"];
+  const toRemove: string[] = [...PROXY_ENV_KEYS];
 
-  // Helper to get value from envDict first, then process.env
+  const settingsEnv = readClaudeSettingsEnv(cwd, settingSources);
+
+  // Helper: envDict, then process.env, then Claude settings env. Settings are
+  // included because Foundry is often enabled only there, and the resource is
+  // mutually exclusive with the base URL we set — leaving it in options.env
+  // makes the CLI hard-fail.
   const getEnvValue = (key: string): string | undefined =>
-    envDict[key] || process.env[key];
+    envDict[key] || process.env[key] || settingsEnv[key];
 
   // Remove FOUNDRY_RESOURCE if Foundry is enabled
   // (it's mutually exclusive with ANTHROPIC_BASE_URL which we'll set)
@@ -324,8 +631,16 @@ export interface ProxyInstance {
  */
 export const createProxyInstance = async ({
   env,
+  cwd,
+  settingSources,
+  settings,
+  targetUrl: resolvedTargetUrl,
 }: {
   env: Record<string, string | undefined>;
+  cwd?: string;
+  settingSources?: string[];
+  settings?: string | Record<string, unknown>;
+  targetUrl?: string | null;
 }): Promise<ProxyInstance | null> => {
   try {
     const port = await findAvailablePort(
@@ -337,8 +652,13 @@ export const createProxyInstance = async ({
       return null;
     }
 
-    // Resolve target URL using the priority order
-    const targetUrl = resolveTargetUrlFromEnv(env);
+    // Prefer the caller's already-resolved upstream. Re-resolving here without
+    // the session cwd would miss a gateway configured only in project or local
+    // settings, and the proxy would forward to the default Anthropic API while
+    // ANTHROPIC_ORIGINAL_BASE_URL pointed at the gateway.
+    const targetUrl =
+      resolvedTargetUrl ??
+      resolveTargetUrlFromEnv(env, undefined, cwd, settingSources, settings);
     if (!targetUrl) {
       logger.warn(
         "Unable to resolve target URL for cc-proxy (provider misconfigured).",
