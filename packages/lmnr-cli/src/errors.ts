@@ -37,6 +37,7 @@ export const setupKeyFailed = (m: string) => new CliError("setup_key_failed", 9,
 export const mintFailed = (m: string) => new CliError("mint_failed", 9, m);
 export const configWriteFailed = (m: string) => new CliError("config_write_failed", 8, m);
 export const unsupportedAgent = (m: string) => new CliError("unsupported_agent", 13, m);
+export const schemaFetchFailed = (m: string) => new CliError("schema_fetch_failed", 15, m);
 
 /**
  * Bare exit codes for the two sites that DON'T go through `failWith`: each emits

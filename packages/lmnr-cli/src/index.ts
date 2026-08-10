@@ -28,7 +28,7 @@ import { handleProjectMintKey } from "./commands/project/mint-key";
 import { handleSetup } from "./commands/setup";
 import { handleSkillAdd, handleSkillUpdate } from "./commands/skill";
 import { handleSqlQuery } from "./commands/sql";
-import { SQL_SCHEMA_HELP } from "./commands/sql/schema";
+import { handleSqlSchema } from "./commands/sql/schema";
 import { handleStatus } from "./commands/status";
 import { pc } from "./utils/colors";
 import { loadLocalEnv } from "./utils/env-file";
@@ -193,8 +193,10 @@ async function main() {
     .action(withProjectClient(handleSqlQuery))
     .addHelpText(
       "after",
-      SQL_SCHEMA_HELP +
       `
+Run \`lmnr-cli sql schema\` for the tables and columns you can query. The
+schema is served by the API, so it always matches the running server.
+
 When a debug session is active in this directory, the command (and its args) is
 recorded into that session as a \`command\` block so a reviewer sees what ran.
 The raw query string is uploaded. Attach agent reasoning with --reasoning.
@@ -216,9 +218,21 @@ Examples:
   sqlCmd
     .command("schema")
     .description("Show available tables and their columns")
-    .action(() => {
-      process.stdout.write(SQL_SCHEMA_HELP);
-    });
+    .action(withProjectClient(handleSqlSchema))
+    .addHelpText(
+      "after",
+      `
+Fetched from the API, so it reflects the server you are pointed at rather than
+a copy bundled with this CLI. Requires login and network access.
+
+Use --json for the raw payload ({ tables, enums }), which is easier to parse
+than the default text rendering.
+
+Examples:
+  $ lmnr-cli sql schema
+  $ lmnr-cli sql schema --json
+`,
+    );
 
   const askCmd = program
     .command("ask")
