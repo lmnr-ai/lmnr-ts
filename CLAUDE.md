@@ -9,7 +9,7 @@ Laminar TypeScript SDK — a pnpm monorepo publishing `@lmnr-ai/lmnr`, `@lmnr-ai
 ## Repository Structure
 
 - `packages/lmnr` — main `@lmnr-ai/lmnr` package: tracing, OpenTelemetry instrumentations, custom framework exporters (Mastra, Vercel AI SDK, OpenAI, etc.).
-- `packages/client` — typed HTTP client for the Laminar API (`@lmnr-ai/client`).
+- `packages/client` — typed HTTP client for the Laminar API (`@lmnr-ai/client`). `LaminarClient` resolves `baseUrl ?? process.env.LMNR_BASE_URL` BEFORE port extraction — port parsing must run on the resolved value, or `LMNR_BASE_URL=http://localhost:8000` silently becomes `http://localhost:443` (regression: `packages/client/test/client-base-url.test.ts`).
 - `packages/types` — shared type defs.
 - `packages/lmnr-cli` — `lmnr` CLI.
 
@@ -24,15 +24,6 @@ pnpm check-versions             # Verify package versions are aligned
 ```
 
 Work inside a specific package with `pnpm --filter @lmnr-ai/lmnr ...` or `cd packages/lmnr && pnpm ...`.
-
-## Eve Reporter (`packages/lmnr/src/integrations/eve.ts`)
-
-`LaminarReporter` implements eve's `EvalReporter` (`eve/evals/reporters`) via local type mirrors — no peer dep on `eve` (same pattern as the Mastra exporter). Non-obvious facts:
-
-- The reporter contract (`onRunStart` / `onEvalComplete` / `onRunComplete`) is stable across eve versions (verified 0.16.x → 0.22.x); the local mirrors use optional fields and `readonly` arrays so they stay assignable to eve's real types.
-- **E2E testing against a real eve project requires `npm pack` tarballs, not `file:` installs.** Eve bundles `evals.config.ts` with Rolldown/Nitro; a `file:` install symlinks the package without its dep tree (pino etc. missing) and bundling fails with "Failed to bundle authored module evals.config.ts". Pack `types`, `client`, and `lmnr` and install all three tarballs.
-- **The E2E eve project is `~/Documents/Programming/eve-agent-test`** (`~/Documents/Programming/laminar-test` holds Laminar's OWN eval tests, not an eve project). It needs Node 24 (`~/.nvm/versions/node/v24.18.0/bin`); `agent/instrumentation.ts` sets `traceChannelRequests: true`, and `evals/evals.config.ts` gates the reporter's propagation behind `LMNR_EVE_PROPAGATE=false` so the session-id lookup fallback stays testable. Set `BRAINTRUST_API_KEY=` to skip the second reporter. Local runs are `npx eve eval [name] --max-concurrency N`; the two-process shape is `npx eve dev --port 3111` in the background then `npx eve eval --url http://localhost:3111` (an arbitrary URL is an anonymous remote target — no Vercel auth). Only ONE dev server per agent can run at a time; `eve eval` without `--url` refuses to boot while one is up, so `pkill -f "eve dev"` first.
-- `LaminarClient` resolves `baseUrl ?? process.env.LMNR_BASE_URL` BEFORE port extraction — port parsing must run on the resolved value, or `LMNR_BASE_URL=http://localhost:8000` silently becomes `http://localhost:443`. Regression covered in `packages/client/test/client-base-url.test.ts`.
 
 ## Mastra Exporter (`packages/lmnr/src/opentelemetry-lib/instrumentation/mastra/`)
 

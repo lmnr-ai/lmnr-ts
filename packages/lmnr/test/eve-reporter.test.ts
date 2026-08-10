@@ -23,6 +23,11 @@ import { otelSpanIdToUUID, otelTraceIdToUUID } from "../src/utils";
 
 type RequestBody = Record<string, any>;
 
+// `RequestBody` is intentionally loose, so narrow the scores map at the read
+// site rather than sprinkling casts through the assertions.
+const scoresOf = (body: RequestBody): Record<string, number> =>
+  body.scores as Record<string, number>;
+
 const NOCK_URL = "https://api.lmnr.ai:443";
 const PROJECT_API_KEY = "test-api-key";
 const MOCK_EVAL_ID: StringUUID = "12345678-1234-1234-1234-123456789abc";
@@ -220,36 +225,7 @@ void describe("LaminarReporter for eve evals", () => {
     updateScope.done();
   });
 
-  void it("encodes a failed gate in stable summary scores", async () => {
-    mockInit();
-    nock(NOCK_URL).post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`).reply(200, {});
-    let updateBody: RequestBody = {};
-    nock(NOCK_URL)
-      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`), (b: RequestBody) => {
-        updateBody = b;
-        return true;
-      })
-      .reply(200, {});
-
-    const reporter = makeReporter();
-    await reporter.onRunStart([{ id: "a" }], {});
-    await reporter.onEvalComplete({
-      id: "a",
-      verdict: "failed",
-      result: { status: "completed" },
-      assertions: [
-        { name: "must-answer", score: 0, severity: "gate", passed: false },
-      ],
-    });
-
-    assert.deepStrictEqual(updateBody.scores, {
-      "eve.verdict.passed": 0,
-      "eve.gates.passed": 0,
-      "eve.soft_thresholds.passed": 1,
-    });
-  });
-
-  void it("surfaces failed assertions in datapoint metadata", async () => {
+  void it("encodes a failed gate in both the scores and the metadata", async () => {
     mockInit();
     let createBody: RequestBody = {};
     nock(NOCK_URL)
@@ -258,8 +234,12 @@ void describe("LaminarReporter for eve evals", () => {
         return true;
       })
       .reply(200, {});
+    let updateBody: RequestBody = {};
     nock(NOCK_URL)
-      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`))
+      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`), (b: RequestBody) => {
+        updateBody = b;
+        return true;
+      })
       .reply(200, {});
 
     const reporter = makeReporter();
@@ -279,6 +259,11 @@ void describe("LaminarReporter for eve evals", () => {
       ],
     });
 
+    assert.deepStrictEqual(updateBody.scores, {
+      "eve.verdict.passed": 0,
+      "eve.gates.passed": 0,
+      "eve.soft_thresholds.passed": 1,
+    });
     assert.deepStrictEqual(createBody.points[0].metadata.failedAssertions, [
       { name: "must-answer", message: "no answer produced" },
     ]);
@@ -322,7 +307,7 @@ void describe("LaminarReporter for eve evals", () => {
     ]);
   });
 
-  void it("increments the datapoint index across evals", async () => {
+  void it("uses the same score keys for heterogeneous evals, indexed in order", async () => {
     mockInit();
     const indices: number[] = [];
     nock(NOCK_URL)
@@ -330,35 +315,6 @@ void describe("LaminarReporter for eve evals", () => {
         indices.push(b.points[0].index);
         return true;
       })
-      .twice()
-      .reply(200, {});
-    nock(NOCK_URL)
-      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`))
-      .twice()
-      .reply(200, {});
-
-    const reporter = makeReporter();
-    await reporter.onRunStart([{ id: "a" }, { id: "b" }], {});
-    await reporter.onEvalComplete({
-      id: "a",
-      verdict: "scored",
-      result: { status: "completed" },
-      assertions: [{ name: "accuracy", score: 1, severity: "soft" }],
-    });
-    await reporter.onEvalComplete({
-      id: "b",
-      verdict: "scored",
-      result: { status: "completed" },
-      assertions: [{ name: "accuracy", score: 0, severity: "soft" }],
-    });
-
-    assert.deepStrictEqual(indices, [0, 1]);
-  });
-
-  void it("uses the same score keys for heterogeneous eve assertions", async () => {
-    mockInit();
-    nock(NOCK_URL)
-      .post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`)
       .twice()
       .reply(200, {});
     const scoreUpdates: RequestBody[] = [];
@@ -389,33 +345,19 @@ void describe("LaminarReporter for eve evals", () => {
       ],
     });
 
+    // Different eval files assert different things, but the score COLUMNS must
+    // match or Laminar's eval UI reads the sparse cells as incomplete. Exact
+    // score values are pinned by the graded-eval and failed-gate cases above.
+    const KEYS = [
+      "eve.gates.passed",
+      "eve.soft_thresholds.passed",
+      "eve.verdict.passed",
+    ];
     assert.deepStrictEqual(
-      scoreUpdates.map((body) => Object.keys(body.scores).sort()),
-      [
-        [
-          "eve.gates.passed",
-          "eve.soft_thresholds.passed",
-          "eve.verdict.passed",
-        ],
-        [
-          "eve.gates.passed",
-          "eve.soft_thresholds.passed",
-          "eve.verdict.passed",
-        ],
-      ],
+      scoreUpdates.map((body) => Object.keys(scoresOf(body)).sort()),
+      [KEYS, KEYS],
     );
-    assert.deepStrictEqual(scoreUpdates.map((body) => body.scores), [
-      {
-        "eve.verdict.passed": 1,
-        "eve.gates.passed": 1,
-        "eve.soft_thresholds.passed": 1,
-      },
-      {
-        "eve.verdict.passed": 1,
-        "eve.gates.passed": 1,
-        "eve.soft_thresholds.passed": 1,
-      },
-    ]);
+    assert.deepStrictEqual(indices, [0, 1]);
   });
 
   void it("does not throw when onRunStart failed and onEvalComplete runs", async () => {
