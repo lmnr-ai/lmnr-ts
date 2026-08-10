@@ -75,6 +75,19 @@ export class LaminarClient {
   }
 
   /**
+   * The fully-resolved API origin every resource fetches from, e.g.
+   * `http://localhost:8000`. Already normalized: trailing slash removed, any
+   * port embedded in `baseUrl` stripped, and the effective port appended.
+   *
+   * Exposed so callers can name the real address in diagnostics instead of
+   * rebuilding it from `baseUrl` + `port` — that reconstruction drifts from
+   * this normalization and prints things like `http://host:8000:9000`.
+   */
+  public get apiBaseUrl(): string {
+    return this.baseUrl;
+  }
+
+  /**
    * Normalize the constructor's auth inputs into a {@link LaminarAuth} union.
    * Precedence: an explicit `auth` wins; otherwise the legacy
    * `projectApiKey` (+ optional `cliUserProjectId`) is mapped — a present

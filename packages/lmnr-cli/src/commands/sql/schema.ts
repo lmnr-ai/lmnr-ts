@@ -1,7 +1,6 @@
 import type { LaminarClient } from "@lmnr-ai/client";
 import { errorMessage, type SqlSchema } from "@lmnr-ai/types";
 
-import { envHttpPort, resolveBaseUrl } from "../../auth/resolve";
 import type { GlobalOpts } from "../../auth/with-client";
 import { schemaFetchFailed } from "../../errors";
 import { outputJson, printData } from "../../utils/output";
@@ -91,12 +90,12 @@ export const handleSqlSchema = async (
     // exactly when the user is already misconfigured (a stale LMNR_BASE_URL in
     // a project `.env` is the common case).
     //
-    // Host and port are separate everywhere in the CLI (`--base-url
-    // http://localhost --port 8000` is the documented self-host form), so the
-    // message must splice the port back on. Naming the host alone points at a
-    // URL that looks correct when the port is the actual miss.
-    const port = opts.port ?? envHttpPort();
-    const url = `${resolveBaseUrl(opts.baseUrl)}${port ? `:${port}` : ""}`;
+    // Read the origin off the client rather than rebuilding it from
+    // `baseUrl` + `port`: the client strips a trailing slash and any port
+    // already in `baseUrl` before appending the effective one, so
+    // reconstruction drifts (`http://host:8000:9000`) and names an address
+    // that was never fetched.
+    const url = client.apiBaseUrl;
     throw schemaFetchFailed(
       `Could not fetch the SQL schema from ${url}: ${errorMessage(err)}. ` +
       "Check your connection, or that --base-url / --port (LMNR_BASE_URL / " +

@@ -1,3 +1,4 @@
+import { LaminarClient } from "@lmnr-ai/client";
 import type { SqlSchema } from "@lmnr-ai/types";
 import { describe, expect, it } from "vitest";
 
@@ -91,34 +92,44 @@ void describe("renderSqlSchema", () => {
 // 8000` is the documented self-host form). The failure message used to print
 // the host alone, which named a URL that looked right when the port was the
 // actual miss.
+// Driven through a REAL LaminarClient so the message is pinned to the origin
+// the client actually fetches. An earlier version rebuilt the URL from
+// `baseUrl` + `port` and drifted from the client's normalization.
 void describe("handleSqlSchema failure message", () => {
-  const failingClient = {
-    sql: { schema: () => Promise.reject(new Error("fetch failed")) },
-  } as unknown as Parameters<typeof handleSqlSchema>[0];
+  const failing = (baseUrl?: string, port?: number) => {
+    const client = new LaminarClient({
+      baseUrl,
+      port,
+      auth: { type: "apiKey", key: "test-key" },
+    });
+    client.sql.schema = () => Promise.reject(new Error("fetch failed"));
+    return client;
+  };
 
-  void it("includes the --port flag in the URL", async () => {
+  void it("names the host and port that were fetched", async () => {
     await expect(
-      handleSqlSchema(failingClient, { baseUrl: "http://localhost", port: 8000 }),
+      handleSqlSchema(failing("http://localhost", 8000), {}),
     ).rejects.toThrow("http://localhost:8000");
   });
 
-  void it("falls back to LMNR_HTTP_PORT when no flag is given", async () => {
-    process.env.LMNR_HTTP_PORT = "8123";
-    try {
-      await expect(
-        handleSqlSchema(failingClient, { baseUrl: "http://localhost" }),
-      ).rejects.toThrow("http://localhost:8123");
-    } finally {
-      delete process.env.LMNR_HTTP_PORT;
-    }
+  // The client strips a port already present in baseUrl before appending the
+  // effective one. Rebuilding the URL instead printed `localhost:8000:9000`.
+  void it("does not double the port when baseUrl already carries one", async () => {
+    await expect(
+      handleSqlSchema(failing("http://localhost:8000", 9000), {}),
+    ).rejects.toThrow("http://localhost:9000");
   });
 
-  // No port resolvable → no `:port` on the host. The `:` that follows the URL
-  // in the message is this handler's own `${url}: ${error}` separator, so match
-  // on `:<digits>` rather than a bare colon.
-  void it("appends no port when none is resolvable", async () => {
+  // Likewise a trailing slash, which otherwise rendered as `http://host/:8000`.
+  void it("does not leave a slash before the port", async () => {
     await expect(
-      handleSqlSchema(failingClient, { baseUrl: "https://api.lmnr.ai" }),
-    ).rejects.toThrow(/from https:\/\/api\.lmnr\.ai: /);
+      handleSqlSchema(failing("http://localhost/", 8000), {}),
+    ).rejects.toThrow("http://localhost:8000");
+  });
+
+  void it("shows the default port when none is given", async () => {
+    await expect(
+      handleSqlSchema(failing("https://api.lmnr.ai"), {}),
+    ).rejects.toThrow("https://api.lmnr.ai:443");
   });
 });
