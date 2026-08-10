@@ -18,7 +18,10 @@ export interface SqlSchemaColumn {
   description: string;
 }
 
-/** One logical table. The caller writes this name; the engine rewrites it to a project-scoped view. */
+/**
+ * One logical table. The caller writes this name; the engine rewrites it to a
+ * project-scoped view.
+ */
 export interface SqlSchemaTable {
   name: string;
   description: string;
