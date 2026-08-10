@@ -652,6 +652,17 @@ export class LaminarReporter implements EvalReporter {
       process.stdout.write(`\nLaminar: check eve eval results at ${url}\n`);
     } catch (error) {
       logger.error(`Laminar eve reporter: failed to start run: ${errorMessage(error)}`);
+      if (!this.evalId) {
+        // No evaluation to attach results to, so stop minting traces for it.
+        // A live factory would keep opening an EVALUATION span on every `send`
+        // that `onEvalComplete` then drops on its `!evalId` guard, and
+        // `onRunComplete` would still flush those orphans to Laminar.
+        this.client = undefined;
+        if (activeSessionTraceFactory === this.sessionTraceFactory) {
+          activeSessionTraceFactory = null;
+        }
+        await this.shutdownTracerProvider();
+      }
     }
   }
 
@@ -938,7 +949,11 @@ export class LaminarReporter implements EvalReporter {
       trace.getTracer(EVE_REPORTER_TRACER_NAME);
     const span = tracer.startSpan(`eve eval ${evalId}`, {
       attributes: {
-        "lmnr.span.type": "EVALUATION",
+        [SPAN_TYPE]: "EVALUATION",
+        // Same pair `mintSessionTrace` stamps: the trace type is what associates
+        // the trace with the evaluation, and a datapoint on a trace without it
+        // loses that association.
+        [TRACE_TYPE]: "EVALUATION",
         "lmnr.eve.reporter": EVE_REPORTER_TRACER_NAME,
         "lmnr.eve.eval.id": evalId,
         "lmnr.eve.eval.verdict": verdict ?? "",

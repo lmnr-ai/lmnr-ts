@@ -206,6 +206,15 @@ void describe("LaminarReporter for eve evals", () => {
       },
     ]);
 
+    // Both the trace and the span type, exactly as the propagated root stamps
+    // them — without the trace type the datapoint's trace loses its evaluation
+    // association.
+    assert.strictEqual(reporterSpan.attributes["lmnr.span.type"], "EVALUATION");
+    assert.strictEqual(
+      reporterSpan.attributes["lmnr.association.properties.trace_type"],
+      "EVALUATION",
+    );
+
     // Eval metadata rides on the span, never on a `/v1/traces/metadata` POST.
     const meta = "lmnr.association.properties.metadata";
     assert.strictEqual(reporterSpan.attributes[`${meta}.source`], "eve");
@@ -369,6 +378,25 @@ void describe("LaminarReporter for eve evals", () => {
     // nock would throw on an unmocked request. It must short-circuit instead.
     await assert.doesNotReject(() => reporter.onEvalComplete({ id: "a" }));
     assert.doesNotThrow(() => reporter.onRunComplete());
+  });
+
+  void it("mints no session traces after onRunStart failed", async () => {
+    nock(NOCK_URL).post("/v1/evals").reply(500, "boom");
+
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+
+    // The patch stays installed, but with no evaluation to attach results to it
+    // must stop minting traces — every span it opened would be an orphan the
+    // datapoint never links to.
+    const SessionClass = makeStubSessionClass();
+    patchEveClientSession(SessionClass);
+    const session = new SessionClass("wrun_orphan");
+    await session.send("hello");
+
+    assert.strictEqual(session.sentInputs[0], "hello");
+    await reporter.onRunComplete();
+    assert.deepStrictEqual(exporter.getFinishedSpans(), []);
   });
 
   void it("swallows datapoint errors so a bad eval never breaks the run", async () => {
