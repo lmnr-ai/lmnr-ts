@@ -82,6 +82,8 @@ export interface LaminarInitializeProps {
   traceExportTimeoutMillis?: number;
   logLevel?: "debug" | "info" | "warn" | "error";
   maxExportBatchSize?: number;
+  maxExportBatchSizeBytes?: number;
+  flushBySize?: boolean;
   forceHttp?: boolean;
   sessionRecordingOptions?: SessionRecordingOptions;
   metadata?: Record<string, any>;
@@ -149,6 +151,13 @@ export class Laminar {
    * @param {string} props.logLevel - OTel log level. Defaults to "error".
    * @param {number} props.maxExportBatchSize - Maximum number of spans to export in a single batch.
    * Ignored when `disableBatch` is true.
+   * @param {boolean} props.flushBySize - Whether to also flush batches by approximate payload
+   * size, not just by span count and schedule delay. The batch is flushed when the next span
+   * would push it past `maxExportBatchSizeBytes`, so a few large spans are exported without
+   * waiting for `maxExportBatchSize` spans to accumulate. Useful when spans carry large prompts
+   * or completions and exports get rejected for being too big. Defaults to false.
+   * @param {number} props.maxExportBatchSizeBytes - Approximate maximum size, in bytes, of the
+   * spans buffered in one batch. Only used when `flushBySize` is true. Defaults to 32 MiB.
    * @param {boolean} props.forceHttp - Whether to force HTTP export. Not recommended.
    * @param {SessionRecordingOptions} props.sessionRecordingOptions - Options for browser
    * session recording.
@@ -192,6 +201,8 @@ export class Laminar {
     traceExportTimeoutMillis,
     logLevel,
     maxExportBatchSize,
+    maxExportBatchSizeBytes,
+    flushBySize,
     forceHttp,
     sessionRecordingOptions,
     metadata,
@@ -264,6 +275,8 @@ export class Laminar {
       logLevel: logLevel ?? "error",
       disableBatch,
       maxExportBatchSize,
+      maxExportBatchSizeBytes,
+      flushBySize,
       traceExportTimeoutMillis,
       sessionRecordingOptions,
       spanProcessor,

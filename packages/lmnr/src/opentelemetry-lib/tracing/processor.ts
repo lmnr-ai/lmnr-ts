@@ -32,6 +32,7 @@ import {
   TRACE_TYPE,
   USER_ID,
 } from "./attributes";
+import { SizeLimitedBatchSpanProcessor } from "./batch-processor";
 import {
   getParentSpanId,
   makeSpanOtelV2Compatible,
@@ -70,6 +71,17 @@ interface LaminarSpanProcessorOptions {
    * Defaults to false.
    */
   disableBatch?: boolean;
+  /**
+   * Approximate maximum size, in bytes, of the spans buffered in a single batch.
+   * Only used when `flushBySize` is true. Optional.
+   * Defaults to 32 MiB.
+   */
+  maxExportBatchSizeBytes?: number;
+  /**
+   * Whether to also flush batches by approximate payload size. Optional.
+   * Defaults to false.
+   */
+  flushBySize?: boolean;
   /**
    * Whether to force HTTP and use OpenTelemetry HTTP/protobuf exporter.
    * Not recommended with Laminar backends.
@@ -139,12 +151,20 @@ export class LaminarSpanProcessor implements SpanProcessor {
         | SimpleSpanProcessor;
     } else {
       const exporter = options.exporter ?? new LaminarSpanExporter(options);
-      this.instance = options.disableBatch
-        ? new SimpleSpanProcessor(exporter)
-        : new BatchSpanProcessor(exporter, {
-          maxExportBatchSize: options.maxExportBatchSize ?? 512,
-          exportTimeoutMillis: options.traceExportTimeoutMillis ?? 30000,
+      const batchConfig = {
+        maxExportBatchSize: options.maxExportBatchSize ?? 512,
+        exportTimeoutMillis: options.traceExportTimeoutMillis ?? 30000,
+      };
+      if (options.disableBatch) {
+        this.instance = new SimpleSpanProcessor(exporter);
+      } else if (options.flushBySize) {
+        this.instance = new SizeLimitedBatchSpanProcessor(exporter, {
+          ...batchConfig,
+          maxExportBatchSizeBytes: options.maxExportBatchSizeBytes,
         });
+      } else {
+        this.instance = new BatchSpanProcessor(exporter, batchConfig);
+      }
     }
   }
 

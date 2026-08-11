@@ -416,6 +416,21 @@ export interface InitializeOptions {
   maxExportBatchSize?: number;
 
   /**
+   * Approximate maximum size, in bytes, of the spans buffered in a single batch.
+   * Only used when `flushBySize` is true. Optional.
+   * Defaults to 32 MiB.
+   */
+  maxExportBatchSizeBytes?: number;
+
+  /**
+   * Whether to also flush batches by approximate payload size, in addition to
+   * span count and schedule delay. Useful when spans carry large prompts or
+   * completions and exports get rejected for being too big. Optional.
+   * Defaults to false.
+   */
+  flushBySize?: boolean;
+
+  /**
    * The timeout for sending traces data. Optional.
    * Defaults to 30 seconds.
    */
