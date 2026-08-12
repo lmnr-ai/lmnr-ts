@@ -15,6 +15,7 @@ import {
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 
+import { Laminar } from "../laminar";
 import { LaminarSpanProcessor } from "../opentelemetry-lib";
 import {
   SPAN_INPUT,
@@ -36,7 +37,8 @@ const logger = initializeLogger();
 const EVE_REPORTER_TRACER_NAME = "@lmnr-ai/lmnr/eve-reporter";
 const EVE_CLIENT_MODULE = "eve/client";
 const TRACEPARENT_HEADER = "traceparent";
-const LAMINAR_SPAN_CONTEXT_HEADER = "laminar-span-context";
+/** Same wire name the Temporal instrumentation uses (`temporal/consts.ts`). */
+const LAMINAR_SPAN_CONTEXT_HEADER = "x-lmnr-span-context";
 /**
  * Root span name for every propagated eval, and it never changes. eve calls
  * `ClientSession.send` before any hook that knows which eval is in flight, and
@@ -553,15 +555,14 @@ type TraceResolution =
  *
  * ```ts
  * registerTelemetry(new LaminarAiSdkTelemetry({
- *   // `disableBatch` matters: eve ends the command with `process.exit()`, and a
- *   // batch queue would never flush.
- *   laminarOptions: { projectApiKey, disableBatch: true },
+ *   laminarOptions: { projectApiKey },
  * }));
  * ```
  *
  * Each judge then gets its own span under the eval's root — see
- * {@link bindEvalContext}. Without those two lines the reporter still records
- * every assertion's score as an EVALUATOR span; only the model call is missing.
+ * {@link bindEvalContext}, and {@link LaminarReporter.flushHostPipeline} for how
+ * those spans get shipped. Without that line the reporter still records every
+ * assertion's score as an EVALUATOR span; only the model call is missing.
  *
  * @example
  * ```ts
@@ -613,6 +614,11 @@ export class LaminarReporter implements EvalReporter {
         baseUrl: this.options.baseUrl,
         projectApiKey: this.options.projectApiKey,
       });
+      // The reporter owns a provider instead of borrowing `getTracerProvider()`:
+      // that one is a noop unless the host called `Laminar.initialize()` (we never
+      // register globally), and every eve span would silently become a
+      // NonRecordingSpan. It also needs its own credentials and its own
+      // forceFlush/shutdown, neither of which the API's `TracerProvider` exposes.
       this.tracerProvider = new BasicTracerProvider({
         spanProcessors: [
           this.options.spanProcessor ?? new LaminarSpanProcessor({
@@ -771,8 +777,27 @@ export class LaminarReporter implements EvalReporter {
       activeSessionTraceFactory = null;
     }
     await this.shutdownTracerProvider();
+    await this.flushHostPipeline();
     this.evalId = undefined;
     this.evalsById.clear();
+  }
+
+  /**
+   * Flush the host process's own Laminar pipeline — the one `t.judge.autoevals.*`
+   * spans go to (see the class doc's `registerTelemetry` note). eve knows nothing
+   * about it and ends `eve eval` with `process.exit()`, which skips `beforeExit`,
+   * so `onRunComplete` is the last awaited point at which those spans can ship.
+   * A no-op when the host never called `Laminar.initialize()`.
+   */
+  private async flushHostPipeline(): Promise<void> {
+    try {
+      await Laminar.flush();
+    } catch (error) {
+      logger.warn(
+        `Laminar eve reporter: failed to flush the host pipeline: ` +
+        errorMessage(error),
+      );
+    }
   }
 
   /**
@@ -795,8 +820,13 @@ export class LaminarReporter implements EvalReporter {
         "lmnr.eve.reporter": EVE_REPORTER_TRACER_NAME,
       },
     }, ROOT_CONTEXT);
+    // TRACE_TYPE is stamped on descendants too, matching what `observe`'s
+    // association properties give the native evaluator on every child span.
     const executorSpan = tracer.startSpan(EXECUTOR_SPAN_NAME, {
-      attributes: { [SPAN_TYPE]: "EXECUTOR" },
+      attributes: {
+        [SPAN_TYPE]: "EXECUTOR",
+        [TRACE_TYPE]: "EVALUATION",
+      },
     }, trace.setSpan(ROOT_CONTEXT, rootSpan));
     const sessionTrace: EveSessionTrace = {
       traceId: otelTraceIdToUUID(rootSpan.spanContext().traceId),
@@ -890,6 +920,7 @@ export class LaminarReporter implements EvalReporter {
       sessionTrace.tracer.startSpan(name, {
         attributes: {
           [SPAN_TYPE]: "EVALUATOR",
+          [TRACE_TYPE]: "EVALUATION",
           [SPAN_OUTPUT]: output,
         },
       }, rootContext).end();

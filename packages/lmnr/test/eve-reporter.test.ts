@@ -17,6 +17,7 @@ import {
   LaminarReporter,
   patchEveClientSession,
 } from "../src/integrations/eve";
+import { Laminar } from "../src/laminar";
 import { LaminarSpanProcessor } from "../src/opentelemetry-lib";
 import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
 import { otelSpanIdToUUID, otelTraceIdToUUID } from "../src/utils";
@@ -409,6 +410,26 @@ void describe("LaminarReporter for eve evals", () => {
       reporter.onEvalComplete({ id: "a", result: {}, assertions: [] }),
     );
   });
+
+  void it("flushes the host pipeline on run complete", async () => {
+    mockInit();
+    // Judge spans go to the host's own Laminar pipeline, and eve calls
+    // `process.exit()` right after this hook — so this is their only flush point.
+    const originalFlush = Laminar.flush.bind(Laminar);
+    let flushes = 0;
+    Laminar.flush = () => {
+      flushes += 1;
+      return Promise.resolve();
+    };
+    try {
+      const reporter = makeReporter();
+      await reporter.onRunStart([{ id: "a" }], {});
+      await reporter.onRunComplete();
+      assert.strictEqual(flushes, 1);
+    } finally {
+      Laminar.flush = originalFlush;
+    }
+  });
 });
 
 /**
@@ -501,7 +522,7 @@ void describe("LaminarReporter eve trace propagation", () => {
     assert.match(traceIdHex, /^[0-9a-f]{32}$/);
     assert.match(spanIdHex, /^[0-9a-f]{16}$/);
     assert.strictEqual(flags, "01");
-    const laminarContext = JSON.parse(headers["laminar-span-context"]);
+    const laminarContext = JSON.parse(headers["x-lmnr-span-context"]);
     assert.strictEqual(laminarContext.traceId, otelTraceIdToUUID(traceIdHex));
     assert.strictEqual(laminarContext.isRemote, true);
     // The path must travel with the ids. Laminar nests by `lmnr.span.ids_path`,
@@ -562,6 +583,12 @@ void describe("LaminarReporter eve trace propagation", () => {
     );
     assert.strictEqual(root.attributes["lmnr.eve.eval.id"], "a");
     assert.strictEqual(executor.attributes["lmnr.span.type"], "EXECUTOR");
+    // The trace type rides on every span the reporter owns, matching what the
+    // native evaluator's association properties stamp on each descendant.
+    assert.strictEqual(
+      executor.attributes["lmnr.association.properties.trace_type"],
+      "EVALUATION",
+    );
     // The agent's turn is parented to the executor span, not the root.
     assert.strictEqual(
       parseTraceparent(headersOf(session.sentInputs[0])).spanIdHex,
@@ -583,6 +610,11 @@ void describe("LaminarReporter eve trace propagation", () => {
     );
     assert.ok(evaluators.every(
       (span) => span.spanContext().traceId === root.spanContext().traceId,
+    ));
+    assert.ok(evaluators.every(
+      (span) =>
+        span.attributes["lmnr.association.properties.trace_type"] ===
+          "EVALUATION",
     ));
 
     await reporter.onRunComplete();
