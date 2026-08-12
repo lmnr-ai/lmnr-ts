@@ -4,5 +4,6 @@ export * from "./debug-session";
 export * from "./evaluation";
 export * from "./initialize-options";
 export * from "./session-block";
+export * from "./sql-schema";
 export * from "./tracing";
 export * from "./utils";

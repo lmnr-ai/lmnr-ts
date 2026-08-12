@@ -1,3 +1,5 @@
+import type { SqlSchema } from "@lmnr-ai/types";
+
 import { BaseResource, type LaminarAuth } from "./index";
 
 export class SqlResource extends BaseResource {
@@ -25,5 +27,25 @@ export class SqlResource extends BaseResource {
     }
 
     return (await response.json()).data as Array<Record<string, any>>;
+  }
+
+  /**
+   * Fetch the queryable tables, columns, and enums. Server-rendered from
+   * app-server's `query_engine::schema`, so it is the same source that backs
+   * the MCP `query_laminar_sql` tool description — never a client-side copy.
+   */
+  public async schema(): Promise<SqlSchema> {
+    const response = await fetch(`${this.baseHttpUrl}${this.apiPrefix}/sql/schema`, {
+      method: "GET",
+      headers: {
+        ...this.headers(),
+      },
+    });
+
+    if (!response.ok) {
+      await this.handleError(response);
+    }
+
+    return (await response.json()) as SqlSchema;
   }
 }
