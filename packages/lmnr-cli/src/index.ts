@@ -26,6 +26,13 @@ import { handleProjectsList } from "./commands/project";
 import { handleProjectLink } from "./commands/project/link";
 import { handleProjectMintKey } from "./commands/project/mint-key";
 import { handleSetup } from "./commands/setup";
+import {
+  handleSignalCreate,
+  handleSignalDelete,
+  handleSignalGet,
+  handleSignalList,
+  handleSignalUpdate,
+} from "./commands/signal";
 import { handleSkillAdd, handleSkillUpdate } from "./commands/skill";
 import { handleSqlQuery } from "./commands/sql";
 import { handleSqlSchema } from "./commands/sql/schema";
@@ -231,6 +238,172 @@ than the default text rendering.
 Examples:
   $ lmnr-cli sql schema
   $ lmnr-cli sql schema --json
+`,
+    );
+
+  const signalCmd = program
+    .command("signal")
+    .alias("signals")
+    .description("Manage Signals (LLM analyzers that run on matching traces)")
+    .option(
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+      "Run `lmnr-cli login` first.",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option("--json", "Output structured JSON to stdout");
+
+  const TRIGGER_HELP = `
+A signal fires when its trigger CONDITIONS match, and then runs only if its
+FILTERS pass. The two lists are different and not interchangeable:
+
+  conditions  WHEN to evaluate — decided from a single span batch:
+                root_span_finished  eq "true"
+                span_name           eq | ne | includes   (this batch's spans)
+              An empty conditions list NEVER fires.
+
+  filters     WHETHER to run — properties of the whole trace:
+                total_token_count   eq|ne|gt|gte|lt|lte  <number>
+                status              eq | ne   "error" | "success"
+                span_names          eq (include) | ne (do not include) <name>
+              An empty filters list passes (runs on every firing trace).
+
+Note span_name (condition, this batch) and span_names (filter, anywhere in the
+trace) are DIFFERENT columns.
+`;
+
+  signalCmd
+    .command("list")
+    .description("List signals in the project")
+    .argument("[name]", "Filter by name (case-insensitive substring)")
+    .action(withProjectClient(handleSignalList));
+
+  signalCmd
+    .command("get")
+    .description("Show one signal with its triggers")
+    .argument("<signal>", "Signal id or name")
+    .action(withProjectClient(handleSignalGet));
+
+  signalCmd
+    .command("create")
+    .description("Create a signal with a payload schema and triggers")
+    .argument("<name>", "Signal name (unique per project, max 255 chars)")
+    .requiredOption(
+      "--prompt <prompt>",
+      "LLM instruction describing what to detect in a trace",
+    )
+    .requiredOption(
+      "--schema <json>",
+      "Payload schema as JSON: " +
+      '\'{"properties":{"<field>":{"type":"string|number|boolean",' +
+      '"description":"...","enum":["..."]}}}\'',
+    )
+    .option(
+      "--trigger <json>",
+      "Trigger as JSON (repeatable): " +
+      '\'{"conditions":[...],"filters":[...],"mode":0}\'. ' +
+      "Omitted → the default trigger (root span finished, >1000 tokens)",
+      (val: string, prev: string[]) => [...prev, val],
+      [] as string[],
+    )
+    .option(
+      "--no-default-trigger",
+      "With no --trigger, create the signal with NO trigger (it never fires)",
+    )
+    .option(
+      "--sample-rate <percent>",
+      "Evaluate only this percent of matching traces (1-95). Omitted → no sampling",
+    )
+    .option("--disabled", "Create the signal deactivated")
+    .action(withProjectClient(handleSignalCreate))
+    .addHelpText(
+      "after",
+      `
+Creates a Signal exactly as the UI's "Create signal" flow does, including the
+auto-created critical-severity alert subscribed to your email.
+
+Payload schema rules (identical to the UI):
+  - field names must be identifiers: ^[a-zA-Z_][a-zA-Z0-9_]*$
+  - field types: "string", "number", "boolean" (enum: "string" + "enum": [...])
+  - every field is required
+${TRIGGER_HELP}
+Examples:
+  $ lmnr-cli signal create "Refund requests" \\
+      --prompt "Detect when the user asks for a refund. Extract the reason." \\
+      --schema '{"properties":{"reason":{"type":"string","description":"Refund reason"}}}'
+
+  $ lmnr-cli signal create "Agent failures" \\
+      --prompt "Find failures. Rate severity." \\
+      --schema '{"properties":{"sev":{"type":"string","enum":["low","high"],\
+"description":"Severity"}}}' \\
+      --trigger '{"conditions":[{"column":"span_name","operator":"includes",\
+"value":["agent.run"]}],"filters":[{"column":"status","operator":"eq",\
+"value":"error"}]}' \\
+      --sample-rate 25 --json
+`,
+    );
+
+  signalCmd
+    .command("update")
+    .description("Update a signal (only the flags you pass are changed)")
+    .argument("<signal>", "Signal id or name")
+    .option("--prompt <prompt>", "Replace the LLM instruction")
+    .option("--schema <json>", "Replace the payload schema (same shape as create)")
+    .option(
+      "--trigger <json>",
+      "Replace ALL triggers with these (repeatable, same shape as create)",
+      (val: string, prev: string[]) => [...prev, val],
+      [] as string[],
+    )
+    .option("--sample-rate <percent>", "Set the sampling percent (1-95)")
+    .option("--no-sampling", "Clear sampling (evaluate every matching trace)")
+    .option("--disabled", "Deactivate the signal")
+    .option("--no-disabled", "Reactivate the signal")
+    .action(withProjectClient(handleSignalUpdate))
+    .addHelpText(
+      "after",
+      `
+This is a PARTIAL update: any flag you omit keeps its stored value, so changing
+the prompt will not clear sampling or reactivate a disabled signal.
+
+--trigger REPLACES the signal's whole trigger set (triggers have no stable
+client-facing identity, so there is no per-trigger edit).
+${TRIGGER_HELP}
+Examples:
+  $ lmnr-cli signal update "Refund requests" --prompt "Detect refund asks only"
+  $ lmnr-cli signal update "Refund requests" --sample-rate 10
+  $ lmnr-cli signal update "Refund requests" --no-sampling
+  $ lmnr-cli signal update "Refund requests" --disabled
+  $ lmnr-cli signal update "Refund requests" --no-disabled
+  $ lmnr-cli signal update "Refund requests" \\
+      --trigger '{"conditions":[{"column":"root_span_finished","operator":"eq",\
+"value":"true"}],"filters":[{"column":"total_token_count","operator":"gt",\
+"value":"5000"}]}'
+`,
+    );
+
+  signalCmd
+    .command("delete")
+    .description("Delete a signal, its triggers, its alerts, and its events")
+    .argument("<signal>", "Signal id or name")
+    .action(withProjectClient(handleSignalDelete))
+    .addHelpText(
+      "after",
+      `
+Deletion is permanent and also removes the signal's alerts and every signal
+event it produced (in ClickHouse). A name must match exactly one signal.
+
+Examples:
+  $ lmnr-cli signal delete "Refund requests"
+  $ lmnr-cli signal delete 29b937f1-7e3c-4768-a5e3-7e891c2d7d0a --json
 `,
     );
 

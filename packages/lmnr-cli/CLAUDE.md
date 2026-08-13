@@ -18,6 +18,30 @@ This is a CLI for the Laminar agent observability platform.
   `src/commands/setup/index.ts`. The old standalone `GET /v1/project` probe
   (`src/auth/project-id.ts`) was DELETED — do not reintroduce a key-authed probe.
 
+# Signals (`src/commands/signal/`)
+
+- **Triggers have TWO lists that are NOT interchangeable**, and putting a column
+  in the wrong one yields a signal that looks configured but silently never
+  fires: `conditions` = WHEN to evaluate (decidable from one span batch —
+  `root_span_finished`, `span_name`; an EMPTY list never fires) and `filters` =
+  WHETHER to run (whole-trace state — `total_token_count`, `status`,
+  `span_names`; an empty list passes). `span_name` (condition, the firing batch
+  only) and `span_names` (filter, anywhere in the trace) are DIFFERENT columns.
+  `validate.ts` rejects a cross-slot column with a message naming the right list.
+- Client-side validation is **UX, not a security boundary** — app-server
+  re-validates everything. Keep the two in sync anyway: the point is that an
+  agent gets an actionable error before paying for a round trip.
+- `signal update` is a PARTIAL patch. Omitted flags must leave stored values
+  alone, so `--no-sampling` sends an explicit `sampleRate: null` (the server
+  distinguishes absent from null) and `--trigger` REPLACES the whole trigger set.
+  An empty patch is an error listing the valid flags, never a silent no-op.
+- `<signal>` accepts an id or a name. An ambiguous name is an ERROR listing the
+  candidates rather than a silent pick — `update` / `delete` are destructive.
+- `SignalsResource` (`@lmnr-ai/client`) overrides error handling with its own
+  `raiseSignalError` instead of `BaseResource.handleError`: signal routes answer
+  `{error: "<message>"}` with user-facing text, and the shared handler would
+  print the raw JSON body at the user (`409 {"error":"..."}`).
+
 # Package Boundaries
 - `lmnr-cli` is the standalone CLI (`npx lmnr-cli@latest`). It depends on
   `@lmnr-ai/client` for API calls, not the full `@lmnr-ai/lmnr` SDK.

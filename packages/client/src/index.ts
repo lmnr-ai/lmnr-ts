@@ -5,6 +5,7 @@ import { EvalsResource } from "./resources/evals";
 import { EvaluatorsResource } from "./resources/evaluators";
 import { type LaminarAuth } from "./resources/index";
 import { RolloutSessionsResource } from "./resources/rollout-sessions";
+import { SignalsResource } from "./resources/signals";
 import { SqlResource } from "./resources/sql";
 import { TagsResource } from "./resources/tags";
 import { TracesResource } from "./resources/traces";
@@ -19,6 +20,7 @@ export class LaminarClient {
   private _evals: EvalsResource;
   private _evaluators: EvaluatorsResource;
   private _rolloutSessions: RolloutSessionsResource;
+  private _signals: SignalsResource;
   private _sql: SqlResource;
   private _tags: TagsResource;
   private _traces: TracesResource;
@@ -69,6 +71,7 @@ export class LaminarClient {
     this._evals = new EvalsResource(this.baseUrl, this.auth);
     this._evaluators = new EvaluatorsResource(this.baseUrl, this.auth);
     this._rolloutSessions = new RolloutSessionsResource(this.baseUrl, this.auth);
+    this._signals = new SignalsResource(this.baseUrl, this.auth);
     this._sql = new SqlResource(this.baseUrl, this.auth);
     this._tags = new TagsResource(this.baseUrl, this.auth);
     this._traces = new TracesResource(this.baseUrl, this.auth);
@@ -129,6 +132,10 @@ export class LaminarClient {
     return this._evaluators;
   }
 
+  public get signals() {
+    return this._signals;
+  }
+
   public get rolloutSessions() {
     return this._rolloutSessions;
   }
@@ -152,3 +159,11 @@ export {
   type CacheOutcome,
   RolloutSessionsResource,
 } from "./resources/rollout-sessions";
+export type {
+  CreateSignalOptions,
+  Signal,
+  SignalFilter,
+  SignalStructuredOutput,
+  SignalTrigger,
+  UpdateSignalOptions,
+} from "./resources/signals";
