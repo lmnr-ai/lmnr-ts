@@ -789,6 +789,12 @@ export class LaminarReporter implements EvalReporter {
       projectApiKey: this.client?.apiKey ?? this.options.projectApiKey,
       baseUrl: this.client?.configuredBaseUrl ?? this.options.baseUrl,
       spanProcessor: this.options.spanProcessor,
+      // Registering a reporter is not consent to monkey-patch the runner's LLM
+      // and vector-store libraries, which is what the default (`undefined`)
+      // does. A host that wants auto-instrumentation calls
+      // `Laminar.initialize()` itself — it runs at `evals.config.ts` module
+      // load, long before `onRunStart`, so its options win.
+      instrumentModules: {},
       // eve ends `eve eval` with `process.exit()`, which skips `beforeExit`, so
       // a batch queue has no reliable drain point beyond our own flushes.
       disableBatch: true,

@@ -19,6 +19,7 @@ import {
 } from "../src/integrations/eve";
 import { Laminar } from "../src/laminar";
 import { LaminarSpanProcessor } from "../src/opentelemetry-lib";
+import { _configuration } from "../src/opentelemetry-lib/configuration";
 import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
 import { otelSpanIdToUUID, otelTraceIdToUUID } from "../src/utils";
 
@@ -432,6 +433,20 @@ void describe("LaminarReporter for eve evals", () => {
     } finally {
       Laminar.flush = originalFlush;
     }
+  });
+
+  void it("registers no auto-instrumentations when it initializes tracing", async () => {
+    mockInit();
+
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+
+    // Registering a reporter is not consent to monkey-patch the runner's OpenAI /
+    // Anthropic / LangChain / vector-store clients, which a `undefined`
+    // `instrumentModules` would do. A host that wants that calls
+    // `Laminar.initialize()` itself, before onRunStart.
+    assert.ok(Laminar.initialized());
+    assert.deepStrictEqual(_configuration?.instrumentModules, {});
   });
 
   void it("reuses tracing that was already initialized", async () => {
