@@ -201,6 +201,14 @@ export const getTracer = (): Tracer => {
 export const getSpanProcessor = (): LaminarSpanProcessor | undefined =>
   spanProcessor;
 
+/**
+ * The API key the initialized pipeline exports with. Used internally so an
+ * integration that carries its own credentials can detect that it would ship
+ * spans to a different project than its own API calls.
+ * @returns The API key, or undefined if tracing is not initialized.
+ */
+export const getConfiguredApiKey = (): string | undefined => _apiKey;
+
 export const forceFlush = async () => {
   // Wait for pending stream processing with 5 second timeout
   await waitForPendingStreams(5000);

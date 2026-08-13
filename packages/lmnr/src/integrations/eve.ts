@@ -10,13 +10,10 @@ import {
   trace,
   type Tracer,
 } from "@opentelemetry/api";
-import {
-  BasicTracerProvider,
-  type SpanProcessor,
-} from "@opentelemetry/sdk-trace-base";
+import { type SpanProcessor } from "@opentelemetry/sdk-trace-base";
 
 import { Laminar } from "../laminar";
-import { LaminarSpanProcessor } from "../opentelemetry-lib";
+import { getConfiguredApiKey, getTracer } from "../opentelemetry-lib/tracing";
 import {
   SPAN_INPUT,
   SPAN_OUTPUT,
@@ -192,8 +189,9 @@ export interface LaminarReporterOptions {
    */
   client?: LaminarClient;
   /**
-   * Override the reporter's span processor. Intended for tests; production
-   * defaults to a Laminar span processor using the reporter credentials.
+   * Span processor for the tracing this reporter initializes. Intended for
+   * tests; production defaults to Laminar's. Ignored when something already
+   * called `Laminar.initialize()` — see {@link LaminarReporter.ensureTracing}.
    */
   spanProcessor?: SpanProcessor;
   /**
@@ -551,18 +549,18 @@ type TraceResolution =
  * Laminar only when the runner registers an AI SDK telemetry integration. eve
  * imports `generateText` inside its own bundle, so `wrapAISDK` cannot reach it —
  * but AI SDK v7 reads registered integrations off `globalThis`, which does. One
- * line in `evals.config.ts` (the integration initializes Laminar itself):
+ * line in `evals.config.ts`:
  *
  * ```ts
- * registerTelemetry(new LaminarAiSdkTelemetry({
- *   laminarOptions: { projectApiKey },
- * }));
+ * registerTelemetry(new LaminarAiSdkTelemetry());
  * ```
  *
- * Each judge then gets its own span under the eval's root — see
- * {@link bindEvalContext}, and {@link LaminarReporter.flushHostPipeline} for how
- * those spans get shipped. Without that line the reporter still records every
- * assertion's score as an EVALUATOR span; only the model call is missing.
+ * Judge spans and eve eval spans then share ONE tracer provider — whichever of
+ * the two initialized Laminar first (see {@link LaminarReporter.ensureTracing}).
+ * Each judge gets its own span under the eval's root — see
+ * {@link bindEvalContext}, and {@link LaminarReporter.flush} for how spans ship.
+ * Without that line the reporter still records every assertion's score as an
+ * EVALUATOR span; only the model call is missing.
  *
  * @example
  * ```ts
@@ -580,7 +578,6 @@ export class LaminarReporter implements EvalReporter {
   private evalId?: string;
   private evalsById = new Map<string, EveEval>();
   private index = 0;
-  private tracerProvider?: BasicTracerProvider;
   /** Session traces minted this run and not yet graded. */
   private openSessionTraces = new Set<EveSessionTrace>();
   /** Stable identity so `onRunComplete` only clears its own registration. */
@@ -605,31 +602,15 @@ export class LaminarReporter implements EvalReporter {
         .map((evaluation) => [evaluation.id, evaluation]),
     );
     this.index = 0;
-    // A leftover provider means the previous run never reached onRunComplete
-    // (eve crashed mid-run); release its exporter before replacing it.
+    // Spans from a previous run that never reached onRunComplete (eve crashed
+    // mid-run) are closed here rather than abandoned mid-trace.
     this.finishOpenSessionTraces();
-    await this.shutdownTracerProvider();
     try {
       this.client = this.options.client ?? new LaminarClient({
         baseUrl: this.options.baseUrl,
         projectApiKey: this.options.projectApiKey,
       });
-      // The reporter owns a provider instead of borrowing `getTracerProvider()`:
-      // that one is a noop unless the host called `Laminar.initialize()` (we never
-      // register globally), and every eve span would silently become a
-      // NonRecordingSpan. It also needs its own credentials and its own
-      // forceFlush/shutdown, neither of which the API's `TracerProvider` exposes.
-      this.tracerProvider = new BasicTracerProvider({
-        spanProcessors: [
-          this.options.spanProcessor ?? new LaminarSpanProcessor({
-            // Derive from the client so a pre-constructed `client` option and
-            // the fallback-trace exporter share auth and base URL.
-            apiKey: this.client.apiKey ?? this.options.projectApiKey,
-            baseUrl: this.client.configuredBaseUrl ?? this.options.baseUrl,
-            disableBatch: true,
-          }),
-        ],
-      });
+      this.ensureTracing();
       // Register the factory and patch eve BEFORE `evals.init` — eve awaits
       // `onRunStart` before the first eval, but the patch has to be in place
       // for the very first `send`, and a slow init must not shrink that margin.
@@ -667,20 +648,16 @@ export class LaminarReporter implements EvalReporter {
         if (activeSessionTraceFactory === this.sessionTraceFactory) {
           activeSessionTraceFactory = null;
         }
-        await this.shutdownTracerProvider();
       }
     }
   }
 
   async onEvalComplete(result: EveEvalResult): Promise<void> {
-    // Capture run state in locals: `this.evalId` and `this.tracerProvider`
-    // are cleared by onRunComplete and replaced by a later onRunStart, so
-    // re-reading them after an await could pair this run's datapoint with
-    // another run's evaluation, or record fallback spans on a provider that
-    // was already shut down.
+    // Capture run state in locals: `this.evalId` is cleared by onRunComplete and
+    // replaced by a later onRunStart, so re-reading it after an await could pair
+    // this run's datapoint with another run's evaluation.
     const client = this.client;
     const evalId = this.evalId;
-    const tracerProvider = this.tracerProvider;
     if (!client || !evalId) {
       // onRunStart failed; nothing to attach this result to.
       return;
@@ -694,7 +671,6 @@ export class LaminarReporter implements EvalReporter {
       : undefined;
     const evalDescription = evalDefinition?.description;
     const traceResolution = this.resolveDatapointTrace({
-      tracerProvider,
       evalId: result.id ?? String(index),
       description: evalDescription,
       verdict: result.verdict,
@@ -762,7 +738,7 @@ export class LaminarReporter implements EvalReporter {
       // Both paths own their trace, so eval metadata is stamped as span
       // attributes before this flush. Pushing it over HTTP instead would race
       // the ingest of the very spans that create the trace.
-      await tracerProvider?.forceFlush();
+      await this.flush();
     }
   }
 
@@ -776,26 +752,61 @@ export class LaminarReporter implements EvalReporter {
     if (activeSessionTraceFactory === this.sessionTraceFactory) {
       activeSessionTraceFactory = null;
     }
-    await this.shutdownTracerProvider();
-    await this.flushHostPipeline();
+    await this.flush();
     this.evalId = undefined;
     this.evalsById.clear();
   }
 
   /**
-   * Flush the host process's own Laminar pipeline — the one `t.judge.autoevals.*`
-   * spans go to (see the class doc's `registerTelemetry` note). eve knows nothing
-   * about it and ends `eve eval` with `process.exit()`, which skips `beforeExit`,
-   * so `onRunComplete` is the last awaited point at which those spans can ship.
-   * A no-op when the host never called `Laminar.initialize()`.
+   * Point the process's Laminar tracing at this reporter's project, unless
+   * something already initialized it. Mirrors `LaminarAiSdkTelemetry`, which
+   * initializes the same way for judge spans — so eve eval spans and judge
+   * spans share ONE tracer provider however the run was set up. Without this,
+   * `getTracer()` returns a noop whenever nobody registered the AI SDK
+   * integration, and every eve span would be dropped silently.
    */
-  private async flushHostPipeline(): Promise<void> {
+  private ensureTracing(): void {
+    if (Laminar.initialized()) {
+      // Spans follow the initialized pipeline's project; datapoints follow the
+      // reporter's client. Same key is the normal case and stays silent — a
+      // genuine mismatch would put the datapoints and their traces in different
+      // projects, so the trace ids they reference would not resolve.
+      const ourKey = this.client?.apiKey ?? this.options.projectApiKey;
+      const tracingKey = getConfiguredApiKey();
+      if (ourKey && tracingKey && ourKey !== tracingKey) {
+        logger.warn(
+          "Laminar eve reporter: Laminar is already initialized with a different " +
+          "project API key. eve eval spans go to that project while datapoints go " +
+          "to the reporter's, so datapoint trace ids will not resolve. Point both " +
+          "at the same project.",
+        );
+      }
+      return;
+    }
+    Laminar.initialize({
+      // Derive from the client so a pre-constructed `client` option and the
+      // spans it links to share auth and base URL.
+      projectApiKey: this.client?.apiKey ?? this.options.projectApiKey,
+      baseUrl: this.client?.configuredBaseUrl ?? this.options.baseUrl,
+      spanProcessor: this.options.spanProcessor,
+      // eve ends `eve eval` with `process.exit()`, which skips `beforeExit`, so
+      // a batch queue has no reliable drain point beyond our own flushes.
+      disableBatch: true,
+    });
+  }
+
+  /**
+   * Flush the process's Laminar pipeline — eve eval spans AND judge spans, which
+   * now share one provider. eve ends `eve eval` with `process.exit()` (skipping
+   * `beforeExit`), so these calls are the only points at which spans ship.
+   * Never `shutdown()`: the pipeline may belong to the host, not to us.
+   */
+  private async flush(): Promise<void> {
     try {
       await Laminar.flush();
     } catch (error) {
       logger.warn(
-        `Laminar eve reporter: failed to flush the host pipeline: ` +
-        errorMessage(error),
+        `Laminar eve reporter: failed to flush spans: ` + errorMessage(error),
       );
     }
   }
@@ -806,11 +817,7 @@ export class LaminarReporter implements EvalReporter {
    * the patched `send`, so it must never throw into the user's eval.
    */
   private mintSessionTrace(): EveSessionTrace | undefined {
-    const tracerProvider = this.tracerProvider;
-    if (!tracerProvider) {
-      return undefined;
-    }
-    const tracer = tracerProvider.getTracer(EVE_REPORTER_TRACER_NAME);
+    const tracer = getTracer();
     // ROOT_CONTEXT, not the active context: concurrent evals must not nest
     // inside whichever span happens to be active on the runner's stack.
     const rootSpan = tracer.startSpan(ROOT_SPAN_NAME, {
@@ -934,36 +941,16 @@ export class LaminarReporter implements EvalReporter {
   }
 
   /**
-   * Flush and release the run's tracer provider. shutdown() flushes
-   * registered processors itself; without it the exporter (and its HTTP
-   * resources) stays open when the same reporter instance is reused.
-   */
-  private async shutdownTracerProvider(): Promise<void> {
-    const tracerProvider = this.tracerProvider;
-    this.tracerProvider = undefined;
-    try {
-      await tracerProvider?.shutdown();
-    } catch (error) {
-      logger.error(
-        `Laminar eve reporter: failed to shut down tracer provider: ` +
-        errorMessage(error),
-      );
-    }
-  }
-
-  /**
    * Resolve the trace this datapoint links to. There is no lookup: either
    * `patchEveClientSession` already minted the session's trace (and we know its
    * id), or we open a reporter-owned EVALUATION span to hold the grade.
    */
   private resolveDatapointTrace({
-    tracerProvider,
     evalId,
     description,
     verdict,
     sessionId,
   }: {
-    tracerProvider?: BasicTracerProvider;
     evalId: string;
     description?: string;
     verdict?: EveEvalVerdict;
@@ -976,9 +963,7 @@ export class LaminarReporter implements EvalReporter {
       return { traceId: sessionTrace.traceId, source: "propagated", sessionTrace };
     }
 
-    const tracer = tracerProvider?.getTracer(EVE_REPORTER_TRACER_NAME) ??
-      trace.getTracer(EVE_REPORTER_TRACER_NAME);
-    const span = tracer.startSpan(`eve eval ${evalId}`, {
+    const span = getTracer().startSpan(`eve eval ${evalId}`, {
       attributes: {
         [SPAN_TYPE]: "EVALUATION",
         // Same pair `mintSessionTrace` stamps: the trace type is what associates

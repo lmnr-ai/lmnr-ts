@@ -65,8 +65,11 @@ void describe("LaminarReporter for eve evals", () => {
     exporter = new InMemorySpanExporter();
   });
 
-  void afterEach(() => {
+  void afterEach(async () => {
     nock.cleanAll();
+    // The reporter calls `Laminar.initialize()` when nothing else has, so each
+    // test must start uninitialized or its spans land in a previous exporter.
+    await Laminar.shutdown();
   });
 
   void it("creates one Laminar evaluation on run start with eve metadata", async () => {
@@ -411,10 +414,10 @@ void describe("LaminarReporter for eve evals", () => {
     );
   });
 
-  void it("flushes the host pipeline on run complete", async () => {
+  void it("flushes spans on run complete", async () => {
     mockInit();
-    // Judge spans go to the host's own Laminar pipeline, and eve calls
-    // `process.exit()` right after this hook — so this is their only flush point.
+    // eve calls `process.exit()` right after this hook, so it is the last point
+    // at which anything still queued — eve eval spans or judge spans — can ship.
     const originalFlush = Laminar.flush.bind(Laminar);
     let flushes = 0;
     Laminar.flush = () => {
@@ -429,6 +432,41 @@ void describe("LaminarReporter for eve evals", () => {
     } finally {
       Laminar.flush = originalFlush;
     }
+  });
+
+  void it("reuses tracing that was already initialized", async () => {
+    mockInit();
+    nock(NOCK_URL).post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`).reply(200, {});
+    nock(NOCK_URL)
+      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`))
+      .reply(200, {});
+
+    // Stands in for `registerTelemetry(new LaminarAiSdkTelemetry())`, which
+    // initializes Laminar when `evals.config.ts` loads — before onRunStart.
+    const hostExporter = new InMemorySpanExporter();
+    Laminar.initialize({
+      projectApiKey: PROJECT_API_KEY,
+      spanProcessor: new SimpleSpanProcessor(hostExporter),
+      disableBatch: true,
+    });
+
+    // `makeReporter` passes its own spanProcessor, which must now be ignored.
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    await reporter.onEvalComplete({
+      id: "a",
+      verdict: "passed",
+      result: {},
+      assertions: [],
+    });
+
+    // ONE provider: the reporter never stands up a second one, so its own
+    // processor sees nothing and the eve span lands on the existing pipeline.
+    assert.deepStrictEqual(exporter.getFinishedSpans(), []);
+    assert.ok(
+      hostExporter.getFinishedSpans().some((span) => span.name === "eve eval a"),
+      "expected the eve span on the already-initialized provider",
+    );
   });
 });
 
@@ -492,8 +530,11 @@ void describe("LaminarReporter eve trace propagation", () => {
     exporter = new InMemorySpanExporter();
   });
 
-  void afterEach(() => {
+  void afterEach(async () => {
     nock.cleanAll();
+    // The reporter calls `Laminar.initialize()` when nothing else has, so each
+    // test must start uninitialized or its spans land in a previous exporter.
+    await Laminar.shutdown();
   });
 
   void it("pushes a runner-minted traceparent into every eve send", async () => {
