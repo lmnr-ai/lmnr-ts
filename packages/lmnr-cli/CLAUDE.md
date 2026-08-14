@@ -27,10 +27,11 @@ This is a CLI for the Laminar agent observability platform.
   WHETHER to run (whole-trace state — `total_token_count`, `status`,
   `span_names`; an empty list passes). `span_name` (condition, the firing batch
   only) and `span_names` (filter, anywhere in the trace) are DIFFERENT columns.
-  `validate.ts` rejects a cross-slot column with a message naming the right list.
-- Client-side validation is **UX, not a security boundary** — app-server
-  re-validates everything. Keep the two in sync anyway: the point is that an
-  agent gets an actionable error before paying for a round trip.
+  Documented in `--help`; **enforced in app-server**, not in the CLI.
+- `validate.ts` only parses flag JSON and fills omitted schema `type`/`required`.
+  Do NOT re-implement column allowlists, sample-rate bounds, or field-name
+  regexes here — they drift from `signals/service.rs`. Server 400 `{error}`
+  text is already shown verbatim via `raiseSignalError`.
 - `signal update` is a PARTIAL patch. Omitted flags must leave stored values
   alone, so `--no-sampling` sends an explicit `sampleRate: null` (the server
   distinguishes absent from null) and `--trigger` REPLACES the whole trigger set.
