@@ -1,4 +1,5 @@
-import type { LaminarClient, Signal, SignalTrigger } from "@lmnr-ai/client";
+import type { LaminarClient } from "@lmnr-ai/client";
+import type { Signal, SignalTrigger } from "@lmnr-ai/types";
 
 import type { GlobalOpts } from "../../auth/with-client";
 import { initializeLogger } from "../../utils/logger";

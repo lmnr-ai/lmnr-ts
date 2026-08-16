@@ -16,7 +16,7 @@ import type {
   SignalFilter,
   SignalStructuredOutput,
   SignalTrigger,
-} from "@lmnr-ai/client";
+} from "@lmnr-ai/types";
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);

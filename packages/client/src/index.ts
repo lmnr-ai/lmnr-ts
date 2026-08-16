@@ -161,9 +161,5 @@ export {
 } from "./resources/rollout-sessions";
 export type {
   CreateSignalOptions,
-  Signal,
-  SignalFilter,
-  SignalStructuredOutput,
-  SignalTrigger,
   UpdateSignalOptions,
 } from "./resources/signals";
