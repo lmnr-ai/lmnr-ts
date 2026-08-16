@@ -53,8 +53,7 @@ export const parseStructuredOutput = (raw: string): SignalStructuredOutput => {
  */
 export const collectFlag = (val: string, prev: string[] = []): string[] => [...prev, val];
 
-/** `none` means the signal only runs via backfill. */
-export const TRIGGER_KINDS = ["root-span-finished", "span-name", "none"] as const;
+export const TRIGGER_KINDS = ["root-span-finished", "span-name"] as const;
 
 export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 
@@ -66,7 +65,7 @@ export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 export const parseTrigger = (
   kind: string | undefined,
   spanNames: string[],
-): SignalTrigger | null | undefined => {
+): SignalTrigger | undefined => {
   if (kind === undefined) {
     if (spanNames.length > 0) {
       throw new Error("--span-name requires --trigger span-name");
@@ -80,7 +79,6 @@ export const parseTrigger = (
     throw new Error(`--span-name only applies to --trigger span-name, not ${kind}`);
   }
 
-  if (kind === "none") return null;
   if (kind === "root-span-finished") return { type: "rootSpanFinished" };
 
   const names = spanNames.map((name) => name.trim()).filter((name) => name.length > 0);
@@ -132,8 +130,7 @@ export const parseMode = (raw: string): SignalMode => {
 /** The 1-95 range is enforced server-side. */
 export const parseSampleRate = (raw: string): number => {
   const n = Number(raw);
-  // `Number("")` is 0; `Number("abc")` is NaN, which stringifies to `null`
-  // and would look like `--no-sampling` on update.
+  // `Number("")` is 0; `Number("abc")` is NaN.
   if (raw.trim() === "" || !Number.isInteger(n)) {
     throw new Error("--sample-rate must be an integer");
   }

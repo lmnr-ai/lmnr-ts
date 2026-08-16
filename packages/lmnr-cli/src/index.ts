@@ -270,7 +270,6 @@ Three separate things decide when a signal runs:
                 span-name            a named span finished — pass --span-name
                                      (repeatable); for distributed traces where
                                      no single span is observably the root
-                none                 never fires on its own; backfill only
 
   --filter    WHETHER it runs, given it fired. JSON object, repeatable, ANDed:
                 '{"column":"<col>","operator":"<op>","value":<value>}'
@@ -314,7 +313,7 @@ FILTER (matched anywhere in the trace) are different things.
     )
     .option(
       "--trigger <kind>",
-      "When to evaluate: root-span-finished | span-name | none. " +
+      "When to evaluate: root-span-finished | span-name. " +
       "Omitted → root-span-finished",
     )
     .option(
@@ -361,10 +360,6 @@ Examples:
       --trigger span-name --span-name agent.run \\
       --filter '{"column":"status","operator":"eq","value":"error"}' \\
       --mode realtime --sample-rate 25 --json
-
-  $ lmnr-cli signal create "Backfill only" \\
-      --prompt "..." --schema '{"properties":{"x":{"type":"string"}}}' \\
-      --trigger none
 `,
     );
 
@@ -376,7 +371,7 @@ Examples:
     .option("--schema <json>", "Replace the payload schema (same shape as create)")
     .option(
       "--trigger <kind>",
-      "Change when it is evaluated: root-span-finished | span-name | none",
+      "Change when it is evaluated: root-span-finished | span-name",
     )
     .option(
       "--span-name <name>",
@@ -393,7 +388,6 @@ Examples:
     .option("--no-filters", "Clear all filters (run on every trace it fires for)")
     .option("--mode <mode>", "batch | realtime")
     .option("--sample-rate <percent>", "Set the sampling percent (1-95)")
-    .option("--no-sampling", "Clear sampling (evaluate every matching trace)")
     .option("--disabled", "Deactivate the signal")
     .option("--no-disabled", "Reactivate the signal")
     .action(withProjectClient(handleSignalUpdate))
@@ -408,7 +402,6 @@ ${TRIGGER_HELP}
 Examples:
   $ lmnr-cli signal update "Refund requests" --prompt "Detect refund asks only"
   $ lmnr-cli signal update "Refund requests" --sample-rate 10
-  $ lmnr-cli signal update "Refund requests" --no-sampling
   $ lmnr-cli signal update "Refund requests" --disabled
   $ lmnr-cli signal update "Refund requests" --no-disabled
   $ lmnr-cli signal update "Refund requests" \\

@@ -11,8 +11,7 @@ export interface SignalStructuredOutput {
 /**
  * WHEN a signal is evaluated, decided from a single span batch. A closed set,
  * not a column list: these are the only two shapes the backend evaluates, so
- * anything else would be stored and then silently never fire. A `null` trigger
- * means the signal runs only via backfill.
+ * anything else would be stored and then silently never fire.
  */
 export type SignalTrigger =
   | { type: "rootSpanFinished" }
@@ -43,8 +42,7 @@ export interface Signal {
   sampleRate: number | null;
   disabled: boolean;
   createdAt: string;
-  /** `null` when the signal never fires on its own (backfill only). */
-  trigger: SignalTrigger | null;
+  trigger: SignalTrigger;
   filters: SignalFilter[];
   mode: SignalMode;
 }

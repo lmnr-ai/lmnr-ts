@@ -26,7 +26,6 @@ void describe("parseTrigger", () => {
     // applies its default.
     expect(parseTrigger(undefined, [])).toBeUndefined();
     expect(parseTrigger("root-span-finished", [])).toEqual({ type: "rootSpanFinished" });
-    expect(parseTrigger("none", [])).toBeNull();
     expect(parseTrigger("span-name", ["  agent.run  ", "", "worker.step"])).toEqual({
       type: "spanName",
       spanNames: ["agent.run", "worker.step"],
@@ -45,6 +44,7 @@ void describe("parseTrigger", () => {
 
   void it("rejects an unknown kind and lists the valid ones", () => {
     expect(() => parseTrigger("rootSpanFinished", [])).toThrow(/root-span-finished/);
+    expect(() => parseTrigger("none", [])).toThrow(/root-span-finished/);
   });
 });
 
@@ -103,9 +103,8 @@ void describe("parseStructuredOutput", () => {
 });
 
 void describe("parseSampleRate", () => {
-  void it("rejects blanks and non-integers that would serialize as null", () => {
-    // `Number("")` is 0 and `Number("abc")` is NaN → JSON `null`, which the
-    // server reads as "clear sampling" — the opposite of what was asked.
+  void it("rejects blanks and non-integers", () => {
+    // `Number("")` is 0 and `Number("abc")` is NaN — neither is a sample rate.
     expect(parseSampleRate("25")).toBe(25);
     for (const bad of ["", "abc", "2.5"]) {
       expect(() => parseSampleRate(bad)).toThrow(/must be an integer/);

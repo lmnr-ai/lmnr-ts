@@ -38,15 +38,12 @@ type SignalUpdateOpts = GlobalOpts & {
   filters?: boolean;
   mode?: string;
   sampleRate?: string;
-  /** `--no-sampling` clears the stored rate. */
-  sampling?: boolean;
   disabled?: boolean;
   /** commander's `--no-disabled` → `disabled: false`, i.e. re-enable. */
 };
 
 /** In the same words `--trigger` accepts, so output can be fed back in. */
-export const describeTrigger = (trigger: SignalTrigger | null): string => {
-  if (trigger === null) return "none (runs only via backfill)";
+export const describeTrigger = (trigger: SignalTrigger): string => {
   if (trigger.type === "rootSpanFinished") return "root-span-finished";
   return `span-name: ${trigger.spanNames.join(", ")}`;
 };
@@ -182,9 +179,6 @@ export const handleSignalUpdate = async (
   ref: string,
   opts: SignalUpdateOpts,
 ): Promise<void> => {
-  if (opts.sampleRate !== undefined && opts.sampling === false) {
-    throw new Error("--sample-rate cannot be combined with --no-sampling");
-  }
   if (opts.filter !== undefined && opts.filters === false) {
     throw new Error("--filter cannot be combined with --no-filters");
   }
@@ -199,10 +193,7 @@ export const handleSignalUpdate = async (
     ...(opts.sampleRate !== undefined
       ? { sampleRate: parseSampleRate(opts.sampleRate) }
       : {}),
-    // Explicit null is what clears the stored rate server-side.
-    ...(opts.sampling === false ? { sampleRate: null } : {}),
     ...(opts.disabled !== undefined ? { disabled: opts.disabled } : {}),
-    // `null` (from `--trigger none`) is a real value here, so check for absence.
     ...(trigger !== undefined ? { trigger } : {}),
     ...(opts.filter !== undefined ? { filters: opts.filter.map(parseFilter) } : {}),
     ...(opts.filters === false ? { filters: [] } : {}),
@@ -212,8 +203,7 @@ export const handleSignalUpdate = async (
   if (Object.keys(patch).length === 0) {
     throw new Error(
       "Nothing to update. Pass at least one of --prompt, --schema, --trigger, " +
-      "--filter, --no-filters, --mode, --sample-rate, --no-sampling, " +
-      "--disabled, --no-disabled.",
+      "--filter, --no-filters, --mode, --sample-rate, --disabled, --no-disabled.",
     );
   }
 

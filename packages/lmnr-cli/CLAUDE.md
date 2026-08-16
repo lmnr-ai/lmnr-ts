@@ -21,14 +21,11 @@ This is a CLI for the Laminar agent observability platform.
 # Signals (`src/commands/signal/`)
 
 - **A signal's firing config is THREE independent flags, not one nested blob**:
-  `--trigger` (WHEN it's evaluated: `root-span-finished` | `span-name` | `none`,
-  with `--span-name` repeatable for the second), `--filter` (WHETHER it runs,
+  `--trigger` (WHEN it's evaluated: `root-span-finished` | `span-name`, with
+  `--span-name` repeatable for the second), `--filter` (WHETHER it runs,
   repeatable JSON, ANDed) and `--mode` (`batch` | `realtime`). They map to the
-  API's `trigger` / `filters` / `mode`. This replaced a single
-  `--trigger '{"conditions":[…],"filters":[…]}'` blob whose two lists were easy
-  to confuse — a column in the wrong list was stored happily and the signal then
-  silently never fired. `--trigger` is a KIND, never a column list, so that
-  mistake is no longer expressible.
+  API's `trigger` / `filters` / `mode`. `--trigger` is a KIND, never a column
+  list. Omitted on create → `root-span-finished`; there is no "no trigger" flag.
 - **`--filter` stays `{column, operator, value}` JSON — do NOT turn it into a
   `"col op value"` DSL.** Filters are meant to be versatile and extensible: new
   operators, array/nested values, and extra keys must reach the server without a
@@ -49,11 +46,11 @@ This is a CLI for the Laminar agent observability platform.
   server and its 400 names the supported ones (shown verbatim via
   `raiseSignalError`).
 - `signal update` is a PARTIAL patch, and the three firing flags are independent —
-  changing `--mode` leaves the trigger and filters alone. Omitted flags must leave
-  stored values alone, so clearing needs an explicit spelling: `--no-sampling`
-  sends `sampleRate: null`, `--trigger none` sends `trigger: null`, and
-  `--no-filters` sends `filters: []` (the server distinguishes absent from null).
-  An empty patch is an error listing the valid flags, never a silent no-op.
+  changing `--mode` leaves the trigger and filters alone. Omitted flags leave
+  stored values alone. Sampling and trigger can only be set, not cleared (omit
+  them on create for no sampling / the default trigger). `--no-filters` sends
+  `filters: []`. An empty patch is an error listing the valid flags, never a
+  silent no-op.
 - `<signal>` accepts an id or a name. An ambiguous name is an ERROR listing the
   candidates rather than a silent pick — `update` / `delete` are destructive.
 - `SignalsResource` (`@lmnr-ai/client`) overrides error handling with its own
