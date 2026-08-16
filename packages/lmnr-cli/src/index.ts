@@ -262,22 +262,26 @@ Examples:
     .option("--json", "Output structured JSON to stdout");
 
   const TRIGGER_HELP = `
-A signal fires when its trigger CONDITIONS match, and then runs only if its
-FILTERS pass. The two lists are different and not interchangeable:
+Three separate things decide when a signal runs:
 
-  conditions  WHEN to evaluate — decided from a single span batch:
-                root_span_finished  eq "true"
-                span_name           eq | ne | includes   (this batch's spans)
-              An empty conditions list NEVER fires.
+  --trigger   WHEN it is evaluated (one choice):
+                root-span-finished   the trace's root span finished (default)
+                span-name            a named span finished — pass --span-name
+                                     (repeatable); for distributed traces where
+                                     no single span is observably the root
+                none                 never fires on its own; backfill only
 
-  filters     WHETHER to run — properties of the whole trace:
-                total_token_count   eq|ne|gt|gte|lt|lte  <number>
-                status              eq | ne   "error" | "success"
-                span_names          eq (include) | ne (do not include) <name>
-              An empty filters list passes (runs on every firing trace).
+  --filter    WHETHER it runs, given it fired (repeatable, ANDed).
+              Properties of the whole trace:
+                total_token_count  = != > >= < <=  <number>
+                status             = !=                 error | success
+                span_names         = (include) != (do not include)  <name>
+              No filters means it runs on every trace it fires for.
 
-Note span_name (condition, this batch) and span_names (filter, anywhere in the
-trace) are DIFFERENT columns.
+  --mode      HOW it runs: batch (default, cheaper) or realtime (~2x cost).
+
+Note --span-name (the TRIGGER, matched in the firing batch) and the span_names
+FILTER (matched anywhere in the trace) are different things.
 `;
 
   signalCmd
@@ -288,13 +292,13 @@ trace) are DIFFERENT columns.
 
   signalCmd
     .command("get")
-    .description("Show one signal with its triggers")
+    .description("Show one signal with its trigger, filters, and mode")
     .argument("<signal>", "Signal id or name")
     .action(withProjectClient(handleSignalGet));
 
   signalCmd
     .command("create")
-    .description("Create a signal with a payload schema and triggers")
+    .description("Create a signal with a payload schema, trigger, and filters")
     .argument("<name>", "Signal name (unique per project, max 255 chars)")
     .requiredOption(
       "--prompt <prompt>",
@@ -307,17 +311,24 @@ trace) are DIFFERENT columns.
       '"description":"...","enum":["..."]}}}\'',
     )
     .option(
-      "--trigger <json>",
-      "Trigger as JSON (repeatable): " +
-      '\'{"conditions":[...],"filters":[...],"mode":0}\'. ' +
-      "Omitted → the default trigger (root span finished, >1000 tokens)",
-      (val: string, prev: string[]) => [...prev, val],
-      [] as string[],
+      "--trigger <kind>",
+      "When to evaluate: root-span-finished | span-name | none. " +
+      "Omitted → root-span-finished",
     )
     .option(
-      "--no-default-trigger",
-      "With no --trigger, create the signal with NO trigger (it never fires)",
+      "--span-name <name>",
+      "Span name to trigger on (repeatable). Requires --trigger span-name",
+      // No default: an absent flag must stay `undefined` so the handler can tell
+      // "not passed" from "passed empty" and omit the key from the request.
+      (val: string, prev: string[] = []) => [...prev, val],
     )
+    .option(
+      "--filter <expr>",
+      'Filter as "<column> <op> <value>" (repeatable, ANDed), ' +
+      'e.g. "total_token_count > 1000". Omitted → the default >1000 tokens',
+      (val: string, prev: string[] = []) => [...prev, val],
+    )
+    .option("--mode <mode>", "batch | realtime. Omitted → batch")
     .option(
       "--sample-rate <percent>",
       "Evaluate only this percent of matching traces (1-95). Omitted → no sampling",
@@ -344,10 +355,13 @@ Examples:
       --prompt "Find failures. Rate severity." \\
       --schema '{"properties":{"sev":{"type":"string","enum":["low","high"],\
 "description":"Severity"}}}' \\
-      --trigger '{"conditions":[{"column":"span_name","operator":"includes",\
-"value":["agent.run"]}],"filters":[{"column":"status","operator":"eq",\
-"value":"error"}]}' \\
-      --sample-rate 25 --json
+      --trigger span-name --span-name agent.run \\
+      --filter "status = error" \\
+      --mode realtime --sample-rate 25 --json
+
+  $ lmnr-cli signal create "Backfill only" \\
+      --prompt "..." --schema '{"properties":{"x":{"type":"string"}}}' \\
+      --trigger none
 `,
     );
 
@@ -358,11 +372,23 @@ Examples:
     .option("--prompt <prompt>", "Replace the LLM instruction")
     .option("--schema <json>", "Replace the payload schema (same shape as create)")
     .option(
-      "--trigger <json>",
-      "Replace ALL triggers with these (repeatable, same shape as create)",
-      (val: string, prev: string[]) => [...prev, val],
-      [] as string[],
+      "--trigger <kind>",
+      "Change when it is evaluated: root-span-finished | span-name | none",
     )
+    .option(
+      "--span-name <name>",
+      "Span name to trigger on (repeatable). Requires --trigger span-name",
+      // No default: an absent flag must stay `undefined` so the handler can tell
+      // "not passed" from "passed empty" and omit the key from the request.
+      (val: string, prev: string[] = []) => [...prev, val],
+    )
+    .option(
+      "--filter <expr>",
+      "Replace ALL filters with these (repeatable, same syntax as create)",
+      (val: string, prev: string[] = []) => [...prev, val],
+    )
+    .option("--no-filters", "Clear all filters (run on every trace it fires for)")
+    .option("--mode <mode>", "batch | realtime")
     .option("--sample-rate <percent>", "Set the sampling percent (1-95)")
     .option("--no-sampling", "Clear sampling (evaluate every matching trace)")
     .option("--disabled", "Deactivate the signal")
@@ -372,10 +398,9 @@ Examples:
       "after",
       `
 This is a PARTIAL update: any flag you omit keeps its stored value, so changing
-the prompt will not clear sampling or reactivate a disabled signal.
-
---trigger REPLACES the signal's whole trigger set (triggers have no stable
-client-facing identity, so there is no per-trigger edit).
+the prompt will not clear sampling, reactivate a disabled signal, or alter when
+it fires. --trigger, --filter, and --mode are independent — changing one leaves
+the other two alone. --filter REPLACES the whole filter set.
 ${TRIGGER_HELP}
 Examples:
   $ lmnr-cli signal update "Refund requests" --prompt "Detect refund asks only"
@@ -383,10 +408,11 @@ Examples:
   $ lmnr-cli signal update "Refund requests" --no-sampling
   $ lmnr-cli signal update "Refund requests" --disabled
   $ lmnr-cli signal update "Refund requests" --no-disabled
+  $ lmnr-cli signal update "Refund requests" --filter "total_token_count > 5000"
+  $ lmnr-cli signal update "Refund requests" --no-filters
+  $ lmnr-cli signal update "Refund requests" --mode realtime
   $ lmnr-cli signal update "Refund requests" \\
-      --trigger '{"conditions":[{"column":"root_span_finished","operator":"eq",\
-"value":"true"}],"filters":[{"column":"total_token_count","operator":"gt",\
-"value":"5000"}]}'
+      --trigger span-name --span-name agent.run --span-name worker.step
 `,
     );
 
