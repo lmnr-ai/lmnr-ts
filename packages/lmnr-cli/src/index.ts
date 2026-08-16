@@ -388,6 +388,7 @@ Examples:
     .option("--no-filters", "Clear all filters (run on every trace it fires for)")
     .option("--mode <mode>", "batch | realtime")
     .option("--sample-rate <percent>", "Set the sampling percent (1-95)")
+    .option("--no-sampling", "Clear sampling (evaluate every matching trace)")
     .option("--disabled", "Deactivate the signal")
     .option("--no-disabled", "Reactivate the signal")
     .action(withProjectClient(handleSignalUpdate))
@@ -402,6 +403,7 @@ ${TRIGGER_HELP}
 Examples:
   $ lmnr-cli signal update "Refund requests" --prompt "Detect refund asks only"
   $ lmnr-cli signal update "Refund requests" --sample-rate 10
+  $ lmnr-cli signal update "Refund requests" --no-sampling
   $ lmnr-cli signal update "Refund requests" --disabled
   $ lmnr-cli signal update "Refund requests" --no-disabled
   $ lmnr-cli signal update "Refund requests" \\

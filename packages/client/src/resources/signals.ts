@@ -25,14 +25,12 @@ export interface CreateSignalOptions {
 
 /**
  * A partial patch. Every field is optional and an ABSENT field leaves the stored
- * value alone. `filters: []` clears filters. Sampling and trigger can only be
- * set to a value, not cleared — omit them on create for no sampling / the
- * default trigger.
+ * value alone. `sampleRate: null` clears sampling, `filters: []` clears filters.
  */
 export interface UpdateSignalOptions {
   prompt?: string;
   structuredOutput?: SignalStructuredOutput;
-  sampleRate?: number;
+  sampleRate?: number | null;
   disabled?: boolean;
   trigger?: SignalTrigger;
   filters?: SignalFilter[];
@@ -106,7 +104,8 @@ export class SignalsResource extends BaseResource {
 
   /**
    * PATCH, not PUT: only the keys present in `options` are sent, so the server
-   * leaves everything else as stored.
+   * leaves everything else as stored. An explicit `null` on `sampleRate` must
+   * survive serialization (it means "clear"), so nulls are NOT stripped here.
    */
   public async update(signalId: string, options: UpdateSignalOptions): Promise<Signal> {
     const response = await fetch(

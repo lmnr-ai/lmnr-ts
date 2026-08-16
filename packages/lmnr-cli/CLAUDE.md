@@ -47,10 +47,9 @@ This is a CLI for the Laminar agent observability platform.
   `raiseSignalError`).
 - `signal update` is a PARTIAL patch, and the three firing flags are independent —
   changing `--mode` leaves the trigger and filters alone. Omitted flags leave
-  stored values alone. Sampling and trigger can only be set, not cleared (omit
-  them on create for no sampling / the default trigger). `--no-filters` sends
-  `filters: []`. An empty patch is an error listing the valid flags, never a
-  silent no-op.
+  stored values alone. `--no-sampling` sends `sampleRate: null` (clears the
+  stored rate; evaluate every matching trace). `--no-filters` sends `filters: []`.
+  An empty patch is an error listing the valid flags, never a silent no-op.
 - `<signal>` accepts an id or a name. An ambiguous name is an ERROR listing the
   candidates rather than a silent pick — `update` / `delete` are destructive.
 - `SignalsResource` (`@lmnr-ai/client`) overrides error handling with its own
