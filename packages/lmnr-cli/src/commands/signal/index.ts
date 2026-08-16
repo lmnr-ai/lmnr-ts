@@ -44,27 +44,16 @@ type SignalUpdateOpts = GlobalOpts & {
   /** commander's `--no-disabled` → `disabled: false`, i.e. re-enable. */
 };
 
-/** When the signal is evaluated, in the same words `--trigger` accepts. */
+/** In the same words `--trigger` accepts, so output can be fed back in. */
 export const describeTrigger = (trigger: SignalTrigger | null): string => {
-  if (trigger === null) return "none — runs only via backfill";
-  if (trigger.type === "rootSpanFinished") return "root span finished";
-  return `span name in [${trigger.spanNames.join(", ")}]`;
+  if (trigger === null) return "none (runs only via backfill)";
+  if (trigger.type === "rootSpanFinished") return "root-span-finished";
+  return `span-name: ${trigger.spanNames.join(", ")}`;
 };
 
-const OPERATOR_SYMBOLS: Record<string, string> = {
-  eq: "=",
-  ne: "!=",
-  gt: ">",
-  gte: ">=",
-  lt: "<",
-  lte: "<=",
-};
-
-/** Render a filter back in the `--filter` syntax so output can be copy-pasted. */
-export const describeFilter = (filter: SignalFilter): string => {
-  const value = Array.isArray(filter.value) ? filter.value.join(", ") : String(filter.value);
-  return `${filter.column} ${OPERATOR_SYMBOLS[filter.operator] ?? filter.operator} ${value}`;
-};
+/** JSON, matching what `--filter` takes. */
+export const describeFilters = (filters: SignalFilter[]): string =>
+  filters.length === 0 ? "none" : filters.map((f) => JSON.stringify(f)).join(" AND ");
 
 const printSignal = (signal: Signal): void => {
   logger.info(`${signal.name} (${signal.id})`);
@@ -72,11 +61,7 @@ const printSignal = (signal: Signal): void => {
   const fields = Object.keys(signal.structuredOutput?.properties ?? {}).join(", ");
   logger.info(`  fields:       ${fields}`);
   logger.info(`  trigger:      ${describeTrigger(signal.trigger)}`);
-  logger.info(
-    `  filters:      ${signal.filters.length === 0
-      ? "none — runs on every trace it fires for"
-      : signal.filters.map(describeFilter).join(" AND ")}`,
-  );
+  logger.info(`  filters:      ${describeFilters(signal.filters)}`);
   logger.info(`  mode:         ${signal.mode}`);
   logger.info(`  sample rate:  ${signal.sampleRate ?? "none"}`);
   logger.info(`  status:       ${signal.disabled ? "disabled" : "active"}`);
@@ -132,7 +117,7 @@ export const handleSignalList = async (
     s.disabled ? "disabled" : "active",
     s.sampleRate === null ? "-" : `${s.sampleRate}%`,
     describeTrigger(s.trigger),
-    s.filters.length === 0 ? "-" : s.filters.map(describeFilter).join(" AND "),
+    String(s.filters.length),
     s.mode,
   ]);
   logger.info(

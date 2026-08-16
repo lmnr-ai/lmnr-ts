@@ -23,30 +23,31 @@ This is a CLI for the Laminar agent observability platform.
 - **A signal's firing config is THREE independent flags, not one nested blob**:
   `--trigger` (WHEN it's evaluated: `root-span-finished` | `span-name` | `none`,
   with `--span-name` repeatable for the second), `--filter` (WHETHER it runs,
-  repeatable `"<column> <op> <value>"`, ANDed) and `--mode`
-  (`batch` | `realtime`). They map to the API's `trigger` / `filters` / `mode`
-  fields. This replaced a single `--trigger '{"conditions":[…],"filters":[…]}'`
-  JSON blob whose two lists were easy to confuse — a column in the wrong list was
-  stored happily and the signal then silently never fired. `--trigger` is a KIND,
-  never a column list, so that mistake is no longer expressible.
+  repeatable JSON, ANDed) and `--mode` (`batch` | `realtime`). They map to the
+  API's `trigger` / `filters` / `mode`. This replaced a single
+  `--trigger '{"conditions":[…],"filters":[…]}'` blob whose two lists were easy
+  to confuse — a column in the wrong list was stored happily and the signal then
+  silently never fired. `--trigger` is a KIND, never a column list, so that
+  mistake is no longer expressible.
+- **`--filter` stays `{column, operator, value}` JSON — do NOT turn it into a
+  `"col op value"` DSL.** Filters are meant to be versatile and extensible: new
+  operators, array/nested values, and extra keys must reach the server without a
+  CLI release, so `parseFilter` checks only the wire shape and spreads unknown
+  keys through.
 - **`--span-name` without `--trigger span-name` is an ERROR, not an implied kind
   switch.** Inferring the kind would let a typo'd `--trigger` quietly change when
   the signal fires — the exact failure class this command is shaped to prevent.
-- **Repeatable flags (`--span-name`, `--filter`) must NOT be registered with a
-  `[] as string[]` default.** Commander would then always hand the handler an
-  array, so an absent flag reads as "passed empty" — `signal update --prompt x`
-  would CLEAR the signal's filters, and `create` would send `filters: []`
-  (meaning "no filters") instead of omitting the key and letting the server apply
-  its default. Use `(val, prev: string[] = []) => [...prev, val]` with no default
-  so absence stays `undefined`. This shipped broken once; `validate.test.ts` has a
-  regression test for the collector.
-- `validate.ts` only translates flag syntax into the wire shape (trigger kind →
-  tagged object, `"col op value"` → `{column, operator, value}`) and fills omitted
+- **Repeatable flags must use the shared `collectFlag` and NOT a commander `[]`
+  default.** With a default the handler always receives an array, so an absent
+  flag reads as "passed empty": `signal update --prompt x` CLEARED the signal's
+  filters, and `create` sent `filters: []` instead of omitting the key for the
+  server default. This shipped broken once; `validate.test.ts` covers it.
+- `validate.ts` only translates flag syntax into the wire shape and fills omitted
   schema `type`/`required`. Do NOT re-implement column allowlists, sample-rate
   bounds, or field-name regexes here — they drift from `signals/service.rs`.
-  Notably `--filter` does NOT validate the column, so a bad one reaches the
-  server and its 400 names the supported ones. Server 400 `{error}` text is
-  already shown verbatim via `raiseSignalError`.
+  `--filter` deliberately does not validate the column, so a bad one reaches the
+  server and its 400 names the supported ones (shown verbatim via
+  `raiseSignalError`).
 - `signal update` is a PARTIAL patch, and the three firing flags are independent —
   changing `--mode` leaves the trigger and filters alone. Omitted flags must leave
   stored values alone, so clearing needs an explicit spelling: `--no-sampling`

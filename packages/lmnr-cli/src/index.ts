@@ -33,6 +33,7 @@ import {
   handleSignalList,
   handleSignalUpdate,
 } from "./commands/signal";
+import { collectFlag } from "./commands/signal/validate";
 import { handleSkillAdd, handleSkillUpdate } from "./commands/skill";
 import { handleSqlQuery } from "./commands/sql";
 import { handleSqlSchema } from "./commands/sql/schema";
@@ -271,11 +272,12 @@ Three separate things decide when a signal runs:
                                      no single span is observably the root
                 none                 never fires on its own; backfill only
 
-  --filter    WHETHER it runs, given it fired (repeatable, ANDed).
+  --filter    WHETHER it runs, given it fired. JSON object, repeatable, ANDed:
+                '{"column":"<col>","operator":"<op>","value":<value>}'
               Properties of the whole trace:
-                total_token_count  = != > >= < <=  <number>
-                status             = !=                 error | success
-                span_names         = (include) != (do not include)  <name>
+                total_token_count  eq|ne|gt|gte|lt|lte  <number>
+                status             eq | ne              error | success
+                span_names         eq (include) | ne (do not include)  <name>
               No filters means it runs on every trace it fires for.
 
   --mode      HOW it runs: batch (default, cheaper) or realtime (~2x cost).
@@ -320,13 +322,14 @@ FILTER (matched anywhere in the trace) are different things.
       "Span name to trigger on (repeatable). Requires --trigger span-name",
       // No default: an absent flag must stay `undefined` so the handler can tell
       // "not passed" from "passed empty" and omit the key from the request.
-      (val: string, prev: string[] = []) => [...prev, val],
+      collectFlag,
     )
     .option(
       "--filter <expr>",
-      'Filter as "<column> <op> <value>" (repeatable, ANDed), ' +
-      'e.g. "total_token_count > 1000". Omitted → the default >1000 tokens',
-      (val: string, prev: string[] = []) => [...prev, val],
+      "Filter as JSON (repeatable, ANDed): " +
+      '\'{"column":"total_token_count","operator":"gt","value":"1000"}\'. ' +
+      "Omitted → the default >1000 tokens",
+      collectFlag,
     )
     .option("--mode <mode>", "batch | realtime. Omitted → batch")
     .option(
@@ -356,7 +359,7 @@ Examples:
       --schema '{"properties":{"sev":{"type":"string","enum":["low","high"],\
 "description":"Severity"}}}' \\
       --trigger span-name --span-name agent.run \\
-      --filter "status = error" \\
+      --filter '{"column":"status","operator":"eq","value":"error"}' \\
       --mode realtime --sample-rate 25 --json
 
   $ lmnr-cli signal create "Backfill only" \\
@@ -380,12 +383,12 @@ Examples:
       "Span name to trigger on (repeatable). Requires --trigger span-name",
       // No default: an absent flag must stay `undefined` so the handler can tell
       // "not passed" from "passed empty" and omit the key from the request.
-      (val: string, prev: string[] = []) => [...prev, val],
+      collectFlag,
     )
     .option(
       "--filter <expr>",
       "Replace ALL filters with these (repeatable, same syntax as create)",
-      (val: string, prev: string[] = []) => [...prev, val],
+      collectFlag,
     )
     .option("--no-filters", "Clear all filters (run on every trace it fires for)")
     .option("--mode <mode>", "batch | realtime")
@@ -408,7 +411,8 @@ Examples:
   $ lmnr-cli signal update "Refund requests" --no-sampling
   $ lmnr-cli signal update "Refund requests" --disabled
   $ lmnr-cli signal update "Refund requests" --no-disabled
-  $ lmnr-cli signal update "Refund requests" --filter "total_token_count > 5000"
+  $ lmnr-cli signal update "Refund requests" \\
+      --filter '{"column":"total_token_count","operator":"gt","value":"5000"}'
   $ lmnr-cli signal update "Refund requests" --no-filters
   $ lmnr-cli signal update "Refund requests" --mode realtime
   $ lmnr-cli signal update "Refund requests" \\
