@@ -19,7 +19,7 @@ export interface CreateSignalOptions {
   trigger?: SignalTrigger;
   /** Omit for the default (>1000 tokens); `[]` runs on every firing trace. */
   filters?: SignalFilter[];
-  /** Defaults to `"batch"`. */
+  /** Defaults to `"realtime"`. */
   mode?: SignalMode;
 }
 

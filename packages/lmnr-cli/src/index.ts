@@ -279,7 +279,7 @@ Three separate things decide when a signal runs:
                 span_names         eq (include) | ne (do not include)  <name>
               No filters means it runs on every trace it fires for.
 
-  --mode      HOW it runs: batch (default, cheaper) or realtime (~2x cost).
+  --mode      HOW it runs: batch or realtime. Omitted → realtime.
 
 Note --span-name (the TRIGGER, matched in the firing batch) and the span_names
 FILTER (matched anywhere in the trace) are different things.
@@ -330,7 +330,7 @@ FILTER (matched anywhere in the trace) are different things.
       "Omitted → the default >1000 tokens",
       collectFlag,
     )
-    .option("--mode <mode>", "batch | realtime. Omitted → batch")
+    .option("--mode <mode>", "batch | realtime. Omitted → realtime")
     .option(
       "--sample-rate <percent>",
       "Evaluate only this percent of matching traces (1-95). Omitted → no sampling",

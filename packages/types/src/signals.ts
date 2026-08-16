@@ -30,7 +30,6 @@ export interface SignalFilter {
   [key: string]: unknown;
 }
 
-/** Realtime is faster and costs ~2x batch. */
 export type SignalMode = "batch" | "realtime";
 
 export interface Signal {
