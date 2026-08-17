@@ -276,7 +276,7 @@ Three separate things decide when a signal runs:
               Properties of the whole trace:
                 total_token_count  eq|ne|gt|gte|lt|lte  <number>
                 status             eq | ne              error | success
-                span_names         eq (include) | ne (do not include)  <name>
+                span_names         includes | notIncludes  <name or [names]>
               No filters means it runs on every trace it fires for.
 
   --mode      HOW it runs: batch or realtime. Omitted → realtime.

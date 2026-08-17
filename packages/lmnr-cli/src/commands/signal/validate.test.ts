@@ -60,8 +60,8 @@ void describe("parseFilter", () => {
   void it("preserves richer value types and extra keys", () => {
     // The point of keeping filters as JSON: the shape can grow server-side
     // without a CLI change, so nothing here may narrow or drop it.
-    expect(parseFilter('{"column":"span_names","operator":"eq","value":["a","b"],"negate":true}'))
-      .toEqual({ column: "span_names", operator: "eq", value: ["a", "b"], negate: true });
+    expect(parseFilter('{"column":"span_names","operator":"includes","value":["a","b"],"x":true}'))
+      .toEqual({ column: "span_names", operator: "includes", value: ["a", "b"], x: true });
     expect(parseFilter('{"column":"total_token_count","operator":"gt","value":1000}').value)
       .toBe(1000);
   });
