@@ -1,7 +1,6 @@
 /**
  * A signal's payload schema — the structured output the LLM must return. Every
- * field is required (the UI drawer marks them all required); enums are a string
- * field with an `enum` array.
+ * field is required; enums are a string field with an `enum` array.
  */
 export interface SignalStructuredOutput {
   type: "object";
@@ -10,31 +9,28 @@ export interface SignalStructuredOutput {
 }
 
 /**
- * A signal trigger. The two lists mean different things and are NOT
- * interchangeable:
- *
- * - `conditions` — WHEN the signal is evaluated. Decidable from one span batch
- *   (`root_span_finished`, `span_name`). An EMPTY list never fires.
- * - `filters` — WHETHER a fired trigger runs. Properties of the whole trace
- *   (`total_token_count`, `status`, `span_names`). An empty list passes.
- *
- * Note `span_name` (condition, this batch only) and `span_names` (filter,
- * anywhere in the trace) are DIFFERENT columns.
+ * WHEN a signal is evaluated, decided from a single span batch. A closed set,
+ * not a column list: these are the only two shapes the backend evaluates, so
+ * anything else would be stored and then silently never fire.
  */
-export interface SignalTrigger {
-  id?: string;
-  conditions: SignalFilter[];
-  filters: SignalFilter[];
-  createdAt?: string;
-  /** 0 = batch, 1 = realtime */
-  mode?: number;
-}
+export type SignalTrigger =
+  | { type: "rootSpanFinished" }
+  | { type: "spanName"; spanNames: string[] };
 
+/**
+ * WHETHER a fired signal runs — a property of the whole trace. Columns:
+ * `total_token_count`, `status`, `span_names`. An empty list runs on every
+ * firing trace. Extra keys are preserved so the shape can grow server-side
+ * without an SDK release.
+ */
 export interface SignalFilter {
   column: string;
   operator: string;
-  value: string | number | string[];
+  value: unknown;
+  [key: string]: unknown;
 }
+
+export type SignalMode = "batch" | "realtime";
 
 export interface Signal {
   id: string;
@@ -45,5 +41,7 @@ export interface Signal {
   sampleRate: number | null;
   disabled: boolean;
   createdAt: string;
-  triggers: SignalTrigger[];
+  trigger: SignalTrigger;
+  filters: SignalFilter[];
+  mode: SignalMode;
 }

@@ -1,19 +1,13 @@
 /**
- * Parse `--schema` / `--trigger` / `--sample-rate` into the request body.
- *
- * Domain rules (column allowlists, sample-rate bounds, field-name regex, the
- * conditions/filters split, …) live in app-server. Duplicating them here drifted
- * from the server and the UI; a 400 `{error}` is already unwrapped for the user
- * by `SignalsResource.raiseSignalError`. This file only:
- *
- * - JSON-parses flag strings (with the flag name in the error)
- * - fills omitted schema `type` / `required` so the short `--schema` in --help
- *   matches what the UI stores
- * - rejects values that are not a sendable wire shape (non-object JSON, NaN)
+ * Parse the signal flags into a request body. Domain rules (column allowlists,
+ * sample-rate bounds, field-name regex) live in app-server; duplicating them
+ * here drifted from the server and the UI, and a 400 `{error}` is already shown
+ * verbatim by `SignalsResource.raiseSignalError`.
  */
 
 import type {
   SignalFilter,
+  SignalMode,
   SignalStructuredOutput,
   SignalTrigger,
 } from "@lmnr-ai/types";
@@ -29,11 +23,7 @@ const parseJsonArg = (raw: string, what: string): unknown => {
   }
 };
 
-/**
- * Parse the payload schema JSON. `type` and `required` may be omitted — the
- * help example is just `{"properties":{...}}` — and are filled to `"object"` /
- * all property names. Everything else is sent as-is for the server to validate.
- */
+/** `type` and `required` may be omitted; they default to `"object"` / all fields. */
 export const parseStructuredOutput = (raw: string): SignalStructuredOutput => {
   const parsed = parseJsonArg(raw, "--schema");
   if (!isPlainObject(parsed)) {
@@ -55,45 +45,98 @@ export const parseStructuredOutput = (raw: string): SignalStructuredOutput => {
   };
 };
 
-/** Parse one `--trigger` JSON argument. Column/operator/value rules are server-side. */
-export const parseTrigger = (raw: string): SignalTrigger => {
-  const parsed = parseJsonArg(raw, "--trigger");
-  if (!isPlainObject(parsed)) {
+/**
+ * Collector for repeatable flags. Must NOT be paired with a commander default of
+ * `[]`: the handler would then always receive an array, so an absent flag would
+ * read as "passed empty" and `signal update --prompt x` would clear the signal's
+ * filters instead of leaving them alone.
+ */
+export const collectFlag = (val: string, prev: string[] = []): string[] => [...prev, val];
+
+export const TRIGGER_KINDS = ["root-span-finished", "span-name"] as const;
+
+export type TriggerKind = (typeof TRIGGER_KINDS)[number];
+
+/**
+ * `--span-name` without `--trigger span-name` is an error rather than an implied
+ * kind switch: inferring it would let a typo'd kind quietly change when the
+ * signal fires.
+ */
+export const parseTrigger = (
+  kind: string | undefined,
+  spanNames: string[],
+): SignalTrigger | undefined => {
+  if (kind === undefined) {
+    if (spanNames.length > 0) {
+      throw new Error("--span-name requires --trigger span-name");
+    }
+    return undefined;
+  }
+  if (!(TRIGGER_KINDS as readonly string[]).includes(kind)) {
+    throw new Error(`--trigger must be one of ${TRIGGER_KINDS.join(", ")} (got "${kind}")`);
+  }
+  if (kind !== "span-name" && spanNames.length > 0) {
+    throw new Error(`--span-name only applies to --trigger span-name, not ${kind}`);
+  }
+
+  if (kind === "root-span-finished") return { type: "rootSpanFinished" };
+
+  const names = spanNames.map((name) => name.trim()).filter((name) => name.length > 0);
+  if (names.length === 0) {
     throw new Error(
-      '--trigger must be a JSON object like {"conditions":[...],"filters":[...]}',
+      "--trigger span-name requires at least one --span-name, " +
+      "or the signal would never fire",
     );
   }
-  const { conditions, filters, mode, ...rest } = parsed;
-  const extraKeys = Object.keys(rest);
-  if (extraKeys.length > 0) {
-    throw new Error(`--trigger has unsupported keys: ${extraKeys.join(", ")}`);
-  }
-  if (conditions !== undefined && !Array.isArray(conditions)) {
-    throw new Error('--trigger "conditions" must be an array');
-  }
-  if (filters !== undefined && !Array.isArray(filters)) {
-    throw new Error('--trigger "filters" must be an array');
-  }
-
-  return {
-    conditions: (conditions ?? []) as SignalFilter[],
-    filters: (filters ?? []) as SignalFilter[],
-    ...(mode !== undefined ? { mode: mode as number } : {}),
-  };
+  return { type: "spanName", spanNames: names };
 };
 
-/** Coerce `--sample-rate` to an integer. The 1–95 range is enforced server-side. */
+/**
+ * Filters stay `{column, operator, value}` JSON so new operators and richer
+ * value types need no CLI change. Only the wire shape is checked here.
+ */
+export const parseFilter = (raw: string): SignalFilter => {
+  const parsed = parseJsonArg(raw, "--filter");
+  if (!isPlainObject(parsed)) {
+    throw new Error(
+      '--filter must be a JSON object like {"column":"total_token_count",' +
+      '"operator":"gt","value":"1000"}',
+    );
+  }
+  if (typeof parsed.column !== "string" || parsed.column.trim().length === 0) {
+    throw new Error('--filter must carry a non-empty "column" string');
+  }
+  if (typeof parsed.operator !== "string" || parsed.operator.trim().length === 0) {
+    throw new Error('--filter must carry a non-empty "operator" string');
+  }
+  if (parsed.value === undefined) {
+    throw new Error('--filter must carry a "value"');
+  }
+
+  // Spread so any additional keys a future filter shape carries reach the server
+  // untouched instead of being silently dropped here.
+  return { ...parsed, column: parsed.column, operator: parsed.operator } as SignalFilter;
+};
+
+export const MODES = ["batch", "realtime"] as const;
+
+export const parseMode = (raw: string): SignalMode => {
+  if (!(MODES as readonly string[]).includes(raw)) {
+    throw new Error(`--mode must be one of ${MODES.join(", ")} (got "${raw}")`);
+  }
+  return raw as SignalMode;
+};
+
+/** The 1-95 range is enforced server-side. */
 export const parseSampleRate = (raw: string): number => {
   const n = Number(raw);
-  // `Number("")` is 0; `Number("abc")` is NaN, which stringifies to `null`
-  // and would look like `--no-sampling` on update.
+  // `Number("")` is 0; `Number("abc")` is NaN.
   if (raw.trim() === "" || !Number.isInteger(n)) {
     throw new Error("--sample-rate must be an integer");
   }
   return n;
 };
 
-/** Trim the signal name. Empty after trim is a missing positional, not a 400. */
 export const validateName = (name: string): string => {
   const trimmed = name.trim();
   if (trimmed.length === 0) {
@@ -102,7 +145,6 @@ export const validateName = (name: string): string => {
   return trimmed;
 };
 
-/** Reject a blank `--prompt` so we don't round-trip an empty required flag. */
 export const validatePrompt = (prompt: string): string => {
   if (prompt.trim().length === 0) {
     throw new Error("Signal prompt is required");

@@ -1,5 +1,7 @@
 import {
   type Signal,
+  type SignalFilter,
+  type SignalMode,
   type SignalStructuredOutput,
   type SignalTrigger,
 } from "@lmnr-ai/types";
@@ -10,24 +12,29 @@ export interface CreateSignalOptions {
   name: string;
   prompt: string;
   structuredOutput: SignalStructuredOutput;
+  /** Omit for no sampling. */
   sampleRate?: number;
   disabled?: boolean;
-  /** Omit to seed the UI's default trigger; `[]` creates an inert signal. */
-  triggers?: SignalTrigger[];
+  /** Omit for the default (root span finished). */
+  trigger?: SignalTrigger;
+  /** Omit for the default (>1000 tokens); `[]` runs on every firing trace. */
+  filters?: SignalFilter[];
+  /** Defaults to `"realtime"`. */
+  mode?: SignalMode;
 }
 
 /**
  * A partial patch. Every field is optional and an ABSENT field leaves the stored
- * value alone — so updating the prompt can't clear sampling or re-enable a
- * deactivated signal. `sampleRate: null` explicitly clears sampling, and
- * `triggers` replaces the signal's whole trigger set when present.
+ * value alone. `sampleRate: null` clears sampling, `filters: []` clears filters.
  */
 export interface UpdateSignalOptions {
   prompt?: string;
   structuredOutput?: SignalStructuredOutput;
   sampleRate?: number | null;
   disabled?: boolean;
-  triggers?: SignalTrigger[];
+  trigger?: SignalTrigger;
+  filters?: SignalFilter[];
+  mode?: SignalMode;
 }
 
 /** Signals CRUD over the CLI user-token surface (`/v1/cli/signals`). */
@@ -97,8 +104,8 @@ export class SignalsResource extends BaseResource {
 
   /**
    * PATCH, not PUT: only the keys present in `options` are sent, so the server
-   * leaves everything else as stored. `sampleRate: null` must survive
-   * serialization (it means "clear"), so it is NOT stripped here.
+   * leaves everything else as stored. An explicit `null` on `sampleRate` must
+   * survive serialization (it means "clear"), so nulls are NOT stripped here.
    */
   public async update(signalId: string, options: UpdateSignalOptions): Promise<Signal> {
     const response = await fetch(

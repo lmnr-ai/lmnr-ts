@@ -20,21 +20,35 @@ This is a CLI for the Laminar agent observability platform.
 
 # Signals (`src/commands/signal/`)
 
-- **Triggers have TWO lists that are NOT interchangeable**, and putting a column
-  in the wrong one yields a signal that looks configured but silently never
-  fires: `conditions` = WHEN to evaluate (decidable from one span batch —
-  `root_span_finished`, `span_name`; an EMPTY list never fires) and `filters` =
-  WHETHER to run (whole-trace state — `total_token_count`, `status`,
-  `span_names`; an empty list passes). `span_name` (condition, the firing batch
-  only) and `span_names` (filter, anywhere in the trace) are DIFFERENT columns.
-  Documented in `--help`; **enforced in app-server**, not in the CLI.
-- `validate.ts` only parses flag JSON and fills omitted schema `type`/`required`.
-  Do NOT re-implement column allowlists, sample-rate bounds, or field-name
-  regexes here — they drift from `signals/service.rs`. Server 400 `{error}`
-  text is already shown verbatim via `raiseSignalError`.
-- `signal update` is a PARTIAL patch. Omitted flags must leave stored values
-  alone, so `--no-sampling` sends an explicit `sampleRate: null` (the server
-  distinguishes absent from null) and `--trigger` REPLACES the whole trigger set.
+- **A signal's firing config is THREE independent flags, not one nested blob**:
+  `--trigger` (WHEN it's evaluated: `root-span-finished` | `span-name`, with
+  `--span-name` repeatable for the second), `--filter` (WHETHER it runs,
+  repeatable JSON, ANDed) and `--mode` (`batch` | `realtime`). They map to the
+  API's `trigger` / `filters` / `mode`. `--trigger` is a KIND, never a column
+  list. Omitted on create → `root-span-finished`; there is no "no trigger" flag.
+- **`--filter` stays `{column, operator, value}` JSON — do NOT turn it into a
+  `"col op value"` DSL.** Filters are meant to be versatile and extensible: new
+  operators, array/nested values, and extra keys must reach the server without a
+  CLI release, so `parseFilter` checks only the wire shape and spreads unknown
+  keys through.
+- **`--span-name` without `--trigger span-name` is an ERROR, not an implied kind
+  switch.** Inferring the kind would let a typo'd `--trigger` quietly change when
+  the signal fires — the exact failure class this command is shaped to prevent.
+- **Repeatable flags must use the shared `collectFlag` and NOT a commander `[]`
+  default.** With a default the handler always receives an array, so an absent
+  flag reads as "passed empty": `signal update --prompt x` CLEARED the signal's
+  filters, and `create` sent `filters: []` instead of omitting the key for the
+  server default. This shipped broken once; `validate.test.ts` covers it.
+- `validate.ts` only translates flag syntax into the wire shape and fills omitted
+  schema `type`/`required`. Do NOT re-implement column allowlists, sample-rate
+  bounds, or field-name regexes here — they drift from `signals/service.rs`.
+  `--filter` deliberately does not validate the column, so a bad one reaches the
+  server and its 400 names the supported ones (shown verbatim via
+  `raiseSignalError`).
+- `signal update` is a PARTIAL patch, and the three firing flags are independent —
+  changing `--mode` leaves the trigger and filters alone. Omitted flags leave
+  stored values alone. `--no-sampling` sends `sampleRate: null` (clears the
+  stored rate; evaluate every matching trace). `--no-filters` sends `filters: []`.
   An empty patch is an error listing the valid flags, never a silent no-op.
 - `<signal>` accepts an id or a name. An ambiguous name is an ERROR listing the
   candidates rather than a silent pick — `update` / `delete` are destructive.

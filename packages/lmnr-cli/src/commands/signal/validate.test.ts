@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  collectFlag,
+  parseFilter,
+  parseMode,
   parseSampleRate,
   parseStructuredOutput,
   parseTrigger,
@@ -8,131 +11,111 @@ import {
   validatePrompt,
 } from "./validate";
 
-const ROOT_SPAN = { column: "root_span_finished", operator: "eq", value: "true" };
-const trigger = (body: Record<string, unknown>) => JSON.stringify(body);
+void describe("collectFlag", () => {
+  void it("starts from undefined so an absent flag is not an empty array", () => {
+    // With a commander `[]` default this returns [] for an absent flag, which
+    // made `signal update --prompt x` clear the signal's filters.
+    expect(collectFlag("a", undefined)).toEqual(["a"]);
+    expect(collectFlag("b", ["a"])).toEqual(["a", "b"]);
+  });
+});
 
 void describe("parseTrigger", () => {
-  void it("parses conditions / filters / mode through without rewriting them", () => {
-    const parsed = parseTrigger(
-      trigger({
-        conditions: [{ column: "span_name", operator: "includes", value: ["agent.run"] }],
-        filters: [{ column: "span_names", operator: "ne", value: "healthcheck" }],
-        mode: 1,
-      }),
-    );
-    expect(parsed.conditions).toHaveLength(1);
-    expect(parsed.filters).toHaveLength(1);
-    expect(parsed.mode).toBe(1);
+  void it("maps each kind to its wire shape", () => {
+    // Absent must stay undefined so the handler omits the key and the server
+    // applies its default.
+    expect(parseTrigger(undefined, [])).toBeUndefined();
+    expect(parseTrigger("root-span-finished", [])).toEqual({ type: "rootSpanFinished" });
+    expect(parseTrigger("span-name", ["  agent.run  ", "", "worker.step"])).toEqual({
+      type: "spanName",
+      spanNames: ["agent.run", "worker.step"],
+    });
   });
 
-  void it("omits mode when unset so the server applies its own default", () => {
-    expect(parseTrigger(trigger({ conditions: [ROOT_SPAN] })).mode).toBeUndefined();
+  void it("rejects span-name with no usable name, which could never fire", () => {
+    expect(() => parseTrigger("span-name", [])).toThrow(/requires at least one --span-name/);
+    expect(() => parseTrigger("span-name", ["  "])).toThrow(/requires at least one --span-name/);
   });
 
-  void it("does not reject domain mistakes — those are the server's 400", () => {
-    parseTrigger(trigger({ conditions: [] }));
-    parseTrigger(
-      trigger({ conditions: [{ column: "status", operator: "eq", value: "error" }] }),
-    );
-    parseTrigger(trigger({ conditions: [ROOT_SPAN], mode: 2 }));
+  void it("rejects --span-name without --trigger span-name instead of inferring it", () => {
+    expect(() => parseTrigger(undefined, ["agent.run"])).toThrow(/requires --trigger span-name/);
+    expect(() => parseTrigger("root-span-finished", ["agent.run"])).toThrow(/only applies to/);
   });
 
-  void it("rejects unknown keys instead of silently dropping them", () => {
-    expect(() => {
-      parseTrigger(trigger({ conditions: [ROOT_SPAN], filter: [] }));
-    }).toThrow(/unsupported keys: filter/);
+  void it("rejects an unknown kind and lists the valid ones", () => {
+    expect(() => parseTrigger("rootSpanFinished", [])).toThrow(/root-span-finished/);
+    expect(() => parseTrigger("none", [])).toThrow(/root-span-finished/);
+  });
+});
+
+void describe("parseFilter", () => {
+  void it("passes the filter object through for the server to validate", () => {
+    expect(parseFilter('{"column":"total_token_count","operator":"gt","value":"1000"}')).toEqual({
+      column: "total_token_count",
+      operator: "gt",
+      value: "1000",
+    });
   });
 
-  void it("rejects a non-object or a non-array conditions/filters list", () => {
-    expect(() => {
-      parseTrigger("[]");
-    }).toThrow(/must be a JSON object/);
-    expect(() => {
-      parseTrigger(trigger({ conditions: "nope" }));
-    }).toThrow(/"conditions" must be an array/);
-    expect(() => {
-      parseTrigger(trigger({ conditions: [ROOT_SPAN], filters: {} }));
-    }).toThrow(/"filters" must be an array/);
+  void it("preserves richer value types and extra keys", () => {
+    // The point of keeping filters as JSON: the shape can grow server-side
+    // without a CLI change, so nothing here may narrow or drop it.
+    expect(parseFilter('{"column":"span_names","operator":"eq","value":["a","b"],"negate":true}'))
+      .toEqual({ column: "span_names", operator: "eq", value: ["a", "b"], negate: true });
+    expect(parseFilter('{"column":"total_token_count","operator":"gt","value":1000}').value)
+      .toBe(1000);
   });
 
-  void it("reports malformed JSON with the flag name", () => {
-    expect(() => {
-      parseTrigger("{not json");
-    }).toThrow(/--trigger is not valid JSON/);
+  void it("rejects malformed JSON and a missing column / operator / value", () => {
+    expect(() => parseFilter("{nope")).toThrow(/not valid JSON/);
+    expect(() => parseFilter('["a"]')).toThrow(/must be a JSON object/);
+    expect(() => parseFilter('{"operator":"gt","value":"1"}')).toThrow(/"column"/);
+    expect(() => parseFilter('{"column":"c","value":"1"}')).toThrow(/"operator"/);
+    expect(() => parseFilter('{"column":"c","operator":"gt"}')).toThrow(/"value"/);
+  });
+
+  void it("does not validate the column, leaving the allowlist to the server", () => {
+    expect(parseFilter('{"column":"nonsense","operator":"eq","value":"1"}').column)
+      .toBe("nonsense");
+  });
+});
+
+void describe("parseMode", () => {
+  void it("accepts the named modes and rejects the raw discriminant", () => {
+    expect(parseMode("batch")).toBe("batch");
+    expect(parseMode("realtime")).toBe("realtime");
+    expect(() => parseMode("1")).toThrow(/--mode must be one of/);
   });
 });
 
 void describe("parseStructuredOutput", () => {
-  const schema = (properties: unknown, extra: Record<string, unknown> = {}) =>
-    JSON.stringify({ properties, ...extra });
-
-  void it("fills omitted type and required so the short --help shape is valid", () => {
-    const parsed = parseStructuredOutput(
-      schema({ a: { type: "string", description: "d" }, b: { type: "number", description: "d" } }),
-    );
+  void it("fills omitted type and required from the properties", () => {
+    const parsed = parseStructuredOutput('{"properties":{"a":{"type":"string"}}}');
     expect(parsed.type).toBe("object");
-    expect(parsed.required.sort()).toEqual(["a", "b"]);
-  });
-
-  void it("passes an explicit required list through, even if partial", () => {
-    const parsed = parseStructuredOutput(
-      schema(
-        { a: { type: "string", description: "d" }, b: { type: "string", description: "d" } },
-        { required: ["a"] },
-      ),
-    );
     expect(parsed.required).toEqual(["a"]);
   });
 
-  void it("does not rewrite property contents", () => {
-    const parsed = parseStructuredOutput(
-      schema({ a: { type: "string", description: "d", format: "email" } }),
-    );
-    expect(parsed.properties.a).toEqual({
-      type: "string",
-      description: "d",
-      format: "email",
-    });
-  });
-
-  void it("rejects a non-object or a missing properties object", () => {
-    expect(() => {
-      parseStructuredOutput("[]");
-    }).toThrow(/must be a JSON object/);
-    expect(() => {
-      parseStructuredOutput("{}");
-    }).toThrow(/"properties" object/);
-  });
-
-  void it("reports malformed JSON with the flag name", () => {
-    expect(() => {
-      parseStructuredOutput("{not json");
-    }).toThrow(/--schema is not valid JSON/);
+  void it("rejects non-JSON, non-objects, and a missing properties map", () => {
+    expect(() => parseStructuredOutput("{nope")).toThrow(/not valid JSON/);
+    expect(() => parseStructuredOutput('["a"]')).toThrow(/must be a JSON object/);
+    expect(() => parseStructuredOutput("{}")).toThrow(/"properties"/);
   });
 });
 
-void describe("scalars", () => {
-  void it("coerces --sample-rate to an integer and rejects non-integers", () => {
-    expect(parseSampleRate("95")).toBe(95);
-    expect(parseSampleRate("0")).toBe(0);
-    for (const raw of ["1.5", "abc", ""]) {
-      expect(() => {
-        parseSampleRate(raw);
-      }).toThrow(/must be an integer/);
+void describe("parseSampleRate", () => {
+  void it("rejects blanks and non-integers", () => {
+    // `Number("")` is 0 and `Number("abc")` is NaN — neither is a sample rate.
+    expect(parseSampleRate("25")).toBe(25);
+    for (const bad of ["", "abc", "2.5"]) {
+      expect(() => parseSampleRate(bad)).toThrow(/must be an integer/);
     }
   });
+});
 
-  void it("trims the name and rejects a blank one", () => {
-    expect(validateName("  Padded  ")).toBe("Padded");
-    expect(() => {
-      validateName("   ");
-    }).toThrow(/name is required/);
-  });
-
-  void it("requires a non-blank prompt", () => {
-    expect(() => {
-      validatePrompt("  ");
-    }).toThrow(/prompt is required/);
-    expect(validatePrompt("find things")).toBe("find things");
+void describe("name and prompt", () => {
+  void it("trims the name and rejects blanks", () => {
+    expect(validateName("  Refunds  ")).toBe("Refunds");
+    expect(() => validateName("   ")).toThrow(/name is required/);
+    expect(() => validatePrompt("  ")).toThrow(/prompt is required/);
   });
 });
