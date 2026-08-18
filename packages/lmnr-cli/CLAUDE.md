@@ -57,6 +57,29 @@ This is a CLI for the Laminar agent observability platform.
   `{error: "<message>"}` with user-facing text, and the shared handler would
   print the raw JSON body at the user (`409 {"error":"..."}`).
 
+# Evals (`src/commands/eval/`)
+
+- The `eval` group is **read + tag management only**: `list` / `get` / `tag` /
+  `untag`. It never runs an evaluation — running one is `LMNR_DEBUG=1 <your
+  script>` (see the debug-sessions section above). Keep it that way; a `run`
+  subcommand would re-introduce the `@lmnr-ai/lmnr` dep the CLI deliberately
+  doesn't have.
+- Tags live at the EVALUATION level (Postgres `evaluation_tags`), and the name
+  registry is the same `tag_classes` table the UI's trace/span tag picker uses —
+  so a tag created by `eval tag` shows up in the UI picker immediately. Attaching
+  an unknown name creates the tag class server-side; nothing to pre-create.
+- `--tag` on `eval list` is repeatable and ANDed ("carries all of these"), and
+  goes over the wire as a single comma-joined `tags` query param. It uses the
+  shared `collectFlag` (no commander `[]` default) for the same reason `signal`
+  does.
+- `EvalsResource` methods added for this surface (`list` / `get` / `addTags` /
+  `removeTag`) use `this.apiPrefix`, so they hit `/v1/cli/evals` under CLI
+  user-token auth and `/v1/evals` under a project API key. The older
+  datapoint-oriented methods on that resource hard-code `/v1` — don't "unify"
+  them, they are SDK-only. Like signals, the new methods unwrap
+  `{error: "<message>"}` envelopes (`raiseEvalError`) instead of using
+  `BaseResource.handleError`.
+
 # Package Boundaries
 - `lmnr-cli` is the standalone CLI (`npx lmnr-cli@latest`). It depends on
   `@lmnr-ai/client` for API calls, not the full `@lmnr-ai/lmnr` SDK.
@@ -114,7 +137,8 @@ This is a CLI for the Laminar agent observability platform.
   `client.rolloutSessions.listBlocks` (`GET .../blocks`) and prints
   trace/eval/text blocks oldest-first. `SessionBlock` + content shapes live in
   `@lmnr-ai/types` (`session-block.ts`).
-- **There is NO `lmnr-cli eval` command.** Evals are just normal
+- **`lmnr-cli eval` does NOT run evals** (see the `eval` group section below for
+  what it does do). Evals are just normal
   Laminar-instrumented programs — run them directly under `LMNR_DEBUG=1`. The SDK
   resolves the session id the same way it does for traces (`buildDebugConfig`:
   `LMNR_DEBUG_SESSION_ID` env → `.lmnr/debug-session.json` → minted) and
