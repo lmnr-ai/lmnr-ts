@@ -8,6 +8,17 @@ export type InitEvaluationResponse = {
   projectId: StringUUID;
 };
 
+export type Evaluation = {
+  id: StringUUID;
+  createdAt: string;
+  groupId: string;
+  name: string;
+  projectId: StringUUID;
+  metadata?: Record<string, any> | null;
+  /** Evaluation-level tag names, in the order they were attached. */
+  tags: string[];
+};
+
 export type Dataset = {
   id: StringUUID;
   name: string;

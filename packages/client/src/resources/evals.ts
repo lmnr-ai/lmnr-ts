@@ -1,4 +1,5 @@
 import {
+  type Evaluation,
   type EvaluationDatapoint,
   type GetDatapointsResponse,
   type InitEvaluationResponse,
@@ -95,6 +96,123 @@ export class EvalsResource extends BaseResource {
     }
 
     return response.json() as Promise<InitEvaluationResponse>;
+  }
+
+  /**
+   * List evaluations in the project, newest first.
+   *
+   * @param {Object} [options] - Filters
+   * @param {string} [options.groupId] - Only evaluations in this group
+   * @param {string} [options.name] - Case-insensitive substring match on the name
+   * @param {string[]} [options.tags] - Only evaluations carrying ALL of these tags
+   * @param {number} [options.limit] - Page size (default 50, max 500)
+   * @param {number} [options.offset] - Page offset
+   * @returns {Promise<Evaluation[]>} The matching evaluations, each with its tags
+   */
+  public async list(options?: {
+    groupId?: string;
+    name?: string;
+    tags?: string[];
+    limit?: number;
+    offset?: number;
+  }): Promise<Evaluation[]> {
+    const params = new URLSearchParams();
+    if (options?.groupId) params.set("groupId", options.groupId);
+    if (options?.name) params.set("name", options.name);
+    if (options?.tags?.length) params.set("tags", options.tags.join(","));
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    if (options?.offset !== undefined) params.set("offset", String(options.offset));
+    const query = params.size > 0 ? `?${params.toString()}` : "";
+
+    const response = await fetch(`${this.baseHttpUrl}${this.apiPrefix}/evals${query}`, {
+      method: "GET",
+      headers: this.headers(),
+    });
+
+    if (!response.ok) {
+      await this.raiseEvalError(response);
+    }
+
+    const body = (await response.json()) as { evaluations?: Evaluation[] };
+    return Array.isArray(body?.evaluations) ? body.evaluations : [];
+  }
+
+  /**
+   * Get a single evaluation with its tags.
+   *
+   * @param {string} evalId - The evaluation ID
+   * @returns {Promise<Evaluation>} The evaluation
+   */
+  public async get(evalId: string): Promise<Evaluation> {
+    const response = await fetch(`${this.baseHttpUrl}${this.apiPrefix}/evals/${evalId}`, {
+      method: "GET",
+      headers: this.headers(),
+    });
+
+    if (!response.ok) {
+      await this.raiseEvalError(response);
+    }
+
+    return response.json() as Promise<Evaluation>;
+  }
+
+  /**
+   * Attach tags to an evaluation. Unknown tag names are registered as new tag
+   * classes in the project. Already-attached tags are a no-op.
+   *
+   * @param {string} evalId - The evaluation ID
+   * @param {string[]} tags - Tag names to attach
+   * @returns {Promise<string[]>} The evaluation's full tag list
+   */
+  public async addTags(evalId: string, tags: string[]): Promise<string[]> {
+    const response = await fetch(`${this.baseHttpUrl}${this.apiPrefix}/evals/${evalId}/tags`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ tags }),
+    });
+
+    if (!response.ok) {
+      await this.raiseEvalError(response);
+    }
+
+    const body = (await response.json()) as { tags?: string[] };
+    return Array.isArray(body?.tags) ? body.tags : [];
+  }
+
+  /**
+   * Detach a single tag from an evaluation.
+   *
+   * @param {string} evalId - The evaluation ID
+   * @param {string} tag - Tag name to detach
+   * @returns {Promise<string[]>} The evaluation's remaining tag list
+   */
+  public async removeTag(evalId: string, tag: string): Promise<string[]> {
+    const url =
+      `${this.baseHttpUrl}${this.apiPrefix}/evals/${evalId}/tags/${encodeURIComponent(tag)}`;
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: this.headers(),
+    });
+
+    if (!response.ok) {
+      await this.raiseEvalError(response);
+    }
+
+    const body = (await response.json()) as { tags?: string[] };
+    return Array.isArray(body?.tags) ? body.tags : [];
+  }
+
+  /** Unwrap `{ error: "<message>" }` envelopes so the CLI shows the message, not raw JSON. */
+  private async raiseEvalError(response: Response): Promise<never> {
+    const body = await response.text();
+    let message = body;
+    try {
+      const parsed = JSON.parse(body) as { error?: unknown };
+      if (typeof parsed?.error === "string" && parsed.error.length > 0) {
+        message = parsed.error;
+      }
+    } catch { /* Not JSON — use it as-is. */ }
+    throw new Error(`${response.status} ${message}`);
   }
 
   /**

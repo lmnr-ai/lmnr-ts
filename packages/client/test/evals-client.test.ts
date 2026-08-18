@@ -718,6 +718,108 @@ void describe("EvalsResource Client Methods", () => {
     });
   });
 
+  void describe("list / get / tags", () => {
+    const mockEvalId: StringUUID = "12345678-1234-1234-1234-123456789abc";
+
+    void it("lists evaluations, joining tag filters with a comma", async () => {
+      const scope = nock(baseUrl)
+        .get('/v1/evals')
+        .query({ name: "gpt", tags: "regression,baseline", limit: "10" })
+        .reply(200, {
+          evaluations: [
+            {
+              id: mockEvalId,
+              createdAt: "2026-08-18T00:00:00Z",
+              groupId: "default",
+              name: "gpt run",
+              projectId: "project-123",
+              metadata: null,
+              tags: ["regression", "baseline"],
+            },
+          ],
+        });
+
+      const result = await client.evals.list({
+        name: "gpt",
+        tags: ["regression", "baseline"],
+        limit: 10,
+      });
+
+      assert.strictEqual(result.length, 1);
+      assert.deepStrictEqual(result[0].tags, ["regression", "baseline"]);
+      scope.done();
+    });
+
+    void it("returns an empty array when the response has no evaluations key", async () => {
+      const scope = nock(baseUrl).get('/v1/evals').reply(200, {});
+
+      assert.deepStrictEqual(await client.evals.list(), []);
+      scope.done();
+    });
+
+    void it("gets a single evaluation", async () => {
+      const scope = nock(baseUrl)
+        .get(`/v1/evals/${mockEvalId}`)
+        .reply(200, {
+          id: mockEvalId,
+          createdAt: "2026-08-18T00:00:00Z",
+          groupId: "default",
+          name: "run",
+          projectId: "project-123",
+          metadata: null,
+          tags: [],
+        });
+
+      const result = await client.evals.get(mockEvalId);
+
+      assert.strictEqual(result.id, mockEvalId);
+      scope.done();
+    });
+
+    void it("attaches tags and returns the updated list", async () => {
+      const scope = nock(baseUrl)
+        .post(`/v1/evals/${mockEvalId}/tags`, { tags: ["regression"] })
+        .reply(200, { tags: ["baseline", "regression"] });
+
+      const result = await client.evals.addTags(mockEvalId, ["regression"]);
+
+      assert.deepStrictEqual(result, ["baseline", "regression"]);
+      scope.done();
+    });
+
+    void it("url-encodes the tag name on removal", async () => {
+      const scope = nock(baseUrl)
+        .delete(`/v1/evals/${mockEvalId}/tags/needs%20review`)
+        .reply(200, { tags: [] });
+
+      assert.deepStrictEqual(await client.evals.removeTag(mockEvalId, "needs review"), []);
+      scope.done();
+    });
+
+    void it("surfaces the server's error message instead of the raw JSON body", async () => {
+      const scope = nock(baseUrl)
+        .post(`/v1/evals/${mockEvalId}/tags`, { tags: [""] })
+        .reply(400, { error: "At least one non-empty tag is required" });
+
+      await assert.rejects(
+        client.evals.addTags(mockEvalId, [""]),
+        /400 At least one non-empty tag is required/,
+      );
+      scope.done();
+    });
+
+    void it("targets the /v1/cli surface when authenticated with a user token", async () => {
+      const cliClient = new LaminarClient({
+        baseUrl: "https://api.lmnr.ai",
+        auth: { type: "userToken", token: "jwt", projectId: "project-123" },
+      });
+      const scope = nock(baseUrl).get('/v1/cli/evals').reply(200, { evaluations: [] });
+
+      assert.deepStrictEqual(await cliClient.evals.list(), []);
+      scope.done();
+    });
+  });
+
   void describe("Integration workflow", () => {
     void it("supports a complete evaluation workflow", async () => {
       const mockEvalId: StringUUID = "12345678-1234-1234-1234-123456789abc";

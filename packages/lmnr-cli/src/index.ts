@@ -19,6 +19,12 @@ import {
   handleDebugSessionSetName,
   handleDebugSessionSummary,
 } from "./commands/debug";
+import {
+  handleEvalGet,
+  handleEvalList,
+  handleEvalTag,
+  handleEvalUntag,
+} from "./commands/eval";
 import { handleLogin } from "./commands/login";
 import { handleLogout } from "./commands/logout";
 import { AGENTS, handlePluginAdd } from "./commands/plugin";
@@ -429,6 +435,89 @@ event it produced (in ClickHouse). A name must match exactly one signal.
 Examples:
   $ lmnr-cli signal delete "Refund requests"
   $ lmnr-cli signal delete 29b937f1-7e3c-4768-a5e3-7e891c2d7d0a --json
+`,
+    );
+
+  const evalCmd = program
+    .command("eval")
+    .alias("evals")
+    .description("Inspect evaluation runs and manage their tags")
+    .option(
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+      "Run `lmnr-cli login` first.",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option("--json", "Output structured JSON to stdout");
+
+  evalCmd
+    .command("list")
+    .description("List evaluation runs with their tags")
+    .option("--group <groupId>", "Only evaluations in this group")
+    .option("--name <name>", "Filter by name (case-insensitive substring)")
+    .option("--tag <tag>", "Only evaluations carrying this tag (repeatable, ANDed)", collectFlag)
+    .option("--limit <n>", "Page size (default 50, max 500)", (val) => parseInt(val, 10))
+    .option("--offset <n>", "Page offset (default 0)", (val) => parseInt(val, 10))
+    .action(withProjectClient(handleEvalList))
+    .addHelpText(
+      "after",
+      `
+Newest first. Repeating --tag narrows the result to evaluations carrying ALL of
+the given tags.
+
+Examples:
+  $ lmnr-cli eval list
+  $ lmnr-cli eval list --tag regression --tag baseline --json
+  $ lmnr-cli eval list --group nightly --name gpt --limit 10
+`,
+    );
+
+  evalCmd
+    .command("get")
+    .description("Show one evaluation run with its tags")
+    .argument("<evalId>", "Evaluation id")
+    .action(withProjectClient(handleEvalGet));
+
+  evalCmd
+    .command("tag")
+    .description("Attach one or more tags to an evaluation run")
+    .argument("<evalId>", "Evaluation id")
+    .argument("<tags...>", "Tag names to attach")
+    .action(withProjectClient(handleEvalTag))
+    .addHelpText(
+      "after",
+      `
+Tags that don't exist yet in the project are created automatically, so they show
+up in the UI's tag picker afterwards. Re-attaching an existing tag is a no-op.
+
+Examples:
+  $ lmnr-cli eval tag 29b937f1-7e3c-4768-a5e3-7e891c2d7d0a regression baseline
+  $ lmnr-cli eval tag 29b937f1-7e3c-4768-a5e3-7e891c2d7d0a "needs review" --json
+`,
+    );
+
+  evalCmd
+    .command("untag")
+    .description("Detach one or more tags from an evaluation run")
+    .argument("<evalId>", "Evaluation id")
+    .argument("<tags...>", "Tag names to detach")
+    .action(withProjectClient(handleEvalUntag))
+    .addHelpText(
+      "after",
+      `
+Only the evaluation's attachment is removed — the tag itself stays available in
+the project. Detaching a tag that isn't attached is a no-op.
+
+Examples:
+  $ lmnr-cli eval untag 29b937f1-7e3c-4768-a5e3-7e891c2d7d0a regression
 `,
     );
 
@@ -902,6 +991,8 @@ Examples:
   lmnr-cli dataset list --json                             # List all datasets
   lmnr-cli dataset push data.jsonl -n my-dataset --json    # Push data to a dataset
   lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a dataset
+  lmnr-cli eval list --tag regression --json               # Evaluation runs by tag
+  lmnr-cli eval tag <evalId> regression                    # Tag an evaluation run
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json # Query spans
   lmnr-cli sql schema                                      # Show available tables
   lmnr-cli debug session new                               # Mint a fresh debug session
