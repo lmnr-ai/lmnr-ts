@@ -107,17 +107,22 @@ export type StreamInfo =
  * response.
  * @returns - StreamInfo object describing the stream type, or { type: null } if not a stream.
  */
+/**
+ * True when `key` is present on `obj` and is not a method. AI SDK results expose `textStream` /
+ * `fullStream` as getters that return a stream; hosts (e.g. Node 26's `Response`) may expose
+ * same-named methods, which are not AI SDK results.
+ */
+const isAISDKStreamProperty = (obj: object, key: string): boolean =>
+  key in obj && typeof (obj as Record<string, unknown>)[key] !== "function";
+
 export const getStream = (response: unknown): StreamInfo => {
   if (!response || typeof response !== "object") {
     return { type: null };
   }
 
-  // Check for AI SDK StreamTextResult (has textStream or fullStream property)
-  if ("textStream" in response || "fullStream" in response) {
-    return { type: "aisdk-result", result: response };
-  }
-
   // Check for Response object (from createUIMessageStreamResponse, createTextStreamResponse, etc.)
+  // NOTE: this MUST come before the AI SDK check below — Node 26's `Response` exposes a
+  // `textStream()` method, which would otherwise be mistaken for a StreamTextResult.
   if (response instanceof Response) {
     return { type: "response", response };
   }
@@ -125,6 +130,13 @@ export const getStream = (response: unknown): StreamInfo => {
   // Check for ReadableStream
   if (response instanceof ReadableStream) {
     return { type: "readable-stream", stream: response };
+  }
+
+  // Check for AI SDK StreamTextResult (has a textStream or fullStream *value* — AI SDK exposes
+  // these as getters returning a stream, never as methods, so anything callable is not a match)
+  if (isAISDKStreamProperty(response, "textStream")
+    || isAISDKStreamProperty(response, "fullStream")) {
+    return { type: "aisdk-result", result: response };
   }
 
   // Check for AsyncIterable (but not ReadableStream, which also implements AsyncIterable)

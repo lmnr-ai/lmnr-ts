@@ -192,6 +192,7 @@ void describe("Stream Handling in observeBase", () => {
     const output = JSON.parse(spans[0].attributes["lmnr.span.output"] as string);
     assert.strictEqual(output.type, "response");
     assert.ok(Array.isArray(output.chunks));
+    assert.strictEqual(output.chunks.join(""), responseBody);
   });
 
   void it("handles stream errors and records partial output", async () => {
