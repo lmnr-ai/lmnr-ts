@@ -101,28 +101,41 @@ export type StreamInfo =
   | { type: null };
 
 /**
+ * Checks whether `key` looks like an AI SDK stream property WITHOUT reading it.
+ *
+ * Reading is not safe here: AI SDK exposes `textStream` / `fullStream` as getters that build a
+ * fresh stream on every access. On `streamText` that tees (and mutates) the internal base stream,
+ * leaving an abandoned branch that buffers the whole response; on `streamObject` it `pipeThrough`s
+ * the base stream directly, permanently LOCKING it so the caller's own access throws. So we only
+ * inspect the property descriptor: AI SDK's are accessors, whereas a same-named host API (e.g.
+ * Node 26's `Response.prototype.textStream`) is a data property holding a method.
+ */
+const hasStreamAccessor = (obj: object, key: string): boolean => {
+  for (let o: object | null = obj; o !== null; o = Object.getPrototypeOf(o) as object | null) {
+    const descriptor = Object.getOwnPropertyDescriptor(o, key);
+    if (descriptor) {
+      // An accessor, or a data property holding an already-built stream — but never a method.
+      return typeof descriptor.value !== "function";
+    }
+  }
+  return false;
+};
+
+/**
  * This function checks if an object is stream or stream-like, and returns information
  * about the stream type and how to handle it.
  * @param response - The result of a function, either an AI SDK result, a raw stream, or any other
  * response.
  * @returns - StreamInfo object describing the stream type, or { type: null } if not a stream.
  */
-/**
- * True when `key` is present on `obj` and is not a method. AI SDK results expose `textStream` /
- * `fullStream` as getters that return a stream; hosts (e.g. Node 26's `Response`) may expose
- * same-named methods, which are not AI SDK results.
- */
-const isAISDKStreamProperty = (obj: object, key: string): boolean =>
-  key in obj && typeof (obj as Record<string, unknown>)[key] !== "function";
-
 export const getStream = (response: unknown): StreamInfo => {
   if (!response || typeof response !== "object") {
     return { type: null };
   }
 
   // Check for Response object (from createUIMessageStreamResponse, createTextStreamResponse, etc.)
-  // NOTE: this MUST come before the AI SDK check below — Node 26's `Response` exposes a
-  // `textStream()` method, which would otherwise be mistaken for a StreamTextResult.
+  // NOTE: this MUST come before the AI SDK check below — Node 26's `Response` has a `textStream()`
+  // method, which would otherwise be mistaken for a StreamTextResult.
   if (response instanceof Response) {
     return { type: "response", response };
   }
@@ -132,10 +145,8 @@ export const getStream = (response: unknown): StreamInfo => {
     return { type: "readable-stream", stream: response };
   }
 
-  // Check for AI SDK StreamTextResult (has a textStream or fullStream *value* — AI SDK exposes
-  // these as getters returning a stream, never as methods, so anything callable is not a match)
-  if (isAISDKStreamProperty(response, "textStream")
-    || isAISDKStreamProperty(response, "fullStream")) {
+  // Check for AI SDK StreamTextResult (has a textStream or fullStream accessor)
+  if (hasStreamAccessor(response, "textStream") || hasStreamAccessor(response, "fullStream")) {
     return { type: "aisdk-result", result: response };
   }
 
