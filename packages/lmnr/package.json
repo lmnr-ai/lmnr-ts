@@ -84,7 +84,6 @@
     "dotenv": "^17.4.2",
     "esbuild": "^0.28.1",
     "export-to-csv": "^1.4.0",
-    "glob": "^13.0.6",
     "lmnr-cli": "^0.4.2",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3",

@@ -1,6 +1,5 @@
 import * as esbuild from "esbuild";
-import * as fs from "fs";
-import * as glob from "glob";
+import * as fs from "fs/promises";
 
 import { Evaluation } from "../evaluations";
 import { getDirname, initializeLogger } from "../utils";
@@ -50,6 +49,7 @@ function loadModule({
   // add some arguments for proper cjs/esm interop
 
   /* eslint-disable @typescript-eslint/no-implied-eval */
+  /* eslint-disable @typescript-eslint/no-unsafe-call*/
   new Function(
     "require",
     "module",
@@ -62,6 +62,7 @@ function loadModule({
     __filename,
     __dirname,
   );
+  /* eslint-enable @typescript-eslint/no-unsafe-call*/
   /* eslint-enable @typescript-eslint/no-implied-eval */
 
   // Return the modified _evals global variable
@@ -80,12 +81,14 @@ export async function runEvaluation(
   files: string[],
   options: EvalCommandOptions,
 ): Promise<void> {
-  let evalFiles: string[];
-  if (files && files.length > 0) {
-    evalFiles = files.flatMap((file: string) => glob.sync(file));
-  } else {
+  const patterns = files && files.length > 0
+    ? files
     // No files provided, use default pattern
-    evalFiles = glob.sync('evals/**/*.eval.{ts,js}');
+    : ['evals/**/*.eval.{ts,js}'];
+
+  const evalFiles: string[] = [];
+  for await (const file of fs.glob(patterns)) {
+    evalFiles.push(file);
   }
 
   evalFiles.sort();
@@ -180,7 +183,6 @@ export async function runEvaluation(
   }
 
   if (options.outputFile) {
-    fs.writeFileSync(options.outputFile, JSON.stringify(scores, null, 2));
+    await fs.writeFile(options.outputFile, JSON.stringify(scores, null, 2));
   }
 }
-
