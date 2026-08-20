@@ -9,7 +9,7 @@ Laminar TypeScript SDK — a pnpm monorepo publishing `@lmnr-ai/lmnr`, `@lmnr-ai
 ## Repository Structure
 
 - `packages/lmnr` — main `@lmnr-ai/lmnr` package: tracing, OpenTelemetry instrumentations, custom framework exporters (Mastra, Vercel AI SDK, OpenAI, etc.).
-- `packages/client` — typed HTTP client for the Laminar API (`@lmnr-ai/client`). `LaminarClient` resolves `baseUrl ?? process.env.LMNR_BASE_URL` BEFORE port extraction — port parsing must run on the resolved value, or `LMNR_BASE_URL=http://localhost:8000` silently becomes `http://localhost:443` (regression: `packages/client/test/client-base-url.test.ts`).
+- `packages/client` — typed HTTP client for the Laminar API (`@lmnr-ai/client`).
 - `packages/types` — shared type defs.
 - `packages/lmnr-cli` — `lmnr` CLI.
 
