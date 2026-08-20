@@ -58,6 +58,8 @@ export const startTracing = (options: InitializeOptions) => {
     forceHttp: options.forceHttp,
     traceExportTimeoutMillis: options.traceExportTimeoutMillis,
     maxExportBatchSize: options.maxExportBatchSize,
+    maxExportBatchSizeBytes: options.maxExportBatchSizeBytes,
+    flushBySize: options.flushBySize,
     exporter: options.exporter,
     disableBatch: options.disableBatch,
   });
