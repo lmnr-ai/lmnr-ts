@@ -12,6 +12,22 @@ export {
   type EvaluatorFunctionReturn,
   HumanEvaluator,
 } from "./evaluations";
+export {
+  type EvalReporter,
+  type EveAssertionResult,
+  type EveAssertionSeverity,
+  type EveEval,
+  type EveEvalDerivedFacts,
+  type EveEvalResult,
+  type EveEvalRunSummary,
+  type EveEvalTarget,
+  type EveEvalTaskResult,
+  type EveEvalToolCall,
+  type EveEvalVerdict,
+  type EveRuntimeIdentity,
+  LaminarReporter,
+  type LaminarReporterOptions,
+} from "./integrations/eve";
 export { Laminar, type LaminarInitializeProps } from "./laminar";
 export { LaminarSpanProcessor } from "./opentelemetry-lib/";
 export {

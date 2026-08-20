@@ -43,7 +43,7 @@ export const decodePayload = (payload: unknown): string | undefined => {
 
 /**
  * Read the currently active Laminar span and encode its context into a headers
- * map.  Writes both `laminar-span-context` (full Laminar JSON) and
+ * map.  Writes both `x-lmnr-span-context` (full Laminar JSON) and
  * `traceparent` (W3C, for interop with non-Laminar workers).
  *
  * Returns the headers map unchanged if there is no active Laminar span.
@@ -105,7 +105,7 @@ export interface RestoredContext {
 }
 
 /**
- * Read `laminar-span-context` (preferred) or `traceparent` (fallback) from
+ * Read `x-lmnr-span-context` (preferred) or `traceparent` (fallback) from
  * Temporal headers and push the restored context onto Laminar's ALS stack.
  *
  * Returns the restored context (Laminar + OTel) or `undefined` if headers
