@@ -1,3 +1,4 @@
 allowBuilds:
   esbuild: false
   protobufjs: false
+  sharp: false

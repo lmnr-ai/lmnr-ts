@@ -1,7 +1,6 @@
+import { type NextRequest, NextResponse } from "next/server";
 import { anthropic } from "@/lib/anthropic";
 import { openai } from "@/lib/openai";
-
-import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,7 +17,7 @@ Your goal is to provide supportive responses that help the user process their fe
 Never give medical advice or diagnose conditions.`,
     };
 
-    let response;
+    let response: string | null = null;
 
     if (llmProvider === "openai") {
       const completion = await openai.chat.completions.create({

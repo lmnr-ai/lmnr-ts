@@ -1,4 +1,3 @@
-
 import eslint from "@eslint/js";
 import nextPlugin from "@next/eslint-plugin-next";
 import tseslint from "typescript-eslint";
@@ -12,7 +11,6 @@ const eslintRulesCommon = {
   "no-duplicate-imports": "error",
   "no-console": "warn",
 };
-
 
 const eslintConfig = [
   {

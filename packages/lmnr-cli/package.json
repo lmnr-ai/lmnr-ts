@@ -43,6 +43,6 @@
     "@lmnr-ai/client": "workspace:*",
     "@lmnr-ai/types": "workspace:*",
     "@types/cross-spawn": "^6.0.6",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   }
 }
