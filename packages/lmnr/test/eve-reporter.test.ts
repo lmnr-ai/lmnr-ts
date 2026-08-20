@@ -924,6 +924,48 @@ void describe("LaminarReporter eve trace propagation", () => {
     await reporter.onRunComplete();
   });
 
+  void it("keeps a fallback datapoint off another eval's trace", async () => {
+    mockInit();
+    let createBody: RequestBody = {};
+    mockDatapointWrites((b) => (createBody = b));
+
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }, { id: "b" }], {});
+    const SessionClass = makeStubSessionClass();
+    patchEveClientSession(SessionClass);
+
+    // Eval "a" sends, so `bindEvalContext` binds its root into this async chain
+    // — exactly the state `onEvalComplete` can run in with concurrent evals.
+    const session = new SessionClass("wrun_a");
+    await session.send("hello");
+    const boundTraceId = trace
+      .getSpan(LaminarContextManager.getContext())
+      ?.spanContext().traceId;
+    assert.ok(boundTraceId, "expected eval a's root to be bound");
+
+    // Eval "b" never sent, so it takes the fallback path from inside that
+    // binding. Its span must still open its own trace: the datapoint's traceId
+    // is read off it, so adopting eval a's root would file b's grade under a.
+    await reporter.onEvalComplete({
+      id: "b",
+      verdict: "passed",
+      result: {},
+      assertions: [],
+    });
+
+    const fallback = exporter
+      .getFinishedSpans()
+      .find((span) => span.name === "eve eval b");
+    assert.ok(fallback, "expected a reporter-owned EVALUATION span");
+    assert.notStrictEqual(fallback.spanContext().traceId, boundTraceId);
+    assert.strictEqual(
+      createBody.points[0].traceId,
+      otelTraceIdToUUID(fallback.spanContext().traceId),
+    );
+
+    await reporter.onRunComplete();
+  });
+
   void it("closes session spans that never reached onEvalComplete", async () => {
     mockInit();
     mockDatapointWrites();

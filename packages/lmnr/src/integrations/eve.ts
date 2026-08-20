@@ -992,7 +992,13 @@ export class LaminarReporter implements EvalReporter {
           eveSessionId: sessionId ?? "",
         }),
       },
-    });
+      // ROOT_CONTEXT for the same reason `mintSessionTrace` uses it, and this
+      // path needs it more: the datapoint's `traceId` is read straight off this
+      // span. `getTracer()` defaults to `LaminarContextManager.getContext()`, so
+      // without it another eval's root — bound by `bindEvalContext`, or pushed
+      // by any `startActiveSpan({ global: true })` in the runner — adopts this
+      // span and the datapoint silently links to that eval's trace.
+    }, ROOT_CONTEXT);
     return { traceId: traceIdFromSpan(span), source: "reporter-fallback", span };
   }
 }
