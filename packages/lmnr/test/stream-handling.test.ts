@@ -6,6 +6,7 @@ import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
 import { Laminar } from "../src";
 import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import { getStream } from "../src/opentelemetry-lib/instrumentation/aisdk/utils";
 import { observeBase } from "../src/opentelemetry-lib/tracing/decorators";
 import {
   consumeStreamResult,
@@ -437,5 +438,39 @@ void describe("Stream Handling in observeBase", () => {
     const regularResult = { foo: "bar", baz: 123 };
     const result = await consumeStreamResult(regularResult);
     assert.strictEqual(result, regularResult);
+  });
+
+  void it("classifies an AI SDK result without invoking its stream getters", () => {
+    // Mirrors AI SDK's DefaultStreamObjectResult: `textStream` / `fullStream` are getters that
+    // pipeThrough (and thus LOCK) the base stream. Classification must never read them.
+    let getterReads = 0;
+    const baseStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue("Hello");
+        controller.close();
+      },
+    });
+    const mockStreamObjectResult = {
+      get textStream() {
+        getterReads++;
+        return baseStream.pipeThrough(new TransformStream());
+      },
+      get fullStream() {
+        getterReads++;
+        return baseStream.pipeThrough(new TransformStream());
+      },
+    };
+
+    const streamInfo = getStream(mockStreamObjectResult);
+
+    assert.strictEqual(streamInfo.type, "aisdk-result");
+    assert.strictEqual(getterReads, 0);
+    assert.strictEqual(baseStream.locked, false);
+  });
+
+  void it("classifies a native Response as a response, not an AI SDK result", () => {
+    // Node 26 added a `textStream()` method to Response.
+    const streamInfo = getStream(new Response("Response content"));
+    assert.strictEqual(streamInfo.type, "response");
   });
 });

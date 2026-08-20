@@ -101,6 +101,27 @@ export type StreamInfo =
   | { type: null };
 
 /**
+ * Checks whether `key` looks like an AI SDK stream property WITHOUT reading it.
+ *
+ * Reading is not safe here: AI SDK exposes `textStream` / `fullStream` as getters that build a
+ * fresh stream on every access. On `streamText` that tees (and mutates) the internal base stream,
+ * leaving an abandoned branch that buffers the whole response; on `streamObject` it `pipeThrough`s
+ * the base stream directly, permanently LOCKING it so the caller's own access throws. So we only
+ * inspect the property descriptor: AI SDK's are accessors, whereas a same-named host API (e.g.
+ * Node 26's `Response.prototype.textStream`) is a data property holding a method.
+ */
+const hasStreamAccessor = (obj: object, key: string): boolean => {
+  for (let o: object | null = obj; o !== null; o = Object.getPrototypeOf(o) as object | null) {
+    const descriptor = Object.getOwnPropertyDescriptor(o, key);
+    if (descriptor) {
+      // An accessor, or a data property holding an already-built stream — but never a method.
+      return typeof descriptor.value !== "function";
+    }
+  }
+  return false;
+};
+
+/**
  * This function checks if an object is stream or stream-like, and returns information
  * about the stream type and how to handle it.
  * @param response - The result of a function, either an AI SDK result, a raw stream, or any other
@@ -112,12 +133,9 @@ export const getStream = (response: unknown): StreamInfo => {
     return { type: null };
   }
 
-  // Check for AI SDK StreamTextResult (has textStream or fullStream property)
-  if ("textStream" in response || "fullStream" in response) {
-    return { type: "aisdk-result", result: response };
-  }
-
   // Check for Response object (from createUIMessageStreamResponse, createTextStreamResponse, etc.)
+  // NOTE: this MUST come before the AI SDK check below — Node 26's `Response` has a `textStream()`
+  // method, which would otherwise be mistaken for a StreamTextResult.
   if (response instanceof Response) {
     return { type: "response", response };
   }
@@ -125,6 +143,11 @@ export const getStream = (response: unknown): StreamInfo => {
   // Check for ReadableStream
   if (response instanceof ReadableStream) {
     return { type: "readable-stream", stream: response };
+  }
+
+  // Check for AI SDK StreamTextResult (has a textStream or fullStream accessor)
+  if (hasStreamAccessor(response, "textStream") || hasStreamAccessor(response, "fullStream")) {
+    return { type: "aisdk-result", result: response };
   }
 
   // Check for AsyncIterable (but not ReadableStream, which also implements AsyncIterable)
