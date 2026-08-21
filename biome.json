@@ -1,4 +1,14 @@
 {
+  "files": {
+    "includes": [
+      "**",
+      "!**/dist/**",
+      "!**/node_modules/**",
+      "!**/.next/**",
+      "!examples/**",
+      "!assets/recorder/record.umd.min.cjs"
+    ]
+  },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2 },
   "linter": {
     "enabled": true,
@@ -96,7 +106,8 @@
       "!next-env.d.ts",
       "!examples/**",
       "!assets/recorder/record.umd.min.cjs",
-      "!**/dist/**"
+      "!**/dist/**",
+      "!dist/**"
     ]
   },
   "javascript": { "globals": [] },

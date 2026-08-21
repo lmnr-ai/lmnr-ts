@@ -18,7 +18,6 @@ import {
   SPAN_OUTPUT,
 } from "../src/opentelemetry-lib/tracing/attributes";
 
-
 // Produce a Temporal-style headers map carrying the active Laminar span context,
 // the way the client-side WorkflowClientInterceptor would on workflow start.
 // Returns the headers plus the parent span's trace id for nesting assertions.

@@ -24,7 +24,6 @@ type ClassPatchData = {
   originalModelsDescriptor: PropertyDescriptor | undefined;
 };
 
-
 export class GoogleGenAiInstrumentation extends InstrumentationBase {
   private traceContent: boolean;
 

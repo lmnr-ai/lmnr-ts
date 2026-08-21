@@ -243,7 +243,6 @@ export function instrumentClaudeAgentQuery(
   };
 }
 
-
 export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
   constructor() {
     super("@lmnr/claude-agent-instrumentation", SDK_VERSION, {
