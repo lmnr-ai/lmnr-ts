@@ -2,10 +2,17 @@
 
 import { useState } from "react";
 
-type Message = {
-  id: string;
+// The wire/model representation: exactly what the chat API (and the provider
+// behind it) accepts. Nothing UI-specific belongs here.
+type ModelMessage = {
   role: "user" | "assistant";
   content: string;
+};
+
+// The UI representation: a model message plus a stable React identity. `id`
+// is client-only and is stripped by toModelMessages before the fetch.
+type UiMessage = ModelMessage & {
+  id: string;
 };
 
 // Stable, unique id per message, assigned once at creation time. A render-time
@@ -14,7 +21,10 @@ type Message = {
 let messageCounter = 0;
 const nextMessageId = () => `message-${messageCounter++}`;
 
-const INITIAL_MESSAGES: Message[] = [
+const toModelMessages = (messages: UiMessage[]): ModelMessage[] =>
+  messages.map(({ role, content }) => ({ role, content }));
+
+const INITIAL_MESSAGES: UiMessage[] = [
   {
     id: nextMessageId(),
     role: "assistant",
@@ -32,7 +42,7 @@ const scrollIntoView = (node: HTMLDivElement | null) => {
 };
 
 export default function ChatUI() {
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState<UiMessage[]>(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -41,7 +51,7 @@ export default function ChatUI() {
     if (input.trim() === "") return;
 
     // Add user message
-    const userMessage: Message = {
+    const userMessage: UiMessage = {
       id: nextMessageId(),
       role: "user",
       content: input,
@@ -58,7 +68,7 @@ export default function ChatUI() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          messages: [...messages, userMessage],
+          messages: toModelMessages([...messages, userMessage]),
         }),
       });
 
