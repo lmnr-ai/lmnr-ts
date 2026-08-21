@@ -32,8 +32,14 @@ export async function readLocalProjectFile(
   while (true) {
     const candidate = join(dir, LOCAL_LMNR_DIR, LOCAL_LMNR_PROJECT_FILE);
     try {
-      const parsed = JSON.parse(await readFile(candidate, "utf8")) as LocalProjectFile;
-      if (parsed && typeof parsed.projectId === "string" && parsed.projectId.length > 0) {
+      const parsed = JSON.parse(
+        await readFile(candidate, "utf8"),
+      ) as LocalProjectFile;
+      if (
+        parsed &&
+        typeof parsed.projectId === "string" &&
+        parsed.projectId.length > 0
+      ) {
         return parsed;
       }
     } catch {

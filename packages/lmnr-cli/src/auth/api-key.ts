@@ -24,7 +24,10 @@ export const mintProjectApiKey = async (
 ): Promise<MintedApiKey> => {
   const res = await fetch(`${trimTrailingSlashes(issuer)}/api/cli/api-key`, {
     method: "POST",
-    headers: { authorization: `Bearer ${sessionToken}`, "content-type": "application/json" },
+    headers: {
+      authorization: `Bearer ${sessionToken}`,
+      "content-type": "application/json",
+    },
     body: JSON.stringify({ deviceName, projectId }),
   });
   if (res.ok) {

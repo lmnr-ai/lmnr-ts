@@ -74,7 +74,6 @@ export const getParentSpanId = (
   span: OTelSpanCompat | OTelReadableSpanCompat,
 ): string | undefined => {
   const spanAny = span as any;
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return spanAny.parentSpanContext?.spanId ?? spanAny.parentSpanId;
 };
 
@@ -89,7 +88,7 @@ export const getParentSpanId = (
 export const createResource = (attributes: Record<string, string>): any => {
   // type IResource from `@opentelemetry/resources`
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    // biome-ignore lint/style/noCommonJs: dynamically resolve dependencies to remain compatible with both versions
     const resources = require("@opentelemetry/resources");
 
     // v2 uses resourceFromAttributes (0.200+ SDK, 2.x API)

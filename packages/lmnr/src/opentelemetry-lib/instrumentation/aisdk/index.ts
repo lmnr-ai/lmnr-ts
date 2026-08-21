@@ -65,7 +65,6 @@ export const wrapAISDK = (ai: typeof AI): typeof AI => {
             },
           };
         }
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         return originalFn(...args);
       };
     } else {

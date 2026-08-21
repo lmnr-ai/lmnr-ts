@@ -12,9 +12,8 @@ import { AsyncLocalStorage } from "async_hooks";
 // reference the human-readable name.
 export const DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY_RAW =
   "LMNR_DISABLE_OPENAI_RESPONSES_INSTRUMENTATION";
-export const DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY = createContextKey(
-  DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY_RAW,
-);
+export const DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY =
+  createContextKey(DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY_RAW);
 
 // Task-local system instructions for the currently-executing model call.
 // Set by the wrapped getResponse / getStreamedResponse methods in index.ts
@@ -30,10 +29,6 @@ export const runWithSystemInstructions = <T>(
   fn: () => T,
 ): T => systemInstructionsStorage.run(value, fn);
 
-/* eslint-disable
-  @typescript-eslint/prefer-promise-reject-errors,
-  @typescript-eslint/no-unused-vars
-*/
 // Wrap an async iterable so that the system instructions ALS value is set for
 // each iteration step. We can't simply call `systemInstructionsStorage.run()`
 // once around generator creation, because the ALS context is restored as soon
@@ -70,10 +65,6 @@ export const wrapStreamWithSystemInstructions = <T>(
     };
   },
 });
-/* eslint-enable
-  @typescript-eslint/prefer-promise-reject-errors,
-  @typescript-eslint/no-unused-vars
-*/
 
 export const spanKind = (spanData: any): string => {
   if (spanData == null) {
@@ -89,7 +80,12 @@ export const spanName = (span: any, spanData: any): string => {
   }
   const kind = spanKind(spanData);
   if (kind) {
-    if (kind === "agent" || kind === "custom" || kind === "function" || kind === "tool") {
+    if (
+      kind === "agent" ||
+      kind === "custom" ||
+      kind === "function" ||
+      kind === "tool"
+    ) {
       return nameFromSpanData(spanData) || `agents.${kind}`;
     }
     return `agents.${kind}`;

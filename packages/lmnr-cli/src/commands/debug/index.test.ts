@@ -1,5 +1,5 @@
-import type { LaminarClient } from '@lmnr-ai/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { LaminarClient } from "@lmnr-ai/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The debug handlers are now pure: the wrapper resolves a user-token client and
 // owns the error envelope. We pass a stub client with the surfaces it uses.
@@ -15,29 +15,33 @@ const stubClient = {
   },
 } as unknown as LaminarClient;
 
-import { handleDebugSessionAddNote, handleDebugSessionSummary } from './index';
+import { handleDebugSessionAddNote, handleDebugSessionSummary } from "./index";
 
-const baseOpts = { projectId: 'fake-project', baseUrl: 'http://localhost', port: 8080 };
-const SESSION_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+const baseOpts = {
+  projectId: "fake-project",
+  baseUrl: "http://localhost",
+  port: 8080,
+};
+const SESSION_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
 const traceBlock = (id: string, traceId: string, createdAt: string) => ({
   id,
   createdAt,
-  type: 'trace',
+  type: "trace",
   content: { traceId },
 });
 
 const textBlock = (id: string, text: string, createdAt: string) => ({
   id,
   createdAt,
-  type: 'text',
+  type: "text",
   content: { text },
 });
 
 const evalBlock = (id: string, evaluationId: string, createdAt: string) => ({
   id,
   createdAt,
-  type: 'evaluation',
+  type: "evaluation",
   content: { evaluationId },
 });
 
@@ -45,12 +49,14 @@ const commandBlock = (
   id: string,
   content: Record<string, unknown>,
   createdAt: string,
-) => ({ id, createdAt, type: 'command', content });
+) => ({ id, createdAt, type: "command", content });
 
 let logSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
-  logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  logSpy = vi.spyOn(console, "log").mockImplementation(() => {
+    /* empty */
+  });
   vi.clearAllMocks();
 });
 
@@ -58,144 +64,185 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('handleDebugSessionSummary', () => {
-  it('renders trace / text / eval blocks oldest-first in text mode', async () => {
+describe("handleDebugSessionSummary", () => {
+  it("renders trace / text / eval blocks oldest-first in text mode", async () => {
     mockListBlocks.mockResolvedValue([
-      textBlock('b2', 'a finding', '2026-06-01T10:30:00.000Z'),
-      traceBlock('b1', 'trace-1', '2026-06-01T10:00:00.000Z'),
-      evalBlock('b3', 'eval-9', '2026-06-01T11:00:00.000Z'),
+      textBlock("b2", "a finding", "2026-06-01T10:30:00.000Z"),
+      traceBlock("b1", "trace-1", "2026-06-01T10:00:00.000Z"),
+      evalBlock("b3", "eval-9", "2026-06-01T11:00:00.000Z"),
     ]);
 
-    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID });
+    await handleDebugSessionSummary(stubClient, {
+      ...baseOpts,
+      sessionId: SESSION_ID,
+    });
 
     expect(logSpy).toHaveBeenCalledWith(
       '<trace id="trace-1"/>\n\na finding\n\n<evaluation id="eval-9"/>',
     );
   });
 
-  it('renders command blocks (invocation + exit code + reasoning)', async () => {
+  it("renders command blocks (invocation + exit code + reasoning)", async () => {
     mockListBlocks.mockResolvedValue([
       commandBlock(
-        'c1',
+        "c1",
         {
-          command: 'sql query',
-          args: ['SELECT 1'],
+          command: "sql query",
+          args: ["SELECT 1"],
           exitCode: 0,
-          reasoning: 'checking error rate',
-          output: 'ignored in human summary',
+          reasoning: "checking error rate",
+          output: "ignored in human summary",
         },
-        '2026-06-01T10:00:00.000Z',
+        "2026-06-01T10:00:00.000Z",
       ),
       commandBlock(
-        'c2',
-        { command: 'ask', args: ['why?'], exitCode: 9 },
-        '2026-06-01T10:05:00.000Z',
+        "c2",
+        { command: "ask", args: ["why?"], exitCode: 9 },
+        "2026-06-01T10:05:00.000Z",
       ),
     ]);
 
-    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID });
+    await handleDebugSessionSummary(stubClient, {
+      ...baseOpts,
+      sessionId: SESSION_ID,
+    });
 
     expect(logSpy).toHaveBeenCalledWith(
       '<command exitCode="0" reasoning="checking error rate">sql query SELECT 1</command>' +
-      '\n\n<command exitCode="9">ask why?</command>',
+        '\n\n<command exitCode="9">ask why?</command>',
     );
   });
 
-  it('skips blocks with missing ids / empty text', async () => {
+  it("skips blocks with missing ids / empty text", async () => {
     mockListBlocks.mockResolvedValue([
-      traceBlock('b1', 'trace-1', '2026-06-01T10:00:00.000Z'),
-      { id: 'b2', createdAt: '2026-06-01T10:30:00.000Z', type: 'text', content: { text: '' } },
+      traceBlock("b1", "trace-1", "2026-06-01T10:00:00.000Z"),
+      {
+        id: "b2",
+        createdAt: "2026-06-01T10:30:00.000Z",
+        type: "text",
+        content: { text: "" },
+      },
     ]);
 
-    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID });
+    await handleDebugSessionSummary(stubClient, {
+      ...baseOpts,
+      sessionId: SESSION_ID,
+    });
 
     expect(logSpy).toHaveBeenCalledWith('<trace id="trace-1"/>');
   });
 
-  it('outputs the ordered blocks array in json mode', async () => {
+  it("outputs the ordered blocks array in json mode", async () => {
     const blocks = [
-      textBlock('b2', 'note', '2026-06-01T11:00:00.000Z'),
-      traceBlock('b1', 'trace-1', '2026-06-01T10:00:00.000Z'),
+      textBlock("b2", "note", "2026-06-01T11:00:00.000Z"),
+      traceBlock("b1", "trace-1", "2026-06-01T10:00:00.000Z"),
     ];
     mockListBlocks.mockResolvedValue(blocks);
 
-    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID, json: true });
+    await handleDebugSessionSummary(stubClient, {
+      ...baseOpts,
+      sessionId: SESSION_ID,
+      json: true,
+    });
 
-    expect(logSpy).toHaveBeenCalledWith(JSON.stringify([
-      traceBlock('b1', 'trace-1', '2026-06-01T10:00:00.000Z'),
-      textBlock('b2', 'note', '2026-06-01T11:00:00.000Z'),
-    ]));
+    expect(logSpy).toHaveBeenCalledWith(
+      JSON.stringify([
+        traceBlock("b1", "trace-1", "2026-06-01T10:00:00.000Z"),
+        textBlock("b2", "note", "2026-06-01T11:00:00.000Z"),
+      ]),
+    );
   });
 
-  it('passes the session id to listBlocks', async () => {
+  it("passes the session id to listBlocks", async () => {
     mockListBlocks.mockResolvedValue([]);
 
-    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID, json: true });
+    await handleDebugSessionSummary(stubClient, {
+      ...baseOpts,
+      sessionId: SESSION_ID,
+      json: true,
+    });
 
     expect(mockListBlocks).toHaveBeenCalledWith({ sessionId: SESSION_ID });
   });
 
-  it('prints a friendly message for an empty session in text mode', async () => {
+  it("prints a friendly message for an empty session in text mode", async () => {
     mockListBlocks.mockResolvedValue([]);
 
-    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID });
+    await handleDebugSessionSummary(stubClient, {
+      ...baseOpts,
+      sessionId: SESSION_ID,
+    });
 
-    expect(logSpy).toHaveBeenCalledWith(`No blocks found for session ${SESSION_ID}.`);
+    expect(logSpy).toHaveBeenCalledWith(
+      `No blocks found for session ${SESSION_ID}.`,
+    );
   });
 
-  it('outputs [] for an empty session in json mode', async () => {
+  it("outputs [] for an empty session in json mode", async () => {
     mockListBlocks.mockResolvedValue([]);
 
-    await handleDebugSessionSummary(stubClient, { ...baseOpts, sessionId: SESSION_ID, json: true });
+    await handleDebugSessionSummary(stubClient, {
+      ...baseOpts,
+      sessionId: SESSION_ID,
+      json: true,
+    });
 
-    expect(logSpy).toHaveBeenCalledWith('[]');
+    expect(logSpy).toHaveBeenCalledWith("[]");
   });
 
-  it('propagates listBlocks failures to the wrapper', async () => {
-    mockListBlocks.mockRejectedValue(new Error('boom'));
+  it("propagates listBlocks failures to the wrapper", async () => {
+    mockListBlocks.mockRejectedValue(new Error("boom"));
 
     const opts = { ...baseOpts, sessionId: SESSION_ID, json: true };
-    await expect(handleDebugSessionSummary(stubClient, opts)).rejects.toThrow('boom');
+    await expect(handleDebugSessionSummary(stubClient, opts)).rejects.toThrow(
+      "boom",
+    );
   });
 });
 
-describe('handleDebugSessionAddNote', () => {
-  it('adds a text block to the session', async () => {
-    mockAddBlock.mockResolvedValue('block-1');
+describe("handleDebugSessionAddNote", () => {
+  it("adds a text block to the session", async () => {
+    mockAddBlock.mockResolvedValue("block-1");
 
-    await handleDebugSessionAddNote(
-      stubClient,
-      'a finding',
-      { ...baseOpts, sessionId: SESSION_ID },
-    );
+    await handleDebugSessionAddNote(stubClient, "a finding", {
+      ...baseOpts,
+      sessionId: SESSION_ID,
+    });
 
     expect(mockAddBlock).toHaveBeenCalledWith({
       sessionId: SESSION_ID,
-      type: 'text',
-      content: { text: 'a finding' },
+      type: "text",
+      content: { text: "a finding" },
       failOnNotFound: true,
     });
   });
 
-  it('outputs {sessionId, blockId, note} in json mode', async () => {
-    mockAddBlock.mockResolvedValue('block-1');
+  it("outputs {sessionId, blockId, note} in json mode", async () => {
+    mockAddBlock.mockResolvedValue("block-1");
 
-    await handleDebugSessionAddNote(
-      stubClient,
-      'a finding',
-      { ...baseOpts, sessionId: SESSION_ID, json: true },
-    );
+    await handleDebugSessionAddNote(stubClient, "a finding", {
+      ...baseOpts,
+      sessionId: SESSION_ID,
+      json: true,
+    });
 
     expect(logSpy).toHaveBeenCalledWith(
-      JSON.stringify({ sessionId: SESSION_ID, blockId: 'block-1', note: 'a finding' }),
+      JSON.stringify({
+        sessionId: SESSION_ID,
+        blockId: "block-1",
+        note: "a finding",
+      }),
     );
   });
 
-  it('propagates addBlock failures to the wrapper', async () => {
-    mockAddBlock.mockRejectedValue(new Error('404 not found'));
+  it("propagates addBlock failures to the wrapper", async () => {
+    mockAddBlock.mockRejectedValue(new Error("404 not found"));
 
     await expect(
-      handleDebugSessionAddNote(stubClient, 'x', { ...baseOpts, sessionId: SESSION_ID }),
-    ).rejects.toThrow('not found');
+      handleDebugSessionAddNote(stubClient, "x", {
+        ...baseOpts,
+        sessionId: SESSION_ID,
+      }),
+    ).rejects.toThrow("not found");
   });
 });

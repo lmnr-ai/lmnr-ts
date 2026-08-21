@@ -43,7 +43,9 @@ export function deriveWorkspaceName(opts: DeriveOptions = {}): string {
   );
 }
 
-function firstNonEmpty(...candidates: (string | undefined | null)[]): string | undefined {
+function firstNonEmpty(
+  ...candidates: (string | undefined | null)[]
+): string | undefined {
   for (const c of candidates) {
     if (typeof c === "string" && c.length > 0) return c;
   }

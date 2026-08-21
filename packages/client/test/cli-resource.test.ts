@@ -18,10 +18,11 @@ void describe("CliResource Tests", () => {
     }));
     global.fetch = mockFetch as any;
 
-    const resource = new CliResource(
-      "https://api.test.com:443",
-      { type: "userToken", token: "jwt", projectId: "" },
-    );
+    const resource = new CliResource("https://api.test.com:443", {
+      type: "userToken",
+      token: "jwt",
+      projectId: "",
+    });
     const projects = await resource.listProjects();
 
     // Workspace alpha (case-insensitive) before beta; within a workspace,
@@ -33,13 +34,17 @@ void describe("CliResource Tests", () => {
   });
 
   void it("listProjects returns [] for a missing projects array", async () => {
-    const mockFetch = mock.fn(() => ({ ok: true, json: () => Promise.resolve({}) }));
+    const mockFetch = mock.fn(() => ({
+      ok: true,
+      json: () => Promise.resolve({}),
+    }));
     global.fetch = mockFetch as any;
 
-    const resource = new CliResource(
-      "https://api.test.com:443",
-      { type: "userToken", token: "jwt", projectId: "" },
-    );
+    const resource = new CliResource("https://api.test.com:443", {
+      type: "userToken",
+      token: "jwt",
+      projectId: "",
+    });
     assert.deepStrictEqual(await resource.listProjects(), []);
   });
 });

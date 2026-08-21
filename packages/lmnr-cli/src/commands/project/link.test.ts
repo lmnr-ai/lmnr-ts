@@ -9,7 +9,9 @@ const h = vi.hoisted(() => ({
   ensureProjectKey: vi.fn(),
 }));
 
-vi.mock("../../auth/credentials", () => ({ safeReadCredentials: h.safeReadCredentials }));
+vi.mock("../../auth/credentials", () => ({
+  safeReadCredentials: h.safeReadCredentials,
+}));
 vi.mock("../../utils/projects", () => ({
   listProjects: h.listProjects,
   promptProjectChoice: h.promptProjectChoice,
@@ -27,7 +29,11 @@ vi.mock("./link-core", async (importActual) => {
 import { SessionExpiredError } from "../../auth/resolve";
 import { handleProjectLink } from "./link";
 
-const CREDS = { issuer: "https://laminar.sh", sessionToken: "s", userEmail: "u@x.io" };
+const CREDS = {
+  issuer: "https://laminar.sh",
+  sessionToken: "s",
+  userEmail: "u@x.io",
+};
 const PROJECTS = [
   { id: "p1", name: "Alpha", workspaceId: "w1", workspaceName: "Acme" },
   { id: "p2", name: "Beta", workspaceId: "w1", workspaceName: "Acme" },
@@ -81,7 +87,9 @@ describe("handleProjectLink", () => {
         onKeyMismatch: "warn",
       }),
     );
-    const out = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+    const out = stdoutSpy.mock.calls
+      .map((c: unknown[]) => String(c[0]))
+      .join("");
     expect(out).toContain('"projectId":"p2"');
     expect(out).toContain('"apiKey":"lmnr-new"');
     expect(exitSpy).not.toHaveBeenCalled();
@@ -104,12 +112,16 @@ describe("handleProjectLink", () => {
     );
     // ...and the mismatch is surfaced (not a hard failure).
     expect(exitSpy).not.toHaveBeenCalled();
-    const out = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+    const out = stdoutSpy.mock.calls
+      .map((c: unknown[]) => String(c[0]))
+      .join("");
     expect(out).toContain('"keyMismatchProjectId":"other-proj"');
   });
 
   it("--project-id the user can't access exits no_access (4)", async () => {
-    await expect(handleProjectLink({ projectId: "nope", json: true })).rejects.toMatchObject({
+    await expect(
+      handleProjectLink({ projectId: "nope", json: true }),
+    ).rejects.toMatchObject({
       code: 4,
     });
     expect(h.writeLocalProjectFile).not.toHaveBeenCalled();
@@ -141,24 +153,32 @@ describe("handleProjectLink", () => {
   it("not logged in exits login_failed (6)", async () => {
     h.safeReadCredentials.mockResolvedValue(null);
 
-    await expect(handleProjectLink({ json: true })).rejects.toMatchObject({ code: 6 });
+    await expect(handleProjectLink({ json: true })).rejects.toMatchObject({
+      code: 6,
+    });
     expect(h.listProjects).not.toHaveBeenCalled();
   });
 
   it("an expired session during discovery exits login_failed (6), not (10)", async () => {
     h.listProjects.mockRejectedValue(new SessionExpiredError("expired"));
 
-    await expect(handleProjectLink({ json: true })).rejects.toMatchObject({ code: 6 });
+    await expect(handleProjectLink({ json: true })).rejects.toMatchObject({
+      code: 6,
+    });
   });
 
   it("a non-expiry discovery error still exits list_projects_failed (10)", async () => {
     h.listProjects.mockRejectedValue(new Error("network down"));
 
-    await expect(handleProjectLink({ json: true })).rejects.toMatchObject({ code: 10 });
+    await expect(handleProjectLink({ json: true })).rejects.toMatchObject({
+      code: 10,
+    });
   });
 
   it("--json with multiple projects and no id exits (project_ambiguous)", async () => {
-    await expect(handleProjectLink({ json: true })).rejects.toBeInstanceOf(Error);
+    await expect(handleProjectLink({ json: true })).rejects.toBeInstanceOf(
+      Error,
+    );
     expect(h.promptProjectChoice).not.toHaveBeenCalled();
   });
 });

@@ -11,22 +11,24 @@ import { suppressTracing } from "@opentelemetry/core";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import nock from "nock";
 
-import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import {
+  _resetConfiguration,
+  initializeTracing,
+} from "../src/opentelemetry-lib/configuration";
 
 void describe("google-genai instrumentation", () => {
   const exporter = new InMemorySpanExporter();
-  const dirname = typeof __dirname !== "undefined"
-    ? __dirname
-    : path.dirname(fileURLToPath(import.meta.url));
+  const dirname =
+    typeof __dirname !== "undefined"
+      ? __dirname
+      : path.dirname(fileURLToPath(import.meta.url));
   const recordingsDir = path.join(dirname, "recordings");
 
   // Create a mutable module-like object for the default manual instrumentation path.
   let genaiModule: { GoogleGenAI: typeof GoogleGenAI };
 
   const getRecordingFile = (testName: string) => {
-    const sanitizedName = testName
-      .replace(/[^a-zA-Z0-9]/g, "-")
-      .toLowerCase();
+    const sanitizedName = testName.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
     return path.join(recordingsDir, `google-genai-${sanitizedName}.json`);
   };
 
@@ -53,7 +55,11 @@ void describe("google-genai instrumentation", () => {
             recording.method ?? "POST",
             recording.body as nock.RequestBodyMatcher,
           )
-          .reply(recording.status, recording.response, recording.headers as Record<string, string>);
+          .reply(
+            recording.status,
+            recording.response,
+            recording.rawHeaders as Record<string, string>,
+          );
       });
     } else {
       throw new Error(
@@ -69,10 +75,7 @@ void describe("google-genai instrumentation", () => {
         fs.mkdirSync(recordingsDir, { recursive: true });
       }
       const recordingsFile = getRecordingFile(testName);
-      fs.writeFileSync(
-        recordingsFile,
-        JSON.stringify(recordings, null, 2),
-      );
+      fs.writeFileSync(recordingsFile, JSON.stringify(recordings, null, 2));
       nock.restore();
     }
   };
@@ -95,8 +98,8 @@ void describe("google-genai instrumentation", () => {
     googleGenAiInput,
     traceContent = true,
   }: {
-    googleGenAiInput: any,
-    traceContent?: boolean,
+    googleGenAiInput: any;
+    traceContent?: boolean;
   }) => {
     _resetConfiguration();
     initializeTracing({
@@ -235,7 +238,10 @@ void describe("google-genai instrumentation", () => {
       assert.strictEqual(span.name, "gemini.generate_content_stream");
       // Verify partial content was captured in output messages
       const outputMessages = span.attributes["gen_ai.output.messages"];
-      assert.ok(outputMessages, "output messages should be set for partial stream");
+      assert.ok(
+        outputMessages,
+        "output messages should be set for partial stream",
+      );
       assert.ok(
         (outputMessages as string).includes(firstChunkText),
         "output messages should contain the consumed chunk text",
@@ -303,14 +309,8 @@ void describe("google-genai instrumentation", () => {
       assert.strictEqual(span.attributes["gen_ai.usage.input_tokens"], 8);
 
       // Content attributes should NOT be present
-      assert.strictEqual(
-        span.attributes["gen_ai.input.messages"],
-        undefined,
-      );
-      assert.strictEqual(
-        span.attributes["gen_ai.output.messages"],
-        undefined,
-      );
+      assert.strictEqual(span.attributes["gen_ai.input.messages"], undefined);
+      assert.strictEqual(span.attributes["gen_ai.output.messages"], undefined);
     });
   });
 

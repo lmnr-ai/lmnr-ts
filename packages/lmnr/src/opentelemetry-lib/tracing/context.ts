@@ -1,7 +1,11 @@
 import { TraceType, TracingLevel } from "@lmnr-ai/types";
 import {
-  Context, context as contextApi,
-  createContextKey, ROOT_CONTEXT, trace } from "@opentelemetry/api";
+  Context,
+  context as contextApi,
+  createContextKey,
+  ROOT_CONTEXT,
+  trace,
+} from "@opentelemetry/api";
 import { AsyncLocalStorage } from "async_hooks";
 
 import { LaminarSpan } from "./span";
@@ -10,9 +14,7 @@ export const CONTEXT_SPAN_PATH_KEY = createContextKey("span_path");
 export const ASSOCIATION_PROPERTIES_KEY = createContextKey(
   "association_properties",
 );
-export const CONTEXT_GLOBAL_METADATA_KEY = createContextKey(
-  "global_metadata",
-);
+export const CONTEXT_GLOBAL_METADATA_KEY = createContextKey("global_metadata");
 
 export class LaminarContextManager {
   private static _asyncLocalStorage = new AsyncLocalStorage<Context[]>();
@@ -34,7 +36,9 @@ export class LaminarContextManager {
   private static _globalActiveContexts: Context[] = [];
 
   private constructor() {
-    throw new Error("LaminarContextManager is a static class and cannot be instantiated");
+    throw new Error(
+      "LaminarContextManager is a static class and cannot be instantiated",
+    );
   }
 
   private static isValidContext(context: Context): boolean {
@@ -58,7 +62,9 @@ export class LaminarContextManager {
     }
   }
 
-  private static findLatestValidContext(contexts: Context[]): Context | undefined {
+  private static findLatestValidContext(
+    contexts: Context[],
+  ): Context | undefined {
     // Walk through contexts from most recent to oldest and return the most
     // recent one that is still valid (has a live activated span, or has no
     // span at all).
@@ -79,7 +85,9 @@ export class LaminarContextManager {
     if (asyncContext !== undefined) {
       return asyncContext;
     }
-    const globalContext = this.findLatestValidContext(this._globalActiveContexts);
+    const globalContext = this.findLatestValidContext(
+      this._globalActiveContexts,
+    );
     if (globalContext !== undefined) {
       return globalContext;
     }
@@ -96,7 +104,7 @@ export class LaminarContextManager {
     const contexts = this.getContextStack();
     if (contexts.length > 0) {
       // Remove the last context and filter out any contexts with inactive spans
-      const newContexts = contexts.slice(0, -1).filter(context => {
+      const newContexts = contexts.slice(0, -1).filter((context) => {
         const span = trace.getSpan(context);
 
         if (!span) {
@@ -168,15 +176,20 @@ export class LaminarContextManager {
   }
 
   public static getContextStack(): Context[] {
-    return this._asyncLocalStorage.getStore()
-      || (this._inheritGlobalContext ? [contextApi.active()] : []);
+    return (
+      this._asyncLocalStorage.getStore() ||
+      (this._inheritGlobalContext ? [contextApi.active()] : [])
+    );
   }
 
   /**
    * Run a function with an isolated context stack.
    * This ensures that parallel executions don't interfere with each other.
    */
-  public static runWithIsolatedContext<T>(initialStack: Context[], fn: () => T): T {
+  public static runWithIsolatedContext<T>(
+    initialStack: Context[],
+    fn: () => T,
+  ): T {
     return this._asyncLocalStorage.run(initialStack, fn);
   }
 
@@ -188,7 +201,10 @@ export class LaminarContextManager {
     this._activeSpans.delete(spanId);
   }
 
-  public static setAssociationProperties(span: LaminarSpan, context: Context): Context {
+  public static setAssociationProperties(
+    span: LaminarSpan,
+    context: Context,
+  ): Context {
     const properties = span.laminarAssociationProperties;
 
     return this.setRawAssociationProperties(properties, context);

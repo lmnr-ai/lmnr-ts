@@ -33,8 +33,8 @@ export class LaminarClient {
     projectApiKey,
     cliUserProjectId,
   }: {
-    baseUrl?: string,
-    port?: number,
+    baseUrl?: string;
+    port?: number;
     /**
      * Unified auth. A discriminated union that drives both the URL prefix and
      * the request headers:
@@ -44,36 +44,45 @@ export class LaminarClient {
      * When omitted, the legacy `projectApiKey` / `cliUserProjectId` fields (or
      * `LMNR_PROJECT_API_KEY`) are normalized into this union.
      */
-    auth?: LaminarAuth,
+    auth?: LaminarAuth;
     /**
      * @deprecated Pass `auth: { type: "apiKey", key }` instead. Kept for
      * backward compatibility — normalized into the unified `auth` union.
      */
-    projectApiKey?: string,
+    projectApiKey?: string;
     /**
      * @deprecated Pass `auth: { type: "userToken", token, projectId }` instead.
      * Kept for backward compatibility: when set, the legacy `projectApiKey` is
      * treated as a user JWT and routes to `/v1/cli/*` with this project id.
      */
-    cliUserProjectId?: string,
+    cliUserProjectId?: string;
   } = {}) {
     loadEnv();
-    this.auth = LaminarClient.normalizeAuth(auth, projectApiKey, cliUserProjectId);
+    this.auth = LaminarClient.normalizeAuth(
+      auth,
+      projectApiKey,
+      cliUserProjectId,
+    );
     const resolvedBaseUrl = baseUrl ?? process.env.LMNR_BASE_URL;
     this.configuredUrl = resolvedBaseUrl;
-    const httpPort = port ?? (
-      resolvedBaseUrl?.match(/:\d{1,5}$/g)
+    const httpPort =
+      port ??
+      (resolvedBaseUrl?.match(/:\d{1,5}$/g)
         ? parseInt(resolvedBaseUrl.match(/:\d{1,5}$/g)![0].slice(1))
         : 443);
     const baseUrlNoPort = resolvedBaseUrl
-      ?.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
-    this.baseUrl = `${baseUrlNoPort ?? 'https://api.lmnr.ai'}:${httpPort}`;
+      ?.replace(/\/$/, "")
+      .replace(/:\d{1,5}$/g, "");
+    this.baseUrl = `${baseUrlNoPort ?? "https://api.lmnr.ai"}:${httpPort}`;
     this._browserEvents = new BrowserEventsResource(this.baseUrl, this.auth);
     this._cli = new CliResource(this.baseUrl, this.auth);
     this._datasets = new DatasetsResource(this.baseUrl, this.auth);
     this._evals = new EvalsResource(this.baseUrl, this.auth);
     this._evaluators = new EvaluatorsResource(this.baseUrl, this.auth);
-    this._rolloutSessions = new RolloutSessionsResource(this.baseUrl, this.auth);
+    this._rolloutSessions = new RolloutSessionsResource(
+      this.baseUrl,
+      this.auth,
+    );
     this._signals = new SignalsResource(this.baseUrl, this.auth);
     this._sql = new SqlResource(this.baseUrl, this.auth);
     this._tags = new TagsResource(this.baseUrl, this.auth);

@@ -5,7 +5,10 @@ import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import nock from "nock";
 
 import { evaluate, HumanEvaluator, Laminar } from "../src/index";
-import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import {
+  _resetConfiguration,
+  initializeTracing,
+} from "../src/opentelemetry-lib/configuration";
 
 type RequestBody = Record<string, any>;
 
@@ -35,18 +38,19 @@ void describe("evaluate", () => {
     // spy into request body
     let body: RequestBody = {};
 
-    nock(baseUrl)
-      .post('/v1/evals')
-      .reply(200, {
-        id: mockEvalId,
-        projectId: "mock-project-id",
-      });
+    nock(baseUrl).post("/v1/evals").reply(200, {
+      id: mockEvalId,
+      projectId: "mock-project-id",
+    });
 
     nock(baseUrl)
-      .post(`/v1/evals/${mockEvalId}/datapoints`, (requestBody: RequestBody): boolean => {
-        body = requestBody;
-        return true;
-      })
+      .post(
+        `/v1/evals/${mockEvalId}/datapoints`,
+        (requestBody: RequestBody): boolean => {
+          body = requestBody;
+          return true;
+        },
+      )
       .times(2)
       .reply(200, {});
 
@@ -56,14 +60,14 @@ void describe("evaluate", () => {
           data: "a".repeat(150),
           target: "b".repeat(150),
           metadata: {
-            "test": "test",
+            test: "test",
           },
         },
       ],
       executor: (data) => data,
       evaluators: {
-        "test": (output, target) => output === target ? 1 : 0,
-        "test2": (output, target) => output === target ? 1 : 0,
+        test: (output, target) => (output === target ? 1 : 0),
+        test2: (output, target) => (output === target ? 1 : 0),
       },
       config: {
         projectApiKey: "test",
@@ -72,14 +76,13 @@ void describe("evaluate", () => {
 
     await Laminar.flush();
 
-
     assert.strictEqual(body?.points?.length, 1);
 
     const point = body.points[0];
     assert.strictEqual(point.data.length, 150);
     assert.strictEqual(point.target.length, 150);
     assert.strictEqual(point.index, 0);
-    assert.deepStrictEqual(point.metadata, { test: 'test' });
+    assert.deepStrictEqual(point.metadata, { test: "test" });
     assert.deepStrictEqual(point.scores, { test2: 0, test: 0 });
 
     // Check that generated fields exist but don't check their exact values
@@ -90,24 +93,29 @@ void describe("evaluate", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 4);
     const evaluationSpan = spans.find(
-      (span) => span.attributes['lmnr.span.type'] === "EVALUATION",
+      (span) => span.attributes["lmnr.span.type"] === "EVALUATION",
     );
-    const executorSpan = spans.find((span) => span.attributes['lmnr.span.type'] === "EXECUTOR");
+    const executorSpan = spans.find(
+      (span) => span.attributes["lmnr.span.type"] === "EXECUTOR",
+    );
     assert.strictEqual(
-      String(executorSpan?.attributes['lmnr.span.output']),
+      String(executorSpan?.attributes["lmnr.span.output"]),
       "a".repeat(150),
     );
     const evaluatorSpans = spans.filter(
-      (span) => span.attributes['lmnr.span.type'] === "EVALUATOR",
+      (span) => span.attributes["lmnr.span.type"] === "EVALUATOR",
     );
     assert.strictEqual(evaluationSpan?.name, "evaluation");
     assert.strictEqual(executorSpan?.name, "executor");
-    assert.deepStrictEqual(evaluatorSpans.map((span) => span.name).sort(), ["test", "test2"]);
+    assert.deepStrictEqual(evaluatorSpans.map((span) => span.name).sort(), [
+      "test",
+      "test2",
+    ]);
 
     // Every span produced under the evaluation should carry the evaluation id
     for (const span of spans) {
       assert.strictEqual(
-        span.attributes['lmnr.association.properties.metadata.evaluation_id'],
+        span.attributes["lmnr.association.properties.metadata.evaluation_id"],
         mockEvalId,
         `span "${span.name}" missing evaluation_id metadata association property`,
       );
@@ -121,35 +129,35 @@ void describe("evaluate", () => {
     // spy into request body
     let body: RequestBody = {};
 
-    nock(baseUrl)
-      .post('/v1/evals')
-      .times(1)
-      .reply(200, {
-        id: mockEvalId,
-        projectId: "mock-project-id",
-      });
+    nock(baseUrl).post("/v1/evals").times(1).reply(200, {
+      id: mockEvalId,
+      projectId: "mock-project-id",
+    });
 
     nock(baseUrl)
-      .post(`/v1/evals/${mockEvalId}/datapoints`, (requestBody: RequestBody): boolean => {
-        body = requestBody;
-        return true;
-      })
+      .post(
+        `/v1/evals/${mockEvalId}/datapoints`,
+        (requestBody: RequestBody): boolean => {
+          body = requestBody;
+          return true;
+        },
+      )
       .times(2)
       .reply(200, {});
 
-    nock(baseUrl)
-      .post('/v1/evals')
-      .times(1)
-      .reply(200, {
-        id: mockEvalId,
-        projectId: "mock-project-id",
-      });
+    nock(baseUrl).post("/v1/evals").times(1).reply(200, {
+      id: mockEvalId,
+      projectId: "mock-project-id",
+    });
 
     nock(baseUrl)
-      .post(`/v1/evals/${mockEvalId}/datapoints`, (requestBody: RequestBody): boolean => {
-        body = requestBody;
-        return true;
-      })
+      .post(
+        `/v1/evals/${mockEvalId}/datapoints`,
+        (requestBody: RequestBody): boolean => {
+          body = requestBody;
+          return true;
+        },
+      )
       .times(2)
       .reply(200, {});
 
@@ -159,21 +167,21 @@ void describe("evaluate", () => {
           data: "a".repeat(150),
           target: "b".repeat(150),
           metadata: {
-            "test": "test",
+            test: "test",
           },
         },
         {
           data: "x".repeat(150),
           target: "y".repeat(150),
           metadata: {
-            "test": "test",
+            test: "test",
           },
         },
       ],
       executor: (data) => data,
       evaluators: {
-        "test": (output, target) => output === target ? 1 : 0,
-        "test2": (output, target, data) => output === data ? 1 : 0,
+        test: (output, target) => (output === target ? 1 : 0),
+        test2: (output, target, data) => (output === data ? 1 : 0),
       },
       config: {
         projectApiKey: "test",
@@ -182,14 +190,13 @@ void describe("evaluate", () => {
 
     await Laminar.flush();
 
-
     assert.strictEqual(body?.points?.length, 1);
 
     const point = body.points[0];
     assert.strictEqual(point.data.length, 150);
     assert.strictEqual(point.target.length, 150);
     assert.strictEqual(point.index, 1);
-    assert.deepStrictEqual(point.metadata, { test: 'test' });
+    assert.deepStrictEqual(point.metadata, { test: "test" });
     assert.deepStrictEqual(point.scores, { test2: 1, test: 0 });
 
     // Check that generated fields exist but don't check their exact values
@@ -199,37 +206,39 @@ void describe("evaluate", () => {
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 8);
-    const traceIds = Array.from(new Set(spans.map((span) => span.spanContext().traceId)));
+    const traceIds = Array.from(
+      new Set(spans.map((span) => span.spanContext().traceId)),
+    );
     assert.strictEqual(traceIds.length, 2);
 
-
     const evaluationSpans = spans.filter(
-      (span) => span.attributes['lmnr.span.type'] === "EVALUATION",
+      (span) => span.attributes["lmnr.span.type"] === "EVALUATION",
     );
-    const executorSpans = spans.filter((span) => span.attributes['lmnr.span.type'] === "EXECUTOR");
+    const executorSpans = spans.filter(
+      (span) => span.attributes["lmnr.span.type"] === "EXECUTOR",
+    );
     const evaluatorSpans = spans.filter(
-      (span) => span.attributes['lmnr.span.type'] === "EVALUATOR",
+      (span) => span.attributes["lmnr.span.type"] === "EVALUATOR",
     );
     assert.strictEqual(evaluationSpans.length, 2);
     assert.strictEqual(executorSpans.length, 2);
     assert.strictEqual(evaluatorSpans.length, 4);
     assert.deepStrictEqual(
-      Array.from(new Set(evaluatorSpans.map((span) => span.name))).sort(), ["test", "test2"],
+      Array.from(new Set(evaluatorSpans.map((span) => span.name))).sort(),
+      ["test", "test2"],
     );
     const testSpan = evaluatorSpans.find((span) => span.name === "test")!;
     const test2Span = evaluatorSpans.find((span) => span.name === "test2")!;
-    assert.strictEqual(testSpan.attributes['lmnr.span.output'], '0');
-    assert.strictEqual(test2Span.attributes['lmnr.span.output'], '1');
-    assert.deepStrictEqual(JSON.parse(String(testSpan.attributes['lmnr.span.input'])), [
-      "a".repeat(150),
-      "b".repeat(150),
-      "a".repeat(150),
-    ]);
-    assert.deepStrictEqual(JSON.parse(String(test2Span.attributes['lmnr.span.input'])), [
-      "a".repeat(150),
-      "b".repeat(150),
-      "a".repeat(150),
-    ]);
+    assert.strictEqual(testSpan.attributes["lmnr.span.output"], "0");
+    assert.strictEqual(test2Span.attributes["lmnr.span.output"], "1");
+    assert.deepStrictEqual(
+      JSON.parse(String(testSpan.attributes["lmnr.span.input"])),
+      ["a".repeat(150), "b".repeat(150), "a".repeat(150)],
+    );
+    assert.deepStrictEqual(
+      JSON.parse(String(test2Span.attributes["lmnr.span.input"])),
+      ["a".repeat(150), "b".repeat(150), "a".repeat(150)],
+    );
   });
 
   void it("evaluation with human evaluators exports human evaluator spans", async () => {
@@ -238,18 +247,19 @@ void describe("evaluate", () => {
 
     let body: RequestBody = {};
 
-    nock(baseUrl)
-      .post('/v1/evals')
-      .reply(200, {
-        id: mockEvalId,
-        projectId: "mock-project-id",
-      });
+    nock(baseUrl).post("/v1/evals").reply(200, {
+      id: mockEvalId,
+      projectId: "mock-project-id",
+    });
 
     nock(baseUrl)
-      .post(`/v1/evals/${mockEvalId}/datapoints`, (requestBody: RequestBody): boolean => {
-        body = requestBody;
-        return true;
-      })
+      .post(
+        `/v1/evals/${mockEvalId}/datapoints`,
+        (requestBody: RequestBody): boolean => {
+          body = requestBody;
+          return true;
+        },
+      )
       .times(2)
       .reply(200, {});
 
@@ -259,15 +269,15 @@ void describe("evaluate", () => {
           data: "test input",
           target: "test target",
           metadata: {
-            "test": "test",
+            test: "test",
           },
         },
       ],
       executor: (data) => `output for ${data}`,
       evaluators: {
-        "automatic": (output, target) => output.includes(target || "") ? 1 : 0,
-        "human_quality": new HumanEvaluator(),
-        "human_relevance": new HumanEvaluator([{ value: 1, label: 'label' }]),
+        automatic: (output, target) => (output.includes(target || "") ? 1 : 0),
+        human_quality: new HumanEvaluator(),
+        human_relevance: new HumanEvaluator([{ value: 1, label: "label" }]),
       },
       config: {
         projectApiKey: "test",
@@ -280,7 +290,7 @@ void describe("evaluate", () => {
 
     const point = body.points[0];
     assert.strictEqual(point.index, 0);
-    assert.deepStrictEqual(point.metadata, { test: 'test' });
+    assert.deepStrictEqual(point.metadata, { test: "test" });
 
     assert.strictEqual(point.scores.automatic, 0);
     assert.strictEqual(point.scores.human_quality, null);
@@ -295,21 +305,23 @@ void describe("evaluate", () => {
     assert.strictEqual(spans.length, 5);
 
     const evaluationSpan = spans.find(
-      (span) => span.attributes['lmnr.span.type'] === "EVALUATION",
+      (span) => span.attributes["lmnr.span.type"] === "EVALUATION",
     );
     assert.strictEqual(evaluationSpan?.name, "evaluation");
 
-    const executorSpan = spans.find((span) => span.attributes['lmnr.span.type'] === "EXECUTOR");
+    const executorSpan = spans.find(
+      (span) => span.attributes["lmnr.span.type"] === "EXECUTOR",
+    );
     assert.strictEqual(executorSpan?.name, "executor");
 
     const automaticEvaluatorSpans = spans.filter(
-      (span) => span.attributes['lmnr.span.type'] === "EVALUATOR",
+      (span) => span.attributes["lmnr.span.type"] === "EVALUATOR",
     );
     assert.strictEqual(automaticEvaluatorSpans.length, 1);
     assert.strictEqual(automaticEvaluatorSpans[0].name, "automatic");
 
     const humanEvaluatorSpans = spans.filter(
-      (span) => span.attributes['lmnr.span.type'] === "HUMAN_EVALUATOR",
+      (span) => span.attributes["lmnr.span.type"] === "HUMAN_EVALUATOR",
     );
 
     const humanEvaluatorSpanWithOptions = humanEvaluatorSpans.find(
@@ -317,10 +329,14 @@ void describe("evaluate", () => {
     );
 
     const options =
-      humanEvaluatorSpanWithOptions?.attributes?.['lmnr.span.human_evaluator_options'];
+      humanEvaluatorSpanWithOptions?.attributes?.[
+        "lmnr.span.human_evaluator_options"
+      ];
 
     assert.strictEqual(!!options, true);
-    assert.deepStrictEqual(JSON.parse(String(options)), [{ value: 1, label: 'label' }]);
+    assert.deepStrictEqual(JSON.parse(String(options)), [
+      { value: 1, label: "label" },
+    ]);
     assert.strictEqual(humanEvaluatorSpans.length, 2);
     assert.deepStrictEqual(
       humanEvaluatorSpans.map((span) => span.name).sort(),

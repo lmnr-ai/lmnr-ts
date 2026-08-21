@@ -63,7 +63,9 @@ const wrapHandle = (handle: WorkflowHandleLike, span: Span): void => {
     try {
       return Laminar.serializeLaminarSpanContext(span) ?? undefined;
     } catch (e) {
-      logger.debug(`failed to derive workflow child span parent: ${errorMessage(e)}`);
+      logger.debug(
+        `failed to derive workflow child span parent: ${errorMessage(e)}`,
+      );
       return undefined;
     }
   };
@@ -78,7 +80,9 @@ const wrapHandle = (handle: WorkflowHandleLike, span: Span): void => {
         try {
           (span as LaminarSpan).setOutput(res);
         } catch (e) {
-          logger.debug(`failed to set workflow span output: ${errorMessage(e)}`);
+          logger.debug(
+            `failed to set workflow span output: ${errorMessage(e)}`,
+          );
         }
       });
       return res;
@@ -88,10 +92,8 @@ const wrapHandle = (handle: WorkflowHandleLike, span: Span): void => {
     }
   };
 
-  const wrapTerminating = (
-    name: string,
-    orig: (...args: unknown[]) => Promise<unknown>,
-  ) =>
+  const wrapTerminating =
+    (name: string, orig: (...args: unknown[]) => Promise<unknown>) =>
     async (...args: unknown[]): Promise<unknown> => {
       if (closed) {
         return orig(...args);
@@ -103,7 +105,9 @@ const wrapHandle = (handle: WorkflowHandleLike, span: Span): void => {
       try {
         const res = await orig(...args);
         childSpan.end();
-        closeWith(() => {});
+        closeWith(() => {
+          /* intentionally empty */
+        });
         return res;
       } catch (e) {
         childSpan.recordException(e as Error);
@@ -114,7 +118,10 @@ const wrapHandle = (handle: WorkflowHandleLike, span: Span): void => {
     };
 
   handle.cancel = wrapTerminating("temporal.workflow.cancel", origCancel);
-  handle.terminate = wrapTerminating("temporal.workflow.terminate", origTerminate);
+  handle.terminate = wrapTerminating(
+    "temporal.workflow.terminate",
+    origTerminate,
+  );
 };
 
 /**
@@ -134,7 +141,10 @@ export const patchWorkflowClient = (clientModule: {
   WorkflowClient?: WorkflowClientLike;
 }): void => {
   const WorkflowClient = clientModule.WorkflowClient;
-  if (!WorkflowClient?.prototype || _patchedWorkflowClients.has(WorkflowClient)) {
+  if (
+    !WorkflowClient?.prototype ||
+    _patchedWorkflowClients.has(WorkflowClient)
+  ) {
     return;
   }
   _patchedWorkflowClients.add(WorkflowClient);

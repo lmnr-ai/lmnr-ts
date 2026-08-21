@@ -4,7 +4,12 @@ import type {
   Trace,
   TracingProcessor,
 } from "@openai/agents";
-import { type Context, ROOT_CONTEXT, type Span as OtelSpan, trace } from "@opentelemetry/api";
+import {
+  type Context,
+  type Span as OtelSpan,
+  ROOT_CONTEXT,
+  trace,
+} from "@opentelemetry/api";
 
 import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
@@ -46,7 +51,6 @@ interface TraceState {
   pendingHandoffCtxs: Map<string, string>;
 }
 
-/* eslint-disable @typescript-eslint/require-await */
 export class LaminarAgentsTraceProcessor implements TracingProcessor {
   private traces: Map<string, TraceState> = new Map();
   private disabled: boolean = false;
@@ -293,7 +297,6 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async shutdown(_timeout?: number): Promise<void> {
     this.disabled = true;
     const states = Array.from(this.traces.values()).filter((s) => !s.ended);
@@ -428,4 +431,3 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
     }
   }
 }
-/* eslint-enable @typescript-eslint/require-await */

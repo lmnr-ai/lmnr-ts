@@ -95,7 +95,8 @@ const renderBlock = (block: SessionBlock): string | null => {
   const content = block.content ?? {};
   switch (block.type) {
     case "trace": {
-      const traceId = typeof content.traceId === "string" ? content.traceId : "";
+      const traceId =
+        typeof content.traceId === "string" ? content.traceId : "";
       return traceId ? `<trace id="${traceId}"/>` : null;
     }
     case "evaluation": {
@@ -110,12 +111,14 @@ const renderBlock = (block: SessionBlock): string | null => {
     case "command": {
       // One digest line per command: what ran + how it exited (+ reasoning, when
       // supplied). Full stdout/stderr stay in `--json`.
-      const command = typeof content.command === "string" ? content.command : "";
+      const command =
+        typeof content.command === "string" ? content.command : "";
       if (!command) return null;
       const args = Array.isArray(content.args)
         ? content.args.map((a) => (typeof a === "string" ? a : String(a)))
         : [];
-      const exitCode = typeof content.exitCode === "number" ? content.exitCode : 0;
+      const exitCode =
+        typeof content.exitCode === "number" ? content.exitCode : 0;
       const reasoning =
         typeof content.reasoning === "string" && content.reasoning
           ? ` reasoning="${escapeXml(content.reasoning)}"`
@@ -163,7 +166,8 @@ export const handleDebugSessionSummary = async (
 /** Build the frontend debugger-session URL (LMNR_FRONTEND_URL, else cloud default). */
 const buildDebuggerUrl = (projectId: string, sessionId: string): string => {
   const frontend =
-    process.env.LMNR_FRONTEND_URL?.trim().replace(/\/+$/, "") || DEFAULT_FRONTEND_URL;
+    process.env.LMNR_FRONTEND_URL?.trim().replace(/\/+$/, "") ||
+    DEFAULT_FRONTEND_URL;
   return `${frontend}/project/${projectId}/debugger-sessions/${sessionId}`;
 };
 
@@ -183,11 +187,12 @@ export const handleDebugSessionOpen = async (
   const file = readDebugSessionFile(resolveDebugSessionDir());
   let debuggerUrl = file?.session_id === sessionId ? file.debugger_url : null;
   if (!debuggerUrl) {
-    const projectId = opts.projectId || (await readLocalProjectFile())?.projectId;
+    const projectId =
+      opts.projectId || (await readLocalProjectFile())?.projectId;
     if (!projectId) {
       throw new Error(
         "Cannot build the debugger URL: no project is linked to this " +
-        "directory. Pass --project-id or run `lmnr-cli setup`.",
+          "directory. Pass --project-id or run `lmnr-cli setup`.",
       );
     }
     debuggerUrl = buildDebuggerUrl(projectId, sessionId);
@@ -203,7 +208,9 @@ export const handleDebugSessionOpen = async (
   try {
     await open(debuggerUrl);
   } catch (e) {
-    logger.warn(`Could not open a browser (${errorMessage(e)}). URL: ${debuggerUrl}`);
+    logger.warn(
+      `Could not open a browser (${errorMessage(e)}). URL: ${debuggerUrl}`,
+    );
   }
 };
 
@@ -233,14 +240,17 @@ export const handleDebugSessionNew = async (
   const sessionDir = resolveDebugSessionDir();
 
   // 1. Write the file FIRST. debugger_url is filled in after register().
-  writeDebugSessionFile({
-    session_id: sessionId,
-    trace_id: null,
-    replay_trace_id: null,
-    cache_until: null,
-    debugger_url: null,
-    started_at: new Date().toISOString(),
-  }, sessionDir);
+  writeDebugSessionFile(
+    {
+      session_id: sessionId,
+      trace_id: null,
+      replay_trace_id: null,
+      cache_until: null,
+      debugger_url: null,
+      started_at: new Date().toISOString(),
+    },
+    sessionDir,
+  );
 
   // 2. Best-effort register. A failure warns but never fails — the file is
   // already usable for continuation.
@@ -250,21 +260,24 @@ export const handleDebugSessionNew = async (
   } catch (e) {
     logger.warn(
       "Could not register the debug session with the backend " +
-      `(the local .lmnr/debug-session.json is still usable): ${errorMessage(e)}`,
+        `(the local .lmnr/debug-session.json is still usable): ${errorMessage(e)}`,
     );
   }
 
   // 3. Once the project id is known, rewrite the file with the debugger URL.
   const debuggerUrl = projectId ? buildDebuggerUrl(projectId, sessionId) : null;
   if (debuggerUrl) {
-    writeDebugSessionFile({
-      session_id: sessionId,
-      trace_id: null,
-      replay_trace_id: null,
-      cache_until: null,
-      debugger_url: debuggerUrl,
-      started_at: new Date().toISOString(),
-    }, sessionDir);
+    writeDebugSessionFile(
+      {
+        session_id: sessionId,
+        trace_id: null,
+        replay_trace_id: null,
+        cache_until: null,
+        debugger_url: debuggerUrl,
+        started_at: new Date().toISOString(),
+      },
+      sessionDir,
+    );
   }
 
   // 4. Output.

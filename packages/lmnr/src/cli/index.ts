@@ -26,7 +26,9 @@ async function cli() {
 
   program
     .name("lmnr")
-    .description("CLI for Laminar. Use `lmnr <subcommand> --help` for more information.")
+    .description(
+      "CLI for Laminar. Use `lmnr <subcommand> --help` for more information.",
+    )
     .version(version, "-v, --version", "display version number");
 
   // Eval command
@@ -36,8 +38,8 @@ async function cli() {
     .argument(
       "[files...]",
       "A file or files containing the evaluation to run. If no file is provided, " +
-      "the evaluation will run all `*.eval.ts|js` files in the `evals` directory. " +
-      "If multiple files are provided, the evaluation will run each file in order.",
+        "the evaluation will run all `*.eval.ts|js` files in the `evals` directory. " +
+        "If multiple files are provided, the evaluation will run each file in order.",
     )
     .option(
       "--fail-on-error",
@@ -50,14 +52,14 @@ async function cli() {
     .option(
       "--external-packages <packages...>",
       "[ADVANCED] List of packages to pass as external to esbuild. This will not link " +
-      "the packages directly into the eval file, but will instead require them at runtime. " +
-      "Read more: https://esbuild.github.io/api/#external",
+        "the packages directly into the eval file, but will instead require them at runtime. " +
+        "Read more: https://esbuild.github.io/api/#external",
     )
     .option(
       "--dynamic-imports-to-skip <modules...>",
       "[ADVANCED] List of module names to skip when encountered as dynamic imports. " +
-      "These dynamic imports will resolve to an empty module to prevent build failures. " +
-      "This is meant to skip the imports that are not used in the evaluation itself.",
+        "These dynamic imports will resolve to an empty module to prevent build failures. " +
+        "This is meant to skip the imports that are not used in the evaluation itself.",
     )
     .option(
       "--frontend-port <port>",
@@ -75,7 +77,9 @@ async function cli() {
   // Datasets command with global options
   const datasetCmd = program
     .command("datasets")
-    .description("[DEPRECATED] Manage datasets. Use `lmnr-cli dataset` instead.")
+    .description(
+      "[DEPRECATED] Manage datasets. Use `lmnr-cli dataset` instead.",
+    )
     .option(
       "--project-api-key <key>",
       "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
@@ -104,9 +108,18 @@ async function cli() {
   datasetCmd
     .command("push")
     .description("Push datapoints to an existing dataset")
-    .argument("<paths...>", "Paths to files or directories containing data to push")
-    .option("-n, --name <name>", "Name of the dataset (either name or id must be provided)")
-    .option("--id <id>", "ID of the dataset (either name or id must be provided)")
+    .argument(
+      "<paths...>",
+      "Paths to files or directories containing data to push",
+    )
+    .option(
+      "-n, --name <name>",
+      "Name of the dataset (either name or id must be provided)",
+    )
+    .option(
+      "--id <id>",
+      "ID of the dataset (either name or id must be provided)",
+    )
     .option("-r, --recursive", "Recursively read files in directories", false)
     .option(
       "--batch-size <size>",
@@ -124,9 +137,18 @@ async function cli() {
   datasetCmd
     .command("pull")
     .description("Pull data from a dataset")
-    .argument("[output-path]", "Path to save the data. If not provided, prints to console")
-    .option("-n, --name <name>", "Name of the dataset (either name or id must be provided)")
-    .option("--id <id>", "ID of the dataset (either name or id must be provided)")
+    .argument(
+      "[output-path]",
+      "Path to save the data. If not provided, prints to console",
+    )
+    .option(
+      "-n, --name <name>",
+      "Name of the dataset (either name or id must be provided)",
+    )
+    .option(
+      "--id <id>",
+      "ID of the dataset (either name or id must be provided)",
+    )
     .option(
       "--output-format <format>",
       "Output format (json, csv, jsonl). Inferred from file extension if not provided",
@@ -137,8 +159,15 @@ async function cli() {
       (val) => parseInt(val, 10),
       100,
     )
-    .option("--limit <limit>", "Limit number of datapoints to pull", (val) => parseInt(val, 10))
-    .option("--offset <offset>", "Offset for pagination", (val) => parseInt(val, 10), 0)
+    .option("--limit <limit>", "Limit number of datapoints to pull", (val) =>
+      parseInt(val, 10),
+    )
+    .option(
+      "--offset <offset>",
+      "Offset for pagination",
+      (val) => parseInt(val, 10),
+      0,
+    )
     .action(async (outputPath: string | undefined, options, cmd) => {
       process.stderr.write(deprecatedDatasetsWarning + "\n");
       const parentOpts = cmd.parent?.opts() || {};
@@ -150,7 +179,10 @@ async function cli() {
     .command("create")
     .description("Create a dataset from input files")
     .argument("<name>", "Name of the dataset to create")
-    .argument("<paths...>", "Paths to files or directories containing data to push")
+    .argument(
+      "<paths...>",
+      "Paths to files or directories containing data to push",
+    )
     .requiredOption("-o, --output-file <file>", "Path to save the pulled data")
     .option(
       "--output-format <format>",
@@ -182,4 +214,3 @@ cli().catch((err) => {
   logger.error(errorMessage(err));
   throw err;
 });
-

@@ -1,4 +1,4 @@
-import { context, trace, Tracer, TracerProvider } from "@opentelemetry/api";
+import { context, Tracer, TracerProvider, trace } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { AlwaysOnSampler } from "@opentelemetry/sdk-trace-base";
@@ -16,6 +16,7 @@ import { createResource } from "./compat";
 import { consumeStreamResult, waitForPendingStreams } from "./stream-utils";
 
 export { consumeStreamResult, waitForPendingStreams };
+
 import { initializeLaminarInstrumentations } from "./instrumentations";
 import { LaminarSpanProcessor } from "./processor";
 import { LaminarTracer } from "./tracer";

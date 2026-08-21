@@ -1,5 +1,5 @@
 import { LaminarClient } from "@lmnr-ai/client";
-import { errorMessage, EvaluationDatapoint } from "@lmnr-ai/types";
+import { EvaluationDatapoint, errorMessage } from "@lmnr-ai/types";
 import { trace } from "@opentelemetry/api";
 import * as cliProgress from "cli-progress";
 
@@ -565,11 +565,7 @@ export class Evaluation<D, T, O> {
         index: number,
       ): Promise<[number, EvaluationDatapoint<D, T, O>]> => {
         try {
-          const result = await this.evaluateDatapoint(
-            evalId,
-            datapoint,
-            index,
-          );
+          const result = await this.evaluateDatapoint(evalId, datapoint, index);
           this.progressReporter.update(1);
           return [index, result];
         } finally {
@@ -625,11 +621,7 @@ export class Evaluation<D, T, O> {
 
         // Add dataset link if data comes from a (possibly chained) remote
         // dataset.
-        if (
-          this.datasetSource?.id &&
-          datapoint.id &&
-          datapoint.createdAt
-        ) {
+        if (this.datasetSource?.id && datapoint.id && datapoint.createdAt) {
           partialDatapoint.datasetLink = {
             datasetId: this.datasetSource.id,
             datapointId: datapoint.id,
@@ -723,11 +715,7 @@ export class Evaluation<D, T, O> {
 
         // Add dataset link if data comes from a (possibly chained) remote
         // dataset.
-        if (
-          this.datasetSource?.id &&
-          datapoint.id &&
-          datapoint.createdAt
-        ) {
+        if (this.datasetSource?.id && datapoint.id && datapoint.createdAt) {
           resultDatapoint.datasetLink = {
             datasetId: this.datasetSource.id,
             datapointId: datapoint.id,

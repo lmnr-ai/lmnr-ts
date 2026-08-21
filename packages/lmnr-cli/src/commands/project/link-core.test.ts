@@ -42,7 +42,9 @@ afterEach(() => {
 describe("ensureProjectKey — session expiry during the key probe", () => {
   it("maps an expired grant to login_failed (6), not an uncoded exit 1", async () => {
     // The existing-key probe calls refreshIfNeeded, which reports expiry.
-    h.refreshIfNeeded.mockRejectedValue(new SessionExpiredError("Session expired"));
+    h.refreshIfNeeded.mockRejectedValue(
+      new SessionExpiredError("Session expired"),
+    );
 
     await expect(
       ensureProjectKey({

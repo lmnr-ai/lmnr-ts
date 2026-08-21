@@ -10,16 +10,22 @@ import {
 // Coerce an unknown field to a non-empty string, else null — the file is
 // best-effort local state that an agent may hand-edit, so every field is treated
 // defensively rather than trusted.
-const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
+const str = (v: unknown): string | null =>
+  typeof v === "string" && v.length > 0 ? v : null;
 
 /**
  * Read `${dir ?? cwd}/.lmnr/debug-session.json`. Best-effort: returns null on a
  * missing / unreadable / malformed file, or one with no usable `session_id`
  * (the caller treats null as "no existing session" and mints a fresh one).
  */
-export const readDebugSessionFile = (dir: string = process.cwd()): DebugSessionFile | null => {
+export const readDebugSessionFile = (
+  dir: string = process.cwd(),
+): DebugSessionFile | null => {
   try {
-    const raw = readFileSync(join(dir, DEBUG_SESSION_DIR, DEBUG_SESSION_FILE), "utf-8");
+    const raw = readFileSync(
+      join(dir, DEBUG_SESSION_DIR, DEBUG_SESSION_FILE),
+      "utf-8",
+    );
     const r = JSON.parse(raw) as Record<string, unknown>;
     const session_id = str(r.session_id);
     if (!session_id) return null;
@@ -42,7 +48,9 @@ export const readDebugSessionFile = (dir: string = process.cwd()): DebugSessionF
  * debug run started from a subdirectory of a project joins the project's
  * session. Returns null when no ancestor (including `startDir`) has one.
  */
-export const findDebugSessionDir = (startDir: string = process.cwd()): string | null => {
+export const findDebugSessionDir = (
+  startDir: string = process.cwd(),
+): string | null => {
   let dir = resolve(startDir);
   const root = parse(dir).root;
   while (true) {
@@ -60,8 +68,9 @@ export const findDebugSessionDir = (startDir: string = process.cwd()): string | 
  * writing to cwd would strand the ancestor's copy stale and shadow it with a
  * nested one.
  */
-export const resolveDebugSessionDir = (startDir: string = process.cwd()): string =>
-  findDebugSessionDir(startDir) ?? resolve(startDir);
+export const resolveDebugSessionDir = (
+  startDir: string = process.cwd(),
+): string => findDebugSessionDir(startDir) ?? resolve(startDir);
 
 /**
  * Write the debug-session file (mkdir -p first). Best-effort: swallows any IO
@@ -74,7 +83,11 @@ export const writeDebugSessionFile = (
   try {
     const directory = join(dir, DEBUG_SESSION_DIR);
     mkdirSync(directory, { recursive: true });
-    writeFileSync(join(directory, DEBUG_SESSION_FILE), JSON.stringify(file), "utf-8");
+    writeFileSync(
+      join(directory, DEBUG_SESSION_FILE),
+      JSON.stringify(file),
+      "utf-8",
+    );
     return true;
   } catch {
     return false;

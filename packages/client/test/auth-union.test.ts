@@ -8,15 +8,15 @@ import { LaminarClient } from "../src/index";
 // fields once normalized).
 function captureFetch() {
   const calls: { url: string; headers: Record<string, string> }[] = [];
-  // Mirror the real fetch interface: resolve to a Response-like object whose
-  // .json() also returns a Promise. (Promise.resolve, not async — these have
-  // no await, so async would trip @typescript-eslint/require-await.)
   const mockFetch = mock.fn((url: string, init: RequestInit) => {
     calls.push({
       url,
       headers: (init?.headers ?? {}) as Record<string, string>,
     });
-    return Promise.resolve({ ok: true, json: () => Promise.resolve({ data: [] }) });
+    return Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ data: [] }),
+    });
   });
   global.fetch = mockFetch as any;
   return calls;
@@ -46,7 +46,10 @@ void describe("LaminarClient unified auth", () => {
 
     await client.sql.query("SELECT 1");
 
-    assert.strictEqual(calls[0].url, "https://api.test.com:443/v1/cli/sql/query");
+    assert.strictEqual(
+      calls[0].url,
+      "https://api.test.com:443/v1/cli/sql/query",
+    );
     assert.strictEqual(calls[0].headers.Authorization, "Bearer jwt-abc");
     assert.strictEqual(calls[0].headers["x-lmnr-project-id"], "proj-9");
   });
@@ -75,7 +78,10 @@ void describe("LaminarClient unified auth", () => {
 
     await client.sql.query("SELECT 1");
 
-    assert.strictEqual(calls[0].url, "https://api.test.com:443/v1/cli/sql/query");
+    assert.strictEqual(
+      calls[0].url,
+      "https://api.test.com:443/v1/cli/sql/query",
+    );
     assert.strictEqual(calls[0].headers.Authorization, "Bearer user-jwt");
     assert.strictEqual(calls[0].headers["x-lmnr-project-id"], "proj-legacy");
   });
@@ -89,7 +95,10 @@ void describe("LaminarClient unified auth", () => {
 
     await client.cli.listProjects();
 
-    assert.strictEqual(calls[0].url, "https://api.test.com:443/v1/cli/projects");
+    assert.strictEqual(
+      calls[0].url,
+      "https://api.test.com:443/v1/cli/projects",
+    );
     assert.strictEqual(calls[0].headers.Authorization, "Bearer jwt-disc");
     assert.strictEqual(calls[0].headers["x-lmnr-project-id"], undefined);
   });

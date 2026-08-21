@@ -1,7 +1,7 @@
-import { errorMessage } from '@lmnr-ai/types';
+import { errorMessage } from "@lmnr-ai/types";
 
-import { pc } from './colors';
-import { recordStderr, recordStdout } from './command-capture';
+import { pc } from "./colors";
+import { recordStderr, recordStdout } from "./command-capture";
 
 /**
  * stdout data sink: write-through to stdout AND record into the capture buffer.
@@ -18,7 +18,9 @@ export function emitData(text: string): void {
  * `console.log` to keep its exact behavior; recording is a parallel side-channel.
  */
 export function printData(...args: unknown[]): void {
-  recordStdout(args.map((a) => (typeof a === 'string' ? a : String(a))).join(' ') + '\n');
+  recordStdout(
+    args.map((a) => (typeof a === "string" ? a : String(a))).join(" ") + "\n",
+  );
   console.log(...args);
 }
 
@@ -38,7 +40,7 @@ export function emitErr(text: string): void {
  */
 export function outputJson(data: unknown): void {
   const serialized = JSON.stringify(data);
-  recordStdout(serialized + '\n');
+  recordStdout(serialized + "\n");
   console.log(serialized);
 }
 
@@ -47,9 +49,13 @@ export function outputJson(data: unknown): void {
  * mode, else a colored `ERROR (code): detail` on stderr. Used by the interactive
  * device-flow commands (`setup`, `plugin add`) that manage their own exit codes.
  */
-export const emitError = (json: boolean, code: string, detail: string): void => {
+export const emitError = (
+  json: boolean,
+  code: string,
+  detail: string,
+): void => {
   if (json) {
-    process.stdout.write(JSON.stringify({ error: code, detail }) + '\n');
+    process.stdout.write(JSON.stringify({ error: code, detail }) + "\n");
   } else {
     process.stderr.write(`\n${pc.red(`ERROR (${code})`)}: ${detail}\n`);
   }
@@ -60,8 +66,10 @@ export const emitError = (json: boolean, code: string, detail: string): void => 
  * Use this in --json mode so agents can parse the failure.
  */
 export function outputJsonError(error: unknown, exitCode: number = 1): never {
-  console.log(JSON.stringify({
-    error: errorMessage(error),
-  }));
+  console.log(
+    JSON.stringify({
+      error: errorMessage(error),
+    }),
+  );
   process.exit(exitCode);
 }

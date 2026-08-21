@@ -24,10 +24,13 @@ export class DatasetsResource extends BaseResource {
    * @returns {Promise<Dataset[]>} Array of datasets
    */
   public async listDatasets(): Promise<Dataset[]> {
-    const response = await fetch(this.baseHttpUrl + this.apiPrefix + "/datasets", {
-      method: "GET",
-      headers: this.headers(),
-    });
+    const response = await fetch(
+      this.baseHttpUrl + this.apiPrefix + "/datasets",
+      {
+        method: "GET",
+        headers: this.headers(),
+      },
+    );
 
     if (!response.ok) {
       await this.handleError(response);
@@ -175,7 +178,8 @@ export class DatasetsResource extends BaseResource {
     const params = new URLSearchParams(paramsObj);
 
     const response = await fetch(
-      this.baseHttpUrl + `${this.apiPrefix}/datasets/datapoints?${params.toString()}`,
+      this.baseHttpUrl +
+        `${this.apiPrefix}/datasets/datapoints?${params.toString()}`,
       {
         method: "GET",
         headers: this.headers(),

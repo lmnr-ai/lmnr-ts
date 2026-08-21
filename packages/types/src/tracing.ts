@@ -8,20 +8,20 @@ import { type StringUUID } from "./utils";
  * Executor and evaluator spans are top-level spans added automatically when doing evaluations.
  */
 export type SpanType =
-  | 'DEFAULT'
-  | 'LLM'
-  | 'EXECUTOR'
-  | 'EVALUATOR'
-  | 'HUMAN_EVALUATOR'
-  | 'EVALUATION'
-  | 'TOOL'
-  | 'CACHED';
+  | "DEFAULT"
+  | "LLM"
+  | "EXECUTOR"
+  | "EVALUATOR"
+  | "HUMAN_EVALUATOR"
+  | "EVALUATION"
+  | "TOOL"
+  | "CACHED";
 
 /**
  * Trace types to categorize traces.
  * They are used as association properties passed to all spans in a trace.
  */
-export type TraceType = 'DEFAULT' | 'EVALUATION';
+export type TraceType = "DEFAULT" | "EVALUATION";
 
 /**
  * Tracing levels to conditionally disable tracing.
@@ -31,9 +31,9 @@ export type TraceType = 'DEFAULT' | 'EVALUATION';
  * ALL - All data is sent.
  */
 export enum TracingLevel {
-  OFF = 'off',
-  META_ONLY = 'meta_only',
-  ALL = 'all',
+  OFF = "off",
+  META_ONLY = "meta_only",
+  ALL = "all",
 }
 
 /**

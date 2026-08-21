@@ -263,7 +263,9 @@ export class RolloutSessionsResource extends BaseResource {
         },
       );
     } catch (e) {
-      logger.warn(`Debug cache lookup failed, running live: ${errorMessage(e)}`);
+      logger.warn(
+        `Debug cache lookup failed, running live: ${errorMessage(e)}`,
+      );
       return { kind: "live" };
     }
 
@@ -276,7 +278,10 @@ export class RolloutSessionsResource extends BaseResource {
 
     let body: { outcome?: string; response?: unknown };
     try {
-      body = (await response.json()) as { outcome?: string; response?: unknown };
+      body = (await response.json()) as {
+        outcome?: string;
+        response?: unknown;
+      };
     } catch (e) {
       logger.warn(
         `Failed to parse debug cache response, running live: ${errorMessage(e)}`,

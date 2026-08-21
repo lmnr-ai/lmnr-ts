@@ -1,4 +1,8 @@
-import { errorMessage, type SessionRecordingOptions, type StringUUID } from "@lmnr-ai/types";
+import {
+  errorMessage,
+  type SessionRecordingOptions,
+  type StringUUID,
+} from "@lmnr-ai/types";
 import { Page as PlaywrightPage } from "playwright";
 import { Page as PuppeteerPage } from "puppeteer";
 
@@ -36,7 +40,6 @@ export const nameArgsOrCopy = (args: any[], name: string = "instruction") => {
   if (args.length === 1 && typeof args[0] === "string") {
     return { [name]: args[0] };
   }
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return [...args];
 };
 
@@ -57,9 +60,7 @@ export const takeFullSnapshot = async (
         (window as unknown as LmnrWindow).lmnrRrweb.record.takeFullSnapshot();
         return true;
       } catch (error) {
-        logger.error(
-          "Error taking full snapshot: " + errorMessage(error),
-        );
+        logger.error("Error taking full snapshot: " + errorMessage(error));
         return false;
       }
     }
@@ -115,9 +116,7 @@ export const injectSessionRecorder = async (
     try {
       await castedPage.evaluate(injectScript, sessionRecordingOptions);
     } catch (error) {
-      logger.debug(
-        "Failed to inject session recorder: " + errorMessage(error),
-      );
+      logger.debug("Failed to inject session recorder: " + errorMessage(error));
     }
   }
 };
@@ -130,11 +129,11 @@ export const cleanStagehandLLMClient = (llmClient: object): object =>
       .map(([key, value]) =>
         key === "clientOptions"
           ? [
-            key,
-            Object.fromEntries(
-              Object.entries(value).filter(([key]) => key !== "apiKey"),
-            ),
-          ]
+              key,
+              Object.fromEntries(
+                Object.entries(value).filter(([key]) => key !== "apiKey"),
+              ),
+            ]
           : [key, value],
       ),
   );
@@ -300,10 +299,10 @@ const modelToProviderMap: Record<string, string> = {
   "gpt-4.1-nano": "openai",
   "o4-mini": "openai",
   //prettier-ignore
-  "o3": "openai",
+  o3: "openai",
   "o3-mini": "openai",
   //prettier-ignore
-  "o1": "openai",
+  o1: "openai",
   "o1-mini": "openai",
   "gpt-4o": "openai",
   "gpt-4o-mini": "openai",
@@ -373,7 +372,7 @@ export const injectScript = (
   // Define a wrapper function that handles stringification based on the parameter
   const sendEvent = stringifyCallbackArgs
     ? (chunk: any) =>
-      (window as unknown as LmnrWindow).lmnrSendEvents(JSON.stringify(chunk))
+        (window as unknown as LmnrWindow).lmnrSendEvents(JSON.stringify(chunk))
     : (chunk: any) => (window as unknown as LmnrWindow).lmnrSendEvents(chunk);
 
   // Gzip compress a string using CompressionStream API (main thread, no workers)
@@ -388,9 +387,7 @@ export const injectScript = (
     const reader = cs.readable.getReader();
 
     // TODO: investigate why the events are not sent if we await the write and close
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     writer.write(inputBytes);
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     writer.close();
 
     const parts = [];
@@ -505,7 +502,6 @@ export const injectScript = (
   if (!(window as unknown as LmnrWindow).lmnrStartedRecordingEvents) {
     // It's fine to retrigger the interval even if the original function
     // is async and still running.
-    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     setInterval(sendBatchIfReady, BATCH_TIMEOUT);
 
     const recordOptions = {
@@ -608,9 +604,7 @@ export async function sendEvents(
         await client.browserEvents
           .send({ sessionId, traceId, events })
           .catch((error) => {
-            logger.debug(
-              "Failed to send events: " + errorMessage(error),
-            );
+            logger.debug("Failed to send events: " + errorMessage(error));
           });
       }
 
@@ -633,8 +627,6 @@ export async function sendEvents(
       chunkBuffers.delete(bid);
     }
   } catch (error) {
-    logger.debug(
-      "Could not send events: " + errorMessage(error),
-    );
+    logger.debug("Could not send events: " + errorMessage(error));
   }
 }

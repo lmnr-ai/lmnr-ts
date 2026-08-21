@@ -57,8 +57,8 @@ import { buildAiSdkInstrumentationAttributes } from "./package-versions";
 import {
   type LlmState,
   type OperationState,
-  stepKey,
   type StepState,
+  stepKey,
   type ToolState,
 } from "./types";
 import {
@@ -74,8 +74,6 @@ import {
   verbatimPromptString,
   verbatimStandardizedMessages,
 } from "./utils";
-
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
 
 /**
  * The AI SDK v7 diagnostics channel name. Every lifecycle event fires
@@ -178,10 +176,10 @@ export class LaminarAiSdkTelemetry {
           ...buildAiSdkInstrumentationAttributes(),
           ...(typeof event.functionId === "string"
             ? {
-              "operation.name": event.functionId,
-              // legacy, needed for older parsing at the backend to work
-              "ai.prompt": "_",
-            }
+                "operation.name": event.functionId,
+                // legacy, needed for older parsing at the backend to work
+                "ai.prompt": "_",
+              }
             : {}),
         },
       },
@@ -429,9 +427,8 @@ export class LaminarAiSdkTelemetry {
     // for when onLanguageModelCallEnd doesn't fire; on the normal path we
     // read text from `event.content` which is correctly scoped per call.
     if (this.activeStreamStepByCallId.size !== 1) return;
-    const [callId, stepNumber] = this.activeStreamStepByCallId
-      .entries()
-      .next().value!;
+    const [callId, stepNumber] = this.activeStreamStepByCallId.entries().next()
+      .value!;
     const llm = this.llmByKey.get(stepKey(callId, stepNumber));
     if (!llm) return;
     llm.textDeltas.push(chunk.text);
@@ -795,8 +792,8 @@ export class LaminarAiSdkTelemetry {
       rawError instanceof Error
         ? rawError
         : new Error(
-          typeof rawError === "string" ? rawError : serializeJSON(rawError),
-        );
+            typeof rawError === "string" ? rawError : serializeJSON(rawError),
+          );
     const eventCallId: string | undefined =
       event && typeof event === "object" && typeof event.callId === "string"
         ? event.callId

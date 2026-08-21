@@ -176,9 +176,8 @@ export const patchTemporalWorker = (
     if (!usesWorkflowBundle) {
       interceptors.workflowModules = [
         require.resolve("@lmnr-ai/lmnr/temporal-workflow-interceptors"),
-        ...((rawOpts?.interceptors?.workflowModules as
-          | string[]
-          | undefined) ?? []),
+        ...((rawOpts?.interceptors?.workflowModules as string[] | undefined) ??
+          []),
       ];
     }
 
@@ -256,7 +255,9 @@ export const patchTemporalClient = (clientModule: {
           },
         });
       }
-    } as unknown as new (...args: unknown[]) => unknown;
+    } as unknown as new (
+      ...args: unknown[]
+    ) => unknown;
 };
 
 // ─── Convenience namespace ────────────────────────────────────────────────────

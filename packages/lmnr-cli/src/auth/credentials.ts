@@ -65,7 +65,10 @@ export async function readCredentials(): Promise<Credentials | null> {
   } catch {
     return null;
   }
-  if (parsed.version === CREDENTIALS_VERSION && typeof parsed.sessionToken === "string") {
+  if (
+    parsed.version === CREDENTIALS_VERSION &&
+    typeof parsed.sessionToken === "string"
+  ) {
     return parsed as Credentials;
   }
   return null;

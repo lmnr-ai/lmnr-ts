@@ -7,29 +7,33 @@ import { getDirname, initializeLogger } from "../utils";
 const logger = initializeLogger();
 
 // esbuild plugin to skip dynamic imports
-const createSkipDynamicImportsPlugin = (skipModules: string[]): esbuild.Plugin => ({
-  name: 'skip-dynamic-imports',
+const createSkipDynamicImportsPlugin = (
+  skipModules: string[],
+): esbuild.Plugin => ({
+  name: "skip-dynamic-imports",
   setup(build) {
     if (!skipModules || skipModules.length === 0) return;
 
     build.onResolve({ filter: /.*/ }, (args) => {
       // Only handle dynamic imports
-      if (args.kind === 'dynamic-import' && skipModules.includes(args.path)) {
+      if (args.kind === "dynamic-import" && skipModules.includes(args.path)) {
         logger.warn(`Skipping dynamic import: ${args.path}`);
         // Return a virtual module that exports an empty object
         return {
           path: args.path,
-          namespace: 'lmnr-skip-dynamic-import',
+          namespace: "lmnr-skip-dynamic-import",
         };
       }
     });
 
     // Provide empty module content for skipped dynamic imports
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    build.onLoad({ filter: /.*/, namespace: 'lmnr-skip-dynamic-import' }, (args) => ({
-      contents: 'export default {};',
-      loader: 'js',
-    }));
+    build.onLoad(
+      { filter: /.*/, namespace: "lmnr-skip-dynamic-import" },
+      (args) => ({
+        contents: "export default {};",
+        loader: "js",
+      }),
+    );
   },
 });
 
@@ -48,22 +52,12 @@ function loadModule({
 
   // add some arguments for proper cjs/esm interop
 
-  /* eslint-disable @typescript-eslint/no-implied-eval */
-  /* eslint-disable @typescript-eslint/no-unsafe-call*/
-  new Function(
-    "require",
-    "module",
-    "__filename",
-    "__dirname",
-    moduleText,
-  )(
+  new Function("require", "module", "__filename", "__dirname", moduleText)(
     require,
     module,
     __filename,
     __dirname,
   );
-  /* eslint-enable @typescript-eslint/no-unsafe-call*/
-  /* eslint-enable @typescript-eslint/no-implied-eval */
 
   // Return the modified _evals global variable
   return globalThis._evaluations;
@@ -81,10 +75,11 @@ export async function runEvaluation(
   files: string[],
   options: EvalCommandOptions,
 ): Promise<void> {
-  const patterns = files && files.length > 0
-    ? files
-    // No files provided, use default pattern
-    : ['evals/**/*.eval.{ts,js}'];
+  const patterns =
+    files && files.length > 0
+      ? files
+      : // No files provided, use default pattern
+        ["evals/**/*.eval.{ts,js}"];
 
   const evalFiles: string[] = [];
   for await (const file of fs.glob(patterns)) {
@@ -94,9 +89,11 @@ export async function runEvaluation(
   evalFiles.sort();
 
   if (evalFiles.length === 0) {
-    logger.error("No evaluation files found. Please provide a file or " +
-      "ensure there are eval files that are named like `*.eval.{ts,js}` in " +
-      "the `evals` directory or its subdirectories.");
+    logger.error(
+      "No evaluation files found. Please provide a file or " +
+        "ensure there are eval files that are named like `*.eval.{ts,js}` in " +
+        "the `evals` directory or its subdirectories.",
+    );
     process.exit(1);
   }
 
@@ -107,10 +104,10 @@ export async function runEvaluation(
   }
 
   const scores: {
-    file: string,
-    scores: Record<string, number>,
-    url: string,
-    evaluationId: string,
+    file: string;
+    scores: Record<string, number>;
+    url: string;
+    evaluationId: string;
   }[] = [];
 
   for (const file of evalFiles) {
@@ -120,7 +117,7 @@ export async function runEvaluation(
       platform: "node" as esbuild.Platform,
       entryPoints: [file],
       outfile: `tmp_out_${file}.js`,
-      write: false,  // will be loaded in memory as a temp file
+      write: false, // will be loaded in memory as a temp file
       external: [
         "@lmnr-ai/lmnr",
         "@lmnr-ai/lmnr/*",
@@ -143,8 +140,10 @@ export async function runEvaluation(
     const result = await esbuild.build(buildOptions);
 
     if (!result.outputFiles) {
-      logger.error("Error when building: No output files found " +
-        "it is likely that all eval files are not valid TypeScript or JavaScript files.");
+      logger.error(
+        "Error when building: No output files found " +
+          "it is likely that all eval files are not valid TypeScript or JavaScript files.",
+      );
       if (options.failOnError) {
         process.exit(1);
       }
@@ -176,8 +175,8 @@ export async function runEvaluation(
       scores.push({
         file,
         scores: evalResult?.averageScores ?? {},
-        url: evalResult?.url ?? '',
-        evaluationId: evalResult?.evaluationId ?? '',
+        url: evalResult?.url ?? "",
+        evaluationId: evalResult?.evaluationId ?? "",
       });
     }
   }

@@ -1,8 +1,13 @@
-import { Context, type Span, type SpanOptions, trace, type Tracer } from "@opentelemetry/api";
+import {
+  Context,
+  type Span,
+  type SpanOptions,
+  type Tracer,
+  trace,
+} from "@opentelemetry/api";
 
 import { LaminarContextManager } from "./context";
 import { LaminarSpan } from "./span";
-
 
 export class LaminarTracer implements Tracer {
   private _tracer: Tracer;
@@ -10,13 +15,24 @@ export class LaminarTracer implements Tracer {
     this._tracer = tracer;
   }
 
-  public startSpan(name: string, options?: SpanOptions, context?: Context): Span {
+  public startSpan(
+    name: string,
+    options?: SpanOptions,
+    context?: Context,
+  ): Span {
     return new LaminarSpan(
-      this._tracer.startSpan(name, options, context || LaminarContextManager.getContext()),
+      this._tracer.startSpan(
+        name,
+        options,
+        context || LaminarContextManager.getContext(),
+      ),
     );
   }
 
-  public startActiveSpan<F extends (span: Span) => unknown>(name: string, fn: F): ReturnType<F>;
+  public startActiveSpan<F extends (span: Span) => unknown>(
+    name: string,
+    fn: F,
+  ): ReturnType<F>;
   public startActiveSpan<F extends (span: Span) => unknown>(
     name: string,
     options: SpanOptions,
@@ -42,24 +58,35 @@ export class LaminarTracer implements Tracer {
       contextToUse = LaminarContextManager.getContext();
     }
 
-    const wrapped = (fn: F) => (span: Span): ReturnType<F> => {
-      const laminarSpan = new LaminarSpan(span);
-      const ctxWithAssociationProperties = LaminarContextManager.setAssociationProperties(
-        laminarSpan,
-        contextToUse,
-      );
-      const newContext = trace.setSpan(ctxWithAssociationProperties, laminarSpan);
-      const currentStack = LaminarContextManager.getContextStack();
-      const res = LaminarContextManager.runWithIsolatedContext(
-        [...currentStack, newContext],
-        () => fn(laminarSpan) as ReturnType<F>,
-      );
-      // We don't pop the context here, because it is the caller's responsibility to
-      // end the span. LaminarSpan.end() will pop the context.
-      return res;
-    };
+    const wrapped =
+      (fn: F) =>
+      (span: Span): ReturnType<F> => {
+        const laminarSpan = new LaminarSpan(span);
+        const ctxWithAssociationProperties =
+          LaminarContextManager.setAssociationProperties(
+            laminarSpan,
+            contextToUse,
+          );
+        const newContext = trace.setSpan(
+          ctxWithAssociationProperties,
+          laminarSpan,
+        );
+        const currentStack = LaminarContextManager.getContextStack();
+        const res = LaminarContextManager.runWithIsolatedContext(
+          [...currentStack, newContext],
+          () => fn(laminarSpan) as ReturnType<F>,
+        );
+        // We don't pop the context here, because it is the caller's responsibility to
+        // end the span. LaminarSpan.end() will pop the context.
+        return res;
+      };
     if (typeof optionsOrFn === "function") {
-      return this._tracer.startActiveSpan(name, {}, contextToUse, wrapped(optionsOrFn));
+      return this._tracer.startActiveSpan(
+        name,
+        {},
+        contextToUse,
+        wrapped(optionsOrFn),
+      );
     }
     if (typeof contextOrFn === "function") {
       return this._tracer.startActiveSpan(
@@ -79,4 +106,3 @@ export class LaminarTracer implements Tracer {
     );
   }
 }
-

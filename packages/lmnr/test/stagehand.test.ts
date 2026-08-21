@@ -3,9 +3,9 @@ import { after, afterEach, beforeEach, describe, it } from "node:test";
 
 import {
   context,
-  diag,
   DiagConsoleLogger,
   DiagLogLevel,
+  diag,
   trace,
 } from "@opentelemetry/api";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
@@ -16,11 +16,6 @@ import {
   _resetConfiguration,
   initializeTracing,
 } from "../src/opentelemetry-lib/configuration";
-
-/* eslint-disable
-  @typescript-eslint/require-await,
-  @typescript-eslint/no-unused-vars
-*/
 
 // These tests exercise the wrap/unwrap guards and the BROWSERBASE apiClient
 // fallback path. We do not pull in the real @browserbasehq/stagehand package
@@ -201,8 +196,3 @@ void describe("Stagehand v3 instrumentation — wrap guards", () => {
     }
   });
 });
-
-/* eslint-enable
-  @typescript-eslint/require-await,
-  @typescript-eslint/no-unused-vars
-*/

@@ -1,3 +1,4 @@
+// biome-ignore-all lint/complexity/noBannedTypes: instrumentation wraps arbitrary Functions
 import { diag } from "@opentelemetry/api";
 import {
   InstrumentationBase,
@@ -21,15 +22,11 @@ export { LaminarAgentsTraceProcessor } from "./processor";
 
 const logger = initializeLogger();
 
-/* eslint-disable
-  @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return,
-  @typescript-eslint/no-unsafe-argument
-*/
-
-type ModelRequestLike = {
-  systemInstructions?: string;
-} | undefined;
+type ModelRequestLike =
+  | {
+      systemInstructions?: string;
+    }
+  | undefined;
 
 const wrapGetResponse = (original: Function): Function =>
   function (this: any, request: ModelRequestLike, ...rest: any[]) {
@@ -132,9 +129,8 @@ export class OpenAIAgentsInstrumentation extends InstrumentationBase {
         if (typeof cls.prototype[method] !== "function") {
           continue;
         }
-        const wrapper = method === "getResponse"
-          ? wrapGetResponse
-          : wrapGetStreamedResponse;
+        const wrapper =
+          method === "getResponse" ? wrapGetResponse : wrapGetStreamedResponse;
         try {
           this._wrap(cls.prototype, method, wrapper as any);
         } catch (e) {
@@ -191,8 +187,3 @@ export class OpenAIAgentsInstrumentation extends InstrumentationBase {
     this.unpatchModel(moduleExports as AgentsOpenAIModule);
   }
 }
-/* eslint-enable
-  @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return,
-  @typescript-eslint/no-unsafe-argument
-*/

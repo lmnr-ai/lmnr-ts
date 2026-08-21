@@ -1,20 +1,27 @@
-import { LaminarClient } from '@lmnr-ai/client';
-import { errorMessage, SessionRecordingOptions } from '@lmnr-ai/types';
-import { diag, trace } from '@opentelemetry/api';
+// biome-ignore-all lint/complexity/noBannedTypes: instrumentation wraps arbitrary Functions
+import { LaminarClient } from "@lmnr-ai/client";
+import { errorMessage, SessionRecordingOptions } from "@lmnr-ai/types";
+import { diag, trace } from "@opentelemetry/api";
 import {
   InstrumentationBase,
   InstrumentationModuleDefinition,
   InstrumentationNodeModuleDefinition,
 } from "@opentelemetry/instrumentation";
 import type * as PuppeteerLib from "puppeteer";
-import type { Browser, BrowserContext, Page } from 'puppeteer';
+import type { Browser, BrowserContext, Page } from "puppeteer";
 import type * as PuppeteerCoreLib from "puppeteer-core";
 
 import { version as SDK_VERSION } from "../../package.json";
-import { observe } from '../decorators';
-import { TRACE_HAS_BROWSER_SESSION } from '../opentelemetry-lib/tracing/attributes';
-import { LaminarContextManager } from '../opentelemetry-lib/tracing/context';
-import { initializeLogger, newUUID, NIL_UUID, otelTraceIdToUUID, StringUUID } from '../utils';
+import { observe } from "../decorators";
+import { TRACE_HAS_BROWSER_SESSION } from "../opentelemetry-lib/tracing/attributes";
+import { LaminarContextManager } from "../opentelemetry-lib/tracing/context";
+import {
+  initializeLogger,
+  NIL_UUID,
+  newUUID,
+  otelTraceIdToUUID,
+  StringUUID,
+} from "../utils";
 import {
   ChunkBuffer,
   EventChunk,
@@ -26,24 +33,18 @@ import {
 
 const logger = initializeLogger();
 
-
-/* eslint-disable
-  @typescript-eslint/no-this-alias,
-  @typescript-eslint/no-unsafe-function-type
-*/
 export class PuppeteerInstrumentation extends InstrumentationBase {
   private _patchedBrowsers: Set<Browser> = new Set();
   private _client: LaminarClient;
   private _sessionRecordingOptions?: SessionRecordingOptions;
 
-  constructor(client: LaminarClient, sessionRecordingOptions?: SessionRecordingOptions) {
-    super(
-      "@lmnr/puppeteer-instrumentation",
-      SDK_VERSION,
-      {
-        enabled: true,
-      },
-    );
+  constructor(
+    client: LaminarClient,
+    sessionRecordingOptions?: SessionRecordingOptions,
+  ) {
+    super("@lmnr/puppeteer-instrumentation", SDK_VERSION, {
+      enabled: true,
+    });
     this._client = client;
     this._sessionRecordingOptions = sessionRecordingOptions;
   }
@@ -54,33 +55,28 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
       // About two years before first writing this instrumentation
       // and apparently no big breaking changes afterwards
       // https://github.com/puppeteer/puppeteer/releases
-      ['>=19.0.0'],
+      [">=19.0.0"],
       this.patch.bind(this),
       this.unpatch.bind(this),
     );
 
-    const puppeteerCoreInstrumentation = new InstrumentationNodeModuleDefinition(
-      "puppeteer-core",
-      ['>=19.0.0'],
-      this.patch.bind(this),
-      this.unpatch.bind(this),
-    );
+    const puppeteerCoreInstrumentation =
+      new InstrumentationNodeModuleDefinition(
+        "puppeteer-core",
+        [">=19.0.0"],
+        this.patch.bind(this),
+        this.unpatch.bind(this),
+      );
 
     return [puppeteerInstrumentation, puppeteerCoreInstrumentation];
   }
 
-  public manuallyInstrument(puppeteerModule: typeof PuppeteerLib | typeof PuppeteerCoreLib) {
-    this._wrap(
-      puppeteerModule,
-      'launch',
-      this.patchNewBrowser(),
-    );
+  public manuallyInstrument(
+    puppeteerModule: typeof PuppeteerLib | typeof PuppeteerCoreLib,
+  ) {
+    this._wrap(puppeteerModule, "launch", this.patchNewBrowser());
 
-    this._wrap(
-      puppeteerModule,
-      'connect',
-      this.patchNewBrowser(),
-    );
+    this._wrap(puppeteerModule, "connect", this.patchNewBrowser());
 
     return puppeteerModule;
   }
@@ -90,11 +86,7 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
     moduleVersion?: string,
   ) {
     diag.debug(`patching puppeteer ${moduleVersion}`);
-    this._wrap(
-      moduleExports,
-      `launch`,
-      this.patchNewBrowser(),
-    );
+    this._wrap(moduleExports, `launch`, this.patchNewBrowser());
 
     this._wrap(
       moduleExports.PuppeteerNode.prototype,
@@ -102,11 +94,7 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
       this.patchNewBrowser(),
     );
 
-    this._wrap(
-      moduleExports,
-      `connect`,
-      this.patchNewBrowser(),
-    );
+    this._wrap(moduleExports, `connect`, this.patchNewBrowser());
 
     this._wrap(
       moduleExports.Puppeteer.prototype,
@@ -114,133 +102,123 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
       this.patchNewBrowser(),
     );
 
-    this._wrap(
-      moduleExports.default,
-      `launch`,
-      this.patchNewBrowser(),
-    );
+    this._wrap(moduleExports.default, `launch`, this.patchNewBrowser());
 
-    this._wrap(
-      moduleExports.default,
-      `connect`,
-      this.patchNewBrowser(),
-    );
+    this._wrap(moduleExports.default, `connect`, this.patchNewBrowser());
 
     return moduleExports;
   }
 
   private unpatch(moduleExports: typeof PuppeteerLib, moduleVersion?: string) {
     diag.debug(`unpatching puppeteer ${moduleVersion}`);
-    this._unwrap(
-      moduleExports,
-      `launch`,
-    );
+    this._unwrap(moduleExports, `launch`);
 
-    this._unwrap(
-      moduleExports,
-      `connect`,
-    );
+    this._unwrap(moduleExports, `connect`);
 
-    this._unwrap(
-      moduleExports.PuppeteerNode.prototype,
-      `launch`,
-    );
+    this._unwrap(moduleExports.PuppeteerNode.prototype, `launch`);
 
-    this._unwrap(
-      moduleExports.Puppeteer.prototype,
-      `connect`,
-    );
+    this._unwrap(moduleExports.Puppeteer.prototype, `connect`);
 
-    this._unwrap(
-      moduleExports.default,
-      `connect`,
-    );
+    this._unwrap(moduleExports.default, `connect`);
 
-    this._unwrap(
-      moduleExports.default,
-      `launch`,
-    );
+    this._unwrap(moduleExports.default, `launch`);
 
     for (const browser of this._patchedBrowsers) {
-      this._unwrap(browser, 'createBrowserContext');
+      this._unwrap(browser, "createBrowserContext");
     }
   }
 
   private patchNewBrowser() {
     const plugin = this;
-    return (original: Function) => async function method(this: Browser, ...args: any[]) {
-      const browser: Browser = await original.call(this, ...args);
-      const sessionId = newUUID();
+    return (original: Function) =>
+      async function method(this: Browser, ...args: any[]) {
+        const browser: Browser = await original.call(this, ...args);
+        const sessionId = newUUID();
 
-      for (const context of browser.browserContexts()) {
-        context.on('targetcreated', (target) => {
-          target.page().then(page => {
-            if (page) {
-              plugin.patchPage(page, sessionId).catch(error => {
+        for (const context of browser.browserContexts()) {
+          context.on("targetcreated", (target) => {
+            target
+              .page()
+              .then((page) => {
+                if (page) {
+                  plugin.patchPage(page, sessionId).catch((error) => {
+                    logger.error(
+                      "Failed to patch page: " + errorMessage(error),
+                    );
+                  });
+                }
+              })
+              .catch((error) => {
                 logger.error("Failed to patch page: " + errorMessage(error));
               });
-            }
-          })
-            .catch(error => {
-              logger.error("Failed to patch page: " + errorMessage(error));
-            });
-        });
-        await Promise.all((await context.pages()).map(page => plugin.patchPage(page, sessionId)));
-      }
+          });
+          await Promise.all(
+            (await context.pages()).map((page) =>
+              plugin.patchPage(page, sessionId),
+            ),
+          );
+        }
 
-      plugin._wrap(
-        browser,
-        'createBrowserContext',
-        plugin.patchBrowserNewContext(),
-      );
+        plugin._wrap(
+          browser,
+          "createBrowserContext",
+          plugin.patchBrowserNewContext(),
+        );
 
-      plugin._patchedBrowsers.add(browser);
-      return browser;
-    };
+        plugin._patchedBrowsers.add(browser);
+        return browser;
+      };
   }
 
   private patchBrowserNewContext() {
     const plugin = this;
-    return (original: Function) => async function method(this: Browser, ...args: unknown[]) {
-      const context: BrowserContext = await original.bind(this).apply(this, args);
-      const sessionId = newUUID();
-      // Patch pages created by browser, e.g. new tab
-      context.on('targetcreated', (target) => {
-        target.page().then(page => {
-          if (page) {
-            plugin.patchPage(page, sessionId).catch(error => {
+    return (original: Function) =>
+      async function method(this: Browser, ...args: unknown[]) {
+        const context: BrowserContext = await original
+          .bind(this)
+          .apply(this, args);
+        const sessionId = newUUID();
+        // Patch pages created by browser, e.g. new tab
+        context.on("targetcreated", (target) => {
+          target
+            .page()
+            .then((page) => {
+              if (page) {
+                plugin.patchPage(page, sessionId).catch((error) => {
+                  logger.error("Failed to patch page: " + errorMessage(error));
+                });
+              }
+            })
+            .catch((error) => {
               logger.error("Failed to patch page: " + errorMessage(error));
             });
-          }
-        })
-          .catch(error => {
-            logger.error("Failed to patch page: " + errorMessage(error));
-          });
-      });
-      context.on('targetchanged', (target) => {
-        target.page().then(page => {
-          if (page) {
-            plugin.patchPage(page, sessionId).catch(error => {
+        });
+        context.on("targetchanged", (target) => {
+          target
+            .page()
+            .then((page) => {
+              if (page) {
+                plugin.patchPage(page, sessionId).catch((error) => {
+                  logger.error("Failed to patch page: " + errorMessage(error));
+                });
+              }
+            })
+            .catch((error) => {
               logger.error("Failed to patch page: " + errorMessage(error));
             });
-          }
-        })
-          .catch(error => {
-            logger.error("Failed to patch page: " + errorMessage(error));
-          });
-      });
+        });
 
-      // Patch pages that are already created
-      for (const page of await context.pages()) {
-        await plugin.patchPage(page, sessionId);
-      }
+        // Patch pages that are already created
+        for (const page of await context.pages()) {
+          await plugin.patchPage(page, sessionId);
+        }
 
-      return context;
-    };
+        return context;
+      };
   }
 
   public async patchPage(page: Page, sessionId: StringUUID) {
-    return await observe({ name: 'puppeteer.page' }, async () => {
+    return await observe({ name: "puppeteer.page" }, async () => {
       await this._patchPage(page, sessionId);
     });
   }
@@ -253,15 +231,19 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
       await takeFullSnapshot(page);
     };
 
-    const currentSpan = trace.getSpan(LaminarContextManager.getContext()) ?? trace.getActiveSpan();
+    const currentSpan =
+      trace.getSpan(LaminarContextManager.getContext()) ??
+      trace.getActiveSpan();
     currentSpan?.setAttribute(TRACE_HAS_BROWSER_SESSION, true);
     const otelTraceId = currentSpan?.spanContext().traceId;
     const traceId = otelTraceId ? otelTraceIdToUUID(otelTraceId) : NIL_UUID;
 
-    page.on('domcontentloaded', () => {
-      injectSessionRecorder(page, this._sessionRecordingOptions).catch(error => {
-        logger.error("Error in onLoad handler: " + errorMessage(error));
-      });
+    page.on("domcontentloaded", () => {
+      injectSessionRecorder(page, this._sessionRecordingOptions).catch(
+        (error) => {
+          logger.error("Error in onLoad handler: " + errorMessage(error));
+        },
+      );
     });
 
     await injectSessionRecorder(page, this._sessionRecordingOptions);
@@ -269,16 +251,25 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
     const chunkBuffers = new Map<string, ChunkBuffer>();
 
     try {
-      await page.exposeFunction(LMNR_SEND_EVENTS_FUNCTION_NAME, async (chunk: EventChunk) => {
-        await sendEvents(chunk, this._client, chunkBuffers, sessionId, traceId);
-      });
+      await page.exposeFunction(
+        LMNR_SEND_EVENTS_FUNCTION_NAME,
+        async (chunk: EventChunk) => {
+          await sendEvents(
+            chunk,
+            this._client,
+            chunkBuffers,
+            sessionId,
+            traceId,
+          );
+        },
+      );
     } catch (error) {
-      logger.debug("Could not expose function " + LMNR_SEND_EVENTS_FUNCTION_NAME + ": "
-        + errorMessage(error));
+      logger.debug(
+        "Could not expose function " +
+          LMNR_SEND_EVENTS_FUNCTION_NAME +
+          ": " +
+          errorMessage(error),
+      );
     }
   }
 }
-/* eslint-enable
-  @typescript-eslint/no-this-alias,
-  @typescript-eslint/no-unsafe-function-type
-*/

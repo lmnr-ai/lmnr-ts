@@ -204,7 +204,9 @@ export class LaminarSpanProcessor implements SpanProcessor {
     const parentSpanIdsPath =
       parentIdsPathFromAttribute ??
       (parentSpanId
-        ? this._spanIdLists.get(parentSpanId) ?? [otelSpanIdToUUID(parentSpanId)]
+        ? (this._spanIdLists.get(parentSpanId) ?? [
+            otelSpanIdToUUID(parentSpanId),
+          ])
         : []);
     const spanPath = parentSpanPath
       ? [...parentSpanPath, span.name]

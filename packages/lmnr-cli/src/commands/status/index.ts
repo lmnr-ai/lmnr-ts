@@ -1,7 +1,10 @@
 import { safeReadCredentials } from "../../auth/credentials";
 import type { GlobalOpts } from "../../auth/with-client";
 import { pc } from "../../utils/colors";
-import { readDebugSessionFile, resolveDebugSessionDir } from "../../utils/debug-session-file";
+import {
+  readDebugSessionFile,
+  resolveDebugSessionDir,
+} from "../../utils/debug-session-file";
 import { readLocalProjectFile } from "../../utils/local-project-file";
 import { outputJson } from "../../utils/output";
 
@@ -65,14 +68,20 @@ export const handleStatus = async (opts: GlobalOpts): Promise<void> => {
     out += row("Project", project);
     out += row("Workspace", report.workspaceName ?? notSet("unknown"));
   } else {
-    out += row("Project", notSet("no project linked here — run `lmnr-cli project link`"));
+    out += row(
+      "Project",
+      notSet("no project linked here — run `lmnr-cli project link`"),
+    );
   }
 
   if (report.debugSessionId) {
     out += row("Debug session", report.debugSessionId);
     if (report.debuggerUrl) out += row("Debugger URL", report.debuggerUrl);
   } else {
-    out += row("Debug session", notSet("none active — run `lmnr-cli debug session new`"));
+    out += row(
+      "Debug session",
+      notSet("none active — run `lmnr-cli debug session new`"),
+    );
   }
 
   process.stdout.write(out);

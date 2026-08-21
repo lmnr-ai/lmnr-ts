@@ -44,7 +44,6 @@ const _handlerHeaders = new AsyncLocalStorage<Headers>();
 const activeHeaders = (): Headers =>
   _handlerHeaders.getStore() ?? _startHeaders;
 
-
 export const interceptors = (): WorkflowInterceptors => ({
   inbound: [
     {
@@ -95,4 +94,3 @@ export const interceptors = (): WorkflowInterceptors => ({
     },
   ],
 });
-

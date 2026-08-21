@@ -10,7 +10,11 @@ import spawn from "cross-spawn";
 
 import { version } from "../../../package.json";
 import { mintProjectApiKey } from "../../auth/api-key";
-import { type Credentials, globalLmnrDirectory, safeReadCredentials } from "../../auth/credentials";
+import {
+  type Credentials,
+  globalLmnrDirectory,
+  safeReadCredentials,
+} from "../../auth/credentials";
 import { SessionExpiredError } from "../../auth/resolve";
 import { DEFAULT_BASE_URL, DEFAULT_FRONTEND_URL } from "../../constants";
 import {
@@ -88,7 +92,15 @@ export const AGENTS: Record<string, AgentSpec> = {
     hostCli: "claude",
     probeArgv: ["plugin", "--help"],
     installCommands: [
-      { argv: ["plugin", "marketplace", "add", "lmnr-ai/lmnr-claude-code-plugin"], lenient: true },
+      {
+        argv: [
+          "plugin",
+          "marketplace",
+          "add",
+          "lmnr-ai/lmnr-claude-code-plugin",
+        ],
+        lenient: true,
+      },
       { argv: ["plugin", "install", "lmnr@lmnr", "--scope", "user"] },
     ],
     configFile: "claude-code-plugin.json",
@@ -100,7 +112,10 @@ export const AGENTS: Record<string, AgentSpec> = {
     hostCli: "codex",
     probeArgv: ["plugin", "--help"],
     installCommands: [
-      { argv: ["plugin", "marketplace", "add", "lmnr-ai/lmnr-codex-plugin"], lenient: true },
+      {
+        argv: ["plugin", "marketplace", "add", "lmnr-ai/lmnr-codex-plugin"],
+        lenient: true,
+      },
       { argv: ["plugin", "add", "lmnr@lmnr"] },
     ],
     configFile: "codex-plugin.json",
@@ -165,13 +180,18 @@ interface PluginAddResult {
  * CLI's argv — it lives only in the per-agent config file (no agent has a
  * per-add-on secret store), so the install commands carry no secret.
  */
-export const handlePluginAdd = async (agent: string, options: PluginAddOptions): Promise<void> => {
+export const handlePluginAdd = async (
+  agent: string,
+  options: PluginAddOptions,
+): Promise<void> => {
   const isJson = options.json === true;
   const spec = AGENTS[agent];
   if (!spec) {
     failWith(
       isJson,
-      unsupportedAgent(`Unknown agent "${agent}". Supported: ${Object.keys(AGENTS).join(", ")}.`),
+      unsupportedAgent(
+        `Unknown agent "${agent}". Supported: ${Object.keys(AGENTS).join(", ")}.`,
+      ),
     );
   }
 
@@ -180,11 +200,19 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
     process.env.LMNR_FRONTEND_URL,
     DEFAULT_FRONTEND_URL,
   );
-  const baseUrl = firstNonEmpty(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
+  const baseUrl = firstNonEmpty(
+    options.baseUrl,
+    process.env.LMNR_BASE_URL,
+    DEFAULT_BASE_URL,
+  );
 
   if (!isJson) {
-    process.stderr.write(`\n${orange("Laminar CLI")} ${pc.dim(`v${version}`)}\n`);
-    process.stderr.write(pc.dim(`Setting up the Laminar ${spec.noun} for ${spec.label}.\n\n`));
+    process.stderr.write(
+      `\n${orange("Laminar CLI")} ${pc.dim(`v${version}`)}\n`,
+    );
+    process.stderr.write(
+      pc.dim(`Setting up the Laminar ${spec.noun} for ${spec.label}.\n\n`),
+    );
   }
 
   // --- 1. Login ------------------------------------------------------------
@@ -193,7 +221,10 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
   if (!creds) {
     let login;
     try {
-      login = await handleLogin({ frontendUrl, noBrowser: options.browser === false });
+      login = await handleLogin({
+        frontendUrl,
+        noBrowser: options.browser === false,
+      });
     } catch (err) {
       failWith(isJson, loginFailed(errorMessage(err)));
     }
@@ -206,11 +237,19 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
 
   const issuer = creds.issuer || frontendUrl;
   if (!isJson) {
-    process.stderr.write(`${pc.green("✓")} Logged in as ${creds.userEmail ?? "<unknown>"}\n`);
+    process.stderr.write(
+      `${pc.green("✓")} Logged in as ${creds.userEmail ?? "<unknown>"}\n`,
+    );
   }
 
   // --- 2. Project selection (deliberate — the dedicated coding-agent project) --
-  const project = await resolveProject(creds, baseUrl, options, loginProjectId, isJson);
+  const project = await resolveProject(
+    creds,
+    baseUrl,
+    options,
+    loginProjectId,
+    isJson,
+  );
   if (!isJson) {
     process.stderr.write(
       `${pc.green("✓")} Traces will go to project ${project.name || project.id}` +
@@ -223,12 +262,19 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
   const keyName = `${spec.label} ${spec.noun} @ ${hostname()}`;
   let key;
   try {
-    key = await mintProjectApiKey(issuer, creds.sessionToken, project.id, keyName);
+    key = await mintProjectApiKey(
+      issuer,
+      creds.sessionToken,
+      project.id,
+      keyName,
+    );
   } catch (err) {
     failWith(isJson, mintFailed(errorMessage(err)));
   }
   if (!isJson) {
-    process.stderr.write(`${pc.green("✓")} Minted a project API key named "${pc.bold(keyName)}"\n`);
+    process.stderr.write(
+      `${pc.green("✓")} Minted a project API key named "${pc.bold(keyName)}"\n`,
+    );
   }
 
   // --- 4. Write the per-agent config file the plugin reads -----------------
@@ -249,7 +295,10 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
 
   // Shared by the success summary and the JSON failure path, so a caller always
   // gets the minted key + commands regardless of outcome.
-  const makeResult = (didInstall: boolean, error?: string): PluginAddResult => ({
+  const makeResult = (
+    didInstall: boolean,
+    error?: string,
+  ): PluginAddResult => ({
     agent,
     projectId: project.id,
     projectName: project.name || null,
@@ -268,7 +317,9 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
     if (!installed) {
       if (isJson) {
         // Key is already minted/on disk — emit the full result so a caller can recover it.
-        process.stdout.write(JSON.stringify(makeResult(false, "install_failed")) + "\n");
+        process.stdout.write(
+          JSON.stringify(makeResult(false, "install_failed")) + "\n",
+        );
       } else {
         printCommands(spec, hostCommands, false, "install-failed");
         emitError(
@@ -280,7 +331,12 @@ export const handlePluginAdd = async (agent: string, options: PluginAddOptions):
       process.exit(EXIT_INSTALL_FAILED);
     }
   } else {
-    printCommands(spec, hostCommands, isJson, options.printOnly ? "print-only" : "no-host-cli");
+    printCommands(
+      spec,
+      hostCommands,
+      isJson,
+      options.printOnly ? "print-only" : "no-host-cli",
+    );
   }
 
   // --- 6. Summary ----------------------------------------------------------
@@ -335,7 +391,10 @@ const resolveProject = async (
     // An expired grant surfaces here via listProjects → refreshIfNeeded. Map it
     // to login_failed (6), like setup / project link — not a discovery failure.
     if (err instanceof SessionExpiredError) {
-      failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
+      failWith(
+        isJson,
+        loginFailed("Session expired. Run `lmnr-cli login` first."),
+      );
     }
     failWith(isJson, listProjectsFailed(errorMessage(err)));
   }
@@ -347,7 +406,9 @@ const resolveProject = async (
         isJson,
         noAccess(
           `You don't have access to project ${options.projectId}. Accessible: ` +
-            projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+            projects
+              .map((p) => `${p.id} (${p.workspaceName}/${p.name})`)
+              .join(", "),
         ),
       );
     }
@@ -378,14 +439,18 @@ const resolveProject = async (
       isJson,
       projectAmbiguous(
         `Multiple projects: pass --project-id <id>. ` +
-          projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+          projects
+            .map((p) => `${p.id} (${p.workspaceName}/${p.name})`)
+            .join(", "),
       ),
     );
   }
   return promptProjectChoice(
     projects,
     "\nPick the project to send this agent's traces to " +
-      pc.dim("(a dedicated project keeps agent traces separate from your app traces)") +
+      pc.dim(
+        "(a dedicated project keeps agent traces separate from your app traces)",
+      ) +
       ":\n",
   );
 };
@@ -400,13 +465,18 @@ const resolveProject = async (
  * reads it from here (no agent has a per-add-on secret store), so the key never
  * has to pass through the host CLI's argv. Returns the path.
  */
-export const writeAgentConfig = (spec: AgentSpec, apiKey: string, baseUrl: string): string => {
+export const writeAgentConfig = (
+  spec: AgentSpec,
+  apiKey: string,
+  baseUrl: string,
+): string => {
   const dir = globalLmnrDirectory();
   // recursive == `mkdir -p` (no error if it exists). 0700 not 0600: a dir needs the
   // execute bit to traverse into it; the key file itself is written 0600 below.
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const filePath = join(dir, spec.configFile);
-  const body = JSON.stringify({ projectApiKey: apiKey, baseUrl }, null, 2) + "\n";
+  const body =
+    JSON.stringify({ projectApiKey: apiKey, baseUrl }, null, 2) + "\n";
   writeFileSync(filePath, body, { mode: 0o600 });
   // `mode` only applies on create; chmod so a re-run can't leave an existing file looser.
   chmodSync(filePath, 0o600);
@@ -445,7 +515,9 @@ const runInstall = async (
   if (!isJson) process.stderr.write("\n");
   for (const cmd of commands) {
     if (!isJson) {
-      process.stderr.write(`${pc.dim(`$ ${renderCommand(spec.hostCli, cmd.argv)}`)}\n`);
+      process.stderr.write(
+        `${pc.dim(`$ ${renderCommand(spec.hostCli, cmd.argv)}`)}\n`,
+      );
     }
     const code = await runChild(spec.hostCli, cmd.argv, isJson);
     if (code !== 0) {
@@ -466,7 +538,11 @@ const runInstall = async (
 
 // In --json mode the child's stdout goes to our stderr (fd 2) so its chatter
 // can't pollute the single JSON line we print on stdout.
-const runChild = (cmd: string, argv: string[], isJson: boolean): Promise<number> =>
+const runChild = (
+  cmd: string,
+  argv: string[],
+  isJson: boolean,
+): Promise<number> =>
   new Promise((resolve) => {
     const stdio: StdioOptions = isJson ? ["inherit", 2, "inherit"] : "inherit";
     const child = spawn(cmd, argv, { stdio });

@@ -6,8 +6,8 @@ import {
   SpanContext,
   SpanKind,
   SpanStatusCode,
-  trace,
   TraceFlags,
+  trace,
 } from "@opentelemetry/api";
 
 import { version as SDK_VERSION } from "../../../../package.json";
@@ -170,8 +170,9 @@ export class MastraExporter {
   // on Laminar's tracer provider (set by `Laminar.initialize()`) for span
   // creation and export, so this is a no-op kept only for API compatibility
   // with Mastra's exporter contract.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  init(_options?: unknown): void {}
+  init(_options?: unknown): void {
+    /* intentional no-op */
+  }
 
   async exportTracingEvent(event: MastraTracingEvent): Promise<void> {
     const span = event.exportedSpan;
@@ -195,9 +196,7 @@ export class MastraExporter {
       // `applyLlmAttributes` time.
       this.generationAttrsById.set(
         span.id,
-        existing
-          ? { ...existing, ...span.attributes }
-          : { ...span.attributes },
+        existing ? { ...existing, ...span.attributes } : { ...span.attributes },
       );
     }
 
@@ -221,9 +220,7 @@ export class MastraExporter {
     try {
       await processor.forceFlush();
     } catch (err) {
-      logger.error(
-        `[MastraExporter] forceFlush failed: ${errorMessage(err)}`,
-      );
+      logger.error(`[MastraExporter] forceFlush failed: ${errorMessage(err)}`);
     }
   }
 
@@ -616,10 +613,7 @@ export class MastraExporter {
     // If it wasn't called, `getTracerProvider()` falls back to the global
     // OTel API which is a NoopTracerProvider, and `tracer.startSpan` will
     // return a NonRecordingSpan — caught below.
-    const tracer = getTracerProvider().getTracer(
-      "@lmnr-ai/lmnr",
-      SDK_VERSION,
-    );
+    const tracer = getTracerProvider().getTracer("@lmnr-ai/lmnr", SDK_VERSION);
     const parentCtx = this.buildParentContext(span, traceState);
 
     const otelSpan = tracer.startSpan(
@@ -720,8 +714,7 @@ export class MastraExporter {
     span: MastraExportedSpan,
     traceState: TraceState,
   ): Context {
-    const baseCtx =
-      LaminarContextManager.getContext() ?? contextApi.active();
+    const baseCtx = LaminarContextManager.getContext() ?? contextApi.active();
 
     if (span.parentSpanId) {
       const parentLive = this.liveOtelSpanByMastraId.get(span.parentSpanId);
@@ -886,11 +879,11 @@ export class MastraExporter {
       const normalizedToolCalls =
         Array.isArray(outObj.toolCalls) && outObj.toolCalls.length > 0
           ? (outObj.toolCalls as Array<Record<string, unknown>>).map((tc) => ({
-            toolCallType: tc.toolCallType ?? "function",
-            toolCallId: tc.toolCallId,
-            toolName: tc.toolName,
-            args: stringifyArgs(tc.args ?? tc.input),
-          }))
+              toolCallType: tc.toolCallType ?? "function",
+              toolCallId: tc.toolCallId,
+              toolName: tc.toolName,
+              args: stringifyArgs(tc.args ?? tc.input),
+            }))
           : [];
       if (normalizedToolCalls.length > 0) {
         attributes["ai.response.toolCalls"] =

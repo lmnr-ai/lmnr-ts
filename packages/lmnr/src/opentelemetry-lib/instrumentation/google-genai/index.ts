@@ -8,7 +8,12 @@ import {
 
 import { version as SDK_VERSION } from "../../../../package.json";
 import { Laminar } from "../../../laminar";
-import { setRequestAttributes, setResponseAttributes, wrapStreamingResponse } from "./utils";
+import { LaminarSpan } from "../../tracing/span";
+import {
+  setRequestAttributes,
+  setResponseAttributes,
+  wrapStreamingResponse,
+} from "./utils";
 
 const WRAPPED_SYMBOL = Symbol("lmnr.google-genai.wrapped");
 const CLASS_PATCH_DATA_SYMBOL = Symbol("lmnr.google-genai.classPatchData");
@@ -19,18 +24,12 @@ type ClassPatchData = {
   originalModelsDescriptor: PropertyDescriptor | undefined;
 };
 
-/* eslint-disable
-  @typescript-eslint/no-unsafe-return
-*/
+
 export class GoogleGenAiInstrumentation extends InstrumentationBase {
   private traceContent: boolean;
 
   constructor(config?: { traceContent?: boolean }) {
-    super(
-      "@lmnr/google-genai-instrumentation",
-      SDK_VERSION,
-      { enabled: true },
-    );
+    super("@lmnr/google-genai-instrumentation", SDK_VERSION, { enabled: true });
     this.traceContent = config?.traceContent ?? true;
   }
 
@@ -51,7 +50,7 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
     } else {
       diag.warn(
         "Could not find GoogleGenAI class in google_genai manual instrumentation input. " +
-        "Pass either GoogleGenAI class or module object with GoogleGenAI export.",
+          "Pass either GoogleGenAI class or module object with GoogleGenAI export.",
       );
     }
   }
@@ -77,16 +76,19 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
     if (typeof moduleOrClass === "function") {
       return moduleOrClass;
     }
-    if (moduleOrClass?.GoogleGenAI && typeof moduleOrClass.GoogleGenAI === "function") {
+    if (
+      moduleOrClass?.GoogleGenAI &&
+      typeof moduleOrClass.GoogleGenAI === "function"
+    ) {
       return moduleOrClass.GoogleGenAI;
     }
     return undefined;
   }
 
   private patchGoogleGenAIClass(GoogleGenAIClass: any): void {
-    const classPatchData = (
-      GoogleGenAIClass[CLASS_PATCH_DATA_SYMBOL] as ClassPatchData | undefined
-    );
+    const classPatchData = GoogleGenAIClass[CLASS_PATCH_DATA_SYMBOL] as
+      | ClassPatchData
+      | undefined;
     if (classPatchData) {
       classPatchData.instrumentation = this;
       classPatchData.traceContent = this.traceContent;
@@ -98,7 +100,9 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
       "models",
     );
     if (originalModelsDescriptor && !originalModelsDescriptor.configurable) {
-      diag.warn("Could not patch GoogleGenAI.prototype.models: descriptor is non-configurable.");
+      diag.warn(
+        "Could not patch GoogleGenAI.prototype.models: descriptor is non-configurable.",
+      );
       return;
     }
 
@@ -140,7 +144,9 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
   }
 
   private unpatchGoogleGenAIClass(GoogleGenAIClass: any): void {
-    const classPatchData = GoogleGenAIClass[CLASS_PATCH_DATA_SYMBOL] as ClassPatchData | undefined;
+    const classPatchData = GoogleGenAIClass[CLASS_PATCH_DATA_SYMBOL] as
+      | ClassPatchData
+      | undefined;
     if (!classPatchData) {
       return;
     }
@@ -156,7 +162,10 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
     delete GoogleGenAIClass[CLASS_PATCH_DATA_SYMBOL];
   }
 
-  private patchModelsInstance(models: any, classPatchData: ClassPatchData): void {
+  private patchModelsInstance(
+    models: any,
+    classPatchData: ClassPatchData,
+  ): void {
     if (!models || typeof models !== "object") return;
     if (typeof models.generateContent !== "function") return;
     if (typeof models.generateContentStream !== "function") return;
@@ -165,7 +174,8 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
     if (models[WRAPPED_SYMBOL]) return;
 
     const originalGenerateContent = models.generateContent.bind(models);
-    const originalGenerateContentStream = models.generateContentStream.bind(models);
+    const originalGenerateContentStream =
+      models.generateContentStream.bind(models);
     models.generateContent = async function (params: any) {
       if (isTracingSuppressed(context.active())) {
         return originalGenerateContent(params);
@@ -174,21 +184,28 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
       const span = Laminar.startSpan({
         name: "gemini.generate_content",
         spanType: "LLM",
-      });
+      }) as LaminarSpan;
 
       setRequestAttributes(span, params, classPatchData.traceContent);
 
-      return Laminar.withSpan(span, async () => {
-        try {
-          const response = await originalGenerateContent(params);
-          setResponseAttributes(span, response, classPatchData.traceContent);
-          return response;
-        } catch (error) {
-          span.setAttribute("error.type", (error as Error).constructor?.name ?? "Error");
-          span.setStatus({ code: SpanStatusCode.ERROR });
-          throw error;
-        }
-      }, true);
+      return Laminar.withSpan(
+        span,
+        async () => {
+          try {
+            const response = await originalGenerateContent(params);
+            setResponseAttributes(span, response, classPatchData.traceContent);
+            return response;
+          } catch (error) {
+            span.setAttribute(
+              "error.type",
+              (error as Error).constructor?.name ?? "Error",
+            );
+            span.setStatus({ code: SpanStatusCode.ERROR });
+            throw error;
+          }
+        },
+        true,
+      );
     };
 
     models.generateContentStream = async function (params: any) {
@@ -199,15 +216,22 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
       const span = Laminar.startSpan({
         name: "gemini.generate_content_stream",
         spanType: "LLM",
-      });
+      }) as LaminarSpan;
 
       setRequestAttributes(span, params, classPatchData.traceContent);
 
       try {
         const asyncGen = await originalGenerateContentStream(params);
-        return wrapStreamingResponse(span, asyncGen, classPatchData.traceContent);
+        return wrapStreamingResponse(
+          span,
+          asyncGen,
+          classPatchData.traceContent,
+        );
       } catch (error) {
-        span.setAttribute("error.type", (error as Error).constructor?.name ?? "Error");
+        span.setAttribute(
+          "error.type",
+          (error as Error).constructor?.name ?? "Error",
+        );
         span.recordException(error as Error);
         span.setStatus({ code: SpanStatusCode.ERROR });
         span.end();
@@ -218,6 +242,3 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
     models[WRAPPED_SYMBOL] = true;
   }
 }
-/* eslint-enable
-  @typescript-eslint/no-unsafe-return
-*/

@@ -1,12 +1,12 @@
-import { errorMessage } from '@lmnr-ai/types';
-import csv from 'csv-parser';
-import { asString, generateCsv, mkConfig } from 'export-to-csv';
-import { createReadStream } from 'fs';
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import { errorMessage } from "@lmnr-ai/types";
+import csv from "csv-parser";
+import { asString, generateCsv, mkConfig } from "export-to-csv";
+import { createReadStream } from "fs";
+import * as fs from "fs/promises";
+import * as path from "path";
 
-import { Datapoint } from '../evaluations';
-import { initializeLogger } from '../utils';
+import { Datapoint } from "../evaluations";
+import { initializeLogger } from "../utils";
 
 const logger = initializeLogger();
 
@@ -15,7 +15,7 @@ const logger = initializeLogger();
  */
 const isSupportedFile = (file: string): boolean => {
   const ext = path.extname(file).toLowerCase();
-  return ['.json', '.csv', '.jsonl'].includes(ext);
+  return [".json", ".csv", ".jsonl"].includes(ext);
 };
 
 /**
@@ -55,8 +55,8 @@ export const collectFiles = async (
       }
     } catch (error) {
       logger.warn(
-        `Path does not exist or is not accessible: ${filepath}. `
-        + `Error: ${errorMessage(error)}`,
+        `Path does not exist or is not accessible: ${filepath}. ` +
+          `Error: ${errorMessage(error)}`,
       );
     }
   }
@@ -68,7 +68,7 @@ export const collectFiles = async (
  * Read a JSON file and return its contents.
  */
 const readJsonFile = async (filepath: string): Promise<any[]> => {
-  const content = await fs.readFile(filepath, 'utf-8');
+  const content = await fs.readFile(filepath, "utf-8");
   const parsed = JSON.parse(content);
   return Array.isArray(parsed) ? parsed : [parsed];
 };
@@ -78,22 +78,20 @@ const readJsonFile = async (filepath: string): Promise<any[]> => {
  */
 const tryParseJson = (content: string): any => {
   // Don't try to parse if it's not a string or doesn't look like JSON
-  if (typeof content !== 'string') {
+  if (typeof content !== "string") {
     return content;
   }
 
   // If it doesn't start with { or [, it's probably not JSON
   const trimmed = content.trim();
-  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
     return content;
   }
 
   try {
     return JSON.parse(content);
   } catch (error) {
-    logger.debug(
-      `Error parsing JSON: ${errorMessage(error)}`,
-    );
+    logger.debug(`Error parsing JSON: ${errorMessage(error)}`);
     return content;
   }
 };
@@ -112,22 +110,22 @@ const parseCsvRow = (row: Record<string, string>): any => {
 /**
  * Read a CSV file and return its contents as an array of objects.
  */
-const readCsvFile = async (filepath: string): Promise<any[]> => new Promise((resolve, reject) => {
-  const results: any[] = [];
-  createReadStream(filepath)
-    .pipe(csv())
-    .on('data', (data) => results.push(parseCsvRow(data)))
-    .on('end', () => resolve(results))
-    .on('error', reject);
-});
+const readCsvFile = async (filepath: string): Promise<any[]> =>
+  new Promise((resolve, reject) => {
+    const results: any[] = [];
+    createReadStream(filepath)
+      .pipe(csv())
+      .on("data", (data) => results.push(parseCsvRow(data)))
+      .on("end", () => resolve(results))
+      .on("error", reject);
+  });
 
 /**
  * Read a JSONL file and return its contents as an array of objects.
  */
 async function readJsonlFile(filepath: string): Promise<any[]> {
-  const content = await fs.readFile(filepath, 'utf-8');
-  const lines = content.split('\n').filter((line) => line.trim());
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  const content = await fs.readFile(filepath, "utf-8");
+  const lines = content.split("\n").filter((line) => line.trim());
   return lines.map((line) => JSON.parse(line));
 }
 
@@ -137,11 +135,11 @@ async function readJsonlFile(filepath: string): Promise<any[]> {
 async function readFile(filepath: string): Promise<any[]> {
   const ext = path.extname(filepath).toLowerCase();
 
-  if (ext === '.json') {
+  if (ext === ".json") {
     return readJsonFile(filepath);
-  } else if (ext === '.csv') {
+  } else if (ext === ".csv") {
     return readCsvFile(filepath);
-  } else if (ext === '.jsonl') {
+  } else if (ext === ".jsonl") {
     return readJsonlFile(filepath);
   } else {
     throw new Error(`Unsupported file type: ${ext}`);
@@ -158,7 +156,7 @@ export const loadFromPaths = async <D = any, T = any>(
   const files = await collectFiles(paths, recursive);
 
   if (files.length === 0) {
-    logger.warn('No supported files found in the specified paths');
+    logger.warn("No supported files found in the specified paths");
     return [];
   }
 
@@ -172,9 +170,7 @@ export const loadFromPaths = async <D = any, T = any>(
       result.push(...data);
       logger.info(`Read ${data.length} record(s) from ${file}`);
     } catch (error) {
-      logger.error(
-        `Error reading file ${file}: ${errorMessage(error)}`,
-      );
+      logger.error(`Error reading file ${file}: ${errorMessage(error)}`);
       throw error;
     }
   }
@@ -190,7 +186,7 @@ const writeJsonFile = async <D, T>(
   data: Datapoint<D, T>[],
 ): Promise<void> => {
   const content = JSON.stringify(data, null, 2);
-  await fs.writeFile(filepath, content, 'utf-8');
+  await fs.writeFile(filepath, content, "utf-8");
 };
 
 /**
@@ -201,19 +197,21 @@ const writeCsvFile = async <D, T>(
   data: Datapoint<D, T>[],
 ): Promise<void> => {
   if (data.length === 0) {
-    throw new Error('No data to write to CSV');
+    throw new Error("No data to write to CSV");
   }
 
-  const formattedData = data.map(item =>
-    Object.fromEntries(Object.entries(item).map(([key, value]) => [key, stringifyForCsv(value)]),
-    ));
+  const formattedData = data.map((item) =>
+    Object.fromEntries(
+      Object.entries(item).map(([key, value]) => [key, stringifyForCsv(value)]),
+    ),
+  );
 
   const csvConfig = mkConfig({ useKeysAsHeaders: true });
 
   const csvOutput = generateCsv(csvConfig)(formattedData);
   const csvString = asString(csvOutput);
 
-  await fs.writeFile(filepath, csvString, 'utf-8');
+  await fs.writeFile(filepath, csvString, "utf-8");
 };
 
 /**
@@ -223,8 +221,8 @@ const writeJsonlFile = async <D, T>(
   filepath: string,
   data: Datapoint<D, T>[],
 ): Promise<void> => {
-  const lines = data.map((item) => JSON.stringify(item)).join('\n');
-  await fs.writeFile(filepath, lines + '\n', 'utf-8');
+  const lines = data.map((item) => JSON.stringify(item)).join("\n");
+  await fs.writeFile(filepath, lines + "\n", "utf-8");
 };
 
 /**
@@ -233,7 +231,7 @@ const writeJsonlFile = async <D, T>(
 export const writeToFile = async <D, T>(
   filepath: string,
   data: Datapoint<D, T>[],
-  format?: 'json' | 'csv' | 'jsonl',
+  format?: "json" | "csv" | "jsonl",
 ): Promise<void> => {
   // Create parent directories if they don't exist
   const dir = path.dirname(filepath);
@@ -248,11 +246,11 @@ export const writeToFile = async <D, T>(
     );
   }
 
-  if (ext === 'json') {
+  if (ext === "json") {
     await writeJsonFile(filepath, data);
-  } else if (ext === 'csv') {
+  } else if (ext === "csv") {
     await writeCsvFile(filepath, data);
-  } else if (ext === 'jsonl') {
+  } else if (ext === "jsonl") {
     await writeJsonlFile(filepath, data);
   } else {
     throw new Error(`Unsupported output format: ${ext}`);
@@ -267,12 +265,12 @@ export const writeToFile = async <D, T>(
  */
 const stringifyForCsv = (value: any): string => {
   if (value === null || value === undefined) {
-    return '';
+    return "";
   }
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return value;
   }
-  if (typeof value === 'number' || typeof value === 'boolean') {
+  if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
   // For objects and arrays, stringify to JSON
@@ -284,32 +282,36 @@ const stringifyForCsv = (value: any): string => {
  */
 export const printToConsole = <D, T>(
   data: Datapoint<D, T>[],
-  format: 'json' | 'csv' | 'jsonl' = 'json',
+  format: "json" | "csv" | "jsonl" = "json",
 ) => {
-  if (format === 'json') {
+  if (format === "json") {
     console.log(JSON.stringify(data, null, 2));
-  } else if (format === 'csv') {
+  } else if (format === "csv") {
     if (data.length === 0) {
-      logger.error('No data to print');
+      logger.error("No data to print");
       return;
     }
 
-    const formattedData = data.map(item =>
-      Object.fromEntries(Object.entries(item).map(([key, value]) => [key, stringifyForCsv(value)]),
-      ));
+    const formattedData = data.map((item) =>
+      Object.fromEntries(
+        Object.entries(item).map(([key, value]) => [
+          key,
+          stringifyForCsv(value),
+        ]),
+      ),
+    );
 
     const csvConfig = mkConfig({ useKeysAsHeaders: true });
 
     const csvOutput = generateCsv(csvConfig)(formattedData);
     const csvString = asString(csvOutput);
     console.log(csvString);
-  } else if (format === 'jsonl') {
+  } else if (format === "jsonl") {
     data.forEach((item) => console.log(JSON.stringify(item)));
   } else {
     throw new Error(
-      `Unsupported output format: ${String(format)}. `
-      + "(supported formats: json, csv, jsonl)",
+      `Unsupported output format: ${String(format)}. ` +
+        "(supported formats: json, csv, jsonl)",
     );
   }
 };
-

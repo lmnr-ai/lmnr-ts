@@ -12,9 +12,7 @@ import {
   _resetConfiguration,
   initializeTracing,
 } from "../src/opentelemetry-lib/configuration";
-import {
-  LaminarAiSdkTelemetry,
-} from "../src/opentelemetry-lib/instrumentation/aisdk/v7-integration";
+import { LaminarAiSdkTelemetry } from "../src/opentelemetry-lib/instrumentation/aisdk/v7-integration";
 import {
   buildAiSdkInstrumentationAttributes,
   findAiSdkScopeEntries,
@@ -132,7 +130,10 @@ void describe("AI SDK v7 package version detection", () => {
     const attributes = buildAiSdkInstrumentationAttributes();
 
     assert.equal(attributes[SPAN_INSTRUMENTATION_SCOPE_NAME], "ai");
-    assert.equal(typeof attributes[SPAN_INSTRUMENTATION_SCOPE_VERSION], "string");
+    assert.equal(
+      typeof attributes[SPAN_INSTRUMENTATION_SCOPE_VERSION],
+      "string",
+    );
     assert.ok(
       Object.keys(attributes).some((k) =>
         k.startsWith("lmnr.span.instrumentation.@ai-sdk/"),

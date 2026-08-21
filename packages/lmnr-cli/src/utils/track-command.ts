@@ -4,7 +4,10 @@ import type { Command } from "commander";
 import { buildLaminarClient } from "../auth/client";
 import type { GlobalOpts } from "../auth/with-client";
 import { getCapturedOutput } from "./command-capture";
-import { readDebugSessionFile, resolveDebugSessionDir } from "./debug-session-file";
+import {
+  readDebugSessionFile,
+  resolveDebugSessionDir,
+} from "./debug-session-file";
 import { initializeLogger } from "./logger";
 
 const logger = initializeLogger();
@@ -57,13 +60,13 @@ export const withTrackingOptions = (cmd: Command): Command =>
     .option(
       "--no-track",
       "Do not record this command into the active debug session " +
-      "(also: LMNR_NO_COMMAND_TRACKING=1)",
+        "(also: LMNR_NO_COMMAND_TRACKING=1)",
     )
     .option(
       "--reasoning <text>",
       // "15 words maximum" is guidance only — any-length text is recorded verbatim.
       "Agent reasoning to track with the Debugger session. Why are you calling " +
-      "this command? Limit 15 words maximum.",
+        "this command? Limit 15 words maximum.",
     );
 
 /** Space-joined command path (e.g. `"sql query"`), excluding the program root. */
@@ -79,7 +82,8 @@ export const commandPath = (cmd: Command): string => {
 };
 
 /** Whether `path` is on the record-into-session allowlist. */
-export const isTrackedCommand = (path: string): boolean => TRACKED_COMMANDS.has(path);
+export const isTrackedCommand = (path: string): boolean =>
+  TRACKED_COMMANDS.has(path);
 
 /** Opted out via `--no-track` or `LMNR_NO_COMMAND_TRACKING` (`1`/`true`/`yes`). */
 export const trackingDisabled = (opts: TrackOpts): boolean => {
@@ -116,14 +120,16 @@ export const maybeTrackCommand = async (
     const path = commandPath(actionCommand);
     if (!isTrackedCommand(path)) return;
 
-    const sessionId = readDebugSessionFile(resolveDebugSessionDir())?.session_id;
+    const sessionId = readDebugSessionFile(
+      resolveDebugSessionDir(),
+    )?.session_id;
     if (!sessionId) {
       // No session is normal, so stay silent — unless reasoning was passed.
       if (opts.reasoning) {
         logger.warn(
           "--reasoning was provided but there is no active debug session in " +
-          "this directory, so it was not recorded. Start one with " +
-          "`lmnr-cli debug session new`.",
+            "this directory, so it was not recorded. Start one with " +
+            "`lmnr-cli debug session new`.",
         );
       }
       return;
@@ -139,7 +145,8 @@ export const maybeTrackCommand = async (
       });
       // Fold the fatal error into the teed diagnostics (either may be empty).
       const { stdout, stderr: capturedStderr } = getCapturedOutput();
-      const stderr = [capturedStderr, errorText].filter(Boolean).join("\n") || null;
+      const stderr =
+        [capturedStderr, errorText].filter(Boolean).join("\n") || null;
 
       // Typed against the shared contract so a field rename in @lmnr-ai/types
       // is a compile error, not a silent drop.

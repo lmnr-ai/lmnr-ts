@@ -5,23 +5,19 @@ import { context, trace } from "@opentelemetry/api";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
 import { Laminar, observe } from "../src/index";
-import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import {
+  _resetConfiguration,
+  initializeTracing,
+} from "../src/opentelemetry-lib/configuration";
 import { patchWorkflowClient } from "../src/opentelemetry-lib/instrumentation/temporal";
 import { buildHeaders } from "../src/opentelemetry-lib/instrumentation/temporal/helpers";
-import {
-  ActivityInterceptorFactory,
-} from "../src/opentelemetry-lib/instrumentation/temporal/interceptors";
+import { ActivityInterceptorFactory } from "../src/opentelemetry-lib/instrumentation/temporal/interceptors";
 import { getTracer } from "../src/opentelemetry-lib/tracing";
 import {
   SPAN_INPUT,
   SPAN_OUTPUT,
 } from "../src/opentelemetry-lib/tracing/attributes";
 
-/* eslint-disable
-  @typescript-eslint/require-await,
-  @typescript-eslint/no-unused-vars,
-  @typescript-eslint/no-unnecessary-type-assertion
-*/
 
 // Produce a Temporal-style headers map carrying the active Laminar span context,
 // the way the client-side WorkflowClientInterceptor would on workflow start.
@@ -55,9 +51,7 @@ const runActivity = async (
   return {
     res,
     traceId,
-    span: exporter
-      .getFinishedSpans()
-      .find((s) => s.name === "myActivity"),
+    span: exporter.getFinishedSpans().find((s) => s.name === "myActivity"),
   };
 };
 
@@ -123,13 +117,13 @@ void describe("temporal workflow span", () => {
       activeDuringStart = Laminar.getCurrentSpan();
       return {
         async result() {
-          return null;
+          return { ok: true };
         },
         async cancel() {
-          return null;
+          return "";
         },
         async terminate() {
-          return null;
+          return "";
         },
       };
     };
@@ -137,7 +131,10 @@ void describe("temporal workflow span", () => {
     const client = new mod.WorkflowClient();
 
     const handle = await client.start("wfActive", { args: [] });
-    assert.ok(activeDuringStart, "a Laminar span must be active during start()");
+    assert.ok(
+      activeDuringStart,
+      "a Laminar span must be active during start()",
+    );
     await handle.result();
   });
 
@@ -251,29 +248,26 @@ void describe("temporal workflow span", () => {
     assert.equal(span, undefined);
   });
 
-  void it(
-    "nests observe() spans under the header context when createActivitySpan is false",
-    async () => {
-      const { traceId } = await runActivity(
-        exporter,
-        { createActivitySpan: false },
-        undefined,
-        async () => {
-          await observe({ name: "userSpan" }, async () => "ok");
-          return { done: true };
-        },
-      );
+  void it("nests observe() spans under the header context when createActivitySpan is false", async () => {
+    const { traceId } = await runActivity(
+      exporter,
+      { createActivitySpan: false },
+      undefined,
+      async () => {
+        await observe({ name: "userSpan" }, async () => "ok");
+        return { done: true };
+      },
+    );
 
-      const userSpan = findSpan(exporter, "userSpan");
-      assert.ok(userSpan, "observe() span should be recorded");
-      assert.equal(
-        userSpan!.spanContext().traceId,
-        traceId,
-        "observe() span must share the remote parent's trace",
-      );
-      assert.equal(findSpan(exporter, "myActivity"), undefined);
-    },
-  );
+    const userSpan = findSpan(exporter, "userSpan");
+    assert.ok(userSpan, "observe() span should be recorded");
+    assert.equal(
+      userSpan!.spanContext().traceId,
+      traceId,
+      "observe() span must share the remote parent's trace",
+    );
+    assert.equal(findSpan(exporter, "myActivity"), undefined);
+  });
 
   void it(
     "nests auto-instrumentation (OTel-context) spans under the header context " +

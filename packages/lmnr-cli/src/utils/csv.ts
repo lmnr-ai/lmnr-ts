@@ -21,7 +21,11 @@ const toStringCell = (value: unknown): string => {
   if (typeof value === "string") {
     return value;
   }
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
     return value.toString();
   }
   // Objects/arrays (e.g. jsonb columns) become a single JSON string cell.

@@ -19,16 +19,14 @@ void describe("LaminarClient base URL resolution", () => {
       projectApiKey,
     });
 
-    const scope = nock("http://localhost:8000")
-      .post("/v1/evals")
-      .reply(200, {
-        id: "12345678-1234-1234-1234-123456789abc",
-        createdAt: new Date().toISOString(),
-        groupId: "group-123",
-        name: "test",
-        metadata: {},
-        projectId: "project-123",
-      });
+    const scope = nock("http://localhost:8000").post("/v1/evals").reply(200, {
+      id: "12345678-1234-1234-1234-123456789abc",
+      createdAt: new Date().toISOString(),
+      groupId: "group-123",
+      name: "test",
+      metadata: {},
+      projectId: "project-123",
+    });
 
     await client.evals.create({ name: "test" });
     scope.done();
@@ -38,16 +36,14 @@ void describe("LaminarClient base URL resolution", () => {
     process.env.LMNR_BASE_URL = "http://localhost:8000";
     const client = new LaminarClient({ projectApiKey });
 
-    const scope = nock("http://localhost:8000")
-      .post("/v1/evals")
-      .reply(200, {
-        id: "12345678-1234-1234-1234-123456789abc",
-        createdAt: new Date().toISOString(),
-        groupId: "group-123",
-        name: "test",
-        metadata: {},
-        projectId: "project-123",
-      });
+    const scope = nock("http://localhost:8000").post("/v1/evals").reply(200, {
+      id: "12345678-1234-1234-1234-123456789abc",
+      createdAt: new Date().toISOString(),
+      groupId: "group-123",
+      name: "test",
+      metadata: {},
+      projectId: "project-123",
+    });
 
     await client.evals.create({ name: "test" });
     scope.done();
@@ -56,16 +52,14 @@ void describe("LaminarClient base URL resolution", () => {
   void it("defaults to https://api.lmnr.ai:443 without baseUrl or env", async () => {
     const client = new LaminarClient({ projectApiKey });
 
-    const scope = nock("https://api.lmnr.ai:443")
-      .post("/v1/evals")
-      .reply(200, {
-        id: "12345678-1234-1234-1234-123456789abc",
-        createdAt: new Date().toISOString(),
-        groupId: "group-123",
-        name: "test",
-        metadata: {},
-        projectId: "project-123",
-      });
+    const scope = nock("https://api.lmnr.ai:443").post("/v1/evals").reply(200, {
+      id: "12345678-1234-1234-1234-123456789abc",
+      createdAt: new Date().toISOString(),
+      groupId: "group-123",
+      name: "test",
+      metadata: {},
+      projectId: "project-123",
+    });
 
     await client.evals.create({ name: "test" });
     scope.done();
@@ -98,16 +92,14 @@ void describe("LaminarClient base URL resolution", () => {
     process.env.LMNR_BASE_URL = "https://api.lmnr.ai";
     const client = new LaminarClient({ projectApiKey });
 
-    const scope = nock("https://api.lmnr.ai:443")
-      .post("/v1/evals")
-      .reply(200, {
-        id: "12345678-1234-1234-1234-123456789abc",
-        createdAt: new Date().toISOString(),
-        groupId: "group-123",
-        name: "test",
-        metadata: {},
-        projectId: "project-123",
-      });
+    const scope = nock("https://api.lmnr.ai:443").post("/v1/evals").reply(200, {
+      id: "12345678-1234-1234-1234-123456789abc",
+      createdAt: new Date().toISOString(),
+      groupId: "group-123",
+      name: "test",
+      metadata: {},
+      projectId: "project-123",
+    });
 
     await client.evals.create({ name: "test" });
     scope.done();

@@ -1268,9 +1268,8 @@ export class Laminar {
    * const result = query({ prompt: "Hello!" });
    * ```
    */
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+  // biome-ignore lint/complexity/noBannedTypes: instrumentation wraps arbitrary Functions
   public static wrapClaudeAgentQuery<T extends Function>(originalQuery: T): T {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return instrumentClaudeAgentQuery(originalQuery as any);
   }
 }

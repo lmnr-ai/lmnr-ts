@@ -28,16 +28,24 @@ export const loginFailed = (m: string) => new CliError("login_failed", 6, m);
 export const noAccess = (m: string) => new CliError("no_access", 4, m);
 export const noProject = (m: string) => new CliError("no_project", 7, m);
 export const noProjects = (m: string) => new CliError("no_projects", 7, m);
-export const projectAmbiguous = (m: string) => new CliError("project_ambiguous", 7, m);
-export const setupInvariant = (m: string) => new CliError("setup_invariant", 7, m);
-export const listProjectsFailed = (m: string) => new CliError("list_projects_failed", 10, m);
-export const keyProbeFailed = (m: string) => new CliError("key_probe_failed", 11, m);
+export const projectAmbiguous = (m: string) =>
+  new CliError("project_ambiguous", 7, m);
+export const setupInvariant = (m: string) =>
+  new CliError("setup_invariant", 7, m);
+export const listProjectsFailed = (m: string) =>
+  new CliError("list_projects_failed", 10, m);
+export const keyProbeFailed = (m: string) =>
+  new CliError("key_probe_failed", 11, m);
 export const keyMismatch = (m: string) => new CliError("key_mismatch", 12, m);
-export const setupKeyFailed = (m: string) => new CliError("setup_key_failed", 9, m);
+export const setupKeyFailed = (m: string) =>
+  new CliError("setup_key_failed", 9, m);
 export const mintFailed = (m: string) => new CliError("mint_failed", 9, m);
-export const configWriteFailed = (m: string) => new CliError("config_write_failed", 8, m);
-export const unsupportedAgent = (m: string) => new CliError("unsupported_agent", 13, m);
-export const schemaFetchFailed = (m: string) => new CliError("schema_fetch_failed", 15, m);
+export const configWriteFailed = (m: string) =>
+  new CliError("config_write_failed", 8, m);
+export const unsupportedAgent = (m: string) =>
+  new CliError("unsupported_agent", 13, m);
+export const schemaFetchFailed = (m: string) =>
+  new CliError("schema_fetch_failed", 15, m);
 
 /**
  * Bare exit codes for the two sites that DON'T go through `failWith`: each emits

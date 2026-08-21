@@ -85,16 +85,16 @@ export const initializeLaminarInstrumentations = (
 
   return options?.instrumentModules !== undefined
     ? manuallyInitInstrumentations(
-      client,
-      options.instrumentModules,
-      options.suppressContentTracing,
-      options.sessionRecordingOptions,
-    )
+        client,
+        options.instrumentModules,
+        options.suppressContentTracing,
+        options.sessionRecordingOptions,
+      )
     : initInstrumentations(
-      client,
-      options.suppressContentTracing,
-      options.sessionRecordingOptions,
-    );
+        client,
+        options.suppressContentTracing,
+        options.sessionRecordingOptions,
+      );
 };
 
 /**
@@ -108,7 +108,7 @@ const getStagehandInstrumentation = (
 ): StagehandV2Instrumentation | StagehandV3Instrumentation => {
   try {
     // Try to require the stagehand package to get its version
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    // biome-ignore lint/style/noCommonJs: dynamic import to dynamically resolve version
     const stagehandPkg = require("@browserbasehq/stagehand/package.json");
     const version = stagehandPkg.version;
     const majorVersion = parseInt(version.split(".")[0], 10);

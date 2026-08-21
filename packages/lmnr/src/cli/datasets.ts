@@ -45,7 +45,10 @@ const pullAllData = async <D = any, T = any>(
       hasMore = false;
     } else if (stopAt !== undefined && currentOffset + batchSize >= stopAt) {
       hasMore = false;
-    } else if (data.totalCount !== undefined && currentOffset + batchSize >= data.totalCount) {
+    } else if (
+      data.totalCount !== undefined &&
+      currentOffset + batchSize >= data.totalCount
+    ) {
       hasMore = false;
     }
 
@@ -83,13 +86,20 @@ export const handleDatasetsList = async (
     const idWidth = 36; // UUID length
     const createdAtWidth = 19; // YYYY-MM-DD HH:MM:SS format
 
-    console.log(`\n${'ID'.padEnd(idWidth)}  ${'Created At'.padEnd(createdAtWidth)}  Name`);
-    console.log(`${'-'.repeat(idWidth)}  ${'-'.repeat(createdAtWidth)}  ${'-'.repeat(20)}`);
+    console.log(
+      `\n${"ID".padEnd(idWidth)}  ${"Created At".padEnd(createdAtWidth)}  Name`,
+    );
+    console.log(
+      `${"-".repeat(idWidth)}  ${"-".repeat(createdAtWidth)}  ${"-".repeat(20)}`,
+    );
 
     // Print each dataset row
     for (const dataset of datasets) {
       const createdAt = new Date(dataset.createdAt);
-      const createdAtStr = createdAt.toISOString().replace('T', ' ').substring(0, 19);
+      const createdAtStr = createdAt
+        .toISOString()
+        .replace("T", " ")
+        .substring(0, 19);
       console.log(
         `${dataset.id.padEnd(idWidth)}  ${createdAtStr.padEnd(createdAtWidth)}  ${dataset.name}`,
       );
@@ -97,9 +107,7 @@ export const handleDatasetsList = async (
 
     console.log(`\nTotal: ${datasets.length} dataset(s)\n`);
   } catch (error) {
-    logger.error(
-      `Failed to list datasets: ${errorMessage(error)}`,
-    );
+    logger.error(`Failed to list datasets: ${errorMessage(error)}`);
   }
 };
 
@@ -146,11 +154,11 @@ export const handleDatasetsPush = async (
       ...identifier,
       batchSize: options.batchSize ?? DEFAULT_DATASET_PUSH_BATCH_SIZE,
     });
-    logger.info(`Pushed ${data.length} data points to dataset ${options.name || options.id}`);
-  } catch (error) {
-    logger.error(
-      `Failed to push dataset: ${errorMessage(error)}`,
+    logger.info(
+      `Pushed ${data.length} data points to dataset ${options.name || options.id}`,
     );
+  } catch (error) {
+    logger.error(`Failed to push dataset: ${errorMessage(error)}`);
   }
 };
 
@@ -162,7 +170,7 @@ export const handleDatasetsPull = async (
   options: DatasetCommandOptions & {
     name?: string;
     id?: StringUUID;
-    outputFormat?: 'json' | 'csv' | 'jsonl';
+    outputFormat?: "json" | "csv" | "jsonl";
     batchSize?: number;
     limit?: number;
     offset?: number;
@@ -197,14 +205,14 @@ export const handleDatasetsPull = async (
 
     if (outputPath) {
       await writeToFile(outputPath, result, options.outputFormat);
-      logger.info(`Successfully pulled ${result.length} data points to ${outputPath}`);
+      logger.info(
+        `Successfully pulled ${result.length} data points to ${outputPath}`,
+      );
     } else {
-      printToConsole(result, options.outputFormat ?? 'json');
+      printToConsole(result, options.outputFormat ?? "json");
     }
   } catch (error) {
-    logger.error(
-      `Failed to pull dataset: ${errorMessage(error)}`,
-    );
+    logger.error(`Failed to pull dataset: ${errorMessage(error)}`);
   }
 };
 
@@ -216,7 +224,7 @@ export const handleDatasetsCreate = async (
   paths: string[],
   options: DatasetCommandOptions & {
     outputFile: string;
-    outputFormat?: 'json' | 'csv' | 'jsonl';
+    outputFormat?: "json" | "csv" | "jsonl";
     recursive?: boolean;
     batchSize?: number;
   },
@@ -245,11 +253,11 @@ export const handleDatasetsCreate = async (
       batchSize: options.batchSize ?? DEFAULT_DATASET_PUSH_BATCH_SIZE,
       createDataset: true,
     });
-    logger.info(`Successfully pushed ${data.length} data points to dataset '${name}'`);
-  } catch (error) {
-    logger.error(
-      `Failed to create dataset: ${errorMessage(error)}`,
+    logger.info(
+      `Successfully pushed ${data.length} data points to dataset '${name}'`,
     );
+  } catch (error) {
+    logger.error(`Failed to create dataset: ${errorMessage(error)}`);
     return;
   }
 
@@ -269,8 +277,8 @@ export const handleDatasetsCreate = async (
     await writeToFile(options.outputFile, result, options.outputFormat);
 
     logger.info(
-      `Successfully created dataset '${name}' `
-      + `and saved ${result.length} datapoints to ${options.outputFile}`,
+      `Successfully created dataset '${name}' ` +
+        `and saved ${result.length} datapoints to ${options.outputFile}`,
     );
   } catch (error) {
     logger.error(
@@ -278,4 +286,3 @@ export const handleDatasetsCreate = async (
     );
   }
 };
-

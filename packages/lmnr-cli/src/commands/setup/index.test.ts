@@ -24,10 +24,16 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("../login", () => ({ handleLogin: h.handleLogin }));
-vi.mock("../../auth/credentials", () => ({ safeReadCredentials: h.safeReadCredentials }));
+vi.mock("../../auth/credentials", () => ({
+  safeReadCredentials: h.safeReadCredentials,
+}));
 vi.mock("../../auth/resolve", async (importActual) => {
   const actual = await importActual<typeof import("../../auth/resolve")>();
-  return { ...actual, refreshIfNeeded: h.refreshIfNeeded, envHttpPort: () => undefined };
+  return {
+    ...actual,
+    refreshIfNeeded: h.refreshIfNeeded,
+    envHttpPort: () => undefined,
+  };
 });
 vi.mock("../../utils/local-project-file", () => ({
   readLocalProjectFile: h.readLocalProjectFile,
@@ -43,7 +49,9 @@ vi.mock("../../utils/env-file", () => ({
   writeEnvFile: h.writeEnvFile,
   isPathGitIgnored: h.isPathGitIgnored,
 }));
-vi.mock("../../auth/api-key", () => ({ mintProjectApiKey: h.mintProjectApiKey }));
+vi.mock("../../auth/api-key", () => ({
+  mintProjectApiKey: h.mintProjectApiKey,
+}));
 vi.mock("../../utils/install-skill", () => ({ installSkill: h.installSkill }));
 
 import { SessionExpiredError } from "../../auth/resolve";
@@ -83,7 +91,9 @@ describe("handleSetup — expired session recovery", () => {
     // Valid-shaped creds on disk both before the gate and after re-login.
     h.safeReadCredentials.mockResolvedValue(VALID_CREDS);
     // The gate's refresh throws SessionExpiredError → the expiry is absorbed.
-    h.refreshIfNeeded.mockRejectedValue(new SessionExpiredError("Session expired"));
+    h.refreshIfNeeded.mockRejectedValue(
+      new SessionExpiredError("Session expired"),
+    );
     // No directory link yet; the browser hands back the chosen project.
     h.readLocalProjectFile.mockResolvedValue(null);
     h.handleLogin.mockResolvedValue({
@@ -114,7 +124,9 @@ describe("handleSetup — expired session recovery", () => {
     );
     // ...and onboarding completed: a JSON result on stdout, no error exit.
     expect(exitSpy).not.toHaveBeenCalled();
-    const out = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+    const out = stdoutSpy.mock.calls
+      .map((c: unknown[]) => String(c[0]))
+      .join("");
     expect(out).toContain('"projectId":"proj-1"');
     expect(out).not.toContain("list_projects_failed");
   });
@@ -125,7 +137,9 @@ describe("handleSetup — expired session recovery", () => {
     h.refreshIfNeeded.mockResolvedValue(VALID_CREDS);
     h.readLocalProjectFile.mockResolvedValue(null); // no link → resolve via CLI
     // ...it only surfaces on the later discovery call.
-    h.listProjects.mockRejectedValue(new SessionExpiredError("Session expired"));
+    h.listProjects.mockRejectedValue(
+      new SessionExpiredError("Session expired"),
+    );
 
     await expect(
       handleSetup({ json: true, writeEnv: false, browser: false }),

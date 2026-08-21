@@ -40,7 +40,10 @@ void describe("TracesResource Client Methods", () => {
       const expectedUuid = "12345678-1234-5678-9abc-123456789abc";
 
       const scope = nock(baseUrl)
-        .post("/v1/traces/metadata", { traceId: expectedUuid, metadata: { k: "v" } })
+        .post("/v1/traces/metadata", {
+          traceId: expectedUuid,
+          metadata: { k: "v" },
+        })
         .reply(200);
 
       await client.traces.pushMetadata(otelHex, { k: "v" });
@@ -66,7 +69,12 @@ void describe("TracesResource Client Methods", () => {
         .reply(404, "Trace not found");
 
       await assert.rejects(
-        () => client.traces.pushMetadata(traceId, { k: "v" }, { failOnNotFound: true }),
+        () =>
+          client.traces.pushMetadata(
+            traceId,
+            { k: "v" },
+            { failOnNotFound: true },
+          ),
         /not found/,
       );
       scope.done();

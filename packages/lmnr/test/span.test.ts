@@ -6,11 +6,13 @@ import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
 import { getRuntime, resetDebugRuntime } from "../src/debug/index";
 import { Laminar, observe } from "../src/index";
-import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import {
+  _resetConfiguration,
+  initializeTracing,
+} from "../src/opentelemetry-lib/configuration";
 import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
 import { LaminarSpan } from "../src/opentelemetry-lib/tracing/span";
 import { MAX_MANUAL_SPAN_PAYLOAD_SIZE, TRUNCATION_SUFFIX } from "../src/utils";
-
 
 void describe("span interface tests", () => {
   const exporter = new InMemorySpanExporter();
@@ -84,12 +86,24 @@ void describe("span interface tests", () => {
     span.setTraceMetadata({ key: "value" });
     span.setTraceSessionId("123");
     span.setTraceUserId("456");
-    assert.strictEqual(span?.attributes['lmnr.span.input'], "my_input");
-    assert.strictEqual(span?.attributes['lmnr.span.output'], "my_output");
-    assert.deepStrictEqual(span?.attributes['lmnr.association.properties.tags'], ["tag1", "tag2"]);
-    assert.strictEqual(span?.attributes['lmnr.association.properties.metadata.key'], "value");
-    assert.strictEqual(span?.attributes['lmnr.association.properties.session_id'], "123");
-    assert.strictEqual(span?.attributes['lmnr.association.properties.user_id'], "456");
+    assert.strictEqual(span?.attributes["lmnr.span.input"], "my_input");
+    assert.strictEqual(span?.attributes["lmnr.span.output"], "my_output");
+    assert.deepStrictEqual(
+      span?.attributes["lmnr.association.properties.tags"],
+      ["tag1", "tag2"],
+    );
+    assert.strictEqual(
+      span?.attributes["lmnr.association.properties.metadata.key"],
+      "value",
+    );
+    assert.strictEqual(
+      span?.attributes["lmnr.association.properties.session_id"],
+      "123",
+    );
+    assert.strictEqual(
+      span?.attributes["lmnr.association.properties.user_id"],
+      "456",
+    );
   });
 
   void it("truncates oversized span input and output instead of replacing them", () => {
@@ -101,8 +115,8 @@ void describe("span interface tests", () => {
     span.setInput({ blob: oversized });
     span.setOutput({ blob: oversized });
 
-    const recordedInput = span.attributes['lmnr.span.input'] as string;
-    const recordedOutput = span.attributes['lmnr.span.output'] as string;
+    const recordedInput = span.attributes["lmnr.span.input"] as string;
+    const recordedOutput = span.attributes["lmnr.span.output"] as string;
     assert.strictEqual(recordedInput.length, MAX_MANUAL_SPAN_PAYLOAD_SIZE);
     assert.strictEqual(recordedOutput.length, MAX_MANUAL_SPAN_PAYLOAD_SIZE);
     assert.ok(recordedInput.endsWith(TRUNCATION_SUFFIX));
@@ -115,7 +129,7 @@ void describe("span interface tests", () => {
     Laminar.startActiveSpan({ name: "test" });
     const span = Laminar.getCurrentSpan() as LaminarSpan;
     span.setInput("small");
-    assert.strictEqual(span.attributes['lmnr.span.input'], "small");
+    assert.strictEqual(span.attributes["lmnr.span.input"], "small");
   });
 
   void it("does not throw on values JSON.stringify cannot serialize", () => {
@@ -128,8 +142,8 @@ void describe("span interface tests", () => {
       assert.doesNotThrow(() => span.setInput(value));
       assert.doesNotThrow(() => span.setOutput(value));
     }
-    assert.strictEqual(span.attributes['lmnr.span.input'], undefined);
-    assert.strictEqual(span.attributes['lmnr.span.output'], undefined);
+    assert.strictEqual(span.attributes["lmnr.span.input"], undefined);
+    assert.strictEqual(span.attributes["lmnr.span.output"], undefined);
   });
 
   void it("stamps global metadata on spans built without observe / startActiveSpan", () => {
@@ -143,7 +157,9 @@ void describe("span interface tests", () => {
       const spans = exporter.getFinishedSpans();
       assert.strictEqual(spans.length, 1);
       assert.strictEqual(
-        spans[0].attributes['lmnr.association.properties.metadata.rollout.session_id'],
+        spans[0].attributes[
+          "lmnr.association.properties.metadata.rollout.session_id"
+        ],
         "abc",
       );
     } finally {
@@ -165,8 +181,9 @@ void describe("span interface tests", () => {
         name: "downstream",
         parentSpanContext: {
           traceId: "01234567-89ab-cdef-0123-456789abcdef",
-          spanId: "0123456789abcdef",
+          spanId: "00000000-0000-0000-0123-456789abcdef",
           debug: { enabled: true, sessionId: SESSION },
+          isRemote: false,
         },
       });
       parent.end();
@@ -197,8 +214,9 @@ void describe("span interface tests", () => {
         name: "req-1",
         parentSpanContext: {
           traceId: "01234567-89ab-cdef-0123-456789abcdef",
-          spanId: "0123456789abcdef",
+          spanId: "00000000-0000-0000-0123-456789abcdef",
           debug: { enabled: true, sessionId: SESSION_A },
+          isRemote: false,
         },
       });
       first.end();
@@ -214,8 +232,9 @@ void describe("span interface tests", () => {
         name: "req-2",
         parentSpanContext: {
           traceId: "11111111-89ab-cdef-0123-456789abcdef",
-          spanId: "1111111111111111",
+          spanId: "00000000-0000-0000-1111-111111111111",
           debug: { enabled: true, sessionId: SESSION_B },
+          isRemote: false,
         },
       });
       second.end();
@@ -249,12 +268,15 @@ void describe("span interface tests", () => {
         name: "downstream",
         parentSpanContext: {
           traceId: "01234567-89ab-cdef-0123-456789abcdef",
-          spanId: "0123456789abcdef",
+          spanId: "00000000-0000-0000-0123-456789abcdef",
           // Deliberately violates the `enabled: boolean` type — the whole point
           // is that an object context skips deserialization, so a non-boolean
           // can slip in here.
-          debug: { enabled: "false", sessionId: SESSION } as unknown as
-            { enabled: boolean; sessionId: string },
+          debug: { enabled: "false", sessionId: SESSION } as unknown as {
+            enabled: boolean;
+            sessionId: string;
+          },
+          isRemote: false,
         },
       });
       parent.end();

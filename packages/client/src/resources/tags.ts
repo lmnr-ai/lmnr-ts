@@ -1,6 +1,5 @@
 /** Resource for tagging traces. */
 
-
 import { isStringUUID, otelTraceIdToUUID } from "../utils";
 import { BaseResource, type LaminarAuth } from "./index";
 
@@ -42,10 +41,7 @@ export class TagsResource extends BaseResource {
    * }
    * ```
    */
-  public async tag(
-    trace_id: string,
-    tags: string[] | string,
-  ): Promise<any> {
+  public async tag(trace_id: string, tags: string[] | string): Promise<any> {
     const traceTags = Array.isArray(tags) ? tags : [tags];
     const formattedTraceId = isStringUUID(trace_id)
       ? trace_id
@@ -53,17 +49,14 @@ export class TagsResource extends BaseResource {
 
     const url = this.baseHttpUrl + "/v1/tag";
     const payload = {
-      "traceId": formattedTraceId,
-      "names": traceTags,
+      traceId: formattedTraceId,
+      names: traceTags,
     };
-    const response = await fetch(
-      url,
-      {
-        method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify(payload),
-      },
-    );
+    const response = await fetch(url, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify(payload),
+    });
     if (!response.ok) {
       await this.handleError(response);
     }

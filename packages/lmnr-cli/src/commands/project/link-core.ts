@@ -6,7 +6,11 @@ import { errorMessage } from "@lmnr-ai/types";
 
 import { type MintedApiKey, mintProjectApiKey } from "../../auth/api-key";
 import { type Credentials } from "../../auth/credentials";
-import { envHttpPort, refreshIfNeeded, SessionExpiredError } from "../../auth/resolve";
+import {
+  envHttpPort,
+  refreshIfNeeded,
+  SessionExpiredError,
+} from "../../auth/resolve";
 import {
   EXIT_ENV_WRITE_FAILED,
   failWith,
@@ -78,7 +82,16 @@ export async function ensureProjectKey(params: {
   isJson: boolean;
   onKeyMismatch?: "fail" | "warn";
 }): Promise<EnsureKeyResult> {
-  const { creds, link, existingKey, cwd, issuer, userBaseUrl, writeEnv, isJson } = params;
+  const {
+    creds,
+    link,
+    existingKey,
+    cwd,
+    issuer,
+    userBaseUrl,
+    writeEnv,
+    isJson,
+  } = params;
   const onKeyMismatch = params.onKeyMismatch ?? "fail";
 
   let apiKey: string | null = null;
@@ -95,7 +108,10 @@ export async function ensureProjectKey(params: {
       // An expired grant from refreshIfNeeded maps to login_failed (6), not an
       // uncoded exit 1 — same contract the callers follow.
       if (err instanceof SessionExpiredError) {
-        failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
+        failWith(
+          isJson,
+          loginFailed("Session expired. Run `lmnr-cli login` first."),
+        );
       }
       throw err;
     }
@@ -110,14 +126,16 @@ export async function ensureProjectKey(params: {
         isJson,
         keyProbeFailed(
           `Couldn't verify the existing Project API Key in ${where} (network or server error). ` +
-          "Check your connection and re-run.",
+            "Check your connection and re-run.",
         ),
       );
     } else if (probe.status === "ok" && probe.projectId === link.projectId) {
       // Already set for this project — no mint, no write.
       needMint = false;
       if (!isJson) {
-        process.stderr.write(`${pc.green("✓")} Project API Key already set in ${where}\n`);
+        process.stderr.write(
+          `${pc.green("✓")} Project API Key already set in ${where}\n`,
+        );
       }
     } else if (probe.status === "ok" && onKeyMismatch === "warn") {
       // Valid key for a different project — warn instead of clobbering and let the
@@ -127,9 +145,9 @@ export async function ensureProjectKey(params: {
       if (!isJson) {
         process.stderr.write(
           `${pc.yellow("⚠")} The Project API Key in ${where} belongs to a different ` +
-          `project (${probe.projectId}), not the one you're linking here (${link.projectId}). ` +
-          `Mint one for this project with \`lmnr-cli project mint-key\` and replace it ` +
-          `in ${where}.\n`,
+            `project (${probe.projectId}), not the one you're linking here (${link.projectId}). ` +
+            `Mint one for this project with \`lmnr-cli project mint-key\` and replace it ` +
+            `in ${where}.\n`,
         );
       }
     } else if (probe.status === "ok") {
@@ -138,30 +156,38 @@ export async function ensureProjectKey(params: {
         isJson,
         keyMismatch(
           `The Project API Key in ${where} belongs to a different project (${probe.projectId}), ` +
-          `not the one linked here (${link.projectId}). Remove or update it, then re-run.`,
+            `not the one linked here (${link.projectId}). Remove or update it, then re-run.`,
         ),
       );
     } else if (!isJson) {
       // invalid / revoked (401) — minting a fresh key is the correct recovery.
       process.stderr.write(
         `${pc.yellow("⚠")} Existing Project API Key in ${where} is invalid or revoked, ` +
-        `minting a new one\n`,
+          `minting a new one\n`,
       );
     }
   }
 
   if (needMint) {
     try {
-      keyMeta = await mintProjectApiKey(issuer, creds.sessionToken, link.projectId, hostname());
+      keyMeta = await mintProjectApiKey(
+        issuer,
+        creds.sessionToken,
+        link.projectId,
+        hostname(),
+      );
     } catch (err) {
       failWith(isJson, setupKeyFailed(errorMessage(err)));
     }
     apiKey = keyMeta.apiKey;
 
     // Backfill display details learned while minting.
-    if (!link.projectName && keyMeta.projectName) link.projectName = keyMeta.projectName;
-    if (!link.workspaceName && keyMeta.workspaceName) link.workspaceName = keyMeta.workspaceName;
-    if (!link.workspaceId && keyMeta.workspaceId) link.workspaceId = keyMeta.workspaceId;
+    if (!link.projectName && keyMeta.projectName)
+      link.projectName = keyMeta.projectName;
+    if (!link.workspaceName && keyMeta.workspaceName)
+      link.workspaceName = keyMeta.workspaceName;
+    if (!link.workspaceId && keyMeta.workspaceId)
+      link.workspaceId = keyMeta.workspaceId;
 
     if (writeEnv) {
       const target = await resolveEnvWriteTarget(cwd, existingKey);
@@ -186,8 +212,8 @@ export async function ensureProjectKey(params: {
       } catch (err) {
         process.stderr.write(
           `\n${pc.red("ERROR")}: failed to write ${target}: ${errorMessage(err)}\n` +
-          pc.dim("Your API key (set it manually):") +
-          `\n  LMNR_PROJECT_API_KEY=${apiKey}\n\n`,
+            pc.dim("Your API key (set it manually):") +
+            `\n  LMNR_PROJECT_API_KEY=${apiKey}\n\n`,
         );
         if (isJson) {
           process.stdout.write(

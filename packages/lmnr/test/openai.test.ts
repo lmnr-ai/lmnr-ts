@@ -12,7 +12,7 @@ import {
   _resetConfiguration,
   initializeTracing,
 } from "../src/opentelemetry-lib/configuration";
-import { decompressRecordingResponse } from "./utils";
+import { decompressRecordingResponse, recordingReplyHeaders } from "./utils";
 
 void describe("openai instrumentation", () => {
   const client = new OpenAI({
@@ -63,7 +63,7 @@ void describe("openai instrumentation", () => {
 
         nock(recording.scope)
           .intercept(recording.path, recording.method ?? "POST", recording.body)
-          .reply(recording.status, response, recording.headers);
+          .reply(recording.status, response, recordingReplyHeaders(recording));
       });
     } else {
       throw new Error(

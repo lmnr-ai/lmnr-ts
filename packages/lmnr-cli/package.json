@@ -8,8 +8,6 @@
   },
   "scripts": {
     "build": "tsdown",
-    "lint": "eslint",
-    "lint:fix": "eslint --fix",
     "test": "vitest run",
     "dev": "tsx src/index.ts"
   },

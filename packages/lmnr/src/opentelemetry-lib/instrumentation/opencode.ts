@@ -1,3 +1,4 @@
+// biome-ignore-all lint/complexity/noBannedTypes: instrumentation wraps arbitrary Functions
 import { diag } from "@opentelemetry/api";
 import {
   InstrumentationBase,
@@ -7,11 +8,6 @@ import {
 
 import { version as SDK_VERSION } from "../../../package.json";
 import { Laminar } from "../../laminar";
-
-/* eslint-disable
-  @typescript-eslint/no-unsafe-return,
-  @typescript-eslint/no-unsafe-function-type
-*/
 
 export class OpencodeInstrumentation extends InstrumentationBase {
   constructor() {
@@ -72,33 +68,34 @@ export class OpencodeInstrumentation extends InstrumentationBase {
   }
 
   private patchPromptMethod(): (original: Function) => Function {
-    return (original: Function) => function (this: any, ...args: any[]) {
-      const options = args[0];
-      if (options?.body?.parts && Array.isArray(options.body.parts)) {
-        const serializedContext = Laminar.serializeLaminarSpanContext();
-        if (serializedContext) {
-          options.body.parts = [
-            ...options.body.parts,
-            {
-              type: "text",
-              metadata: {
-                lmnrSpanContext: serializedContext,
+    return (original: Function) =>
+      function (this: any, ...args: any[]) {
+        const options = args[0];
+        if (options?.body?.parts && Array.isArray(options.body.parts)) {
+          const serializedContext = Laminar.serializeLaminarSpanContext();
+          if (serializedContext) {
+            options.body.parts = [
+              ...options.body.parts,
+              {
+                type: "text",
+                metadata: {
+                  lmnrSpanContext: serializedContext,
+                },
+                text: "",
+                ignored: true,
+                synthetic: true,
               },
-              text: "",
-              ignored: true,
-              synthetic: true,
-            },
-          ];
-        } else {
-          diag.debug(
-            "OpencodeInstrumentation: no active Laminar span context to " +
-              "propagate. Opencode-side spans will start a new trace " +
-              "instead of being children of the caller's span.",
-          );
+            ];
+          } else {
+            diag.debug(
+              "OpencodeInstrumentation: no active Laminar span context to " +
+                "propagate. Opencode-side spans will start a new trace " +
+                "instead of being children of the caller's span.",
+            );
+          }
         }
-      }
-      return original.apply(this, args);
-    };
+        return original.apply(this, args);
+      };
   }
 
   private patch(moduleExports: any): any {
@@ -119,8 +116,3 @@ export class OpencodeInstrumentation extends InstrumentationBase {
     }
   }
 }
-
-/* eslint-enable
-  @typescript-eslint/no-unsafe-return,
-  @typescript-eslint/no-unsafe-function-type
-*/

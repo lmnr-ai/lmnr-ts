@@ -10,9 +10,7 @@ import {
   getStream,
 } from "../instrumentation/aisdk/utils";
 import { shouldSendTraces } from ".";
-import {
-  SPAN_OUTPUT,
-} from "./attributes";
+import { SPAN_OUTPUT } from "./attributes";
 
 const logger = initializeLogger();
 
@@ -23,7 +21,9 @@ const pendingStreamProcessing = new Set<Promise<void>>();
  * Wait for all pending stream processing to complete with a timeout
  * @param timeoutMs - Maximum time to wait in milliseconds (default: 5000)
  */
-export const waitForPendingStreams = async (timeoutMs: number = 5000): Promise<void> => {
+export const waitForPendingStreams = async (
+  timeoutMs: number = 5000,
+): Promise<void> => {
   if (pendingStreamProcessing.size === 0) {
     return;
   }
@@ -40,15 +40,12 @@ export const waitForPendingStreams = async (timeoutMs: number = 5000): Promise<v
     }, timeoutMs);
   });
 
-  await Promise.race([
-    Promise.allSettled(pendingPromises),
-    timeoutPromise,
-  ]);
+  await Promise.race([Promise.allSettled(pendingPromises), timeoutPromise]);
 
   if (timedOut && pendingStreamProcessing.size > 0) {
     logger.warn(
       `Timeout waiting for ${pendingStreamProcessing.size} pending stream(s) ` +
-      `after ${timeoutMs}ms (started with ${initialCount})`,
+        `after ${timeoutMs}ms (started with ${initialCount})`,
     );
   }
 };
@@ -59,7 +56,9 @@ export const waitForPendingStreams = async (timeoutMs: number = 5000): Promise<v
  * @param result - The result that might be a stream
  * @returns The same result, or accumulated data if it was a stream
  */
-export const consumeStreamResult = async (result: unknown): Promise<unknown> => {
+export const consumeStreamResult = async (
+  result: unknown,
+): Promise<unknown> => {
   const streamInfo = getStream(result);
 
   if (streamInfo.type === null) {
@@ -70,20 +69,22 @@ export const consumeStreamResult = async (result: unknown): Promise<unknown> => 
 
   logger.debug("Result is a stream, consuming...");
 
-  if (streamInfo.type === 'aisdk-result') {
+  if (streamInfo.type === "aisdk-result") {
     // For AI SDK results, just await the text property to trigger consumption
     // The background task will handle collecting all data
     try {
-      if ('text' in streamInfo.result) {
+      if ("text" in streamInfo.result) {
         await streamInfo.result.text;
       }
     } catch (error) {
-      logger.warn("Error consuming AI SDK result stream: " + errorMessage(error));
+      logger.warn(
+        "Error consuming AI SDK result stream: " + errorMessage(error),
+      );
     }
     return result;
   }
 
-  if (streamInfo.type === 'readable-stream') {
+  if (streamInfo.type === "readable-stream") {
     // Consume the ReadableStream
     const chunks: unknown[] = [];
     try {
@@ -100,10 +101,10 @@ export const consumeStreamResult = async (result: unknown): Promise<unknown> => 
     } catch (error) {
       logger.warn("Error consuming ReadableStream: " + errorMessage(error));
     }
-    return { type: 'stream', chunks };
+    return { type: "stream", chunks };
   }
 
-  if (streamInfo.type === 'async-iterable') {
+  if (streamInfo.type === "async-iterable") {
     // Consume the AsyncIterable
     const chunks: unknown[] = [];
     try {
@@ -113,17 +114,17 @@ export const consumeStreamResult = async (result: unknown): Promise<unknown> => 
     } catch (error) {
       logger.warn("Error consuming AsyncIterable: " + errorMessage(error));
     }
-    return { type: 'async-iterable', chunks };
+    return { type: "async-iterable", chunks };
   }
 
-  if (streamInfo.type === 'response') {
+  if (streamInfo.type === "response") {
     // Consume the Response body
     try {
       const { chunks, error } = await consumeResponse(streamInfo.response);
       if (error) {
         logger.warn("Error consuming Response: " + errorMessage(error));
       }
-      return { type: 'response', chunks };
+      return { type: "response", chunks };
     } catch (error) {
       logger.warn("Error consuming Response: " + errorMessage(error));
       return result;
@@ -157,10 +158,10 @@ export const handleStreamResult = <T>(
 ): T | ReadableStream<unknown> | AsyncIterable<unknown> | Response => {
   logger.debug(`Handling stream result of type: ${streamInfo.type}`);
 
-  if (streamInfo.type === 'aisdk-result') {
+  if (streamInfo.type === "aisdk-result") {
     // For AI SDK results, consume the promise properties in the background
     trackStreamProcessing(async () => {
-      logger.debug('Starting background processing for AI SDK result');
+      logger.debug("Starting background processing for AI SDK result");
 
       let partialOutput: any = {};
       try {
@@ -170,21 +171,31 @@ export const handleStreamResult = <T>(
           try {
             span.setAttribute(SPAN_OUTPUT, serialize(partialOutput));
           } catch (error) {
-            logger.warn("Failed to serialize AI SDK stream output: " + errorMessage(error));
+            logger.warn(
+              "Failed to serialize AI SDK stream output: " +
+                errorMessage(error),
+            );
           }
         }
       } catch (error) {
         // Record partial output if we have any
-        if (Object.keys(partialOutput).length > 0 && shouldSendTraces() && !ignoreOutput) {
+        if (
+          Object.keys(partialOutput).length > 0 &&
+          shouldSendTraces() &&
+          !ignoreOutput
+        ) {
           try {
             span.setAttribute(SPAN_OUTPUT, serialize(partialOutput));
           } catch (serError) {
-            logger.warn("Failed to serialize partial AI SDK output: " + errorMessage(serError));
+            logger.warn(
+              "Failed to serialize partial AI SDK output: " +
+                errorMessage(serError),
+            );
           }
         }
         span.recordException(error as Error);
       } finally {
-        logger.debug('Ending span for AI SDK result');
+        logger.debug("Ending span for AI SDK result");
         span.end();
       }
     });
@@ -192,9 +203,11 @@ export const handleStreamResult = <T>(
     return originalResult;
   }
 
-  if (streamInfo.type === 'readable-stream') {
-    logger.debug('Setting up background processing for ReadableStream');
-    const { stream, dataPromise } = consumeAndTeeReadableStream(streamInfo.stream);
+  if (streamInfo.type === "readable-stream") {
+    logger.debug("Setting up background processing for ReadableStream");
+    const { stream, dataPromise } = consumeAndTeeReadableStream(
+      streamInfo.stream,
+    );
 
     // Consume in background
     trackStreamProcessing(async () => {
@@ -203,10 +216,12 @@ export const handleStreamResult = <T>(
 
         if (shouldSendTraces() && !ignoreOutput) {
           try {
-            const output = { type: 'stream', chunks };
+            const output = { type: "stream", chunks };
             span.setAttribute(SPAN_OUTPUT, serialize(output));
           } catch (serError) {
-            logger.warn("Failed to serialize stream output: " + errorMessage(serError));
+            logger.warn(
+              "Failed to serialize stream output: " + errorMessage(serError),
+            );
           }
         }
 
@@ -214,7 +229,7 @@ export const handleStreamResult = <T>(
           span.recordException(error as Error);
         }
       } finally {
-        logger.debug('Ending span for ReadableStream');
+        logger.debug("Ending span for ReadableStream");
         span.end();
       }
     });
@@ -222,9 +237,11 @@ export const handleStreamResult = <T>(
     return stream;
   }
 
-  if (streamInfo.type === 'async-iterable') {
-    logger.debug('Setting up background processing for AsyncIterable');
-    const { iterable, dataPromise } = consumeAndTeeAsyncIterable(streamInfo.iterable);
+  if (streamInfo.type === "async-iterable") {
+    logger.debug("Setting up background processing for AsyncIterable");
+    const { iterable, dataPromise } = consumeAndTeeAsyncIterable(
+      streamInfo.iterable,
+    );
 
     // Consume in background
     trackStreamProcessing(async () => {
@@ -233,10 +250,13 @@ export const handleStreamResult = <T>(
 
         if (shouldSendTraces() && !ignoreOutput) {
           try {
-            const output = { type: 'async-iterable', chunks };
+            const output = { type: "async-iterable", chunks };
             span.setAttribute(SPAN_OUTPUT, serialize(output));
           } catch (serError) {
-            logger.warn("Failed to serialize async iterable output: " + errorMessage(serError));
+            logger.warn(
+              "Failed to serialize async iterable output: " +
+                errorMessage(serError),
+            );
           }
         }
 
@@ -244,7 +264,7 @@ export const handleStreamResult = <T>(
           span.recordException(error as Error);
         }
       } finally {
-        logger.debug('Ending span for AsyncIterable');
+        logger.debug("Ending span for AsyncIterable");
         span.end();
       }
     });
@@ -252,8 +272,8 @@ export const handleStreamResult = <T>(
     return iterable;
   }
 
-  if (streamInfo.type === 'response') {
-    logger.debug('Setting up background processing for Response');
+  if (streamInfo.type === "response") {
+    logger.debug("Setting up background processing for Response");
     // For Response objects, extract the body stream and tee it
     const originalResponse = streamInfo.response;
 
@@ -281,10 +301,12 @@ export const handleStreamResult = <T>(
 
         if (shouldSendTraces() && !ignoreOutput) {
           try {
-            const output = { type: 'response', chunks };
+            const output = { type: "response", chunks };
             span.setAttribute(SPAN_OUTPUT, serialize(output));
           } catch (serError) {
-            logger.warn("Failed to serialize response output: " + errorMessage(serError));
+            logger.warn(
+              "Failed to serialize response output: " + errorMessage(serError),
+            );
           }
         }
 
@@ -294,7 +316,7 @@ export const handleStreamResult = <T>(
       } catch (err) {
         span.recordException(err as Error);
       } finally {
-        logger.debug('Ending span for Response');
+        logger.debug("Ending span for Response");
         span.end();
       }
     });
@@ -303,7 +325,7 @@ export const handleStreamResult = <T>(
   }
 
   // Should never reach here, but just in case
-  logger.warn('Stream type not handled, ending span immediately');
+  logger.warn("Stream type not handled, ending span immediately");
   span.end();
   return originalResult;
 };

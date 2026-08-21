@@ -24,7 +24,9 @@ describe("writeEnvFile", () => {
     const path = join(scratch, ".env");
     const result = await writeEnvFile(path, "lmnr_proj_abc");
     expect(result).toEqual({ path, created: true, replaced: false });
-    expect(readFileSync(path, "utf-8")).toBe("LMNR_PROJECT_API_KEY=lmnr_proj_abc\n");
+    expect(readFileSync(path, "utf-8")).toBe(
+      "LMNR_PROJECT_API_KEY=lmnr_proj_abc\n",
+    );
     if (!isWin) {
       const mode = statSync(path).mode & 0o777;
       expect(mode).toBe(0o600);
@@ -35,7 +37,13 @@ describe("writeEnvFile", () => {
     const path = join(scratch, ".env");
     writeFileSync(
       path,
-      ["# header", "FOO=bar", "LMNR_PROJECT_API_KEY=old_key", "BAR=baz", ""].join("\n"),
+      [
+        "# header",
+        "FOO=bar",
+        "LMNR_PROJECT_API_KEY=old_key",
+        "BAR=baz",
+        "",
+      ].join("\n"),
     );
     const result = await writeEnvFile(path, "new_key");
     expect(result.created).toBe(false);

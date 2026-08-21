@@ -78,7 +78,9 @@ export class CliResource extends BaseResource {
    * the resolved project. Returns a tri-state probe so callers can distinguish a
    * revoked key (401 → `invalid`) from a server/access problem (`unverifiable`).
    */
-  public async resolveProjectByApiKey(apiKey: string): Promise<ProjectKeyProbe> {
+  public async resolveProjectByApiKey(
+    apiKey: string,
+  ): Promise<ProjectKeyProbe> {
     let response: Response;
     try {
       response = await fetch(`${this.baseHttpUrl}/v1/cli/project`, {
@@ -95,7 +97,9 @@ export class CliResource extends BaseResource {
     }
     if (response.status === 401) return { status: "invalid" };
     if (!response.ok) return { status: "unverifiable" };
-    const body = (await response.json().catch(() => null)) as { projectId?: string } | null;
+    const body = (await response.json().catch(() => null)) as {
+      projectId?: string;
+    } | null;
     return body?.projectId
       ? { status: "ok", projectId: body.projectId }
       : { status: "unverifiable" };

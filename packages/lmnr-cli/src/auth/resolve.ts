@@ -1,7 +1,11 @@
 import { DEFAULT_BASE_URL } from "../constants";
 import { readLocalProjectFile } from "../utils/local-project-file";
-import { type Credentials, readCredentials, writeCredentials } from "./credentials";
-import { decodeJwtExp, DeviceFlowError, mintAccessJwt } from "./device";
+import {
+  type Credentials,
+  readCredentials,
+  writeCredentials,
+} from "./credentials";
+import { DeviceFlowError, decodeJwtExp, mintAccessJwt } from "./device";
 import { type AuthInputs, type ResolvedAuth } from "./types";
 
 // Re-mint the JWT when it's within this window of expiry.
@@ -33,7 +37,9 @@ export function envHttpPort(): number | undefined {
  * login, so a self-host `.env` change applies without re-logging-in.
  */
 export function resolveBaseUrl(optBaseUrl?: string): string {
-  return optBaseUrl?.trim() || process.env.LMNR_BASE_URL?.trim() || DEFAULT_BASE_URL;
+  return (
+    optBaseUrl?.trim() || process.env.LMNR_BASE_URL?.trim() || DEFAULT_BASE_URL
+  );
 }
 
 /**
@@ -56,7 +62,7 @@ export async function resolveAuth(opts: AuthInputs): Promise<ResolvedAuth> {
   if (!projectId || projectId.length === 0) {
     throw new Error(
       "No project for this directory. Run `lmnr-cli setup` here, " +
-      "or pass --project-id <id>.",
+        "or pass --project-id <id>.",
     );
   }
 
@@ -94,9 +100,12 @@ export async function resolveUserToken(opts: {
  * Only write when we actually re-mint — otherwise a concurrent `logout` deleting
  * the file could race with our write and leave tokens on disk.
  */
-export async function refreshIfNeeded(creds: Credentials): Promise<Credentials> {
+export async function refreshIfNeeded(
+  creds: Credentials,
+): Promise<Credentials> {
   const expMs = new Date(creds.accessTokenExpiresAt).getTime();
-  const nearExpiry = !Number.isFinite(expMs) || expMs - Date.now() <= REFRESH_SKEW_MS;
+  const nearExpiry =
+    !Number.isFinite(expMs) || expMs - Date.now() <= REFRESH_SKEW_MS;
   if (!nearExpiry) {
     return creds;
   }

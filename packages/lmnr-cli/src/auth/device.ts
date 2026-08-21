@@ -29,7 +29,10 @@ type PollErrorCode =
   | "server_error";
 
 export class DeviceFlowError extends Error {
-  constructor(public readonly code: string, message: string) {
+  constructor(
+    public readonly code: string,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -75,7 +78,10 @@ export async function pollDevice(
 
   while (true) {
     if (Date.now() > deadline) {
-      throw new DeviceFlowError("expired_token", "Timed out waiting for authorization");
+      throw new DeviceFlowError(
+        "expired_token",
+        "Timed out waiting for authorization",
+      );
     }
     const url = `${trimSlash(issuer)}${DEVICE_TOKEN_ENDPOINT}`;
     const res = await fetch(url, {
@@ -90,7 +96,10 @@ export async function pollDevice(
     if (res.ok) {
       const body = (await res.json()) as DeviceTokenResponse;
       if (!body.access_token) {
-        throw new DeviceFlowError("server_error", "Device token response missing access_token");
+        throw new DeviceFlowError(
+          "server_error",
+          "Device token response missing access_token",
+        );
       }
       // The browser-selected project (and any future CLI metadata) rides back on
       // the x-lmnr-metadata response header, NOT the OAuth scope. Attach it so
@@ -102,7 +111,10 @@ export async function pollDevice(
     const code = (
       typeof body.error === "string" ? body.error : `http_${res.status}`
     ) as PollErrorCode;
-    const description = typeof body.error_description === "string" ? body.error_description : code;
+    const description =
+      typeof body.error_description === "string"
+        ? body.error_description
+        : code;
     if (code === "authorization_pending") {
       opts.onTick?.();
       await sleep(intervalSeconds * 1000);
@@ -122,7 +134,10 @@ export async function pollDevice(
  * Mint a fresh 15m EdDSA JWT from a session token. Throws DeviceFlowError
  * "invalid_grant" on 401 (session expired/revoked).
  */
-export async function mintAccessJwt(issuer: string, sessionToken: string): Promise<string> {
+export async function mintAccessJwt(
+  issuer: string,
+  sessionToken: string,
+): Promise<string> {
   const url = `${trimSlash(issuer)}${TOKEN_ENDPOINT}`;
   const res = await fetch(url, {
     method: "GET",
@@ -140,22 +155,33 @@ export async function mintAccessJwt(issuer: string, sessionToken: string): Promi
   }
   const body = (await res.json()) as { token?: string };
   if (!body.token) {
-    throw new DeviceFlowError("server_error", "Token endpoint response missing token");
+    throw new DeviceFlowError(
+      "server_error",
+      "Token endpoint response missing token",
+    );
   }
   return body.token;
 }
 
 /** Fetch the BetterAuth session for profile metadata (userId, email). */
-export async function fetchSession(issuer: string, sessionToken: string): Promise<SessionUser> {
+export async function fetchSession(
+  issuer: string,
+  sessionToken: string,
+): Promise<SessionUser> {
   const url = `${trimSlash(issuer)}${SESSION_ENDPOINT}`;
   const res = await fetch(url, {
     method: "GET",
     headers: { authorization: `Bearer ${sessionToken}` },
   });
   if (!res.ok) {
-    throw new DeviceFlowError(`http_${res.status}`, `Failed to fetch session (${res.status})`);
+    throw new DeviceFlowError(
+      `http_${res.status}`,
+      `Failed to fetch session (${res.status})`,
+    );
   }
-  const body = (await res.json()) as { user?: { id?: string; email?: string } } | null;
+  const body = (await res.json()) as {
+    user?: { id?: string; email?: string };
+  } | null;
   const user = body?.user;
   if (!user?.id) {
     throw new DeviceFlowError("server_error", "Session response missing user");
@@ -181,14 +207,17 @@ export function decodeJwtExp(jwt: string): string | null {
   }
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Extract the browser-selected projectId from the device-token `x-lmnr-metadata`
  * response header — a JSON string, e.g. `{"projectId":"<uuid>"}`, forwarded by
  * the server's /device/token route wrapper. Returns null when absent or malformed.
  */
-export function parseProjectFromMetadata(metadata?: string | null): string | null {
+export function parseProjectFromMetadata(
+  metadata?: string | null,
+): string | null {
   if (!metadata) return null;
   try {
     const obj = JSON.parse(metadata) as { projectId?: unknown };
@@ -199,7 +228,9 @@ export function parseProjectFromMetadata(metadata?: string | null): string | nul
   }
 }
 
-async function safeJson(res: Response): Promise<Record<string, unknown> | null> {
+async function safeJson(
+  res: Response,
+): Promise<Record<string, unknown> | null> {
   try {
     return (await res.json()) as Record<string, unknown>;
   } catch {

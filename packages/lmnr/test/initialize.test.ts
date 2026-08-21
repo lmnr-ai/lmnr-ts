@@ -84,7 +84,10 @@ void describe("initialize", () => {
     const pointerLine = lines.find((l) => l.startsWith("LMNR_DEBUG_RUN "));
     assert.ok(pointerLine !== undefined);
     const payload = JSON.parse(pointerLine.slice("LMNR_DEBUG_RUN ".length));
-    assert.strictEqual(payload.trace_id, "01234567-89ab-cdef-0123-456789abcdef");
+    assert.strictEqual(
+      payload.trace_id,
+      "01234567-89ab-cdef-0123-456789abcdef",
+    );
   });
 
   void it("arms the debug runtime from an LMNR_SPAN_CONTEXT debug block", () => {
@@ -108,7 +111,10 @@ void describe("initialize", () => {
 
     const runtime = getRuntime();
     assert.ok(runtime !== null);
-    assert.strictEqual(runtime.sessionId, "00000000-0000-0000-0000-0000000000aa");
+    assert.strictEqual(
+      runtime.sessionId,
+      "00000000-0000-0000-0000-0000000000aa",
+    );
     assert.strictEqual(runtime.localOrigin, false);
   });
 
@@ -130,7 +136,10 @@ void describe("initialize", () => {
     try {
       // Arm from context before initialize() — mirrors a span created at import
       // time / before the app calls initialize().
-      Laminar._armDebugRuntimeFromContext({ enabled: true, sessionId: SESSION });
+      Laminar._armDebugRuntimeFromContext({
+        enabled: true,
+        sessionId: SESSION,
+      });
       assert.ok(getRuntime() !== null);
 
       Laminar.initialize({ projectApiKey: "test" });

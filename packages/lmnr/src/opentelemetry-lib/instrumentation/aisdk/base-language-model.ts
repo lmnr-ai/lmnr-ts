@@ -42,17 +42,17 @@ import { verbatimPromptMessages } from "./v7-integration/utils";
 
 type CacheResponse =
   | {
-    type: "raw";
-    response: Record<string, any> | Record<string, any>[];
-    finishReasons?: string[] | null;
-    model?: string | null;
-  }
+      type: "raw";
+      response: Record<string, any> | Record<string, any>[];
+      finishReasons?: string[] | null;
+      model?: string | null;
+    }
   | {
-    type: "genAi";
-    messages: Record<string, any>[];
-    finishReasons?: string[] | null;
-    model?: string | null;
-  };
+      type: "genAi";
+      messages: Record<string, any>[];
+      finishReasons?: string[] | null;
+      model?: string | null;
+    };
 
 /**
  * Parsed HIT `output`. The server-side response shape is not yet frozen

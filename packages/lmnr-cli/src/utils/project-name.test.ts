@@ -4,7 +4,9 @@ import { deriveProjectName, parseRepoNameFromUrl } from "./project-name";
 
 describe("parseRepoNameFromUrl", () => {
   it("strips .git from https URLs", () => {
-    expect(parseRepoNameFromUrl("https://github.com/owner/repo.git")).toBe("repo");
+    expect(parseRepoNameFromUrl("https://github.com/owner/repo.git")).toBe(
+      "repo",
+    );
   });
   it("strips trailing slashes", () => {
     expect(parseRepoNameFromUrl("https://github.com/owner/repo/")).toBe("repo");
@@ -20,7 +22,9 @@ describe("parseRepoNameFromUrl", () => {
 
 describe("deriveProjectName", () => {
   it("uses explicit name when provided (normalised)", () => {
-    expect(deriveProjectName({ explicit: "My Cool Repo" })).toBe("my-cool-repo");
+    expect(deriveProjectName({ explicit: "My Cool Repo" })).toBe(
+      "my-cool-repo",
+    );
   });
   it("normalises capital letters and special chars", () => {
     expect(deriveProjectName({ explicit: "ABC_123 Foo!" })).toBe("abc-123-foo");

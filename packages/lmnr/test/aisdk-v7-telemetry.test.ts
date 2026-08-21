@@ -249,7 +249,10 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
         type: "function",
         name: "get_weather",
         description: "Get the weather for a city",
-        inputSchema: { type: "object", properties: { city: { type: "string" } } },
+        inputSchema: {
+          type: "object",
+          properties: { city: { type: "string" } },
+        },
       },
     ];
 

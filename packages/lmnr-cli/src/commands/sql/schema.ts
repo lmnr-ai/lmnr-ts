@@ -98,8 +98,8 @@ export const handleSqlSchema = async (
     const url = client.apiBaseUrl;
     throw schemaFetchFailed(
       `Could not fetch the SQL schema from ${url}: ${errorMessage(err)}. ` +
-      "Check your connection, or that --base-url / --port (LMNR_BASE_URL / " +
-      "LMNR_HTTP_PORT) point at a reachable Laminar API.",
+        "Check your connection, or that --base-url / --port (LMNR_BASE_URL / " +
+        "LMNR_HTTP_PORT) point at a reachable Laminar API.",
     );
   }
 

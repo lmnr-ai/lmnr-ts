@@ -1,4 +1,4 @@
-import { version as SDK_VERSION } from '../../package.json';
+import { version as SDK_VERSION } from "../../package.json";
 import { getLangVersion } from "../version";
 import { BaseResource, type LaminarAuth } from "./index";
 
@@ -20,24 +20,29 @@ export class BrowserEventsResource extends BaseResource {
       sessionId,
       traceId,
       events,
-      source: getLangVersion() ?? 'javascript',
+      source: getLangVersion() ?? "javascript",
       sdkVersion: SDK_VERSION,
     };
 
     const jsonString = JSON.stringify(payload);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const compressedStream = blob.stream().pipeThrough(new CompressionStream('gzip'));
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const compressedStream = blob
+      .stream()
+      .pipeThrough(new CompressionStream("gzip"));
     const compressedResponse = new Response(compressedStream);
     const compressedData = await compressedResponse.arrayBuffer();
 
-    const response = await fetch(this.baseHttpUrl + "/v1/browser-sessions/events", {
-      method: "POST",
-      headers: {
-        ...this.headers(),
-        'Content-Encoding': 'gzip',
+    const response = await fetch(
+      this.baseHttpUrl + "/v1/browser-sessions/events",
+      {
+        method: "POST",
+        headers: {
+          ...this.headers(),
+          "Content-Encoding": "gzip",
+        },
+        body: compressedData,
       },
-      body: compressedData,
-    });
+    );
 
     if (!response.ok) {
       await this.handleError(response);

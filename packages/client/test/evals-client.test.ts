@@ -34,7 +34,7 @@ void describe("EvalsResource Client Methods", () => {
       const metadata = { metadata: "test metadata" };
 
       const scope = nock(baseUrl)
-        .post('/v1/evals', {
+        .post("/v1/evals", {
           name: evalName,
           groupName: groupName,
           metadata,
@@ -48,7 +48,11 @@ void describe("EvalsResource Client Methods", () => {
           projectId: "project-123",
         });
 
-      const result = await client.evals.create({ name: evalName, groupName, metadata });
+      const result = await client.evals.create({
+        name: evalName,
+        groupName,
+        metadata,
+      });
 
       assert.strictEqual(result, mockEvalId);
       scope.done();
@@ -58,7 +62,7 @@ void describe("EvalsResource Client Methods", () => {
       const mockEvalId: StringUUID = "12345678-1234-1234-1234-123456789abc";
 
       const scope = nock(baseUrl)
-        .post('/v1/evals', {
+        .post("/v1/evals", {
           name: null,
           groupName: null,
           metadata: null,
@@ -79,9 +83,7 @@ void describe("EvalsResource Client Methods", () => {
     });
 
     void it("handles API errors", async () => {
-      const scope = nock(baseUrl)
-        .post('/v1/evals')
-        .reply(400, "Bad Request");
+      const scope = nock(baseUrl).post("/v1/evals").reply(400, "Bad Request");
 
       await assert.rejects(
         () => client.evals.create({ name: "Test" }),
@@ -149,7 +151,7 @@ void describe("EvalsResource Client Methods", () => {
 
     void it("handles API errors", async () => {
       const scope = nock(baseUrl)
-        .post('/v1/evals/eval-404')
+        .post("/v1/evals/eval-404")
         .reply(404, "Evaluation not found");
 
       await assert.rejects(
@@ -191,7 +193,11 @@ void describe("EvalsResource Client Methods", () => {
         traceId: testTraceId,
       });
 
-      assert.ok(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(result));
+      assert.ok(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+          result,
+        ),
+      );
 
       assert.strictEqual(capturedBody.points.length, 1);
       const point = capturedBody.points[0];
@@ -226,8 +232,12 @@ void describe("EvalsResource Client Methods", () => {
       });
 
       // Verify the returned ID is a valid UUID
-      assert.ok(typeof result === 'string');
-      assert.ok(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(result));
+      assert.ok(typeof result === "string");
+      assert.ok(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+          result,
+        ),
+      );
 
       // Verify the request body
       assert.strictEqual(capturedBody.points.length, 1);
@@ -246,14 +256,15 @@ void describe("EvalsResource Client Methods", () => {
 
     void it("handles API errors", async () => {
       const scope = nock(baseUrl)
-        .post('/v1/evals/eval-123/datapoints')
+        .post("/v1/evals/eval-123/datapoints")
         .reply(500, "Internal Server Error");
 
       await assert.rejects(
-        () => client.evals.createDatapoint({
-          evalId: "eval-123",
-          data: { input: "test" },
-        }),
+        () =>
+          client.evals.createDatapoint({
+            evalId: "eval-123",
+            data: { input: "test" },
+          }),
         (error: Error) => {
           assert.ok(error.message.includes("500"));
           return true;
@@ -274,10 +285,13 @@ void describe("EvalsResource Client Methods", () => {
       let capturedBody: RequestBody = {};
 
       const scope = nock(baseUrl)
-        .post(`/v1/evals/${evalId}/datapoints/${datapointId}`, (body: RequestBody) => {
-          capturedBody = body;
-          return true;
-        })
+        .post(
+          `/v1/evals/${evalId}/datapoints/${datapointId}`,
+          (body: RequestBody) => {
+            capturedBody = body;
+            return true;
+          },
+        )
         .reply(200, {});
 
       await client.evals.updateDatapoint({
@@ -302,10 +316,13 @@ void describe("EvalsResource Client Methods", () => {
       let capturedBody: RequestBody = {};
 
       const scope = nock(baseUrl)
-        .post(`/v1/evals/${evalId}/datapoints/${datapointId}`, (body: RequestBody) => {
-          capturedBody = body;
-          return true;
-        })
+        .post(
+          `/v1/evals/${evalId}/datapoints/${datapointId}`,
+          (body: RequestBody) => {
+            capturedBody = body;
+            return true;
+          },
+        )
         .reply(200, {});
 
       await client.evals.updateDatapoint({
@@ -323,15 +340,16 @@ void describe("EvalsResource Client Methods", () => {
 
     void it("handles API errors", async () => {
       const scope = nock(baseUrl)
-        .post('/v1/evals/eval-123/datapoints/datapoint-456')
+        .post("/v1/evals/eval-123/datapoints/datapoint-456")
         .reply(404, "Not Found");
 
       await assert.rejects(
-        () => client.evals.updateDatapoint({
-          evalId: "eval-123",
-          datapointId: "datapoint-456",
-          scores: { test: 1.0 },
-        }),
+        () =>
+          client.evals.updateDatapoint({
+            evalId: "eval-123",
+            datapointId: "datapoint-456",
+            scores: { test: 1.0 },
+          }),
         (error: Error) => {
           assert.ok(error.message.includes("404"));
           return true;
@@ -458,15 +476,18 @@ void describe("EvalsResource Client Methods", () => {
       const evalsResource = client.evals as any;
       const originalRetrySaveDatapoints = evalsResource.retrySaveDatapoints;
       evalsResource.retrySaveDatapoints = function (options: any) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-        return originalRetrySaveDatapoints.call(this, { ...options, maxRetries: 3 });
+        return originalRetrySaveDatapoints.call(this, {
+          ...options,
+          maxRetries: 3,
+        });
       };
 
       await assert.rejects(
-        () => client.evals.saveDatapoints({
-          evalId,
-          datapoints: testDatapoints,
-        }),
+        () =>
+          client.evals.saveDatapoints({
+            evalId,
+            datapoints: testDatapoints,
+          }),
         (error: Error) => {
           assert.ok(error.message.includes("413"));
           return true;
@@ -551,10 +572,11 @@ void describe("EvalsResource Client Methods", () => {
         });
 
       await assert.rejects(
-        () => client.evals.saveDatapoints({
-          evalId,
-          datapoints: testDatapoints,
-        }),
+        () =>
+          client.evals.saveDatapoints({
+            evalId,
+            datapoints: testDatapoints,
+          }),
         (error: Error) => {
           assert.ok(error.message.includes("500"));
           return true;
@@ -724,7 +746,7 @@ void describe("EvalsResource Client Methods", () => {
       const evalName = "Integration Test";
 
       const createEvalScope = nock(baseUrl)
-        .post('/v1/evals', {
+        .post("/v1/evals", {
           name: evalName,
           groupName: null,
           metadata: null,
@@ -743,8 +765,11 @@ void describe("EvalsResource Client Methods", () => {
         .reply(200, {});
 
       const updateDatapointScope = nock(baseUrl)
-        // eslint-disable-next-line @stylistic/max-len
-        .post(new RegExp(`/v1/evals/${mockEvalId}/datapoints/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`))
+        .post(
+          new RegExp(
+            `/v1/evals/${mockEvalId}/datapoints/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`,
+          ),
+        )
         .reply(200, {});
 
       const evalId = await client.evals.create({ name: evalName });

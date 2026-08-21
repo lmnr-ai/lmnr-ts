@@ -1,3 +1,16 @@
+export { LaminarClient } from "@lmnr-ai/client";
+export {
+  type Dataset as DatasetType,
+  type EvaluationDatapoint,
+  type EvaluationDatapointDatasetLink,
+  type Event,
+  type LaminarSpanContext,
+  type MaskInputOptions,
+  type PushDatapointsResponse,
+  type SessionRecordingOptions,
+  TracingLevel,
+} from "@lmnr-ai/types";
+export { type Span } from "@opentelemetry/api";
 export { EvaluationDataset as Dataset, LaminarDataset } from "./datasets";
 export {
   observe,
@@ -7,9 +20,9 @@ export {
 } from "./decorators";
 export {
   type Datapoint,
-  evaluate,
   type EvaluatorFunction,
   type EvaluatorFunctionReturn,
+  evaluate,
   HumanEvaluator,
 } from "./evaluations";
 export {
@@ -64,16 +77,3 @@ export {
   getTracerProvider,
 } from "./opentelemetry-lib/tracing/index";
 export { initializeLaminarInstrumentations } from "./opentelemetry-lib/tracing/instrumentations";
-export { LaminarClient } from "@lmnr-ai/client";
-export {
-  type Dataset as DatasetType,
-  type EvaluationDatapoint,
-  type EvaluationDatapointDatasetLink,
-  type Event,
-  type LaminarSpanContext,
-  type MaskInputOptions,
-  type PushDatapointsResponse,
-  type SessionRecordingOptions,
-  TracingLevel,
-} from "@lmnr-ai/types";
-export { type Span } from "@opentelemetry/api";

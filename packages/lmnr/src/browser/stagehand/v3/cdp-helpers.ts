@@ -21,7 +21,7 @@ import {
  */
 export function shouldSkipUrl(url: string): boolean {
   if (!url) return true;
-  return SKIP_URL_PATTERNS.some(pattern => url.startsWith(pattern));
+  return SKIP_URL_PATTERNS.some((pattern) => url.startsWith(pattern));
 }
 
 /**
@@ -45,7 +45,7 @@ export async function sendCDP<T = unknown>(
   }
   throw new Error(
     "Stagehand page does not expose sendCDP or getSessionForFrame; " +
-    "unable to send CDP commands",
+      "unable to send CDP commands",
   );
 }
 
@@ -60,7 +60,10 @@ export async function getOrCreateIsolatedWorld(
     const frameTreeResult = await Promise.race([
       sendCDP<{ frameTree: FrameTree }>(page, "Page.getFrameTree"),
       new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout getting frame tree")), CDP_OPERATION_TIMEOUT_MS),
+        setTimeout(
+          () => reject(new Error("Timeout getting frame tree")),
+          CDP_OPERATION_TIMEOUT_MS,
+        ),
       ),
     ]);
 
@@ -70,13 +73,18 @@ export async function getOrCreateIsolatedWorld(
 
     // Create isolated world
     const isolatedWorldResult = await Promise.race([
-      sendCDP<{ executionContextId: number }>(page, "Page.createIsolatedWorld", {
-        frameId,
-        worldName: "laminar-recorder",
-      }),
+      sendCDP<{ executionContextId: number }>(
+        page,
+        "Page.createIsolatedWorld",
+        {
+          frameId,
+          worldName: "laminar-recorder",
+        },
+      ),
       new Promise<null>((_, reject) =>
-        setTimeout(() => reject(
-          new Error("Timeout creating isolated world")), CDP_OPERATION_TIMEOUT_MS,
+        setTimeout(
+          () => reject(new Error("Timeout creating isolated world")),
+          CDP_OPERATION_TIMEOUT_MS,
         ),
       ),
     ]);
@@ -108,14 +116,19 @@ export async function isRecorderPresent(
         returnByValue: true,
       }),
       new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout checking recorder")), CDP_OPERATION_TIMEOUT_MS),
+        setTimeout(
+          () => reject(new Error("Timeout checking recorder")),
+          CDP_OPERATION_TIMEOUT_MS,
+        ),
       ),
     ]);
 
     if (!result) return true; // On timeout, assume present to avoid double injection
     return result.result?.value === true;
   } catch (error) {
-    logger.debug("Failed to check if recorder is present: " + errorMessage(error));
+    logger.debug(
+      "Failed to check if recorder is present: " + errorMessage(error),
+    );
     return true; // On error, assume present to be safe
   }
 }
@@ -136,7 +149,9 @@ export async function injectRecorderViaCDP(
     try {
       url = page.url();
     } catch (error) {
-      logger.debug("Failed to get page URL, page might be closed: " + errorMessage(error));
+      logger.debug(
+        "Failed to get page URL, page might be closed: " + errorMessage(error),
+      );
       return null;
     }
 
@@ -197,7 +212,9 @@ export async function injectRecorderViaCDP(
       await sendCDP(page, "Runtime.addBinding", {
         name: "lmnrSendEvents",
       });
-      logger.debug(`Added binding 'lmnrSendEvents' for page ${frameId}, context ${contextId}`);
+      logger.debug(
+        `Added binding 'lmnrSendEvents' for page ${frameId}, context ${contextId}`,
+      );
     } catch (error) {
       // Binding might already exist, that's ok
       logger.debug("Binding may already exist: " + errorMessage(error));
@@ -212,9 +229,11 @@ export async function injectRecorderViaCDP(
         if (!state.pageSessionHandlers.has(pageTargetId)) {
           // Access the connection's sessions map to find the session for this page
           const connInternal = conn as unknown as {
-            getSession(sessionId: string): {
-              on<P>(event: string, handler: (params: P) => void): void
-            } | undefined;
+            getSession(sessionId: string):
+              | {
+                  on<P>(event: string, handler: (params: P) => void): void;
+                }
+              | undefined;
             sessions: Map<string, unknown>;
           };
 
@@ -223,30 +242,39 @@ export async function injectRecorderViaCDP(
           // The session for a page target is tracked in the context
           // We can iterate sessions and try to set up the listener
           if (connInternal.sessions) {
-            for (const [sessionId, session] of connInternal.sessions.entries()) {
+            for (const [
+              sessionId,
+              session,
+            ] of connInternal.sessions.entries()) {
               try {
                 // Set up the handler on each session (the correct one will receive the events)
                 const sessionTyped = session as {
-                  on<P>(event: string, handler: (params: P) => void): void
+                  on<P>(event: string, handler: (params: P) => void): void;
                 };
                 if (sessionTyped.on) {
                   sessionTyped.on<RuntimeBindingCalledEvent>(
                     "Runtime.bindingCalled",
                     bindingHandler,
                   );
-                  logger.debug(`Set up binding handler on session ${sessionId}`);
+                  logger.debug(
+                    `Set up binding handler on session ${sessionId}`,
+                  );
                 }
               } catch (error) {
                 // Session might be closed, continue with next session
-                logger.debug(`Failed to set up binding handler on session ${sessionId}: `
-                  + errorMessage(error));
+                logger.debug(
+                  `Failed to set up binding handler on session ${sessionId}: ` +
+                    errorMessage(error),
+                );
               }
             }
           }
           state.pageSessionHandlers.set(pageTargetId, bindingHandler);
         }
       } catch (error) {
-        logger.debug("Failed to set up binding handler: " + errorMessage(error));
+        logger.debug(
+          "Failed to set up binding handler: " + errorMessage(error),
+        );
       }
     }
 

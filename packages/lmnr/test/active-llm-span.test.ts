@@ -14,9 +14,7 @@ import {
   pushActiveLlmSpan,
   removeActiveLlmSpan,
 } from "../src/opentelemetry-lib/instrumentation/aisdk/active-llm-span";
-import {
-  LaminarAiSdkTelemetry,
-} from "../src/opentelemetry-lib/instrumentation/aisdk/v7-integration";
+import { LaminarAiSdkTelemetry } from "../src/opentelemetry-lib/instrumentation/aisdk/v7-integration";
 
 const mkStart = (callId: string) => ({
   callId,
@@ -140,8 +138,9 @@ void describe("v7 integration publishes the LLM span to the registry", () => {
     const llm = spans.find((s) => s.name.startsWith("ai.llm "));
     assert.ok(llm);
     assert.equal(
-      (registered as unknown as { spanContext: () => { spanId: string } })
-        .spanContext().spanId,
+      (
+        registered as unknown as { spanContext: () => { spanId: string } }
+      ).spanContext().spanId,
       llm.spanContext().spanId,
     );
   });

@@ -45,7 +45,7 @@ function splitCommanderArgs(cmdArgs: unknown[]): {
   command: Command;
   opts: GlobalOpts;
 } {
-  const command = cmdArgs.at(-1) as Command;
+  const command = cmdArgs[cmdArgs.length - 1] as Command;
   const positionals = cmdArgs.slice(0, -2);
   const opts = command.optsWithGlobals();
   return { positionals, command, opts };
@@ -91,38 +91,47 @@ function runWithEnvelope(
  * The handler shape both client wrappers accept: a pure function of the resolved
  * client, the commander positionals, and the parsed options. Auth resolution and
  * the error envelope live in the wrapper.
+ *
+ * `O` is the command's own options type (`GlobalOpts` plus whatever flags that
+ * command declares). It is a type parameter rather than a hardcoded
+ * `GlobalOpts` because parameters are contravariant: a handler asking for
+ * `GlobalOpts & { outputFile: string }` is NOT assignable to one asking for
+ * plain `GlobalOpts`. The wrapper can only ever produce `optsWithGlobals()`,
+ * which commander types as `OptionValues`, so the cast to `O` happens once here
+ * instead of at every call site.
  */
-export type ClientAction<A extends unknown[]> = (
-  client: LaminarClient,
-  ...args: [...A, GlobalOpts]
-) => Promise<void>;
+export type ClientAction<
+  A extends unknown[],
+  O extends GlobalOpts = GlobalOpts,
+> = (client: LaminarClient, ...args: [...A, O]) => Promise<void>;
 
 /**
  * The handler shape {@link withLocalOpts} accepts — no client, for commands that
  * only touch local state (e.g. `.lmnr/*` files) and never call the API.
  */
-export type LocalAction<A extends unknown[]> = (
-  ...args: [...A, GlobalOpts]
-) => Promise<void>;
+export type LocalAction<
+  A extends unknown[],
+  O extends GlobalOpts = GlobalOpts,
+> = (...args: [...A, O]) => Promise<void>;
 
 /**
  * Wrap a local-only command handler: no auth/client build, but the same
  * positionals + options threading and error envelope as the client wrappers.
  */
 export const withLocalOpts =
-  <A extends unknown[]>(
-    action: LocalAction<A>,
+  <A extends unknown[], O extends GlobalOpts = GlobalOpts>(
+    action: LocalAction<A, O>,
     exitCodeFor: ExitCodeMapper = defaultExitCode,
   ) =>
-    async (...cmdArgs: unknown[]): Promise<void> => {
-      const { positionals, command, opts } = splitCommanderArgs(cmdArgs);
-      await runWithEnvelope(
-        () => action(...(positionals as A), opts),
-        opts,
-        exitCodeFor,
-        command,
-      );
-    };
+  async (...cmdArgs: unknown[]): Promise<void> => {
+    const { positionals, command, opts } = splitCommanderArgs(cmdArgs);
+    await runWithEnvelope(
+      () => action(...(positionals as A), opts as O),
+      opts,
+      exitCodeFor,
+      command,
+    );
+  };
 
 /**
  * Wrap a project-scoped command handler. Resolves a user-token
@@ -135,26 +144,26 @@ export const withLocalOpts =
  *     .action(withProjectClient(handleSqlQuery)); // (client, query, opts) => work
  */
 export const withProjectClient =
-  <A extends unknown[]>(
-    action: ClientAction<A>,
+  <A extends unknown[], O extends GlobalOpts = GlobalOpts>(
+    action: ClientAction<A, O>,
     exitCodeFor: ExitCodeMapper = defaultExitCode,
   ) =>
-    async (...cmdArgs: unknown[]): Promise<void> => {
-      const { positionals, command, opts } = splitCommanderArgs(cmdArgs);
-      await runWithEnvelope(
-        async () => {
-          const client = await buildLaminarClient({
-            projectId: opts.projectId,
-            baseUrl: opts.baseUrl,
-            port: opts.port,
-          });
-          await action(client, ...(positionals as A), opts);
-        },
-        opts,
-        exitCodeFor,
-        command,
-      );
-    };
+  async (...cmdArgs: unknown[]): Promise<void> => {
+    const { positionals, command, opts } = splitCommanderArgs(cmdArgs);
+    await runWithEnvelope(
+      async () => {
+        const client = await buildLaminarClient({
+          projectId: opts.projectId,
+          baseUrl: opts.baseUrl,
+          port: opts.port,
+        });
+        await action(client, ...(positionals as A), opts as O);
+      },
+      opts,
+      exitCodeFor,
+      command,
+    );
+  };
 
 /**
  * Wrap a discovery command handler. Resolves a user-token
@@ -162,31 +171,31 @@ export const withProjectClient =
  * selected), threads positionals + options, and owns the error envelope.
  */
 export const withUserToken =
-  <A extends unknown[]>(
-    action: ClientAction<A>,
+  <A extends unknown[], O extends GlobalOpts = GlobalOpts>(
+    action: ClientAction<A, O>,
     exitCodeFor: ExitCodeMapper = defaultExitCode,
   ) =>
-    async (...cmdArgs: unknown[]): Promise<void> => {
-      const { positionals, command, opts } = splitCommanderArgs(cmdArgs);
-      await runWithEnvelope(
-        async () => {
-          const token = await resolveUserToken({
-            baseUrl: opts.baseUrl,
-            port: opts.port,
-          });
-          const client = new LaminarClient({
-            baseUrl: token.baseUrl,
-            // token.port already folds in the LMNR_HTTP_PORT fallback; opts.port
-            // would drop it.
-            port: token.port,
-            // No project id yet. CliResource overrides its own URL/headers, so
-            // the empty projectId is never sent.
-            auth: { type: "userToken", token: token.bearer, projectId: "" },
-          });
-          await action(client, ...(positionals as A), opts);
-        },
-        opts,
-        exitCodeFor,
-        command,
-      );
-    };
+  async (...cmdArgs: unknown[]): Promise<void> => {
+    const { positionals, command, opts } = splitCommanderArgs(cmdArgs);
+    await runWithEnvelope(
+      async () => {
+        const token = await resolveUserToken({
+          baseUrl: opts.baseUrl,
+          port: opts.port,
+        });
+        const client = new LaminarClient({
+          baseUrl: token.baseUrl,
+          // token.port already folds in the LMNR_HTTP_PORT fallback; opts.port
+          // would drop it.
+          port: token.port,
+          // No project id yet. CliResource overrides its own URL/headers, so
+          // the empty projectId is never sent.
+          auth: { type: "userToken", token: token.bearer, projectId: "" },
+        });
+        await action(client, ...(positionals as A), opts as O);
+      },
+      opts,
+      exitCodeFor,
+      command,
+    );
+  };

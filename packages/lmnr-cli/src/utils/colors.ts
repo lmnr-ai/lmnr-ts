@@ -8,7 +8,8 @@ import { createColors } from "picocolors";
 // stream's redirection (e.g. `setup > out.txt` must not get ANSI in the file).
 function enabledFor(stream: NodeJS.WriteStream): boolean {
   if ("NO_COLOR" in process.env) return false;
-  if ("FORCE_COLOR" in process.env && process.env.FORCE_COLOR !== "0") return true;
+  if ("FORCE_COLOR" in process.env && process.env.FORCE_COLOR !== "0")
+    return true;
   return Boolean(stream.isTTY);
 }
 

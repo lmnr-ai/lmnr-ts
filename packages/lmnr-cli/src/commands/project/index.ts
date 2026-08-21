@@ -25,18 +25,25 @@ export const handleProjectsList = async (
   }
 
   if (projects.length === 0) {
-    console.log("No projects found. Create one in the dashboard, then run `lmnr-cli setup`.");
+    console.log(
+      "No projects found. Create one in the dashboard, then run `lmnr-cli setup`.",
+    );
     return;
   }
 
   const columns = ["", "Workspace", "Project", "Project ID"];
-  const rows = projects.map((p) => [p.id === linked ? "●" : "", p.workspaceName, p.name, p.id]);
+  const rows = projects.map((p) => [
+    p.id === linked ? "●" : "",
+    p.workspaceName,
+    p.name,
+    p.id,
+  ]);
   console.log(renderTable(columns, rows));
   console.log(
     linked
       ? "\n● = linked to this directory (lmnr-cli setup). " +
-      "Override per-command with --project-id.\n"
+          "Override per-command with --project-id.\n"
       : "\nNot linked here. Run `lmnr-cli setup` in your project directory, " +
-      "or pass --project-id.\n",
+          "or pass --project-id.\n",
   );
 };

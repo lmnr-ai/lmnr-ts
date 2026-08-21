@@ -48,7 +48,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   delete process.env.LMNR_NO_COMMAND_TRACKING;
   h.readDebugSessionFile.mockReturnValue({ session_id: "sess-1" });
-  h.buildLaminarClient.mockResolvedValue({ rolloutSessions: { addBlock: h.addBlock } });
+  h.buildLaminarClient.mockResolvedValue({
+    rolloutSessions: { addBlock: h.addBlock },
+  });
   h.addBlock.mockResolvedValue("block-1");
 });
 
@@ -91,7 +93,9 @@ describe("trackingDisabled", () => {
 describe("maybeTrackCommand", () => {
   it("posts a command block for an allowlisted command with an active session", async () => {
     const sql = makeCmd("sql", root);
-    const query = makeCmd("query", sql, { projectId: "p1" }, ["SELECT * FROM spans LIMIT 1"]);
+    const query = makeCmd("query", sql, { projectId: "p1" }, [
+      "SELECT * FROM spans LIMIT 1",
+    ]);
 
     await maybeTrackCommand(query, 0);
 
@@ -142,14 +146,20 @@ describe("maybeTrackCommand", () => {
     await maybeTrackCommand(query, 9);
 
     expect(h.addBlock).toHaveBeenCalledWith(
-      expect.objectContaining({ content: expect.objectContaining({ exitCode: 9 }) }),
+      expect.objectContaining({
+        content: expect.objectContaining({ exitCode: 9 }),
+      }),
     );
   });
 
   it("folds the explicit fatal error text into stderr on the failure path", async () => {
     const query = makeCmd("query", makeCmd("sql", root), {}, ["BAD SQL"]);
 
-    await maybeTrackCommand(query, 1, "relation \"nonexistent_table\" does not exist");
+    await maybeTrackCommand(
+      query,
+      1,
+      'relation "nonexistent_table" does not exist',
+    );
 
     expect(h.addBlock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -188,7 +198,9 @@ describe("maybeTrackCommand", () => {
     );
 
     expect(h.addBlock).not.toHaveBeenCalled();
-    expect(h.logWarn).toHaveBeenCalledWith(expect.stringContaining("no active debug session"));
+    expect(h.logWarn).toHaveBeenCalledWith(
+      expect.stringContaining("no active debug session"),
+    );
   });
 
   it("swallows a write failure — never throws", async () => {
@@ -199,7 +211,9 @@ describe("maybeTrackCommand", () => {
   });
 
   it("posts nothing when opted out via --no-track", async () => {
-    const query = makeCmd("query", makeCmd("sql", root), { track: false }, ["SELECT 1"]);
+    const query = makeCmd("query", makeCmd("sql", root), { track: false }, [
+      "SELECT 1",
+    ]);
 
     await maybeTrackCommand(query, 0);
 
