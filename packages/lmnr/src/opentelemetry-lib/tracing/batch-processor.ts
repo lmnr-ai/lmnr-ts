@@ -32,7 +32,9 @@ const valueSize = (value: unknown): number => {
   return FIXED_ATTRIBUTE_VALUE_SIZE;
 };
 
-const attributesSize = (attributes: Record<string, unknown> | undefined): number => {
+const attributesSize = (
+  attributes: Record<string, unknown> | undefined,
+): number => {
   if (!attributes) {
     return 0;
   }
@@ -59,7 +61,8 @@ const attributesSize = (attributes: Record<string, unknown> | undefined): number
  * equivalent primitive — `len(s.encode())` allocates the whole encoded copy —
  * which is the only reason it samples.
  */
-export const utf8Size = (value: string): number => Buffer.byteLength(value, "utf8");
+export const utf8Size = (value: string): number =>
+  Buffer.byteLength(value, "utf8");
 
 /**
  * Approximate the exported size of a span, in bytes.
@@ -161,7 +164,8 @@ export class SizeLimitedBatchSpanProcessor extends BatchSpanProcessor {
     // discrepancy is not worth the coupling.
     const size = approximateSpanSize(span);
     const shouldFlush =
-      this.pendingSizeBytes > 0 && this.pendingSizeBytes + size > this.maxExportBatchSizeBytes;
+      this.pendingSizeBytes > 0 &&
+      this.pendingSizeBytes + size > this.maxExportBatchSizeBytes;
     this.pendingSizeBytes = shouldFlush ? size : this.pendingSizeBytes + size;
 
     if (shouldFlush) {

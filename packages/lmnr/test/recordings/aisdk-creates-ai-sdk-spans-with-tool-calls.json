@@ -326,9 +326,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "location"
-            ],
+            "required": ["location"],
             "additionalProperties": false
           }
         },
@@ -345,9 +343,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "location"
-            ],
+            "required": ["location"],
             "additionalProperties": false
           }
         }

@@ -105,19 +105,20 @@ export interface V3RecorderState {
   traceId: StringUUID;
   client: LaminarClient;
   chunkBuffers: Map<string, ChunkBuffer>;
-  contextIdToSession: Map<number, { sessionId: StringUUID; traceId: StringUUID }>;
+  contextIdToSession: Map<
+    number,
+    { sessionId: StringUUID; traceId: StringUUID }
+  >;
   instrumentedPageIds: Set<string>;
   bindingHandler: ((event: RuntimeBindingCalledEvent) => void) | null;
   targetCreatedHandler: ((event: TargetCreatedEvent) => void) | null;
   targetInfoChangedHandler: ((event: TargetInfoChangedEvent) => void) | null;
-  pageSessionHandlers: Map<string, ((event: RuntimeBindingCalledEvent) => void)>;
+  pageSessionHandlers: Map<string, (event: RuntimeBindingCalledEvent) => void>;
 }
 
 /**
  * Stagehand Agent Client interface
  */
 export type AgentClient = {
-  execute: (
-    instructionOrOptions: string | object,
-  ) => Promise<object>;
+  execute: (instructionOrOptions: string | object) => Promise<object>;
 };

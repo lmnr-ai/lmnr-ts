@@ -14,7 +14,10 @@ import {
 } from "../../errors";
 import { pc } from "../../utils/colors";
 import { findEnvKey } from "../../utils/env-file";
-import { type LocalProjectFile, writeLocalProjectFile } from "../../utils/local-project-file";
+import {
+  type LocalProjectFile,
+  writeLocalProjectFile,
+} from "../../utils/local-project-file";
 import { listProjects, promptProjectChoice } from "../../utils/projects";
 import { firstNonEmpty, trimSlash } from "../../utils/text";
 import { ensureProjectKey } from "./link-core";
@@ -51,14 +54,23 @@ export interface ProjectLinkResult {
  * `ensureProjectKey` (same as `setup`). No `--project-id` opens the picker;
  * `--project-id <id>` is validated against accessible projects. Requires login.
  */
-export async function handleProjectLink(options: ProjectLinkOptions): Promise<void> {
+export async function handleProjectLink(
+  options: ProjectLinkOptions,
+): Promise<void> {
   const isJson = options.json === true;
   const writeEnv = options.writeEnv !== false;
-  const baseUrl = firstNonEmpty(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
+  const baseUrl = firstNonEmpty(
+    options.baseUrl,
+    process.env.LMNR_BASE_URL,
+    DEFAULT_BASE_URL,
+  );
 
   const creds = await safeReadCredentials();
   if (!creds) {
-    failWith(isJson, loginFailed("Not authenticated. Run `lmnr-cli login` first."));
+    failWith(
+      isJson,
+      loginFailed("Not authenticated. Run `lmnr-cli login` first."),
+    );
   }
   const issuer = creds.issuer || DEFAULT_FRONTEND_URL;
 
@@ -69,7 +81,10 @@ export async function handleProjectLink(options: ProjectLinkOptions): Promise<vo
   } catch (err) {
     // Expired grant is an auth problem (exit 6), not a discovery failure (exit 10).
     if (err instanceof SessionExpiredError) {
-      failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
+      failWith(
+        isJson,
+        loginFailed("Session expired. Run `lmnr-cli login` first."),
+      );
     }
     failWith(isJson, listProjectsFailed(errorMessage(err)));
   }
@@ -92,7 +107,9 @@ export async function handleProjectLink(options: ProjectLinkOptions): Promise<vo
         isJson,
         noAccess(
           `You don't have access to project ${options.projectId}. Accessible: ` +
-          projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+            projects
+              .map((p) => `${p.id} (${p.workspaceName}/${p.name})`)
+              .join(", "),
         ),
       );
     }
@@ -105,7 +122,9 @@ export async function handleProjectLink(options: ProjectLinkOptions): Promise<vo
       isJson,
       projectAmbiguous(
         `Multiple projects: pass --project-id <id>. ` +
-        projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+          projects
+            .map((p) => `${p.id} (${p.workspaceName}/${p.name})`)
+            .join(", "),
       ),
     );
   } else {
@@ -163,8 +182,8 @@ export async function handleProjectLink(options: ProjectLinkOptions): Promise<vo
   // Human confirmation is a message, not data — stderr (matches the ✓ lines above).
   process.stderr.write(
     `\n${pc.green("✓")} This directory is now linked to ` +
-    `${link.projectName ?? link.projectId}` +
-    (link.workspaceName ? pc.dim(` (${link.workspaceName})`) : "") +
-    "\n",
+      `${link.projectName ?? link.projectId}` +
+      (link.workspaceName ? pc.dim(` (${link.workspaceName})`) : "") +
+      "\n",
   );
 }

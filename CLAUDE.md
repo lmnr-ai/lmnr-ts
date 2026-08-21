@@ -96,7 +96,7 @@ When adding/modifying integration tests for Mastra:
 - **`createProxyInstance` must NOT re-resolve the upstream — the caller passes the already-resolved `targetUrl` (and `cwd`).** It used to call `resolveTargetUrlFromEnv(env)` itself with no cwd, so a gateway living only in project/local settings was missed when `options.cwd !== process.cwd()`: the proxy forwarded to the default Anthropic API while `ANTHROPIC_ORIGINAL_BASE_URL` pointed at the gateway. This mirrors Python, where `start_proxy(proxy, target_url=...)` has always taken the resolved value. Pinned by the `project-settings gateway when cwd differs` test (it fails if the resolution is moved back inside).
 - **`options.settings` may be a `string` (JSON or a file path) or a `Settings` object.** Anything we cannot FULLY read must be left untouched (return `null`) so the CLI can still resolve it with its own cwd — replacing it with a proxy-only object would silently drop the user's real settings for that run. "Cannot read" covers more than a missing path: an unreadable file, malformed JSON (a trailing comma the CLI may tolerate), and valid JSON that isn't an object all count. This is why `loadSettingsFile` returns `Record | null` rather than defaulting to `{}`: `buildProxyFlagSettings` must NOT confuse a failed read with a valid-but-empty `{}` file (the latter still gets the proxy). The on-disk settings LAYERS want the opposite ("absent → `{}`", carry on), so `readClaudeSettingsEnv` applies `?? {}` at its single call site — do NOT reintroduce a wrapper function for that, and do NOT make `null` the same as `{}` inside the loader.
 - This is a **cross-language parity surface** with the Python SDK's `claude_agent/{utils,wrappers}.py` (`build_proxy_flag_settings` / `read_claude_settings_env` / `apply_settings_proxy_override`). Keep the precedence rules and the neutralized-key list in sync.
-- Test files must prefix `describe`/`it` with `void` (`void it("...", ...)`) or eslint's `no-floating-promises` fails the lint run.
+- Test files must prefix `describe`/`it` with `void` (`void it("...", ...)`).
 
 ## Coding Style
 
@@ -106,7 +106,7 @@ When adding/modifying integration tests for Mastra:
 
 ## Formatting / Lint
 
-- No project-wide `prettier` binary is installed; "format" is enforced through eslint (`@stylistic/*` rules). Use `pnpm -r lint:fix` (or `pnpm --filter <pkg> lint:fix`) instead of `prettier --write`.
+- No project-wide `prettier` binary is installed; "format" is enforced through biome.
 - Max line length is 100 chars (`@stylistic/max-len`). Long destructured `import` lines will fail lint — break them across multiple lines.
 
 ## Debug mode (`packages/lmnr/src/debug/`)

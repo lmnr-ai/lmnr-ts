@@ -5,7 +5,10 @@ import { context, trace } from "@opentelemetry/api";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
 import { Laminar } from "../src";
-import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import {
+  _resetConfiguration,
+  initializeTracing,
+} from "../src/opentelemetry-lib/configuration";
 import { getStream } from "../src/opentelemetry-lib/instrumentation/aisdk/utils";
 import { observeBase } from "../src/opentelemetry-lib/tracing/decorators";
 import {
@@ -39,17 +42,13 @@ void describe("Stream Handling in observeBase", () => {
     const chunks = ["chunk1", "chunk2", "chunk3"];
     const stream = new ReadableStream({
       start(controller) {
-        chunks.forEach(chunk => controller.enqueue(chunk));
+        chunks.forEach((chunk) => controller.enqueue(chunk));
         controller.close();
       },
     });
 
     const fn = () => stream;
-    const result = observeBase(
-      { name: "testReadableStream" },
-      fn,
-      undefined,
-    );
+    const result = observeBase({ name: "testReadableStream" }, fn, undefined);
 
     assert.ok(result instanceof ReadableStream);
 
@@ -65,13 +64,15 @@ void describe("Stream Handling in observeBase", () => {
     assert.deepStrictEqual(collected, chunks);
 
     // Wait a bit for background processing
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "testReadableStream");
 
-    const output = JSON.parse(spans[0].attributes["lmnr.span.output"] as string);
+    const output = JSON.parse(
+      spans[0].attributes["lmnr.span.output"] as string,
+    );
     assert.strictEqual(output.type, "stream");
     assert.deepStrictEqual(output.chunks, chunks);
   });
@@ -79,7 +80,6 @@ void describe("Stream Handling in observeBase", () => {
   void it("handles AsyncIterable and collects items", async () => {
     const items = [1, 2, 3, 4, 5];
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     async function* generateItems() {
       for (const item of items) {
         yield item;
@@ -87,11 +87,7 @@ void describe("Stream Handling in observeBase", () => {
     }
 
     const fn = () => generateItems();
-    const result = observeBase(
-      { name: "testAsyncIterable" },
-      fn,
-      undefined,
-    );
+    const result = observeBase({ name: "testAsyncIterable" }, fn, undefined);
 
     // Consume the iterable
     const collected: number[] = [];
@@ -102,13 +98,15 @@ void describe("Stream Handling in observeBase", () => {
     assert.deepStrictEqual(collected, items);
 
     // Wait for background processing
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "testAsyncIterable");
 
-    const output = JSON.parse(spans[0].attributes["lmnr.span.output"] as string);
+    const output = JSON.parse(
+      spans[0].attributes["lmnr.span.output"] as string,
+    );
     assert.strictEqual(output.type, "async-iterable");
     assert.deepStrictEqual(output.chunks, items);
   });
@@ -137,23 +135,21 @@ void describe("Stream Handling in observeBase", () => {
     };
 
     const fn = () => mockStreamTextResult;
-    const result = observeBase(
-      { name: "testAISDKResult" },
-      fn,
-      undefined,
-    );
+    const result = observeBase({ name: "testAISDKResult" }, fn, undefined);
 
     // Result should be the original object
     assert.strictEqual(result, mockStreamTextResult);
 
     // Wait for background processing
-    await new Promise(resolve => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "testAISDKResult");
 
-    const output = JSON.parse(spans[0].attributes["lmnr.span.output"] as string);
+    const output = JSON.parse(
+      spans[0].attributes["lmnr.span.output"] as string,
+    );
     assert.strictEqual(output.text, "Hello World");
     assert.strictEqual(output.finishReason, "stop");
     assert.deepStrictEqual(output.usage, {
@@ -171,11 +167,7 @@ void describe("Stream Handling in observeBase", () => {
     });
 
     const fn = () => response;
-    const result = observeBase(
-      { name: "testResponse" },
-      fn,
-      undefined,
-    );
+    const result = observeBase({ name: "testResponse" }, fn, undefined);
 
     assert.ok(result instanceof Response);
 
@@ -184,13 +176,15 @@ void describe("Stream Handling in observeBase", () => {
     assert.strictEqual(text, responseBody);
 
     // Wait for background processing
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "testResponse");
 
-    const output = JSON.parse(spans[0].attributes["lmnr.span.output"] as string);
+    const output = JSON.parse(
+      spans[0].attributes["lmnr.span.output"] as string,
+    );
     assert.strictEqual(output.type, "response");
     assert.ok(Array.isArray(output.chunks));
   });
@@ -206,11 +200,7 @@ void describe("Stream Handling in observeBase", () => {
     });
 
     const fn = () => stream;
-    const result = observeBase(
-      { name: "testStreamError" },
-      fn,
-      undefined,
-    );
+    const result = observeBase({ name: "testStreamError" }, fn, undefined);
 
     // Try to consume the stream
     const reader = result.getReader();
@@ -225,11 +215,11 @@ void describe("Stream Handling in observeBase", () => {
     } catch (error) {
       // Expected error
       assert.ok(error instanceof Error);
-      assert.strictEqual((error).message, "Stream error");
+      assert.strictEqual(error.message, "Stream error");
     }
 
     // Wait for background processing
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
@@ -262,23 +252,21 @@ void describe("Stream Handling in observeBase", () => {
     };
 
     const fn = () => mockStreamTextResult;
-    const result = observeBase(
-      { name: "testAISDKError" },
-      fn,
-      undefined,
-    );
+    const result = observeBase({ name: "testAISDKError" }, fn, undefined);
 
     assert.strictEqual(result, mockStreamTextResult);
 
     // Wait for background processing
-    await new Promise(resolve => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "testAISDKError");
 
     // Should have captured partial output
-    const output = JSON.parse(spans[0].attributes["lmnr.span.output"] as string);
+    const output = JSON.parse(
+      spans[0].attributes["lmnr.span.output"] as string,
+    );
     assert.strictEqual(output.text, "Hello");
     assert.strictEqual(output.finishReason, "stop");
 
@@ -313,7 +301,7 @@ void describe("Stream Handling in observeBase", () => {
     }
 
     // Wait for background processing
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
@@ -325,11 +313,7 @@ void describe("Stream Handling in observeBase", () => {
 
   void it("handles non-stream results normally", () => {
     const fn = () => "regular string result";
-    const result = observeBase(
-      { name: "testNonStream" },
-      fn,
-      undefined,
-    );
+    const result = observeBase({ name: "testNonStream" }, fn, undefined);
 
     assert.strictEqual(result, "regular string result");
 
@@ -352,11 +336,7 @@ void describe("Stream Handling in observeBase", () => {
     });
 
     const fn = () => stream;
-    const result = observeBase(
-      { name: "testPendingStream" },
-      fn,
-      undefined,
-    );
+    const result = observeBase({ name: "testPendingStream" }, fn, undefined);
 
     // Start consuming but don't finish
     const reader = result.getReader();
@@ -367,7 +347,10 @@ void describe("Stream Handling in observeBase", () => {
     const elapsed = Date.now() - startTime;
 
     // Should have timed out around 100ms
-    assert.ok(elapsed >= 90 && elapsed < 200, `Expected timeout around 100ms, got ${elapsed}ms`);
+    assert.ok(
+      elapsed >= 90 && elapsed < 200,
+      `Expected timeout around 100ms, got ${elapsed}ms`,
+    );
 
     // Clean up - close the stream and cancel the reader
     controller!.close();
@@ -379,21 +362,20 @@ void describe("Stream Handling in observeBase", () => {
     const chunks = ["chunk1", "chunk2", "chunk3"];
     const stream = new ReadableStream({
       start(controller) {
-        chunks.forEach(chunk => controller.enqueue(chunk));
+        chunks.forEach((chunk) => controller.enqueue(chunk));
         controller.close();
       },
     });
 
     const result = await consumeStreamResult(stream);
-    assert.ok(typeof result === 'object' && result !== null);
-    assert.strictEqual((result as any).type, 'stream');
+    assert.ok(typeof result === "object" && result !== null);
+    assert.strictEqual((result as any).type, "stream");
     assert.deepStrictEqual((result as any).chunks, chunks);
   });
 
   void it("consumeStreamResult handles AsyncIterable", async () => {
     const items = [1, 2, 3, 4, 5];
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     async function* generateItems() {
       for (const item of items) {
         yield item;
@@ -401,8 +383,8 @@ void describe("Stream Handling in observeBase", () => {
     }
 
     const result = await consumeStreamResult(generateItems());
-    assert.ok(typeof result === 'object' && result !== null);
-    assert.strictEqual((result as any).type, 'async-iterable');
+    assert.ok(typeof result === "object" && result !== null);
+    assert.strictEqual((result as any).type, "async-iterable");
     assert.deepStrictEqual((result as any).chunks, items);
   });
 

@@ -29,7 +29,7 @@ export const parseStructuredOutput = (raw: string): SignalStructuredOutput => {
   if (!isPlainObject(parsed)) {
     throw new Error(
       "--schema must be a JSON object like " +
-      '{"type":"object","properties":{...},"required":[...]}',
+        '{"type":"object","properties":{...},"required":[...]}',
     );
   }
   if (!isPlainObject(parsed.properties)) {
@@ -37,11 +37,16 @@ export const parseStructuredOutput = (raw: string): SignalStructuredOutput => {
   }
 
   return {
-    type: parsed.type === undefined ? "object" : parsed.type as SignalStructuredOutput["type"],
-    properties: parsed.properties as unknown as SignalStructuredOutput["properties"],
-    required: parsed.required === undefined
-      ? Object.keys(parsed.properties)
-      : parsed.required as string[],
+    type:
+      parsed.type === undefined
+        ? "object"
+        : (parsed.type as SignalStructuredOutput["type"]),
+    properties:
+      parsed.properties as unknown as SignalStructuredOutput["properties"],
+    required:
+      parsed.required === undefined
+        ? Object.keys(parsed.properties)
+        : (parsed.required as string[]),
   };
 };
 
@@ -51,7 +56,10 @@ export const parseStructuredOutput = (raw: string): SignalStructuredOutput => {
  * read as "passed empty" and `signal update --prompt x` would clear the signal's
  * filters instead of leaving them alone.
  */
-export const collectFlag = (val: string, prev: string[] = []): string[] => [...prev, val];
+export const collectFlag = (val: string, prev: string[] = []): string[] => [
+  ...prev,
+  val,
+];
 
 export const TRIGGER_KINDS = ["root-span-finished", "span-name"] as const;
 
@@ -73,19 +81,25 @@ export const parseTrigger = (
     return undefined;
   }
   if (!(TRIGGER_KINDS as readonly string[]).includes(kind)) {
-    throw new Error(`--trigger must be one of ${TRIGGER_KINDS.join(", ")} (got "${kind}")`);
+    throw new Error(
+      `--trigger must be one of ${TRIGGER_KINDS.join(", ")} (got "${kind}")`,
+    );
   }
   if (kind !== "span-name" && spanNames.length > 0) {
-    throw new Error(`--span-name only applies to --trigger span-name, not ${kind}`);
+    throw new Error(
+      `--span-name only applies to --trigger span-name, not ${kind}`,
+    );
   }
 
   if (kind === "root-span-finished") return { type: "rootSpanFinished" };
 
-  const names = spanNames.map((name) => name.trim()).filter((name) => name.length > 0);
+  const names = spanNames
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
   if (names.length === 0) {
     throw new Error(
       "--trigger span-name requires at least one --span-name, " +
-      "or the signal would never fire",
+        "or the signal would never fire",
     );
   }
   return { type: "spanName", spanNames: names };
@@ -100,13 +114,16 @@ export const parseFilter = (raw: string): SignalFilter => {
   if (!isPlainObject(parsed)) {
     throw new Error(
       '--filter must be a JSON object like {"column":"total_token_count",' +
-      '"operator":"gt","value":"1000"}',
+        '"operator":"gt","value":"1000"}',
     );
   }
   if (typeof parsed.column !== "string" || parsed.column.trim().length === 0) {
     throw new Error('--filter must carry a non-empty "column" string');
   }
-  if (typeof parsed.operator !== "string" || parsed.operator.trim().length === 0) {
+  if (
+    typeof parsed.operator !== "string" ||
+    parsed.operator.trim().length === 0
+  ) {
     throw new Error('--filter must carry a non-empty "operator" string');
   }
   if (parsed.value === undefined) {
@@ -115,7 +132,11 @@ export const parseFilter = (raw: string): SignalFilter => {
 
   // Spread so any additional keys a future filter shape carries reach the server
   // untouched instead of being silently dropped here.
-  return { ...parsed, column: parsed.column, operator: parsed.operator } as SignalFilter;
+  return {
+    ...parsed,
+    column: parsed.column,
+    operator: parsed.operator,
+  } as SignalFilter;
 };
 
 export const MODES = ["batch", "realtime"] as const;

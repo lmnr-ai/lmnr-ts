@@ -66,10 +66,13 @@ export class SignalsResource extends BaseResource {
 
   public async list(name?: string): Promise<Signal[]> {
     const query = name ? `?${new URLSearchParams({ name }).toString()}` : "";
-    const response = await fetch(`${this.baseHttpUrl}${this.apiPrefix}/signals${query}`, {
-      method: "GET",
-      headers: this.headers(),
-    });
+    const response = await fetch(
+      `${this.baseHttpUrl}${this.apiPrefix}/signals${query}`,
+      {
+        method: "GET",
+        headers: this.headers(),
+      },
+    );
     if (!response.ok) {
       await this.raiseSignalError(response);
     }
@@ -91,11 +94,14 @@ export class SignalsResource extends BaseResource {
   }
 
   public async create(options: CreateSignalOptions): Promise<Signal> {
-    const response = await fetch(`${this.baseHttpUrl}${this.apiPrefix}/signals`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify(options),
-    });
+    const response = await fetch(
+      `${this.baseHttpUrl}${this.apiPrefix}/signals`,
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify(options),
+      },
+    );
     if (!response.ok) {
       await this.raiseSignalError(response);
     }
@@ -107,7 +113,10 @@ export class SignalsResource extends BaseResource {
    * leaves everything else as stored. An explicit `null` on `sampleRate` must
    * survive serialization (it means "clear"), so nulls are NOT stripped here.
    */
-  public async update(signalId: string, options: UpdateSignalOptions): Promise<Signal> {
+  public async update(
+    signalId: string,
+    options: UpdateSignalOptions,
+  ): Promise<Signal> {
     const response = await fetch(
       `${this.baseHttpUrl}${this.apiPrefix}/signals/${signalId}`,
       {

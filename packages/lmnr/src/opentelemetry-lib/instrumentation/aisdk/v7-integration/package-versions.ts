@@ -20,9 +20,11 @@ let cached: AiSdkPackageVersions | undefined;
 
 const readPackageVersion = (specifier: string): string | undefined => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    // biome-ignore lint/style/noCommonJs: dynamic package version resolution needs CJS resolve
     const pkg = require(`${specifier}/package.json`);
-    return typeof pkg?.version === "string" ? pkg.version as string : undefined;
+    return typeof pkg?.version === "string"
+      ? (pkg.version as string)
+      : undefined;
   } catch {
     return undefined;
   }
@@ -37,7 +39,12 @@ const readPackageVersion = (specifier: string): string | undefined => {
  * what the host project declared, so those entries must be skipped.
  */
 export const isPackageManagerInternalPath = (path: string): boolean =>
-  path.split(sep).some((segment) => segment.startsWith(".") && segment !== "." && segment !== "..");
+  path
+    .split(sep)
+    .some(
+      (segment) =>
+        segment.startsWith(".") && segment !== "." && segment !== "..",
+    );
 
 /**
  * Given the ordered `node_modules` search-path list Node would use to

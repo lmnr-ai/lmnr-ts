@@ -7,8 +7,8 @@ import {
 import {
   ROOT_CONTEXT,
   type Span,
-  trace,
   type Tracer,
+  trace,
 } from "@opentelemetry/api";
 import { type SpanProcessor } from "@opentelemetry/sdk-trace-base";
 
@@ -258,16 +258,18 @@ const traceByClientSession = new WeakMap<object, EveSessionTrace>();
 /** eve session id -> trace, read by `onEvalComplete` via `result.sessionId`. */
 const traceByEveSessionId = new Map<string, EveSessionTrace>();
 /** Set by the running reporter's `onRunStart`; cleared by `onRunComplete`. */
-let activeSessionTraceFactory: (() => EveSessionTrace | undefined) | null = null;
+let activeSessionTraceFactory: (() => EveSessionTrace | undefined) | null =
+  null;
 
 /** Mirrors eve's own `normalizeSendTurnInput`, then merges the trace headers. */
 const withTraceHeaders = (
   input: unknown,
   headers: Record<string, string>,
 ): EveSendTurnPayload => {
-  const payload: EveSendTurnPayload = typeof input === "string"
-    ? { message: input }
-    : { ...(input as EveSendTurnPayload) };
+  const payload: EveSendTurnPayload =
+    typeof input === "string"
+      ? { message: input }
+      : { ...(input as EveSendTurnPayload) };
   payload.headers = { ...(payload.headers ?? {}), ...headers };
   return payload;
 };
@@ -288,7 +290,7 @@ const openSessionTrace = (
   } catch (error) {
     logger.warn(
       `Laminar eve reporter: failed to open a session trace: ` +
-      errorMessage(error),
+        errorMessage(error),
     );
     return undefined;
   }
@@ -338,8 +340,7 @@ const buildTraceHeaders = (
   };
   return {
     // eve reads ONLY `traceparent` (see its `traceChannelRequest`).
-    [TRACEPARENT_HEADER]:
-      `00-${spanContext.traceId}-${spanContext.spanId}-01`,
+    [TRACEPARENT_HEADER]: `00-${spanContext.traceId}-${spanContext.spanId}-01`,
     // For Laminar-aware agents; eve ignores it.
     [LAMINAR_SPAN_CONTEXT_HEADER]: JSON.stringify(laminarContext),
   };
@@ -379,7 +380,7 @@ const bindEvalContext = (sessionTrace: EveSessionTrace): void => {
   } catch (error) {
     logger.warn(
       `Laminar eve reporter: failed to bind the eval context: ` +
-      errorMessage(error),
+        errorMessage(error),
     );
   }
 };
@@ -418,7 +419,7 @@ export const patchEveClientSession = (
     } catch (error) {
       logger.warn(
         `Laminar eve reporter: failed to record the eve session id: ` +
-        errorMessage(error),
+          errorMessage(error),
       );
     }
     return response;
@@ -437,13 +438,11 @@ const loadEveClientSession = async (): Promise<
   EveClientSessionClass | undefined
 > => {
   try {
-    const module = await import(EVE_CLIENT_MODULE) as {
+    const module = (await import(EVE_CLIENT_MODULE)) as {
       ClientSession?: unknown;
     };
     const sessionClass = module.ClientSession;
-    return typeof sessionClass === "function"
-      ? sessionClass
-      : undefined;
+    return typeof sessionClass === "function" ? sessionClass : undefined;
   } catch {
     return undefined;
   }
@@ -476,18 +475,20 @@ const didAssertionPass = (assertion: EveAssertionResult): boolean => {
  */
 const resultToScores = (result: EveEvalResult): Record<string, number> => {
   const assertions = result.assertions ?? [];
-  const gateAssertions = assertions.filter((assertion) =>
-    assertion.severity === "gate",
+  const gateAssertions = assertions.filter(
+    (assertion) => assertion.severity === "gate",
   );
-  const thresholdedSoftAssertions = assertions.filter((assertion) =>
-    assertion.severity === "soft" &&
-    typeof assertion.threshold === "number",
+  const thresholdedSoftAssertions = assertions.filter(
+    (assertion) =>
+      assertion.severity === "soft" && typeof assertion.threshold === "number",
   );
 
   return {
     "eve.verdict.passed": result.verdict === "passed" ? 1 : 0,
     "eve.gates.passed": gateAssertions.every(didAssertionPass) ? 1 : 0,
-    "eve.soft_thresholds.passed": thresholdedSoftAssertions.every(didAssertionPass)
+    "eve.soft_thresholds.passed": thresholdedSoftAssertions.every(
+      didAssertionPass,
+    )
       ? 1
       : 0,
   };
@@ -597,8 +598,10 @@ export class LaminarReporter implements EvalReporter {
     this.evalId = undefined;
     this.evalsById = new Map(
       evaluations
-        .filter((evaluation): evaluation is EveEval & { id: string } =>
-          typeof evaluation.id === "string")
+        .filter(
+          (evaluation): evaluation is EveEval & { id: string } =>
+            typeof evaluation.id === "string",
+        )
         .map((evaluation) => [evaluation.id, evaluation]),
     );
     this.index = 0;
@@ -606,10 +609,12 @@ export class LaminarReporter implements EvalReporter {
     // mid-run) are closed here rather than abandoned mid-trace.
     this.finishOpenSessionTraces();
     try {
-      this.client = this.options.client ?? new LaminarClient({
-        baseUrl: this.options.baseUrl,
-        projectApiKey: this.options.projectApiKey,
-      });
+      this.client =
+        this.options.client ??
+        new LaminarClient({
+          baseUrl: this.options.baseUrl,
+          projectApiKey: this.options.projectApiKey,
+        });
       this.ensureTracing();
       // Register the factory and patch eve BEFORE `evals.init` — eve awaits
       // `onRunStart` before the first eval, but the patch has to be in place
@@ -634,11 +639,14 @@ export class LaminarReporter implements EvalReporter {
       this.evalId = evaluation.id;
       // Same line the native evaluator prints. Without it a run reports nothing
       // about where its results went, and eve's own output never mentions it.
-      const url = getFrontendUrl(this.client.configuredBaseUrl ?? this.options.baseUrl) +
+      const url =
+        getFrontendUrl(this.client.configuredBaseUrl ?? this.options.baseUrl) +
         `/project/${evaluation.projectId}/evaluations/${evaluation.id}`;
       process.stdout.write(`\nLaminar: check eve eval results at ${url}\n`);
     } catch (error) {
-      logger.error(`Laminar eve reporter: failed to start run: ${errorMessage(error)}`);
+      logger.error(
+        `Laminar eve reporter: failed to start run: ${errorMessage(error)}`,
+      );
       if (!this.evalId) {
         // No evaluation to attach results to, so stop minting traces for it.
         // A live factory would keep opening an EVALUATION span on every `send`
@@ -666,9 +674,8 @@ export class LaminarReporter implements EvalReporter {
     const task = result.result ?? {};
     const derived = task.derived ?? {};
     const assertions = result.assertions ?? [];
-    const evalDefinition = typeof result.id === "string"
-      ? this.evalsById.get(result.id)
-      : undefined;
+    const evalDefinition =
+      typeof result.id === "string" ? this.evalsById.get(result.id) : undefined;
     const evalDescription = evalDefinition?.description;
     const traceResolution = this.resolveDatapointTrace({
       evalId: result.id ?? String(index),
@@ -719,7 +726,7 @@ export class LaminarReporter implements EvalReporter {
       }
       logger.error(
         `Laminar eve reporter: failed to report eval ` +
-        `"${result.id ?? index}": ${errorMessage(error)}`,
+          `"${result.id ?? index}": ${errorMessage(error)}`,
       );
     } finally {
       if (traceResolution.source === "reporter-fallback") {
@@ -776,9 +783,9 @@ export class LaminarReporter implements EvalReporter {
       if (ourKey && tracingKey && ourKey !== tracingKey) {
         logger.warn(
           "Laminar eve reporter: Laminar is already initialized with a different " +
-          "project API key. eve eval spans go to that project while datapoints go " +
-          "to the reporter's, so datapoint trace ids will not resolve. Point both " +
-          "at the same project.",
+            "project API key. eve eval spans go to that project while datapoints go " +
+            "to the reporter's, so datapoint trace ids will not resolve. Point both " +
+            "at the same project.",
         );
       }
       return;
@@ -826,21 +833,29 @@ export class LaminarReporter implements EvalReporter {
     const tracer = getTracer();
     // ROOT_CONTEXT, not the active context: concurrent evals must not nest
     // inside whichever span happens to be active on the runner's stack.
-    const rootSpan = tracer.startSpan(ROOT_SPAN_NAME, {
-      attributes: {
-        [SPAN_TYPE]: "EVALUATION",
-        [TRACE_TYPE]: "EVALUATION",
-        "lmnr.eve.reporter": EVE_REPORTER_TRACER_NAME,
+    const rootSpan = tracer.startSpan(
+      ROOT_SPAN_NAME,
+      {
+        attributes: {
+          [SPAN_TYPE]: "EVALUATION",
+          [TRACE_TYPE]: "EVALUATION",
+          "lmnr.eve.reporter": EVE_REPORTER_TRACER_NAME,
+        },
       },
-    }, ROOT_CONTEXT);
+      ROOT_CONTEXT,
+    );
     // TRACE_TYPE is stamped on descendants too, matching what `observe`'s
     // association properties give the native evaluator on every child span.
-    const executorSpan = tracer.startSpan(EXECUTOR_SPAN_NAME, {
-      attributes: {
-        [SPAN_TYPE]: "EXECUTOR",
-        [TRACE_TYPE]: "EVALUATION",
+    const executorSpan = tracer.startSpan(
+      EXECUTOR_SPAN_NAME,
+      {
+        attributes: {
+          [SPAN_TYPE]: "EXECUTOR",
+          [TRACE_TYPE]: "EVALUATION",
+        },
       },
-    }, trace.setSpan(ROOT_CONTEXT, rootSpan));
+      trace.setSpan(ROOT_CONTEXT, rootSpan),
+    );
     const sessionTrace: EveSessionTrace = {
       traceId: otelTraceIdToUUID(rootSpan.spanContext().traceId),
       rootSpan,
@@ -905,7 +920,7 @@ export class LaminarReporter implements EvalReporter {
     } catch (error) {
       logger.warn(
         `Laminar eve reporter: failed to finish the session trace: ` +
-        errorMessage(error),
+          errorMessage(error),
       );
     }
   }
@@ -930,13 +945,19 @@ export class LaminarReporter implements EvalReporter {
         threshold: assertion.threshold,
         message: assertion.message,
       });
-      sessionTrace.tracer.startSpan(name, {
-        attributes: {
-          [SPAN_TYPE]: "EVALUATOR",
-          [TRACE_TYPE]: "EVALUATION",
-          [SPAN_OUTPUT]: output,
-        },
-      }, rootContext).end();
+      sessionTrace.tracer
+        .startSpan(
+          name,
+          {
+            attributes: {
+              [SPAN_TYPE]: "EVALUATOR",
+              [TRACE_TYPE]: "EVALUATION",
+              [SPAN_OUTPUT]: output,
+            },
+          },
+          rootContext,
+        )
+        .end();
     }
   }
 
@@ -966,39 +987,51 @@ export class LaminarReporter implements EvalReporter {
       ? traceByEveSessionId.get(sessionId)
       : undefined;
     if (sessionTrace) {
-      return { traceId: sessionTrace.traceId, source: "propagated", sessionTrace };
+      return {
+        traceId: sessionTrace.traceId,
+        source: "propagated",
+        sessionTrace,
+      };
     }
 
-    const span = getTracer().startSpan(`eve eval ${evalId}`, {
-      attributes: {
-        [SPAN_TYPE]: "EVALUATION",
-        // Same pair `mintSessionTrace` stamps: the trace type is what associates
-        // the trace with the evaluation, and a datapoint on a trace without it
-        // loses that association.
-        [TRACE_TYPE]: "EVALUATION",
-        "lmnr.eve.reporter": EVE_REPORTER_TRACER_NAME,
-        "lmnr.eve.eval.id": evalId,
-        "lmnr.eve.eval.verdict": verdict ?? "",
-        ...(sessionId ? { "lmnr.eve.session.id": sessionId } : {}),
-        "lmnr.eve.trace_resolution": "reporter-fallback",
-        // Stamped as attributes rather than pushed over HTTP: this trace is
-        // created by the span we are opening right now, so a metadata POST would
-        // race its own ingest and fail with "Trace ... not found".
-        ...metadataToAttributes({
-          source: "eve",
-          eveEvalId: evalId,
-          eveEvalDescription: description ?? "",
-          eveEvalVerdict: verdict ?? "",
-          eveSessionId: sessionId ?? "",
-        }),
+    const span = getTracer().startSpan(
+      `eve eval ${evalId}`,
+      {
+        attributes: {
+          [SPAN_TYPE]: "EVALUATION",
+          // Same pair `mintSessionTrace` stamps: the trace type is what associates
+          // the trace with the evaluation, and a datapoint on a trace without it
+          // loses that association.
+          [TRACE_TYPE]: "EVALUATION",
+          "lmnr.eve.reporter": EVE_REPORTER_TRACER_NAME,
+          "lmnr.eve.eval.id": evalId,
+          "lmnr.eve.eval.verdict": verdict ?? "",
+          ...(sessionId ? { "lmnr.eve.session.id": sessionId } : {}),
+          "lmnr.eve.trace_resolution": "reporter-fallback",
+          // Stamped as attributes rather than pushed over HTTP: this trace is
+          // created by the span we are opening right now, so a metadata POST would
+          // race its own ingest and fail with "Trace ... not found".
+          ...metadataToAttributes({
+            source: "eve",
+            eveEvalId: evalId,
+            eveEvalDescription: description ?? "",
+            eveEvalVerdict: verdict ?? "",
+            eveSessionId: sessionId ?? "",
+          }),
+        },
+        // ROOT_CONTEXT for the same reason `mintSessionTrace` uses it, and this
+        // path needs it more: the datapoint's `traceId` is read straight off this
+        // span. `getTracer()` defaults to `LaminarContextManager.getContext()`, so
+        // without it another eval's root — bound by `bindEvalContext`, or pushed
+        // by any `startActiveSpan({ global: true })` in the runner — adopts this
+        // span and the datapoint silently links to that eval's trace.
       },
-      // ROOT_CONTEXT for the same reason `mintSessionTrace` uses it, and this
-      // path needs it more: the datapoint's `traceId` is read straight off this
-      // span. `getTracer()` defaults to `LaminarContextManager.getContext()`, so
-      // without it another eval's root — bound by `bindEvalContext`, or pushed
-      // by any `startActiveSpan({ global: true })` in the runner — adopts this
-      // span and the datapoint silently links to that eval's trace.
-    }, ROOT_CONTEXT);
-    return { traceId: traceIdFromSpan(span), source: "reporter-fallback", span };
+      ROOT_CONTEXT,
+    );
+    return {
+      traceId: traceIdFromSpan(span),
+      source: "reporter-fallback",
+      span,
+    };
   }
 }

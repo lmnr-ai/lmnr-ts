@@ -17,7 +17,10 @@ interface DatasetIdentifierOptions extends GlobalOpts {
 }
 
 /** Throw on the name/id mutual-exclusion rule. The wrapper renders the error. */
-function requireSingleIdentifier(opts: { name?: string; id?: StringUUID }): void {
+function requireSingleIdentifier(opts: {
+  name?: string;
+  id?: StringUUID;
+}): void {
   if (!opts.name && !opts.id) {
     throw new Error("Either name or id must be provided");
   }
@@ -56,7 +59,10 @@ const pullAllData = async <D = any, T = any>(
       hasMore = false;
     } else if (stopAt !== undefined && currentOffset + batchSize >= stopAt) {
       hasMore = false;
-    } else if (data.totalCount !== undefined && currentOffset + batchSize >= data.totalCount) {
+    } else if (
+      data.totalCount !== undefined &&
+      currentOffset + batchSize >= data.totalCount
+    ) {
       hasMore = false;
     }
 
@@ -92,11 +98,14 @@ export const handleDatasetsList = async (
 
   const rows = datasets.map((dataset) => {
     const createdAt = new Date(dataset.createdAt);
-    const createdAtStr = createdAt.toISOString().replace('T', ' ').substring(0, 19);
+    const createdAtStr = createdAt
+      .toISOString()
+      .replace("T", " ")
+      .substring(0, 19);
     return [dataset.id, createdAtStr, dataset.name];
   });
 
-  console.log(renderTable(['ID', 'Created At', 'Name'], rows));
+  console.log(renderTable(["ID", "Created At", "Name"], rows));
   console.log(`\nTotal: ${datasets.length} dataset(s)\n`);
 };
 
@@ -132,7 +141,9 @@ export const handleDatasetsPush = async (
     return;
   }
 
-  logger.info(`Pushed ${data.length} data points to dataset ${opts.name || opts.id}`);
+  logger.info(
+    `Pushed ${data.length} data points to dataset ${opts.name || opts.id}`,
+  );
 };
 
 /**
@@ -142,7 +153,7 @@ export const handleDatasetsPull = async (
   client: LaminarClient,
   outputPath: string | undefined,
   opts: DatasetIdentifierOptions & {
-    outputFormat?: 'json' | 'csv' | 'jsonl';
+    outputFormat?: "json" | "csv" | "jsonl";
     batchSize?: number;
     limit?: number;
     offset?: number;
@@ -165,13 +176,15 @@ export const handleDatasetsPull = async (
     if (opts.json) {
       outputJson({ path: outputPath, count: result.length });
     } else {
-      logger.info(`Successfully pulled ${result.length} data points to ${outputPath}`);
+      logger.info(
+        `Successfully pulled ${result.length} data points to ${outputPath}`,
+      );
     }
   } else {
     if (opts.json) {
       outputJson(result);
     } else {
-      printToConsole(result, opts.outputFormat ?? 'json');
+      printToConsole(result, opts.outputFormat ?? "json");
     }
   }
 };
@@ -185,7 +198,7 @@ export const handleDatasetsCreate = async (
   paths: string[],
   opts: GlobalOpts & {
     outputFile: string;
-    outputFormat?: 'json' | 'csv' | 'jsonl';
+    outputFormat?: "json" | "csv" | "jsonl";
     recursive?: boolean;
     batchSize?: number;
   },
@@ -206,7 +219,9 @@ export const handleDatasetsCreate = async (
     batchSize: opts.batchSize ?? DEFAULT_DATASET_PUSH_BATCH_SIZE,
     createDataset: true,
   });
-  logger.info(`Successfully pushed ${data.length} data points to dataset '${name}'`);
+  logger.info(
+    `Successfully pushed ${data.length} data points to dataset '${name}'`,
+  );
 
   // Pull data back from the dataset
   logger.info(`Pulling data from dataset '${name}'...`);
@@ -226,8 +241,8 @@ export const handleDatasetsCreate = async (
     outputJson({ name, path: opts.outputFile, count: result.length });
   } else {
     logger.info(
-      `Successfully created dataset '${name}' `
-      + `and saved ${result.length} datapoints to ${opts.outputFile}`,
+      `Successfully created dataset '${name}' ` +
+        `and saved ${result.length} datapoints to ${opts.outputFile}`,
     );
   }
 };

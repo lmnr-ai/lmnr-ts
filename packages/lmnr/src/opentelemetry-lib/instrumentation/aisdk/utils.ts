@@ -32,10 +32,10 @@ export const stringifyPromptForTelemetry = (
           typeof message.content === "string"
             ? message.content
             : message.content.map((part) =>
-              part.type === "file"
-                ? {
-                  ...part,
-                  data:
+                part.type === "file"
+                  ? {
+                      ...part,
+                      data:
                         part.data instanceof Uint8Array
                           ? convertDataContentToBase64String(part.data)
                           : part.data &&
@@ -45,15 +45,15 @@ export const stringifyPromptForTelemetry = (
                               (part.data as { data?: unknown }).data instanceof
                                 Uint8Array
                             ? {
-                              ...part.data,
-                              data: convertDataContentToBase64String(
-                                (part.data as { data: Uint8Array }).data,
-                              ),
-                            }
+                                ...part.data,
+                                data: convertDataContentToBase64String(
+                                  (part.data as { data: Uint8Array }).data,
+                                ),
+                              }
                             : part.data,
-                }
-                : part,
-            ),
+                    }
+                  : part,
+              ),
       }),
     ),
   );
@@ -111,7 +111,11 @@ export type StreamInfo =
  * Node 26's `Response.prototype.textStream`) is a data property holding a method.
  */
 const hasStreamAccessor = (obj: object, key: string): boolean => {
-  for (let o: object | null = obj; o !== null; o = Object.getPrototypeOf(o) as object | null) {
+  for (
+    let o: object | null = obj;
+    o !== null;
+    o = Object.getPrototypeOf(o) as object | null
+  ) {
     const descriptor = Object.getOwnPropertyDescriptor(o, key);
     if (descriptor) {
       // An accessor, or a data property holding an already-built stream — but never a method.
@@ -146,7 +150,10 @@ export const getStream = (response: unknown): StreamInfo => {
   }
 
   // Check for AI SDK StreamTextResult (has a textStream or fullStream accessor)
-  if (hasStreamAccessor(response, "textStream") || hasStreamAccessor(response, "fullStream")) {
+  if (
+    hasStreamAccessor(response, "textStream") ||
+    hasStreamAccessor(response, "fullStream")
+  ) {
     return { type: "aisdk-result", result: response };
   }
 

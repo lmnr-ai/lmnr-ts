@@ -14,7 +14,9 @@ export default function Home() {
         <ChatUI />
       </main>
       <footer className="py-4 text-center text-sm text-gray-500 dark:text-gray-400">
-        <p>AI-powered support | Not a substitute for professional medical advice</p>
+        <p>
+          AI-powered support | Not a substitute for professional medical advice
+        </p>
       </footer>
     </div>
   );

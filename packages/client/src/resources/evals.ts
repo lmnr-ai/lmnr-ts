@@ -56,9 +56,15 @@ export class EvalsResource extends BaseResource {
    */
 
   public async create(args?: {
-    name?: string, groupName?: string, metadata?: Record<string, any>
+    name?: string;
+    groupName?: string;
+    metadata?: Record<string, any>;
   }): Promise<StringUUID> {
-    const evaluation = await this.init(args?.name, args?.groupName, args?.metadata);
+    const evaluation = await this.init(
+      args?.name,
+      args?.groupName,
+      args?.metadata,
+    );
     return evaluation.id;
   }
 
@@ -213,23 +219,31 @@ export class EvalsResource extends BaseResource {
     datapoints: EvaluationDatapoint<D, T, O>[];
     groupName?: string;
   }): Promise<void> {
-    const response = await fetch(this.baseHttpUrl + `/v1/evals/${evalId}/datapoints`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({
-        points: datapoints.map((d) => (
-          {
+    const response = await fetch(
+      this.baseHttpUrl + `/v1/evals/${evalId}/datapoints`,
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({
+          points: datapoints.map((d) => ({
             ...d,
-            data: slicePayload(d.data, INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH),
-            target: slicePayload(d.target, INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH),
+            data: slicePayload(
+              d.data,
+              INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH,
+            ),
+            target: slicePayload(
+              d.target,
+              INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH,
+            ),
             executorOutput: slicePayload(
               d.executorOutput,
               INITIAL_EVALUATION_DATAPOINT_MAX_DATA_LENGTH,
             ),
           })),
-        groupName: groupName ?? null,
-      }),
-    });
+          groupName: groupName ?? null,
+        }),
+      },
+    );
 
     if (response.status === 413) {
       return await this.retrySaveDatapoints({
@@ -264,7 +278,7 @@ export class EvalsResource extends BaseResource {
     limit: number;
   }): Promise<GetDatapointsResponse<D, T>> {
     logger.warn(
-      'evals.getDatapoints() is deprecated. Use client.datasets.pull() instead.',
+      "evals.getDatapoints() is deprecated. Use client.datasets.pull() instead.",
     );
 
     const params = new URLSearchParams({
@@ -303,21 +317,25 @@ export class EvalsResource extends BaseResource {
     let length = initialLength;
     let lastResponse: Response | null = null;
     for (let i = 0; i < maxRetries; i++) {
-      logger.debug(`Retrying save datapoints... ${i + 1} of ${maxRetries}, length: ${length}`);
-      const response = await fetch(this.baseHttpUrl + `/v1/evals/${evalId}/datapoints`, {
-        method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify({
-          points: datapoints.map((d) => (
-            {
+      logger.debug(
+        `Retrying save datapoints... ${i + 1} of ${maxRetries}, length: ${length}`,
+      );
+      const response = await fetch(
+        this.baseHttpUrl + `/v1/evals/${evalId}/datapoints`,
+        {
+          method: "POST",
+          headers: this.headers(),
+          body: JSON.stringify({
+            points: datapoints.map((d) => ({
               ...d,
               data: slicePayload(d.data, length),
               target: slicePayload(d.target, length),
               executorOutput: slicePayload(d.executorOutput, length),
             })),
-          groupName: groupName ?? null,
-        }),
-      });
+            groupName: groupName ?? null,
+          }),
+        },
+      );
       lastResponse = response;
       length = Math.floor(length / 2);
       if (response.status !== 413) {

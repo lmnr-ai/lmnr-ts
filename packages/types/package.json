@@ -17,9 +17,7 @@
   "types": "dist/index.d.cts",
   "scripts": {
     "prepare": "tsdown",
-    "build": "tsdown",
-    "lint": "eslint",
-    "lint:fix": "eslint --fix"
+    "build": "tsdown"
   },
   "files": [
     "dist"

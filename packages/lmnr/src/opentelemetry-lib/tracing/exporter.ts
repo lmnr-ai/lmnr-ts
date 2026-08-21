@@ -4,12 +4,8 @@
 
 import { Metadata } from "@grpc/grpc-js";
 import { ExportResult } from "@opentelemetry/core";
-import {
-  OTLPTraceExporter as ExporterGrpc,
-} from "@opentelemetry/exporter-trace-otlp-grpc";
-import {
-  OTLPTraceExporter as ExporterHttp,
-} from "@opentelemetry/exporter-trace-otlp-proto";
+import { OTLPTraceExporter as ExporterGrpc } from "@opentelemetry/exporter-trace-otlp-grpc";
+import { OTLPTraceExporter as ExporterHttp } from "@opentelemetry/exporter-trace-otlp-proto";
 import { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base";
 
 import { getOtelEnvVar, initializeLogger, parseOtelHeaders } from "../../utils";
@@ -20,13 +16,15 @@ const logger = initializeLogger();
 export class LaminarSpanExporter implements SpanExporter {
   private exporter: SpanExporter;
 
-  constructor(options: {
-    baseUrl?: string;
-    port?: number;
-    apiKey?: string;
-    forceHttp?: boolean;
-    timeoutMillis?: number;
-  } = {}) {
+  constructor(
+    options: {
+      baseUrl?: string;
+      port?: number;
+      apiKey?: string;
+      forceHttp?: boolean;
+      timeoutMillis?: number;
+    } = {},
+  ) {
     let url = options.baseUrl ?? process?.env?.LMNR_BASE_URL;
     let port = options.port;
     let forceHttp = options.forceHttp ?? false;
@@ -36,40 +34,41 @@ export class LaminarSpanExporter implements SpanExporter {
     let headers: Record<string, string> = {};
     if (key) {
       headers = forceHttp
-        ? { 'Authorization': `Bearer ${key}` }
-        : { 'authorization': `Bearer ${key}` };
+        ? { Authorization: `Bearer ${key}` }
+        : { authorization: `Bearer ${key}` };
       if (!url) {
-        url = 'https://api.lmnr.ai';
+        url = "https://api.lmnr.ai";
       }
     } else {
-      const otelHeaders = getOtelEnvVar('HEADERS');
+      const otelHeaders = getOtelEnvVar("HEADERS");
       if (otelHeaders) {
         headers = parseOtelHeaders(otelHeaders);
       }
       // Check for OTEL endpoint configuration
-      const otelEndpoint = getOtelEnvVar('ENDPOINT');
+      const otelEndpoint = getOtelEnvVar("ENDPOINT");
       if (otelEndpoint && !url) {
         url = otelEndpoint;
 
         // Determine protocol from OTEL env vars
-        const otelProtocol = getOtelEnvVar('PROTOCOL') || 'grpc/protobuf';
+        const otelProtocol = getOtelEnvVar("PROTOCOL") || "grpc/protobuf";
         const otelExporter = process?.env?.OTEL_EXPORTER;
-        forceHttp = otelProtocol === 'http/protobuf'
-          || otelProtocol === 'http/json'
-          || otelExporter === 'otlp_http';
+        forceHttp =
+          otelProtocol === "http/protobuf" ||
+          otelProtocol === "http/json" ||
+          otelExporter === "otlp_http";
       } else if (otelEndpoint && url) {
         logger.warn(
-          'OTEL_ENDPOINT is set, but Laminar base URL is also set. Ignoring OTEL_ENDPOINT.',
+          "OTEL_ENDPOINT is set, but Laminar base URL is also set. Ignoring OTEL_ENDPOINT.",
         );
       }
     }
 
     if (!url) {
       throw new Error(
-        'Laminar base URL is not set and OTEL_ENDPOINT is not set. Please either\n' +
-        '- set the LMNR_BASE_URL environment variable\n' +
-        '- set the OTEL_ENDPOINT environment variable (if you are not using a Laminar API key)\n' +
-        '- pass the baseUrl parameter to Laminar.initialize',
+        "Laminar base URL is not set and OTEL_ENDPOINT is not set. Please either\n" +
+          "- set the LMNR_BASE_URL environment variable\n" +
+          "- set the OTEL_ENDPOINT environment variable (if you are not using a Laminar API key)\n" +
+          "- pass the baseUrl parameter to Laminar.initialize",
       );
     }
 
@@ -77,10 +76,12 @@ export class LaminarSpanExporter implements SpanExporter {
     if (!port) {
       port = url.match(/:\d{1,5}$/g)
         ? parseInt(url.match(/:\d{1,5}$/g)![0].slice(1))
-        : (forceHttp ? 443 : 8443);
+        : forceHttp
+          ? 443
+          : 8443;
     }
 
-    const urlWithoutSlash = url.replace(/\/$/, '').replace(/:\d{1,5}$/g, '');
+    const urlWithoutSlash = url.replace(/\/$/, "").replace(/:\d{1,5}$/g, "");
 
     if (forceHttp) {
       this.exporter = new ExporterHttp({
@@ -123,4 +124,3 @@ export class LaminarSpanExporter implements SpanExporter {
     return this.exporter.forceFlush?.();
   }
 }
-

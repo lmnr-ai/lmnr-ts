@@ -68,11 +68,17 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     process.env.LMNR_FRONTEND_URL,
     DEFAULT_FRONTEND_URL,
   );
-  const baseUrl = firstNonEmpty(options.baseUrl, process.env.LMNR_BASE_URL, DEFAULT_BASE_URL);
+  const baseUrl = firstNonEmpty(
+    options.baseUrl,
+    process.env.LMNR_BASE_URL,
+    DEFAULT_BASE_URL,
+  );
   const isJson = options.json === true;
 
   if (!isJson) {
-    process.stderr.write(`\n${orange("Laminar CLI")} ${pc.dim(`v${version}`)}\n\n`);
+    process.stderr.write(
+      `\n${orange("Laminar CLI")} ${pc.dim(`v${version}`)}\n\n`,
+    );
   }
 
   const cwd = process.cwd();
@@ -111,7 +117,10 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
         ? expiredIssuer
         : frontendUrl;
     try {
-      login = await handleLogin({ frontendUrl: loginUrl, noBrowser: options.browser === false });
+      login = await handleLogin({
+        frontendUrl: loginUrl,
+        noBrowser: options.browser === false,
+      });
     } catch (err) {
       failWith(isJson, loginFailed(errorMessage(err)));
     }
@@ -132,7 +141,13 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
       link = await writeLink(userBaseUrl, login.projectId, isJson);
     } else {
       // Defensive: fall back to the CLI picker if the browser attached no project.
-      link = await resolveProjectViaCli(creds, userBaseUrl, issuer, isJson, options);
+      link = await resolveProjectViaCli(
+        creds,
+        userBaseUrl,
+        issuer,
+        isJson,
+        options,
+      );
     }
   } else {
     // Already logged in.
@@ -141,23 +156,34 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     if (link) {
       await assertAccess(creds, userBaseUrl, link, existingKey, isJson);
     } else {
-      link = await resolveProjectViaCli(creds, userBaseUrl, issuer, isJson, options);
+      link = await resolveProjectViaCli(
+        creds,
+        userBaseUrl,
+        issuer,
+        isJson,
+        options,
+      );
     }
   }
 
   if (!isJson) {
-    process.stderr.write(`${pc.green("✓")} Logged in as ${creds.userEmail ?? "<unknown>"}\n`);
+    process.stderr.write(
+      `${pc.green("✓")} Logged in as ${creds.userEmail ?? "<unknown>"}\n`,
+    );
     process.stderr.write(
       `${pc.green("✓")} Project: ${link.projectName ?? link.projectId}` +
-      (link.workspaceName ? pc.dim(` (${link.workspaceName})`) : "") +
-      "\n",
+        (link.workspaceName ? pc.dim(` (${link.workspaceName})`) : "") +
+        "\n",
     );
   }
 
   // --- 2. Assert invariants -------------------------------------------------
 
   if (!creds || !link.projectId) {
-    failWith(isJson, setupInvariant("missing credentials or project after resolution"));
+    failWith(
+      isJson,
+      setupInvariant("missing credentials or project after resolution"),
+    );
   }
 
   const issuer = creds.issuer || frontendUrl;
@@ -192,7 +218,9 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
         const note = skillResult.defaulted
           ? pc.dim(" (no agent dir found; defaulted to .claude and .agents)")
           : "";
-        process.stderr.write(`${pc.green("✓")} Installed Laminar skill${note}\n`);
+        process.stderr.write(
+          `${pc.green("✓")} Installed Laminar skill${note}\n`,
+        );
       }
     }
   } catch (err) {
@@ -227,13 +255,13 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
       'lmnr-cli sql query "SELECT * FROM traces ORDER BY start_time DESC LIMIT 1" --json';
     process.stdout.write(
       "\nNext steps:\n" +
-      "  1. Instrument your project with Laminar using the installed skill or the docs:\n" +
-      `     ${pcOut.cyan(docsUrl)}\n` +
-      "  2. Run your project.\n" +
-      "  3. Verify instrumentation:\n" +
-      `     ${pcOut.green(verifyCmd)}\n` +
-      "  4. View your traces in the browser:\n" +
-      `     ${pcOut.cyan(frontendLink)}\n`,
+        "  1. Instrument your project with Laminar using the installed skill or the docs:\n" +
+        `     ${pcOut.cyan(docsUrl)}\n` +
+        "  2. Run your project.\n" +
+        "  3. Verify instrumentation:\n" +
+        `     ${pcOut.green(verifyCmd)}\n` +
+        "  4. View your traces in the browser:\n" +
+        `     ${pcOut.cyan(frontendLink)}\n`,
     );
   }
 }
@@ -260,7 +288,10 @@ async function resolveProjectViaCli(
     // Expiry can surface here if the up-front gate swallowed a transient error:
     // keep it login_failed (6), not list_projects_failed (10).
     if (err instanceof SessionExpiredError) {
-      failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
+      failWith(
+        isJson,
+        loginFailed("Session expired. Run `lmnr-cli login` first."),
+      );
     }
     failWith(isJson, listProjectsFailed(errorMessage(err)));
   }
@@ -273,7 +304,7 @@ async function resolveProjectViaCli(
         isJson,
         noProjects(
           `No projects found. Run \`lmnr-cli setup\` interactively (it opens the browser ` +
-          `to create your first project) or create one at ${trimSlash(issuer)}/onboarding.`,
+            `to create your first project) or create one at ${trimSlash(issuer)}/onboarding.`,
         ),
       );
     }
@@ -294,7 +325,7 @@ async function resolveProjectViaCli(
         isJson,
         noProjects(
           `No project was created. Create one at ${trimSlash(issuer)}/onboarding ` +
-          `then re-run setup.`,
+            `then re-run setup.`,
         ),
       );
     }
@@ -310,7 +341,9 @@ async function resolveProjectViaCli(
         isJson,
         noAccess(
           `You don't have access to project ${options.projectId}. Accessible: ` +
-          projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+            projects
+              .map((p) => `${p.id} (${p.workspaceName}/${p.name})`)
+              .join(", "),
         ),
       );
     }
@@ -323,11 +356,16 @@ async function resolveProjectViaCli(
         isJson,
         projectAmbiguous(
           `Multiple projects: pass --project-id <id>, or run setup interactively. ` +
-          projects.map((p) => `${p.id} (${p.workspaceName}/${p.name})`).join(", "),
+            projects
+              .map((p) => `${p.id} (${p.workspaceName}/${p.name})`)
+              .join(", "),
         ),
       );
     }
-    chosen = await promptProjectChoice(projects, "\nMultiple projects available. Choose one:\n");
+    chosen = await promptProjectChoice(
+      projects,
+      "\nMultiple projects available. Choose one:\n",
+    );
   }
 
   const linkPath = await writeLocalProjectFile({
@@ -376,7 +414,7 @@ async function writeLink(
     if (!isJson) {
       process.stderr.write(
         `${pc.yellow("Warning")}: could not write .lmnr/project.json (${errorMessage(err)}). ` +
-        `CLI commands will need --project-id ${projectId}.\n`,
+          `CLI commands will need --project-id ${projectId}.\n`,
       );
     }
   }
@@ -400,14 +438,20 @@ async function assertAccess(
   } catch (err) {
     // An expired grant is an auth failure: login_failed (6).
     if (err instanceof SessionExpiredError) {
-      failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
+      failWith(
+        isJson,
+        loginFailed("Session expired. Run `lmnr-cli login` first."),
+      );
     }
     // Discovery failed (network/5xx) — report as a transient list failure
     // (exit 10), NOT no_access (exit 4), so automation can retry.
     failWith(isJson, listProjectsFailed(errorMessage(err)));
   }
   if (!projects.some((p) => p.id === link.projectId)) {
-    failWith(isJson, noAccess(buildNoAccessDetail(link, creds, existingKey, projects)));
+    failWith(
+      isJson,
+      noAccess(buildNoAccessDetail(link, creds, existingKey, projects)),
+    );
   }
 }
 
@@ -421,15 +465,22 @@ function buildNoAccessDetail(
   existingKey: EnvKeyLocation | null,
   accessible: CliProject[],
 ): string {
-  const project = link.projectName ? `"${link.projectName}" (${link.projectId})` : link.projectId;
+  const project = link.projectName
+    ? `"${link.projectName}" (${link.projectId})`
+    : link.projectId;
   const account = creds.userEmail ?? "the current account";
-  const workspace = link.workspaceName ? ` in workspace "${link.workspaceName}"` : "";
+  const workspace = link.workspaceName
+    ? ` in workspace "${link.workspaceName}"`
+    : "";
   const keyWhere =
     existingKey === null
       ? null
       : existingKey.source.type === "process-env"
         ? { loc: "your environment", verb: "unset it" }
-        : { loc: relative(process.cwd(), existingKey.source.path), verb: "remove that line" };
+        : {
+            loc: relative(process.cwd(), existingKey.source.path),
+            verb: "remove that line",
+          };
   const envHint = keyWhere
     ? `\n  • A stale LMNR_PROJECT_API_KEY in ${keyWhere.loc} can pin a different project — ` +
       `${keyWhere.verb}, then re-run setup.`

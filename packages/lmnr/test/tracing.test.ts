@@ -13,8 +13,14 @@ import {
   TracingLevel,
   withTracingLevel,
 } from "../src/index";
-import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
-import { clearSpanProcessor, getTracer } from "../src/opentelemetry-lib/tracing";
+import {
+  _resetConfiguration,
+  initializeTracing,
+} from "../src/opentelemetry-lib/configuration";
+import {
+  clearSpanProcessor,
+  getTracer,
+} from "../src/opentelemetry-lib/tracing";
 import { getParentSpanId } from "../src/opentelemetry-lib/tracing/compat";
 import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
 import { otelSpanIdToUUID } from "../src/utils";
@@ -36,7 +42,6 @@ void describe("tracing", () => {
     });
   });
 
-
   void afterEach(() => {
     exporter.reset();
   });
@@ -55,11 +60,17 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
 
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.deepEqual(spans[0].attributes["lmnr.span.path"], ["test"]);
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
   });
 
   void it("observes using withSpan", () => {
@@ -80,14 +91,16 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], "my_input");
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+    assert.strictEqual(spans[0].attributes["lmnr.span.input"], "my_input");
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
+    assert.deepEqual(spans[0].attributes["lmnr.span.path"], ["test"]);
   });
 
   void it("observes a wrapped async function", async () => {
-    // eslint-disable-next-line @typescript-eslint/require-await
     const fn = async (a: number, b: number) => a + b;
     const result = await observe({ name: "test" }, fn, 1, 2);
     assert.strictEqual(result, 3);
@@ -95,14 +108,19 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
+    assert.deepEqual(spans[0].attributes["lmnr.span.path"], ["test"]);
   });
 
   void it("observes using withSpan with async functions", async () => {
-    // eslint-disable-next-line @typescript-eslint/require-await
     const fn = async (a: number, b: number) => a + b;
     const span = Laminar.startSpan({ name: "test", input: "my_input" });
     const result = await Laminar.withSpan(
@@ -120,10 +138,13 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], "my_input");
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+    assert.strictEqual(spans[0].attributes["lmnr.span.input"], "my_input");
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
+    assert.deepEqual(spans[0].attributes["lmnr.span.path"], ["test"]);
   });
 
   void it("sets span name to function name if not provided to observe", () => {
@@ -134,10 +155,16 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "fn");
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["fn"]);
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
+    assert.deepEqual(spans[0].attributes["lmnr.span.path"], ["fn"]);
   });
 
   void it("sets span type to LLM when spanType is LLM in observe", () => {
@@ -147,12 +174,18 @@ void describe("tracing", () => {
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
-    assert.strictEqual(spans[0].attributes['lmnr.span.type'], 'LLM');
+    assert.strictEqual(spans[0].attributes["lmnr.span.type"], "LLM");
 
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
+    assert.deepEqual(spans[0].attributes["lmnr.span.path"], ["test"]);
   });
 
   void it("sets span type to LLM when spanType is LLM in startSpan", () => {
@@ -165,9 +198,12 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.span.type'], 'LLM');
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+    assert.strictEqual(spans[0].attributes["lmnr.span.type"], "LLM");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
+    assert.deepEqual(spans[0].attributes["lmnr.span.path"], ["test"]);
   });
 
   void it("sets the parent span context in observe", () => {
@@ -182,7 +218,8 @@ void describe("tracing", () => {
         },
       },
       fn,
-      1, 2,
+      1,
+      2,
     );
 
     const result2 = observe(
@@ -190,7 +227,8 @@ void describe("tracing", () => {
         name: "test2",
       },
       fn,
-      1, 2,
+      1,
+      2,
     );
 
     assert.strictEqual(result, 3);
@@ -198,20 +236,35 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
 
     assert.strictEqual(spans.length, 2);
-    const testSpan = spans.find(span => span.name === "test");
-    const test2Span = spans.find(span => span.name === "test2");
+    const testSpan = spans.find((span) => span.name === "test");
+    const test2Span = spans.find((span) => span.name === "test2");
 
-    assert.strictEqual(testSpan?.attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(testSpan?.attributes['lmnr.span.output'], "3");
+    assert.strictEqual(
+      testSpan?.attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(testSpan?.attributes["lmnr.span.output"], "3");
     assert.strictEqual(testSpan?.name, "test");
 
-    assert.strictEqual(testSpan?.spanContext().traceId, "0123456789abcdef0123456789abcdef");
+    assert.strictEqual(
+      testSpan?.spanContext().traceId,
+      "0123456789abcdef0123456789abcdef",
+    );
     assert.strictEqual(getParentSpanId(testSpan), "0123456789abcdef");
-    assert.strictEqual(testSpan?.attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.deepEqual(testSpan?.attributes['lmnr.span.path'], ["test"]);
+    assert.strictEqual(
+      testSpan?.attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
+    assert.deepEqual(testSpan?.attributes["lmnr.span.path"], ["test"]);
 
-    assert.notStrictEqual(testSpan?.spanContext().traceId, test2Span?.spanContext().traceId);
-    assert.notStrictEqual(getParentSpanId(test2Span!), getParentSpanId(testSpan));
+    assert.notStrictEqual(
+      testSpan?.spanContext().traceId,
+      test2Span?.spanContext().traceId,
+    );
+    assert.notStrictEqual(
+      getParentSpanId(test2Span!),
+      getParentSpanId(testSpan),
+    );
     assert.strictEqual(getParentSpanId(test2Span!), undefined);
   });
 
@@ -232,11 +285,17 @@ void describe("tracing", () => {
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
 
-    assert.strictEqual(spans[0].spanContext().traceId, "0123456789abcdef0123456789abcdef");
+    assert.strictEqual(
+      spans[0].spanContext().traceId,
+      "0123456789abcdef0123456789abcdef",
+    );
     assert.strictEqual(getParentSpanId(spans[0]), "0123456789abcdef");
 
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
+    assert.deepEqual(spans[0].attributes["lmnr.span.path"], ["test"]);
   });
 
   void it("does not leak ALS context entries when parentSpanContext is used", () => {
@@ -251,9 +310,11 @@ void describe("tracing", () => {
     // stack returns to its baseline depth across many child spans.
     const parent = Laminar.startActiveSpan({ name: "parent" });
     const baselineStackDepth = LaminarContextManager.getContextStack().length;
-    const parentCtx = (parent as unknown as {
-      getLaminarSpanContext(): LaminarSpanContext;
-    }).getLaminarSpanContext();
+    const parentCtx = (
+      parent as unknown as {
+        getLaminarSpanContext(): LaminarSpanContext;
+      }
+    ).getLaminarSpanContext();
 
     for (let i = 0; i < 5; i++) {
       const child = Laminar.startActiveSpan({
@@ -278,13 +339,22 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
 
     assert.strictEqual(spans.length, 1);
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
     assert.strictEqual(spans[0].name, "test");
 
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.session_id'], "123");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+    assert.strictEqual(
+      spans[0].attributes["lmnr.association.properties.session_id"],
+      "123",
+    );
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
+    assert.deepEqual(spans[0].attributes["lmnr.span.path"], ["test"]);
   });
 
   void it("sets the user id in observe", () => {
@@ -295,89 +365,134 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
 
     assert.strictEqual(spans.length, 1);
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
     assert.strictEqual(spans[0].name, "test");
 
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.user_id'], "123");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+    assert.strictEqual(
+      spans[0].attributes["lmnr.association.properties.user_id"],
+      "123",
+    );
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
+    assert.deepEqual(spans[0].attributes["lmnr.span.path"], ["test"]);
   });
 
   void it("sets the metadata in observe", () => {
     const fn = (a: number, b: number) => a + b;
-    const result = observe({
-      name: "test",
-      metadata: { key: "value", nested: { key2: "value2" } },
-    }, fn, 1, 2);
+    const result = observe(
+      {
+        name: "test",
+        metadata: { key: "value", nested: { key2: "value2" } },
+      },
+      fn,
+      1,
+      2,
+    );
 
     assert.strictEqual(result, 3);
     const spans = exporter.getFinishedSpans();
 
     assert.strictEqual(spans.length, 1);
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
     assert.strictEqual(spans[0].name, "test");
 
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.metadata.key'], "value");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.association.properties.metadata.key"],
+      "value",
+    );
     assert.deepStrictEqual(
-      JSON.parse(spans[0].attributes['lmnr.association.properties.metadata.nested'] as string),
+      JSON.parse(
+        spans[0].attributes[
+          "lmnr.association.properties.metadata.nested"
+        ] as string,
+      ),
       { key2: "value2" },
     );
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
+    assert.deepEqual(spans[0].attributes["lmnr.span.path"], ["test"]);
   });
 
   void it("sets the tags in observe", () => {
     const fn = (a: number, b: number) => a + b;
-    const result = observe({
-      name: "test",
-      tags: ["tag1", "tag2"],
-    }, fn, 1, 2);
+    const result = observe(
+      {
+        name: "test",
+        tags: ["tag1", "tag2"],
+      },
+      fn,
+      1,
+      2,
+    );
 
     assert.strictEqual(result, 3);
     const spans = exporter.getFinishedSpans();
 
     assert.strictEqual(spans.length, 1);
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
     assert.strictEqual(spans[0].name, "test");
 
     assert.deepStrictEqual(
-      spans[0].attributes['lmnr.association.properties.tags'],
+      spans[0].attributes["lmnr.association.properties.tags"],
       ["tag1", "tag2"],
     );
     assert.strictEqual(
-      spans[0].attributes['lmnr.span.instrumentation_source'],
+      spans[0].attributes["lmnr.span.instrumentation_source"],
       "javascript",
     );
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+    assert.deepEqual(spans[0].attributes["lmnr.span.path"], ["test"]);
   });
 
   void it("removes duplicate tags in observe", () => {
     const fn = (a: number, b: number) => a + b;
-    const result = observe({
-      name: "test",
-      tags: ["tag1", "tag2", "tag1"],
-    }, fn, 1, 2);
+    const result = observe(
+      {
+        name: "test",
+        tags: ["tag1", "tag2", "tag1"],
+      },
+      fn,
+      1,
+      2,
+    );
 
     assert.strictEqual(result, 3);
     const spans = exporter.getFinishedSpans();
 
     assert.strictEqual(spans.length, 1);
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
     assert.strictEqual(spans[0].name, "test");
 
-    const tags = spans[0].attributes['lmnr.association.properties.tags'] as string[];
+    const tags = spans[0].attributes[
+      "lmnr.association.properties.tags"
+    ] as string[];
     assert.strictEqual(tags.length, 2);
     assert.strictEqual(tags.includes("tag1"), true);
     assert.strictEqual(tags.includes("tag2"), true);
     assert.strictEqual(
-      spans[0].attributes['lmnr.span.instrumentation_source'],
+      spans[0].attributes["lmnr.span.instrumentation_source"],
       "javascript",
     );
-    assert.deepEqual(spans[0].attributes['lmnr.span.path'], ["test"]);
+    assert.deepEqual(spans[0].attributes["lmnr.span.path"], ["test"]);
   });
 
   void it("sets the session id in startSpan", () => {
@@ -388,8 +503,14 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.session_id'], "123");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.association.properties.session_id"],
+      "123",
+    );
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
   });
 
   void it("sets the user id in startSpan", () => {
@@ -400,8 +521,14 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.user_id'], "123");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.association.properties.user_id"],
+      "123",
+    );
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
   });
 
   void it("sets the metadata in startSpan", () => {
@@ -415,9 +542,16 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.metadata.key'], "value");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.association.properties.metadata.key"],
+      "value",
+    );
     assert.deepStrictEqual(
-      JSON.parse(spans[0].attributes['lmnr.association.properties.metadata.nested'] as string),
+      JSON.parse(
+        spans[0].attributes[
+          "lmnr.association.properties.metadata.nested"
+        ] as string,
+      ),
       { key2: "value2" },
     );
   });
@@ -431,32 +565,19 @@ void describe("tracing", () => {
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
     assert.deepStrictEqual(
-      spans[0].attributes['lmnr.association.properties.tags'],
+      spans[0].attributes["lmnr.association.properties.tags"],
       ["tag1", "tag2"],
     );
     assert.strictEqual(
-      spans[0].attributes['lmnr.span.instrumentation_source'],
+      spans[0].attributes["lmnr.span.instrumentation_source"],
       "javascript",
     );
   });
 
   void it("removes duplicate tags in startSpan", () => {
-    const span = Laminar.startSpan({ name: "test", tags: ["tag1", "tag2", "tag1"] });
-    const result = Laminar.withSpan(span, () => 3, true);
-    assert.strictEqual(result, 3);
-
-    const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 1);
-    assert.strictEqual(spans[0].name, "test");
-    const tags = spans[0].attributes['lmnr.association.properties.tags'] as string[];
-    assert.strictEqual(tags.length, 2);
-    assert.strictEqual(tags.includes("tag1"), true);
-    assert.strictEqual(tags.includes("tag2"), true);
-  });
-
-  void it("can process empty metadata or tags", () => {
     const span = Laminar.startSpan({
-      name: "test", metadata: {}, tags: [], userId: "", sessionId: "",
+      name: "test",
+      tags: ["tag1", "tag2", "tag1"],
     });
     const result = Laminar.withSpan(span, () => 3, true);
     assert.strictEqual(result, 3);
@@ -464,37 +585,96 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.user_id'], undefined);
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.session_id'], undefined);
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.metadata'], undefined);
-    assert.deepStrictEqual(spans[0].attributes['lmnr.association.properties.tags'], []);
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    const tags = spans[0].attributes[
+      "lmnr.association.properties.tags"
+    ] as string[];
+    assert.strictEqual(tags.length, 2);
+    assert.strictEqual(tags.includes("tag1"), true);
+    assert.strictEqual(tags.includes("tag2"), true);
+  });
+
+  void it("can process empty metadata or tags", () => {
+    const span = Laminar.startSpan({
+      name: "test",
+      metadata: {},
+      tags: [],
+      userId: "",
+      sessionId: "",
+    });
+    const result = Laminar.withSpan(span, () => 3, true);
+    assert.strictEqual(result, 3);
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].name, "test");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.association.properties.user_id"],
+      undefined,
+    );
+    assert.strictEqual(
+      spans[0].attributes["lmnr.association.properties.session_id"],
+      undefined,
+    );
+    assert.strictEqual(
+      spans[0].attributes["lmnr.association.properties.metadata"],
+      undefined,
+    );
+    assert.deepStrictEqual(
+      spans[0].attributes["lmnr.association.properties.tags"],
+      [],
+    );
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
   });
 
   void it("observes nested functions", () => {
     const double = (a: number) => a * 2;
-    const fn = (a: number, b: number) => a + observe({ name: "double" }, double, b);
+    const fn = (a: number, b: number) =>
+      a + observe({ name: "double" }, double, b);
     const result = observe({ name: "test" }, fn, 1, 2);
 
     assert.strictEqual(result, 5);
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 2);
-    const testSpan = spans.find(span => span.name === "test");
-    const doubleSpan = spans.find(span => span.name === "double");
+    const testSpan = spans.find((span) => span.name === "test");
+    const doubleSpan = spans.find((span) => span.name === "double");
 
-    assert.strictEqual(testSpan?.attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(testSpan?.attributes['lmnr.span.output'], "5");
-    assert.deepEqual(testSpan?.attributes['lmnr.span.path'], ["test"]);
+    assert.strictEqual(
+      testSpan?.attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(testSpan?.attributes["lmnr.span.output"], "5");
+    assert.deepEqual(testSpan?.attributes["lmnr.span.path"], ["test"]);
 
-    assert.strictEqual(doubleSpan?.attributes['lmnr.span.input'], JSON.stringify([2]));
-    assert.strictEqual(doubleSpan?.attributes['lmnr.span.output'], "4");
-    assert.deepEqual(doubleSpan?.attributes['lmnr.span.path'], ["test", "double"]);
+    assert.strictEqual(
+      doubleSpan?.attributes["lmnr.span.input"],
+      JSON.stringify([2]),
+    );
+    assert.strictEqual(doubleSpan?.attributes["lmnr.span.output"], "4");
+    assert.deepEqual(doubleSpan?.attributes["lmnr.span.path"], [
+      "test",
+      "double",
+    ]);
 
-    assert.strictEqual(getParentSpanId(doubleSpan), testSpan?.spanContext().spanId);
-    assert.strictEqual(testSpan?.spanContext().traceId, doubleSpan?.spanContext().traceId);
-    assert.strictEqual(testSpan?.attributes['lmnr.span.instrumentation_source'], "javascript");
-    assert.strictEqual(doubleSpan?.attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(
+      getParentSpanId(doubleSpan),
+      testSpan?.spanContext().spanId,
+    );
+    assert.strictEqual(
+      testSpan?.spanContext().traceId,
+      doubleSpan?.spanContext().traceId,
+    );
+    assert.strictEqual(
+      testSpan?.attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
+    assert.strictEqual(
+      doubleSpan?.attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
   });
 
   void it("sets the span path on manual spans within observe", () => {
@@ -510,15 +690,17 @@ void describe("tracing", () => {
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 2);
-    const testSpan = spans.find(span => span.name === "test");
-    const innerSpan = spans.find(span => span.name === "inner");
-    assert.deepEqual(testSpan?.attributes['lmnr.span.path'], ["test"]);
-    assert.deepEqual(innerSpan?.attributes['lmnr.span.path'], ["test", "inner"]);
+    const testSpan = spans.find((span) => span.name === "test");
+    const innerSpan = spans.find((span) => span.name === "inner");
+    assert.deepEqual(testSpan?.attributes["lmnr.span.path"], ["test"]);
+    assert.deepEqual(innerSpan?.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+    ]);
   });
 
   void it("sets the span path on observed spans within manual spans", () => {
-    const double = (a: number) =>
-      observe({ name: "inner" }, (n) => n * 2, a);
+    const double = (a: number) => observe({ name: "inner" }, (n) => n * 2, a);
     const fn = (a: number, b: number) => {
       const span = Laminar.startSpan({ name: "test" });
       return a + Laminar.withSpan(span, () => double(b), true);
@@ -529,18 +711,30 @@ void describe("tracing", () => {
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 2);
-    const testSpan = spans.find(span => span.name === "test");
-    const innerSpan = spans.find(span => span.name === "inner");
-    assert.deepEqual(testSpan?.attributes['lmnr.span.path'], ["test"]);
-    assert.deepEqual(innerSpan?.attributes['lmnr.span.path'], ["test", "inner"]);
+    const testSpan = spans.find((span) => span.name === "test");
+    const innerSpan = spans.find((span) => span.name === "inner");
+    assert.deepEqual(testSpan?.attributes["lmnr.span.path"], ["test"]);
+    assert.deepEqual(innerSpan?.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+    ]);
 
-    assert.strictEqual(testSpan?.spanContext().traceId, innerSpan?.spanContext().traceId);
-    assert.strictEqual(getParentSpanId(innerSpan), testSpan?.spanContext().spanId);
+    assert.strictEqual(
+      testSpan?.spanContext().traceId,
+      innerSpan?.spanContext().traceId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan),
+      testSpan?.spanContext().spanId,
+    );
   });
 
   void it("preserves span path when using serialized span context", () => {
     function innerFunction(serializedContext: string) {
-      return observe({ name: "inner", parentSpanContext: serializedContext }, () => "inner result");
+      return observe(
+        { name: "inner", parentSpanContext: serializedContext },
+        () => "inner result",
+      );
     }
 
     const result = observe({ name: "outer" }, () => {
@@ -548,8 +742,10 @@ void describe("tracing", () => {
         const currentSpan = trace.getActiveSpan();
         if (!currentSpan) throw new Error("No active span");
 
-        const serializedContext = Laminar.serializeLaminarSpanContext(currentSpan);
-        if (!serializedContext) throw new Error("Failed to serialize span context");
+        const serializedContext =
+          Laminar.serializeLaminarSpanContext(currentSpan);
+        if (!serializedContext)
+          throw new Error("Failed to serialize span context");
 
         clearSpanProcessor();
 
@@ -563,15 +759,19 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 3);
 
-    const outerSpan = spans.find(span => span.name === "outer");
-    const testSpan = spans.find(span => span.name === "test");
-    const innerSpan = spans.find(span => span.name === "inner");
+    const outerSpan = spans.find((span) => span.name === "outer");
+    const testSpan = spans.find((span) => span.name === "test");
+    const innerSpan = spans.find((span) => span.name === "inner");
 
     // Verify the basic paths work for spans in the same process
-    assert.deepEqual(outerSpan?.attributes['lmnr.span.path'], ["outer"]);
-    assert.deepEqual(testSpan?.attributes['lmnr.span.path'], ["outer", "test"]);
+    assert.deepEqual(outerSpan?.attributes["lmnr.span.path"], ["outer"]);
+    assert.deepEqual(testSpan?.attributes["lmnr.span.path"], ["outer", "test"]);
 
-    assert.deepEqual(innerSpan?.attributes['lmnr.span.path'], ["outer", "test", "inner"]);
+    assert.deepEqual(innerSpan?.attributes["lmnr.span.path"], [
+      "outer",
+      "test",
+      "inner",
+    ]);
 
     const outerSpanId = outerSpan?.spanContext().spanId;
     const testSpanId = testSpan?.spanContext().spanId;
@@ -583,7 +783,10 @@ void describe("tracing", () => {
       otelSpanIdToUUID(innerSpanId),
     ];
 
-    assert.deepEqual(innerSpan?.attributes['lmnr.span.ids_path'], expectedIdsPath);
+    assert.deepEqual(
+      innerSpan?.attributes["lmnr.span.ids_path"],
+      expectedIdsPath,
+    );
   });
 
   void it("seeds ids_path from a remote parent the processor has never seen", () => {
@@ -607,10 +810,12 @@ void describe("tracing", () => {
     // it extracted from request headers.
     getTracer().startSpan("child-of-remote", undefined, remoteContext).end();
 
-    const span = exporter.getFinishedSpans().find(s => s.name === "child-of-remote");
+    const span = exporter
+      .getFinishedSpans()
+      .find((s) => s.name === "child-of-remote");
     assert.ok(span);
     assert.strictEqual(getParentSpanId(span), remoteParentSpanId);
-    assert.deepEqual(span.attributes['lmnr.span.ids_path'], [
+    assert.deepEqual(span.attributes["lmnr.span.ids_path"], [
       otelSpanIdToUUID(remoteParentSpanId),
       otelSpanIdToUUID(span.spanContext().spanId),
     ]);
@@ -623,7 +828,8 @@ void describe("tracing", () => {
     // the PARENT_SPAN_IDS_PATH attribute can seed the path. The ids path must
     // still start with the parent, or the backend's `is_top_span` check treats
     // the span as a root and throws the parent away.
-    const parentSpanIdUuid = "00000000-0000-0000-1234-567890abcdef" as StringUUID;
+    const parentSpanIdUuid =
+      "00000000-0000-0000-1234-567890abcdef" as StringUUID;
     const span = Laminar.startSpan({
       name: "activity",
       parentSpanContext: {
@@ -634,10 +840,12 @@ void describe("tracing", () => {
     });
     span.end();
 
-    const exported = exporter.getFinishedSpans().find(s => s.name === "activity");
+    const exported = exporter
+      .getFinishedSpans()
+      .find((s) => s.name === "activity");
     assert.ok(exported);
     assert.strictEqual(getParentSpanId(exported), "1234567890abcdef");
-    assert.deepEqual(exported.attributes['lmnr.span.ids_path'], [
+    assert.deepEqual(exported.attributes["lmnr.span.ids_path"], [
       parentSpanIdUuid,
       otelSpanIdToUUID(exported.spanContext().spanId),
     ]);
@@ -645,7 +853,10 @@ void describe("tracing", () => {
 
   void it("preserves span path in serialized span context with Laminar.startSpan", () => {
     const innerFunction = (serializedContext: string) => {
-      const span = Laminar.startSpan({ name: "inner", parentSpanContext: serializedContext });
+      const span = Laminar.startSpan({
+        name: "inner",
+        parentSpanContext: serializedContext,
+      });
       span.end();
       return "inner result";
     };
@@ -655,8 +866,10 @@ void describe("tracing", () => {
         const currentSpan = trace.getActiveSpan();
         if (!currentSpan) throw new Error("No active span");
 
-        const serializedContext = Laminar.serializeLaminarSpanContext(currentSpan);
-        if (!serializedContext) throw new Error("Failed to serialize span context");
+        const serializedContext =
+          Laminar.serializeLaminarSpanContext(currentSpan);
+        if (!serializedContext)
+          throw new Error("Failed to serialize span context");
 
         clearSpanProcessor();
 
@@ -670,17 +883,21 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 3);
 
-    const outerSpan = spans.find(span => span.name === "outer");
-    const testSpan = spans.find(span => span.name === "test");
-    const innerSpan = spans.find(span => span.name === "inner");
+    const outerSpan = spans.find((span) => span.name === "outer");
+    const testSpan = spans.find((span) => span.name === "test");
+    const innerSpan = spans.find((span) => span.name === "inner");
 
     // Verify the basic paths work for spans in the same process
-    assert.deepEqual(outerSpan?.attributes['lmnr.span.path'], ["outer"]);
-    assert.deepEqual(testSpan?.attributes['lmnr.span.path'], ["outer", "test"]);
+    assert.deepEqual(outerSpan?.attributes["lmnr.span.path"], ["outer"]);
+    assert.deepEqual(testSpan?.attributes["lmnr.span.path"], ["outer", "test"]);
 
     // This is the key assertion: The inner span should know about the full path
     // even though it was created using Laminar.startSpan with a serialized context
-    assert.deepEqual(innerSpan?.attributes['lmnr.span.path'], ["outer", "test", "inner"]);
+    assert.deepEqual(innerSpan?.attributes["lmnr.span.path"], [
+      "outer",
+      "test",
+      "inner",
+    ]);
 
     const outerSpanId = outerSpan?.spanContext().spanId;
     const testSpanId = testSpan?.spanContext().spanId;
@@ -692,7 +909,10 @@ void describe("tracing", () => {
       otelSpanIdToUUID(innerSpanId),
     ];
 
-    assert.deepEqual(innerSpan?.attributes['lmnr.span.ids_path'], expectedIdsPath);
+    assert.deepEqual(
+      innerSpan?.attributes["lmnr.span.ids_path"],
+      expectedIdsPath,
+    );
   });
 
   void it("sets the tracing level attribute when withTracingLevel is used", () => {
@@ -700,13 +920,15 @@ void describe("tracing", () => {
     const result = withTracingLevel(
       TracingLevel.META_ONLY,
       (a, b) => observe({ name: "span_with_meta_only" }, fn, a, b),
-      1, 2,
+      1,
+      2,
     );
 
     const result2 = withTracingLevel(
       TracingLevel.OFF,
       (a, b) => observe({ name: "span_with_off" }, fn, a, b),
-      1, 2,
+      1,
+      2,
     );
 
     assert.strictEqual(result, 3);
@@ -715,17 +937,28 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 2);
 
-    const spanWithMetaOnly = spans.find(span => span.name === "span_with_meta_only");
-    const spanWithOff = spans.find(span => span.name === "span_with_off");
+    const spanWithMetaOnly = spans.find(
+      (span) => span.name === "span_with_meta_only",
+    );
+    const spanWithOff = spans.find((span) => span.name === "span_with_off");
 
-    assert.strictEqual(spanWithMetaOnly?.attributes['lmnr.internal.tracing_level'], "meta_only");
     assert.strictEqual(
-      spanWithMetaOnly?.attributes['lmnr.span.instrumentation_source'],
+      spanWithMetaOnly?.attributes["lmnr.internal.tracing_level"],
+      "meta_only",
+    );
+    assert.strictEqual(
+      spanWithMetaOnly?.attributes["lmnr.span.instrumentation_source"],
       "javascript",
     );
 
-    assert.strictEqual(spanWithOff?.attributes['lmnr.internal.tracing_level'], "off");
-    assert.strictEqual(spanWithOff?.attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(
+      spanWithOff?.attributes["lmnr.internal.tracing_level"],
+      "off",
+    );
+    assert.strictEqual(
+      spanWithOff?.attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
   });
 
   void it("sets the attributes with setSpanAttributes", () => {
@@ -746,50 +979,57 @@ void describe("tracing", () => {
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
 
-    assert.strictEqual(spans[0].attributes['gen_ai.system'], "openai");
-    assert.strictEqual(spans[0].attributes['gen_ai.request.model'], "gpt-4o-date-version");
-    assert.strictEqual(spans[0].attributes['gen_ai.response.model'], "gpt-4o");
-    assert.strictEqual(spans[0].attributes['gen_ai.usage.input_tokens'], 100);
-    assert.strictEqual(spans[0].attributes['gen_ai.usage.output_tokens'], 200);
+    assert.strictEqual(spans[0].attributes["gen_ai.system"], "openai");
+    assert.strictEqual(
+      spans[0].attributes["gen_ai.request.model"],
+      "gpt-4o-date-version",
+    );
+    assert.strictEqual(spans[0].attributes["gen_ai.response.model"], "gpt-4o");
+    assert.strictEqual(spans[0].attributes["gen_ai.usage.input_tokens"], 100);
+    assert.strictEqual(spans[0].attributes["gen_ai.usage.output_tokens"], 200);
 
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
   });
 
   void it("processes exceptions in observe", () => {
     const fn = () => {
       throw new Error("test err");
     };
-    assert.throws(
-      () => observe({ name: "test" }, fn),
-    );
+    assert.throws(() => observe({ name: "test" }, fn));
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
 
     const events = spans[0].events;
     assert.strictEqual(events.length, 1);
     assert.strictEqual(events[0].name, "exception");
-    assert.strictEqual(events[0].attributes?.['exception.type'], "Error");
-    assert.strictEqual(events[0].attributes?.['exception.message'], "test err");
+    assert.strictEqual(events[0].attributes?.["exception.type"], "Error");
+    assert.strictEqual(events[0].attributes?.["exception.message"], "test err");
     assert.strictEqual(
-      events[0]
-        .attributes
-        ?.['exception.stacktrace']
+      events[0].attributes?.["exception.stacktrace"]
         ?.toString()
-        .startsWith('Error: test err\n    at'),
+        .startsWith("Error: test err\n    at"),
       true,
     );
   });
 
   void it("processes exceptions in async observe", async () => {
     const fn = async () => {
-      // add an await statement so eslint doesn't complain
-      await new Promise(resolve => setTimeout(resolve, 5));
+      await new Promise((resolve) => setTimeout(resolve, 5));
       throw new Error("test err");
     };
     await assert.rejects(
@@ -803,19 +1043,20 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.span.instrumentation_source'], "javascript");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.instrumentation_source"],
+      "javascript",
+    );
 
     const events = spans[0].events;
     assert.strictEqual(events.length, 1);
     assert.strictEqual(events[0].name, "exception");
-    assert.strictEqual(events[0].attributes?.['exception.type'], "Error");
-    assert.strictEqual(events[0].attributes?.['exception.message'], "test err");
+    assert.strictEqual(events[0].attributes?.["exception.type"], "Error");
+    assert.strictEqual(events[0].attributes?.["exception.message"], "test err");
     assert.strictEqual(
-      events[0]
-        .attributes
-        ?.['exception.stacktrace']
+      events[0].attributes?.["exception.stacktrace"]
         ?.toString()
-        .startsWith('Error: test err\n    at'),
+        .startsWith("Error: test err\n    at"),
       true,
     );
   });
@@ -825,9 +1066,7 @@ void describe("tracing", () => {
     const fn = () => {
       throw new Error("test error");
     };
-    assert.throws(
-      () => Laminar.withSpan(span, fn, true),
-    );
+    assert.throws(() => Laminar.withSpan(span, fn, true));
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
@@ -836,14 +1075,15 @@ void describe("tracing", () => {
     const events = spans[0].events;
     assert.strictEqual(events.length, 1);
     assert.strictEqual(events[0].name, "exception");
-    assert.strictEqual(events[0].attributes?.['exception.type'], "Error");
-    assert.strictEqual(events[0].attributes?.['exception.message'], "test error");
+    assert.strictEqual(events[0].attributes?.["exception.type"], "Error");
     assert.strictEqual(
-      events[0]
-        .attributes
-        ?.['exception.stacktrace']
+      events[0].attributes?.["exception.message"],
+      "test error",
+    );
+    assert.strictEqual(
+      events[0].attributes?.["exception.stacktrace"]
         ?.toString()
-        .startsWith('Error: test error\n    at'),
+        .startsWith("Error: test error\n    at"),
       true,
     );
   });
@@ -851,8 +1091,7 @@ void describe("tracing", () => {
   void it("processes exceptions in async withSpan", async () => {
     const span = Laminar.startSpan({ name: "test" });
     const fn = async () => {
-      // add an await statement so eslint doesn't complain
-      await new Promise(resolve => setTimeout(resolve, 5));
+      await new Promise((resolve) => setTimeout(resolve, 5));
       throw new Error("test error");
     };
     await assert.rejects(
@@ -870,14 +1109,15 @@ void describe("tracing", () => {
     const events = spans[0].events;
     assert.strictEqual(events.length, 1);
     assert.strictEqual(events[0].name, "exception");
-    assert.strictEqual(events[0].attributes?.['exception.type'], "Error");
-    assert.strictEqual(events[0].attributes?.['exception.message'], "test error");
+    assert.strictEqual(events[0].attributes?.["exception.type"], "Error");
     assert.strictEqual(
-      events[0]
-        .attributes
-        ?.['exception.stacktrace']
+      events[0].attributes?.["exception.message"],
+      "test error",
+    );
+    assert.strictEqual(
+      events[0].attributes?.["exception.stacktrace"]
         ?.toString()
-        .startsWith('Error: test error\n    at'),
+        .startsWith("Error: test error\n    at"),
       true,
     );
   });
@@ -894,9 +1134,15 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.session_id'], "123");
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.association.properties.session_id"],
+      "123",
+    );
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
   });
 
   void it("sets the user id on the current span when setTraceUserId is used", () => {
@@ -911,15 +1157,22 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.user_id'], "123");
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.association.properties.user_id"],
+      "123",
+    );
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
   });
 
   void it("sets metadata on the current span when setTraceMetadata is used", () => {
     const fn = (a: number, b: number) => {
       Laminar.setTraceMetadata({
-        k1: "v1", k2: {
+        k1: "v1",
+        k2: {
           obj: "shall be stringified",
         },
       });
@@ -932,13 +1185,19 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.strictEqual(spans[0].attributes['lmnr.association.properties.metadata.k1'], "v1");
     assert.strictEqual(
-      spans[0].attributes['lmnr.association.properties.metadata.k2'],
+      spans[0].attributes["lmnr.association.properties.metadata.k1"],
+      "v1",
+    );
+    assert.strictEqual(
+      spans[0].attributes["lmnr.association.properties.metadata.k2"],
       JSON.stringify({ obj: "shall be stringified" }),
     );
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
   });
 
   void it("sets tags on the current span when setSpanTags is used", () => {
@@ -954,10 +1213,14 @@ void describe("tracing", () => {
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
     assert.deepStrictEqual(
-      spans[0].attributes['lmnr.association.properties.tags'], ["tag1", "tag2"],
+      spans[0].attributes["lmnr.association.properties.tags"],
+      ["tag1", "tag2"],
     );
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
   });
 
   void it("deduplicates tags on the current span when setSpanTags is used", () => {
@@ -972,20 +1235,25 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    const tags = spans[0].attributes['lmnr.association.properties.tags'] as string[];
+    const tags = spans[0].attributes[
+      "lmnr.association.properties.tags"
+    ] as string[];
     assert.strictEqual(tags.length, 2);
     assert.strictEqual(tags.includes("tag1"), true);
     assert.strictEqual(tags.includes("tag2"), true);
-    assert.strictEqual(spans[0].attributes['lmnr.span.input'], JSON.stringify([1, 2]));
-    assert.strictEqual(spans[0].attributes['lmnr.span.output'], "3");
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([1, 2]),
+    );
+    assert.strictEqual(spans[0].attributes["lmnr.span.output"], "3");
   });
 
   void it("does not override span type in nested observe", () => {
     const fn = (a: number, b: number) => a + b;
 
     observe(
-      { name: "evaluator", spanType: 'EVALUATOR' },
-      () => observe({ name: 'default' }, fn, 1, 2),
+      { name: "evaluator", spanType: "EVALUATOR" },
+      () => observe({ name: "default" }, fn, 1, 2),
       1,
       2,
     );
@@ -993,14 +1261,17 @@ void describe("tracing", () => {
     const spans = exporter.getFinishedSpans();
 
     assert.strictEqual(spans.length, 2);
-    const evaluatorSpan = spans.find((s) => s.name === 'evaluator');
-    const defaultSpan = spans.find((s) => s.name === 'default');
+    const evaluatorSpan = spans.find((s) => s.name === "evaluator");
+    const defaultSpan = spans.find((s) => s.name === "default");
 
     assert.ok(evaluatorSpan, "evaluator span should be present");
     assert.ok(defaultSpan, "default span should be present");
 
-    assert.strictEqual(evaluatorSpan?.attributes['lmnr.span.type'], 'EVALUATOR');
-    assert.strictEqual(defaultSpan?.attributes['lmnr.span.type'], undefined);
+    assert.strictEqual(
+      evaluatorSpan?.attributes["lmnr.span.type"],
+      "EVALUATOR",
+    );
+    assert.strictEqual(defaultSpan?.attributes["lmnr.span.type"], undefined);
   });
 
   void it("doesn't nest spans in startSpan", () => {
@@ -1011,9 +1282,12 @@ void describe("tracing", () => {
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 2);
-    const testSpan = spans.find(span => span.name === "test")!;
-    const secondSpan = spans.find(span => span.name === "second")!;
-    assert.notStrictEqual(testSpan.spanContext().traceId, secondSpan.spanContext().traceId);
+    const testSpan = spans.find((span) => span.name === "test")!;
+    const secondSpan = spans.find((span) => span.name === "second")!;
+    assert.notStrictEqual(
+      testSpan.spanContext().traceId,
+      secondSpan.spanContext().traceId,
+    );
     assert.strictEqual(getParentSpanId(testSpan), undefined);
     assert.strictEqual(getParentSpanId(secondSpan), undefined);
     assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
@@ -1022,14 +1296,17 @@ void describe("tracing", () => {
 
   void it("doesn't nest spans in startSpan with observe", () => {
     const testSpanManual = Laminar.startSpan({ name: "test" });
-    observe({ name: "second" }, () => { });
+    observe({ name: "second" }, () => "observe's output");
     testSpanManual.end();
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 2);
-    const testSpan = spans.find(span => span.name === "test")!;
-    const secondSpan = spans.find(span => span.name === "second")!;
-    assert.notStrictEqual(testSpan.spanContext().traceId, secondSpan.spanContext().traceId);
+    const testSpan = spans.find((span) => span.name === "test")!;
+    const secondSpan = spans.find((span) => span.name === "second")!;
+    assert.notStrictEqual(
+      testSpan.spanContext().traceId,
+      secondSpan.spanContext().traceId,
+    );
     assert.strictEqual(getParentSpanId(testSpan), undefined);
     assert.strictEqual(getParentSpanId(secondSpan), undefined);
     assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
@@ -1044,12 +1321,21 @@ void describe("tracing", () => {
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 2);
-    const testSpan = spans.find(span => span.name === "test")!;
-    const innerSpan = spans.find(span => span.name === "inner")!;
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
-    assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
+    const testSpan = spans.find((span) => span.name === "test")!;
+    const innerSpan = spans.find((span) => span.name === "inner")!;
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan.spanContext().traceId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan),
+      testSpan.spanContext().spanId,
+    );
     assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
-    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "inner"]);
+    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+    ]);
   });
 
   void it("nests multiple sequential spans in startActiveSpan", () => {
@@ -1062,16 +1348,34 @@ void describe("tracing", () => {
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 3);
-    const testSpan = spans.find(span => span.name === "test")!;
-    const innerSpan = spans.find(span => span.name === "inner")!;
-    const innerSpan2 = spans.find(span => span.name === "inner2")!;
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan2.spanContext().traceId);
-    assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
-    assert.strictEqual(getParentSpanId(innerSpan2), testSpan.spanContext().spanId);
+    const testSpan = spans.find((span) => span.name === "test")!;
+    const innerSpan = spans.find((span) => span.name === "inner")!;
+    const innerSpan2 = spans.find((span) => span.name === "inner2")!;
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan.spanContext().traceId,
+    );
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan2.spanContext().traceId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan),
+      testSpan.spanContext().spanId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan2),
+      testSpan.spanContext().spanId,
+    );
     assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
-    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "inner"]);
-    assert.deepStrictEqual(innerSpan2.attributes["lmnr.span.path"], ["test", "inner2"]);
+    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+    ]);
+    assert.deepStrictEqual(innerSpan2.attributes["lmnr.span.path"], [
+      "test",
+      "inner2",
+    ]);
   });
 
   void it("nests deeply nested spans in startActiveSpan", () => {
@@ -1086,23 +1390,50 @@ void describe("tracing", () => {
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 4);
-    const testSpan = spans.find(span => span.name === "test")!;
-    const innerSpan = spans.find(span => span.name === "inner")!;
-    const innerSpan2 = spans.find(span => span.name === "inner2")!;
-    const innerSpan3 = spans.find(span => span.name === "inner3")!;
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan2.spanContext().traceId);
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan3.spanContext().traceId);
-    assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
-    assert.strictEqual(getParentSpanId(innerSpan2), innerSpan.spanContext().spanId);
-    assert.strictEqual(getParentSpanId(innerSpan3), innerSpan2.spanContext().spanId);
-    assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
-    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "inner"]);
-    assert.deepStrictEqual(innerSpan2.attributes["lmnr.span.path"], ["test", "inner", "inner2"]);
-    assert.deepStrictEqual(
-      innerSpan3.attributes["lmnr.span.path"],
-      ["test", "inner", "inner2", "inner3"],
+    const testSpan = spans.find((span) => span.name === "test")!;
+    const innerSpan = spans.find((span) => span.name === "inner")!;
+    const innerSpan2 = spans.find((span) => span.name === "inner2")!;
+    const innerSpan3 = spans.find((span) => span.name === "inner3")!;
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan.spanContext().traceId,
     );
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan2.spanContext().traceId,
+    );
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan3.spanContext().traceId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan),
+      testSpan.spanContext().spanId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan2),
+      innerSpan.spanContext().spanId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan3),
+      innerSpan2.spanContext().spanId,
+    );
+    assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
+    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+    ]);
+    assert.deepStrictEqual(innerSpan2.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+      "inner2",
+    ]);
+    assert.deepStrictEqual(innerSpan3.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+      "inner2",
+      "inner3",
+    ]);
   });
 
   void it("does not break when ending a span twice", () => {
@@ -1116,42 +1447,74 @@ void describe("tracing", () => {
     innerSpanManual.end();
     testSpanManual.end();
 
-
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 4);
-    const testSpan = spans.find(span => span.name === "test")!;
-    const innerSpan = spans.find(span => span.name === "inner")!;
-    const innerSpan2 = spans.find(span => span.name === "inner2")!;
-    const innerSpan3 = spans.find(span => span.name === "inner3")!;
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan2.spanContext().traceId);
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan3.spanContext().traceId);
-    assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
-    assert.strictEqual(getParentSpanId(innerSpan2), innerSpan.spanContext().spanId);
-    assert.strictEqual(getParentSpanId(innerSpan3), innerSpan2.spanContext().spanId);
-    assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
-    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "inner"]);
-    assert.deepStrictEqual(innerSpan2.attributes["lmnr.span.path"], ["test", "inner", "inner2"]);
-    assert.deepStrictEqual(
-      innerSpan3.attributes["lmnr.span.path"],
-      ["test", "inner", "inner2", "inner3"],
+    const testSpan = spans.find((span) => span.name === "test")!;
+    const innerSpan = spans.find((span) => span.name === "inner")!;
+    const innerSpan2 = spans.find((span) => span.name === "inner2")!;
+    const innerSpan3 = spans.find((span) => span.name === "inner3")!;
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan.spanContext().traceId,
     );
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan2.spanContext().traceId,
+    );
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan3.spanContext().traceId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan),
+      testSpan.spanContext().spanId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan2),
+      innerSpan.spanContext().spanId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan3),
+      innerSpan2.spanContext().spanId,
+    );
+    assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
+    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+    ]);
+    assert.deepStrictEqual(innerSpan2.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+      "inner2",
+    ]);
+    assert.deepStrictEqual(innerSpan3.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+      "inner2",
+      "inner3",
+    ]);
   });
 
   void it("nests deeply nested possibly inactive spans in startActiveSpan", () => {
     const testSpanManual = Laminar.startActiveSpan({ name: "test" });
     const innerSpanManual = Laminar.startActiveSpan({ name: "inner" });
     const innerSpanManual2 = Laminar.startActiveSpan({ name: "inner2" });
-    const innerSpanManual2Inactive = Laminar.startSpan({ name: "inner2-inactive" });
+    const innerSpanManual2Inactive = Laminar.startSpan({
+      name: "inner2-inactive",
+    });
     // inactive 2 starts after inactive 1 starts and ends before inactive 1 ends
     // but must not be its child, inactive 1 is not activated
     innerSpanManual2Inactive.end();
 
-    const innerSpanManual2Inactive2 = Laminar.startSpan({ name: "inner2-inactive2" });
+    const innerSpanManual2Inactive2 = Laminar.startSpan({
+      name: "inner2-inactive2",
+    });
     innerSpanManual2Inactive2.end();
 
     const innerSpanManual3 = Laminar.startActiveSpan({ name: "inner3" });
-    const innerSpanManual3Inactive = Laminar.startSpan({ name: "inner3-inactive" });
+    const innerSpanManual3Inactive = Laminar.startSpan({
+      name: "inner3-inactive",
+    });
     innerSpanManual3Inactive.end();
     innerSpanManual3.end();
     innerSpanManual2.end();
@@ -1163,120 +1526,235 @@ void describe("tracing", () => {
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 8);
-    const testSpan = spans.find(span => span.name === "test")!;
-    const innerSpan = spans.find(span => span.name === "inner")!;
-    const innerSpan2 = spans.find(span => span.name === "inner2")!;
-    const innerSpan2Inactive = spans.find(span => span.name === "inner2-inactive")!;
-    const innerSpan2Inactive2 = spans.find(span => span.name === "inner2-inactive2")!;
+    const testSpan = spans.find((span) => span.name === "test")!;
+    const innerSpan = spans.find((span) => span.name === "inner")!;
+    const innerSpan2 = spans.find((span) => span.name === "inner2")!;
+    const innerSpan2Inactive = spans.find(
+      (span) => span.name === "inner2-inactive",
+    )!;
+    const innerSpan2Inactive2 = spans.find(
+      (span) => span.name === "inner2-inactive2",
+    )!;
 
-    const innerSpan3 = spans.find(span => span.name === "inner3")!;
-    const innerSpan3Inactive = spans.find(span => span.name === "inner3-inactive")!;
+    const innerSpan3 = spans.find((span) => span.name === "inner3")!;
+    const innerSpan3Inactive = spans.find(
+      (span) => span.name === "inner3-inactive",
+    )!;
 
-    const newTraceSpan = spans.find(span => span.name === "new-trace")!;
+    const newTraceSpan = spans.find((span) => span.name === "new-trace")!;
 
-    assert.notStrictEqual(testSpan.spanContext().traceId, newTraceSpan.spanContext().traceId);
+    assert.notStrictEqual(
+      testSpan.spanContext().traceId,
+      newTraceSpan.spanContext().traceId,
+    );
 
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan2.spanContext().traceId);
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan2Inactive.spanContext().traceId);
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan2Inactive2.spanContext().traceId);
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan3.spanContext().traceId);
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan3Inactive.spanContext().traceId);
-    assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
-    assert.strictEqual(getParentSpanId(innerSpan2), innerSpan.spanContext().spanId);
-    assert.strictEqual(getParentSpanId(innerSpan2Inactive), innerSpan2.spanContext().spanId);
-    assert.strictEqual(getParentSpanId(innerSpan2Inactive2), innerSpan2.spanContext().spanId);
-    assert.strictEqual(getParentSpanId(innerSpan3), innerSpan2.spanContext().spanId);
-    assert.strictEqual(getParentSpanId(innerSpan3Inactive), innerSpan3.spanContext().spanId);
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan.spanContext().traceId,
+    );
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan2.spanContext().traceId,
+    );
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan2Inactive.spanContext().traceId,
+    );
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan2Inactive2.spanContext().traceId,
+    );
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan3.spanContext().traceId,
+    );
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan3Inactive.spanContext().traceId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan),
+      testSpan.spanContext().spanId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan2),
+      innerSpan.spanContext().spanId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan2Inactive),
+      innerSpan2.spanContext().spanId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan2Inactive2),
+      innerSpan2.spanContext().spanId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan3),
+      innerSpan2.spanContext().spanId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan3Inactive),
+      innerSpan3.spanContext().spanId,
+    );
     assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
-    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "inner"]);
-    assert.deepStrictEqual(
-      innerSpan2.attributes["lmnr.span.path"],
-      ["test", "inner", "inner2"],
-    );
-    assert.deepStrictEqual(
-      innerSpan2Inactive.attributes["lmnr.span.path"],
-      ["test", "inner", "inner2", "inner2-inactive"],
-    );
-    assert.deepStrictEqual(
-      innerSpan2Inactive2.attributes["lmnr.span.path"],
-      ["test", "inner", "inner2", "inner2-inactive2"],
-    );
-    assert.deepStrictEqual(
-      innerSpan3.attributes["lmnr.span.path"],
-      ["test", "inner", "inner2", "inner3"],
-    );
-    assert.deepStrictEqual(
-      innerSpan3Inactive.attributes["lmnr.span.path"],
-      ["test", "inner", "inner2", "inner3", "inner3-inactive"],
-    );
+    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+    ]);
+    assert.deepStrictEqual(innerSpan2.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+      "inner2",
+    ]);
+    assert.deepStrictEqual(innerSpan2Inactive.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+      "inner2",
+      "inner2-inactive",
+    ]);
+    assert.deepStrictEqual(innerSpan2Inactive2.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+      "inner2",
+      "inner2-inactive2",
+    ]);
+    assert.deepStrictEqual(innerSpan3.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+      "inner2",
+      "inner3",
+    ]);
+    assert.deepStrictEqual(innerSpan3Inactive.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+      "inner2",
+      "inner3",
+      "inner3-inactive",
+    ]);
     assert.strictEqual(getParentSpanId(newTraceSpan), undefined);
-    assert.deepStrictEqual(newTraceSpan.attributes['lmnr.span.path'], ["new-trace"]);
+    assert.deepStrictEqual(newTraceSpan.attributes["lmnr.span.path"], [
+      "new-trace",
+    ]);
   });
 
   void it("nests observed span in startActiveSpan", () => {
     const testSpanManual = Laminar.startActiveSpan({ name: "test" });
-    observe({ name: "inner" }, () => { });
+    observe({ name: "inner" }, () => "inner output");
     testSpanManual.end();
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 2);
-    const testSpan = spans.find(span => span.name === "test")!;
-    const innerSpan = spans.find(span => span.name === "inner")!;
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
-    assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
+    const testSpan = spans.find((span) => span.name === "test")!;
+    const innerSpan = spans.find((span) => span.name === "inner")!;
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan.spanContext().traceId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan),
+      testSpan.spanContext().spanId,
+    );
     assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
-    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "inner"]);
+    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+    ]);
   });
 
   void it("nests multiple sequential spans in startActiveSpan with observe", () => {
     const testSpanManual = Laminar.startActiveSpan({ name: "test" });
-    observe({ name: "inner" }, () => { });
-    observe({ name: "inner2" }, () => { });
+    observe({ name: "inner" }, () => "inner output");
+    observe({ name: "inner2" }, () => "inner2 output");
     testSpanManual.end();
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 3);
-    const testSpan = spans.find(span => span.name === "test")!;
-    const innerSpan = spans.find(span => span.name === "inner")!;
-    const innerSpan2 = spans.find(span => span.name === "inner2")!;
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan2.spanContext().traceId);
-    assert.strictEqual(getParentSpanId(innerSpan), testSpan.spanContext().spanId);
-    assert.strictEqual(getParentSpanId(innerSpan2), testSpan.spanContext().spanId);
+    const testSpan = spans.find((span) => span.name === "test")!;
+    const innerSpan = spans.find((span) => span.name === "inner")!;
+    const innerSpan2 = spans.find((span) => span.name === "inner2")!;
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan.spanContext().traceId,
+    );
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan2.spanContext().traceId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan),
+      testSpan.spanContext().spanId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan2),
+      testSpan.spanContext().spanId,
+    );
     assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
-    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "inner"]);
-    assert.deepStrictEqual(innerSpan2.attributes["lmnr.span.path"], ["test", "inner2"]);
+    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], [
+      "test",
+      "inner",
+    ]);
+    assert.deepStrictEqual(innerSpan2.attributes["lmnr.span.path"], [
+      "test",
+      "inner2",
+    ]);
   });
 
   void it("is compatible with Laminar.withSpan", () => {
     const testSpanManual = Laminar.startSpan({ name: "test" });
     Laminar.withSpan(testSpanManual, () => {
-      observe({ name: "other" }, () => { });
+      observe({ name: "other" }, () => "other observe output");
     });
     Laminar.withSpan(testSpanManual, () => {
       observe({ name: "middle" }, () => {
-        observe({ name: "inner" }, () => { });
+        observe({ name: "inner" }, () => "inner observe output");
       });
     });
     testSpanManual.end();
 
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 4);
-    const testSpan = spans.find(span => span.name === "test")!;
-    const otherSpan = spans.find(span => span.name === "other")!;
-    const middleSpan = spans.find(span => span.name === "middle")!;
-    const innerSpan = spans.find(span => span.name === "inner")!;
-    assert.strictEqual(testSpan.spanContext().traceId, otherSpan.spanContext().traceId);
-    assert.strictEqual(testSpan.spanContext().traceId, middleSpan.spanContext().traceId);
-    assert.strictEqual(testSpan.spanContext().traceId, innerSpan.spanContext().traceId);
-    assert.strictEqual(getParentSpanId(otherSpan), testSpan.spanContext().spanId);
-    assert.strictEqual(getParentSpanId(middleSpan), testSpan.spanContext().spanId);
-    assert.strictEqual(getParentSpanId(innerSpan), middleSpan.spanContext().spanId);
+    const testSpan = spans.find((span) => span.name === "test")!;
+    const otherSpan = spans.find((span) => span.name === "other")!;
+    const middleSpan = spans.find((span) => span.name === "middle")!;
+    const innerSpan = spans.find((span) => span.name === "inner")!;
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      otherSpan.spanContext().traceId,
+    );
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      middleSpan.spanContext().traceId,
+    );
+    assert.strictEqual(
+      testSpan.spanContext().traceId,
+      innerSpan.spanContext().traceId,
+    );
+    assert.strictEqual(
+      getParentSpanId(otherSpan),
+      testSpan.spanContext().spanId,
+    );
+    assert.strictEqual(
+      getParentSpanId(middleSpan),
+      testSpan.spanContext().spanId,
+    );
+    assert.strictEqual(
+      getParentSpanId(innerSpan),
+      middleSpan.spanContext().spanId,
+    );
     assert.deepStrictEqual(testSpan.attributes["lmnr.span.path"], ["test"]);
-    assert.deepStrictEqual(otherSpan.attributes["lmnr.span.path"], ["test", "other"]);
-    assert.deepStrictEqual(middleSpan.attributes["lmnr.span.path"], ["test", "middle"]);
-    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], ["test", "middle", "inner"]);
+    assert.deepStrictEqual(otherSpan.attributes["lmnr.span.path"], [
+      "test",
+      "other",
+    ]);
+    assert.deepStrictEqual(middleSpan.attributes["lmnr.span.path"], [
+      "test",
+      "middle",
+    ]);
+    assert.deepStrictEqual(innerSpan.attributes["lmnr.span.path"], [
+      "test",
+      "middle",
+      "inner",
+    ]);
   });
 
   void it("reads the parent span context from env", () => {
@@ -1308,30 +1786,36 @@ void describe("tracing", () => {
     const spanId = otelSpanIdToUUID(spans[0].spanContext().spanId);
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "test");
-    assert.deepStrictEqual(spans[0].attributes['lmnr.span.path'], ["parent", "test"]);
-    assert.deepStrictEqual(
-      spans[0].attributes['lmnr.span.ids_path'],
-      ["00000000-0000-0000-0123-456789abcdef", spanId],
-    );
+    assert.deepStrictEqual(spans[0].attributes["lmnr.span.path"], [
+      "parent",
+      "test",
+    ]);
+    assert.deepStrictEqual(spans[0].attributes["lmnr.span.ids_path"], [
+      "00000000-0000-0000-0123-456789abcdef",
+      spanId,
+    ]);
     assert.strictEqual(
       otelSpanIdToUUID(getParentSpanId(spans[0]) as string),
       "00000000-0000-0000-0123-456789abcdef",
     );
-    assert.strictEqual(spans[0].spanContext().traceId, "0123456789abcdef0123456789abcdef");
+    assert.strictEqual(
+      spans[0].spanContext().traceId,
+      "0123456789abcdef0123456789abcdef",
+    );
     assert.deepStrictEqual(
-      spans[0].attributes['lmnr.association.properties.metadata.key'],
+      spans[0].attributes["lmnr.association.properties.metadata.key"],
       "value",
     );
     assert.strictEqual(
-      spans[0].attributes['lmnr.association.properties.session_id'],
+      spans[0].attributes["lmnr.association.properties.session_id"],
       "session1",
     );
     assert.strictEqual(
-      spans[0].attributes['lmnr.association.properties.user_id'],
+      spans[0].attributes["lmnr.association.properties.user_id"],
       "user1",
     );
     assert.strictEqual(
-      spans[0].attributes['lmnr.association.properties.trace_type'],
+      spans[0].attributes["lmnr.association.properties.trace_type"],
       "EVALUATION",
     );
     process.env = originalEnv;

@@ -1,12 +1,17 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, parse, resolve } from "node:path";
 
-import { DEBUG_SESSION_DIR, DEBUG_SESSION_FILE, type DebugSessionFile } from "@lmnr-ai/types";
+import {
+  DEBUG_SESSION_DIR,
+  DEBUG_SESSION_FILE,
+  type DebugSessionFile,
+} from "@lmnr-ai/types";
 
 // Coerce an unknown field to a non-empty string, else null — the file is
 // best-effort local state that an agent may hand-edit, so every field is
 // treated defensively rather than trusted. Mirrors the SDK's read.
-const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
+const str = (v: unknown): string | null =>
+  typeof v === "string" && v.length > 0 ? v : null;
 
 /**
  * Read `${dir ?? cwd}/.lmnr/debug-session.json`. Best-effort: returns null on a
@@ -14,9 +19,14 @@ const str = (v: unknown): string | null => (typeof v === "string" && v.length > 
  * Mirrors the SDK's reader (`@lmnr-ai/lmnr` `src/debug/debug-session-file.ts`)
  * over the shared `DebugSessionFile` contract from `@lmnr-ai/types`.
  */
-export const readDebugSessionFile = (dir: string = process.cwd()): DebugSessionFile | null => {
+export const readDebugSessionFile = (
+  dir: string = process.cwd(),
+): DebugSessionFile | null => {
   try {
-    const raw = readFileSync(join(dir, DEBUG_SESSION_DIR, DEBUG_SESSION_FILE), "utf-8");
+    const raw = readFileSync(
+      join(dir, DEBUG_SESSION_DIR, DEBUG_SESSION_FILE),
+      "utf-8",
+    );
     const r = JSON.parse(raw) as Record<string, unknown>;
     const session_id = str(r.session_id);
     if (!session_id) return null;
@@ -40,7 +50,9 @@ export const readDebugSessionFile = (dir: string = process.cwd()): DebugSessionF
  * Mirrors the SDK's `findDebugSessionDir`. Returns null when no ancestor
  * (including `startDir`) has one.
  */
-export const findDebugSessionDir = (startDir: string = process.cwd()): string | null => {
+export const findDebugSessionDir = (
+  startDir: string = process.cwd(),
+): string | null => {
   let dir = resolve(startDir);
   const root = parse(dir).root;
   while (true) {
@@ -57,8 +69,9 @@ export const findDebugSessionDir = (startDir: string = process.cwd()): string | 
  * itself. Read and write MUST share this anchor — `debug session new` resets
  * the nearest existing file rather than shadowing it with a nested copy.
  */
-export const resolveDebugSessionDir = (startDir: string = process.cwd()): string =>
-  findDebugSessionDir(startDir) ?? resolve(startDir);
+export const resolveDebugSessionDir = (
+  startDir: string = process.cwd(),
+): string => findDebugSessionDir(startDir) ?? resolve(startDir);
 
 /**
  * Resolve the session id a debug command should act on: the explicit
@@ -67,13 +80,16 @@ export const resolveDebugSessionDir = (startDir: string = process.cwd()): string
  * actionable error when neither exists; the command wrapper's error envelope
  * formats it.
  */
-export const resolveSessionId = (explicit?: string, startDir?: string): string => {
+export const resolveSessionId = (
+  explicit?: string,
+  startDir?: string,
+): string => {
   if (explicit) return explicit;
   const file = readDebugSessionFile(resolveDebugSessionDir(startDir));
   if (file?.session_id) return file.session_id;
   throw new Error(
     "No session id given and no .lmnr/debug-session.json found in this " +
-    "directory. Pass --session-id <id> or run `lmnr-cli debug session new`.",
+      "directory. Pass --session-id <id> or run `lmnr-cli debug session new`.",
   );
 };
 
@@ -90,7 +106,11 @@ export const writeDebugSessionFile = (
   try {
     const directory = join(dir, DEBUG_SESSION_DIR);
     mkdirSync(directory, { recursive: true });
-    writeFileSync(join(directory, DEBUG_SESSION_FILE), JSON.stringify(file), "utf-8");
+    writeFileSync(
+      join(directory, DEBUG_SESSION_FILE),
+      JSON.stringify(file),
+      "utf-8",
+    );
     return true;
   } catch {
     return false;

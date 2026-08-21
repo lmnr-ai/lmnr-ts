@@ -79,7 +79,10 @@ void describe("LaminarReporter for eve evals", () => {
 
     const reporter = makeReporter();
     const evals: EveEval[] = [{ id: "a" }, { id: "b" }];
-    const target: EveEvalTarget = { kind: "local", url: "http://localhost:1234" };
+    const target: EveEvalTarget = {
+      kind: "local",
+      url: "http://localhost:1234",
+    };
     await reporter.onRunStart(evals, target);
 
     assert.strictEqual(body.name, "eve-run");
@@ -122,7 +125,9 @@ void describe("LaminarReporter for eve evals", () => {
     let updateBody: RequestBody = {};
     const updateScope = nock(NOCK_URL)
       .post(
-        new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/${DATAPOINT_ID_RE.source.slice(1, -1)}`),
+        new RegExp(
+          `/v1/evals/${MOCK_EVAL_ID}/datapoints/${DATAPOINT_ID_RE.source.slice(1, -1)}`,
+        ),
         (b: RequestBody) => {
           updateBody = b;
           return true;
@@ -131,12 +136,15 @@ void describe("LaminarReporter for eve evals", () => {
       .reply(200, {});
 
     const reporter = makeReporter();
-    await reporter.onRunStart([
-      {
-        id: "brooklyn-forecast",
-        description: "Checks that the agent can answer with local weather.",
-      },
-    ], { kind: "local" });
+    await reporter.onRunStart(
+      [
+        {
+          id: "brooklyn-forecast",
+          description: "Checks that the agent can answer with local weather.",
+        },
+      ],
+      { kind: "local" },
+    );
 
     const result: EveEvalResult = {
       id: "brooklyn-forecast",
@@ -231,8 +239,14 @@ void describe("LaminarReporter for eve evals", () => {
       reporterSpan.attributes[`${meta}.eveEvalDescription`],
       "Checks that the agent can answer with local weather.",
     );
-    assert.strictEqual(reporterSpan.attributes[`${meta}.eveEvalVerdict`], "passed");
-    assert.strictEqual(reporterSpan.attributes[`${meta}.eveSessionId`], "wrun_abc123");
+    assert.strictEqual(
+      reporterSpan.attributes[`${meta}.eveEvalVerdict`],
+      "passed",
+    );
+    assert.strictEqual(
+      reporterSpan.attributes[`${meta}.eveSessionId`],
+      "wrun_abc123",
+    );
 
     initScope.done();
     createScope.done();
@@ -250,10 +264,13 @@ void describe("LaminarReporter for eve evals", () => {
       .reply(200, {});
     let updateBody: RequestBody = {};
     nock(NOCK_URL)
-      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`), (b: RequestBody) => {
-        updateBody = b;
-        return true;
-      })
+      .post(
+        new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`),
+        (b: RequestBody) => {
+          updateBody = b;
+          return true;
+        },
+      )
       .reply(200, {});
 
     const reporter = makeReporter();
@@ -311,7 +328,12 @@ void describe("LaminarReporter for eve evals", () => {
       verdict: "failed",
       result: { status: "completed" },
       assertions: [
-        { name: "must-answer", score: 0, severity: "gate", message: "no answer" },
+        {
+          name: "must-answer",
+          score: 0,
+          severity: "gate",
+          message: "no answer",
+        },
       ],
     });
 
@@ -333,10 +355,13 @@ void describe("LaminarReporter for eve evals", () => {
       .reply(200, {});
     const scoreUpdates: RequestBody[] = [];
     nock(NOCK_URL)
-      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`), (b: RequestBody) => {
-        scoreUpdates.push(b);
-        return true;
-      })
+      .post(
+        new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`),
+        (b: RequestBody) => {
+          scoreUpdates.push(b);
+          return true;
+        },
+      )
       .twice()
       .reply(200, {});
 
@@ -355,7 +380,12 @@ void describe("LaminarReporter for eve evals", () => {
       verdict: "passed",
       result: { status: "completed", finalMessage: "weather" },
       assertions: [
-        { name: "calledTool(web_fetch)", score: 1, severity: "gate", passed: true },
+        {
+          name: "calledTool(web_fetch)",
+          score: 1,
+          severity: "gate",
+          passed: true,
+        },
       ],
     });
 
@@ -406,7 +436,9 @@ void describe("LaminarReporter for eve evals", () => {
 
   void it("swallows datapoint errors so a bad eval never breaks the run", async () => {
     mockInit();
-    nock(NOCK_URL).post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`).reply(500, "nope");
+    nock(NOCK_URL)
+      .post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`)
+      .reply(500, "nope");
 
     const reporter = makeReporter();
     await reporter.onRunStart([{ id: "a" }], {});
@@ -479,7 +511,9 @@ void describe("LaminarReporter for eve evals", () => {
     // processor sees nothing and the eve span lands on the existing pipeline.
     assert.deepStrictEqual(exporter.getFinishedSpans(), []);
     assert.ok(
-      hostExporter.getFinishedSpans().some((span) => span.name === "eve eval a"),
+      hostExporter
+        .getFinishedSpans()
+        .some((span) => span.name === "eve eval a"),
       "expected the eve span on the already-initialized provider",
     );
   });
@@ -492,7 +526,9 @@ void describe("LaminarReporter for eve evals", () => {
  * double-patch WeakSet in the reporter module cannot leak across tests.
  */
 const makeStubSessionClass = (): {
-  new(eveSessionId: string): {
+  new (
+    eveSessionId: string,
+  ): {
     eveSessionId: string;
     sentInputs: unknown[];
     send(input: unknown): Promise<{ sessionId: string }>;
@@ -654,24 +690,28 @@ void describe("LaminarReporter eve trace propagation", () => {
     const evaluators = spans.filter(
       (span) => span.attributes["lmnr.span.type"] === "EVALUATOR",
     );
-    assert.deepStrictEqual(
-      evaluators.map((span) => span.name).sort(),
-      ["includes(/hi/)", "similarity"],
-    );
+    assert.deepStrictEqual(evaluators.map((span) => span.name).sort(), [
+      "includes(/hi/)",
+      "similarity",
+    ]);
     // No explicit parent path is declared any more — see the span-path test
     // below, which runs a real LaminarSpanProcessor and checks the tree.
     assert.strictEqual(
       evaluators[0].attributes["lmnr.span.parent_path"],
       undefined,
     );
-    assert.ok(evaluators.every(
-      (span) => span.spanContext().traceId === root.spanContext().traceId,
-    ));
-    assert.ok(evaluators.every(
-      (span) =>
-        span.attributes["lmnr.association.properties.trace_type"] ===
+    assert.ok(
+      evaluators.every(
+        (span) => span.spanContext().traceId === root.spanContext().traceId,
+      ),
+    );
+    assert.ok(
+      evaluators.every(
+        (span) =>
+          span.attributes["lmnr.association.properties.trace_type"] ===
           "EVALUATION",
-    ));
+      ),
+    );
 
     await reporter.onRunComplete();
   });
@@ -697,12 +737,13 @@ void describe("LaminarReporter eve trace propagation", () => {
       id: "a",
       verdict: "passed",
       result: { sessionId: "wrun_1", status: "waiting", finalMessage: "hi" },
-      assertions: [{ name: "judge.autoevals.closedQA", score: 1, severity: "soft" }],
+      assertions: [
+        { name: "judge.autoevals.closedQA", score: 1, severity: "soft" },
+      ],
     });
 
     const pathOf = (name: string) =>
-      exporter.getFinishedSpans()
-        .find((span) => span.name === name)
+      exporter.getFinishedSpans().find((span) => span.name === name)
         ?.attributes["lmnr.span.path"];
     assert.deepStrictEqual(pathOf("eve eval"), ["eve eval"]);
     assert.deepStrictEqual(pathOf("executor"), ["eve eval", "executor"]);
@@ -758,10 +799,10 @@ void describe("LaminarReporter eve trace propagation", () => {
     const evaluators = spans.filter(
       (span) => span.attributes["lmnr.span.type"] === "EVALUATOR",
     );
-    assert.deepStrictEqual(
-      evaluators.map((span) => span.name).sort(),
-      ["judge.autoevals.closedQA", "judge.autoevals.factuality"],
-    );
+    assert.deepStrictEqual(evaluators.map((span) => span.name).sort(), [
+      "judge.autoevals.closedQA",
+      "judge.autoevals.factuality",
+    ]);
 
     await reporter.onRunComplete();
   });
@@ -986,7 +1027,10 @@ void describe("LaminarReporter eve trace propagation", () => {
     assert.deepStrictEqual(exporter.getFinishedSpans(), []);
     await reporter.onRunComplete();
 
-    const names = exporter.getFinishedSpans().map((span) => span.name).sort();
+    const names = exporter
+      .getFinishedSpans()
+      .map((span) => span.name)
+      .sort();
     assert.deepStrictEqual(names, ["eve eval", "executor"]);
   });
 });

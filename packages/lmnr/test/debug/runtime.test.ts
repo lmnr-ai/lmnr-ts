@@ -20,7 +20,6 @@ import {
 class FakeRolloutSessions {
   public calls: Record<string, unknown>[] = [];
   constructor(private outcome: CacheOutcome = { kind: "live" }) {}
-  // eslint-disable-next-line @typescript-eslint/require-await
   async cache(args: Record<string, unknown>): Promise<CacheOutcome> {
     this.calls.push(args);
     return this.outcome;
@@ -439,7 +438,10 @@ void describe("DebugRuntime", () => {
     const lines = withCapturedConsole(() => runtime.emitPointer());
     const pointerLines = lines.filter((l) => l.startsWith("LMNR_DEBUG_RUN "));
     assert.strictEqual(pointerLines.length, 0);
-    assert.strictEqual(existsSync(join(dir, ".lmnr", "debug-session.json")), false);
+    assert.strictEqual(
+      existsSync(join(dir, ".lmnr", "debug-session.json")),
+      false,
+    );
   });
 
   void it("init returns null when disabled", () => {

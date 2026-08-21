@@ -53,7 +53,9 @@ export async function handleLogout(): Promise<void> {
   // re-write creds just after this delete (durable token + inert JWT; no lock).
   await deleteCredentials();
   await revokeSession(creds);
-  process.stderr.write(`Logged out of ${label}. Removed ${credentialsPath()}.\n`);
+  process.stderr.write(
+    `Logged out of ${label}. Removed ${credentialsPath()}.\n`,
+  );
 }
 
 function trimSlash(url: string): string {

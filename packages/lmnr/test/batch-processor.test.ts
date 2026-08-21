@@ -206,7 +206,11 @@ void describe("SizeLimitedBatchSpanProcessor", () => {
     for (let i = 0; i < 3; i++) {
       emit(tracer, `span-${i}`, 3000);
     }
-    assert.deepEqual(exporter.batchSizes, [3], "count limit should have flushed");
+    assert.deepEqual(
+      exporter.batchSizes,
+      [3],
+      "count limit should have flushed",
+    );
 
     for (let i = 0; i < 4; i++) {
       emit(tracer, `after-${i}`, 2000);
@@ -235,7 +239,9 @@ void describe("SizeLimitedBatchSpanProcessor", () => {
   });
 
   void it("does not count unsampled spans", () => {
-    const { exporter, processor } = makeProcessor({ maxExportBatchSizeBytes: 1000 });
+    const { exporter, processor } = makeProcessor({
+      maxExportBatchSizeBytes: 1000,
+    });
 
     const unsampled = {
       name: "unsampled",
@@ -263,7 +269,8 @@ void describe("SizeLimitedBatchSpanProcessor", () => {
 
     try {
       const failing: SpanExporter = {
-        export: (_spans, cb) => cb({ code: 1, error: new Error("export boom") }),
+        export: (_spans, cb) =>
+          cb({ code: 1, error: new Error("export boom") }),
         shutdown: () => Promise.resolve(),
       };
       const processor = new SizeLimitedBatchSpanProcessor(failing, {
@@ -281,7 +288,11 @@ void describe("SizeLimitedBatchSpanProcessor", () => {
       }
       // Let any rejection surface.
       await new Promise((resolve) => setTimeout(resolve, 100));
-      assert.deepEqual(rejections, [], "export failure surfaced as an unhandled rejection");
+      assert.deepEqual(
+        rejections,
+        [],
+        "export failure surfaced as an unhandled rejection",
+      );
     } finally {
       process.removeListener("unhandledRejection", onRejection);
     }
@@ -399,7 +410,9 @@ void describe("LaminarSpanProcessor transport selection", () => {
       maxExportBatchSizeBytes: 1234,
     });
 
-    assert.ok(!(instanceOf(processor) instanceof SizeLimitedBatchSpanProcessor));
+    assert.ok(
+      !(instanceOf(processor) instanceof SizeLimitedBatchSpanProcessor),
+    );
   });
 
   void it("still uses SimpleSpanProcessor when disableBatch is set", () => {

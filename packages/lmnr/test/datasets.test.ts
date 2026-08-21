@@ -79,12 +79,9 @@ void describe("EvaluationDataset subsampling", () => {
 
     void it("throws on a non-integer count", async () => {
       const ds = indexed(10).take(2.5);
-      await assert.rejects(
-        async () => {
-          await ds.size();
-        },
-        /take count 2.5 is not an integer/,
-      );
+      await assert.rejects(async () => {
+        await ds.size();
+      }, /take count 2.5 is not an integer/);
     });
   });
 
@@ -97,54 +94,39 @@ void describe("EvaluationDataset subsampling", () => {
 
     void it("throws on an out-of-range index, naming the index and size", async () => {
       const ds = indexed(5).select([0, 9]);
-      await assert.rejects(
-        async () => {
-          await ds.size();
-        },
-        /select index 9 is out of range for dataset of size 5/,
-      );
+      await assert.rejects(async () => {
+        await ds.size();
+      }, /select index 9 is out of range for dataset of size 5/);
     });
 
     void it("throws on a negative index", async () => {
       const ds = indexed(5).select([-1]);
-      await assert.rejects(
-        async () => {
-          await ds.size();
-        },
-        /select index -1 is out of range for dataset of size 5/,
-      );
+      await assert.rejects(async () => {
+        await ds.size();
+      }, /select index -1 is out of range for dataset of size 5/);
     });
 
     void it("throws on a non-integer index, naming the index", async () => {
       const ds = indexed(5).select([1.5]);
-      await assert.rejects(
-        async () => {
-          await ds.size();
-        },
-        /select index 1.5 is not an integer/,
-      );
+      await assert.rejects(async () => {
+        await ds.size();
+      }, /select index 1.5 is not an integer/);
     });
   });
 
   void describe("out-of-range access on a transformed dataset", () => {
     void it("throws on an out-of-range get, naming the index and size", async () => {
       const ds = indexed(10).take(3);
-      await assert.rejects(
-        async () => {
-          await ds.get(5);
-        },
-        /Index 5 is out of range for dataset of size 3/,
-      );
+      await assert.rejects(async () => {
+        await ds.get(5);
+      }, /Index 5 is out of range for dataset of size 3/);
     });
 
     void it("throws on a negative get", async () => {
       const ds = indexed(10).take(3);
-      await assert.rejects(
-        async () => {
-          await ds.get(-1);
-        },
-        /Index -1 is out of range for dataset of size 3/,
-      );
+      await assert.rejects(async () => {
+        await ds.get(-1);
+      }, /Index -1 is out of range for dataset of size 3/);
     });
 
     void it("does not read from the base for an out-of-range index", async () => {
@@ -165,7 +147,10 @@ void describe("EvaluationDataset subsampling", () => {
       const base = indexed(10);
       const shuffled = base.shuffle({ seed: 42 });
       assert.deepStrictEqual(await dataOf(shuffled), seededPerm(10, 42));
-      assert.deepStrictEqual(await dataOf(base), Array.from({ length: 10 }, (_, i) => i));
+      assert.deepStrictEqual(
+        await dataOf(base),
+        Array.from({ length: 10 }, (_, i) => i),
+      );
     });
 
     void it("same seed yields the same order across two fresh chains", async () => {
@@ -199,11 +184,11 @@ void describe("EvaluationDataset subsampling", () => {
       const takeThenShuffle = indexed(50).take(10).shuffle({ seed: 3 });
       // shuffle-then-take = a random 10 out of 50; take-then-shuffle = a
       // permutation of the first 10 only.
-      assert.deepStrictEqual(await dataOf(shuffleThenTake), seededPerm(50, 3).slice(0, 10));
       assert.deepStrictEqual(
-        await dataOf(takeThenShuffle),
-        seededPerm(10, 3),
+        await dataOf(shuffleThenTake),
+        seededPerm(50, 3).slice(0, 10),
       );
+      assert.deepStrictEqual(await dataOf(takeThenShuffle), seededPerm(10, 3));
       assert.notDeepStrictEqual(
         await dataOf(shuffleThenTake),
         await dataOf(takeThenShuffle),
@@ -394,12 +379,15 @@ void describe("evaluate over a chained LaminarDataset", () => {
 
     const savedDatapoints: Record<string, any>[] = [];
     nock(baseUrl)
-      .post(`/v1/evals/${mockEvalId}/datapoints`, (body: Record<string, any>) => {
-        for (const p of body.points ?? []) {
-          savedDatapoints.push(p);
-        }
-        return true;
-      })
+      .post(
+        `/v1/evals/${mockEvalId}/datapoints`,
+        (body: Record<string, any>) => {
+          for (const p of body.points ?? []) {
+            savedDatapoints.push(p);
+          }
+          return true;
+        },
+      )
       .times(4)
       .reply(200, {});
 
@@ -420,7 +408,10 @@ void describe("evaluate over a chained LaminarDataset", () => {
     await Laminar.flush();
 
     const linked = savedDatapoints.filter((p) => p.datasetLink);
-    assert.ok(linked.length > 0, "expected at least one datapoint with a datasetLink");
+    assert.ok(
+      linked.length > 0,
+      "expected at least one datapoint with a datasetLink",
+    );
     for (const p of linked) {
       assert.strictEqual(p.datasetLink.datasetId, datasetId);
       assert.ok(p.datasetLink.datapointId);

@@ -7,7 +7,10 @@ import nock from "nock";
 
 import { observe } from "../src/decorators";
 import { Laminar } from "../src/laminar";
-import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import {
+  _resetConfiguration,
+  initializeTracing,
+} from "../src/opentelemetry-lib/configuration";
 import { OpencodeInstrumentation } from "../src/opentelemetry-lib/instrumentation/opencode";
 
 // Minimal mock of the @opencode-ai/sdk Session class structure.
@@ -23,21 +26,27 @@ class MockSession {
 
   async prompt(options: any): Promise<any> {
     const sessionId = options.path.id;
-    const response = await fetch(`${this._baseUrl}/session/${sessionId}/message`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(options.body),
-    });
+    const response = await fetch(
+      `${this._baseUrl}/session/${sessionId}/message`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(options.body),
+      },
+    );
     return response.json();
   }
 
   async promptAsync(options: any): Promise<any> {
     const sessionId = options.path.id;
-    const response = await fetch(`${this._baseUrl}/session/${sessionId}/prompt_async`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(options.body),
-    });
+    const response = await fetch(
+      `${this._baseUrl}/session/${sessionId}/prompt_async`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(options.body),
+      },
+    );
     if (response.status === 204) {
       return undefined;
     }
@@ -93,9 +102,7 @@ void describe("opencode instrumentation", () => {
       await session.prompt({
         path: { id: "test-session" },
         body: {
-          parts: [
-            { type: "text", text: "Hello, world!" },
-          ],
+          parts: [{ type: "text", text: "Hello, world!" }],
         },
       });
     });
@@ -128,7 +135,7 @@ void describe("opencode instrumentation", () => {
     // Verify the observe span was created
     const spans = exporter.getFinishedSpans();
     assert.ok(spans.length >= 1, "at least one span should exist");
-    const observeSpan = spans.find(span => span.name === "test-observe");
+    const observeSpan = spans.find((span) => span.name === "test-observe");
     assert.ok(observeSpan, "observe span should exist");
   });
 
@@ -146,9 +153,7 @@ void describe("opencode instrumentation", () => {
       await session.promptAsync({
         path: { id: "test-session" },
         body: {
-          parts: [
-            { type: "text", text: "Async hello!" },
-          ],
+          parts: [{ type: "text", text: "Async hello!" }],
         },
       });
     });
@@ -187,9 +192,7 @@ void describe("opencode instrumentation", () => {
     await session.prompt({
       path: { id: "test-session" },
       body: {
-        parts: [
-          { type: "text", text: "No context here" },
-        ],
+        parts: [{ type: "text", text: "No context here" }],
       },
     });
 
@@ -248,7 +251,11 @@ void describe("opencode instrumentation", () => {
           parts: [
             { type: "text", text: "First part" },
             { type: "text", text: "Second part" },
-            { type: "file", mime: "image/png", url: "https://example.com/image.png" },
+            {
+              type: "file",
+              mime: "image/png",
+              url: "https://example.com/image.png",
+            },
           ],
         },
       });
@@ -284,9 +291,7 @@ void describe("opencode instrumentation", () => {
       await session.prompt({
         path: { id: "test-session" },
         body: {
-          parts: [
-            { type: "text", text: "Trace matching test" },
-          ],
+          parts: [{ type: "text", text: "Trace matching test" }],
         },
       });
     });
@@ -298,12 +303,15 @@ void describe("opencode instrumentation", () => {
 
     // The trace ID in the injected context should match the observe span's trace ID
     const spans = exporter.getFinishedSpans();
-    const observeSpan = spans.find(span => span.name === "test-trace-match");
+    const observeSpan = spans.find((span) => span.name === "test-trace-match");
     assert.ok(observeSpan);
 
     // The OTel trace ID is a hex string; the serialized context converts it to UUID format
     // Just verify both exist and the trace IDs are related
     assert.ok(spanContext.traceId, "injected traceId should exist");
-    assert.ok(observeSpan.spanContext().traceId, "observe span traceId should exist");
+    assert.ok(
+      observeSpan.spanContext().traceId,
+      "observe span traceId should exist",
+    );
   });
 });

@@ -8,7 +8,10 @@ interface AgentFrame {
   type: "conversation" | "delta" | "thought" | "message" | "finish" | "error";
   conversationId?: string;
   text?: string;
-  message?: { role: string; parts?: { type: string; text?: string; name?: string }[] };
+  message?: {
+    role: string;
+    parts?: { type: string; text?: string; name?: string }[];
+  };
 }
 
 /** `ask`-specific opts on top of the shared globals. `conversation` continues a prior session. */
@@ -19,14 +22,25 @@ type AskOpts = GlobalOpts & { conversation?: string };
  * answer to stdout (activity to stderr). `--conversation <id>` continues a prior
  * session; its id is echoed on stderr.
  */
-export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => {
+export const handleAsk = async (
+  query: string,
+  opts: AskOpts,
+): Promise<void> => {
   const question = query?.trim();
   if (!question) {
-    throw new Error('Provide a question, e.g. lmnr-cli ask "why did my latest trace fail?"');
+    throw new Error(
+      'Provide a question, e.g. lmnr-cli ask "why did my latest trace fail?"',
+    );
   }
 
   // User-token auth + resolved project — same resolution `withProjectClient` uses.
   const { bearer, baseUrl, port, projectId } = await resolveAuth(opts);
+
+  if (baseUrl === undefined) {
+    throw new Error(
+      "Could not resolve base url. Set it using environment or the --base-url option",
+    );
+  }
 
   // baseUrl carries no port by convention; splice the resolved port on.
   const url = new URL(baseUrl.replace(/\/+$/, ""));
@@ -117,7 +131,8 @@ export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => 
       case "error": {
         // Here `message` is a string (unlike the `message` frame's object).
         const raw = (frame as unknown as { message?: unknown }).message;
-        failure = typeof raw === "string" && raw.length > 0 ? raw : "Agent error";
+        failure =
+          typeof raw === "string" && raw.length > 0 ? raw : "Agent error";
         break;
       }
       case "finish":
@@ -128,7 +143,8 @@ export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => 
   const drain = (chunk: string): void => {
     buffer += chunk;
     let idx: number;
-    while ((idx = buffer.indexOf("\n\n")) !== -1) {
+    while (buffer.indexOf("\n\n") !== -1) {
+      idx = buffer.indexOf("\n\n");
       const event = buffer.slice(0, idx);
       buffer = buffer.slice(idx + 2);
       const dataLine = event.split("\n").find((l) => l.startsWith("data:"));
@@ -159,7 +175,9 @@ export const handleAsk = async (query: string, opts: AskOpts): Promise<void> => 
   // Echo a ready-to-run continuation hint on stderr (stdout stays the clean answer).
   if (conversationId) {
     emitErr(
-      pc.dim(`\ncontinue with: lmnr-cli ask "<question>" --conversation ${conversationId}\n`),
+      pc.dim(
+        `\ncontinue with: lmnr-cli ask "<question>" --conversation ${conversationId}\n`,
+      ),
     );
   }
 };

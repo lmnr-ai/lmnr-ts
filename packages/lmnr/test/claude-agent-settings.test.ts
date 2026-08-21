@@ -81,7 +81,10 @@ void describe("claude agent settings.json handling", () => {
       ANTHROPIC_BASE_URL: UPSTREAM,
     });
 
-    assert.equal(readClaudeSettingsEnv(sessionDir).ANTHROPIC_BASE_URL, UPSTREAM);
+    assert.equal(
+      readClaudeSettingsEnv(sessionDir).ANTHROPIC_BASE_URL,
+      UPSTREAM,
+    );
   });
 
   void it("lets local settings outrank project and user settings", () => {
@@ -180,7 +183,13 @@ void describe("claude agent settings.json handling", () => {
     );
 
     assert.equal(
-      resolveTargetUrlFromEnv({}, undefined, sessionDir, undefined, settingsFile),
+      resolveTargetUrlFromEnv(
+        {},
+        undefined,
+        sessionDir,
+        undefined,
+        settingsFile,
+      ),
       UPSTREAM,
     );
   });
@@ -254,7 +263,10 @@ void describe("claude agent settings.json handling", () => {
       // ("Must provide one of the baseURL or resource arguments").
       const env = { CLAUDE_CODE_USE_FOUNDRY: value };
 
-      assert.equal(isProviderEnabledInEnv(env, "CLAUDE_CODE_USE_FOUNDRY"), true);
+      assert.equal(
+        isProviderEnabledInEnv(env, "CLAUDE_CODE_USE_FOUNDRY"),
+        true,
+      );
       assert.ok(
         getEnvVarsToRemove(env, sessionDir).includes(
           "ANTHROPIC_FOUNDRY_RESOURCE",
@@ -308,7 +320,8 @@ void describe("claude agent settings.json handling", () => {
 
     const settings = buildProxyFlagSettings(undefined, PROXY_URL, sessionDir);
 
-    assert.equal((settings?.env as Record<string, string>).https_proxy, "");
+    assert.ok(settings);
+    assert.equal((settings.env as Record<string, string>).https_proxy, "");
   });
 
   void it("does not let a lowercase settings proxy var shadow the gateway", () => {
@@ -402,8 +415,9 @@ void describe("claude agent settings.json handling", () => {
 
     const settings = buildProxyFlagSettings(undefined, PROXY_URL, sessionDir);
 
+    assert.ok(settings);
     assert.equal(
-      (settings?.env as Record<string, string>).ANTHROPIC_BASE_URL,
+      (settings.env as Record<string, string>).ANTHROPIC_BASE_URL,
       PROXY_URL,
     );
   });
@@ -431,7 +445,8 @@ void describe("claude agent settings.json handling", () => {
 
     const settings = buildProxyFlagSettings(undefined, PROXY_URL, sessionDir);
 
-    assert.equal((settings?.env as Record<string, string>).HTTPS_PROXY, "");
+    assert.ok(settings);
+    assert.equal((settings.env as Record<string, string>).HTTPS_PROXY, "");
   });
 
   void it("does not invent provider base URLs the user never configured", () => {
@@ -450,8 +465,9 @@ void describe("claude agent settings.json handling", () => {
 
     const settings = buildProxyFlagSettings(undefined, PROXY_URL, sessionDir);
 
+    assert.ok(settings);
     assert.equal(
-      (settings?.env as Record<string, string>).ANTHROPIC_BEDROCK_BASE_URL,
+      (settings.env as Record<string, string>).ANTHROPIC_BEDROCK_BASE_URL,
       PROXY_URL,
     );
   });
@@ -503,7 +519,8 @@ void describe("claude agent settings.json handling", () => {
 
     const settings = buildProxyFlagSettings(undefined, PROXY_URL, sessionDir);
 
-    assert.equal((settings?.env as Record<string, string>).HTTPS_PROXY, "");
+    assert.ok(settings);
+    assert.equal((settings.env as Record<string, string>).HTTPS_PROXY, "");
   });
 
   void it("pins a provider base URL when only the enabling flag is set", () => {
@@ -513,8 +530,9 @@ void describe("claude agent settings.json handling", () => {
 
     const settings = buildProxyFlagSettings(undefined, PROXY_URL, sessionDir);
 
+    assert.ok(settings);
     assert.equal(
-      (settings?.env as Record<string, string>).ANTHROPIC_VERTEX_BASE_URL,
+      (settings.env as Record<string, string>).ANTHROPIC_VERTEX_BASE_URL,
       PROXY_URL,
     );
   });
@@ -526,7 +544,11 @@ void describe("claude agent settings.json handling", () => {
       JSON.stringify({ model: "sonnet", env: { KEEP: "1" } }),
     );
 
-    const settings = buildProxyFlagSettings(settingsFile, PROXY_URL, sessionDir);
+    const settings = buildProxyFlagSettings(
+      settingsFile,
+      PROXY_URL,
+      sessionDir,
+    );
     const env = settings?.env as Record<string, string>;
 
     assert.equal(settings?.model, "sonnet");
@@ -585,8 +607,9 @@ void describe("claude agent settings.json handling", () => {
       sessionDir,
     );
 
+    assert.ok(settings);
     assert.equal(
-      (settings?.env as Record<string, string>).ANTHROPIC_BASE_URL,
+      (settings.env as Record<string, string>).ANTHROPIC_BASE_URL,
       PROXY_URL,
     );
   });

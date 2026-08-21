@@ -120,7 +120,11 @@ const applyResponseSpanData = (lmnrSpan: Span, spanData: any): void => {
   const response = spanData?._response ?? spanData?.response;
   const responseInput = spanData?._input ?? spanData?.input;
 
-  setGenAiInputMessages(lmnrSpan, responseInput, getCurrentSystemInstructions());
+  setGenAiInputMessages(
+    lmnrSpan,
+    responseInput,
+    getCurrentSystemInstructions(),
+  );
 
   if (response != null) {
     setGenAiOutputMessagesFromResponse(lmnrSpan, response);
@@ -137,10 +141,16 @@ const applyHandoffSpanData = (lmnrSpan: Span, spanData: any): void => {
   const fromAgent = spanData?.from_agent;
   const toAgent = spanData?.to_agent;
   if (fromAgent) {
-    lmnrSpan.setAttribute("openai.agents.handoff.from", nameFromSpanData(fromAgent));
+    lmnrSpan.setAttribute(
+      "openai.agents.handoff.from",
+      nameFromSpanData(fromAgent),
+    );
   }
   if (toAgent) {
-    lmnrSpan.setAttribute("openai.agents.handoff.to", nameFromSpanData(toAgent));
+    lmnrSpan.setAttribute(
+      "openai.agents.handoff.to",
+      nameFromSpanData(toAgent),
+    );
   }
 };
 
@@ -151,7 +161,10 @@ const applyGuardrailSpanData = (lmnrSpan: Span, spanData: any): void => {
   }
   const triggered = spanData?.triggered;
   if (triggered !== undefined && triggered !== null) {
-    lmnrSpan.setAttribute("openai.agents.guardrail.triggered", Boolean(triggered));
+    lmnrSpan.setAttribute(
+      "openai.agents.guardrail.triggered",
+      Boolean(triggered),
+    );
   }
 };
 
@@ -162,7 +175,10 @@ const applyCustomSpanData = (lmnrSpan: Span, spanData: any): void => {
   }
   const customData = spanData?.data;
   if (customData !== undefined && customData !== null) {
-    lmnrSpan.setAttribute("openai.agents.custom.data", JSON.stringify(customData));
+    lmnrSpan.setAttribute(
+      "openai.agents.custom.data",
+      JSON.stringify(customData),
+    );
   }
 };
 

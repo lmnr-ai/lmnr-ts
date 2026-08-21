@@ -11,16 +11,19 @@ export class SqlResource extends BaseResource {
     sql: string,
     parameters: Record<string, any> = {},
   ): Promise<Array<Record<string, any>>> {
-    const response = await fetch(`${this.baseHttpUrl}${this.apiPrefix}/sql/query`, {
-      method: "POST",
-      headers: {
-        ...this.headers(),
+    const response = await fetch(
+      `${this.baseHttpUrl}${this.apiPrefix}/sql/query`,
+      {
+        method: "POST",
+        headers: {
+          ...this.headers(),
+        },
+        body: JSON.stringify({
+          query: sql,
+          parameters,
+        }),
       },
-      body: JSON.stringify({
-        query: sql,
-        parameters,
-      }),
-    });
+    );
 
     if (!response.ok) {
       await this.handleError(response);
@@ -35,12 +38,15 @@ export class SqlResource extends BaseResource {
    * the MCP `query_laminar_sql` tool description — never a client-side copy.
    */
   public async schema(): Promise<SqlSchema> {
-    const response = await fetch(`${this.baseHttpUrl}${this.apiPrefix}/sql/schema`, {
-      method: "GET",
-      headers: {
-        ...this.headers(),
+    const response = await fetch(
+      `${this.baseHttpUrl}${this.apiPrefix}/sql/schema`,
+      {
+        method: "GET",
+        headers: {
+          ...this.headers(),
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       await this.handleError(response);

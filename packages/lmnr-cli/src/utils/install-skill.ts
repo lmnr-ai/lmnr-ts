@@ -85,7 +85,9 @@ export const installSkillInto = async (
     await downloadSkill(staging);
 
     // Files relative to the staging root (e.g. "SKILL.md", "references/x.md").
-    const relFiles = (await readdir(staging, { recursive: true, withFileTypes: true }))
+    const relFiles = (
+      await readdir(staging, { recursive: true, withFileTypes: true })
+    )
       .filter((d) => d.isFile())
       .map((d) => relative(staging, join(d.parentPath, d.name)));
 
@@ -144,12 +146,12 @@ export async function installSkill(
     const written = err instanceof SkillInstallError ? err.written : [];
     process.stderr.write(
       `Warning: could not install the Laminar skill (${skillSource()}): ` +
-      `${errorMessage(err)}; skipping skill install.\n`,
+        `${errorMessage(err)}; skipping skill install.\n`,
     );
     if (written.length > 0) {
       process.stderr.write(
         `Warning: the skill was partially installed (${written.length} file(s) ` +
-        "written before the failure); re-run `lmnr-cli skill add` to finish.\n",
+          "written before the failure); re-run `lmnr-cli skill add` to finish.\n",
       );
     }
     return { written, defaulted: false, skipped: true };

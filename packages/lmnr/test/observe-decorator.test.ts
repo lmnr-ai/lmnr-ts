@@ -6,7 +6,10 @@ import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
 import { Laminar, observe, observeExperimentalDecorator } from "../src";
 import { getRuntime, resetDebugRuntime } from "../src/debug";
-import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import {
+  _resetConfiguration,
+  initializeTracing,
+} from "../src/opentelemetry-lib/configuration";
 
 void describe("observeExperimentalDecorator", () => {
   const exporter = new InMemorySpanExporter();
@@ -31,25 +34,29 @@ void describe("observeExperimentalDecorator", () => {
   });
 
   void it("throws error when applied to a property", () => {
-    assert.throws(() => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      class TestClass {
-        // @ts-expect-error - Testing runtime error for invalid decorator usage
-        @observeExperimentalDecorator({ name: "testProperty" })
-        public testProperty: string = "test value";
-      }
-    }, {
-      name: "Error",
-      message: "observeExperimentalDecorator can only be applied to methods. " +
-        "Applied to: testProperty",
-    });
+    assert.throws(
+      () => {
+        // biome-ignore lint/correctness/noUnusedVariables: test-only class, not meant to be instantiated
+        class TestClass {
+          // @ts-expect-error - Testing runtime error for invalid decorator usage
+          @observeExperimentalDecorator({ name: "testProperty" })
+          public testProperty: string = "test value";
+        }
+      },
+      {
+        name: "Error",
+        message:
+          "observeExperimentalDecorator can only be applied to methods. " +
+          "Applied to: testProperty",
+      },
+    );
   });
 
   void it("decorates async methods with basic configuration", async () => {
     class TestService {
       @observeExperimentalDecorator({ name: "asyncMethod", spanType: "LLM" })
       public async asyncMethod(input: number): Promise<number> {
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
         return input * 2;
       }
     }
@@ -63,8 +70,14 @@ void describe("observeExperimentalDecorator", () => {
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "asyncMethod");
     assert.strictEqual(spans[0].attributes["lmnr.span.type"], "LLM");
-    assert.strictEqual(spans[0].attributes["lmnr.span.input"], JSON.stringify([5]));
-    assert.strictEqual(spans[0].attributes["lmnr.span.output"], JSON.stringify(10));
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.input"],
+      JSON.stringify([5]),
+    );
+    assert.strictEqual(
+      spans[0].attributes["lmnr.span.output"],
+      JSON.stringify(10),
+    );
   });
 
   void it("uses method name as default span name", async () => {
@@ -107,11 +120,26 @@ void describe("observeExperimentalDecorator", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     const attrs = spans[0].attributes;
-    assert.strictEqual(attrs["lmnr.association.properties.metadata.version"], "1.0");
-    assert.strictEqual(attrs["lmnr.association.properties.metadata.model"], "gpt-4");
-    assert.deepStrictEqual(attrs["lmnr.association.properties.tags"], ["test", "metadata"]);
-    assert.strictEqual(attrs["lmnr.association.properties.session_id"], "test-session-123");
-    assert.strictEqual(attrs["lmnr.association.properties.user_id"], "user-456");
+    assert.strictEqual(
+      attrs["lmnr.association.properties.metadata.version"],
+      "1.0",
+    );
+    assert.strictEqual(
+      attrs["lmnr.association.properties.metadata.model"],
+      "gpt-4",
+    );
+    assert.deepStrictEqual(attrs["lmnr.association.properties.tags"], [
+      "test",
+      "metadata",
+    ]);
+    assert.strictEqual(
+      attrs["lmnr.association.properties.session_id"],
+      "test-session-123",
+    );
+    assert.strictEqual(
+      attrs["lmnr.association.properties.user_id"],
+      "user-456",
+    );
   });
 
   void it("supports dynamic configuration function", async () => {
@@ -125,10 +153,15 @@ void describe("observeExperimentalDecorator", () => {
         },
         tags: ["math", operation as string],
       }))
-      public async performMath(operation: string, ...values: number[]): Promise<number> {
-        return Promise.resolve(operation === "sum"
-          ? values.reduce((a, b) => a + b, 0)
-          : values.reduce((a, b) => a * b, 1));
+      public async performMath(
+        operation: string,
+        ...values: number[]
+      ): Promise<number> {
+        return Promise.resolve(
+          operation === "sum"
+            ? values.reduce((a, b) => a + b, 0)
+            : values.reduce((a, b) => a * b, 1),
+        );
       }
     }
 
@@ -141,9 +174,18 @@ void describe("observeExperimentalDecorator", () => {
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "math_sum");
     const attrs = spans[0].attributes;
-    assert.strictEqual(attrs["lmnr.association.properties.metadata.operation"], "sum");
-    assert.strictEqual(attrs["lmnr.association.properties.metadata.valueCount"], 3);
-    assert.deepStrictEqual(attrs["lmnr.association.properties.tags"], ["math", "sum"]);
+    assert.strictEqual(
+      attrs["lmnr.association.properties.metadata.operation"],
+      "sum",
+    );
+    assert.strictEqual(
+      attrs["lmnr.association.properties.metadata.valueCount"],
+      3,
+    );
+    assert.deepStrictEqual(attrs["lmnr.association.properties.tags"], [
+      "math",
+      "sum",
+    ]);
   });
 
   void it("handles exceptions in decorated methods", () => {
@@ -175,8 +217,7 @@ void describe("observeExperimentalDecorator", () => {
     class TestService {
       @observeExperimentalDecorator({ name: "errorMethod" })
       public async errorMethod(): Promise<never> {
-        // add an await statement so eslint doesn't complain
-        await new Promise(resolve => setTimeout(resolve, 5));
+        await new Promise((resolve) => setTimeout(resolve, 5));
         throw new Error("Test error");
       }
     }
@@ -243,13 +284,15 @@ void describe("observeExperimentalDecorator", () => {
             },
           },
         },
-        // eslint-disable-next-line @typescript-eslint/require-await
         async () => "ok",
       );
 
       const runtime = getRuntime();
       assert.ok(runtime !== null);
-      assert.strictEqual(runtime.sessionId, "00000000-0000-0000-0000-0000000000bb");
+      assert.strictEqual(
+        runtime.sessionId,
+        "00000000-0000-0000-0000-0000000000bb",
+      );
       assert.strictEqual(runtime.localOrigin, false);
     } finally {
       resetDebugRuntime();

@@ -11,16 +11,30 @@ describe("AGENTS install commands", () => {
     const cmds = AGENTS["claude-code"].installCommands;
     expect(cmds).toHaveLength(2);
     expect(cmds[0].argv).toEqual([
-      "plugin", "marketplace", "add", "lmnr-ai/lmnr-claude-code-plugin",
+      "plugin",
+      "marketplace",
+      "add",
+      "lmnr-ai/lmnr-claude-code-plugin",
     ]);
     expect(cmds[0].lenient).toBe(true);
-    expect(cmds[1].argv).toEqual(["plugin", "install", "lmnr@lmnr", "--scope", "user"]);
+    expect(cmds[1].argv).toEqual([
+      "plugin",
+      "install",
+      "lmnr@lmnr",
+      "--scope",
+      "user",
+    ]);
     expect(cmds[1].lenient).toBeFalsy();
   });
 
   it("codex: marketplace add then `plugin add` (no scope flag)", () => {
     const cmds = AGENTS.codex.installCommands;
-    expect(cmds[0].argv).toEqual(["plugin", "marketplace", "add", "lmnr-ai/lmnr-codex-plugin"]);
+    expect(cmds[0].argv).toEqual([
+      "plugin",
+      "marketplace",
+      "add",
+      "lmnr-ai/lmnr-codex-plugin",
+    ]);
     expect(cmds[1].argv).toEqual(["plugin", "add", "lmnr@lmnr"]);
   });
 
@@ -36,7 +50,9 @@ describe("AGENTS install commands", () => {
 
   it("no secret ever appears in the install commands (key is file-delivered)", () => {
     for (const spec of Object.values(AGENTS)) {
-      const joined = spec.installCommands.map((c) => c.argv.join(" ")).join(" ");
+      const joined = spec.installCommands
+        .map((c) => c.argv.join(" "))
+        .join(" ");
       expect(joined).not.toContain("--config");
       expect(joined.toLowerCase()).not.toContain("api");
     }
@@ -88,19 +104,33 @@ describe("writeAgentConfig", () => {
   });
 
   it("writes {projectApiKey, baseUrl} to ~/.config/lmnr/<agent>-plugin.json at mode 0600", () => {
-    const p = writeAgentConfig(AGENTS.codex, "SECRET_KEY", "https://api.lmnr.ai");
+    const p = writeAgentConfig(
+      AGENTS.codex,
+      "SECRET_KEY",
+      "https://api.lmnr.ai",
+    );
     expect(p).toBe(join(home, "lmnr", "codex-plugin.json"));
     const parsed = JSON.parse(readFileSync(p, "utf-8"));
-    expect(parsed).toEqual({ projectApiKey: "SECRET_KEY", baseUrl: "https://api.lmnr.ai" });
+    expect(parsed).toEqual({
+      projectApiKey: "SECRET_KEY",
+      baseUrl: "https://api.lmnr.ai",
+    });
     // 0600: owner read/write only.
     expect(statSync(p).mode & 0o777).toBe(0o600);
   });
 
   it("writes pi's key to pi-extension.json, where the pi extension reads it", () => {
-    const p = writeAgentConfig(AGENTS.pi, "SECRET_KEY", "http://localhost:8000");
+    const p = writeAgentConfig(
+      AGENTS.pi,
+      "SECRET_KEY",
+      "http://localhost:8000",
+    );
     expect(p).toBe(join(home, "lmnr", "pi-extension.json"));
     const parsed = JSON.parse(readFileSync(p, "utf-8"));
-    expect(parsed).toEqual({ projectApiKey: "SECRET_KEY", baseUrl: "http://localhost:8000" });
+    expect(parsed).toEqual({
+      projectApiKey: "SECRET_KEY",
+      baseUrl: "http://localhost:8000",
+    });
     expect(statSync(p).mode & 0o777).toBe(0o600);
   });
 });

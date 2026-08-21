@@ -228,12 +228,16 @@ void describe("EvaluatorsResource Client Methods", () => {
     void describe("error handling", () => {
       void it("throws error when neither traceId nor spanId is provided", async () => {
         await assert.rejects(
-          () => client.evaluators.score({
-            name: "test",
-            score: 0.5,
-          } as any),
+          () =>
+            client.evaluators.score({
+              name: "test",
+              score: 0.5,
+            } as any),
           (error: Error) => {
-            assert.strictEqual(error.message, "Either 'traceId' or 'spanId' must be provided.");
+            assert.strictEqual(
+              error.message,
+              "Either 'traceId' or 'spanId' must be provided.",
+            );
             return true;
           },
         );

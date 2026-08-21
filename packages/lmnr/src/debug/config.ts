@@ -12,7 +12,10 @@ import { randomUUID } from "node:crypto";
 import { type DebugContext } from "@lmnr-ai/types";
 
 import { initializeLogger } from "../utils";
-import { readDebugSessionFile, resolveDebugSessionDir } from "./debug-session-file";
+import {
+  readDebugSessionFile,
+  resolveDebugSessionDir,
+} from "./debug-session-file";
 
 const logger = initializeLogger();
 
@@ -137,9 +140,7 @@ export const buildDebugConfig = (): DebugConfig | null => {
   // Continuation is NOT replay: only an explicit replay trace (env or the file's
   // `replay_trace_id`) arms replay. The prior run's `trace_id` is never promoted.
   const replayTraceId =
-    process.env.LMNR_DEBUG_REPLAY_TRACE_ID ||
-    existing?.replay_trace_id ||
-    null;
+    process.env.LMNR_DEBUG_REPLAY_TRACE_ID || existing?.replay_trace_id || null;
   const cacheUntilValue =
     process.env.LMNR_DEBUG_CACHE_UNTIL ?? existing?.cache_until ?? undefined;
   const cacheUntilSpanId = parseCacheUntil(cacheUntilValue);

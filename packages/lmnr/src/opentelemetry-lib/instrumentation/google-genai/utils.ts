@@ -51,8 +51,14 @@ function contentToMessages(
   if (systemInstruction) {
     if (typeof systemInstruction === "string") {
       messages.push({ role: "system", content: systemInstruction });
-    } else if (typeof systemInstruction === "object" && systemInstruction !== null) {
-      messages.push({ role: "system", ...(toDict(systemInstruction) as Record<string, any>) });
+    } else if (
+      typeof systemInstruction === "object" &&
+      systemInstruction !== null
+    ) {
+      messages.push({
+        role: "system",
+        ...(toDict(systemInstruction) as Record<string, any>),
+      });
     }
   }
 
@@ -79,7 +85,9 @@ function contentToMessages(
 function extractToolDefinitions(config: any): any[] {
   if (!config?.tools) return [];
   const tools: any[] = [];
-  const toolsArray = Array.isArray(config.tools) ? config.tools : [config.tools];
+  const toolsArray = Array.isArray(config.tools)
+    ? config.tools
+    : [config.tools];
 
   for (const tool of toolsArray) {
     if (!tool) continue;
@@ -115,13 +123,29 @@ export function setRequestAttributes(
     safeSetAttribute(span, "gen_ai.request.top_p", config.topP);
     safeSetAttribute(span, "gen_ai.request.top_k", config.topK);
     safeSetAttribute(span, "gen_ai.request.max_tokens", config.maxOutputTokens);
-    safeSetAttribute(span, "gen_ai.request.frequency_penalty", config.frequencyPenalty);
-    safeSetAttribute(span, "gen_ai.request.presence_penalty", config.presencePenalty);
+    safeSetAttribute(
+      span,
+      "gen_ai.request.frequency_penalty",
+      config.frequencyPenalty,
+    );
+    safeSetAttribute(
+      span,
+      "gen_ai.request.presence_penalty",
+      config.presencePenalty,
+    );
     safeSetAttribute(span, "gen_ai.request.seed", config.seed);
-    safeSetAttribute(span, "gen_ai.request.choice_count", config.candidateCount);
+    safeSetAttribute(
+      span,
+      "gen_ai.request.choice_count",
+      config.candidateCount,
+    );
 
     if (config.stopSequences && config.stopSequences.length > 0) {
-      safeSetAttribute(span, "gen_ai.request.stop_sequences", JSON.stringify(config.stopSequences));
+      safeSetAttribute(
+        span,
+        "gen_ai.request.stop_sequences",
+        JSON.stringify(config.stopSequences),
+      );
     }
 
     const outputSchema = config.responseSchema ?? config.responseJsonSchema;
@@ -136,13 +160,20 @@ export function setRequestAttributes(
     // Tool definitions
     const toolDefs = extractToolDefinitions(config);
     if (toolDefs.length > 0) {
-      safeSetAttribute(span, "gen_ai.tool.definitions", JSON.stringify(toolDefs));
+      safeSetAttribute(
+        span,
+        "gen_ai.tool.definitions",
+        JSON.stringify(toolDefs),
+      );
     }
   }
 
   // Input messages (content-traced only)
   if (traceContent) {
-    const messages = contentToMessages(params?.contents, config?.systemInstruction);
+    const messages = contentToMessages(
+      params?.contents,
+      config?.systemInstruction,
+    );
     if (messages.length > 0) {
       safeSetAttribute(span, "gen_ai.input.messages", JSON.stringify(messages));
     }
@@ -173,8 +204,16 @@ export function setResponseAttributes(
     }
 
     safeSetAttribute(span, LLM_USAGE_TOTAL_TOKENS, usage.totalTokenCount);
-    safeSetAttribute(span, "gen_ai.usage.reasoning_tokens", usage.thoughtsTokenCount);
-    safeSetAttribute(span, "gen_ai.usage.cache_read_input_tokens", usage.cachedContentTokenCount);
+    safeSetAttribute(
+      span,
+      "gen_ai.usage.reasoning_tokens",
+      usage.thoughtsTokenCount,
+    );
+    safeSetAttribute(
+      span,
+      "gen_ai.usage.cache_read_input_tokens",
+      usage.cachedContentTokenCount,
+    );
   }
 
   // Response content (content-traced only)
@@ -217,7 +256,11 @@ export function setResponseAttributes(
     }
 
     if (outputMessages.length > 0) {
-      safeSetAttribute(span, "gen_ai.output.messages", JSON.stringify(outputMessages));
+      safeSetAttribute(
+        span,
+        "gen_ai.output.messages",
+        JSON.stringify(outputMessages),
+      );
     }
   }
 }
@@ -290,7 +333,10 @@ export function wrapStreamingResponse(
         const usage = chunk?.usageMetadata;
         if (usage) {
           sawUsageMetadata = true;
-          if (promptTokenCount === undefined && usage.promptTokenCount !== undefined) {
+          if (
+            promptTokenCount === undefined &&
+            usage.promptTokenCount !== undefined
+          ) {
             promptTokenCount = usage.promptTokenCount;
           }
           if (usage.candidatesTokenCount !== undefined) {
@@ -302,8 +348,10 @@ export function wrapStreamingResponse(
           if (usage.totalTokenCount !== undefined) {
             totalTokenCount = usage.totalTokenCount;
           }
-          if (cachedContentTokenCount === undefined
-            && usage.cachedContentTokenCount !== undefined) {
+          if (
+            cachedContentTokenCount === undefined &&
+            usage.cachedContentTokenCount !== undefined
+          ) {
             cachedContentTokenCount = usage.cachedContentTokenCount;
           }
         }
@@ -316,18 +364,20 @@ export function wrapStreamingResponse(
       }
     } catch (error) {
       streamError = error;
-      span.setAttribute("error.type", (error as Error).constructor?.name ?? "Error");
+      span.setAttribute(
+        "error.type",
+        (error as Error).constructor?.name ?? "Error",
+      );
       span.recordException(error as Error);
       span.setStatus({ code: SpanStatusCode.ERROR });
       throw error;
     } finally {
       try {
-        const hasResponseData = (
-          modelVersion !== undefined
-          || role !== undefined
-          || accumulatedParts.length > 0
-          || sawUsageMetadata
-        );
+        const hasResponseData =
+          modelVersion !== undefined ||
+          role !== undefined ||
+          accumulatedParts.length > 0 ||
+          sawUsageMetadata;
         if (hasResponseData) {
           const mergedParts = mergeTextParts(accumulatedParts);
           const compoundResponse = {

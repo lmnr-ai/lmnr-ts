@@ -52,12 +52,16 @@ export const describeTrigger = (trigger: SignalTrigger): string => {
 
 /** JSON, matching what `--filter` takes. */
 export const describeFilters = (filters: SignalFilter[]): string =>
-  filters.length === 0 ? "none" : filters.map((f) => JSON.stringify(f)).join(" AND ");
+  filters.length === 0
+    ? "none"
+    : filters.map((f) => JSON.stringify(f)).join(" AND ");
 
 const printSignal = (signal: Signal): void => {
   logger.info(`${signal.name} (${signal.id})`);
   logger.info(`  prompt:       ${signal.prompt}`);
-  const fields = Object.keys(signal.structuredOutput?.properties ?? {}).join(", ");
+  const fields = Object.keys(signal.structuredOutput?.properties ?? {}).join(
+    ", ",
+  );
   logger.info(`  fields:       ${fields}`);
   logger.info(`  trigger:      ${describeTrigger(signal.trigger)}`);
   logger.info(`  filters:      ${describeFilters(signal.filters)}`);
@@ -71,9 +75,14 @@ const printSignal = (signal: Signal): void => {
  * doesn't have to list first; an ambiguous substring is an error rather than a
  * silent pick, since update/delete are destructive.
  */
-const resolveSignalId = async (client: LaminarClient, ref: string): Promise<string> => {
+const resolveSignalId = async (
+  client: LaminarClient,
+  ref: string,
+): Promise<string> => {
   // A uuid is unambiguous — use it directly and let the server 404.
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref)) {
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref)
+  ) {
     return ref;
   }
   const matches = await client.signals.list(ref);
@@ -86,8 +95,8 @@ const resolveSignalId = async (client: LaminarClient, ref: string): Promise<stri
   if (candidates.length > 1) {
     throw new Error(
       `"${ref}" matches ${candidates.length} signals: ` +
-      `${candidates.map((s) => `${s.name} (${s.id})`).join(", ")}. ` +
-      "Pass the id instead.",
+        `${candidates.map((s) => `${s.name} (${s.id})`).join(", ")}. ` +
+        "Pass the id instead.",
     );
   }
   return candidates[0].id;
@@ -120,7 +129,10 @@ export const handleSignalList = async (
     s.mode,
   ]);
   logger.info(
-    renderTable(["ID", "Name", "Status", "Sample", "Trigger", "Filters", "Mode"], rows),
+    renderTable(
+      ["ID", "Name", "Status", "Sample", "Trigger", "Filters", "Mode"],
+      rows,
+    ),
   );
 };
 
@@ -155,7 +167,9 @@ export const handleSignalCreate = async (
     prompt,
     structuredOutput,
     ...(trigger !== undefined ? { trigger } : {}),
-    ...(opts.filter !== undefined ? { filters: opts.filter.map(parseFilter) } : {}),
+    ...(opts.filter !== undefined
+      ? { filters: opts.filter.map(parseFilter) }
+      : {}),
     ...(opts.mode !== undefined ? { mode: parseMode(opts.mode) } : {}),
     ...(opts.sampleRate !== undefined
       ? { sampleRate: parseSampleRate(opts.sampleRate) }
@@ -191,7 +205,9 @@ export const handleSignalUpdate = async (
   const trigger = parseTrigger(opts.trigger, opts.spanName ?? []);
 
   const patch = {
-    ...(opts.prompt !== undefined ? { prompt: validatePrompt(opts.prompt) } : {}),
+    ...(opts.prompt !== undefined
+      ? { prompt: validatePrompt(opts.prompt) }
+      : {}),
     ...(opts.schema !== undefined
       ? { structuredOutput: parseStructuredOutput(opts.schema) }
       : {}),
@@ -202,7 +218,9 @@ export const handleSignalUpdate = async (
     ...(opts.sampling === false ? { sampleRate: null } : {}),
     ...(opts.disabled !== undefined ? { disabled: opts.disabled } : {}),
     ...(trigger !== undefined ? { trigger } : {}),
-    ...(opts.filter !== undefined ? { filters: opts.filter.map(parseFilter) } : {}),
+    ...(opts.filter !== undefined
+      ? { filters: opts.filter.map(parseFilter) }
+      : {}),
     ...(opts.filters === false ? { filters: [] } : {}),
     ...(opts.mode !== undefined ? { mode: parseMode(opts.mode) } : {}),
   };
@@ -210,12 +228,15 @@ export const handleSignalUpdate = async (
   if (Object.keys(patch).length === 0) {
     throw new Error(
       "Nothing to update. Pass at least one of --prompt, --schema, --trigger, " +
-      "--filter, --no-filters, --mode, --sample-rate, --no-sampling, " +
-      "--disabled, --no-disabled.",
+        "--filter, --no-filters, --mode, --sample-rate, --no-sampling, " +
+        "--disabled, --no-disabled.",
     );
   }
 
-  const signal = await client.signals.update(await resolveSignalId(client, ref), patch);
+  const signal = await client.signals.update(
+    await resolveSignalId(client, ref),
+    patch,
+  );
 
   if (opts.json) {
     outputJson(signal);
@@ -231,7 +252,9 @@ export const handleSignalDelete = async (
   ref: string,
   opts: GlobalOpts,
 ): Promise<void> => {
-  const signal = await client.signals.delete(await resolveSignalId(client, ref));
+  const signal = await client.signals.delete(
+    await resolveSignalId(client, ref),
+  );
 
   if (opts.json) {
     outputJson(signal);

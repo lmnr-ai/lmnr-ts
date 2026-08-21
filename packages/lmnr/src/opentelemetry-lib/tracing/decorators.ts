@@ -1,4 +1,9 @@
-import { errorMessage, LaminarSpanContext, TraceType, TracingLevel } from "@lmnr-ai/types";
+import {
+  errorMessage,
+  LaminarSpanContext,
+  TraceType,
+  TracingLevel,
+} from "@lmnr-ai/types";
 import { AttributeValue, context, type Span, trace } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
 
@@ -11,14 +16,8 @@ import {
 } from "../../utils";
 import { getStream, StreamInfo } from "../instrumentation/aisdk/utils";
 import { getTracer, shouldSendTraces } from ".";
-import {
-  SPAN_INPUT,
-  SPAN_OUTPUT,
-} from "./attributes";
-import {
-  ASSOCIATION_PROPERTIES_KEY,
-  LaminarContextManager,
-} from "./context";
+import { SPAN_INPUT, SPAN_OUTPUT } from "./attributes";
+import { ASSOCIATION_PROPERTIES_KEY, LaminarContextManager } from "./context";
 import { handleStreamResult } from "./stream-utils";
 
 const logger = initializeLogger();
@@ -48,12 +47,7 @@ export function observeBase<
   A extends unknown[],
   This,
   F extends (this: This, ...args: A) => ReturnType<F>,
->(
-  config: DecoratorConfig,
-  fn: F,
-  thisArg: This,
-  ...args: A
-): ReturnType<F>;
+>(config: DecoratorConfig, fn: F, thisArg: This, ...args: A): ReturnType<F>;
 
 // Overload for when thisArg is not provided (standalone function)
 export function observeBase<
@@ -94,9 +88,10 @@ export function observeBase<
 
   if (parentSpanContext) {
     try {
-      const laminarContext = typeof parentSpanContext === 'string'
-        ? deserializeLaminarSpanContext(parentSpanContext)
-        : parentSpanContext;
+      const laminarContext =
+        typeof parentSpanContext === "string"
+          ? deserializeLaminarSpanContext(parentSpanContext)
+          : parentSpanContext;
 
       // Arm the debug runtime from a propagated debug block (first-wins,
       // idempotent, no-op when already armed or no block present). observe()
@@ -106,7 +101,10 @@ export function observeBase<
       Laminar._armDebugRuntimeFromContext(laminarContext.debug);
 
       const spanContext = tryToOtelSpanContext(laminarContext);
-      entityContext = trace.setSpan(entityContext, trace.wrapSpanContext(spanContext));
+      entityContext = trace.setSpan(
+        entityContext,
+        trace.wrapSpanContext(spanContext),
+      );
     } catch (e) {
       logger.warn("Failed to parse parent span context: " + errorMessage(e));
     }
@@ -115,11 +113,12 @@ export function observeBase<
   // Set context properties for propagation to child spans
   try {
     if (contextProperties && Object.keys(contextProperties).length > 0) {
-      const currentAssociationProperties = entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
-      entityContext = entityContext.setValue(
-        ASSOCIATION_PROPERTIES_KEY,
-        { ...currentAssociationProperties, ...contextProperties },
-      );
+      const currentAssociationProperties =
+        entityContext.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
+      entityContext = entityContext.setValue(ASSOCIATION_PROPERTIES_KEY, {
+        ...currentAssociationProperties,
+        ...contextProperties,
+      });
     }
   } catch (e) {
     logger.warn("Failed to set context properties: " + errorMessage(e));
@@ -139,7 +138,7 @@ export function observeBase<
             if (input !== undefined) {
               span.setAttribute(
                 SPAN_INPUT,
-                typeof input === 'string'
+                typeof input === "string"
                   ? truncateSpanPayload(input, "input")
                   : serialize(input, "input"),
               );
@@ -150,7 +149,7 @@ export function observeBase<
             ) {
               span.setAttribute(
                 SPAN_INPUT,
-                typeof spanInput[0] === 'string'
+                typeof spanInput[0] === "string"
                   ? truncateSpanPayload(spanInput[0], "input")
                   : serialize(spanInput[0], "input"),
               );
@@ -176,57 +175,63 @@ export function observeBase<
             span.recordException(error as Error);
             span.end();
           } catch (error) {
-            logger.warn("Failed to record exception and end span: " + errorMessage(error));
+            logger.warn(
+              "Failed to record exception and end span: " + errorMessage(error),
+            );
           }
           throw error;
         }
 
         if (res instanceof Promise) {
-          return res.then((resolvedRes) => {
-            // Check if the resolved result is a stream
-            let streamInfo: StreamInfo = { type: null };
-            try {
-              streamInfo = getStream(resolvedRes);
-            } catch (error) {
-              logger.warn("Failed to get stream info: " + errorMessage(error));
-            }
-            if (streamInfo.type !== null) {
-              return handleStreamResult(
-                resolvedRes,
-                streamInfo,
-                span,
-                ignoreOutput,
-                serialize,
-              ) as ReturnType<F>;
-            }
-
-            // Not a stream, handle normally
-            try {
-              if (shouldSendTraces() && !ignoreOutput) {
-                span.setAttribute(
-                  SPAN_OUTPUT,
-                  serialize(resolvedRes),
+          return res
+            .then((resolvedRes) => {
+              // Check if the resolved result is a stream
+              let streamInfo: StreamInfo = { type: null };
+              try {
+                streamInfo = getStream(resolvedRes);
+              } catch (error) {
+                logger.warn(
+                  "Failed to get stream info: " + errorMessage(error),
                 );
               }
-            } catch (error) {
-              logger.warn("Failed to serialize async output: " + errorMessage(error));
-            } finally {
-              try {
-                span.end();
-              } catch (error) {
-                logger.warn("Failed to end span: " + errorMessage(error));
+              if (streamInfo.type !== null) {
+                return handleStreamResult(
+                  resolvedRes,
+                  streamInfo,
+                  span,
+                  ignoreOutput,
+                  serialize,
+                ) as ReturnType<F>;
               }
-            }
 
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-            return resolvedRes;
-          })
+              // Not a stream, handle normally
+              try {
+                if (shouldSendTraces() && !ignoreOutput) {
+                  span.setAttribute(SPAN_OUTPUT, serialize(resolvedRes));
+                }
+              } catch (error) {
+                logger.warn(
+                  "Failed to serialize async output: " + errorMessage(error),
+                );
+              } finally {
+                try {
+                  span.end();
+                } catch (error) {
+                  logger.warn("Failed to end span: " + errorMessage(error));
+                }
+              }
+
+              return resolvedRes;
+            })
             .catch((error) => {
               try {
                 span.recordException(error as Error);
                 span.end();
               } catch (error) {
-                logger.warn("Failed to record exception and end span: " + errorMessage(error));
+                logger.warn(
+                  "Failed to record exception and end span: " +
+                    errorMessage(error),
+                );
               }
               throw error;
             }) as ReturnType<F>;
@@ -241,14 +246,19 @@ export function observeBase<
         }
         if (streamInfo.type !== null) {
           return handleStreamResult(
-            res, streamInfo, span, ignoreOutput, serialize) as ReturnType<F>;
+            res,
+            streamInfo,
+            span,
+            ignoreOutput,
+            serialize,
+          ) as ReturnType<F>;
         }
 
         try {
           if (shouldSendTraces() && !ignoreOutput) {
             span.setAttribute(
               SPAN_OUTPUT,
-              typeof res === 'string'
+              typeof res === "string"
                 ? truncateSpanPayload(res, "output")
                 : serialize(res),
             );
@@ -285,7 +295,6 @@ const normalizePayload = (payload: unknown, seen: WeakSet<any>): unknown => {
     // serialize object one by one
     const output: any = {};
     Object.entries(payload as any).forEach(([key, value]) => {
-
       output[key] = normalizePayload(value, seen);
     });
     return output;

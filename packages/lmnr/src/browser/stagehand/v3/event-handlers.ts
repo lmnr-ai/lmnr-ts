@@ -1,4 +1,8 @@
-import { errorMessage, type SessionRecordingOptions, type StringUUID } from "@lmnr-ai/types";
+import {
+  errorMessage,
+  type SessionRecordingOptions,
+  type StringUUID,
+} from "@lmnr-ai/types";
 
 import { EventChunk, sendEvents } from "../../utils";
 import { injectRecorderViaCDP, shouldSkipUrl } from "./cdp-helpers";
@@ -21,13 +25,15 @@ export function createBindingHandler(
     if (event.name !== "lmnrSendEvents") return;
     const sessionInfo = state.contextIdToSession.get(event.executionContextId);
     if (!sessionInfo) {
-      logger.debug("No session info found for context ID: " + event.executionContextId);
+      logger.debug(
+        "No session info found for context ID: " + event.executionContextId,
+      );
       // Try to find any matching session (for cases where context ID changed)
       // This is a fallback - normally the context should be mapped
       if (state.contextIdToSession.size > 0) {
         // Use the first available session info as fallback
-        const [, fallbackInfo] = state.contextIdToSession.entries().next().value as
-          [number, { sessionId: StringUUID; traceId: StringUUID }];
+        const [, fallbackInfo] = state.contextIdToSession.entries().next()
+          .value as [number, { sessionId: StringUUID; traceId: StringUUID }];
         if (fallbackInfo) {
           try {
             const chunk = JSON.parse(event.payload) as EventChunk;
@@ -39,7 +45,9 @@ export function createBindingHandler(
               fallbackInfo.traceId,
             );
           } catch (error) {
-            logger.debug("Failed to parse binding payload: " + errorMessage(error));
+            logger.debug(
+              "Failed to parse binding payload: " + errorMessage(error),
+            );
           }
         }
       }
@@ -74,7 +82,7 @@ export function createTargetCreatedHandler(
       if (event.targetInfo.type !== "page") return;
 
       // Wait a bit for the page to be available in the context
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 200));
       // Try to inject into all uninstrumented pages
       for (const page of context.pages()) {
         try {
@@ -90,11 +98,15 @@ export function createTargetCreatedHandler(
           }
         } catch (error) {
           // Page might have been closed or CDP session lost, continue with next page
-          logger.debug("Error injecting recorder into new page: " + errorMessage(error));
+          logger.debug(
+            "Error injecting recorder into new page: " + errorMessage(error),
+          );
         }
       }
     } catch (error) {
-      logger.debug("Error handling target created event: " + errorMessage(error));
+      logger.debug(
+        "Error handling target created event: " + errorMessage(error),
+      );
     }
   };
 }
@@ -115,9 +127,11 @@ export function createTargetInfoChangedHandler(
 
     if (shouldSkipUrl(url)) return;
 
-    logger.debug(`Target URL changed to ${url}, checking if recorder injection needed`);
+    logger.debug(
+      `Target URL changed to ${url}, checking if recorder injection needed`,
+    );
 
-    await new Promise(resolve => setTimeout(resolve, 150));
+    await new Promise((resolve) => setTimeout(resolve, 150));
 
     try {
       for (const page of context.pages()) {
@@ -125,7 +139,11 @@ export function createTargetInfoChangedHandler(
         const targetId = page.targetId();
         if (targetId === event.targetInfo.targetId) {
           await injectRecorderViaCDP(
-            page, state, context.conn, sessionRecordingOptions, state.bindingHandler ?? undefined,
+            page,
+            state,
+            context.conn,
+            sessionRecordingOptions,
+            state.bindingHandler ?? undefined,
           );
           break;
         }

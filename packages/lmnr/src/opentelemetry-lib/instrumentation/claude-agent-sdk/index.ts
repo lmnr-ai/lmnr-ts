@@ -1,3 +1,4 @@
+// biome-ignore-all lint/complexity/noBannedTypes: instrumentation wraps arbitrary Functions
 import { diag } from "@opentelemetry/api";
 import {
   InstrumentationBase,
@@ -47,7 +48,6 @@ export function instrumentClaudeAgentQuery(
       Laminar.initialized() || !!process.env.LMNR_PROJECT_API_KEY;
 
     if (!laminarActive) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return originalQuery(params);
     }
 
@@ -160,10 +160,14 @@ export function instrumentClaudeAgentQuery(
             string,
             string | undefined
           >;
-          if (isProviderEnabledInEnv(subprocessEnv, "CLAUDE_CODE_USE_FOUNDRY")) {
+          if (
+            isProviderEnabledInEnv(subprocessEnv, "CLAUDE_CODE_USE_FOUNDRY")
+          ) {
             subprocessEnv.ANTHROPIC_FOUNDRY_BASE_URL = proxyInstance.baseUrl;
           }
-          if (isProviderEnabledInEnv(subprocessEnv, "CLAUDE_CODE_USE_BEDROCK")) {
+          if (
+            isProviderEnabledInEnv(subprocessEnv, "CLAUDE_CODE_USE_BEDROCK")
+          ) {
             subprocessEnv.ANTHROPIC_BEDROCK_BASE_URL = proxyInstance.baseUrl;
           }
           if (isProviderEnabledInEnv(subprocessEnv, "CLAUDE_CODE_USE_VERTEX")) {
@@ -196,7 +200,7 @@ export function instrumentClaudeAgentQuery(
                 ([key, value]) =>
                   PROXY_BASE_URL_ENV_KEYS.includes(key) &&
                   value !== "" &&
-                  value !== proxyInstance.baseUrl,
+                  value !== proxyInstance?.baseUrl,
               )
               .map(([key]) => key);
             if (conflicting.length > 0) {
@@ -235,14 +239,10 @@ export function instrumentClaudeAgentQuery(
       }
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return generator() as any; // ClaudeAgentSDK.Query
   };
 }
 
-/* eslint-disable
-  @typescript-eslint/no-unsafe-function-type
-*/
 export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
   constructor() {
     super("@lmnr/claude-agent-instrumentation", SDK_VERSION, {
@@ -278,7 +278,6 @@ export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
 
   private patchQuery(): any {
     // casts to ClaudeAgentSDK.query
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return (original: Function) => instrumentClaudeAgentQuery(original as any);
   }
 
@@ -302,6 +301,3 @@ export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
     this._unwrap(moduleExports, "query");
   }
 }
-/* eslint-enable
-  @typescript-eslint/no-unsafe-function-type
-*/

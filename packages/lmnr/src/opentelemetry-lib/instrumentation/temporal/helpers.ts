@@ -1,5 +1,10 @@
 import { errorMessage, LaminarSpanContext } from "@lmnr-ai/types";
-import { Context, isSpanContextValid, ROOT_CONTEXT, trace } from "@opentelemetry/api";
+import {
+  Context,
+  isSpanContextValid,
+  ROOT_CONTEXT,
+  trace,
+} from "@opentelemetry/api";
 
 import {
   deserializeLaminarSpanContext,

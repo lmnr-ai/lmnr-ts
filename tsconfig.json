@@ -22,9 +22,19 @@
     // "useDefineForClassFields": true,                  /* Emit ECMAScript-standard-compliant class fields. */
     // "moduleDetection": "auto",                        /* Control what method is used to detect module-format JS files. */
     /* Modules */
-    "module": "NodeNext" /* Specify what module code is generated. */,
+    /* `preserve` (not NodeNext): tsc NEVER emits here — tsdown/rolldown owns the
+       dual CJS+ESM build for every package, and `tsc --noEmit` is only a type
+       checker. Under NodeNext, a package without `"type": "module"` makes every
+       .ts file CommonJS, so `import.meta.url` is a hard error (TS1470) even
+       though rolldown rewrites it correctly per-format (CJS output gets a
+       `pathToFileURL(__filename)` shim). `preserve` allows both `import.meta`
+       and `require`, matching what the bundler actually supports. Tradeoff: tsc
+       no longer enforces Node's ESM/CJS interop rules (extensionless relative
+       imports stay legal — the emitted code is bundled, so it never hits Node's
+       resolver). */
+    "module": "preserve" /* Specify what module code is generated. */,
     "rootDir": "./packages" /* Specify the root folder within your source files. */,
-    "moduleResolution": "nodenext" /* Specify how TypeScript looks up a file from a given module specifier. */,
+    "moduleResolution": "bundler" /* Specify how TypeScript looks up a file from a given module specifier. */,
     // "baseUrl": "./",                                  /* Specify the base directory to resolve non-relative module names. */
     // "paths": {},                                      /* Specify a set of entries that re-map imports to additional lookup locations. */
     // "rootDirs": [],                                   /* Allow multiple folders to be treated as one when resolving modules. */
@@ -95,7 +105,7 @@
     // "allowUnreachableCode": true,                     /* Disable error reporting for unreachable code. */
     /* Completeness */
     // "skipDefaultLibCheck": true,                      /* Skip type checking .d.ts files that are included with TypeScript. */
-    "skipLibCheck": true /* Skip type checking all .d.ts files. */,
+    "skipLibCheck": true /* Skip type checking all .d.ts files. */
   },
-  "include": ["packages/**/src", "packages/**/test"],
+  "include": ["packages/**/src", "packages/**/test"]
 }

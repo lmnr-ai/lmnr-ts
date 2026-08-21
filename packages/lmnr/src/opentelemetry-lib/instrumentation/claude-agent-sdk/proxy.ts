@@ -52,15 +52,17 @@ const PROVIDER_BASE_URL_ENV_KEYS: [string, string][] = [
 // Forward-proxy env vars in BOTH cases. Claude Code reads the lowercase spelling
 // too (and prefers it), so handling only the uppercase form lets a lowercase
 // corporate proxy divert traffic away from us.
-const PROXY_ENV_KEYS = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"];
+const PROXY_ENV_KEYS = [
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "http_proxy",
+  "https_proxy",
+];
 
 // Keys that must be blanked in the flag-settings layer: they would otherwise
 // redirect the CLI away from our proxy. Removing them from the flag layer is not
 // enough — settings layers merge per key, so a lower layer's value would win.
-const PROXY_NEUTRALIZED_ENV_KEYS = [
-  ...PROXY_ENV_KEYS,
-  FOUNDRY_RESOURCE_ENV,
-];
+const PROXY_NEUTRALIZED_ENV_KEYS = [...PROXY_ENV_KEYS, FOUNDRY_RESOURCE_ENV];
 
 // Transport-level forward proxies, NOT Anthropic API base URLs. They outrank
 // every base URL when resolving our upstream, so reading them from the settings
@@ -110,9 +112,7 @@ export const isProviderEnabledInEnv = (
  * from `{}` (a valid but empty settings file): callers that would otherwise
  * REPLACE a user's settings need to know they failed to read it.
  */
-const loadSettingsFile = (
-  filePath: string,
-): Record<string, unknown> | null => {
+const loadSettingsFile = (filePath: string): Record<string, unknown> | null => {
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(filePath, "utf-8"));
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
@@ -305,12 +305,19 @@ export const buildProxyFlagSettings = (
     // exclusive") if both are live. Blank it whenever Foundry is in play, even
     // when the resource only exists in the process env, since the flag layer is
     // the only place we can override it for the subprocess.
-    if (baseUrlKey === FOUNDRY_BASE_URL_ENV && envDict[baseUrlKey] === proxyUrl) {
+    if (
+      baseUrlKey === FOUNDRY_BASE_URL_ENV &&
+      envDict[baseUrlKey] === proxyUrl
+    ) {
       envDict[FOUNDRY_RESOURCE_ENV] = "";
     }
   }
   for (const key of PROXY_NEUTRALIZED_ENV_KEYS) {
-    if (key in settingsEnv || key in envDict || process.env[key] !== undefined) {
+    if (
+      key in settingsEnv ||
+      key in envDict ||
+      process.env[key] !== undefined
+    ) {
       envDict[key] = "";
     }
   }
@@ -604,9 +611,7 @@ const registerGlobalProxyShutdown = () => {
         try {
           proxyServer.stopServer();
         } catch (e) {
-          logger.debug(
-            `Failed to stop proxy: ${errorMessage(e)}`,
-          );
+          logger.debug(`Failed to stop proxy: ${errorMessage(e)}`);
         }
       }
       activeProxyServers.clear();
@@ -672,7 +677,7 @@ export const createProxyInstance = async ({
 
     try {
       // Dynamically import ProxyServer class
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      // biome-ignore lint/style/noCommonJs: dynamic import needed, so a faulty import doesn't fail the application code
       const { ProxyServer } = require("@lmnr-ai/claude-code-proxy");
 
       const proxyServer = new ProxyServer(port);
@@ -700,15 +705,11 @@ export const createProxyInstance = async ({
         targetUrl,
       };
     } catch (e) {
-      logger.warn(
-        `Unable to start cc-proxy: ${errorMessage(e)}`,
-      );
+      logger.warn(`Unable to start cc-proxy: ${errorMessage(e)}`);
       return null;
     }
   } catch (e) {
-    logger.warn(
-      `Failed to create proxy instance: ${errorMessage(e)}`,
-    );
+    logger.warn(`Failed to create proxy instance: ${errorMessage(e)}`);
     return null;
   }
 };
@@ -726,9 +727,7 @@ export const stopProxyInstance = (instance: ProxyInstance | null): void => {
     instance.server.stopServer();
     activeProxyServers.delete(instance.server);
   } catch (e) {
-    logger.debug(
-      `Failed to stop proxy instance: ${errorMessage(e)}`,
-    );
+    logger.debug(`Failed to stop proxy instance: ${errorMessage(e)}`);
   }
 };
 
@@ -744,9 +743,7 @@ export const forceReleaseProxy = (): void => {
     try {
       proxyServer.stopServer();
     } catch (e) {
-      logger.debug(
-        `Failed to stop proxy: ${errorMessage(e)}`,
-      );
+      logger.debug(`Failed to stop proxy: ${errorMessage(e)}`);
     }
   }
   activeProxyServers.clear();
@@ -837,7 +834,8 @@ export const setTraceToProxyInstance = async (
     logger.debug(`Set trace context to proxy on port ${instance.port}`);
   } catch (e: any) {
     logger.debug(
-      `Unable to set trace context to proxy on port ${instance.port}: ` + errorMessage(e),
+      `Unable to set trace context to proxy on port ${instance.port}: ` +
+        errorMessage(e),
     );
   }
 };

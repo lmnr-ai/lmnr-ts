@@ -20,7 +20,7 @@ const HARD_LIMIT = MAX_CAPTURE_CHARS * 2;
 
 // SGR color/style escapes (from `pc.*` / pino-pretty), stripped so captured
 // output is plain text.
-// eslint-disable-next-line no-control-regex
+// biome-ignore lint/suspicious/noControlCharactersInRegex: stripping bad chars fro mconsole out
 const ANSI_SGR = /\[[0-9;]*m/g;
 const stripAnsi = (s: string): string => s.replace(ANSI_SGR, "");
 
@@ -53,7 +53,10 @@ const finalize = (buf: string): string | null => {
   return buf;
 };
 
-export const getCapturedOutput = (): { stdout: string | null; stderr: string | null } => ({
+export const getCapturedOutput = (): {
+  stdout: string | null;
+  stderr: string | null;
+} => ({
   stdout: finalize(stdoutBuf),
   stderr: finalize(stderrBuf),
 });

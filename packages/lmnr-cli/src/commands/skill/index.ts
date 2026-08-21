@@ -38,7 +38,7 @@ export const handleSkillUpdate = async (opts: GlobalOpts): Promise<void> => {
   if (targets.length === 0) {
     throw new Error(
       `No installed Laminar skill found (looked for <agent dir>/skills/${SKILL_NAME} in ` +
-      `.claude, .cursor, .codex, .agents). Run \`lmnr-cli skill add\` to install it.`,
+        `.claude, .cursor, .codex, .agents). Run \`lmnr-cli skill add\` to install it.`,
     );
   }
   const written = await installSkillInto(cwd, targets);
@@ -57,7 +57,9 @@ const report = (
     outputJson({ skillDirs, files: written });
     return;
   }
-  const note = defaulted ? pc.dim(" (no agent dir found; defaulted to .claude and .agents)") : "";
+  const note = defaulted
+    ? pc.dim(" (no agent dir found; defaulted to .claude and .agents)")
+    : "";
   process.stderr.write(
     `${pc.green("✓")} ${verb} the Laminar skill in ${skillDirs.join(", ")}${note}\n`,
   );

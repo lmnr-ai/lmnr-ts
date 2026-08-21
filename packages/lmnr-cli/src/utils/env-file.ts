@@ -1,11 +1,5 @@
 import { execFile } from "node:child_process";
-import {
-  access,
-  readFile,
-  rename,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { access, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 
@@ -64,7 +58,10 @@ export async function writeEnvFile(
     next = original.replace(regex, `${varName}=${value}`);
     replaced = true;
   } else {
-    const prefix = original.endsWith("\n") || original.length === 0 ? original : `${original}\n`;
+    const prefix =
+      original.endsWith("\n") || original.length === 0
+        ? original
+        : `${original}\n`;
     next = `${prefix}${varName}=${value}\n`;
   }
   // Capture existing mode so the tmp inherits dest's perms — POSIX `rename`
@@ -93,7 +90,9 @@ export async function readEnvVar(
 }
 
 /** Where an existing key was found: the process environment, or a specific file. */
-export type EnvKeySource = { type: "process-env" } | { type: "file"; path: string };
+export type EnvKeySource =
+  | { type: "process-env" }
+  | { type: "file"; path: string };
 
 export interface EnvKeyLocation {
   value: string;
@@ -110,7 +109,8 @@ export async function findEnvKey(
   varName: string = DEFAULT_VAR_NAME,
 ): Promise<EnvKeyLocation | null> {
   const fromProcess = process.env[varName]?.trim();
-  if (fromProcess) return { value: fromProcess, source: { type: "process-env" } };
+  if (fromProcess)
+    return { value: fromProcess, source: { type: "process-env" } };
   for (const name of CANDIDATE_FILES) {
     const path = resolve(cwd, name);
     const value = await readEnvVar(path, varName);

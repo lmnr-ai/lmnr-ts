@@ -7,9 +7,15 @@ const h = vi.hoisted(() => ({
   refreshIfNeeded: vi.fn(),
 }));
 
-vi.mock("../../auth/credentials", () => ({ safeReadCredentials: h.safeReadCredentials }));
-vi.mock("../../utils/local-project-file", () => ({ readLocalProjectFile: h.readLocalProjectFile }));
-vi.mock("../../auth/api-key", () => ({ mintProjectApiKey: h.mintProjectApiKey }));
+vi.mock("../../auth/credentials", () => ({
+  safeReadCredentials: h.safeReadCredentials,
+}));
+vi.mock("../../utils/local-project-file", () => ({
+  readLocalProjectFile: h.readLocalProjectFile,
+}));
+vi.mock("../../auth/api-key", () => ({
+  mintProjectApiKey: h.mintProjectApiKey,
+}));
 // Keep the real SessionExpiredError (so `instanceof` works); stub only the probe.
 vi.mock("../../auth/resolve", async (orig) => {
   const actual = await orig<typeof import("../../auth/resolve")>();
@@ -19,7 +25,11 @@ vi.mock("../../auth/resolve", async (orig) => {
 import { SessionExpiredError } from "../../auth/resolve";
 import { handleProjectMintKey } from "./mint-key";
 
-const CREDS = { issuer: "https://laminar.sh", sessionToken: "sess", userEmail: "u@x.io" };
+const CREDS = {
+  issuer: "https://laminar.sh",
+  sessionToken: "sess",
+  userEmail: "u@x.io",
+};
 
 class ExitError extends Error {
   constructor(public code: number) {
@@ -41,7 +51,10 @@ beforeEach(() => {
   vi.spyOn(process.stderr, "write").mockImplementation(() => true);
   h.safeReadCredentials.mockResolvedValue(CREDS);
   h.readLocalProjectFile.mockResolvedValue({ projectId: "p1" });
-  h.mintProjectApiKey.mockResolvedValue({ apiKey: "lmnr-minted", apiKeyId: "k1" });
+  h.mintProjectApiKey.mockResolvedValue({
+    apiKey: "lmnr-minted",
+    apiKeyId: "k1",
+  });
   h.refreshIfNeeded.mockResolvedValue(CREDS); // session live by default
 });
 
@@ -79,33 +92,47 @@ describe("handleProjectMintKey", () => {
     await handleProjectMintKey({ json: true });
 
     const parsed = JSON.parse(out().trim());
-    expect(parsed).toEqual({ projectId: "p1", apiKey: "lmnr-minted", apiKeyId: "k1" });
+    expect(parsed).toEqual({
+      projectId: "p1",
+      apiKey: "lmnr-minted",
+      apiKeyId: "k1",
+    });
   });
 
   it("not logged in exits login_failed (6)", async () => {
     h.safeReadCredentials.mockResolvedValue(null);
 
-    await expect(handleProjectMintKey({ json: true })).rejects.toMatchObject({ code: 6 });
+    await expect(handleProjectMintKey({ json: true })).rejects.toMatchObject({
+      code: 6,
+    });
     expect(h.mintProjectApiKey).not.toHaveBeenCalled();
   });
 
   it("no project (no link, no --project-id) exits no_project (7)", async () => {
     h.readLocalProjectFile.mockResolvedValue(null);
 
-    await expect(handleProjectMintKey({ json: true })).rejects.toMatchObject({ code: 7 });
+    await expect(handleProjectMintKey({ json: true })).rejects.toMatchObject({
+      code: 7,
+    });
     expect(h.mintProjectApiKey).not.toHaveBeenCalled();
   });
 
   it("mint failure exits setup_key_failed (9)", async () => {
-    h.mintProjectApiKey.mockRejectedValue(new Error("api-key request failed (500)"));
+    h.mintProjectApiKey.mockRejectedValue(
+      new Error("api-key request failed (500)"),
+    );
 
-    await expect(handleProjectMintKey({ json: true })).rejects.toMatchObject({ code: 9 });
+    await expect(handleProjectMintKey({ json: true })).rejects.toMatchObject({
+      code: 9,
+    });
   });
 
   it("expired session exits login_failed (6), not setup_key_failed (9)", async () => {
     h.refreshIfNeeded.mockRejectedValue(new SessionExpiredError("expired"));
 
-    await expect(handleProjectMintKey({ json: true })).rejects.toMatchObject({ code: 6 });
+    await expect(handleProjectMintKey({ json: true })).rejects.toMatchObject({
+      code: 6,
+    });
     expect(h.mintProjectApiKey).not.toHaveBeenCalled();
   });
 });

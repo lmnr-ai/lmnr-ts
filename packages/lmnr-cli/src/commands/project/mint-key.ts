@@ -28,21 +28,27 @@ export interface ProjectMintKeyResult {
  * deliberately does NOT write `.env` — the bare key goes to stdout (pipe-friendly),
  * everything else to stderr. Requires an existing login.
  */
-export async function handleProjectMintKey(options: ProjectMintKeyOptions): Promise<void> {
+export async function handleProjectMintKey(
+  options: ProjectMintKeyOptions,
+): Promise<void> {
   const isJson = options.json === true;
 
   const creds = await safeReadCredentials();
   if (!creds) {
-    failWith(isJson, loginFailed("Not authenticated. Run `lmnr-cli login` first."));
+    failWith(
+      isJson,
+      loginFailed("Not authenticated. Run `lmnr-cli login` first."),
+    );
   }
 
-  const projectId = options.projectId || (await readLocalProjectFile())?.projectId;
+  const projectId =
+    options.projectId || (await readLocalProjectFile())?.projectId;
   if (!projectId) {
     failWith(
       isJson,
       noProject(
         "No project for this directory. Run `lmnr-cli project link` here, " +
-        "or pass --project-id <id>.",
+          "or pass --project-id <id>.",
       ),
     );
   }
@@ -55,14 +61,22 @@ export async function handleProjectMintKey(options: ProjectMintKeyOptions): Prom
     await refreshIfNeeded(creds);
   } catch (err) {
     if (err instanceof SessionExpiredError) {
-      failWith(isJson, loginFailed("Session expired. Run `lmnr-cli login` first."));
+      failWith(
+        isJson,
+        loginFailed("Session expired. Run `lmnr-cli login` first."),
+      );
     }
     throw err;
   }
 
   let minted;
   try {
-    minted = await mintProjectApiKey(issuer, creds.sessionToken, projectId, hostname());
+    minted = await mintProjectApiKey(
+      issuer,
+      creds.sessionToken,
+      projectId,
+      hostname(),
+    );
   } catch (err) {
     failWith(isJson, setupKeyFailed(errorMessage(err)));
   }
@@ -82,6 +96,6 @@ export async function handleProjectMintKey(options: ProjectMintKeyOptions): Prom
   process.stdout.write(minted.apiKey + "\n");
   process.stderr.write(
     `\n${pc.dim(`Set it in your environment (it is NOT written for you):`)}\n` +
-    `  LMNR_PROJECT_API_KEY=${minted.apiKey}\n`,
+      `  LMNR_PROJECT_API_KEY=${minted.apiKey}\n`,
   );
 }

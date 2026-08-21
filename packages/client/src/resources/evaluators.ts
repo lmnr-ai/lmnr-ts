@@ -15,17 +15,29 @@ interface CreateEvaluatorScoreBase {
   source: EvaluatorScoreSourceType;
 }
 
-interface CreateEvaluatorScoreRequestWithTraceId extends CreateEvaluatorScoreBase {
+interface CreateEvaluatorScoreRequestWithTraceId
+  extends CreateEvaluatorScoreBase {
   traceId: string;
 }
 
-interface CreateEvaluatorScoreRequestWithSpanId extends CreateEvaluatorScoreBase {
+interface CreateEvaluatorScoreRequestWithSpanId
+  extends CreateEvaluatorScoreBase {
   spanId: string;
 }
 
 type ScoreOptions =
-  | { name: string; metadata?: Record<string, any>; score: number; traceId: string; }
-  | { name: string; metadata?: Record<string, any>; score: number; spanId: string; };
+  | {
+      name: string;
+      metadata?: Record<string, any>;
+      score: number;
+      traceId: string;
+    }
+  | {
+      name: string;
+      metadata?: Record<string, any>;
+      score: number;
+      spanId: string;
+    };
 
 /**
  * Resource for creating evaluator scores
@@ -66,9 +78,11 @@ export class EvaluatorsResource extends BaseResource {
   public async score(options: ScoreOptions): Promise<void> {
     const { name, metadata, score } = options;
 
-    let payload: CreateEvaluatorScoreRequestWithTraceId | CreateEvaluatorScoreRequestWithSpanId;
+    let payload:
+      | CreateEvaluatorScoreRequestWithTraceId
+      | CreateEvaluatorScoreRequestWithSpanId;
 
-    if ('traceId' in options && options.traceId) {
+    if ("traceId" in options && options.traceId) {
       const formattedTraceId = isStringUUID(options.traceId)
         ? options.traceId
         : otelTraceIdToUUID(options.traceId);
@@ -80,10 +94,10 @@ export class EvaluatorsResource extends BaseResource {
         source: EvaluatorScoreSourceType.Code,
         traceId: formattedTraceId,
       };
-    } else if ('spanId' in options && options.spanId) {
+    } else if ("spanId" in options && options.spanId) {
       const formattedSpanId = isStringUUID(options.spanId)
         ? options.spanId
-        : otelSpanIdToUUID(options.spanId) as StringUUID;
+        : (otelSpanIdToUUID(options.spanId) as StringUUID);
 
       payload = {
         name,

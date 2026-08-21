@@ -4,10 +4,21 @@ const DEFAULT_TERMINAL_WIDTH = 80;
 const PADDING_RIGHT = 2;
 
 const noBorderChars = {
-  top: "", "top-mid": "", "top-left": "", "top-right": "",
-  bottom: "", "bottom-mid": "", "bottom-left": "", "bottom-right": "",
-  left: "", "left-mid": "", mid: "", "mid-mid": "",
-  right: "", "right-mid": "", middle: "",
+  top: "",
+  "top-mid": "",
+  "top-left": "",
+  "top-right": "",
+  bottom: "",
+  "bottom-mid": "",
+  "bottom-left": "",
+  "bottom-right": "",
+  left: "",
+  "left-mid": "",
+  mid: "",
+  "mid-mid": "",
+  right: "",
+  "right-mid": "",
+  middle: "",
 };
 
 function getTerminalWidth(): number {
@@ -77,7 +88,9 @@ export function renderTable(head: string[], rows: string[][]): string {
 
   if (colWidths) {
     for (const row of rows) {
-      table.push(row.map((cell, i) => truncate(cell, colWidths[i] - PADDING_RIGHT)));
+      table.push(
+        row.map((cell, i) => truncate(cell, colWidths[i] - PADDING_RIGHT)),
+      );
     }
   } else {
     for (const row of rows) {

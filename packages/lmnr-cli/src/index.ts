@@ -4,7 +4,11 @@ import { errorMessage } from "@lmnr-ai/types";
 import { Command } from "commander";
 
 import { version } from "../package.json";
-import { withLocalOpts, withProjectClient, withUserToken } from "./auth/with-client";
+import {
+  withLocalOpts,
+  withProjectClient,
+  withUserToken,
+} from "./auth/with-client";
 import { handleAsk } from "./commands/ask";
 import {
   handleDatasetsCreate,
@@ -66,7 +70,7 @@ async function main() {
     .option(
       "--project-id <id>",
       "Target project id. Defaults to the linked .lmnr/project.json. " +
-      "Run `lmnr-cli login` first.",
+        "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -176,7 +180,7 @@ async function main() {
     .option(
       "--project-id <id>",
       "Target project id. Defaults to the linked .lmnr/project.json. " +
-      "Run `lmnr-cli login` first.",
+        "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -249,7 +253,7 @@ Examples:
     .option(
       "--project-id <id>",
       "Target project id. Defaults to the linked .lmnr/project.json. " +
-      "Run `lmnr-cli login` first.",
+        "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -308,13 +312,13 @@ FILTER (matched anywhere in the trace) are different things.
     .requiredOption(
       "--schema <json>",
       "Payload schema as JSON: " +
-      '\'{"properties":{"<field>":{"type":"string|number|boolean",' +
-      '"description":"...","enum":["..."]}}}\'',
+        '\'{"properties":{"<field>":{"type":"string|number|boolean",' +
+        '"description":"...","enum":["..."]}}}\'',
     )
     .option(
       "--trigger <kind>",
       "When to evaluate: root-span-finished | span-name. " +
-      "Omitted → root-span-finished",
+        "Omitted → root-span-finished",
     )
     .option(
       "--span-name <name>",
@@ -326,8 +330,8 @@ FILTER (matched anywhere in the trace) are different things.
     .option(
       "--filter <expr>",
       "Filter as JSON (repeatable, ANDed): " +
-      '\'{"column":"total_token_count","operator":"gt","value":"1000"}\'. ' +
-      "Omitted → the default >1000 tokens",
+        '\'{"column":"total_token_count","operator":"gt","value":"1000"}\'. ' +
+        "Omitted → the default >1000 tokens",
       collectFlag,
     )
     .option("--mode <mode>", "batch | realtime. Omitted → realtime")
@@ -368,7 +372,10 @@ Examples:
     .description("Update a signal (only the flags you pass are changed)")
     .argument("<signal>", "Signal id or name")
     .option("--prompt <prompt>", "Replace the LLM instruction")
-    .option("--schema <json>", "Replace the payload schema (same shape as create)")
+    .option(
+      "--schema <json>",
+      "Replace the payload schema (same shape as create)",
+    )
     .option(
       "--trigger <kind>",
       "Change when it is evaluated: root-span-finished | span-name",
@@ -385,7 +392,10 @@ Examples:
       "Replace ALL filters with these (repeatable, same syntax as create)",
       collectFlag,
     )
-    .option("--no-filters", "Clear all filters (run on every trace it fires for)")
+    .option(
+      "--no-filters",
+      "Clear all filters (run on every trace it fires for)",
+    )
     .option("--mode <mode>", "batch | realtime")
     .option("--sample-rate <percent>", "Set the sampling percent (1-95)")
     .option("--no-sampling", "Clear sampling (evaluate every matching trace)")
@@ -434,12 +444,14 @@ Examples:
 
   const askCmd = program
     .command("ask")
-    .description("Ask the Laminar agent a natural-language question about your project")
+    .description(
+      "Ask the Laminar agent a natural-language question about your project",
+    )
     .argument("<query>", "Natural-language question")
     .option(
       "--project-id <id>",
       "Target project id. Defaults to the linked .lmnr/project.json. " +
-      "Run `lmnr-cli login` first.",
+        "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -453,9 +465,12 @@ Examples:
     .option(
       "--conversation <id>",
       "Continue a previous conversation by its id (printed after each answer in human mode, " +
-      "or in the `--json` output as `conversationId`)",
+        "or in the `--json` output as `conversationId`)",
     )
-    .option("--json", "Output structured JSON ({ answer, conversationId, tools }) to stdout");
+    .option(
+      "--json",
+      "Output structured JSON ({ answer, conversationId, tools }) to stdout",
+    );
   withTrackingOptions(askCmd)
     .action(withLocalOpts(handleAsk))
     .addHelpText(
@@ -480,11 +495,15 @@ Examples:
 `,
     );
 
-  const projectCmd = program.command("project").description("Work with Laminar projects");
+  const projectCmd = program
+    .command("project")
+    .description("Work with Laminar projects");
 
   projectCmd
     .command("list")
-    .description("List the projects you can access (● = linked to this directory)")
+    .description(
+      "List the projects you can access (● = linked to this directory)",
+    )
     .option(
       "--base-url <url>",
       "Base URL for the Laminar API. Defaults to the logged-in session or LMNR_BASE_URL",
@@ -499,7 +518,9 @@ Examples:
 
   projectCmd
     .command("link")
-    .description("Re-point this directory to a project (rewrites .lmnr/project.json)")
+    .description(
+      "Re-point this directory to a project (rewrites .lmnr/project.json)",
+    )
     .option(
       "--project-id <id>",
       "Project to link. Omit to open the interactive (alphabetically sorted) picker",
@@ -509,7 +530,10 @@ Examples:
       "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
     )
     .option("--no-write-env", "Do not write LMNR_PROJECT_API_KEY to ./.env")
-    .option("--json", "Emit a machine-readable JSON line ({ projectId, ... }) on stdout")
+    .option(
+      "--json",
+      "Emit a machine-readable JSON line ({ projectId, ... }) on stdout",
+    )
     .action(async (options) => {
       await handleProjectLink(options);
     })
@@ -533,7 +557,9 @@ Examples:
 
   projectCmd
     .command("mint-key")
-    .description("Mint a fresh Project API Key for the linked project and print it")
+    .description(
+      "Mint a fresh Project API Key for the linked project and print it",
+    )
     .option(
       "--project-id <id>",
       "Project to mint for. Defaults to the linked .lmnr/project.json",
@@ -568,12 +594,18 @@ Examples:
     .option("--no-browser", "Do not open the verification URL in a browser")
     .action(async (options) => {
       const result = await handleLogin(options);
-      process.stderr.write(`${pc.green("✓")} Logged in as ${result.userEmail ?? "<unknown>"}.\n`);
       process.stderr.write(
-        pc.dim("Client: lmnr-cli. Tokens stored at ~/.config/lmnr/credentials.json (mode 0600).\n"),
+        `${pc.green("✓")} Logged in as ${result.userEmail ?? "<unknown>"}.\n`,
       );
       process.stderr.write(
-        pc.dim("Run `lmnr-cli setup` in a project directory to link it and write its API key.\n"),
+        pc.dim(
+          "Client: lmnr-cli. Tokens stored at ~/.config/lmnr/credentials.json (mode 0600).\n",
+        ),
+      );
+      process.stderr.write(
+        pc.dim(
+          "Run `lmnr-cli setup` in a project directory to link it and write its API key.\n",
+        ),
       );
     });
 
@@ -586,7 +618,9 @@ Examples:
 
   program
     .command("status")
-    .description("Show the signed-in user, linked project, and active debug session")
+    .description(
+      "Show the signed-in user, linked project, and active debug session",
+    )
     .option("--json", "Output a single flat JSON object to stdout")
     .action(withLocalOpts(handleStatus))
     .addHelpText(
@@ -610,14 +644,18 @@ Examples:
     .command("setup")
     .description(
       "One-shot onboarding: login, select a project, write its key to .env, " +
-      "link .lmnr, and install the Laminar agent skill",
+        "link .lmnr, and install the Laminar agent skill",
     )
-    .option("--write-env", "Write LMNR_PROJECT_API_KEY to ./.env (default)", true)
+    .option(
+      "--write-env",
+      "Write LMNR_PROJECT_API_KEY to ./.env (default)",
+      true,
+    )
     .option("--no-write-env", "Do not write to ./.env")
     .option(
       "--project-id <id>",
       "Project to link when you can access more than one (disambiguates the " +
-      "project_ambiguous case in --json mode)",
+        "project_ambiguous case in --json mode)",
     )
     .option("--json", "Emit a machine-readable JSON line on stdout")
     .option("--no-browser", "Do not auto-open the device-flow URL")
@@ -640,7 +678,9 @@ Examples:
 
   skillCmd
     .command("add")
-    .description("Install the Laminar agent skill into this directory's agent dirs")
+    .description(
+      "Install the Laminar agent skill into this directory's agent dirs",
+    )
     .action(withLocalOpts(handleSkillAdd))
     .addHelpText(
       "after",
@@ -658,7 +698,9 @@ Examples:
 
   skillCmd
     .command("update")
-    .description("Replace every installed Laminar agent skill with the latest version")
+    .description(
+      "Replace every installed Laminar agent skill with the latest version",
+    )
     .action(withLocalOpts(handleSkillUpdate))
     .addHelpText(
       "after",
@@ -683,12 +725,18 @@ Examples:
     .description(
       "Log in, pick a project, mint a key, and install the Laminar plugin for a coding agent",
     )
-    .argument("<agent>", `Which agent to set up (currently: ${Object.keys(AGENTS).join(", ")})`)
+    .argument(
+      "<agent>",
+      `Which agent to set up (currently: ${Object.keys(AGENTS).join(", ")})`,
+    )
     .option(
       "--project-id <id>",
       "Project to send this agent's traces to (skips the interactive picker)",
     )
-    .option("--print-only", "Print the install commands instead of running them")
+    .option(
+      "--print-only",
+      "Print the install commands instead of running them",
+    )
     .option("--json", "Emit a machine-readable JSON line on stdout")
     .option("--no-browser", "Do not auto-open the device-flow URL")
     .option(
@@ -729,7 +777,7 @@ Examples:
     .option(
       "--project-id <id>",
       "Target project id. Defaults to the linked .lmnr/project.json. " +
-      "Run `lmnr-cli login` first.",
+        "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",
@@ -781,7 +829,9 @@ Examples:
 
   debugSessionCmd
     .command("add-note")
-    .description("Attach a free-text note to a debug session (a standalone text block)")
+    .description(
+      "Attach a free-text note to a debug session (a standalone text block)",
+    )
     .argument("<note>", "Note text (may contain markdown)")
     .option(
       "--session-id <id>",
@@ -809,7 +859,9 @@ Examples:
 
   debugSessionCmd
     .command("summary")
-    .description("Print every block in a debug session (traces, evals, notes), oldest first")
+    .description(
+      "Print every block in a debug session (traces, evals, notes), oldest first",
+    )
     .option(
       "--session-id <id>",
       "Debug session ID. Defaults to the session in .lmnr/debug-session.json",
@@ -861,7 +913,9 @@ Examples:
 
   debugSessionCmd
     .command("new")
-    .description("Create a fresh debug session and reset .lmnr/debug-session.json")
+    .description(
+      "Create a fresh debug session and reset .lmnr/debug-session.json",
+    )
     .option("--no-browser", "Do not open the debugger session URL in a browser")
     .action(withProjectClient(handleDebugSessionNew))
     .addHelpText(

@@ -25,32 +25,50 @@ void describe("parseTrigger", () => {
     // Absent must stay undefined so the handler omits the key and the server
     // applies its default.
     expect(parseTrigger(undefined, [])).toBeUndefined();
-    expect(parseTrigger("root-span-finished", [])).toEqual({ type: "rootSpanFinished" });
-    expect(parseTrigger("span-name", ["  agent.run  ", "", "worker.step"])).toEqual({
+    expect(parseTrigger("root-span-finished", [])).toEqual({
+      type: "rootSpanFinished",
+    });
+    expect(
+      parseTrigger("span-name", ["  agent.run  ", "", "worker.step"]),
+    ).toEqual({
       type: "spanName",
       spanNames: ["agent.run", "worker.step"],
     });
   });
 
   void it("rejects span-name with no usable name, which could never fire", () => {
-    expect(() => parseTrigger("span-name", [])).toThrow(/requires at least one --span-name/);
-    expect(() => parseTrigger("span-name", ["  "])).toThrow(/requires at least one --span-name/);
+    expect(() => parseTrigger("span-name", [])).toThrow(
+      /requires at least one --span-name/,
+    );
+    expect(() => parseTrigger("span-name", ["  "])).toThrow(
+      /requires at least one --span-name/,
+    );
   });
 
   void it("rejects --span-name without --trigger span-name instead of inferring it", () => {
-    expect(() => parseTrigger(undefined, ["agent.run"])).toThrow(/requires --trigger span-name/);
-    expect(() => parseTrigger("root-span-finished", ["agent.run"])).toThrow(/only applies to/);
+    expect(() => parseTrigger(undefined, ["agent.run"])).toThrow(
+      /requires --trigger span-name/,
+    );
+    expect(() => parseTrigger("root-span-finished", ["agent.run"])).toThrow(
+      /only applies to/,
+    );
   });
 
   void it("rejects an unknown kind and lists the valid ones", () => {
-    expect(() => parseTrigger("rootSpanFinished", [])).toThrow(/root-span-finished/);
+    expect(() => parseTrigger("rootSpanFinished", [])).toThrow(
+      /root-span-finished/,
+    );
     expect(() => parseTrigger("none", [])).toThrow(/root-span-finished/);
   });
 });
 
 void describe("parseFilter", () => {
   void it("passes the filter object through for the server to validate", () => {
-    expect(parseFilter('{"column":"total_token_count","operator":"gt","value":"1000"}')).toEqual({
+    expect(
+      parseFilter(
+        '{"column":"total_token_count","operator":"gt","value":"1000"}',
+      ),
+    ).toEqual({
       column: "total_token_count",
       operator: "gt",
       value: "1000",
@@ -60,23 +78,40 @@ void describe("parseFilter", () => {
   void it("preserves richer value types and extra keys", () => {
     // The point of keeping filters as JSON: the shape can grow server-side
     // without a CLI change, so nothing here may narrow or drop it.
-    expect(parseFilter('{"column":"span_names","operator":"eq","value":["a","b"],"negate":true}'))
-      .toEqual({ column: "span_names", operator: "eq", value: ["a", "b"], negate: true });
-    expect(parseFilter('{"column":"total_token_count","operator":"gt","value":1000}').value)
-      .toBe(1000);
+    expect(
+      parseFilter(
+        '{"column":"span_names","operator":"eq","value":["a","b"],"negate":true}',
+      ),
+    ).toEqual({
+      column: "span_names",
+      operator: "eq",
+      value: ["a", "b"],
+      negate: true,
+    });
+    expect(
+      parseFilter('{"column":"total_token_count","operator":"gt","value":1000}')
+        .value,
+    ).toBe(1000);
   });
 
   void it("rejects malformed JSON and a missing column / operator / value", () => {
     expect(() => parseFilter("{nope")).toThrow(/not valid JSON/);
     expect(() => parseFilter('["a"]')).toThrow(/must be a JSON object/);
-    expect(() => parseFilter('{"operator":"gt","value":"1"}')).toThrow(/"column"/);
-    expect(() => parseFilter('{"column":"c","value":"1"}')).toThrow(/"operator"/);
-    expect(() => parseFilter('{"column":"c","operator":"gt"}')).toThrow(/"value"/);
+    expect(() => parseFilter('{"operator":"gt","value":"1"}')).toThrow(
+      /"column"/,
+    );
+    expect(() => parseFilter('{"column":"c","value":"1"}')).toThrow(
+      /"operator"/,
+    );
+    expect(() => parseFilter('{"column":"c","operator":"gt"}')).toThrow(
+      /"value"/,
+    );
   });
 
   void it("does not validate the column, leaving the allowlist to the server", () => {
-    expect(parseFilter('{"column":"nonsense","operator":"eq","value":"1"}').column)
-      .toBe("nonsense");
+    expect(
+      parseFilter('{"column":"nonsense","operator":"eq","value":"1"}').column,
+    ).toBe("nonsense");
   });
 });
 
@@ -90,14 +125,18 @@ void describe("parseMode", () => {
 
 void describe("parseStructuredOutput", () => {
   void it("fills omitted type and required from the properties", () => {
-    const parsed = parseStructuredOutput('{"properties":{"a":{"type":"string"}}}');
+    const parsed = parseStructuredOutput(
+      '{"properties":{"a":{"type":"string"}}}',
+    );
     expect(parsed.type).toBe("object");
     expect(parsed.required).toEqual(["a"]);
   });
 
   void it("rejects non-JSON, non-objects, and a missing properties map", () => {
     expect(() => parseStructuredOutput("{nope")).toThrow(/not valid JSON/);
-    expect(() => parseStructuredOutput('["a"]')).toThrow(/must be a JSON object/);
+    expect(() => parseStructuredOutput('["a"]')).toThrow(
+      /must be a JSON object/,
+    );
     expect(() => parseStructuredOutput("{}")).toThrow(/"properties"/);
   });
 });

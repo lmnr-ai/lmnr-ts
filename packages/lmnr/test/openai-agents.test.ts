@@ -8,7 +8,10 @@ import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import nock from "nock";
 
 import { Laminar } from "../src/index";
-import { _resetConfiguration, initializeTracing } from "../src/opentelemetry-lib/configuration";
+import {
+  _resetConfiguration,
+  initializeTracing,
+} from "../src/opentelemetry-lib/configuration";
 import {
   DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY,
   DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY_RAW,
@@ -27,14 +30,10 @@ import {
   setLmnrSpanIo,
   setToolDefinitionsFromResponse,
 } from "../src/opentelemetry-lib/instrumentation/openai-agents/messages";
-import {
-  LaminarAgentsTraceProcessor,
-} from "../src/opentelemetry-lib/instrumentation/openai-agents/processor";
-import {
-  applySpanData,
-} from "../src/opentelemetry-lib/instrumentation/openai-agents/span-data";
+import { LaminarAgentsTraceProcessor } from "../src/opentelemetry-lib/instrumentation/openai-agents/processor";
+import { applySpanData } from "../src/opentelemetry-lib/instrumentation/openai-agents/span-data";
 import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
-import { decompressRecordingResponse } from "./utils";
+import { decompressRecordingResponse, recordingReplyHeaders } from "./utils";
 
 const captureAttrs = () => {
   const captured: Record<string, any> = {};
@@ -47,7 +46,9 @@ const captureAttrs = () => {
       status.code = s.code;
       status.message = s.message;
     },
-    end: () => {},
+    end: () => {
+      /* empty */
+    },
   } as any;
   return { span, captured, status };
 };
@@ -106,7 +107,9 @@ void describe("openai-agents messages helpers", () => {
     const { span, captured } = captureAttrs();
     setGenAiInputMessages(span, "hello there");
     const messages = JSON.parse(captured["gen_ai.input.messages"]);
-    assert.deepStrictEqual(messages, [{ role: "user", content: "hello there" }]);
+    assert.deepStrictEqual(messages, [
+      { role: "user", content: "hello there" },
+    ]);
   });
 
   void it("setGenAiInputMessages prepends system instructions", () => {
@@ -157,7 +160,9 @@ void describe("openai-agents messages helpers", () => {
     const { span, captured } = captureAttrs();
     setGenAiOutputMessagesFromResponse(span, {
       id: "resp_123",
-      output: [{ type: "message", content: [{ type: "output_text", text: "hi" }] }],
+      output: [
+        { type: "message", content: [{ type: "output_text", text: "hi" }] },
+      ],
     });
     const parsed = JSON.parse(captured["gen_ai.output.messages"]);
     assert.strictEqual(parsed.id, "resp_123");
@@ -214,7 +219,10 @@ void describe("openai-agents messages helpers", () => {
   void it("setLmnrSpanIo serializes input and output", () => {
     const { span, captured } = captureAttrs();
     setLmnrSpanIo(span, { foo: "bar" }, [1, 2, 3]);
-    assert.strictEqual(captured["lmnr.span.input"], JSON.stringify({ foo: "bar" }));
+    assert.strictEqual(
+      captured["lmnr.span.input"],
+      JSON.stringify({ foo: "bar" }),
+    );
     assert.strictEqual(captured["lmnr.span.output"], JSON.stringify([1, 2, 3]));
   });
 });
@@ -457,7 +465,9 @@ void describe("LaminarAgentsTraceProcessor", () => {
       (s) => s.attributes["gen_ai.response.id"] === "resp_sys",
     );
     assert.ok(resp);
-    const input = JSON.parse(resp.attributes["gen_ai.input.messages"] as string);
+    const input = JSON.parse(
+      resp.attributes["gen_ai.input.messages"] as string,
+    );
     assert.deepStrictEqual(input[0], {
       role: "system",
       content: [{ type: "input_text", text: "You are a calculator." }],
@@ -493,61 +503,58 @@ void describe("LaminarAgentsTraceProcessor", () => {
     assert.strictEqual(toolSpanExported.name, "get_weather");
   });
 
-  void it(
-    "nested Laminar.startSpan inherits the active agents span as parent",
-    async () => {
-      // Regression for the case where another Laminar instrumentation
-      // (google-genai, anthropic, etc.) creates a span from inside an
-      // @openai/agents tool / agent callback: the nested span must be
-      // parented to the agents span, not become a root span in a separate
-      // trace. The processor makes this work by activating each agents span
-      // on Laminar's ALS context stack for the duration of the span.
-      const processor = new LaminarAgentsTraceProcessor();
-      processor.start();
+  void it("nested Laminar.startSpan inherits the active agents span as parent", async () => {
+    // Regression for the case where another Laminar instrumentation
+    // (google-genai, anthropic, etc.) creates a span from inside an
+    // @openai/agents tool / agent callback: the nested span must be
+    // parented to the agents span, not become a root span in a separate
+    // trace. The processor makes this work by activating each agents span
+    // on Laminar's ALS context stack for the duration of the span.
+    const processor = new LaminarAgentsTraceProcessor();
+    processor.start();
 
-      const t = fakeTrace({ traceId: "trace_nested_parent", name: "t" });
-      await processor.onTraceStart(t);
+    const t = fakeTrace({ traceId: "trace_nested_parent", name: "t" });
+    await processor.onTraceStart(t);
 
-      const agentsSpan = fakeSpan({
-        traceId: "trace_nested_parent",
-        spanId: "span_parent",
-        name: null,
-        spanData: {
-          type: "function",
-          name: "tool_outer",
-          input: "x",
-          output: "y",
-        },
-      });
-      await processor.onSpanStart(agentsSpan);
+    const agentsSpan = fakeSpan({
+      traceId: "trace_nested_parent",
+      spanId: "span_parent",
+      name: null,
+      spanData: {
+        type: "function",
+        name: "tool_outer",
+        input: "x",
+        output: "y",
+      },
+    });
+    await processor.onSpanStart(agentsSpan);
 
-      // Simulate a nested Laminar-instrumented call.
-      const nested = Laminar.startSpan({ name: "nested.llm", spanType: "LLM" });
-      nested.end();
+    // Simulate a nested Laminar-instrumented call.
+    const nested = Laminar.startSpan({ name: "nested.llm", spanType: "LLM" });
+    nested.end();
 
-      await processor.onSpanEnd(agentsSpan);
-      await processor.onTraceEnd(t);
-      await Laminar.flush();
+    await processor.onSpanEnd(agentsSpan);
+    await processor.onTraceEnd(t);
+    await Laminar.flush();
 
-      const spans = exporter.getFinishedSpans();
-      const nestedSpan = spans.find((s) => s.name === "nested.llm");
-      const toolSpan = spans.find((s) => s.name === "tool_outer");
-      assert.ok(nestedSpan && toolSpan, "expected both spans exported");
-      assert.strictEqual(
-        nestedSpan.spanContext().traceId,
-        toolSpan.spanContext().traceId,
-        "nested span must share the agents trace id",
-      );
-      const nestedParent =
-        (nestedSpan as any).parentSpanContext?.spanId
-        ?? (nestedSpan as any).parentSpanId;
-      assert.strictEqual(
-        nestedParent,
-        toolSpan.spanContext().spanId,
-        "nested span must be parented to the active agents span",
-      );
-    },
-  );
+    const spans = exporter.getFinishedSpans();
+    const nestedSpan = spans.find((s) => s.name === "nested.llm");
+    const toolSpan = spans.find((s) => s.name === "tool_outer");
+    assert.ok(nestedSpan && toolSpan, "expected both spans exported");
+    assert.strictEqual(
+      nestedSpan.spanContext().traceId,
+      toolSpan.spanContext().traceId,
+      "nested span must share the agents trace id",
+    );
+    const nestedParent =
+      (nestedSpan as any).parentSpanContext?.spanId ??
+      (nestedSpan as any).parentSpanId;
+    assert.strictEqual(
+      nestedParent,
+      toolSpan.spanContext().spanId,
+      "nested span must be parented to the active agents span",
+    );
+  });
 
   void it("idempotent onTraceEnd", async () => {
     const processor = new LaminarAgentsTraceProcessor();
@@ -641,106 +648,100 @@ void describe("LaminarAgentsTraceProcessor", () => {
     );
   });
 
-  void it(
-    "pushes onto ALS during a span's lifetime and removes cleanly on end",
-    async () => {
-      // The processor activates each agents span on the Laminar ALS stack so
-      // that nested Laminar instrumentation (google-genai, etc.) running
-      // inside tool / agent callbacks inherits the agents span as parent.
-      // It must remove the entry by reference on onSpanEnd so that
-      // out-of-order ends cannot corrupt entries belonging to unrelated
-      // still-active spans on the same async frame.
-      const processor = new LaminarAgentsTraceProcessor();
-      processor.start();
+  void it("pushes onto ALS during a span's lifetime and removes cleanly on end", async () => {
+    // The processor activates each agents span on the Laminar ALS stack so
+    // that nested Laminar instrumentation (google-genai, etc.) running
+    // inside tool / agent callbacks inherits the agents span as parent.
+    // It must remove the entry by reference on onSpanEnd so that
+    // out-of-order ends cannot corrupt entries belonging to unrelated
+    // still-active spans on the same async frame.
+    const processor = new LaminarAgentsTraceProcessor();
+    processor.start();
 
-      const baselineStack = LaminarContextManager.getContextStack().length;
+    const baselineStack = LaminarContextManager.getContextStack().length;
 
-      const fakeTraceObj = fakeTrace({ traceId: "trace_als", name: "t" });
-      await processor.onTraceStart(fakeTraceObj);
+    const fakeTraceObj = fakeTrace({ traceId: "trace_als", name: "t" });
+    await processor.onTraceStart(fakeTraceObj);
 
-      const childSpan = fakeSpan({
-        traceId: "trace_als",
-        spanId: "span_als_child",
-        name: null,
-        spanData: { type: "function", name: "tool", input: "x", output: "x" },
-      });
-      await processor.onSpanStart(childSpan);
-      assert.strictEqual(
-        LaminarContextManager.getContextStack().length,
-        baselineStack + 1,
-        "onSpanStart must push the agents span onto ALS so nested "
-          + "instrumentation inherits it",
-      );
+    const childSpan = fakeSpan({
+      traceId: "trace_als",
+      spanId: "span_als_child",
+      name: null,
+      spanData: { type: "function", name: "tool", input: "x", output: "x" },
+    });
+    await processor.onSpanStart(childSpan);
+    assert.strictEqual(
+      LaminarContextManager.getContextStack().length,
+      baselineStack + 1,
+      "onSpanStart must push the agents span onto ALS so nested " +
+        "instrumentation inherits it",
+    );
 
-      await processor.onSpanEnd(childSpan);
-      assert.strictEqual(
-        LaminarContextManager.getContextStack().length,
-        baselineStack,
-        "onSpanEnd must remove the activation entry",
-      );
+    await processor.onSpanEnd(childSpan);
+    assert.strictEqual(
+      LaminarContextManager.getContextStack().length,
+      baselineStack,
+      "onSpanEnd must remove the activation entry",
+    );
 
-      await processor.onTraceEnd(fakeTraceObj);
-      assert.strictEqual(
-        LaminarContextManager.getContextStack().length,
-        baselineStack,
-        "processor must leave ALS stack unchanged after ending trace",
-      );
-    },
-  );
+    await processor.onTraceEnd(fakeTraceObj);
+    assert.strictEqual(
+      LaminarContextManager.getContextStack().length,
+      baselineStack,
+      "processor must leave ALS stack unchanged after ending trace",
+    );
+  });
 
-  void it(
-    "removes activation entries by reference, surviving out-of-order ends",
-    async () => {
-      // Interleave starts/ends from two agent spans: if removal were a blind
-      // LIFO pop, ending the *older* span first would drop the newer span's
-      // entry. `removeContext` finds the exact reference instead.
-      const processor = new LaminarAgentsTraceProcessor();
-      processor.start();
+  void it("removes activation entries by reference, surviving out-of-order ends", async () => {
+    // Interleave starts/ends from two agent spans: if removal were a blind
+    // LIFO pop, ending the *older* span first would drop the newer span's
+    // entry. `removeContext` finds the exact reference instead.
+    const processor = new LaminarAgentsTraceProcessor();
+    processor.start();
 
-      const fakeTraceObj = fakeTrace({ traceId: "trace_interleave", name: "t" });
-      await processor.onTraceStart(fakeTraceObj);
+    const fakeTraceObj = fakeTrace({ traceId: "trace_interleave", name: "t" });
+    await processor.onTraceStart(fakeTraceObj);
 
-      const baselineStack = LaminarContextManager.getContextStack().length;
+    const baselineStack = LaminarContextManager.getContextStack().length;
 
-      const spanA = fakeSpan({
-        traceId: "trace_interleave",
-        spanId: "span_A",
-        name: null,
-        spanData: { type: "function", name: "tool_A", input: "a", output: "a" },
-      });
-      const spanB = fakeSpan({
-        traceId: "trace_interleave",
-        spanId: "span_B",
-        name: null,
-        spanData: { type: "function", name: "tool_B", input: "b", output: "b" },
-      });
+    const spanA = fakeSpan({
+      traceId: "trace_interleave",
+      spanId: "span_A",
+      name: null,
+      spanData: { type: "function", name: "tool_A", input: "a", output: "a" },
+    });
+    const spanB = fakeSpan({
+      traceId: "trace_interleave",
+      spanId: "span_B",
+      name: null,
+      spanData: { type: "function", name: "tool_B", input: "b", output: "b" },
+    });
 
-      await processor.onSpanStart(spanA);
-      await processor.onSpanStart(spanB);
-      assert.strictEqual(
-        LaminarContextManager.getContextStack().length,
-        baselineStack + 2,
-        "both span activations must be on the stack",
-      );
+    await processor.onSpanStart(spanA);
+    await processor.onSpanStart(spanB);
+    assert.strictEqual(
+      LaminarContextManager.getContextStack().length,
+      baselineStack + 2,
+      "both span activations must be on the stack",
+    );
 
-      // Out-of-LIFO end: close A before B.
-      await processor.onSpanEnd(spanA);
-      assert.strictEqual(
-        LaminarContextManager.getContextStack().length,
-        baselineStack + 1,
-        "ending A first must remove A's entry, leaving B's in place",
-      );
+    // Out-of-LIFO end: close A before B.
+    await processor.onSpanEnd(spanA);
+    assert.strictEqual(
+      LaminarContextManager.getContextStack().length,
+      baselineStack + 1,
+      "ending A first must remove A's entry, leaving B's in place",
+    );
 
-      await processor.onSpanEnd(spanB);
-      assert.strictEqual(
-        LaminarContextManager.getContextStack().length,
-        baselineStack,
-        "ending B must clean up the remaining entry",
-      );
+    await processor.onSpanEnd(spanB);
+    assert.strictEqual(
+      LaminarContextManager.getContextStack().length,
+      baselineStack,
+      "ending B must clean up the remaining entry",
+    );
 
-      await processor.onTraceEnd(fakeTraceObj);
-    },
-  );
+    await processor.onTraceEnd(fakeTraceObj);
+  });
 });
 
 void describe("openai-agents end-to-end via nock", () => {
@@ -758,7 +759,7 @@ void describe("openai-agents end-to-end via nock", () => {
       nock(recording.scope)
         .persist()
         .intercept(recording.path, recording.method ?? "POST")
-        .reply(recording.status, response, recording.rawHeaders ?? recording.headers);
+        .reply(recording.status, response, recordingReplyHeaders(recording));
     });
   };
 
@@ -820,8 +821,14 @@ void describe("openai-agents end-to-end via nock", () => {
     );
     assert.ok(responseSpan, "expected a response span with model gpt-4o-mini");
     assert.strictEqual(responseSpan.attributes["gen_ai.system"], "openai");
-    assert.strictEqual(responseSpan.attributes["gen_ai.usage.input_tokens"], 25);
-    assert.strictEqual(responseSpan.attributes["gen_ai.usage.output_tokens"], 8);
+    assert.strictEqual(
+      responseSpan.attributes["gen_ai.usage.input_tokens"],
+      25,
+    );
+    assert.strictEqual(
+      responseSpan.attributes["gen_ai.usage.output_tokens"],
+      8,
+    );
     assert.strictEqual(responseSpan.attributes["llm.usage.total_tokens"], 33);
     assert.strictEqual(
       responseSpan.attributes["gen_ai.response.id"],
@@ -833,9 +840,7 @@ void describe("openai-agents end-to-end via nock", () => {
     );
     assert.deepStrictEqual(input[0], {
       role: "system",
-      content: [
-        { type: "input_text", text: "You are a helpful assistant." },
-      ],
+      content: [{ type: "input_text", text: "You are a helpful assistant." }],
     });
 
     // Every non-root span produced by the agents run should be parented under
@@ -844,7 +849,7 @@ void describe("openai-agents end-to-end via nock", () => {
     // callbacks end up flattened at the trace root.
     const traceId = responseSpan.spanContext().traceId;
     const sameTrace = spans.filter((s) => s.spanContext().traceId === traceId);
-    const getParent = (s: typeof spans[number]): string | undefined => {
+    const getParent = (s: (typeof spans)[number]): string | undefined => {
       const anyS = s as any;
       return (anyS.parentSpanId ?? anyS.parentSpanContext?.spanId) as
         | string
@@ -855,7 +860,8 @@ void describe("openai-agents end-to-end via nock", () => {
       roots.length,
       1,
       `expected a single root span in trace, got ${roots.length}: ` +
-        sameTrace.map((s) => `${s.name}(parent=${getParent(s) ?? "none"})`)
+        sameTrace
+          .map((s) => `${s.name}(parent=${getParent(s) ?? "none"})`)
           .join(", "),
     );
   });

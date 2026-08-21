@@ -1,3 +1,4 @@
+// biome-ignore-all lint/complexity/noBannedTypes: instrumentation wraps arbitrary Functions
 import { LaminarClient } from "@lmnr-ai/client";
 import { errorMessage, type SessionRecordingOptions } from "@lmnr-ai/types";
 import { diag, type Span, trace } from "@opentelemetry/api";
@@ -35,13 +36,6 @@ import {
   TargetInfoChangedEvent,
   V3RecorderState,
 } from "./types";
-
-/* eslint-disable
-  @typescript-eslint/no-this-alias,
-  @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return,
-  @typescript-eslint/no-misused-promises
-*/
 
 /**
  * Guarded _wrap: only wraps `target[methodName]` if it exists as a function.
@@ -556,7 +550,8 @@ export class StagehandInstrumentation extends InstrumentationBase {
           );
         } catch (error) {
           logger.debug(
-            "Error removing target info changed handler: " + errorMessage(error),
+            "Error removing target info changed handler: " +
+              errorMessage(error),
           );
         }
       }
@@ -853,7 +848,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
                       (maybeModelName?.includes("/")
                         ? maybeModelName?.split("/")[0]
                         : instrumentation.globalLLMClientOptions.get(this)
-                          ?.provider);
+                            ?.provider);
                     const model =
                       maybeModelName ??
                       instrumentation.globalLLMClientOptions.get(this)?.model;
@@ -1016,8 +1011,6 @@ export class StagehandInstrumentation extends InstrumentationBase {
     parentSpan: Span,
     stagehandInstance: any,
   ) {
-    const instrumentation = this;
-
     let baseProvider = stagehandInstance?.llmClient?.type as string | undefined;
     const baseModel = stagehandInstance?.llmClient?.modelName as
       | string
@@ -1029,7 +1022,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
 
     const wrapApiMethod = (methodName: "act" | "extract" | "observe") => {
       safeWrap(
-        instrumentation,
+        this,
         apiClient,
         methodName,
         (original: (...args: any[]) => Promise<any>) =>
@@ -1133,9 +1126,3 @@ export class StagehandInstrumentation extends InstrumentationBase {
     wrapApiMethod("observe");
   }
 }
-/* eslint-enable
-  @typescript-eslint/no-this-alias,
-  @typescript-eslint/no-unsafe-function-type,
-  @typescript-eslint/no-unsafe-return,
-  @typescript-eslint/no-misused-promises
-*/

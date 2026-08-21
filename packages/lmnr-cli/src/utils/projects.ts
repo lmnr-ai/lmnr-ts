@@ -11,7 +11,10 @@ import { pc } from "./colors";
  * project scope). Shared by every command that resolves a project before one is
  * selected (`setup`, `plugin add`).
  */
-export const listProjects = async (creds: Credentials, baseUrl: string): Promise<CliProject[]> => {
+export const listProjects = async (
+  creds: Credentials,
+  baseUrl: string,
+): Promise<CliProject[]> => {
   const updated = await refreshIfNeeded(creds);
   const client = new LaminarClient({
     baseUrl,
@@ -38,7 +41,9 @@ export const promptProjectChoice = async (
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {
     while (true) {
-      const answer = (await rl.question(`Select [1-${projects.length}]: `)).trim();
+      const answer = (
+        await rl.question(`Select [1-${projects.length}]: `)
+      ).trim();
       const idx = Number.parseInt(answer, 10);
       if (Number.isInteger(idx) && idx >= 1 && idx <= projects.length) {
         return projects[idx - 1];

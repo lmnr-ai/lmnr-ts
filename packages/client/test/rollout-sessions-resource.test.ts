@@ -8,10 +8,10 @@ void describe("RolloutSessions Resource Tests", () => {
     const mockFetch = mock.fn(() => ({ ok: true }));
     global.fetch = mockFetch as any;
 
-    const resource = new RolloutSessionsResource(
-      "https://api.test.com:443",
-      { type: "apiKey", key: "test-api-key" },
-    );
+    const resource = new RolloutSessionsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "test-api-key",
+    });
     await resource.register({ sessionId: "sess-1" });
 
     assert.strictEqual(mockFetch.mock.calls.length, 1);
@@ -34,10 +34,10 @@ void describe("RolloutSessions Resource Tests", () => {
     }));
     global.fetch = mockFetch as any;
 
-    const resource = new RolloutSessionsResource(
-      "https://api.test.com:443",
-      { type: "apiKey", key: "test-api-key" },
-    );
+    const resource = new RolloutSessionsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "test-api-key",
+    });
     const projectId = await resource.register({ sessionId: "sess-1" });
 
     assert.strictEqual(projectId, "proj-123");
@@ -50,10 +50,10 @@ void describe("RolloutSessions Resource Tests", () => {
     }));
     global.fetch = mockFetch as any;
 
-    const resource = new RolloutSessionsResource(
-      "https://api.test.com:443",
-      { type: "apiKey", key: "test-api-key" },
-    );
+    const resource = new RolloutSessionsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "test-api-key",
+    });
     const projectId = await resource.register({ sessionId: "sess-1" });
 
     assert.strictEqual(projectId, null);
@@ -63,10 +63,10 @@ void describe("RolloutSessions Resource Tests", () => {
     const mockFetch = mock.fn(() => ({ ok: true }));
     global.fetch = mockFetch as any;
 
-    const resource = new RolloutSessionsResource(
-      "https://api.test.com:443",
-      { type: "apiKey", key: "test-api-key" },
-    );
+    const resource = new RolloutSessionsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "test-api-key",
+    });
     await resource.register({ sessionId: "sess-2", name: "my run" });
 
     const requestOptions = (
@@ -80,10 +80,10 @@ void describe("RolloutSessions Resource Tests", () => {
     const mockFetch = mock.fn(() => ({ ok: true }));
     global.fetch = mockFetch as any;
 
-    const resource = new RolloutSessionsResource(
-      "https://api.test.com:443",
-      { type: "apiKey", key: "test-api-key" },
-    );
+    const resource = new RolloutSessionsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "test-api-key",
+    });
     await resource.delete({ sessionId: "sess-3" });
 
     const call = mockFetch.mock.calls[0];
@@ -103,10 +103,10 @@ void describe("RolloutSessions Resource Tests", () => {
     }));
     global.fetch = mockFetch as any;
 
-    const resource = new RolloutSessionsResource(
-      "https://api.test.com:443",
-      { type: "apiKey", key: "test-api-key" },
-    );
+    const resource = new RolloutSessionsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "test-api-key",
+    });
     await assert.rejects(
       () => resource.register({ sessionId: "sess-4" }),
       /500/,
@@ -120,10 +120,10 @@ void describe("RolloutSessions Resource Tests", () => {
     }));
     global.fetch = mockFetch as any;
 
-    const resource = new RolloutSessionsResource(
-      "https://api.test.com:443",
-      { type: "apiKey", key: "test-api-key" },
-    );
+    const resource = new RolloutSessionsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "test-api-key",
+    });
     const id = await resource.addBlock({
       sessionId: "sess-5",
       type: "text",
@@ -149,10 +149,10 @@ void describe("RolloutSessions Resource Tests", () => {
     }));
     global.fetch = mockFetch as any;
 
-    const resource = new RolloutSessionsResource(
-      "https://api.test.com:443",
-      { type: "apiKey", key: "test-api-key" },
-    );
+    const resource = new RolloutSessionsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "test-api-key",
+    });
     const id = await resource.addBlock({
       sessionId: "sess-cmd",
       type: "command",
@@ -160,7 +160,9 @@ void describe("RolloutSessions Resource Tests", () => {
     });
 
     assert.strictEqual(id, "block-2");
-    const requestOptions = (mockFetch.mock.calls[0].arguments as any)[1] as RequestInit;
+    const requestOptions = (
+      mockFetch.mock.calls[0].arguments as any
+    )[1] as RequestInit;
     const body = JSON.parse(requestOptions.body as string);
     assert.deepStrictEqual(body, {
       type: "command",
@@ -169,13 +171,17 @@ void describe("RolloutSessions Resource Tests", () => {
   });
 
   void it("addBlock returns null and warns on 404 by default", async () => {
-    const mockFetch = mock.fn(() => ({ ok: false, status: 404, text: () => "nope" }));
+    const mockFetch = mock.fn(() => ({
+      ok: false,
+      status: 404,
+      text: () => "nope",
+    }));
     global.fetch = mockFetch as any;
 
-    const resource = new RolloutSessionsResource(
-      "https://api.test.com:443",
-      { type: "apiKey", key: "test-api-key" },
-    );
+    const resource = new RolloutSessionsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "test-api-key",
+    });
     const id = await resource.addBlock({
       sessionId: "sess-6",
       type: "text",
@@ -186,13 +192,17 @@ void describe("RolloutSessions Resource Tests", () => {
   });
 
   void it("addBlock throws on 404 when failOnNotFound is set", async () => {
-    const mockFetch = mock.fn(() => ({ ok: false, status: 404, text: () => "nope" }));
+    const mockFetch = mock.fn(() => ({
+      ok: false,
+      status: 404,
+      text: () => "nope",
+    }));
     global.fetch = mockFetch as any;
 
-    const resource = new RolloutSessionsResource(
-      "https://api.test.com:443",
-      { type: "apiKey", key: "test-api-key" },
-    );
+    const resource = new RolloutSessionsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "test-api-key",
+    });
     await assert.rejects(
       () =>
         resource.addBlock({
@@ -213,7 +223,12 @@ void describe("RolloutSessions Resource Tests", () => {
         type: "trace",
         content: { traceId: "t1" },
       },
-      { id: "b2", createdAt: "2026-06-01T11:00:00.000Z", type: "text", content: { text: "hi" } },
+      {
+        id: "b2",
+        createdAt: "2026-06-01T11:00:00.000Z",
+        type: "text",
+        content: { text: "hi" },
+      },
     ];
     const mockFetch = mock.fn(() => ({
       ok: true,
@@ -221,10 +236,10 @@ void describe("RolloutSessions Resource Tests", () => {
     }));
     global.fetch = mockFetch as any;
 
-    const resource = new RolloutSessionsResource(
-      "https://api.test.com:443",
-      { type: "apiKey", key: "test-api-key" },
-    );
+    const resource = new RolloutSessionsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "test-api-key",
+    });
     const result = await resource.listBlocks({ sessionId: "sess-8" });
 
     assert.deepStrictEqual(result, blocks);
@@ -239,15 +254,23 @@ void describe("RolloutSessions Resource Tests", () => {
 
   void it("listBlocks accepts a bare array body", async () => {
     const blocks = [
-      { id: "b1", createdAt: "2026-06-01T10:00:00.000Z", type: "text", content: { text: "hi" } },
+      {
+        id: "b1",
+        createdAt: "2026-06-01T10:00:00.000Z",
+        type: "text",
+        content: { text: "hi" },
+      },
     ];
-    const mockFetch = mock.fn(() => ({ ok: true, json: () => Promise.resolve(blocks) }));
+    const mockFetch = mock.fn(() => ({
+      ok: true,
+      json: () => Promise.resolve(blocks),
+    }));
     global.fetch = mockFetch as any;
 
-    const resource = new RolloutSessionsResource(
-      "https://api.test.com:443",
-      { type: "apiKey", key: "test-api-key" },
-    );
+    const resource = new RolloutSessionsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "test-api-key",
+    });
     const result = await resource.listBlocks({ sessionId: "sess-9" });
 
     assert.deepStrictEqual(result, blocks);

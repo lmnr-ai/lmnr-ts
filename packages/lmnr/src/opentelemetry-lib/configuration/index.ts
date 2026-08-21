@@ -1,4 +1,4 @@
-import { diag, DiagConsoleLogger, DiagLogLevel } from "@opentelemetry/api";
+import { DiagConsoleLogger, DiagLogLevel, diag } from "@opentelemetry/api";
 
 import { type InitializeOptions } from "../interfaces";
 import { startTracing } from "../tracing";
@@ -32,13 +32,10 @@ export const initializeTracing = (options: InitializeOptions) => {
   _configuration = Object.freeze(options);
 
   if (options.logLevel) {
-    diag.setLogger(
-      new DiagConsoleLogger(),
-      {
-        logLevel: logLevelToOtelLogLevel(options.logLevel),
-        suppressOverrideMessage: true,
-      },
-    );
+    diag.setLogger(new DiagConsoleLogger(), {
+      logLevel: logLevelToOtelLogLevel(options.logLevel),
+      suppressOverrideMessage: true,
+    });
   }
 
   startTracing(_configuration);

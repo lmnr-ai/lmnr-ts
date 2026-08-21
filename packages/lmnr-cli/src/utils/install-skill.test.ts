@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,12 +36,17 @@ const skillPaths = (root: string) =>
 beforeEach(() => {
   scratch = mkdtempSync(join(tmpdir(), "lmnr-cli-skill-"));
   downloadTemplate.mockReset();
-  downloadTemplate.mockImplementation((_source: string, opts: { dir: string }) => {
-    mkdirSync(join(opts.dir, "references"), { recursive: true });
-    writeFileSync(join(opts.dir, "SKILL.md"), "# Laminar quickstart trace\n");
-    writeFileSync(join(opts.dir, "references", "quickstart-node.md"), "node quickstart\n");
-    return Promise.resolve({ dir: opts.dir, source: _source });
-  });
+  downloadTemplate.mockImplementation(
+    (_source: string, opts: { dir: string }) => {
+      mkdirSync(join(opts.dir, "references"), { recursive: true });
+      writeFileSync(join(opts.dir, "SKILL.md"), "# Laminar quickstart trace\n");
+      writeFileSync(
+        join(opts.dir, "references", "quickstart-node.md"),
+        "node quickstart\n",
+      );
+      return Promise.resolve({ dir: opts.dir, source: _source });
+    },
+  );
 });
 
 afterEach(async () => {
@@ -48,9 +59,13 @@ describe("installSkill", () => {
     const result = await installSkill(scratch);
     expect(result.skipped).toBe(false);
     expect(result.defaulted).toBe(false);
-    expect([...result.written].sort()).toEqual(skillPaths(join(scratch, ".claude")));
+    expect([...result.written].sort()).toEqual(
+      skillPaths(join(scratch, ".claude")),
+    );
     for (const p of result.written) expect(existsSync(p)).toBe(true);
-    expect(readFileSync(skillPaths(join(scratch, ".claude"))[0], "utf8")).toContain("Laminar");
+    expect(
+      readFileSync(skillPaths(join(scratch, ".claude"))[0], "utf8"),
+    ).toContain("Laminar");
     // downloaded once, regardless of target count
     expect(downloadTemplate).toHaveBeenCalledTimes(1);
   });
@@ -61,7 +76,10 @@ describe("installSkill", () => {
     const result = await installSkill(scratch);
     expect(result.defaulted).toBe(false);
     expect([...result.written].sort()).toEqual(
-      [...skillPaths(join(scratch, ".cursor")), ...skillPaths(join(scratch, ".codex"))].sort(),
+      [
+        ...skillPaths(join(scratch, ".cursor")),
+        ...skillPaths(join(scratch, ".codex")),
+      ].sort(),
     );
     for (const p of result.written) expect(existsSync(p)).toBe(true);
     expect(downloadTemplate).toHaveBeenCalledTimes(1);
@@ -71,11 +89,18 @@ describe("installSkill", () => {
     const result = await installSkill(scratch);
     expect(result.defaulted).toBe(true);
     expect([...result.written].sort()).toEqual(
-      [...skillPaths(join(scratch, ".claude")), ...skillPaths(join(scratch, ".agents"))].sort(),
+      [
+        ...skillPaths(join(scratch, ".claude")),
+        ...skillPaths(join(scratch, ".agents")),
+      ].sort(),
     );
     for (const p of result.written) expect(existsSync(p)).toBe(true);
-    expect(existsSync(join(scratch, ".claude", "skills", SKILL_NAME))).toBe(true);
-    expect(existsSync(join(scratch, ".agents", "skills", SKILL_NAME))).toBe(true);
+    expect(existsSync(join(scratch, ".claude", "skills", SKILL_NAME))).toBe(
+      true,
+    );
+    expect(existsSync(join(scratch, ".agents", "skills", SKILL_NAME))).toBe(
+      true,
+    );
     expect(downloadTemplate).toHaveBeenCalledTimes(1);
   });
 
@@ -83,7 +108,9 @@ describe("installSkill", () => {
     mkdirSync(join(scratch, ".claude"));
     await installSkill(scratch);
     const result = await installSkill(scratch);
-    expect([...result.written].sort()).toEqual(skillPaths(join(scratch, ".claude")));
+    expect([...result.written].sort()).toEqual(
+      skillPaths(join(scratch, ".claude")),
+    );
     expect(existsSync(result.written[0])).toBe(true);
   });
 
@@ -94,7 +121,9 @@ describe("installSkill", () => {
     expect(result.skipped).toBe(true);
     expect(result.written).toEqual([]);
     expect(result.defaulted).toBe(false);
-    expect(existsSync(join(scratch, ".claude", "skills", SKILL_NAME))).toBe(false);
+    expect(existsSync(join(scratch, ".claude", "skills", SKILL_NAME))).toBe(
+      false,
+    );
   });
 
   it("reports files written before a mid-run failure (partial install)", async () => {
@@ -106,8 +135,12 @@ describe("installSkill", () => {
 
     const result = await installSkill(scratch);
     expect(result.skipped).toBe(true);
-    expect([...result.written].sort()).toEqual(skillPaths(join(scratch, ".claude")));
-    expect(existsSync(join(scratch, ".claude", "skills", SKILL_NAME, "SKILL.md"))).toBe(true);
+    expect([...result.written].sort()).toEqual(
+      skillPaths(join(scratch, ".claude")),
+    );
+    expect(
+      existsSync(join(scratch, ".claude", "skills", SKILL_NAME, "SKILL.md")),
+    ).toBe(true);
   });
 });
 
@@ -129,7 +162,9 @@ describe("resolveInstallTargets", () => {
 
 describe("findInstalledSkillDirs", () => {
   it("returns only agent dirs that hold an installed skill", async () => {
-    mkdirSync(join(scratch, ".claude", "skills", SKILL_NAME), { recursive: true });
+    mkdirSync(join(scratch, ".claude", "skills", SKILL_NAME), {
+      recursive: true,
+    });
     mkdirSync(join(scratch, ".cursor")); // present, but no skill installed
     expect(await findInstalledSkillDirs(scratch)).toEqual([".claude"]);
   });
@@ -142,8 +177,17 @@ describe("findInstalledSkillDirs", () => {
 
 describe("installSkillInto", () => {
   it("replaces the installed tree, removing files deleted upstream", async () => {
-    const stale = join(scratch, ".claude", "skills", SKILL_NAME, "references", "removed.md");
-    mkdirSync(join(scratch, ".claude", "skills", SKILL_NAME, "references"), { recursive: true });
+    const stale = join(
+      scratch,
+      ".claude",
+      "skills",
+      SKILL_NAME,
+      "references",
+      "removed.md",
+    );
+    mkdirSync(join(scratch, ".claude", "skills", SKILL_NAME, "references"), {
+      recursive: true,
+    });
     writeFileSync(stale, "stale\n");
 
     const written = await installSkillInto(scratch, [".claude"]);
@@ -154,6 +198,8 @@ describe("installSkillInto", () => {
 
   it("throws when the download fails", async () => {
     downloadTemplate.mockRejectedValueOnce(new Error("network down"));
-    await expect(installSkillInto(scratch, [".claude"])).rejects.toThrow("network down");
+    await expect(installSkillInto(scratch, [".claude"])).rejects.toThrow(
+      "network down",
+    );
   });
 });

@@ -7,8 +7,12 @@ const h = vi.hoisted(() => ({
   resolveDebugSessionDir: vi.fn(() => "/repo"),
 }));
 
-vi.mock("../../auth/credentials", () => ({ safeReadCredentials: h.safeReadCredentials }));
-vi.mock("../../utils/local-project-file", () => ({ readLocalProjectFile: h.readLocalProjectFile }));
+vi.mock("../../auth/credentials", () => ({
+  safeReadCredentials: h.safeReadCredentials,
+}));
+vi.mock("../../utils/local-project-file", () => ({
+  readLocalProjectFile: h.readLocalProjectFile,
+}));
 vi.mock("../../utils/debug-session-file", () => ({
   readDebugSessionFile: h.readDebugSessionFile,
   resolveDebugSessionDir: h.resolveDebugSessionDir,
@@ -26,7 +30,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   // outputJson uses console.log.
-  logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  logSpy = vi.spyOn(console, "log").mockImplementation(() => {
+    /* empty */
+  });
 });
 
 afterEach(() => {
