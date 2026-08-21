@@ -185,7 +185,7 @@ importers:
         specifier: ^2.0.0
         version: 2.0.0
       '@google/genai':
-        specifier: 2.17.1
+        specifier: ^2.17.1
         version: 2.17.1
       '@lmnr-ai/client':
         specifier: workspace:*
