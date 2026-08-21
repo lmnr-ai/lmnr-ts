@@ -1,12 +1,27 @@
 "use client";
 
-import { randomUUID } from "node:crypto";
 import { useState } from "react";
 
 type Message = {
+  id: string;
   role: "user" | "assistant";
   content: string;
 };
+
+// Stable, unique id per message, assigned once at creation time. A render-time
+// id (randomUUID() in the key) would change identity on every render and remount
+// every bubble; the array index would reuse identity across different messages.
+let messageCounter = 0;
+const nextMessageId = () => `message-${messageCounter++}`;
+
+const INITIAL_MESSAGES: Message[] = [
+  {
+    id: nextMessageId(),
+    role: "assistant",
+    content:
+      "Hello, I'm here to help. Feel free to share your thoughts or concerns, and I'll listen and provide support. What's on your mind today?",
+  },
+];
 
 // Ref callback: React invokes it when the node mounts, i.e. exactly when a new
 // message (or the typing indicator) is appended. Defined at module scope so its
@@ -17,23 +32,20 @@ const scrollIntoView = (node: HTMLDivElement | null) => {
 };
 
 export default function ChatUI() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content:
-        "Hello, I'm here to help. Feel free to share your thoughts or concerns, and I'll listen and provide support. What's on your mind today?",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [provider, setProvider] = useState<"openai" | "anthropic">("openai");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim() === "") return;
 
     // Add user message
-    const userMessage: Message = { role: "user", content: input };
+    const userMessage: Message = {
+      id: nextMessageId(),
+      role: "user",
+      content: input,
+    };
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
@@ -47,7 +59,6 @@ export default function ChatUI() {
         },
         body: JSON.stringify({
           messages: [...messages, userMessage],
-          provider,
         }),
       });
 
@@ -60,12 +71,13 @@ export default function ChatUI() {
       // Add assistant's response
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: data.message },
+        { id: nextMessageId(), role: "assistant", content: data.message },
       ]);
     } catch {
       setMessages((prev) => [
         ...prev,
         {
+          id: nextMessageId(),
           role: "assistant",
           content:
             "I'm sorry, I'm having trouble responding right now. Please try again in a moment.",
@@ -78,33 +90,11 @@ export default function ChatUI() {
 
   return (
     <div className="flex flex-col w-full max-w-2xl mx-auto h-[70vh]">
-      <div className="mb-4 flex justify-end">
-        <div className="flex items-center">
-          <label
-            htmlFor="provider"
-            className="mr-2 text-sm text-gray-700 dark:text-gray-300"
-          >
-            Provider:
-          </label>
-          <select
-            id="provider"
-            value={provider}
-            onChange={(e) =>
-              setProvider(e.target.value as "openai" | "anthropic")
-            }
-            className="border rounded-md py-1 px-2 text-sm bg-white dark:bg-gray-800
-                      text-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic</option>
-          </select>
-        </div>
-      </div>
       <div className="bg-white dark:bg-gray-800 rounded-t-lg p-4 border border-gray-200 dark:border-gray-700 overflow-y-auto grow">
         <div className="space-y-4">
           {messages.map((message) => (
             <div
-              key={`view-message-${randomUUID()}`}
+              key={message.id}
               ref={scrollIntoView}
               className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >

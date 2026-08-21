@@ -1,12 +1,27 @@
 "use client";
 
-import { randomUUID } from "node:crypto";
 import { useState } from "react";
 
 type Message = {
+  id: string;
   role: "user" | "assistant";
   content: string;
 };
+
+// Stable, unique id per message, assigned once at creation time. A render-time
+// id (randomUUID() in the key) would change identity on every render and remount
+// every bubble; the array index would reuse identity across different messages.
+let messageCounter = 0;
+const nextMessageId = () => `message-${messageCounter++}`;
+
+const INITIAL_MESSAGES: Message[] = [
+  {
+    id: nextMessageId(),
+    role: "assistant",
+    content:
+      "Hello, I'm here to help. Feel free to share your thoughts or concerns, and I'll listen and provide support. What's on your mind today?",
+  },
+];
 
 // Ref callback: React invokes it when the node mounts, i.e. exactly when a new
 // message (or the typing indicator) is appended. Defined at module scope so its
@@ -17,13 +32,7 @@ const scrollIntoView = (node: HTMLDivElement | null) => {
 };
 
 export default function ChatUI() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content:
-        "Hello, I'm here to help. Feel free to share your thoughts or concerns, and I'll listen and provide support. What's on your mind today?",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [provider, setProvider] = useState<"openai" | "anthropic">("openai");
@@ -33,7 +42,11 @@ export default function ChatUI() {
     if (input.trim() === "") return;
 
     // Add user message
-    const userMessage: Message = { role: "user", content: input };
+    const userMessage: Message = {
+      id: nextMessageId(),
+      role: "user",
+      content: input,
+    };
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
@@ -60,12 +73,13 @@ export default function ChatUI() {
       // Add assistant's response
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: data.message },
+        { id: nextMessageId(), role: "assistant", content: data.message },
       ]);
     } catch {
       setMessages((prev) => [
         ...prev,
         {
+          id: nextMessageId(),
           role: "assistant",
           content:
             "I'm sorry, I'm having trouble responding right now. Please try again in a moment.",
@@ -104,7 +118,7 @@ export default function ChatUI() {
         <div className="space-y-4">
           {messages.map((message) => (
             <div
-              key={`view-message-${randomUUID()}`}
+              key={message.id}
               ref={scrollIntoView}
               className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
