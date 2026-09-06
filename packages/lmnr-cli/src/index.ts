@@ -23,6 +23,7 @@ import {
   handleDebugSessionSetName,
   handleDebugSessionSummary,
 } from "./commands/debug";
+import { handleLlmProfileList } from "./commands/llm-profile";
 import { handleLogin } from "./commands/login";
 import { handleLogout } from "./commands/logout";
 import { AGENTS, handlePluginAdd } from "./commands/plugin";
@@ -340,6 +341,17 @@ FILTER (matched anywhere in the trace) are different things.
       "Evaluate only this percent of matching traces (1-95). Omitted → no sampling",
     )
     .option("--disabled", "Create the signal deactivated")
+    .option(
+      "--llm-profile <name>",
+      "Workspace LLM profile name to run the signal on (self-hosted only). " +
+        "Required together with --model on self-hosted; rejected on Laminar Cloud. " +
+        "Discover names with `lmnr-cli llm-profile list`",
+    )
+    .option(
+      "--model <name>",
+      "Model to use from --llm-profile (self-hosted only). " +
+        "Required together with --llm-profile",
+    )
     .action(withProjectClient(handleSignalCreate))
     .addHelpText(
       "after",
@@ -352,6 +364,12 @@ Payload schema rules (identical to the UI):
   - field types: "string", "number", "boolean" (enum: "string" + "enum": [...])
   - every field is required
 ${TRIGGER_HELP}
+LLM profile (self-hosted only):
+  --llm-profile <name> and --model <name> together pick a workspace LLM
+  profile and one of its models to run the signal on. Both are REQUIRED on
+  self-hosted deployments and REJECTED on Laminar Cloud. Discover profiles
+  with \`lmnr-cli llm-profile list\`.
+
 Examples:
   $ lmnr-cli signal create "Refund requests" \\
       --prompt "Detect when the user asks for a refund. Extract the reason." \\
@@ -364,6 +382,11 @@ Examples:
       --trigger span-name --span-name agent.run \\
       --filter '{"column":"status","operator":"eq","value":"error"}' \\
       --mode realtime --sample-rate 25 --json
+
+  $ lmnr-cli signal create "Refund requests" \\
+      --prompt "Detect refund asks." \\
+      --schema '{"properties":{"reason":{"type":"string","description":"Refund reason"}}}' \\
+      --llm-profile prod-openai --model gpt-4o
 `,
     );
 
@@ -401,6 +424,16 @@ Examples:
     .option("--no-sampling", "Clear sampling (evaluate every matching trace)")
     .option("--disabled", "Deactivate the signal")
     .option("--no-disabled", "Reactivate the signal")
+    .option(
+      "--llm-profile <name>",
+      "Re-route the signal onto a workspace LLM profile (self-hosted only). " +
+        "Must be paired with --model. There is no flag to clear the route " +
+        "back to the server's env LLM.",
+    )
+    .option(
+      "--model <name>",
+      "Model to use from --llm-profile. Must be paired with --llm-profile",
+    )
     .action(withProjectClient(handleSignalUpdate))
     .addHelpText(
       "after",
@@ -408,7 +441,8 @@ Examples:
 This is a PARTIAL update: any flag you omit keeps its stored value, so changing
 the prompt will not clear sampling, reactivate a disabled signal, or alter when
 it fires. --trigger, --filter, and --mode are independent — changing one leaves
-the other two alone. --filter REPLACES the whole filter set.
+the other two alone. --filter REPLACES the whole filter set. --llm-profile and
+--model must be passed together to re-route the signal (self-hosted only).
 ${TRIGGER_HELP}
 Examples:
   $ lmnr-cli signal update "Refund requests" --prompt "Detect refund asks only"
@@ -419,6 +453,8 @@ Examples:
   $ lmnr-cli signal update "Refund requests" \\
       --filter '{"column":"total_token_count","operator":"gt","value":"5000"}'
   $ lmnr-cli signal update "Refund requests" --no-filters
+  $ lmnr-cli signal update "Refund requests" \\
+      --llm-profile prod-openai --model gpt-4o-mini
   $ lmnr-cli signal update "Refund requests" --mode realtime
   $ lmnr-cli signal update "Refund requests" \\
       --trigger span-name --span-name agent.run --span-name worker.step
@@ -439,6 +475,51 @@ event it produced (in ClickHouse). A name must match exactly one signal.
 Examples:
   $ lmnr-cli signal delete "Refund requests"
   $ lmnr-cli signal delete 29b937f1-7e3c-4768-a5e3-7e891c2d7d0a --json
+`,
+    );
+
+  const llmProfileCmd = program
+    .command("llm-profile")
+    .alias("llm-profiles")
+    .description(
+      "Inspect the workspace LLM profiles signals can run on (self-hosted only)",
+    )
+    .option(
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+        "Run `lmnr-cli login` first.",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option("--json", "Output structured JSON to stdout");
+
+  llmProfileCmd
+    .command("list")
+    .description(
+      "List the workspace LLM profiles with the models each declares",
+    )
+    .action(withProjectClient(handleLlmProfileList))
+    .addHelpText(
+      "after",
+      `
+LLM profiles are workspace-scoped provider + credentials + models pairings a
+signal can be pinned to. Self-hosted only: on Laminar Cloud the server rejects
+the request with "LLM profiles are not available on Laminar Cloud".
+
+Feed the printed \`Name\` and one of its \`Models\` to
+\`lmnr-cli signal create --llm-profile <name> --model <name>\`
+or \`lmnr-cli signal update ... --llm-profile <name> --model <name>\`.
+
+Examples:
+  $ lmnr-cli llm-profile list
+  $ lmnr-cli llm-profile list --json
 `,
     );
 

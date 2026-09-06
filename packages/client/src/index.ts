@@ -4,6 +4,7 @@ import { DatasetsResource } from "./resources/datasets";
 import { EvalsResource } from "./resources/evals";
 import { EvaluatorsResource } from "./resources/evaluators";
 import { type LaminarAuth } from "./resources/index";
+import { LlmProfilesResource } from "./resources/llm-profiles";
 import { RolloutSessionsResource } from "./resources/rollout-sessions";
 import { SignalsResource } from "./resources/signals";
 import { SqlResource } from "./resources/sql";
@@ -20,6 +21,7 @@ export class LaminarClient {
   private _datasets: DatasetsResource;
   private _evals: EvalsResource;
   private _evaluators: EvaluatorsResource;
+  private _llmProfiles: LlmProfilesResource;
   private _rolloutSessions: RolloutSessionsResource;
   private _signals: SignalsResource;
   private _sql: SqlResource;
@@ -79,6 +81,7 @@ export class LaminarClient {
     this._datasets = new DatasetsResource(this.baseUrl, this.auth);
     this._evals = new EvalsResource(this.baseUrl, this.auth);
     this._evaluators = new EvaluatorsResource(this.baseUrl, this.auth);
+    this._llmProfiles = new LlmProfilesResource(this.baseUrl, this.auth);
     this._rolloutSessions = new RolloutSessionsResource(
       this.baseUrl,
       this.auth,
@@ -161,6 +164,10 @@ export class LaminarClient {
 
   public get evaluators() {
     return this._evaluators;
+  }
+
+  public get llmProfiles() {
+    return this._llmProfiles;
   }
 
   public get signals() {

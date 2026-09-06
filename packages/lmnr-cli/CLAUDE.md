@@ -56,6 +56,33 @@ This is a CLI for the Laminar agent observability platform.
   `raiseSignalError` instead of `BaseResource.handleError`: signal routes answer
   `{error: "<message>"}` with user-facing text, and the shared handler would
   print the raw JSON body at the user (`409 {"error":"..."}`).
+- **`--llm-profile <name>` + `--model <name>` are self-hosted only and pass
+  through untouched.** Both are wire fields in the signals create/update body,
+  they must be sent together (server rejects a half pair with a user-facing
+  400), on Laminar Cloud any pair is rejected with `"LLM profiles are not
+  available on Laminar Cloud"`, and on self-hosted `create` both are REQUIRED.
+  All of that is enforced in `signals/service.rs::resolve_llm_route` and the
+  messages are surfaced verbatim by `raiseSignalError` — do NOT duplicate any
+  of these rules in `validate.ts`. The wire has no shape for CLEARING the route
+  back to the server's env LLM on update; do not invent one.
+
+# LLM profiles (`src/commands/llm-profile/`)
+
+- **The command is discovery-only** (`lmnr-cli llm-profile list`, aliased to
+  `llm-profiles`): it lists the caller's project's workspace profiles with the
+  models each declares so users can feed the printed `Name` / `Models` into
+  `signal create --llm-profile <name> --model <name>`. There is no create /
+  update / delete — profile management lives in the frontend (Settings → LLM
+  profiles), which owns the encryption workflow.
+- Self-hosted only: on Laminar Cloud the server 404s with
+  `{error: "LLM profiles are not available on Laminar Cloud"}` (same envelope
+  the signals routes use). `LlmProfilesResource.raiseLlmProfileError` unwraps
+  it for the same reason `SignalsResource` does — the raw JSON body is not
+  user-facing text.
+- The endpoint is `GET /v1/cli/llm-profiles`, `CliProjectAuth`-scoped, backed
+  by `db::llm_profiles::list_workspace_llm_profile_options` (mirrors the
+  frontend's `listProjectLlmProfileOptions` picker payload — no config, no
+  secrets, no role check beyond project access).
 
 # Package Boundaries
 - `lmnr-cli` is the standalone CLI (`npx lmnr-cli@latest`). It depends on
