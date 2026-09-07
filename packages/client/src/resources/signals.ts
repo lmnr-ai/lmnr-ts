@@ -22,18 +22,19 @@ export interface CreateSignalOptions {
   /** Defaults to `"realtime"`. */
   mode?: SignalMode;
   /**
-   * Workspace LLM profile name. Required together with `model` on self-hosted
-   * deployments; rejected on Laminar Cloud (the server has env-configured LLMs).
+   * Workspace LLM profile id (discover via `llmProfiles.list()`). Required
+   * together with `model` on self-hosted deployments; rejected on Laminar
+   * Cloud (the server has env-configured LLMs).
    */
-  llmProfile?: string;
-  /** One of the profile's models. Required together with `llmProfile`. */
+  llmProfileId?: string;
+  /** One of the profile's models. Required together with `llmProfileId`. */
   model?: string;
 }
 
 /**
  * A partial patch. Every field is optional and an ABSENT field leaves the stored
  * value alone. `sampleRate: null` clears sampling, `filters: []` clears filters.
- * `llmProfile` + `model` must be sent together to re-route; the wire has no
+ * `llmProfileId` + `model` must be sent together to re-route; the wire has no
  * shape for clearing the route back to the server's env LLM.
  */
 export interface UpdateSignalOptions {
@@ -44,7 +45,7 @@ export interface UpdateSignalOptions {
   trigger?: SignalTrigger;
   filters?: SignalFilter[];
   mode?: SignalMode;
-  llmProfile?: string;
+  llmProfileId?: string;
   model?: string;
 }
 

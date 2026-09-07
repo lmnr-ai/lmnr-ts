@@ -193,6 +193,11 @@ export class LaminarClient {
 
 export type { CliProject, ProjectKeyProbe } from "./resources/cli";
 export type { LaminarAuth } from "./resources/index";
+export type {
+  CreateLlmProfileOptions,
+  LlmProfileSecretsInput,
+  UpdateLlmProfileOptions,
+} from "./resources/llm-profiles";
 export {
   type CacheOutcome,
   RolloutSessionsResource,
