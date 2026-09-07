@@ -48,3 +48,22 @@ export interface Signal {
   filters: SignalFilter[];
   mode: SignalMode;
 }
+
+/**
+ * Stored judge definition blob. The schema key is `structuredOutputSchema`,
+ * not `structuredOutput` — that name is only on `GET /signals/{id}`.
+ */
+export interface SignalDefinition {
+  prompt: string;
+  structuredOutputSchema: SignalStructuredOutput;
+}
+
+/**
+ * One historical judge definition. `GET /signals/{id}`'s `version` field is
+ * only the current pointer; this is the version log.
+ */
+export interface SignalVersion {
+  version: number;
+  definition: SignalDefinition;
+  createdAt: string;
+}
