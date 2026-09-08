@@ -23,6 +23,13 @@ import {
   handleDebugSessionSetName,
   handleDebugSessionSummary,
 } from "./commands/debug";
+import {
+  handleLlmProfileCreate,
+  handleLlmProfileDelete,
+  handleLlmProfileGet,
+  handleLlmProfileList,
+  handleLlmProfileUpdate,
+} from "./commands/llm-profile";
 import { handleLogin } from "./commands/login";
 import { handleLogout } from "./commands/logout";
 import { AGENTS, handlePluginAdd } from "./commands/plugin";
@@ -340,6 +347,17 @@ FILTER (matched anywhere in the trace) are different things.
       "Evaluate only this percent of matching traces (1-95). Omitted → no sampling",
     )
     .option("--disabled", "Create the signal deactivated")
+    .option(
+      "--llm-profile-id <id>",
+      "Workspace LLM profile id to run the signal on (self-hosted only). " +
+        "Required together with --model on self-hosted; rejected on Laminar Cloud. " +
+        "Discover ids with `lmnr-cli llm-profile list`",
+    )
+    .option(
+      "--model <name>",
+      "Model to use from the profile (self-hosted only). " +
+        "Required together with --llm-profile-id",
+    )
     .action(withProjectClient(handleSignalCreate))
     .addHelpText(
       "after",
@@ -352,6 +370,12 @@ Payload schema rules (identical to the UI):
   - field types: "string", "number", "boolean" (enum: "string" + "enum": [...])
   - every field is required
 ${TRIGGER_HELP}
+LLM profile (self-hosted only):
+  --llm-profile-id <id> and --model <name> together pick a workspace LLM
+  profile and one of its models to run the signal on. Both are REQUIRED on
+  self-hosted deployments and REJECTED on Laminar Cloud. Discover profile ids
+  with \`lmnr-cli llm-profile list\`.
+
 Examples:
   $ lmnr-cli signal create "Refund requests" \\
       --prompt "Detect when the user asks for a refund. Extract the reason." \\
@@ -364,6 +388,11 @@ Examples:
       --trigger span-name --span-name agent.run \\
       --filter '{"column":"status","operator":"eq","value":"error"}' \\
       --mode realtime --sample-rate 25 --json
+
+  $ lmnr-cli signal create "Refund requests" \\
+      --prompt "Detect refund asks." \\
+      --schema '{"properties":{"reason":{"type":"string","description":"Refund reason"}}}' \\
+      --llm-profile-id 3f6c9f1e-8f4b-4b0e-9d3a-2f4f4a6d8b11 --model gpt-4o
 `,
     );
 
@@ -401,6 +430,16 @@ Examples:
     .option("--no-sampling", "Clear sampling (evaluate every matching trace)")
     .option("--disabled", "Deactivate the signal")
     .option("--no-disabled", "Reactivate the signal")
+    .option(
+      "--llm-profile-id <id>",
+      "Re-route the signal onto a workspace LLM profile by id (self-hosted " +
+        "only). Must be paired with --model. There is no flag to clear the " +
+        "route back to the server's env LLM.",
+    )
+    .option(
+      "--model <name>",
+      "Model to use from the profile. Must be paired with --llm-profile-id",
+    )
     .action(withProjectClient(handleSignalUpdate))
     .addHelpText(
       "after",
@@ -408,7 +447,8 @@ Examples:
 This is a PARTIAL update: any flag you omit keeps its stored value, so changing
 the prompt will not clear sampling, reactivate a disabled signal, or alter when
 it fires. --trigger, --filter, and --mode are independent — changing one leaves
-the other two alone. --filter REPLACES the whole filter set.
+the other two alone. --filter REPLACES the whole filter set. --llm-profile-id
+and --model must be passed together to re-route the signal (self-hosted only).
 ${TRIGGER_HELP}
 Examples:
   $ lmnr-cli signal update "Refund requests" --prompt "Detect refund asks only"
@@ -419,6 +459,8 @@ Examples:
   $ lmnr-cli signal update "Refund requests" \\
       --filter '{"column":"total_token_count","operator":"gt","value":"5000"}'
   $ lmnr-cli signal update "Refund requests" --no-filters
+  $ lmnr-cli signal update "Refund requests" \\
+      --llm-profile-id 3f6c9f1e-8f4b-4b0e-9d3a-2f4f4a6d8b11 --model gpt-4o-mini
   $ lmnr-cli signal update "Refund requests" --mode realtime
   $ lmnr-cli signal update "Refund requests" \\
       --trigger span-name --span-name agent.run --span-name worker.step
@@ -439,6 +481,195 @@ event it produced (in ClickHouse). A name must match exactly one signal.
 Examples:
   $ lmnr-cli signal delete "Refund requests"
   $ lmnr-cli signal delete 29b937f1-7e3c-4768-a5e3-7e891c2d7d0a --json
+`,
+    );
+
+  const llmProfileCmd = program
+    .command("llm-profile")
+    .alias("llm-profiles")
+    .description(
+      "Manage the workspace LLM profiles signals can run on (self-hosted only)",
+    )
+    .option(
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+        "Run `lmnr-cli login` first.",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option("--json", "Output structured JSON to stdout");
+
+  /**
+   * Provider-shape flags shared by `create` and `update`. Which combination a
+   * provider needs is validated server-side; the flags only assemble the body.
+   * The provider endpoint flag is `--provider-base-url` because `--base-url`
+   * (group level) is the Laminar API URL and `optsWithGlobals` would shadow it.
+   */
+  const addProfileShapeOptions = (cmd: Command): Command =>
+    cmd
+      .option(
+        "--model <name>",
+        "Model the profile declares (repeatable). On update, REPLACES the " +
+          "whole model list",
+        collectFlag,
+      )
+      .option("--api-key <key>", "API key (all providers except Bedrock)")
+      .option(
+        "--access-key-id <id>",
+        "AWS access key id (Bedrock; selects AWS-keys auth, " +
+          "pair with --secret-access-key)",
+      )
+      .option("--secret-access-key <key>", "AWS secret access key (Bedrock)")
+      .option(
+        "--token <token>",
+        "Bearer token (Bedrock; selects bearer-token auth)",
+      )
+      .option("--region <region>", "AWS region (Bedrock)")
+      .option(
+        "--resource-id <id>",
+        "Azure resource id (alternative to --provider-base-url)",
+      )
+      .option(
+        "--provider-base-url <url>",
+        "Provider endpoint URL (Azure alternative to --resource-id; " +
+          "required for custom). NOT the Laminar API URL — that is --base-url",
+      )
+      .option("--api-version <version>", "Azure API version")
+      .option(
+        "--header <name=value>",
+        "Custom header for the custom provider (repeatable). Names are " +
+          "stored in the profile config, values as secrets",
+        collectFlag,
+      );
+
+  llmProfileCmd
+    .command("list")
+    .description(
+      "List the workspace LLM profiles with the models each declares",
+    )
+    .action(withProjectClient(handleLlmProfileList))
+    .addHelpText(
+      "after",
+      `
+LLM profiles are workspace-scoped provider + credentials + models pairings a
+signal can be pinned to. Self-hosted only: on Laminar Cloud the server rejects
+the request with "LLM profiles are not available on this deployment".
+
+Feed the printed \`ID\` and one of its \`Models\` to
+\`lmnr-cli signal create --llm-profile-id <id> --model <name>\`
+or \`lmnr-cli signal update ... --llm-profile-id <id> --model <name>\`.
+
+Examples:
+  $ lmnr-cli llm-profile list
+  $ lmnr-cli llm-profile list --json
+`,
+    );
+
+  llmProfileCmd
+    .command("get")
+    .description("Show one LLM profile (secrets appear as masks)")
+    .argument("<profile-id>", "Profile id (see `lmnr-cli llm-profile list`)")
+    .action(withProjectClient(handleLlmProfileGet))
+    .addHelpText(
+      "after",
+      `
+Secrets are write-only: the server returns a first3***last3 mask per stored
+value plus custom header names, never the plaintext.
+
+Examples:
+  $ lmnr-cli llm-profile get 3f6c9f1e-8f4b-4b0e-9d3a-2f4f4a6d8b11
+  $ lmnr-cli llm-profile get 3f6c9f1e-8f4b-4b0e-9d3a-2f4f4a6d8b11 --json
+`,
+    );
+
+  addProfileShapeOptions(
+    llmProfileCmd
+      .command("create")
+      .description("Create a workspace LLM profile")
+      .argument("<name>", "Profile name (unique per workspace)")
+      .requiredOption(
+        "--provider <provider>",
+        "openai_completions | openai_responses | gemini | bedrock | " +
+          "azure_chat_completions | azure_responses | azure_anthropic | custom",
+      ),
+  )
+    .action(withProjectClient(handleLlmProfileCreate))
+    .addHelpText(
+      "after",
+      `
+Per-provider flags (everything else is rejected server-side):
+  openai_*, gemini:        --api-key
+  azure_*:                 --api-key + exactly one of --resource-id /
+                           --provider-base-url; optional --api-version
+  bedrock:                 --region + either --access-key-id with
+                           --secret-access-key, or --token
+  custom (OpenAI-compat):  --api-key + --provider-base-url;
+                           optional --header <name=value> (repeatable)
+
+Examples:
+  $ lmnr-cli llm-profile create prod-openai --provider openai_responses \\
+      --api-key sk-... --model gpt-4o --model gpt-4o-mini
+
+  $ lmnr-cli llm-profile create bedrock-eu --provider bedrock \\
+      --region eu-west-1 --access-key-id AKIA... --secret-access-key ... \\
+      --model anthropic.claude-3-5-sonnet-20240620-v1:0
+
+  $ lmnr-cli llm-profile create gateway --provider custom \\
+      --provider-base-url https://gw.internal.example.com --api-key key \\
+      --header X-Team=ml --model gpt-4o
+`,
+    );
+
+  addProfileShapeOptions(
+    llmProfileCmd
+      .command("update")
+      .description("Update an LLM profile (only the flags you pass change)")
+      .argument("<profile-id>", "Profile id (see `lmnr-cli llm-profile list`)")
+      .option("--name <name>", "Rename the profile")
+      .option(
+        "--provider <provider>",
+        "Change the provider (requires re-passing the config flags)",
+      ),
+  )
+    .action(withProjectClient(handleLlmProfileUpdate))
+    .addHelpText(
+      "after",
+      `
+Partial update with two caveats:
+  - Any config flag (--region, --resource-id, --provider-base-url,
+    --api-version, --header, --access-key-id, --token) sends a WHOLE new
+    config, so re-pass every config field the provider needs.
+  - --model REPLACES the whole model list. Removing a model that a signal is
+    pinned to is refused.
+Omitted secrets keep their stored values, so credentials never need re-sending.
+
+Examples:
+  $ lmnr-cli llm-profile update 3f6c9f1e-... --name staging-openai
+  $ lmnr-cli llm-profile update 3f6c9f1e-... --api-key sk-new
+  $ lmnr-cli llm-profile update 3f6c9f1e-... --model gpt-4o --model o3-mini
+`,
+    );
+
+  llmProfileCmd
+    .command("delete")
+    .description("Delete an LLM profile (refused while a signal uses it)")
+    .argument("<profile-id>", "Profile id (see `lmnr-cli llm-profile list`)")
+    .action(withProjectClient(handleLlmProfileDelete))
+    .addHelpText(
+      "after",
+      `
+Deletion is permanent. The server refuses while any signal still routes
+through the profile — re-route or delete those signals first.
+
+Examples:
+  $ lmnr-cli llm-profile delete 3f6c9f1e-8f4b-4b0e-9d3a-2f4f4a6d8b11
 `,
     );
 

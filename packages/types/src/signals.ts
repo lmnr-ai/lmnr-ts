@@ -47,4 +47,10 @@ export interface Signal {
   trigger: SignalTrigger;
   filters: SignalFilter[];
   mode: SignalMode;
+  /** Workspace LLM profile id; `null` = runs on the server's env LLM. */
+  llmProfileId: string | null;
+  /** Display name of `llmProfileId`; `null` alongside it. */
+  llmProfileName: string | null;
+  /** Model pinned within the profile; `null` alongside `llmProfileId`. */
+  model: string | null;
 }
