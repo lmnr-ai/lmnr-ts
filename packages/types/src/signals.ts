@@ -50,12 +50,23 @@ export interface Signal {
 }
 
 /**
- * Stored judge definition blob. The schema key is `structuredOutputSchema`,
- * not `structuredOutput` — that name is only on `GET /signals/{id}`.
+ * Stored version blob on `GET /signals/{id}/versions`. Schema key is
+ * `structuredOutputSchema`, not `structuredOutput` (that name is only on
+ * `GET /signals/{id}`). `trigger`/`filters` are stored Filter[] JSON
+ * (`signal_triggers.value` / `filters`), not the CLI tagged {@link SignalTrigger}.
  */
 export interface SignalDefinition {
+  name: string;
   prompt: string;
   structuredOutputSchema: SignalStructuredOutput;
+  trigger: SignalFilter[];
+  filters: SignalFilter[];
+  mode: SignalMode;
+  sampleRate: number | null;
+  disabled: boolean;
+  /** Both `null` = env-var routing. Cloud signals stay `null`. */
+  llmProfileId: string | null;
+  llmModel: string | null;
 }
 
 /**
