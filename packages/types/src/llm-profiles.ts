@@ -44,12 +44,13 @@ export interface LlmProfileConfig {
 
 /**
  * What reads return instead of secrets: a `first3***last3` mask per stored
- * value (fully starred when short) and custom header names only.
+ * value (fully starred when short) and custom header names only. Absent slots
+ * arrive as explicit `null` (the server does not omit them).
  */
 export interface LlmProfileSecretMasks {
-  apiKey?: string;
-  secretAccessKey?: string;
-  token?: string;
+  apiKey?: string | null;
+  secretAccessKey?: string | null;
+  token?: string | null;
   headers: string[];
 }
 

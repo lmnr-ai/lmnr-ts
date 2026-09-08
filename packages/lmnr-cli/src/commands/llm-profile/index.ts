@@ -27,30 +27,32 @@ const printProfile = (profile: LlmProfile): void => {
   logger.info(`  provider:     ${profile.provider}`);
   logger.info(`  auth:         ${profile.config.auth.type}`);
   const { config, secrets } = profile;
+  // `!= null` throughout: config omits absent fields on the wire, but the
+  // secret masks arrive as explicit `null` — both must stay unprinted.
   if (config.auth.type === "aws_keys") {
     logger.info(`  access key:   ${config.auth.accessKeyId}`);
   }
-  if (config.region !== undefined) {
+  if (config.region != null) {
     logger.info(`  region:       ${config.region}`);
   }
-  if (config.resourceId !== undefined) {
+  if (config.resourceId != null) {
     logger.info(`  resource id:  ${config.resourceId}`);
   }
-  if (config.baseUrl !== undefined) {
+  if (config.baseUrl != null) {
     logger.info(`  base url:     ${config.baseUrl}`);
   }
-  if (config.apiVersion !== undefined) {
+  if (config.apiVersion != null) {
     logger.info(`  api version:  ${config.apiVersion}`);
   }
   logger.info(`  models:       ${profile.models.join(", ") || "-"}`);
   // Secrets are write-only; the server returns first3***last3 masks.
-  if (secrets.apiKey !== undefined) {
+  if (secrets.apiKey != null) {
     logger.info(`  api key:      ${secrets.apiKey}`);
   }
-  if (secrets.secretAccessKey !== undefined) {
+  if (secrets.secretAccessKey != null) {
     logger.info(`  secret key:   ${secrets.secretAccessKey}`);
   }
-  if (secrets.token !== undefined) {
+  if (secrets.token != null) {
     logger.info(`  token:        ${secrets.token}`);
   }
   if (secrets.headers.length > 0) {
