@@ -3,6 +3,7 @@ export * from "./debug";
 export * from "./debug-session";
 export * from "./evaluation";
 export * from "./initialize-options";
+export * from "./llm-profiles";
 export * from "./session-block";
 export * from "./signals";
 export * from "./sql-schema";

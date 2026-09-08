@@ -31,6 +31,10 @@ type SignalCreateOpts = GlobalOpts & {
   mode?: string;
   sampleRate?: string;
   disabled?: boolean;
+  /** Workspace LLM profile id; self-hosted only, pass with --model. */
+  llmProfileId?: string;
+  /** Model from the profile; self-hosted only, pass with --llm-profile-id. */
+  model?: string;
 };
 
 type SignalUpdateOpts = GlobalOpts & {
@@ -47,6 +51,8 @@ type SignalUpdateOpts = GlobalOpts & {
   sampling?: boolean;
   disabled?: boolean;
   /** commander's `--no-disabled` → `disabled: false`, i.e. re-enable. */
+  llmProfileId?: string;
+  model?: string;
 };
 
 /** In the same words `--trigger` accepts, so output can be fed back in. */
@@ -73,6 +79,14 @@ const printSignal = (signal: Signal): void => {
   logger.info(`  mode:         ${signal.mode}`);
   logger.info(`  sample rate:  ${signal.sampleRate ?? "none"}`);
   logger.info(`  status:       ${signal.disabled ? "disabled" : "active"}`);
+  // `env` = the server routes the signal through its process-level LLM_PROVIDER
+  // (legacy signals, or every signal on Laminar Cloud).
+  const profile =
+    signal.llmProfileId === null
+      ? "env"
+      : `${signal.llmProfileName ?? "?"} (${signal.llmProfileId})`;
+  logger.info(`  llm profile:  ${profile}`);
+  logger.info(`  model:        ${signal.model ?? "env default"}`);
 };
 
 /**
@@ -216,6 +230,12 @@ export const handleSignalCreate = async (
       ? { sampleRate: parseSampleRate(opts.sampleRate) }
       : {}),
     ...(opts.disabled ? { disabled: true } : {}),
+    // Pair-completeness / feature-gating / workspace membership are all
+    // enforced server-side; `raiseSignalError` surfaces the verbatim message.
+    ...(opts.llmProfileId !== undefined
+      ? { llmProfileId: opts.llmProfileId }
+      : {}),
+    ...(opts.model !== undefined ? { model: opts.model } : {}),
   });
 
   if (opts.json) {
@@ -264,13 +284,19 @@ export const handleSignalUpdate = async (
       : {}),
     ...(opts.filters === false ? { filters: [] } : {}),
     ...(opts.mode !== undefined ? { mode: parseMode(opts.mode) } : {}),
+    // Absent = leave stored route; a half pair is rejected server-side. There
+    // is no wire shape for clearing the route back to env.
+    ...(opts.llmProfileId !== undefined
+      ? { llmProfileId: opts.llmProfileId }
+      : {}),
+    ...(opts.model !== undefined ? { model: opts.model } : {}),
   };
 
   if (Object.keys(patch).length === 0) {
     throw new Error(
       "Nothing to update. Pass at least one of --prompt, --schema, --trigger, " +
         "--filter, --no-filters, --mode, --sample-rate, --no-sampling, " +
-        "--disabled, --no-disabled.",
+        "--disabled, --no-disabled, --llm-profile-id, --model.",
     );
   }
 
