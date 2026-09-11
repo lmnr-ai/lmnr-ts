@@ -39,6 +39,67 @@ export class DatasetsResource extends BaseResource {
     return response.json() as Promise<Dataset[]>;
   }
 
+  /** Create an empty dataset. */
+  public async create(name: string): Promise<Dataset> {
+    const response = await fetch(this.baseHttpUrl + this.apiPrefix + "/datasets", {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ name }),
+    });
+
+    if (!response.ok) {
+      await this.handleError(response);
+    }
+
+    return response.json() as Promise<Dataset>;
+  }
+
+  /** Get a dataset by its canonical UUID. */
+  public async getById(datasetId: StringUUID): Promise<Dataset> {
+    const response = await fetch(
+      `${this.baseHttpUrl}${this.apiPrefix}/datasets/${datasetId}`,
+      { method: "GET", headers: this.headers() },
+    );
+
+    if (!response.ok) {
+      await this.handleError(response);
+    }
+
+    return response.json() as Promise<Dataset>;
+  }
+
+  /** Rename a dataset. */
+  public async update(datasetId: StringUUID, name: string): Promise<Dataset> {
+    const response = await fetch(
+      `${this.baseHttpUrl}${this.apiPrefix}/datasets/${datasetId}`,
+      {
+        method: "PATCH",
+        headers: this.headers(),
+        body: JSON.stringify({ name }),
+      },
+    );
+
+    if (!response.ok) {
+      await this.handleError(response);
+    }
+
+    return response.json() as Promise<Dataset>;
+  }
+
+  /** Delete a dataset and its datapoints. */
+  public async delete(datasetId: StringUUID): Promise<Dataset> {
+    const response = await fetch(
+      `${this.baseHttpUrl}${this.apiPrefix}/datasets/${datasetId}`,
+      { method: "DELETE", headers: this.headers() },
+    );
+
+    if (!response.ok) {
+      await this.handleError(response);
+    }
+
+    return response.json() as Promise<Dataset>;
+  }
+
   /**
    * Get a dataset by name.
    *
