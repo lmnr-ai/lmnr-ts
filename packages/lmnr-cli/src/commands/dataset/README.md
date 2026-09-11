@@ -2,110 +2,52 @@
 
 Manage datasets in your Laminar project from the command line.
 
-## Usage
-
 ```bash
 lmnr-cli dataset <command> [options]
 ```
 
-### Global Options
+Dataset commands authenticate as the signed-in user and target the project from
+`--project-id` or the linked `.lmnr/project.json`. All commands support `--json`.
 
-These options apply to all dataset subcommands. Datasets authenticate as the
-signed-in user (run `lmnr-cli login` first) and target a project:
+## Dataset CRUD
 
-- `--project-id <id>` - Target project id (defaults to the linked `.lmnr/project.json`; run `lmnr-cli setup` to link)
-- `--base-url <url>` - Base URL for the Laminar API (default: https://api.lmnr.ai)
-- `--port <port>` - Port for the Laminar API (default: 443)
-- `--json` - Output structured JSON to stdout
-
-## Commands
-
-### `dataset list`
-
-List all datasets in your project.
+Datasets are addressed by UUID for get, update, and delete. Names do not need to
+be unique.
 
 ```bash
 lmnr-cli dataset list
-lmnr-cli dataset list --json
+lmnr-cli dataset get <dataset-id>
+lmnr-cli dataset create <name>
+lmnr-cli dataset update <dataset-id> --name <new-name>
+lmnr-cli dataset delete <dataset-id>
 ```
 
-### `dataset push`
+`create` creates an empty dataset. `delete` is non-interactive and also deletes
+the dataset's datapoints.
 
-Push datapoints to an existing dataset from local files.
+## Push and pull datapoints
+
+Push and pull retain name-or-ID lookup for compatibility:
 
 ```bash
-lmnr-cli dataset push <paths...> [options]
+lmnr-cli dataset push <paths...> --id <dataset-id>
+lmnr-cli dataset push <paths...> --name <name>
+lmnr-cli dataset pull [output-path] --id <dataset-id>
+lmnr-cli dataset pull [output-path] --name <name>
 ```
 
-**Arguments:**
-- `<paths...>` - Paths to files or directories containing data to push
+Push options include `--recursive` and `--batch-size`. Pull options include
+`--output-format <json|csv|jsonl>`, `--batch-size`, `--limit`, and `--offset`.
 
-**Options:**
-- `-n, --name <name>` - Name of the dataset (either name or id must be provided)
-- `--id <id>` - ID of the dataset (either name or id must be provided)
-- `-r, --recursive` - Recursively read files in directories
-- `--batch-size <size>` - Batch size for pushing data (default: 100)
+## Import files into a new dataset
 
-**Examples:**
-```bash
-lmnr-cli dataset push data.jsonl -n my-dataset
-lmnr-cli dataset push data/ -n my-dataset -r --json
-```
-
-### `dataset pull`
-
-Pull datapoints from a dataset to a local file or stdout.
+The former create-and-populate workflow is available as `import`:
 
 ```bash
-lmnr-cli dataset pull [output-path] [options]
+lmnr-cli dataset import <name> <paths...> -o <output-file>
+lmnr-cli dataset import examples data/ -r -o exported.jsonl
 ```
 
-**Arguments:**
-- `[output-path]` - Path to save the data. If not provided, prints to console
-
-**Options:**
-- `-n, --name <name>` - Name of the dataset (either name or id must be provided)
-- `--id <id>` - ID of the dataset (either name or id must be provided)
-- `--output-format <format>` - Output format (`json`, `csv`, `jsonl`). Inferred from file extension if not provided
-- `--batch-size <size>` - Batch size for pulling data (default: 100)
-- `--limit <limit>` - Limit number of datapoints to pull
-- `--offset <offset>` - Offset for pagination (default: 0)
-
-**Examples:**
-```bash
-lmnr-cli dataset pull output.jsonl -n my-dataset
-lmnr-cli dataset pull -n my-dataset --json          # Print to stdout as JSON
-lmnr-cli dataset pull output.csv -n my-dataset --limit 50
-```
-
-### `dataset create`
-
-Create a new dataset from local input files.
-
-```bash
-lmnr-cli dataset create <name> <paths...> [options]
-```
-
-**Arguments:**
-- `<name>` - Name of the dataset to create
-- `<paths...>` - Paths to files or directories containing data to push
-
-**Required Options:**
-- `-o, --output-file <file>` - Path to save the pulled data
-
-**Options:**
-- `--output-format <format>` - Output format (`json`, `csv`, `jsonl`). Inferred from file extension if not provided
-- `-r, --recursive` - Recursively read files in directories
-- `--batch-size <size>` - Batch size for pushing/pulling data (default: 100)
-
-**Examples:**
-```bash
-lmnr-cli dataset create my-dataset data.jsonl -o output.jsonl
-lmnr-cli dataset create my-dataset data/ -o output.json -r
-```
-
-## Supported File Formats
-
-- **JSONL** (`.jsonl`) - One JSON object per line
-- **JSON** (`.json`) - Array of objects
-- **CSV** (`.csv`) - Comma-separated values with headers
+Import creates and populates a dataset, pulls the stored datapoints back, and
+writes them to the required output file. Supported input/output formats are
+JSON, JSONL, and CSV.

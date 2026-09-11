@@ -1,5 +1,5 @@
 import { LaminarClient } from "@lmnr-ai/client";
-import { Datapoint, type StringUUID } from "@lmnr-ai/types";
+import { Datapoint, type Dataset, type StringUUID } from "@lmnr-ai/types";
 
 import type { GlobalOpts } from "../../auth/with-client";
 import { loadFromPaths, printToConsole, writeToFile } from "../../utils/file";
@@ -10,6 +10,15 @@ import { renderTable } from "../../utils/table";
 const logger = initializeLogger();
 const DEFAULT_DATASET_PULL_BATCH_SIZE = 100;
 const DEFAULT_DATASET_PUSH_BATCH_SIZE = 100;
+
+const printDataset = (dataset: Dataset): void => {
+  console.log(
+    renderTable(
+      ["ID", "Created At", "Name"],
+      [[dataset.id, new Date(dataset.createdAt).toISOString(), dataset.name]],
+    ),
+  );
+};
 
 interface DatasetIdentifierOptions extends GlobalOpts {
   name?: string;
@@ -109,6 +118,64 @@ export const handleDatasetsList = async (
   console.log(`\nTotal: ${datasets.length} dataset(s)\n`);
 };
 
+/** `lmnr-cli dataset get <dataset-id>` */
+export const handleDatasetGet = async (
+  client: LaminarClient,
+  datasetId: StringUUID,
+  opts: GlobalOpts,
+): Promise<void> => {
+  const dataset = await client.datasets.getById(datasetId);
+  if (opts.json) {
+    outputJson(dataset);
+    return;
+  }
+  printDataset(dataset);
+};
+
+/** `lmnr-cli dataset create <name>` */
+export const handleDatasetCreate = async (
+  client: LaminarClient,
+  name: string,
+  opts: GlobalOpts,
+): Promise<void> => {
+  const dataset = await client.datasets.create(name);
+  if (opts.json) {
+    outputJson(dataset);
+    return;
+  }
+  logger.info(`Created dataset "${dataset.name}" (${dataset.id}).`);
+};
+
+/** `lmnr-cli dataset update <dataset-id> --name <name>` */
+export const handleDatasetUpdate = async (
+  client: LaminarClient,
+  datasetId: StringUUID,
+  opts: GlobalOpts & { name: string },
+): Promise<void> => {
+  const dataset = await client.datasets.update(datasetId, opts.name);
+  if (opts.json) {
+    outputJson(dataset);
+    return;
+  }
+  logger.info(`Updated dataset "${dataset.name}" (${dataset.id}).`);
+};
+
+/** `lmnr-cli dataset delete <dataset-id>` */
+export const handleDatasetDelete = async (
+  client: LaminarClient,
+  datasetId: StringUUID,
+  opts: GlobalOpts,
+): Promise<void> => {
+  const dataset = await client.datasets.delete(datasetId);
+  if (opts.json) {
+    outputJson(dataset);
+    return;
+  }
+  logger.info(
+    `Deleted dataset "${dataset.name}" (${dataset.id}) and its datapoints.`,
+  );
+};
+
 /**
  * Handle datasets push command.
  */
@@ -190,9 +257,9 @@ export const handleDatasetsPull = async (
 };
 
 /**
- * Handle datasets create command.
+ * Import local files into a new dataset, then export the persisted datapoints.
  */
-export const handleDatasetsCreate = async (
+export const handleDatasetsImport = async (
   client: LaminarClient,
   name: string,
   paths: string[],

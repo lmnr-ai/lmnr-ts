@@ -11,10 +11,14 @@ import {
 } from "./auth/with-client";
 import { handleAsk } from "./commands/ask";
 import {
-  handleDatasetsCreate,
+  handleDatasetCreate,
+  handleDatasetDelete,
+  handleDatasetGet,
+  handleDatasetsImport,
   handleDatasetsList,
   handleDatasetsPull,
   handleDatasetsPush,
+  handleDatasetUpdate,
 } from "./commands/dataset";
 import {
   handleDebugSessionAddNote,
@@ -96,6 +100,31 @@ async function main() {
     .description("List all datasets")
     .action(withProjectClient(handleDatasetsList));
 
+  datasetsCmd
+    .command("get")
+    .description("Get a dataset by ID")
+    .argument("<dataset-id>", "Dataset UUID")
+    .action(withProjectClient(handleDatasetGet));
+
+  datasetsCmd
+    .command("create")
+    .description("Create an empty dataset")
+    .argument("<name>", "Name of the dataset to create")
+    .action(withProjectClient(handleDatasetCreate));
+
+  datasetsCmd
+    .command("update")
+    .description("Rename a dataset")
+    .argument("<dataset-id>", "Dataset UUID")
+    .requiredOption("-n, --name <name>", "New dataset name")
+    .action(withProjectClient(handleDatasetUpdate));
+
+  datasetsCmd
+    .command("delete")
+    .description("Delete a dataset and its datapoints")
+    .argument("<dataset-id>", "Dataset UUID")
+    .action(withProjectClient(handleDatasetDelete));
+
   // Datasets push command
   datasetsCmd
     .command("push")
@@ -158,10 +187,10 @@ async function main() {
     )
     .action(withProjectClient(handleDatasetsPull));
 
-  // Datasets create command
+  // Dataset import command
   datasetsCmd
-    .command("create")
-    .description("Create a dataset from input files")
+    .command("import")
+    .description("Create and populate a dataset from input files")
     .argument("<name>", "Name of the dataset to create")
     .argument(
       "<paths...>",
@@ -179,7 +208,7 @@ async function main() {
       (val) => parseInt(val, 10),
       100,
     )
-    .action(withProjectClient(handleDatasetsCreate));
+    .action(withProjectClient(handleDatasetsImport));
 
   const sqlCmd = program
     .command("sql")

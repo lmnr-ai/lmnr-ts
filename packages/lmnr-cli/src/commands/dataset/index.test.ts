@@ -4,12 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // The dataset handlers are now pure: the wrapper resolves the client and owns
 // the error envelope. We pass a stub client with the datasets surface directly.
 const mockListDatasets = vi.fn();
+const mockGetById = vi.fn();
+const mockCreate = vi.fn();
+const mockUpdate = vi.fn();
+const mockDelete = vi.fn();
 const mockPush = vi.fn();
 const mockPull = vi.fn();
 
 const stubClient = {
   datasets: {
     listDatasets: mockListDatasets,
+    getById: mockGetById,
+    create: mockCreate,
+    update: mockUpdate,
+    delete: mockDelete,
     push: mockPush,
     pull: mockPull,
   },
@@ -24,10 +32,14 @@ vi.mock("../../utils/file", () => ({
 // Import after mocks are set up
 import { loadFromPaths, printToConsole, writeToFile } from "../../utils/file";
 import {
-  handleDatasetsCreate,
+  handleDatasetCreate,
+  handleDatasetDelete,
+  handleDatasetGet,
+  handleDatasetsImport,
   handleDatasetsList,
   handleDatasetsPull,
   handleDatasetsPush,
+  handleDatasetUpdate,
 } from "./index";
 
 const mockedLoadFromPaths = vi.mocked(loadFromPaths);
@@ -38,7 +50,7 @@ let logSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   logSpy = vi.spyOn(console, "log").mockImplementation(() => {
-    /* empty */
+    // Suppress command output during tests.
   });
   vi.clearAllMocks();
 });
@@ -101,6 +113,54 @@ describe("handleDatasetsList", () => {
     await expect(handleDatasetsList(stubClient, baseOpts)).rejects.toThrow(
       "unauthorized",
     );
+  });
+});
+
+describe("dataset CRUD handlers", () => {
+  const datasetId = "11111111-1111-1111-1111-111111111111" as const;
+  const dataset = {
+    id: datasetId,
+    name: "test-ds",
+    createdAt: "2024-01-01T00:00:00Z",
+  };
+
+  it("gets a dataset and outputs JSON", async () => {
+    mockGetById.mockResolvedValue(dataset);
+    await handleDatasetGet(stubClient, datasetId, { ...baseOpts, json: true });
+    expect(mockGetById).toHaveBeenCalledWith(datasetId);
+    expect(logSpy).toHaveBeenCalledWith(JSON.stringify(dataset));
+  });
+
+  it("creates an empty dataset", async () => {
+    mockCreate.mockResolvedValue(dataset);
+    await handleDatasetCreate(stubClient, "test-ds", {
+      ...baseOpts,
+      json: true,
+    });
+    expect(mockCreate).toHaveBeenCalledWith("test-ds");
+    expect(logSpy).toHaveBeenCalledWith(JSON.stringify(dataset));
+  });
+
+  it("updates a dataset by id", async () => {
+    const renamed = { ...dataset, name: "renamed" };
+    mockUpdate.mockResolvedValue(renamed);
+    await handleDatasetUpdate(stubClient, datasetId, {
+      ...baseOpts,
+      name: "renamed",
+      json: true,
+    });
+    expect(mockUpdate).toHaveBeenCalledWith(datasetId, "renamed");
+    expect(logSpy).toHaveBeenCalledWith(JSON.stringify(renamed));
+  });
+
+  it("deletes a dataset by id without prompting", async () => {
+    mockDelete.mockResolvedValue(dataset);
+    await handleDatasetDelete(stubClient, datasetId, {
+      ...baseOpts,
+      json: true,
+    });
+    expect(mockDelete).toHaveBeenCalledWith(datasetId);
+    expect(logSpy).toHaveBeenCalledWith(JSON.stringify(dataset));
   });
 });
 
@@ -247,12 +307,12 @@ describe("handleDatasetsPull", () => {
   });
 });
 
-describe("handleDatasetsCreate", () => {
+describe("handleDatasetsImport", () => {
   it("throws when no data to push", async () => {
     mockedLoadFromPaths.mockResolvedValue([]);
 
     await expect(
-      handleDatasetsCreate(stubClient, "my-ds", ["./data"], {
+      handleDatasetsImport(stubClient, "my-ds", ["./data"], {
         ...baseOpts,
         outputFile: "/tmp/out.json",
       }),
@@ -267,7 +327,7 @@ describe("handleDatasetsCreate", () => {
     const items = [{ data: { x: 1 }, id: "dp-1" }];
     mockPull.mockResolvedValue({ items, totalCount: 1 });
 
-    await handleDatasetsCreate(stubClient, "my-ds", ["./data"], {
+    await handleDatasetsImport(stubClient, "my-ds", ["./data"], {
       ...baseOpts,
       outputFile: "/tmp/out.json",
       json: true,
@@ -286,7 +346,7 @@ describe("handleDatasetsCreate", () => {
     mockPush.mockRejectedValue(new Error("push failed"));
 
     await expect(
-      handleDatasetsCreate(stubClient, "my-ds", ["./data"], {
+      handleDatasetsImport(stubClient, "my-ds", ["./data"], {
         ...baseOpts,
         outputFile: "/tmp/out.json",
       }),
@@ -299,7 +359,7 @@ describe("handleDatasetsCreate", () => {
     mockPull.mockRejectedValue(new Error("pull failed"));
 
     await expect(
-      handleDatasetsCreate(stubClient, "my-ds", ["./data"], {
+      handleDatasetsImport(stubClient, "my-ds", ["./data"], {
         ...baseOpts,
         outputFile: "/tmp/out.json",
       }),
