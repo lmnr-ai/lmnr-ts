@@ -41,11 +41,14 @@ export class DatasetsResource extends BaseResource {
 
   /** Create an empty dataset. */
   public async create(name: string): Promise<Dataset> {
-    const response = await fetch(this.baseHttpUrl + this.apiPrefix + "/datasets", {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ name }),
-    });
+    const response = await fetch(
+      this.baseHttpUrl + this.apiPrefix + "/datasets",
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({ name }),
+      },
+    );
 
     if (!response.ok) {
       await this.handleError(response);

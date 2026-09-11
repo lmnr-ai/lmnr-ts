@@ -12,10 +12,12 @@ const DEFAULT_DATASET_PULL_BATCH_SIZE = 100;
 const DEFAULT_DATASET_PUSH_BATCH_SIZE = 100;
 
 const printDataset = (dataset: Dataset): void => {
-  console.log(renderTable(
-    ["ID", "Created At", "Name"],
-    [[dataset.id, new Date(dataset.createdAt).toISOString(), dataset.name]],
-  ));
+  console.log(
+    renderTable(
+      ["ID", "Created At", "Name"],
+      [[dataset.id, new Date(dataset.createdAt).toISOString(), dataset.name]],
+    ),
+  );
 };
 
 interface DatasetIdentifierOptions extends GlobalOpts {
@@ -169,7 +171,9 @@ export const handleDatasetDelete = async (
     outputJson(dataset);
     return;
   }
-  logger.info(`Deleted dataset "${dataset.name}" (${dataset.id}) and its datapoints.`);
+  logger.info(
+    `Deleted dataset "${dataset.name}" (${dataset.id}) and its datapoints.`,
+  );
 };
 
 /**

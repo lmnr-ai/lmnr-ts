@@ -4,12 +4,18 @@ import { describe, it, mock } from "node:test";
 import { DatasetsResource } from "../src/resources/datasets";
 
 const datasetId = "11111111-1111-1111-1111-111111111111";
-const dataset = { id: datasetId, name: "examples", createdAt: "2026-01-01T00:00:00Z" };
+const dataset = {
+  id: datasetId,
+  name: "examples",
+  createdAt: "2026-01-01T00:00:00Z",
+};
 
-const resource = () => new DatasetsResource(
-  "https://api.test.com",
-  { type: "userToken", token: "token", projectId: "project" },
-);
+const resource = () =>
+  new DatasetsResource("https://api.test.com", {
+    type: "userToken",
+    token: "token",
+    projectId: "project",
+  });
 
 void describe("DatasetsResource CRUD", () => {
   void it("creates an empty dataset", async () => {
@@ -20,10 +26,15 @@ void describe("DatasetsResource CRUD", () => {
     global.fetch = mockFetch as any;
 
     assert.deepStrictEqual(await resource().create("examples"), dataset);
-    const [url, options] = mockFetch.mock.calls[0].arguments as [string, RequestInit];
+    const [url, options] = mockFetch.mock.calls[0].arguments as unknown as [
+      string,
+      RequestInit,
+    ];
     assert.strictEqual(url, "https://api.test.com/v1/cli/datasets");
     assert.strictEqual(options.method, "POST");
-    assert.deepStrictEqual(JSON.parse(options.body as string), { name: "examples" });
+    assert.deepStrictEqual(JSON.parse(options.body as string), {
+      name: "examples",
+    });
   });
 
   void it("gets a dataset by id", async () => {
@@ -34,8 +45,14 @@ void describe("DatasetsResource CRUD", () => {
     global.fetch = mockFetch as any;
 
     assert.deepStrictEqual(await resource().getById(datasetId), dataset);
-    const [url, options] = mockFetch.mock.calls[0].arguments as [string, RequestInit];
-    assert.strictEqual(url, `https://api.test.com/v1/cli/datasets/${datasetId}`);
+    const [url, options] = mockFetch.mock.calls[0].arguments as unknown as [
+      string,
+      RequestInit,
+    ];
+    assert.strictEqual(
+      url,
+      `https://api.test.com/v1/cli/datasets/${datasetId}`,
+    );
     assert.strictEqual(options.method, "GET");
   });
 
@@ -47,10 +64,18 @@ void describe("DatasetsResource CRUD", () => {
     global.fetch = mockFetch as any;
 
     await resource().update(datasetId, "renamed");
-    const [url, options] = mockFetch.mock.calls[0].arguments as [string, RequestInit];
-    assert.strictEqual(url, `https://api.test.com/v1/cli/datasets/${datasetId}`);
+    const [url, options] = mockFetch.mock.calls[0].arguments as unknown as [
+      string,
+      RequestInit,
+    ];
+    assert.strictEqual(
+      url,
+      `https://api.test.com/v1/cli/datasets/${datasetId}`,
+    );
     assert.strictEqual(options.method, "PATCH");
-    assert.deepStrictEqual(JSON.parse(options.body as string), { name: "renamed" });
+    assert.deepStrictEqual(JSON.parse(options.body as string), {
+      name: "renamed",
+    });
   });
 
   void it("deletes a dataset by id", async () => {
@@ -61,8 +86,14 @@ void describe("DatasetsResource CRUD", () => {
     global.fetch = mockFetch as any;
 
     assert.deepStrictEqual(await resource().delete(datasetId), dataset);
-    const [url, options] = mockFetch.mock.calls[0].arguments as [string, RequestInit];
-    assert.strictEqual(url, `https://api.test.com/v1/cli/datasets/${datasetId}`);
+    const [url, options] = mockFetch.mock.calls[0].arguments as unknown as [
+      string,
+      RequestInit,
+    ];
+    assert.strictEqual(
+      url,
+      `https://api.test.com/v1/cli/datasets/${datasetId}`,
+    );
     assert.strictEqual(options.method, "DELETE");
   });
 
@@ -73,6 +104,9 @@ void describe("DatasetsResource CRUD", () => {
       text: () => Promise.resolve('{"error":"Dataset not found"}'),
     })) as any;
 
-    await assert.rejects(resource().getById(datasetId), /404.*Dataset not found/);
+    await assert.rejects(
+      resource().getById(datasetId),
+      /404.*Dataset not found/,
+    );
   });
 });
