@@ -132,20 +132,6 @@ export const handleDatasetGet = async (
   printDataset(dataset);
 };
 
-/** `lmnr-cli dataset create <name>` */
-export const handleDatasetCreate = async (
-  client: LaminarClient,
-  name: string,
-  opts: GlobalOpts,
-): Promise<void> => {
-  const dataset = await client.datasets.create(name);
-  if (opts.json) {
-    outputJson(dataset);
-    return;
-  }
-  logger.info(`Created dataset "${dataset.name}" (${dataset.id}).`);
-};
-
 /** `lmnr-cli dataset update <dataset-id> --name <name>` */
 export const handleDatasetUpdate = async (
   client: LaminarClient,
@@ -257,9 +243,9 @@ export const handleDatasetsPull = async (
 };
 
 /**
- * Import local files into a new dataset, then export the persisted datapoints.
+ * Create a dataset, populate it from local files, then export its datapoints.
  */
-export const handleDatasetsImport = async (
+export const handleDatasetsCreate = async (
   client: LaminarClient,
   name: string,
   paths: string[],
@@ -277,14 +263,15 @@ export const handleDatasetsImport = async (
     throw new Error("No data to push");
   }
 
-  // Push data to create/populate the dataset
+  const dataset = await client.datasets.create(name);
+
+  // Use the canonical ID for every batch; names are display labels and need not be unique.
   logger.info(`Pushing ${data.length} data points to dataset '${name}'...`);
 
   await client.datasets.push({
     points: data,
-    name,
+    id: dataset.id,
     batchSize: opts.batchSize ?? DEFAULT_DATASET_PUSH_BATCH_SIZE,
-    createDataset: true,
   });
   logger.info(
     `Successfully pushed ${data.length} data points to dataset '${name}'`,
@@ -295,7 +282,7 @@ export const handleDatasetsImport = async (
 
   const result = await pullAllData(
     client,
-    { name },
+    { id: dataset.id },
     opts.batchSize ?? DEFAULT_DATASET_PULL_BATCH_SIZE,
     0,
     undefined,

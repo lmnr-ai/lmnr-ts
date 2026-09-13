@@ -17,13 +17,11 @@ be unique.
 ```bash
 lmnr-cli dataset list
 lmnr-cli dataset get <dataset-id>
-lmnr-cli dataset create <name>
 lmnr-cli dataset update <dataset-id> --name <new-name>
 lmnr-cli dataset delete <dataset-id>
 ```
 
-`create` creates an empty dataset. `delete` is non-interactive and also deletes
-the dataset's datapoints.
+`delete` is non-interactive and also deletes the dataset's datapoints.
 
 ## Push and pull datapoints
 
@@ -39,15 +37,13 @@ lmnr-cli dataset pull [output-path] --name <name>
 Push options include `--recursive` and `--batch-size`. Pull options include
 `--output-format <json|csv|jsonl>`, `--batch-size`, `--limit`, and `--offset`.
 
-## Import files into a new dataset
-
-The former create-and-populate workflow is available as `import`:
+## Create a dataset from files
 
 ```bash
-lmnr-cli dataset import <name> <paths...> -o <output-file>
-lmnr-cli dataset import examples data/ -r -o exported.jsonl
+lmnr-cli dataset create <name> <paths...> -o <output-file>
+lmnr-cli dataset create examples data/ -r -o exported.jsonl
 ```
 
-Import creates and populates a dataset, pulls the stored datapoints back, and
-writes them to the required output file. Supported input/output formats are
+Create persists the dataset first, populates it by UUID, pulls the stored datapoints
+back, and writes them to the required output file. Supported input/output formats are
 JSON, JSONL, and CSV.

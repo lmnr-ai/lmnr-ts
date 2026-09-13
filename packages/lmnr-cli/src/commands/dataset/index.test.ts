@@ -32,10 +32,9 @@ vi.mock("../../utils/file", () => ({
 // Import after mocks are set up
 import { loadFromPaths, printToConsole, writeToFile } from "../../utils/file";
 import {
-  handleDatasetCreate,
   handleDatasetDelete,
   handleDatasetGet,
-  handleDatasetsImport,
+  handleDatasetsCreate,
   handleDatasetsList,
   handleDatasetsPull,
   handleDatasetsPush,
@@ -128,16 +127,6 @@ describe("dataset CRUD handlers", () => {
     mockGetById.mockResolvedValue(dataset);
     await handleDatasetGet(stubClient, datasetId, { ...baseOpts, json: true });
     expect(mockGetById).toHaveBeenCalledWith(datasetId);
-    expect(logSpy).toHaveBeenCalledWith(JSON.stringify(dataset));
-  });
-
-  it("creates an empty dataset", async () => {
-    mockCreate.mockResolvedValue(dataset);
-    await handleDatasetCreate(stubClient, "test-ds", {
-      ...baseOpts,
-      json: true,
-    });
-    expect(mockCreate).toHaveBeenCalledWith("test-ds");
     expect(logSpy).toHaveBeenCalledWith(JSON.stringify(dataset));
   });
 
@@ -307,12 +296,12 @@ describe("handleDatasetsPull", () => {
   });
 });
 
-describe("handleDatasetsImport", () => {
+describe("handleDatasetsCreate", () => {
   it("throws when no data to push", async () => {
     mockedLoadFromPaths.mockResolvedValue([]);
 
     await expect(
-      handleDatasetsImport(stubClient, "my-ds", ["./data"], {
+      handleDatasetsCreate(stubClient, "my-ds", ["./data"], {
         ...baseOpts,
         outputFile: "/tmp/out.json",
       }),
@@ -323,17 +312,28 @@ describe("handleDatasetsImport", () => {
 
   it("pushes, pulls, writes file, and outputs JSON in json mode", async () => {
     mockedLoadFromPaths.mockResolvedValue([{ data: { x: 1 } }]);
+    mockCreate.mockResolvedValue({
+      id: "ds-123",
+      name: "my-ds",
+      createdAt: "2024-01-01T00:00:00Z",
+    });
     mockPush.mockResolvedValue({ datasetId: "ds-123" });
     const items = [{ data: { x: 1 }, id: "dp-1" }];
     mockPull.mockResolvedValue({ items, totalCount: 1 });
 
-    await handleDatasetsImport(stubClient, "my-ds", ["./data"], {
+    await handleDatasetsCreate(stubClient, "my-ds", ["./data"], {
       ...baseOpts,
       outputFile: "/tmp/out.json",
       json: true,
     });
 
-    expect(mockPush).toHaveBeenCalled();
+    expect(mockCreate).toHaveBeenCalledWith("my-ds");
+    expect(mockPush).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "ds-123" }),
+    );
+    expect(mockPull).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "ds-123" }),
+    );
     expect(mockedWriteToFile).toHaveBeenCalled();
     const output = JSON.parse(logSpy.mock.calls[0][0] as string);
     expect(output.name).toBe("my-ds");
@@ -343,10 +343,15 @@ describe("handleDatasetsImport", () => {
 
   it("propagates push failures to the wrapper", async () => {
     mockedLoadFromPaths.mockResolvedValue([{ data: { x: 1 } }]);
+    mockCreate.mockResolvedValue({
+      id: "ds-123",
+      name: "my-ds",
+      createdAt: "2024-01-01T00:00:00Z",
+    });
     mockPush.mockRejectedValue(new Error("push failed"));
 
     await expect(
-      handleDatasetsImport(stubClient, "my-ds", ["./data"], {
+      handleDatasetsCreate(stubClient, "my-ds", ["./data"], {
         ...baseOpts,
         outputFile: "/tmp/out.json",
       }),
@@ -355,11 +360,16 @@ describe("handleDatasetsImport", () => {
 
   it("propagates pull failures to the wrapper", async () => {
     mockedLoadFromPaths.mockResolvedValue([{ data: { x: 1 } }]);
+    mockCreate.mockResolvedValue({
+      id: "ds-123",
+      name: "my-ds",
+      createdAt: "2024-01-01T00:00:00Z",
+    });
     mockPush.mockResolvedValue({ datasetId: "ds-123" });
     mockPull.mockRejectedValue(new Error("pull failed"));
 
     await expect(
-      handleDatasetsImport(stubClient, "my-ds", ["./data"], {
+      handleDatasetsCreate(stubClient, "my-ds", ["./data"], {
         ...baseOpts,
         outputFile: "/tmp/out.json",
       }),

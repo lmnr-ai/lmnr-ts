@@ -118,11 +118,10 @@ Create, inspect, rename, delete, and transfer dataset datapoints.
 
 ```bash
 lmnr-cli dataset list --json                              # List all datasets
-lmnr-cli dataset create my-dataset --json                 # Create an empty dataset
 lmnr-cli dataset get <dataset-id> --json                  # Get by canonical UUID
 lmnr-cli dataset update <dataset-id> --name renamed       # Rename by UUID
 lmnr-cli dataset delete <dataset-id> --json               # Delete without prompting
-lmnr-cli dataset import my-dataset data.jsonl -o out.jsonl
+lmnr-cli dataset create my-dataset data.jsonl -o out.jsonl
 ```
 
 ### `debug` - Annotate and inspect agent runs

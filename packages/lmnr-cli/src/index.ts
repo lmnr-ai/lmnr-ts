@@ -11,10 +11,9 @@ import {
 } from "./auth/with-client";
 import { handleAsk } from "./commands/ask";
 import {
-  handleDatasetCreate,
   handleDatasetDelete,
   handleDatasetGet,
-  handleDatasetsImport,
+  handleDatasetsCreate,
   handleDatasetsList,
   handleDatasetsPull,
   handleDatasetsPush,
@@ -107,12 +106,6 @@ async function main() {
     .action(withProjectClient(handleDatasetGet));
 
   datasetsCmd
-    .command("create")
-    .description("Create an empty dataset")
-    .argument("<name>", "Name of the dataset to create")
-    .action(withProjectClient(handleDatasetCreate));
-
-  datasetsCmd
     .command("update")
     .description("Rename a dataset")
     .argument("<dataset-id>", "Dataset UUID")
@@ -187,10 +180,10 @@ async function main() {
     )
     .action(withProjectClient(handleDatasetsPull));
 
-  // Dataset import command
+  // Dataset create command
   datasetsCmd
-    .command("import")
-    .description("Create and populate a dataset from input files")
+    .command("create")
+    .description("Create a dataset from input files")
     .argument("<name>", "Name of the dataset to create")
     .argument(
       "<paths...>",
@@ -208,7 +201,7 @@ async function main() {
       (val) => parseInt(val, 10),
       100,
     )
-    .action(withProjectClient(handleDatasetsImport));
+    .action(withProjectClient(handleDatasetsCreate));
 
   const sqlCmd = program
     .command("sql")
