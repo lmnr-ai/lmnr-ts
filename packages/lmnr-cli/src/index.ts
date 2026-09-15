@@ -11,10 +11,13 @@ import {
 } from "./auth/with-client";
 import { handleAsk } from "./commands/ask";
 import {
+  handleDatasetDelete,
+  handleDatasetGet,
   handleDatasetsCreate,
   handleDatasetsList,
   handleDatasetsPull,
   handleDatasetsPush,
+  handleDatasetUpdate,
 } from "./commands/dataset";
 import {
   handleDebugSessionAddNote,
@@ -97,6 +100,25 @@ async function main() {
     .description("List all datasets")
     .action(withProjectClient(handleDatasetsList));
 
+  datasetsCmd
+    .command("get")
+    .description("Get a dataset by ID")
+    .argument("<dataset-id>", "Dataset UUID")
+    .action(withProjectClient(handleDatasetGet));
+
+  datasetsCmd
+    .command("update")
+    .description("Rename a dataset")
+    .argument("<dataset-id>", "Dataset UUID")
+    .requiredOption("-n, --name <name>", "New dataset name")
+    .action(withProjectClient(handleDatasetUpdate));
+
+  datasetsCmd
+    .command("delete")
+    .description("Delete a dataset and its datapoints")
+    .argument("<dataset-id>", "Dataset UUID")
+    .action(withProjectClient(handleDatasetDelete));
+
   // Datasets push command
   datasetsCmd
     .command("push")
@@ -159,7 +181,7 @@ async function main() {
     )
     .action(withProjectClient(handleDatasetsPull));
 
-  // Datasets create command
+  // Dataset create command
   datasetsCmd
     .command("create")
     .description("Create a dataset from input files")

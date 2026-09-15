@@ -1,5 +1,5 @@
 import { LaminarClient } from "@lmnr-ai/client";
-import { Datapoint, type StringUUID } from "@lmnr-ai/types";
+import { Datapoint, type Dataset, type StringUUID } from "@lmnr-ai/types";
 
 import type { GlobalOpts } from "../../auth/with-client";
 import { loadFromPaths, printToConsole, writeToFile } from "../../utils/file";
@@ -10,6 +10,15 @@ import { renderTable } from "../../utils/table";
 const logger = initializeLogger();
 const DEFAULT_DATASET_PULL_BATCH_SIZE = 100;
 const DEFAULT_DATASET_PUSH_BATCH_SIZE = 100;
+
+const printDataset = (dataset: Dataset): void => {
+  console.log(
+    renderTable(
+      ["ID", "Created At", "Name"],
+      [[dataset.id, new Date(dataset.createdAt).toISOString(), dataset.name]],
+    ),
+  );
+};
 
 interface DatasetIdentifierOptions extends GlobalOpts {
   name?: string;
@@ -109,6 +118,50 @@ export const handleDatasetsList = async (
   console.log(`\nTotal: ${datasets.length} dataset(s)\n`);
 };
 
+/** `lmnr-cli dataset get <dataset-id>` */
+export const handleDatasetGet = async (
+  client: LaminarClient,
+  datasetId: StringUUID,
+  opts: GlobalOpts,
+): Promise<void> => {
+  const dataset = await client.datasets.getById(datasetId);
+  if (opts.json) {
+    outputJson(dataset);
+    return;
+  }
+  printDataset(dataset);
+};
+
+/** `lmnr-cli dataset update <dataset-id> --name <name>` */
+export const handleDatasetUpdate = async (
+  client: LaminarClient,
+  datasetId: StringUUID,
+  opts: GlobalOpts & { name: string },
+): Promise<void> => {
+  const dataset = await client.datasets.update(datasetId, opts.name);
+  if (opts.json) {
+    outputJson(dataset);
+    return;
+  }
+  logger.info(`Updated dataset "${dataset.name}" (${dataset.id}).`);
+};
+
+/** `lmnr-cli dataset delete <dataset-id>` */
+export const handleDatasetDelete = async (
+  client: LaminarClient,
+  datasetId: StringUUID,
+  opts: GlobalOpts,
+): Promise<void> => {
+  const dataset = await client.datasets.delete(datasetId);
+  if (opts.json) {
+    outputJson(dataset);
+    return;
+  }
+  logger.info(
+    `Deleted dataset "${dataset.name}" (${dataset.id}) and its datapoints.`,
+  );
+};
+
 /**
  * Handle datasets push command.
  */
@@ -190,7 +243,7 @@ export const handleDatasetsPull = async (
 };
 
 /**
- * Handle datasets create command.
+ * Create a dataset, populate it from local files, then export its datapoints.
  */
 export const handleDatasetsCreate = async (
   client: LaminarClient,
@@ -210,14 +263,15 @@ export const handleDatasetsCreate = async (
     throw new Error("No data to push");
   }
 
-  // Push data to create/populate the dataset
+  const dataset = await client.datasets.create(name);
+
+  // Use the canonical ID for every batch; names are display labels and need not be unique.
   logger.info(`Pushing ${data.length} data points to dataset '${name}'...`);
 
   await client.datasets.push({
     points: data,
-    name,
+    id: dataset.id,
     batchSize: opts.batchSize ?? DEFAULT_DATASET_PUSH_BATCH_SIZE,
-    createDataset: true,
   });
   logger.info(
     `Successfully pushed ${data.length} data points to dataset '${name}'`,
@@ -228,7 +282,7 @@ export const handleDatasetsCreate = async (
 
   const result = await pullAllData(
     client,
-    { name },
+    { id: dataset.id },
     opts.batchSize ?? DEFAULT_DATASET_PULL_BATCH_SIZE,
     0,
     undefined,
