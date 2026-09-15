@@ -54,3 +54,33 @@ export interface Signal {
   /** Model pinned within the profile; `null` alongside `llmProfileId`. */
   model: string | null;
 }
+
+/**
+ * Stored version blob on `GET /signals/{id}/versions`. Schema key is
+ * `structuredOutputSchema`, not `structuredOutput` (that name is only on
+ * `GET /signals/{id}`). `trigger`/`filters` are stored Filter[] JSON
+ * (`signal_triggers.value` / `filters`), not the CLI tagged {@link SignalTrigger}.
+ */
+export interface SignalDefinition {
+  name: string;
+  prompt: string;
+  structuredOutputSchema: SignalStructuredOutput;
+  trigger: SignalFilter[];
+  filters: SignalFilter[];
+  mode: SignalMode;
+  sampleRate: number | null;
+  disabled: boolean;
+  /** Both `null` = env-var routing. Cloud signals stay `null`. */
+  llmProfileId: string | null;
+  llmModel: string | null;
+}
+
+/**
+ * One historical judge definition. `GET /signals/{id}`'s `version` field is
+ * only the current pointer; this is the version log.
+ */
+export interface SignalVersion {
+  version: number;
+  definition: SignalDefinition;
+  createdAt: string;
+}

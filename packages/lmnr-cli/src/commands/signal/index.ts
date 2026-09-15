@@ -1,5 +1,10 @@
 import type { LaminarClient } from "@lmnr-ai/client";
-import type { Signal, SignalFilter, SignalTrigger } from "@lmnr-ai/types";
+import type {
+  Signal,
+  SignalFilter,
+  SignalTrigger,
+  SignalVersion,
+} from "@lmnr-ai/types";
 
 import type { GlobalOpts } from "../../auth/with-client";
 import { initializeLogger } from "../../utils/logger";
@@ -162,6 +167,42 @@ export const handleSignalGet = async (
     return;
   }
   printSignal(signal);
+};
+
+const printVersion = (entry: SignalVersion): void => {
+  logger.info(`v${entry.version}  ${entry.createdAt}`);
+  logger.info(`  prompt:  ${entry.definition?.prompt ?? ""}`);
+  const fields = Object.keys(
+    entry.definition?.structuredOutputSchema?.properties ?? {},
+  ).join(", ");
+  logger.info(`  fields:  ${fields}`);
+};
+
+/**
+ * `lmnr-cli signal versions <signal>` — historical judge definitions, oldest
+ * first. The server path is a UUID; a name is resolved the same way as get.
+ */
+export const handleSignalVersions = async (
+  client: LaminarClient,
+  ref: string,
+  opts: GlobalOpts,
+): Promise<void> => {
+  const versions = await client.signals.listVersions(
+    await resolveSignalId(client, ref),
+  );
+
+  if (opts.json) {
+    outputJson(versions);
+    return;
+  }
+  if (versions.length === 0) {
+    logger.info("No versions found.");
+    return;
+  }
+  for (const [i, entry] of versions.entries()) {
+    if (i > 0) logger.info("");
+    printVersion(entry);
+  }
 };
 
 /** `lmnr-cli signal create <name>` */

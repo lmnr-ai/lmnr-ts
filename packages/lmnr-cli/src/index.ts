@@ -43,6 +43,7 @@ import {
   handleSignalGet,
   handleSignalList,
   handleSignalUpdate,
+  handleSignalVersions,
 } from "./commands/signal";
 import { collectFlag } from "./commands/signal/validate";
 import { handleSkillAdd, handleSkillUpdate } from "./commands/skill";
@@ -307,6 +308,24 @@ FILTER (matched anywhere in the trace) are different things.
     .description("Show one signal with its trigger, filters, and mode")
     .argument("<signal>", "Signal id or name")
     .action(withProjectClient(handleSignalGet));
+
+  signalCmd
+    .command("versions")
+    .description("List a signal's judge-definition versions, oldest first")
+    .argument("<signal>", "Signal id or name")
+    .action(withProjectClient(handleSignalVersions))
+    .addHelpText(
+      "after",
+      `
+The version log for the judge prompt + schema. Distinct from \`signal get\`'s
+version field, which is only the current pointer. A name is resolved locally
+(the API path is an id); an ambiguous name is an error, same as get/update.
+
+Examples:
+  $ lmnr-cli signal versions "Failure Detector"
+  $ lmnr-cli signal versions 7143fab6-7a80-4d9f-81ed-4ee3d5d82254 --json
+`,
+    );
 
   signalCmd
     .command("create")

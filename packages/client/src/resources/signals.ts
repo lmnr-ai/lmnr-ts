@@ -4,6 +4,7 @@ import {
   type SignalMode,
   type SignalStructuredOutput,
   type SignalTrigger,
+  type SignalVersion,
 } from "@lmnr-ai/types";
 
 import { BaseResource, type LaminarAuth } from ".";
@@ -103,6 +104,26 @@ export class SignalsResource extends BaseResource {
       await this.raiseSignalError(response);
     }
     return response.json() as Promise<Signal>;
+  }
+
+  /**
+   * Historical judge definitions for `signalId`, oldest first. Distinct from
+   * `GET /signals/{id}`'s `version` field, which is only the current pointer.
+   * 404 if that id isn't in this project; an empty list only if the signal
+   * exists with no version rows.
+   */
+  public async listVersions(signalId: string): Promise<SignalVersion[]> {
+    const response = await fetch(
+      `${this.baseHttpUrl}${this.apiPrefix}/signals/${signalId}/versions`,
+      { method: "GET", headers: this.headers() },
+    );
+    if (!response.ok) {
+      await this.raiseSignalError(response);
+    }
+    // Coerce a missing/non-array `versions` to [] so callers can .map/.length it;
+    // a malformed body on a 2xx is exceptional, not the normal empty case.
+    const body = (await response.json()) as { versions?: SignalVersion[] };
+    return Array.isArray(body?.versions) ? body.versions : [];
   }
 
   public async create(options: CreateSignalOptions): Promise<Signal> {
