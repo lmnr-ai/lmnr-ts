@@ -206,15 +206,21 @@ const patchCallModel = (proto: any, state: PatchState): void => {
     const tools = Array.isArray(request?.tools)
       ? request.tools.map((tool: any) => wrapTool(tool, span, traceContent))
       : undefined;
-    const result = Laminar.withSpan(span, () =>
-      originalCallModel.call(
-        this,
-        tools ? { ...request, tools } : request,
-        options,
-      ),
-    );
-    instrumentModelResult(result, span, traceContent);
-    return result;
+    try {
+      const result = Laminar.withSpan(span, () =>
+        originalCallModel.call(
+          this,
+          tools ? { ...request, tools } : request,
+          options,
+        ),
+      );
+      instrumentModelResult(result, span, traceContent);
+      return result;
+    } catch (error) {
+      recordError(span, error);
+      span.end();
+      throw error;
+    }
   };
 };
 

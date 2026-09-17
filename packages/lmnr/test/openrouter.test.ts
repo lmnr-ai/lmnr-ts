@@ -376,4 +376,21 @@ void describe("openrouter instrumentation", () => {
     assert.ok(span.attributes["error.type"]);
     assert.strictEqual(span.events[0]?.name, "exception");
   });
+
+  void it("ends the call_model span when callModel throws", () => {
+    // An invalid header name makes the SDK throw synchronously, before any request.
+    assert.throws(() =>
+      createClient().callModel(
+        { model: MODEL, input: "Hello" },
+        { headers: { "bad header": "value" } },
+      ),
+    );
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    const span = spans[0];
+    assert.strictEqual(span.name, "openrouter.call_model");
+    assert.strictEqual(span.status.code, SpanStatusCode.ERROR);
+    assert.strictEqual(span.events[0]?.name, "exception");
+  });
 });
