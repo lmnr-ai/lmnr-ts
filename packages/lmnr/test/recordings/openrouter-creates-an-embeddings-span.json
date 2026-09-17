@@ -1,0 +1,33 @@
+[
+  {
+    "scope": "https://openrouter.ai:443",
+    "method": "POST",
+    "path": "/api/v1/embeddings",
+    "body": {
+      "dimensions": 8,
+      "input": ["hello world", "bonjour"],
+      "model": "openai/text-embedding-3-small",
+      "user": "user-123"
+    },
+    "status": 200,
+    "response": [
+      "1f8b08000000000000038d8f5b6bdb401085ffcb3cef8ad9fbe5add0973e85d0505a4210b235311b4b5aa1ddb42946ffbdd88e5d530aeddb9c396766be3940debcd0b6428421950a0cfaae76101f0fbf0d1a37d4f769da01bba9e323c7061d6aa58d4325a4611c1b8d561a868d32ca99e0ac394b193c869b98344e492d8577e72965144aa7b43a6b25b4441ffc4963638470c7e8138334f5f4061157f61f80d84815bcf5c25eb0a445c40b16c74668a15dd0e14ae2bc162e587fba2b9533da7be9c525add05e770911a4953698d353d8286fffa014eb138331f73440844a6f955fe9b8e265ec860118bc966e47100f302f799c6b5bf39ea6025133a8b976c36d639b4b85e8897b06a9b49b9f790ff1b91b0a9dbdb6a7daa5a11cd7bdcea52ed48d6d9a9e69a1694bededf85fec77807fa4b6799c07aa294fe53d8aebca8ef4df534f0b44b89b69faf00918a41e22ec683afecd85f3c11a1fa4e5f74b7978f971f7f1e1cbe7fde2faaff7f3b70aeb2f540d3b5d8c020000"
+    ],
+    "rawHeaders": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+      "cf-ray": "a3c924808fe6fea2-AMS",
+      "connection": "keep-alive",
+      "content-encoding": "gzip",
+      "content-type": "application/json",
+      "date": "Thu, 17 Sep 2026 15:28:46 GMT",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
+      "server": "cloudflare",
+      "set-cookie": "__cf_bm=WoWR7cfd.ODdMpj168pc_.1_p_D73Qt4CrS3JknT1zE-1789658926.164728-1.0.1.1-SoudcceAP_RgGsViX5Ko8Q.CofTkZek8ydKfzn_yXbdsnxT90U9U52Q6Ux19c3lb9XfMVpo0Kqkbnm4VCmgau_pbKs1r0cPX7EgyCy8XwjVKGn2Kt80lmeuPlnTjCkhR; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 15:58:46 GMT",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff"
+    },
+    "responseIsBinary": false
+  }
+]

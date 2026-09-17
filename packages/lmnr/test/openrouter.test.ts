@@ -18,7 +18,14 @@ import {
 import { decompressRecordingResponse, recordingReplyHeaders } from "./utils";
 
 const MODEL = "openai/gpt-4o-mini";
+const EMBEDDINGS_MODEL = "openai/text-embedding-3-small";
 const QUESTION = "What is the capital of France?";
+const CAPITAL_SCHEMA = {
+  type: "object",
+  properties: { capital: { type: "string" } },
+  required: ["capital"],
+  additionalProperties: false,
+};
 
 void describe("openrouter instrumentation", () => {
   const exporter = new InMemorySpanExporter();
@@ -155,6 +162,141 @@ void describe("openrouter instrumentation", () => {
     );
     assert.strictEqual(output[0].message.role, "assistant");
     assert.ok(output[0].message.content.includes("Paris"));
+  });
+
+  void it("sets chat request parity attributes", async () => {
+    await createClient().chat.send({
+      chatRequest: {
+        model: MODEL,
+        messages: [{ role: "user", content: QUESTION }],
+        maxTokens: 30,
+        frequencyPenalty: 0.5,
+        presencePenalty: 0.3,
+        reasoningEffort: "low",
+        user: "user-123",
+        responseFormat: {
+          type: "json_schema",
+          jsonSchema: {
+            name: "capital",
+            strict: true,
+            schema: CAPITAL_SCHEMA,
+          },
+        },
+      },
+    });
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    const span = spans[0];
+    assert.strictEqual(
+      span.attributes["gen_ai.request.frequency_penalty"],
+      0.5,
+    );
+    assert.strictEqual(span.attributes["gen_ai.request.presence_penalty"], 0.3);
+    assert.strictEqual(
+      span.attributes["gen_ai.request.reasoning_effort"],
+      "low",
+    );
+    assert.strictEqual(span.attributes["llm.user"], "user-123");
+    assert.deepStrictEqual(
+      JSON.parse(
+        span.attributes["gen_ai.request.structured_output_schema"] as string,
+      ),
+      CAPITAL_SCHEMA,
+    );
+  });
+
+  void it("sets responses request parity attributes", async () => {
+    await createClient().responses.send({
+      responsesRequest: {
+        model: MODEL,
+        input: QUESTION,
+        maxOutputTokens: 50,
+        frequencyPenalty: 0.2,
+        presencePenalty: 0.1,
+        user: "user-123",
+        reasoning: { effort: "low" },
+        text: {
+          format: {
+            type: "json_schema",
+            name: "capital",
+            schema: CAPITAL_SCHEMA,
+          },
+        },
+      },
+    });
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    const span = spans[0];
+    assert.strictEqual(
+      span.attributes["gen_ai.request.frequency_penalty"],
+      0.2,
+    );
+    assert.strictEqual(span.attributes["gen_ai.request.presence_penalty"], 0.1);
+    assert.strictEqual(
+      span.attributes["gen_ai.request.reasoning_effort"],
+      "low",
+    );
+    assert.strictEqual(span.attributes["llm.user"], "user-123");
+    assert.deepStrictEqual(
+      JSON.parse(
+        span.attributes["gen_ai.request.structured_output_schema"] as string,
+      ),
+      CAPITAL_SCHEMA,
+    );
+  });
+
+  void it("creates an embeddings span", async () => {
+    const response: any = await createClient().embeddings.generate({
+      requestBody: {
+        model: EMBEDDINGS_MODEL,
+        input: ["hello world", "bonjour"],
+        user: "user-123",
+        // Keeps the recorded cassette small.
+        dimensions: 8,
+      },
+    });
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    const span = spans[0];
+    assert.strictEqual(span.name, "openrouter.embeddings");
+    assert.strictEqual(span.attributes["lmnr.span.type"], "LLM");
+    assert.strictEqual(span.attributes["gen_ai.system"], "openrouter");
+    assert.strictEqual(
+      span.attributes["gen_ai.request.model"],
+      EMBEDDINGS_MODEL,
+    );
+    assert.strictEqual(span.attributes["llm.user"], "user-123");
+    assert.strictEqual(span.attributes["gen_ai.response.id"], response.id);
+    assert.ok(span.attributes["gen_ai.response.model"]);
+    assert.ok((span.attributes["gen_ai.usage.input_tokens"] as number) > 0);
+    assert.ok((span.attributes["llm.usage.total_tokens"] as number) > 0);
+    assert.ok((span.attributes["gen_ai.usage.cost"] as number) > 0);
+    assert.ok((span.attributes["gen_ai.usage.input_cost"] as number) > 0);
+    assert.deepStrictEqual(
+      JSON.parse(span.attributes["gen_ai.input.messages"] as string),
+      [{ content: "hello world" }, { content: "bonjour" }],
+    );
+  });
+
+  void it("marks an incomplete responses span as an error", async () => {
+    await createClient().responses.send({
+      responsesRequest: {
+        model: MODEL,
+        input: "Write a 500 word essay about the history of France.",
+        maxOutputTokens: 16,
+      },
+    });
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    const span = spans[0];
+    assert.strictEqual(span.name, "openrouter.responses");
+    assert.strictEqual(span.status.code, SpanStatusCode.ERROR);
+    assert.strictEqual(span.status.message, "max_output_tokens");
+    assert.strictEqual(span.attributes["error.type"], "incomplete");
   });
 
   void it("creates a streaming chat span", async () => {
@@ -332,6 +474,20 @@ void describe("openrouter instrumentation", () => {
         model: MODEL,
         messages: [{ role: "user", content: QUESTION }],
         maxTokens: 20,
+        tools: [
+          {
+            type: ToolType.Function,
+            function: {
+              name: "get_weather",
+              description: "Get the weather in a city",
+              parameters: {
+                type: "object",
+                properties: { city: { type: "string" } },
+                required: ["city"],
+              },
+            },
+          },
+        ],
       },
     });
 
@@ -342,6 +498,7 @@ void describe("openrouter instrumentation", () => {
     assertUsage(span);
     assert.strictEqual(span.attributes["gen_ai.input.messages"], undefined);
     assert.strictEqual(span.attributes["gen_ai.output.messages"], undefined);
+    assert.strictEqual(span.attributes["gen_ai.tool.definitions"], undefined);
   });
 
   void it("does not create spans when tracing is suppressed", async () => {

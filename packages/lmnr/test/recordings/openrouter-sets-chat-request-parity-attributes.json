@@ -1,0 +1,60 @@
+[
+  {
+    "scope": "https://openrouter.ai:443",
+    "method": "POST",
+    "path": "/api/v1/chat/completions",
+    "body": {
+      "frequency_penalty": 0.5,
+      "max_tokens": 30,
+      "messages": [
+        {
+          "content": "What is the capital of France?",
+          "role": "user"
+        }
+      ],
+      "model": "openai/gpt-4o-mini",
+      "presence_penalty": 0.3,
+      "reasoning_effort": "low",
+      "response_format": {
+        "json_schema": {
+          "name": "capital",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "capital": {
+                "type": "string"
+              }
+            },
+            "required": ["capital"],
+            "additionalProperties": false
+          },
+          "strict": true
+        },
+        "type": "json_schema"
+      },
+      "stream": false,
+      "user": "user-123"
+    },
+    "status": 200,
+    "response": [
+      "1f8b08000000000000037d514d8fd33010bdefaf40efec2edd7ed737387043ac101c104596eb4cd26113dbf2385d962aff1d85d2361585393e3fbf8f99bb57a7b93b800b6854e4470fcbd57a315fad96f391fb3879f7e9fd87cf8fe9edeccbd64ab17c5e42216cbf93cbd0703b9bef5d68624d998387824b643315d0171585261454432344f2965f57318f6661d4b06728c414f65c5082c69b9f6d2228c88b646a4cc9bea21413fbdeab8c66ba58d36231993df42184d29e1d99ccfd5fdfd6b582db057624d05f0f605fd00fe8b1421daa98c2564eac923dcbce24b2123c34248708056f33efc9fce3b521115b11f40129d4040d2bc292adcf7dede033fd8e79d8c0d9c8d9d61be80d1e6d62d9a08342a2b2155b9f521c0dd85747a0ebbe29b4278b984213b3c9e189bc40cf26bdc569cd6778ae9043b6f585b7ec7992a1c7f7e37ed6530516b37d094fd0a5ad85d4b5b629285baea53775d6eda8388b8dd51131cf89330d61db161c86407fc001d01d530cb5db2839916d0cfb92127947e6afa037387fb25e5117b7a997fdc8357fdadd58de30dbf912c34adcd8ea7fa5bbaefb05aae7052d3f030000"
+    ],
+    "rawHeaders": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+      "cf-ray": "a3c923453d029f96-AMS",
+      "connection": "keep-alive",
+      "content-encoding": "gzip",
+      "content-type": "application/json",
+      "date": "Thu, 17 Sep 2026 15:27:57 GMT",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
+      "server": "cloudflare",
+      "set-cookie": "__cf_bm=.NeeQMs.zdCQukbZXmz7Hqw_pPrWNb1uiblTZuR2cfA-1789658875.7208836-1.0.1.1-QzMzErRy0yZREP0TbhBoSMFMMFAtZ8ZFurl9aA6MdIhTk1VcmhsyegGsWEHg2Zj9HjlUuNvlKlc5uq1O7Ndexcb_DxUxn0C_4yQ0flWUX7auokITnl9G_qKgbiso2gmi; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 15:57:57 GMT",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-generation-id": "gen-1789658875-cR2FTMOUPrB4Ybasd7w7"
+    },
+    "responseIsBinary": false
+  }
+]

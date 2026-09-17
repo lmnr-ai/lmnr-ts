@@ -1,0 +1,36 @@
+[
+  {
+    "scope": "https://openrouter.ai:443",
+    "method": "POST",
+    "path": "/api/v1/responses",
+    "body": {
+      "input": "Write a 500 word essay about the history of France.",
+      "max_output_tokens": 16,
+      "model": "openai/gpt-4o-mini",
+      "service_tier": "auto",
+      "store": false,
+      "stream": false
+    },
+    "status": 200,
+    "response": [
+      "1f8b08000000000000036d534d6fdb300cbdf757183c2b9bd33569a25b8161dbad97020356148222d38e1659d2243aab17f8bf0f92dd3446e38b69f2f1f1ebf9a6787b6e6eae9a27d0157068d02e96f79bed7ab5d9dc6f178fbf7e3e85f5e38ffeebd63f7cafdafef0b002066ef71b15018780d13b1b1118a88092b0129280bf3330685d850638388f56eacf8da7c59d5bb4da6a60104952178183b6cab5de2065aac99c936d960c5c47be23e0cf53bb6d6c04b55e84eadfb135b71a6b050ca8f7988218a36c1261702639648c3a92b47459f95c2c17b68476e49f48c68a82f03565e51787a73d167b1dc985be7075f12d48abb0d0b19045d06a5f90f41829f4c55f77445bd4c1b545a58f182216b40f28ab98f2bc339ab48aac509da12ea456a5b58e24696723f0e71706c6353eb85dfe1a5e86170618820bc06d670cbb589ca890a43611f80902cae86cda817c156f23b803da08030372ce4cecc9146aefb4ca0beac801032f8334068d18a3d22434850ed9153ebe5ca7bdb41e83cc33f065a2f5c267cb078c68158a747e433df092411df04f8756f5336f4a7a9fb61c8b5db6304edc22c94a92047e1a18eca43a34c175b6025e4b1331973c6ad745f1a64e91b43226470c47ad5090c6f03e3085ceaabc74e050e9287726eb215d18cfbcda460a9d9a6e33f28d823841ed422bb335e9260786814da7d0b639b7206ba45ee80a2de93af731067c70ad27a1a4daa338607fd5effcac7e9715ce4fa0edec265b36f35c6a23f35467683930b872d199eba3b4b46d660ce4489ab3e7cb2afd4b9180979fcab22c97b7772b063a8a5def0ee77d26c42573e7230594add0b6c69045f391e40a681cf4125ade6eae43a7a966d8ed7a1886fff91535b020050000"
+    ],
+    "rawHeaders": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+      "cf-ray": "a3c9235faa739f96-AMS",
+      "connection": "keep-alive",
+      "content-encoding": "gzip",
+      "content-type": "application/json",
+      "date": "Thu, 17 Sep 2026 15:28:00 GMT",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
+      "server": "cloudflare",
+      "set-cookie": "__cf_bm=MWMrmjvSnzKpU_IIRFgMQGtSeXfoKHihNgmSmK4PXFA-1789658879.9476752-1.0.1.1-Ous.mxKWkzPAuEAF0Lj6Cud0b3Ud6SPPVsxb796ob.X0JLZ4Curojl01m0J2o8OKhFieW5v821MSznohqPor7ItSG4AZ6fonSG58C.B9P7F1W_9rHBx7O.0lyND3Gn4E; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 15:58:00 GMT",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-generation-id": "gen-1789658879-OZWTr6OHyD9pAGdmykA5"
+    },
+    "responseIsBinary": false
+  }
+]

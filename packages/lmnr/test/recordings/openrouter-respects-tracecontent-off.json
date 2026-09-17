@@ -12,27 +12,45 @@
         }
       ],
       "model": "openai/gpt-4o-mini",
-      "stream": false
+      "stream": false,
+      "tools": [
+        {
+          "function": {
+            "description": "Get the weather in a city",
+            "name": "get_weather",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": ["city"]
+            }
+          },
+          "type": "function"
+        }
+      ]
     },
     "status": 200,
     "response": [
-      "1f8b08000000000000037d514d8fd33010bdefaf88e6ec96b41ba55ddfe080101760c5010921cb7526c9b08e6d799cc252e5bf235352525198e3f3f3fb98b92be6b93b013520a143b7daecf60f7555eeb7d5aa7a536eea7df3c9e0db4747af1e3fc4770104f8c357340924985ea7b5f143b098c83b106022ea840dc83f2a0206dfa005093ea0d3f4a20b6955f9d5408e404088fe480d4690f0f2c7181104f033271c544baec31822b9ecd506755f3f605d6fabcd2e93301ec9a04a94ffbad15a01a6f76490417e3e01b906bf832c0558df85e80f3cb35a72c4bd8aa8d93b90c0c9e7564e273aa2fac7eb80ccba43902788de2248d0ccc449bb946b7b97f057cc8f3d1646074ada16be2d5e47ed0c16c4c57b1d89d72020623bb2b6739ab311b9ee0c4cd31701e36c15a21f4252c93fa163909b2a5bcdebbec03b01c9276d2fc07693799c4096eb324f7d2f80581d9efd13c8565b4671adad1a4c9a2c6753a34d8fcd45ac1467447d8b947009ebb121bf04f22117c0744eb1d41e03a7887a50e45a8ce80caabf82dee0fcce7a45cd256fcacdfbe16b7eb59d6e6c6f19ee728a65271a74f7bfd6d334fd04743843ef48030000"
+      "1f8b08000000000000037d514d8fd33010bdefaf88e6ec9604fa91fa864048ec015602c4618522d799a4c33ab6e59914aa2aff1d85d2362b0a3e3ebf791f3377d9f9dd1d816ad0d0a29f15eb72b35a966559cc3ebdbd2f9ad59b43f705fd077978d5dd975f4141d87e472ba0c1ee8ccc6de8a243a1e041814d68046bd05715055da8d1818610d11b7ad146992dc2ac234fa020a6b0a71a1368f818d1bf7e0f0af8c0825dd5906f31c5447e346b6255afcda2d8348bed722461da93c54a681cf6bd730aec2e904506fd7804f235fe049d2b70a18d296cf9cc6ac813efaa848683070d2c2182026f84f658fde3b74366d322e823a4e01034186662315ec6dec10bfe8ef97987993591c4b82c34d9bb64bcc58c387b3089780e0a12363d1b774e733222df9e8061f8a6a03f5bc514ba28958427f40c7a598c56e77d5fe052810431eecadb8c3c16d0f93ccff3bc78b9582a20aeb687f004ba318e513d17af6a14438e47576bec0eeb8b5aae4e48f52391e014367d4d610a8ca79c00c329c654bb8f2c094d57916f30a1b758fd9df406e94fd829375faf6e73af2be2e7038b72b8b1c069bccb35a6ada833edff7a0fc3f00bd57408e34c030000"
     ],
     "rawHeaders": {
       "access-control-allow-origin": "*",
       "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
-      "cf-ray": "a3c76a90aae944ce-EWR",
+      "cf-ray": "a3c923691aaf9f96-AMS",
       "connection": "keep-alive",
       "content-encoding": "gzip",
       "content-type": "application/json",
-      "date": "Thu, 17 Sep 2026 10:27:05 GMT",
+      "date": "Thu, 17 Sep 2026 15:28:02 GMT",
       "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
       "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
       "server": "cloudflare",
-      "set-cookie": "__cf_bm=tE_jjcqtFwvEzNtrw1.HHGB_.asETEiD_SFknLhSzP0-1789640824.4310582-1.0.1.1-Dhl9YxzsjM0tXc7mQgcsXzrxsEC0M3zvQt5Q3yFXBpdUv3hAQB4vUpbWBPilOvPCTmbPuBDkr1NJndqBY_7pvGqX21UoXMjasz1r9nsY5v3X6.A_xfHhnkWVey9ut4t9; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 10:57:05 GMT",
+      "set-cookie": "__cf_bm=3Y4YOxHFQ5PHn9MNMdXB2I0MomK_Lw7QcUN2RUB_nQI-1789658881.4525805-1.0.1.1-.FkdWlMwS0lPFvsmoty_rPMq_uT3FvcwyKcElwZSws8LRhycekpTXoz4fX_Xqn37miW7oDY2OGhNcLQjTxv.JMOFf62ZeMr96NDbDwUEKHSaw4ECB1wSOC.Y.3.HO1Tu; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 15:58:02 GMT",
       "transfer-encoding": "chunked",
       "x-content-type-options": "nosniff",
-      "x-generation-id": "gen-1789640824-4H0168dXceJRniBRQrOp"
+      "x-generation-id": "gen-1789658881-SDJ1f6CymUenNtP3mJ8W"
     },
     "responseIsBinary": false
   }

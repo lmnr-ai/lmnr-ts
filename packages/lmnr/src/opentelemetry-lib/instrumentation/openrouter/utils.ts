@@ -2,13 +2,16 @@ import { SpanStatusCode } from "@opentelemetry/api";
 
 import { LaminarSpan } from "../../tracing/span";
 
-export type SendKind = "chat" | "responses";
+export type ResourceKind = "chat" | "responses" | "embeddings";
 
 const TERMINAL_RESPONSE_EVENTS = new Set([
   "response.completed",
   "response.incomplete",
   "response.failed",
 ]);
+
+// A `responses` result in one of these states carries no usable completion.
+const ERROR_RESPONSE_STATUSES = new Set(["failed", "incomplete"]);
 
 const safeSetAttribute = (
   span: LaminarSpan,
@@ -45,23 +48,72 @@ export const responsesInputMessages = (request: any): any[] => {
   return messages;
 };
 
+const structuredOutputSchema = (kind: ResourceKind, request: any): unknown => {
+  const format =
+    kind === "chat" ? request?.responseFormat : request?.text?.format;
+  if (format?.type !== "json_schema") return undefined;
+  return kind === "chat" ? format.jsonSchema?.schema : format.schema;
+};
+
+const embeddingsInputMessages = (input: unknown): unknown[] =>
+  (Array.isArray(input) ? input : [input]).map((content) => ({ content }));
+
 export const setRequestAttributes = (
   span: LaminarSpan,
-  kind: SendKind,
+  kind: ResourceKind,
   request: any,
   traceContent: boolean,
 ): void => {
   safeSetAttribute(span, "gen_ai.request.model", request?.model);
+  safeSetAttribute(span, "llm.user", request?.user);
+
+  if (kind === "embeddings") {
+    if (traceContent && request?.input !== undefined) {
+      safeSetAttribute(
+        span,
+        "gen_ai.input.messages",
+        JSON.stringify(embeddingsInputMessages(request.input)),
+      );
+    }
+    return;
+  }
+
   safeSetAttribute(span, "gen_ai.request.temperature", request?.temperature);
   safeSetAttribute(span, "gen_ai.request.top_p", request?.topP);
+  safeSetAttribute(
+    span,
+    "gen_ai.request.frequency_penalty",
+    request?.frequencyPenalty,
+  );
+  safeSetAttribute(
+    span,
+    "gen_ai.request.presence_penalty",
+    request?.presencePenalty,
+  );
+  // `chat` takes a flat `reasoningEffort`, `responses` nests it under `reasoning`.
+  safeSetAttribute(
+    span,
+    "gen_ai.request.reasoning_effort",
+    request?.reasoningEffort ?? request?.reasoning?.effort,
+  );
   safeSetAttribute(
     span,
     "gen_ai.request.max_tokens",
     kind === "chat" ? request?.maxTokens : request?.maxOutputTokens,
   );
+  const schema = structuredOutputSchema(kind, request);
+  if (schema) {
+    safeSetAttribute(
+      span,
+      "gen_ai.request.structured_output_schema",
+      JSON.stringify(schema),
+    );
+  }
   if (request?.stream) {
     safeSetAttribute(span, "llm.is_streaming", true);
   }
+
+  if (!traceContent) return;
   if (Array.isArray(request?.tools) && request.tools.length > 0) {
     safeSetAttribute(
       span,
@@ -69,8 +121,6 @@ export const setRequestAttributes = (
       JSON.stringify(request.tools),
     );
   }
-
-  if (!traceContent) return;
   const messages =
     kind === "chat" ? request?.messages : responsesInputMessages(request);
   if (Array.isArray(messages) && messages.length > 0) {
@@ -121,9 +171,19 @@ const setUsageAttributes = (
   );
 };
 
+/** Message to fail the span with, or `undefined` if the response succeeded. */
+const responsesErrorMessage = (response: any): string | undefined => {
+  if (!ERROR_RESPONSE_STATUSES.has(response?.status)) return undefined;
+  return (
+    response.error?.message ??
+    response.incompleteDetails?.reason ??
+    response.status
+  );
+};
+
 export const setResponseAttributes = (
   span: LaminarSpan,
-  kind: SendKind,
+  kind: ResourceKind,
   response: any,
   traceContent: boolean,
 ): void => {
@@ -131,16 +191,7 @@ export const setResponseAttributes = (
   safeSetAttribute(span, "gen_ai.response.id", response.id);
   safeSetAttribute(span, "gen_ai.response.model", response.model);
 
-  if (kind === "chat") {
-    setUsageAttributes(
-      span,
-      response.usage,
-      "promptTokens",
-      "completionTokens",
-      "upstreamInferencePromptCost",
-      "upstreamInferenceCompletionsCost",
-    );
-  } else {
+  if (kind === "responses") {
     setUsageAttributes(
       span,
       response.usage,
@@ -149,9 +200,25 @@ export const setResponseAttributes = (
       "upstreamInferenceInputCost",
       "upstreamInferenceOutputCost",
     );
+    const error = responsesErrorMessage(response);
+    if (error) {
+      span.setAttribute("error.type", response.status);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: error });
+    }
+  } else {
+    // `embeddings` usage carries no completion counters, but the keys it does
+    // carry match `chat`.
+    setUsageAttributes(
+      span,
+      response.usage,
+      "promptTokens",
+      "completionTokens",
+      "upstreamInferencePromptCost",
+      "upstreamInferenceCompletionsCost",
+    );
   }
 
-  if (!traceContent) return;
+  if (!traceContent || kind === "embeddings") return;
   const output = kind === "chat" ? response.choices : response.output;
   if (Array.isArray(output) && output.length > 0) {
     safeSetAttribute(span, "gen_ai.output.messages", JSON.stringify(output));
@@ -227,7 +294,7 @@ const responseFromStreamEvents = (events: any[]): any => {
  */
 export const wrapStream = <T extends AsyncIterable<any>>(
   span: LaminarSpan,
-  kind: SendKind,
+  kind: ResourceKind,
   stream: T,
   traceContent: boolean,
 ): T => {

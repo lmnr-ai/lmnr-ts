@@ -11,9 +11,9 @@ import { Laminar } from "../../../laminar";
 import { LaminarSpan } from "../../tracing/span";
 import {
   isAsyncIterable,
+  ResourceKind,
   recordError,
   responsesInputMessages,
-  SendKind,
   setRequestAttributes,
   setResponseAttributes,
   wrapStream,
@@ -22,10 +22,23 @@ import {
 const WRAPPED_SYMBOL = Symbol("lmnr.openrouter.wrapped");
 const PATCH_STATE_SYMBOL = Symbol("lmnr.openrouter.patch-state");
 
+/** The method each resource sends on, and the key its request is wrapped in. */
+const RESOURCE_METHODS: Record<
+  ResourceKind,
+  { method: string; requestKey: string }
+> = {
+  chat: { method: "send", requestKey: "chatRequest" },
+  responses: { method: "send", requestKey: "responsesRequest" },
+  embeddings: { method: "generate", requestKey: "requestBody" },
+};
+
+const RESOURCE_KINDS = Object.keys(RESOURCE_METHODS) as ResourceKind[];
+
 type PatchState = {
   traceContent: boolean;
   chat: PropertyDescriptor | undefined;
   responses: PropertyDescriptor | undefined;
+  embeddings: PropertyDescriptor | undefined;
   callModel: ((...args: any[]) => any) | undefined;
 };
 
@@ -98,12 +111,14 @@ export class OpenRouterInstrumentation extends InstrumentationBase {
       traceContent: this.traceContent,
       chat: Object.getOwnPropertyDescriptor(proto, "chat"),
       responses: Object.getOwnPropertyDescriptor(proto, "responses"),
+      embeddings: Object.getOwnPropertyDescriptor(proto, "embeddings"),
       callModel: proto.callModel,
     };
     proto[PATCH_STATE_SYMBOL] = state;
 
-    patchResourceGetter(proto, "chat", state);
-    patchResourceGetter(proto, "responses", state);
+    for (const kind of RESOURCE_KINDS) {
+      patchResourceGetter(proto, kind, state);
+    }
     if (typeof state.callModel === "function") {
       patchCallModel(proto, state);
     }
@@ -114,11 +129,11 @@ export class OpenRouterInstrumentation extends InstrumentationBase {
     const state = proto[PATCH_STATE_SYMBOL] as PatchState | undefined;
     if (!state) return;
 
-    for (const name of ["chat", "responses"] as const) {
-      if (state[name]) {
-        Object.defineProperty(proto, name, state[name]);
+    for (const kind of RESOURCE_KINDS) {
+      if (state[kind]) {
+        Object.defineProperty(proto, kind, state[kind]);
       } else {
-        delete proto[name];
+        delete proto[kind];
       }
     }
     if (state.callModel) {
@@ -130,7 +145,7 @@ export class OpenRouterInstrumentation extends InstrumentationBase {
 
 const patchResourceGetter = (
   proto: any,
-  kind: SendKind,
+  kind: ResourceKind,
   state: PatchState,
 ): void => {
   const descriptor = state[kind];
@@ -144,22 +159,26 @@ const patchResourceGetter = (
     enumerable: descriptor.enumerable ?? false,
     get() {
       const resource = originalGet.call(this);
-      patchSend(resource, kind, state);
+      patchResourceMethod(resource, kind, state);
       return resource;
     },
   });
 };
 
-const patchSend = (resource: any, kind: SendKind, state: PatchState): void => {
+const patchResourceMethod = (
+  resource: any,
+  kind: ResourceKind,
+  state: PatchState,
+): void => {
   if (!resource || resource[WRAPPED_SYMBOL]) return;
-  if (typeof resource.send !== "function") return;
+  const { method, requestKey } = RESOURCE_METHODS[kind];
+  if (typeof resource[method] !== "function") return;
 
-  const originalSend = resource.send.bind(resource);
-  const requestKey = kind === "chat" ? "chatRequest" : "responsesRequest";
+  const original = resource[method].bind(resource);
 
-  resource.send = async (request: any, options?: any) => {
+  resource[method] = async (request: any, options?: any) => {
     if (isTracingSuppressed(context.active())) {
-      return originalSend(request, options);
+      return original(request, options);
     }
 
     const { traceContent } = state;
@@ -172,7 +191,7 @@ const patchSend = (resource: any, kind: SendKind, state: PatchState): void => {
 
     try {
       const response = await Laminar.withSpan(span, () =>
-        originalSend(request, options),
+        original(request, options),
       );
       if (isAsyncIterable(response)) {
         return wrapStream(span, kind, response, traceContent);
