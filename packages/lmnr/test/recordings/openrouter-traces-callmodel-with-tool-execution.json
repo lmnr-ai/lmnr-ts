@@ -21,9 +21,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "city"
-            ],
+            "required": ["city"],
             "additionalProperties": false
           },
           "strict": null,
@@ -92,9 +90,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "city"
-            ],
+            "required": ["city"],
             "additionalProperties": false
           },
           "strict": null,
