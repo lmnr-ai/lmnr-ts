@@ -11,20 +11,50 @@
     },
     "status": 200,
     "response": [
-      "1f8b08000000000000038d8f5b6bdb401085ffcb3cef8ad9fbe5add0973e85d0505a4210b235311b4b5aa1ddb42946ffbdd88e5d530aeddb9c396766be3940debcd0b6428421950a0cfaae76101f0fbf0d1a37d4f769da01bba9e323c7061d6aa58d4325a4611c1b8d561a868d32ca99e0ac394b193c869b98344e492d8577e72965144aa7b43a6b25b4441ffc4963638470c7e8138334f5f4061157f61f80d84815bcf5c25eb0a445c40b16c74668a15dd0e14ae2bc162e587fba2b9533da7be9c525add05e770911a4953698d353d8286fffa014eb138331f73440844a6f955fe9b8e265ec860118bc966e47100f302f799c6b5bf39ea6025133a8b976c36d639b4b85e8897b06a9b49b9f790ff1b91b0a9dbdb6a7daa5a11cd7bdcea52ed48d6d9a9e69a1694bededf85fec77807fa4b6799c07aa294fe53d8aebca8ef4df534f0b44b89b69faf00918a41e22ec683afecd85f3c11a1fa4e5f74b7978f971f7f1e1cbe7fde2faaff7f3b70aeb2f540d3b5d8c020000"
+      "1f8b08000000000000038d8f5b6be3400c85ff8b9e678ce67e792b74a1a594857dd897528c13ab61b6b6c764a64b4bf07f5f9234d9500aed9b8ece91f4690779f587d615220ca95460d077b583f8b0fb6fd0b8a2be4fd306d8451d1f3836e8502b6d1c2a210de3d868b4d2306c9451ce0467cd51cae0315cc4a4714a6a29bc3b4e29a3503aa5d5512ba125fae00f1a1b2384db471f19a4a9a75788b8b06f00622355f0d60b7bc29216114f581c1ba1857641873389f35ab860fde1ae54ce68efa517a7b4427bde25449056da600e4f61a3bcfd402996470663ee698008955e2b3fd371c5cbd80d03307829dd8620ee60dee671ae6dcdcf3415889a41cdb51b2e1beb5c2a444fdc3348a55dbde567884fdd50e8e8b53dd52e0d65bfee652e754bddd8a6e989b634ada9bd1cffc47e07f822b5cee33c504d792aef515c16b6a7ff9b7ada42849f334d57b7c020f5106143d3fe6f2e9c0fd62a132cfff57675d3ffd8dcdd8df7f37c7d1bf0e6fe372cff00be244ea48c020000"
     ],
     "rawHeaders": {
       "access-control-allow-origin": "*",
       "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
-      "cf-ray": "a3c924808fe6fea2-AMS",
+      "cf-ray": "a3c996837d04ccf1-EWR",
       "connection": "keep-alive",
       "content-encoding": "gzip",
       "content-type": "application/json",
-      "date": "Thu, 17 Sep 2026 15:28:46 GMT",
+      "date": "Thu, 17 Sep 2026 16:46:36 GMT",
       "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
       "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
       "server": "cloudflare",
-      "set-cookie": "__cf_bm=WoWR7cfd.ODdMpj168pc_.1_p_D73Qt4CrS3JknT1zE-1789658926.164728-1.0.1.1-SoudcceAP_RgGsViX5Ko8Q.CofTkZek8ydKfzn_yXbdsnxT90U9U52Q6Ux19c3lb9XfMVpo0Kqkbnm4VCmgau_pbKs1r0cPX7EgyCy8XwjVKGn2Kt80lmeuPlnTjCkhR; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 15:58:46 GMT",
+      "set-cookie": "__cf_bm=DXT_xuN6ilnct.JumQvsrJ27qGnZ3uduNZmt1QXDVNI-1789663596.074349-1.0.1.1-z9B6GSgXSBOu6yM88pno9k6y2MfneL7_gnewSxYmsX6VdmHQryO2gnah9eypUmGNvBEKxzOCwoKIzuqF2wyz1YBfGcxtVVnvDn0d5JVYQipUYVdSn4GWNUNszVNwG7KD; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 17:16:36 GMT",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff"
+    },
+    "responseIsBinary": false
+  },
+  {
+    "scope": "https://openrouter.ai:443",
+    "method": "POST",
+    "path": "/api/v1/embeddings",
+    "body": {
+      "dimensions": 8,
+      "input": [15339, 1917],
+      "model": "openai/text-embedding-3-small"
+    },
+    "status": 200,
+    "response": [
+      "1f8b0800000000000003858fc16ac3301044ff65cf929125cbb2750b9442c9a1253df4108251e24d50234bc6524adae07f2fae4beb43a1b79d9d37cbec0dc2fe150f0934381b1310684d32a0b7b75f03bb3db6adf527208b596f29cb98628528a46222e792509615ace492b04c48a164ad4a394b5e57ac5e605c2ac10b9e576a4e09291857a210b31679c15955575f9a6532cfd584ee0858dfe215341b7704bad0a2030d09af89fe14a382c6ce3807042ed19c10f40dfa21747d6a5238a38fa03981149271cbc521c404ba405a11b0b1d9bf8733e8a3711167af693119ebe274eed2c734a0e91aeb8f38a03f60b38cff617f17f8873a84ae77986cf0f11b65e348a6f66fb6c501343cf6e8570f40c0b6a0e1847efa9be6aaaacb52c8baa4f59dbfdfd8dc3ee3d366e53e7cbd7e59c3f809968a8af3e6010000"
+    ],
+    "rawHeaders": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+      "cf-ray": "a3c99684f9a0ccf1-EWR",
+      "connection": "keep-alive",
+      "content-encoding": "gzip",
+      "content-type": "application/json",
+      "date": "Thu, 17 Sep 2026 16:46:36 GMT",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
+      "server": "cloudflare",
+      "set-cookie": "__cf_bm=liiy2__X7hjqaAifcmKHAivN0awVoGvoCkCC9_a0dXU-1789663596.3147233-1.0.1.1-Vh.wLtSgSimIUXzNX.gwgRyXuXCaYkUIiBRZ_znHZtzjKMqfFOWydHw9I9D6i15QyIEi1DFgWLnpdZUqOvg5o6imlHoWC07pyLAyXu848jcQWTveLXbCjD0UKLCwVEhC; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 17:16:36 GMT",
       "transfer-encoding": "chunked",
       "x-content-type-options": "nosniff"
     },

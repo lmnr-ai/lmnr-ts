@@ -4,7 +4,8 @@
     "method": "POST",
     "path": "/api/v1/chat/completions",
     "body": {
-      "max_tokens": 20,
+      "frequency_penalty": 0.5,
+      "max_tokens": 30,
       "messages": [
         {
           "content": "What is the capital of France?",
@@ -12,28 +13,48 @@
         }
       ],
       "model": "openai/gpt-4o-mini",
+      "presence_penalty": 0.3,
+      "reasoning_effort": "low",
+      "response_format": {
+        "json_schema": {
+          "name": "capital",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "capital": {
+                "type": "string"
+              }
+            },
+            "required": ["capital"],
+            "additionalProperties": false
+          },
+          "strict": true
+        },
+        "type": "json_schema"
+      },
       "stream": false,
-      "temperature": 0
+      "temperature": 0,
+      "user": "user-123"
     },
     "status": 200,
     "response": [
-      "1f8b08000000000000037d514d8fd33010bdefaf88e6ec96b494ddad6f70007182452b848490357126e950c7b63c6eb7ab2aff1d856e4a2a0a737c7e7e1f3337c5383747e01a34b4e4678bbbfbf5edaabc5f96b32fdf0eefd83dbd910f8fdb76f9951e1e0e040a42f5936c060d7683796e43171d650e1e14d84498a906fd474541176a72a02144f2c8afda9867ab30ebd833288829ecb9a6041a3e45f26f3f820279964c9d69d8b79462623f9835d194d5ba5aaf6f91aa814469cf964ce6e1b3df39a7c06e025b12d0df8fc0bea603e852810b6d4ca19291d5b067d9984428c18306c92182028f99f764fef1da9108b604fa082938020d28c292d1e7a177f0997ec77cdc50613172465784a6789fd05b2a588acf9858e6a02051b31374639a9311fbf604f4fd0f05bbd12aa6d0c56c72d89217d08bd56035eefb0cdf29c821a33b03cbc5c0930cba9c97c3dcbe56c062aae7b005dda0135297daa6a68cec6430b56837549fc54a7542cc53e24c531877358729305c7202f4a71453ed5d949c083bc3bea144de92f92be815ce4bd60bea50f2aadcb81fb9e4af96fd95ed4dc39d4f31edc41db6ff6bddf7fd2f1f2616ca49030000"
+      "1f8b08000000000000037d914b8f1a311084effc8aa8ce66c3f218c0b78da23c4ed97b882ce3e9197ad7633bb6876483e6bf4713161814129facf2e7aeeaeed19bd3198d2ed703b884444d6e7cbf5cad8b62b6584fc74f0f9f1e3fbc5f7cf9b8fafe79559a77d3265610f0db2732191266a7f39df14db094d93b0898483a530979a922d0f8922c247c20a7f96d1df278eec70d3b8640887ecf2545483cfc6a234120bda44c8daad8d5144364d77b5541cd8a3515c5747ebfec218a7b36a432f77f5d6bad80d979369420bf1ec0aea49f901301ebeb10fd369da88a1da79d8aa493779048d90708389d794fea1faf0da5a46b823c207a4b90d02971cadae5be6def32fd8979d8c0e8c059db0de4068f3a72daa08340a4aa4dda9e521c0dd8d547a1ebbe09b4278b107d13b2cafe995c829c4f7b8bd398cff24220fbaced855bf65cca9093bb497fd633014e6afbe29f212b6d1389ebdaaaa4acd9a6ded468b3a3f25c6c228e8afa1139d350d66dc97e28f40b1c08dd31c5b0761b528ea41bc5aea248ce90fa2be80de635eb155adc462ff349d7fcacbb31bc61b6f326862d71a3ebff35dd75dd6f60c6eab44a030000"
     ],
     "rawHeaders": {
       "access-control-allow-origin": "*",
       "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
-      "cf-ray": "a3c76a795a76ff90-EWR",
+      "cf-ray": "a3c9966c5ba6ccf1-EWR",
       "connection": "keep-alive",
       "content-encoding": "gzip",
       "content-type": "application/json",
-      "date": "Thu, 17 Sep 2026 10:27:01 GMT",
+      "date": "Thu, 17 Sep 2026 16:46:35 GMT",
       "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
       "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
       "server": "cloudflare",
-      "set-cookie": "__cf_bm=6IHdDl8OGZvrBXbVI778HEpn8K5FkVU1Cqr1xvuZZnI-1789640820.6978555-1.0.1.1-11D3_jxo.dF5ARxSv4dNxZlzrY6hNvLII0BjPbMESpyZWNLQsAHCdp8R3PlSCUUDdwysuN4DIZiRsqL.0KRP5exH1y_SVHXo.3TGY6wQvw0iFYAtjGX..HzlbzRvE4gl; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 10:57:01 GMT",
+      "set-cookie": "__cf_bm=YW_zKN8U1IqPGW6EtIBQFFCeG46fJSAZuY351QGidAw-1789663592.3744712-1.0.1.1-K5cLIpGlXwqh0_g0EgugczeazCpcvW5tUKHlsvXsUesaFeEZ.yeDTPSJcTf1RmgCTK1_7ITTUfni7696hRiHFQ2XXYmNcbNPDnsz.xSOFCMkXJBVks41NM3yWdccizKF; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 17:16:35 GMT",
       "transfer-encoding": "chunked",
       "x-content-type-options": "nosniff",
-      "x-generation-id": "gen-1789640820-RXxBilw5sGTkg2VeQQxe"
+      "x-generation-id": "gen-1789663592-jAHPFD5OG8qI8dcB2mrf"
     },
     "responseIsBinary": false
   }

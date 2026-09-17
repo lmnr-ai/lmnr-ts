@@ -4,33 +4,55 @@
     "method": "POST",
     "path": "/api/v1/responses",
     "body": {
+      "frequency_penalty": 0.2,
       "input": "What is the capital of France?",
       "instructions": "Answer in one word.",
-      "max_output_tokens": 20,
+      "max_output_tokens": 50,
       "model": "openai/gpt-4o-mini",
+      "presence_penalty": 0.1,
+      "reasoning": {
+        "effort": "low"
+      },
       "service_tier": "auto",
       "store": false,
-      "stream": false
+      "stream": false,
+      "text": {
+        "format": {
+          "name": "capital",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "capital": {
+                "type": "string"
+              }
+            },
+            "required": ["capital"],
+            "additionalProperties": false
+          },
+          "type": "json_schema"
+        }
+      },
+      "user": "user-123"
     },
     "status": 200,
     "response": [
-      "1f8b08000000000000037552c16edb300cbdf72b029e95ce49b3b6d36d183660b71d8a0d4551088ccda46a645195a8b641e07f1f643b49d375ba98269f1e1ff57836d99fb3b363b803db808635f9e9eceafacbe5a2ba9ecfa6bf2f97df6fe9f6c7cfe6e6f2e6db6cbe7df9f3080a78f948b580864829b04f040aea4828d41814d04706052d37e4400307f2683fad834c173c6dadb7a020094a4ea0a1e63638126a0ad33e3ee59a2be02c210be8bb516d9bd646da60368f48b97d9a5ff00a14c8365029524ab82ed222bb92c0946c12f4f2ffc65ec80ffc23c9d0d108bd965bfd47c32f8c368102f49e05c5b24fa0efee15385e87c8cbfeafbbefee15508c1c41fbec9c02ebf7dd4c4382d6a57d4598ddc85142533fb0ad7bcd591814048ce81c393354d115b4c44c0a5a7c357b95bca122655e15a96da0889223819e15da60421f8548897c4da618e2640bba52b08af494c9d7db936cb9749ca91a9abd9530a86f49b04141d0bb4ec112ebcd3a72f60de815ba447dcb67cb3999fdbe9862df7039517cb63519b1148f034bccbeee9f16343436e1d2f51625e132d0c86b7d9298ebd101f8ead30bc589f513f63479e1d89c1f4cdbc18a638b7d347adb17ba4e41244cecad5f1f34e18a646b6c435eecaa17361442e43688a9b17e20b3a1ed87790ea3a0a196fb2dd43bb0fec4a40b759239aec40e7a9ee600ad3a05ef2c9ebdcbbcbd7d18e7844058d01dbb2fcaba27015d9d57e52caacf0a6c32cb2d6f0eef5b106f99734812095b63fd8a62bf44ff927c001ae63c815e2c3e868e530dd84b9a5e755df717d3fa9b49b2040000"
+      "1f8b080000000000000375534d53e3300cbdefaf607476d9944201dfd8f31ed88fd90b653c6aa2148363796d05dae9e4bfef3849bf58c8c58ef4f4a427c95fce76df972dd80a34acc84fa6d737b7f3f9ecea763ef9e625f2edaf1f77cb59fd677e1b7e4f7f7e0705bc7ca6524043a414d8270205652414aa0c0ae8038382862b72a0810379b45f574126973c69acb7a020094a9b4043c94d70245465a6ddfd94eb5a01b7125a01fd3056dba495912698c82437ed72fdba0605b209947d9412ae7265915d36604a36097af93caf17f203fd4832243442eb1cd51f1ab60b28315841b700bd807b8c362da00305e83d0b8a659f403f3c2a70bc0a9197fd5ff7d83d2aa0183982f6ad730aacdfe53715095a97761e61762347be9af2896dd9ab68854141c088ce913383175d464b6c4941836bb3ab9b5f28977255e4e29b4011a58d047a9a698309fd2d444ae44b3279424e36a08bf3a9823ad2df967cb939b65f0c81075dc590f0b88c41414382150a82de760a9658beac22b7be025da34bd4a77db5dc26b35b2293673a04278aafb6242396e241b4c4d6977d7b414365132e5d3fb8249c458dbcd627896d394e01ee7c7aa37866fd197b3a7be3589def47b9859a6383fd6d9cf873626f52f9440d82028f4d368ee3cea906cf013f3e852c870345b194b2771771002689d6afa0eb14e4c6da4815e8873df051015695cd55a3bb3fe2ea5575431826f699446f81ea9a63de46c76fd0294858936c8cadc88badfbb60dad0c919b20a6c4f289cc0b6d3eb47318db35f8dad4b73d1f93e9c50cb225bf25bd05eb8f17ebf25a9d580e6b9c5b503e51b587169d82f76bf9ce721cbd177b42202ce80ef117f9d126c98b591445312d8a2b053699e5865ff6fb9011c7cc6d4812091b637d4db15ffcff493e000d3a8fa1c5f527d051d50976d675dd3f7fb6c05770050000"
     ],
     "rawHeaders": {
       "access-control-allow-origin": "*",
       "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
-      "cf-ray": "a3c76a7fc9ca44ce-EWR",
+      "cf-ray": "a3c996866dddccf1-EWR",
       "connection": "keep-alive",
       "content-encoding": "gzip",
       "content-type": "application/json",
-      "date": "Thu, 17 Sep 2026 10:27:02 GMT",
+      "date": "Thu, 17 Sep 2026 16:46:37 GMT",
       "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
       "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
       "server": "cloudflare",
-      "set-cookie": "__cf_bm=_Q1A03js3IglqPwLJHr7PJEiS4hyey7Acz4DFEMmeEw-1789640821.7294738-1.0.1.1-cMTFTWKAf06kixfFKHq9fHXIYUhg_4Qd_iA4WMFcThhG9LXVE4gkxBCvL7jP2S3RI1ByuHC4v9Rc.XOmxaGHS.K31ls3wnMGx_4qRB7yrBRenXmUDAlcgJUjZvSrEzv6; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 10:57:02 GMT",
+      "set-cookie": "__cf_bm=YGSi6GcmvpXE2pDy99esc0dTMb_Dw1RWuff8UY.puw8-1789663596.5425854-1.0.1.1-kF.NEfLDGEGjnmmqrkPzMtcQz6ZXvb7c11bzGgGOBsb_ciP6UNCeHF6AqG12xcc2ByGAxURSROUkSmCMIqO93G9558kKmqqHcCJJ_6oqML3u.22jQ3tAS6GLJkj1qnVU; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 17:16:37 GMT",
       "transfer-encoding": "chunked",
       "x-content-type-options": "nosniff",
-      "x-generation-id": "gen-1789640821-V6bEYeYFIdT6TC12ywWj"
+      "x-generation-id": "gen-1789663596-Bntro9SQAb3fV69pT1RL"
     },
     "responseIsBinary": false
   }

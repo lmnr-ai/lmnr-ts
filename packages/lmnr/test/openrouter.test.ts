@@ -135,41 +135,8 @@ void describe("openrouter instrumentation", () => {
       chatRequest: {
         model: MODEL,
         messages: [{ role: "user", content: QUESTION }],
-        maxTokens: 20,
-        temperature: 0,
-      },
-    });
-
-    const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 1);
-    const span = spans[0];
-    assert.strictEqual(span.name, "openrouter.chat");
-    assert.strictEqual(span.attributes["lmnr.span.type"], "LLM");
-    assert.strictEqual(span.attributes["gen_ai.system"], "openrouter");
-    assert.strictEqual(span.attributes["gen_ai.request.model"], MODEL);
-    assert.strictEqual(span.attributes["gen_ai.request.max_tokens"], 20);
-    assert.strictEqual(span.attributes["gen_ai.request.temperature"], 0);
-    assert.strictEqual(span.attributes["gen_ai.response.model"], MODEL);
-    assert.strictEqual(span.attributes["gen_ai.response.id"], response.id);
-    assertUsage(span);
-
-    assert.deepStrictEqual(
-      JSON.parse(span.attributes["gen_ai.input.messages"] as string),
-      [{ role: "user", content: QUESTION }],
-    );
-    const output = JSON.parse(
-      span.attributes["gen_ai.output.messages"] as string,
-    );
-    assert.strictEqual(output[0].message.role, "assistant");
-    assert.ok(output[0].message.content.includes("Paris"));
-  });
-
-  void it("sets chat request parity attributes", async () => {
-    await createClient().chat.send({
-      chatRequest: {
-        model: MODEL,
-        messages: [{ role: "user", content: QUESTION }],
         maxTokens: 30,
+        temperature: 0,
         frequencyPenalty: 0.5,
         presencePenalty: 0.3,
         reasoningEffort: "low",
@@ -188,6 +155,12 @@ void describe("openrouter instrumentation", () => {
     const spans = exporter.getFinishedSpans();
     assert.strictEqual(spans.length, 1);
     const span = spans[0];
+    assert.strictEqual(span.name, "openrouter.chat");
+    assert.strictEqual(span.attributes["lmnr.span.type"], "LLM");
+    assert.strictEqual(span.attributes["gen_ai.system"], "openrouter");
+    assert.strictEqual(span.attributes["gen_ai.request.model"], MODEL);
+    assert.strictEqual(span.attributes["gen_ai.request.max_tokens"], 30);
+    assert.strictEqual(span.attributes["gen_ai.request.temperature"], 0);
     assert.strictEqual(
       span.attributes["gen_ai.request.frequency_penalty"],
       0.5,
@@ -204,51 +177,24 @@ void describe("openrouter instrumentation", () => {
       ),
       CAPITAL_SCHEMA,
     );
-  });
+    assert.strictEqual(span.attributes["gen_ai.response.model"], MODEL);
+    assert.strictEqual(span.attributes["gen_ai.response.id"], response.id);
+    assertUsage(span);
 
-  void it("sets responses request parity attributes", async () => {
-    await createClient().responses.send({
-      responsesRequest: {
-        model: MODEL,
-        input: QUESTION,
-        maxOutputTokens: 50,
-        frequencyPenalty: 0.2,
-        presencePenalty: 0.1,
-        user: "user-123",
-        reasoning: { effort: "low" },
-        text: {
-          format: {
-            type: "json_schema",
-            name: "capital",
-            schema: CAPITAL_SCHEMA,
-          },
-        },
-      },
-    });
-
-    const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 1);
-    const span = spans[0];
-    assert.strictEqual(
-      span.attributes["gen_ai.request.frequency_penalty"],
-      0.2,
-    );
-    assert.strictEqual(span.attributes["gen_ai.request.presence_penalty"], 0.1);
-    assert.strictEqual(
-      span.attributes["gen_ai.request.reasoning_effort"],
-      "low",
-    );
-    assert.strictEqual(span.attributes["llm.user"], "user-123");
     assert.deepStrictEqual(
-      JSON.parse(
-        span.attributes["gen_ai.request.structured_output_schema"] as string,
-      ),
-      CAPITAL_SCHEMA,
+      JSON.parse(span.attributes["gen_ai.input.messages"] as string),
+      [{ role: "user", content: QUESTION }],
     );
+    const output = JSON.parse(
+      span.attributes["gen_ai.output.messages"] as string,
+    );
+    assert.strictEqual(output[0].message.role, "assistant");
+    assert.ok(output[0].message.content.includes("Paris"));
   });
 
   void it("creates an embeddings span", async () => {
-    const response: any = await createClient().embeddings.generate({
+    const client = createClient();
+    const response: any = await client.embeddings.generate({
       requestBody: {
         model: EMBEDDINGS_MODEL,
         input: ["hello world", "bonjour"],
@@ -257,9 +203,14 @@ void describe("openrouter instrumentation", () => {
         dimensions: 8,
       },
     });
+    // A flat array of token ids is one document, not a batch of them.
+    const tokenIds = [15339, 1917];
+    await client.embeddings.generate({
+      requestBody: { model: EMBEDDINGS_MODEL, input: tokenIds, dimensions: 8 },
+    });
 
     const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans.length, 2);
     const span = spans[0];
     assert.strictEqual(span.name, "openrouter.embeddings");
     assert.strictEqual(span.attributes["lmnr.span.type"], "LLM");
@@ -279,23 +230,8 @@ void describe("openrouter instrumentation", () => {
       JSON.parse(span.attributes["gen_ai.input.messages"] as string),
       [{ content: "hello world" }, { content: "bonjour" }],
     );
-  });
-
-  void it("records a token-id embeddings input as one document", async () => {
-    // A flat array of token ids is one document, not a batch of them.
-    const tokenIds = [15339, 1917];
-    await createClient().embeddings.generate({
-      requestBody: {
-        model: EMBEDDINGS_MODEL,
-        input: tokenIds,
-        dimensions: 8,
-      },
-    });
-
-    const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 1);
     assert.deepStrictEqual(
-      JSON.parse(spans[0].attributes["gen_ai.input.messages"] as string),
+      JSON.parse(spans[1].attributes["gen_ai.input.messages"] as string),
       [{ content: tokenIds }],
     );
   });
@@ -355,7 +291,18 @@ void describe("openrouter instrumentation", () => {
         model: MODEL,
         instructions: "Answer in one word.",
         input: QUESTION,
-        maxOutputTokens: 20,
+        maxOutputTokens: 50,
+        frequencyPenalty: 0.2,
+        presencePenalty: 0.1,
+        user: "user-123",
+        reasoning: { effort: "low" },
+        text: {
+          format: {
+            type: "json_schema",
+            name: "capital",
+            schema: CAPITAL_SCHEMA,
+          },
+        },
       },
     });
 
@@ -366,7 +313,23 @@ void describe("openrouter instrumentation", () => {
     assert.strictEqual(span.attributes["lmnr.span.type"], "LLM");
     assert.strictEqual(span.attributes["gen_ai.system"], "openrouter");
     assert.strictEqual(span.attributes["gen_ai.request.model"], MODEL);
-    assert.strictEqual(span.attributes["gen_ai.request.max_tokens"], 20);
+    assert.strictEqual(span.attributes["gen_ai.request.max_tokens"], 50);
+    assert.strictEqual(
+      span.attributes["gen_ai.request.frequency_penalty"],
+      0.2,
+    );
+    assert.strictEqual(span.attributes["gen_ai.request.presence_penalty"], 0.1);
+    assert.strictEqual(
+      span.attributes["gen_ai.request.reasoning_effort"],
+      "low",
+    );
+    assert.strictEqual(span.attributes["llm.user"], "user-123");
+    assert.deepStrictEqual(
+      JSON.parse(
+        span.attributes["gen_ai.request.structured_output_schema"] as string,
+      ),
+      CAPITAL_SCHEMA,
+    );
     assert.strictEqual(span.attributes["gen_ai.response.id"], response.id);
     assertUsage(span);
 
