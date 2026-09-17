@@ -1,0 +1,32 @@
+[
+  {
+    "scope": "https://openrouter.ai:443",
+    "method": "POST",
+    "path": "/api/v1/embeddings",
+    "body": {
+      "dimensions": 8,
+      "input": [15339, 1917],
+      "model": "openai/text-embedding-3-small"
+    },
+    "status": 200,
+    "response": [
+      "1f8b0800000000000003858f4f4bc43010c5bfcb9cd392e64fd3e4b678d193085e64594adacc2e71dba636595959fadda556b407c1dbbc79bf37bcb941685eb14d60a0f3310101679305b3bffd1ad837e89c1f4e4036b3d96734a78a0a2ea4a2bc6092643417b46492d09c4baea456a55c25d315d51b8c49c5996045a5d614979c32c5055f352f04a395aebe34cd6551a8053d10f083c32b183a1f08f4c1610706125e53f6532ce359ec6dd701814bb427047383710afd98ea14ce3844308c400ac976db451b62022330ab08f858371fe10ce668bb88ab573b4cd67771397719639ad0f6b51f8e38e1d062bd8dff617f17f8876a433f76987c18e2374ae7992ceddfbdc3090c3c8e38ec1e80807760e084c3f27756a84a97526badb3b76bf9b443db3e1f7bf1524c7765ba6f60fe04dafd74c8e6010000"
+    ],
+    "rawHeaders": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+      "cf-ray": "a3c93eb74f466654-AMS",
+      "connection": "keep-alive",
+      "content-encoding": "gzip",
+      "content-type": "application/json",
+      "date": "Thu, 17 Sep 2026 15:46:40 GMT",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
+      "server": "cloudflare",
+      "set-cookie": "__cf_bm=aOa3pSxYdWBnAurBYl.TDCtN6JRta.Et12hJL7QFNvs-1789659999.8847396-1.0.1.1-FHJ0KLHgpLneZqubbLeLg7jkAEyROcvR8DWX75kQhLaIfnQxxbQcEYOTSBE2mEZi9pKJ6bbc8MOEXqb6EZ4BwIJA7VB8aLslydAWsmtZZvvPsAi80J1olcgCZH8U5cei; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 16:16:40 GMT",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff"
+    },
+    "responseIsBinary": false
+  }
+]

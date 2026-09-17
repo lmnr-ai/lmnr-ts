@@ -281,6 +281,25 @@ void describe("openrouter instrumentation", () => {
     );
   });
 
+  void it("records a token-id embeddings input as one document", async () => {
+    // A flat array of token ids is one document, not a batch of them.
+    const tokenIds = [15339, 1917];
+    await createClient().embeddings.generate({
+      requestBody: {
+        model: EMBEDDINGS_MODEL,
+        input: tokenIds,
+        dimensions: 8,
+      },
+    });
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.deepStrictEqual(
+      JSON.parse(spans[0].attributes["gen_ai.input.messages"] as string),
+      [{ content: tokenIds }],
+    );
+  });
+
   void it("marks an incomplete responses span as an error", async () => {
     await createClient().responses.send({
       responsesRequest: {

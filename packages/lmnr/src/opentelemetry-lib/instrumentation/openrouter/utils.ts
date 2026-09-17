@@ -55,8 +55,15 @@ const structuredOutputSchema = (kind: ResourceKind, request: any): unknown => {
   return kind === "chat" ? format.jsonSchema?.schema : format.schema;
 };
 
-const embeddingsInputMessages = (input: unknown): unknown[] =>
-  (Array.isArray(input) ? input : [input]).map((content) => ({ content }));
+/**
+ * `input` is either one document or a batch of them. A flat array of numbers is
+ * a single token-id sequence, not a batch — the API returns one embedding for it.
+ */
+const embeddingsInputMessages = (input: unknown): unknown[] => {
+  const isBatch =
+    Array.isArray(input) && !(input.length > 0 && typeof input[0] === "number");
+  return (isBatch ? input : [input]).map((content) => ({ content }));
+};
 
 export const setRequestAttributes = (
   span: LaminarSpan,
