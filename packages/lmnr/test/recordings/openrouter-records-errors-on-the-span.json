@@ -1,0 +1,41 @@
+[
+  {
+    "scope": "https://openrouter.ai:443",
+    "method": "POST",
+    "path": "/api/v1/chat/completions",
+    "body": {
+      "messages": [
+        {
+          "content": "Hello",
+          "role": "user"
+        }
+      ],
+      "model": "openai/this-model-does-not-exist",
+      "stream": false
+    },
+    "status": 400,
+    "response": {
+      "error": {
+        "message": "openai/this-model-does-not-exist is not a valid model ID",
+        "code": 400
+      },
+      "user_id": "org_33pG5UfhxJ3NWHjfi343YzeOIei"
+    },
+    "rawHeaders": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+      "cf-ray": "a3c76aa209cbff90-EWR",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "date": "Thu, 17 Sep 2026 10:27:07 GMT",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
+      "server": "cloudflare",
+      "set-cookie": "__cf_bm=.NLG59zq1Ifclg0H2vVIF9MQtw7U9UWMnw_aMIsEusM-1789640827.2096422-1.0.1.1-vQGRtBmZx74iSgoXJWB_ET6SNbE9Gwc.jUS7WyK4vlbPkxoNIIyWL9hOzdJnDP69huiDLC1UXo3cZL5RI5CInnW1Dhi7qlprIsQ5be4gEvM1ClRRWkIE6tSz2iMCoR9e; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 10:57:07 GMT",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-generation-id": "gen-1789640827-X4zLgrJ5pLKHbH2mTZuo"
+    },
+    "responseIsBinary": false
+  }
+]

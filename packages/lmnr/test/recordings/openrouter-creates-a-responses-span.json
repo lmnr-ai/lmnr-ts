@@ -1,0 +1,37 @@
+[
+  {
+    "scope": "https://openrouter.ai:443",
+    "method": "POST",
+    "path": "/api/v1/responses",
+    "body": {
+      "input": "What is the capital of France?",
+      "instructions": "Answer in one word.",
+      "max_output_tokens": 20,
+      "model": "openai/gpt-4o-mini",
+      "service_tier": "auto",
+      "store": false,
+      "stream": false
+    },
+    "status": 200,
+    "response": [
+      "1f8b08000000000000037552c16edb300cbdf72b029e95ce49b3b6d36d183660b71d8a0d4551088ccda46a645195a8b641e07f1f643b49d375ba98269f1e1ff57836d99fb3b363b803db808635f9e9eceafacbe5a2ba9ecfa6bf2f97df6fe9f6c7cfe6e6f2e6db6cbe7df9f3080a78f948b580864829b04f040aea4828d41814d04706052d37e4400307f2683fad834c173c6dadb7a020094a4ea0a1e63638126a0ad33e3ee59a2be02c210be8bb516d9bd646da60368f48b97d9a5ff00a14c8365029524ab82ed222bb92c0946c12f4f2ffc65ec80ffc23c9d0d108bd965bfd47c32f8c368102f49e05c5b24fa0efee15385e87c8cbfeafbbefee15508c1c41fbec9c02ebf7dd4c4382d6a57d4598ddc85142533fb0ad7bcd591814048ce81c393354d115b4c44c0a5a7c357b95bca122655e15a96da0889223819e15da60421f8548897c4da618e2640bba52b08af494c9d7db936cb9749ca91a9abd9530a86f49b04141d0bb4ec112ebcd3a72f60de815ba447dcb67cb3999fdbe9862df7039517cb63519b1148f034bccbeee9f16343436e1d2f51625e132d0c86b7d9298ebd101f8ead30bc589f513f63479e1d89c1f4cdbc18a638b7d347adb17ba4e41244cecad5f1f34e18a646b6c435eecaa17361442e43688a9b17e20b3a1ed87790ea3a0a196fb2dd43bb0fec4a40b759239aec40e7a9ee600ad3a05ef2c9ebdcbbcbd7d18e7844058d01dbb2fcaba27015d9d57e52caacf0a6c32cb2d6f0eef5b106f99734812095b63fd8a62bf44ff927c001ae63c815e2c3e868e530dd84b9a5e755df717d3fa9b49b2040000"
+    ],
+    "rawHeaders": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+      "cf-ray": "a3c76a7fc9ca44ce-EWR",
+      "connection": "keep-alive",
+      "content-encoding": "gzip",
+      "content-type": "application/json",
+      "date": "Thu, 17 Sep 2026 10:27:02 GMT",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
+      "server": "cloudflare",
+      "set-cookie": "__cf_bm=_Q1A03js3IglqPwLJHr7PJEiS4hyey7Acz4DFEMmeEw-1789640821.7294738-1.0.1.1-cMTFTWKAf06kixfFKHq9fHXIYUhg_4Qd_iA4WMFcThhG9LXVE4gkxBCvL7jP2S3RI1ByuHC4v9Rc.XOmxaGHS.K31ls3wnMGx_4qRB7yrBRenXmUDAlcgJUjZvSrEzv6; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 10:57:02 GMT",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-generation-id": "gen-1789640821-V6bEYeYFIdT6TC12ywWj"
+    },
+    "responseIsBinary": false
+  }
+]

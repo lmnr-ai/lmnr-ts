@@ -1,0 +1,39 @@
+[
+  {
+    "scope": "https://openrouter.ai:443",
+    "method": "POST",
+    "path": "/api/v1/chat/completions",
+    "body": {
+      "max_tokens": 20,
+      "messages": [
+        {
+          "content": "What is the capital of France?",
+          "role": "user"
+        }
+      ],
+      "model": "openai/gpt-4o-mini",
+      "stream": false
+    },
+    "status": 200,
+    "response": [
+      "1f8b08000000000000037d514d8fd33010bdefaf88e6ec96269b4d777de382e0c0c7014e0859ae334986756ccbe314da2aff1d85926e2a0a737c7e7e1f3377d93c7727a01a24b4e856f9f6f1a92a378fc5c3ea707c78f73e16dbe2e351e75fde72f9615f8000bffb8e268104d3e9b436be0f16137907024c449db006f9a222a0f7355a90e0033a4dafda9056a55ff5e4080484e8f754630409af8f434410c0074ed8ab865c8b314472935713d47df584555594f9762261dc93419568faeb066b0598ce934106f9f504e46afc097223c0fa3644bfe399d59023ee5444cdde81044e3e8000a713ed51fde3b54766dd22c813446f11246866e2a45d9a6a7b97f077cccf1d6646074ada66bec9de44ed0c66c4d9271d89d720206233b0b6739ab311b9f60c8ce33701c36c15a2ef4352c93fa36390793959cdebbec05b01c9276d2f40914f3c4e2037ebcd34d5bd0062b53bf867908db68ce25a5bd59834599e4c8d361dd617b18d3823ea47a4844b580f35f925301d72018ce7144bed21708aa87b45aec188cea0fa2be80dce9fac57d4a9e44db9793f7ccd2f8bf1c6f696e12ea75876a25eb7ff6b3d8ee32f2a4d4a9e48030000"
+    ],
+    "rawHeaders": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+      "cf-ray": "a3c76a988d1cff90-EWR",
+      "connection": "keep-alive",
+      "content-encoding": "gzip",
+      "content-type": "application/json",
+      "date": "Thu, 17 Sep 2026 10:27:06 GMT",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
+      "server": "cloudflare",
+      "set-cookie": "__cf_bm=ymm48JA2p6GCViiGDoZcKmpay1fBmyHIgb.4TJRPZO8-1789640825.6854925-1.0.1.1-hoUqAMEOoeYOnvIa1vdmA5ehEgVxKJFHPk7IwEFkNNvH_9veDsZjbMcS_osui1c3PdwLT_OD3kdJJ2mj9o2ThwpBr1bZUbIvrto.nxV0S73hRuWim7ofKaAabOZeL_Xc; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 10:57:06 GMT",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-generation-id": "gen-1789640825-yz5IMr272Oza1UHs4Nv2"
+    },
+    "responseIsBinary": false
+  }
+]

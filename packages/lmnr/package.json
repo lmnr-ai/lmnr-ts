@@ -104,6 +104,7 @@
     "@lmnr-ai/types": "workspace:*",
     "@onkernel/sdk": "^0.86.1",
     "@openai/agents": "^0.16.1",
+    "@openrouter/sdk": "^1.2.136",
     "@opencode-ai/sdk": "^1.18.18",
     "@pinecone-database/pinecone": "^8.2.0",
     "@playwright/test": "^1.62.1",
