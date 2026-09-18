@@ -202,6 +202,9 @@ importers:
       '@opencode-ai/sdk':
         specifier: ^1.18.18
         version: 1.18.18
+      '@openrouter/sdk':
+        specifier: ^1.2.128
+        version: 1.2.128
       '@pinecone-database/pinecone':
         specifier: ^8.2.0
         version: 8.2.0
@@ -1052,6 +1055,9 @@ packages:
 
   '@opencode-ai/sdk@1.18.18':
     resolution: {integrity: sha512-zJlwXskIR47V1dkPJqeKBgq7nejG1uU8lJaGIGqbX3MWRCT8vKn0fEotbxuPCKnTdmWsDyNGNg9q1qIliDSMDA==}
+
+  '@openrouter/sdk@1.2.128':
+    resolution: {integrity: sha512-6OECM0QfqYkHnYxoDUHETQRvF+iCT+edZy00mlj2pJlLKesTslFWehzPD4aPf2HHJf1aBEs+siswzPnQTZjgfQ==}
 
   '@opentelemetry/api-logs@0.203.0':
     resolution: {integrity: sha512-9B9RU0H7Ya1Dx/Rkyc4stuBZSGVQF27WigitInx2QQoj6KUpEFYPKoWjdFTunJYxmXmh17HeBvbMa1EhGyPmqQ==}
@@ -3633,6 +3639,10 @@ snapshots:
   '@opencode-ai/sdk@1.18.18':
     dependencies:
       cross-spawn: 7.0.6
+
+  '@openrouter/sdk@1.2.128':
+    dependencies:
+      zod: 4.4.3
 
   '@opentelemetry/api-logs@0.203.0':
     dependencies:

@@ -106,8 +106,11 @@ When adding/modifying integration tests for Mastra:
 
 ## Formatting / Lint
 
-- No project-wide `prettier` binary is installed; "format" is enforced through biome.
-- Max line length is 100 chars (`@stylistic/max-len`). Long destructured `import` lines will fail lint — break them across multiple lines.
+- No project-wide `prettier` binary is installed and there is **no eslint** either; lint AND format are both biome (`biome.json` at the repo root).
+- **Lint only exists at the MONOREPO ROOT — the packages have no `lint` script.** `pnpm --filter @lmnr-ai/lmnr lint` fails with `ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT`. Run `pnpm lint` (`biome check`) / `pnpm lint:fix` (`biome check --write`) from `/repos/lmnr-ts`, which is exactly what `.github/workflows/check-lint.yml` runs on PRs. `pnpm typecheck` (`tsc`) is also root-only.
+- Line width is biome's default **80** (`biome.json` sets no `lineWidth`); the old `@stylistic/max-len`-at-100 note was stale. `biome check --write` rewraps for you, so let it rather than hand-wrapping.
+- **Biome's `includes` is `**`, so it formats and lints non-source files too — including JSON test fixtures / nock cassettes under `packages/lmnr/test/recordings/`.** `JSON.stringify(x, null, 2)` output does NOT match biome's JSON formatting, so a freshly recorded cassette fails CI's `pnpm lint` until you run `biome check --write` on it. Do that for every new or re-recorded cassette.
+- `assist/source/organizeImports` is enforced: imports sort ASCII with uppercase first, so a type export like `ResourceKind` must precede `recordError` in the same import block. `noExplicitAny` is only a **warning** and is pre-existing throughout the instrumentation code — don't chase it.
 
 ## Debug mode (`packages/lmnr/src/debug/`)
 

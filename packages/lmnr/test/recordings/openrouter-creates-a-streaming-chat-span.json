@@ -1,0 +1,40 @@
+[
+  {
+    "scope": "https://openrouter.ai:443",
+    "method": "POST",
+    "path": "/api/v1/chat/completions",
+    "body": {
+      "max_tokens": 20,
+      "messages": [
+        {
+          "content": "What is the capital of France?",
+          "role": "user"
+        }
+      ],
+      "model": "openai/gpt-4o-mini",
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      }
+    },
+    "status": 200,
+    "response": "data: {\"id\":\"gen-1789640821-vIPWAJZqnYT1o69G4VTO\",\"object\":\"chat.completion.chunk\",\"created\":1789640821,\"model\":\"openai/gpt-4o-mini\",\"provider\":\"OpenAI\",\"system_fingerprint\":\"fp_0b9b996aeb\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"The\",\"role\":\"assistant\"},\"finish_reason\":null,\"native_finish_reason\":null}]}\n\ndata: {\"id\":\"gen-1789640821-vIPWAJZqnYT1o69G4VTO\",\"object\":\"chat.completion.chunk\",\"created\":1789640821,\"model\":\"openai/gpt-4o-mini\",\"provider\":\"OpenAI\",\"system_fingerprint\":\"fp_0b9b996aeb\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" capital\",\"role\":\"assistant\"},\"finish_reason\":null,\"native_finish_reason\":null}]}\n\ndata: {\"id\":\"gen-1789640821-vIPWAJZqnYT1o69G4VTO\",\"object\":\"chat.completion.chunk\",\"created\":1789640821,\"model\":\"openai/gpt-4o-mini\",\"provider\":\"OpenAI\",\"system_fingerprint\":\"fp_0b9b996aeb\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" of\",\"role\":\"assistant\"},\"finish_reason\":null,\"native_finish_reason\":null}]}\n\ndata: {\"id\":\"gen-1789640821-vIPWAJZqnYT1o69G4VTO\",\"object\":\"chat.completion.chunk\",\"created\":1789640821,\"model\":\"openai/gpt-4o-mini\",\"provider\":\"OpenAI\",\"system_fingerprint\":\"fp_0b9b996aeb\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" France\",\"role\":\"assistant\"},\"finish_reason\":null,\"native_finish_reason\":null}]}\n\ndata: {\"id\":\"gen-1789640821-vIPWAJZqnYT1o69G4VTO\",\"object\":\"chat.completion.chunk\",\"created\":1789640821,\"model\":\"openai/gpt-4o-mini\",\"provider\":\"OpenAI\",\"system_fingerprint\":\"fp_0b9b996aeb\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" is\",\"role\":\"assistant\"},\"finish_reason\":null,\"native_finish_reason\":null}]}\n\ndata: {\"id\":\"gen-1789640821-vIPWAJZqnYT1o69G4VTO\",\"object\":\"chat.completion.chunk\",\"created\":1789640821,\"model\":\"openai/gpt-4o-mini\",\"provider\":\"OpenAI\",\"system_fingerprint\":\"fp_0b9b996aeb\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" Paris\",\"role\":\"assistant\"},\"finish_reason\":null,\"native_finish_reason\":null}]}\n\ndata: {\"id\":\"gen-1789640821-vIPWAJZqnYT1o69G4VTO\",\"object\":\"chat.completion.chunk\",\"created\":1789640821,\"model\":\"openai/gpt-4o-mini\",\"provider\":\"OpenAI\",\"system_fingerprint\":\"fp_0b9b996aeb\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\".\",\"role\":\"assistant\"},\"finish_reason\":null,\"native_finish_reason\":null}]}\n\ndata: {\"id\":\"gen-1789640821-vIPWAJZqnYT1o69G4VTO\",\"object\":\"chat.completion.chunk\",\"created\":1789640821,\"model\":\"openai/gpt-4o-mini\",\"provider\":\"OpenAI\",\"system_fingerprint\":\"fp_0b9b996aeb\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\",\"role\":\"assistant\"},\"finish_reason\":\"stop\",\"native_finish_reason\":\"stop\"}]}\n\ndata: {\"id\":\"gen-1789640821-vIPWAJZqnYT1o69G4VTO\",\"object\":\"chat.completion.chunk\",\"created\":1789640821,\"model\":\"openai/gpt-4o-mini\",\"provider\":\"OpenAI\",\"system_fingerprint\":\"fp_0b9b996aeb\",\"service_tier\":null,\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\",\"role\":\"assistant\"},\"finish_reason\":\"stop\",\"native_finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":14,\"completion_tokens\":7,\"total_tokens\":21,\"cost\":0.0000063,\"is_byok\":false,\"prompt_tokens_details\":{\"cached_tokens\":0,\"cache_write_tokens\":0,\"audio_tokens\":0,\"video_tokens\":0},\"cost_details\":{\"upstream_inference_cost\":0.0000063,\"upstream_inference_prompt_cost\":0.0000021,\"upstream_inference_completions_cost\":0.0000042},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"image_tokens\":0,\"audio_tokens\":0}}}\n\ndata: [DONE]\n\n",
+    "rawHeaders": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+      "cache-control": "no-cache",
+      "cf-ray": "a3c76a7c8948ff90-EWR",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream",
+      "date": "Thu, 17 Sep 2026 10:27:01 GMT",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
+      "server": "cloudflare",
+      "set-cookie": "__cf_bm=k5xOYX9vN9ldSXfTQNkdwuWNTHnzauLW_XwR3j4kbmA-1789640821.207996-1.0.1.1-H.KlnqMaii0tUgmnLf.zU9uG6wXsmDX1wyCSwOh8YKxtoM7R2dvYzHFf180ftcPQ20NbgBaBZXJLojw_11Tn19bFvSpmpEuCPOcgP5M6xqcKVcQCsaqMG9KK8OfZcn_Z; HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Thu, 17 Sep 2026 10:57:01 GMT",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-generation-id": "gen-1789640821-vIPWAJZqnYT1o69G4VTO"
+    },
+    "responseIsBinary": false
+  }
+]

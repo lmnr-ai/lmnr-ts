@@ -21,6 +21,7 @@ import { GoogleGenAiInstrumentation } from "../instrumentation/google-genai";
 import { KernelInstrumentation } from "../instrumentation/kernel";
 import { OpenAIAgentsInstrumentation } from "../instrumentation/openai-agents";
 import { OpencodeInstrumentation } from "../instrumentation/opencode";
+import { OpenRouterInstrumentation } from "../instrumentation/openrouter";
 import {
   patchTemporalClient,
   patchTemporalWorker,
@@ -227,6 +228,12 @@ const initInstrumentations = (
 
   instrumentations.push(new OpenAIAgentsInstrumentation());
 
+  instrumentations.push(
+    new OpenRouterInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
+
   return instrumentations;
 };
 
@@ -382,6 +389,14 @@ const manuallyInitInstrumentations = (
     googleGenAiInstrumentation.manuallyInstrument(
       instrumentModules.google_genai,
     );
+  }
+
+  if (instrumentModules?.openrouter) {
+    const openRouterInstrumentation = new OpenRouterInstrumentation({
+      traceContent: !suppressContentTracing,
+    });
+    instrumentations.push(openRouterInstrumentation);
+    openRouterInstrumentation.manuallyInstrument(instrumentModules.openrouter);
   }
 
   if (instrumentModules?.kernel) {

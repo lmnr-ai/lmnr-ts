@@ -269,6 +269,18 @@ export interface InitializeOptions {
     /**
      * @example
      * ```javascript
+     * import { OpenRouter } from "@openrouter/sdk";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { openrouter: OpenRouter },
+     * });
+     * ```
+     */
+    openrouter?: any;
+    /**
+     * @example
+     * ```javascript
      * import kernel from "@onkernel/sdk";
      * import Laminar from "@lmnr-ai/lmnr";
      *
