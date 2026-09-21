@@ -26,6 +26,7 @@ import {
   patchTemporalClient,
   patchTemporalWorker,
 } from "../instrumentation/temporal";
+import { TypeSafeInstrumentation } from "../instrumentation/typesafe";
 import { InitializeOptions } from "../interfaces";
 
 const logger = initializeLogger();
@@ -234,6 +235,12 @@ const initInstrumentations = (
     }),
   );
 
+  instrumentations.push(
+    new TypeSafeInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
+
   return instrumentations;
 };
 
@@ -397,6 +404,14 @@ const manuallyInitInstrumentations = (
     });
     instrumentations.push(openRouterInstrumentation);
     openRouterInstrumentation.manuallyInstrument(instrumentModules.openrouter);
+  }
+
+  if (instrumentModules?.typesafe) {
+    const typeSafeInstrumentation = new TypeSafeInstrumentation({
+      traceContent: !suppressContentTracing,
+    });
+    instrumentations.push(typeSafeInstrumentation);
+    typeSafeInstrumentation.manuallyInstrument(instrumentModules.typesafe);
   }
 
   if (instrumentModules?.kernel) {

@@ -281,6 +281,18 @@ export interface InitializeOptions {
     /**
      * @example
      * ```javascript
+     * import { TypeSafeClient } from "@typesafe-ai/sdk";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { typesafe: TypeSafeClient },
+     * });
+     * ```
+     */
+    typesafe?: any;
+    /**
+     * @example
+     * ```javascript
      * import kernel from "@onkernel/sdk";
      * import Laminar from "@lmnr-ai/lmnr";
      *
