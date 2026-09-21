@@ -1,7 +1,7 @@
 {
   "name": "@lmnr-ai/lmnr-ts",
   "private": true,
-  "version": "0.8.47",
+  "version": "0.8.48",
   "description": "Laminar AI TypeScript SDK",
   "scripts": {
     "typecheck": "tsc",

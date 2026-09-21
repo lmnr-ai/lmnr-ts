@@ -22,11 +22,11 @@ import { KernelInstrumentation } from "../instrumentation/kernel";
 import { OpenAIAgentsInstrumentation } from "../instrumentation/openai-agents";
 import { OpencodeInstrumentation } from "../instrumentation/opencode";
 import { OpenRouterInstrumentation } from "../instrumentation/openrouter";
-import { TypeSafeInstrumentation } from "../instrumentation/typesafe";
 import {
   patchTemporalClient,
   patchTemporalWorker,
 } from "../instrumentation/temporal";
+import { TypeSafeInstrumentation } from "../instrumentation/typesafe";
 import { InitializeOptions } from "../interfaces";
 
 const logger = initializeLogger();
