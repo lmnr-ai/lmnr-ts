@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.8.47",
+  "version": "0.8.48",
   "description": "TypeScript SDK for Laminar AI",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -110,6 +110,7 @@
     "@playwright/test": "^1.62.1",
     "@qdrant/js-client-rest": "^1.19.0",
     "@temporalio/workflow": "^1.22.0",
+    "@typesafe-ai/sdk": "^0.6.0",
     "@types/cli-progress": "^3.11.6",
     "@types/node": "^24.12.0",
     "@types/semver": "^7.7.1",

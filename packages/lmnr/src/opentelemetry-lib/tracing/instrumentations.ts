@@ -22,6 +22,7 @@ import { KernelInstrumentation } from "../instrumentation/kernel";
 import { OpenAIAgentsInstrumentation } from "../instrumentation/openai-agents";
 import { OpencodeInstrumentation } from "../instrumentation/opencode";
 import { OpenRouterInstrumentation } from "../instrumentation/openrouter";
+import { TypeSafeInstrumentation } from "../instrumentation/typesafe";
 import {
   patchTemporalClient,
   patchTemporalWorker,
@@ -234,6 +235,12 @@ const initInstrumentations = (
     }),
   );
 
+  instrumentations.push(
+    new TypeSafeInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
+
   return instrumentations;
 };
 
@@ -397,6 +404,14 @@ const manuallyInitInstrumentations = (
     });
     instrumentations.push(openRouterInstrumentation);
     openRouterInstrumentation.manuallyInstrument(instrumentModules.openrouter);
+  }
+
+  if (instrumentModules?.typesafe) {
+    const typeSafeInstrumentation = new TypeSafeInstrumentation({
+      traceContent: !suppressContentTracing,
+    });
+    instrumentations.push(typeSafeInstrumentation);
+    typeSafeInstrumentation.manuallyInstrument(instrumentModules.typesafe);
   }
 
   if (instrumentModules?.kernel) {
