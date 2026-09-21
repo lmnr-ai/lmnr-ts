@@ -145,26 +145,32 @@ const wrapSystemOne = (state: PatchState) =>
       recordError(span, error);
       span.end();
     };
-    if (typeof promise?.asResponse === "function") {
-      promise.asResponse().then(async (response: Response) => {
-        try {
-          setResponseAttributes(
-            span,
-            await response.clone().json(),
-            traceContent,
-          );
-        } catch {
-          // Leave the span without response attributes.
-        }
+    // Recording must never break the caller: any surprise from a future
+    // APIPromise shape degrades to a span without response attributes.
+    try {
+      if (typeof promise?.asResponse === "function") {
+        promise.asResponse().then(async (response: Response) => {
+          try {
+            setResponseAttributes(
+              span,
+              await response.clone().json(),
+              traceContent,
+            );
+          } catch {
+            // Leave the span without response attributes.
+          }
+          span.end();
+        }, onError);
+      } else if (typeof promise?.then === "function") {
+        // Defensive: a parsed result has the same shape as the raw body.
+        promise.then((result: any) => {
+          setResponseAttributes(span, result, traceContent);
+          span.end();
+        }, onError);
+      } else {
         span.end();
-      }, onError);
-    } else if (typeof promise?.then === "function") {
-      // Defensive: a parsed result has the same shape as the raw body.
-      promise.then((result: any) => {
-        setResponseAttributes(span, result, traceContent);
-        span.end();
-      }, onError);
-    } else {
+      }
+    } catch {
       span.end();
     }
     return promise;
