@@ -216,7 +216,10 @@ export class LaminarAiSdkTelemetry {
       span.setAttribute(SPAN_TYPE, "LLM");
     }
 
-    const allMetadata = { ...(event.toolsContext ?? {}), ...(event.runtimeContext) ?? {} };
+    const allMetadata = {
+      ...(event.toolsContext ?? {}),
+      ...(event.runtimeContext ?? {}),
+    };
     const { userId, sessionId, tags, ...metadata } = allMetadata;
     if (sessionId) {
       span.setAttribute(SESSION_ID, sessionId);
@@ -224,8 +227,12 @@ export class LaminarAiSdkTelemetry {
     if (userId) {
       span.setAttribute(USER_ID, userId);
     }
-    if (tags && Array.isArray(tags) && tags.every(tag => typeof tag === 'string')) {
-      span.setAttribute(`${ASSOCIATION_PROPERTIES}.tags`, tags)
+    if (
+      tags &&
+      Array.isArray(tags) &&
+      tags.every((tag) => typeof tag === "string")
+    ) {
+      span.setAttribute(`${ASSOCIATION_PROPERTIES}.tags`, tags);
     }
     span.setAttributes(metadataToAttributes(metadata));
 
