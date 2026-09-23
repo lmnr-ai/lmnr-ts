@@ -15,9 +15,12 @@ import {
   registerAiSdkTelemetry,
 } from "../src/opentelemetry-lib/instrumentation/aisdk/v7-integration";
 import {
+  ASSOCIATION_PROPERTIES,
+  SESSION_ID,
   SPAN_INPUT,
   SPAN_OUTPUT,
   SPAN_TYPE,
+  USER_ID,
 } from "../src/opentelemetry-lib/tracing/attributes";
 
 // Minimal synthetic v7 events — we don't need the real `ai` package runtime
@@ -1177,5 +1180,136 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.ok(op, "operation span missing");
     assert.equal(op.attributes["operation.name"], undefined);
     assert.equal(op.attributes["ai.prompt"], undefined);
+  });
+
+  void describe("runtimeContext / toolsContext parsing", () => {
+    void it("sets user id, session id, tags and metadata from runtimeContext", () => {
+      const tel = new LaminarAiSdkTelemetry();
+      const callId = "call-runtime-context";
+
+      tel.onStart(
+        mkStartEvent(callId, {
+          runtimeContext: {
+            userId: "user-123",
+            sessionId: "session-456",
+            tags: ["test", "beta"],
+            myKey: "myValue",
+          },
+        }),
+      );
+      tel.onEnd(mkFinish(callId));
+
+      const spans = exporter.getFinishedSpans();
+      const op = spans.find((s) => s.name === "ai.generateText");
+      assert.ok(op, "operation span missing");
+      assert.equal(op.attributes[USER_ID], "user-123");
+      assert.equal(op.attributes[SESSION_ID], "session-456");
+      assert.deepEqual(op.attributes[`${ASSOCIATION_PROPERTIES}.tags`], [
+        "test",
+        "beta",
+      ]);
+      assert.equal(
+        op.attributes[`${ASSOCIATION_PROPERTIES}.metadata.myKey`],
+        "myValue",
+      );
+    });
+
+    void it("does not set userId/sessionId/tags attributes when runtimeContext is absent", () => {
+      const tel = new LaminarAiSdkTelemetry();
+      const callId = "call-no-runtime-context";
+
+      tel.onStart(mkStartEvent(callId));
+      tel.onEnd(mkFinish(callId));
+
+      const spans = exporter.getFinishedSpans();
+      const op = spans.find((s) => s.name === "ai.generateText");
+      assert.ok(op, "operation span missing");
+      assert.equal(op.attributes[USER_ID], undefined);
+      assert.equal(op.attributes[SESSION_ID], undefined);
+      assert.equal(op.attributes[`${ASSOCIATION_PROPERTIES}.tags`], undefined);
+    });
+
+    void it("ignores tags when not an array of strings", () => {
+      const tel = new LaminarAiSdkTelemetry();
+      const callId = "call-bad-tags";
+
+      tel.onStart(
+        mkStartEvent(callId, {
+          runtimeContext: { tags: ["ok", 123] },
+        }),
+      );
+      tel.onEnd(mkFinish(callId));
+
+      const spans = exporter.getFinishedSpans();
+      const op = spans.find((s) => s.name === "ai.generateText");
+      assert.ok(op, "operation span missing");
+      assert.equal(op.attributes[`${ASSOCIATION_PROPERTIES}.tags`], undefined);
+    });
+
+    void it("merges toolsContext and runtimeContext, with runtimeContext taking precedence", () => {
+      const tel = new LaminarAiSdkTelemetry();
+      const callId = "call-merge-contexts";
+
+      tel.onStart(
+        mkStartEvent(callId, {
+          toolsContext: {
+            userId: "from-tools",
+            fromToolsOnly: "toolsValue",
+          },
+          runtimeContext: {
+            userId: "from-runtime",
+          },
+        }),
+      );
+      tel.onEnd(mkFinish(callId));
+
+      const spans = exporter.getFinishedSpans();
+      const op = spans.find((s) => s.name === "ai.generateText");
+      assert.ok(op, "operation span missing");
+      // runtimeContext wins over toolsContext for overlapping keys.
+      assert.equal(op.attributes[USER_ID], "from-runtime");
+      // Non-overlapping toolsContext keys are still merged in as metadata.
+      assert.equal(
+        op.attributes[`${ASSOCIATION_PROPERTIES}.metadata.fromToolsOnly`],
+        "toolsValue",
+      );
+    });
+
+    void it("does not leak userId/sessionId/tags into generic metadata attributes", () => {
+      const tel = new LaminarAiSdkTelemetry();
+      const callId = "call-no-leak";
+
+      tel.onStart(
+        mkStartEvent(callId, {
+          runtimeContext: {
+            userId: "user-123",
+            sessionId: "session-456",
+            tags: ["test"],
+            other: "value",
+          },
+        }),
+      );
+      tel.onEnd(mkFinish(callId));
+
+      const spans = exporter.getFinishedSpans();
+      const op = spans.find((s) => s.name === "ai.generateText");
+      assert.ok(op, "operation span missing");
+      assert.equal(
+        op.attributes[`${ASSOCIATION_PROPERTIES}.metadata.userId`],
+        undefined,
+      );
+      assert.equal(
+        op.attributes[`${ASSOCIATION_PROPERTIES}.metadata.sessionId`],
+        undefined,
+      );
+      assert.equal(
+        op.attributes[`${ASSOCIATION_PROPERTIES}.metadata.tags`],
+        undefined,
+      );
+      assert.equal(
+        op.attributes[`${ASSOCIATION_PROPERTIES}.metadata.other`],
+        "value",
+      );
+    });
   });
 });

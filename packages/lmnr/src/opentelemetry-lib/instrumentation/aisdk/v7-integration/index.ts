@@ -43,13 +43,16 @@ import {
 } from "@opentelemetry/api";
 
 import { Laminar, type LaminarInitializeProps } from "../../../../laminar";
-import { initializeLogger } from "../../../../utils";
+import { initializeLogger, metadataToAttributes } from "../../../../utils";
 import { getTracer } from "../../../tracing";
 import {
+  ASSOCIATION_PROPERTIES,
   LaminarAttributes,
+  SESSION_ID,
   SPAN_INPUT,
   SPAN_OUTPUT,
   SPAN_TYPE,
+  USER_ID,
 } from "../../../tracing/attributes";
 import { LaminarContextManager } from "../../../tracing/context";
 import { pushActiveLlmSpan, removeActiveLlmSpan } from "../active-llm-span";
@@ -212,6 +215,19 @@ export class LaminarAiSdkTelemetry {
     if (isEmbedOrRerank) {
       span.setAttribute(SPAN_TYPE, "LLM");
     }
+
+    const allMetadata = { ...(event.toolsContext ?? {}), ...(event.runtimeContext) ?? {} };
+    const { userId, sessionId, tags, ...metadata } = allMetadata;
+    if (sessionId) {
+      span.setAttribute(SESSION_ID, sessionId);
+    }
+    if (userId) {
+      span.setAttribute(USER_ID, userId);
+    }
+    if (tags && Array.isArray(tags) && tags.every(tag => typeof tag === 'string')) {
+      span.setAttribute(`${ASSOCIATION_PROPERTIES}.tags`, tags)
+    }
+    span.setAttributes(metadataToAttributes(metadata));
 
     if (this.recordInputs) {
       // generate/stream variants carry StandardizedPrompt (system + messages);
