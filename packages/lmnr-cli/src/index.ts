@@ -441,6 +441,10 @@ Examples:
     .command("update")
     .description("Update a signal (only the flags you pass are changed)")
     .argument("<signal>", "Signal id or name")
+    .option(
+      "--name <name>",
+      "Rename the signal (must be unique in the project)",
+    )
     .option("--prompt <prompt>", "Replace the LLM instruction")
     .option(
       "--schema <json>",
@@ -490,8 +494,10 @@ the prompt will not clear sampling, reactivate a disabled signal, or alter when
 it fires. --trigger, --filter, and --mode are independent — changing one leaves
 the other two alone. --filter REPLACES the whole filter set. --llm-profile-id
 and --model must be passed together to re-route the signal (self-hosted only).
+--name renames in place: the id, events, clusters, and alerts are kept.
 ${TRIGGER_HELP}
 Examples:
+  $ lmnr-cli signal update "Refund requests" --name "Refund asks"
   $ lmnr-cli signal update "Refund requests" --prompt "Detect refund asks only"
   $ lmnr-cli signal update "Refund requests" --sample-rate 10
   $ lmnr-cli signal update "Refund requests" --no-sampling

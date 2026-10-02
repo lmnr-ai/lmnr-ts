@@ -39,6 +39,8 @@ export interface CreateSignalOptions {
  * shape for clearing the route back to the server's env LLM.
  */
 export interface UpdateSignalOptions {
+  /** Must stay unique within the project; the id, events, and alerts are kept. */
+  name?: string;
   prompt?: string;
   structuredOutput?: SignalStructuredOutput;
   sampleRate?: number | null;

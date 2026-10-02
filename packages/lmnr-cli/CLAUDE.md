@@ -50,6 +50,9 @@ This is a CLI for the Laminar agent observability platform.
   stored values alone. `--no-sampling` sends `sampleRate: null` (clears the
   stored rate; evaluate every matching trace). `--no-filters` sends `filters: []`.
   An empty patch is an error listing the valid flags, never a silent no-op.
+  `--name` renames in place (id, events, clusters, alerts kept). It runs through
+  the same `validateName` as create. The server owns uniqueness: it returns a 409
+  and the CLI shows that message verbatim.
 - `<signal>` accepts an id or a name. An ambiguous name is an ERROR listing the
   candidates rather than a silent pick — `update` / `delete` are destructive.
 - `SignalsResource` (`@lmnr-ai/client`) overrides error handling with its own
