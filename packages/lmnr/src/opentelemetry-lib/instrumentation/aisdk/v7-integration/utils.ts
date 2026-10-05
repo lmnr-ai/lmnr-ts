@@ -1,8 +1,14 @@
 import { LanguageModelV4Prompt } from "@ai-sdk/provider";
 import type { HrTime, Span } from "@opentelemetry/api";
 
-import { LaminarAttributes } from "../../../tracing/attributes";
+import { metadataToAttributes } from "../../../../utils";
+import {
+  LaminarAttributes,
+  SESSION_ID,
+  USER_ID,
+} from "../../../tracing/attributes";
 import { stringifyPromptForTelemetry } from "../utils";
+import type { AssociationProperties } from "./types";
 
 export const serializeJSON = (value: unknown): string => {
   if (typeof value === "string") return value;
@@ -120,6 +126,56 @@ export const applyUsageToSpan = (span: Span, usage: any): void => {
   for (const [k, v] of Object.entries(attrs)) {
     if (v !== undefined) span.setAttribute(k, v);
   }
+};
+
+// Resolve the operation's association properties. `runtimeContext` wins over
+// `toolsContext`, and both win over what the parent Laminar context already
+// carries (e.g. an outer `observe({ sessionId })`). `userId` / `sessionId` /
+// `tags` are reserved keys; everything else becomes metadata. Tags are
+// returned separately: like everywhere else in the SDK they are span-level
+// and are not propagated to child spans.
+export const resolveAssociationProperties = (
+  event: any,
+  parent: {
+    userId?: string;
+    sessionId?: string;
+    metadata?: Record<string, unknown>;
+  },
+): { associationProperties: AssociationProperties; tags?: string[] } => {
+  const { userId, sessionId, tags, ...metadata } = {
+    ...(event?.toolsContext ?? {}),
+    ...(event?.runtimeContext ?? {}),
+  };
+  return {
+    associationProperties: {
+      userId:
+        typeof userId === "string" && userId.length > 0
+          ? userId
+          : parent.userId,
+      sessionId:
+        typeof sessionId === "string" && sessionId.length > 0
+          ? sessionId
+          : parent.sessionId,
+      metadata: { ...(parent.metadata ?? {}), ...metadata },
+    },
+    tags:
+      Array.isArray(tags) && tags.every((tag) => typeof tag === "string")
+        ? tags
+        : undefined,
+  };
+};
+
+// Stamp the operation's association properties onto a span. Needed on every
+// span the integration creates: LaminarSpanProcessor.onStart copies
+// association properties from `context.active()`, NOT from the parent context
+// we pass to `startSpan`, and AI SDK callbacks run in the caller's context.
+export const applyAssociationProperties = (
+  span: Span,
+  properties: AssociationProperties,
+): void => {
+  if (properties.userId) span.setAttribute(USER_ID, properties.userId);
+  if (properties.sessionId) span.setAttribute(SESSION_ID, properties.sessionId);
+  span.setAttributes(metadataToAttributes(properties.metadata));
 };
 
 // Set the dual finish-reason attributes used by both ai.* and gen_ai.* parsers.

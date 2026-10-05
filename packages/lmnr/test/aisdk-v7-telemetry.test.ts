@@ -4,6 +4,7 @@ import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { context, SpanStatusCode, trace } from "@opentelemetry/api";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
+import { observe } from "../src/decorators";
 import { Laminar } from "../src/laminar";
 import {
   _resetConfiguration,
@@ -1310,6 +1311,390 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
         op.attributes[`${ASSOCIATION_PROPERTIES}.metadata.other`],
         "value",
       );
+    });
+
+    void describe("propagation to child spans", () => {
+      const META_KEY = `${ASSOCIATION_PROPERTIES}.metadata.myKey`;
+      const TAGS_KEY = `${ASSOCIATION_PROPERTIES}.tags`;
+
+      const toolCall = (toolCallId: string, toolName = "lookup") => ({
+        toolCallId,
+        toolName,
+        input: {},
+      });
+
+      const startTool = (
+        tel: LaminarAiSdkTelemetry,
+        callId: string,
+        toolCallId: string,
+        toolName?: string,
+      ) =>
+        tel.onToolExecutionStart({
+          callId,
+          toolCall: toolCall(toolCallId, toolName),
+          messages: [],
+          toolContext: undefined,
+        });
+
+      const endTool = (
+        tel: LaminarAiSdkTelemetry,
+        callId: string,
+        toolCallId: string,
+        toolName?: string,
+      ) =>
+        tel.onToolExecutionEnd({
+          callId,
+          durationMs: 1,
+          toolCall: toolCall(toolCallId, toolName),
+          toolContext: undefined,
+          messages: [],
+          toolOutput: { type: "tool-result", output: "ok" },
+        });
+
+      void it("stamps userId, sessionId and metadata on step, llm and tool spans", () => {
+        const tel = new LaminarAiSdkTelemetry({ createStepSpan: true });
+        const callId = "call-propagate";
+
+        tel.onStart(
+          mkStartEvent(callId, {
+            runtimeContext: {
+              userId: "user-123",
+              sessionId: "session-456",
+              tags: ["beta"],
+              myKey: "myValue",
+              nested: { a: 1 },
+            },
+          }),
+        );
+        tel.onStepStart(mkStepStartEvent(callId, 0));
+        tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+        tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
+        startTool(tel, callId, "tc-1");
+        endTool(tel, callId, "tc-1");
+        tel.onStepFinish(mkStepEnd(callId, 0));
+        tel.onEnd(mkFinish(callId));
+
+        const spans = exporter.getFinishedSpans();
+        const op = spans.find((s) => s.name === "ai.generateText");
+        const step = spans.find((s) => s.name === "ai.step");
+        const llm = spans.find((s) => s.name.startsWith("ai.llm "));
+        const tool = spans.find((s) => s.name === "ai.tool lookup");
+        assert.ok(op && step && llm && tool, "missing span");
+
+        for (const span of [op, step, llm, tool]) {
+          assert.equal(span.attributes[USER_ID], "user-123", span.name);
+          assert.equal(span.attributes[SESSION_ID], "session-456", span.name);
+          assert.equal(span.attributes[META_KEY], "myValue", span.name);
+          assert.equal(
+            span.attributes[`${ASSOCIATION_PROPERTIES}.metadata.nested`],
+            JSON.stringify({ a: 1 }),
+            span.name,
+          );
+        }
+        // Tags are span-level in the SDK: only the operation span gets them.
+        assert.deepEqual(op.attributes[TAGS_KEY], ["beta"]);
+        for (const span of [step, llm, tool]) {
+          assert.equal(span.attributes[TAGS_KEY], undefined, span.name);
+        }
+      });
+
+      void it("stamps the properties on llm and tool spans when step spans are disabled", () => {
+        const tel = new LaminarAiSdkTelemetry();
+        const callId = "call-propagate-no-step";
+
+        tel.onStart(
+          mkStartEvent(callId, {
+            runtimeContext: { userId: "user-1", myKey: "v" },
+          }),
+        );
+        tel.onStepStart(mkStepStartEvent(callId, 0));
+        tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+        tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
+        startTool(tel, callId, "tc-2");
+        endTool(tel, callId, "tc-2");
+        tel.onStepFinish(mkStepEnd(callId, 0));
+        tel.onStepStart(mkStepStartEvent(callId, 1));
+        tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+        tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
+        tel.onStepFinish(mkStepEnd(callId, 1));
+        tel.onEnd(mkFinish(callId));
+
+        const spans = exporter.getFinishedSpans();
+        const children = spans.filter(
+          (s) => s.name.startsWith("ai.llm ") || s.name === "ai.tool lookup",
+        );
+        assert.equal(children.length, 3);
+        for (const span of children) {
+          assert.equal(span.attributes[USER_ID], "user-1", span.name);
+          assert.equal(span.attributes[META_KEY], "v", span.name);
+          assert.equal(span.attributes[SESSION_ID], undefined, span.name);
+        }
+      });
+
+      void it("stamps the properties on the generateObject llm span", () => {
+        const tel = new LaminarAiSdkTelemetry();
+        const callId = "call-propagate-object";
+
+        tel.onStart(
+          mkStartEvent(callId, {
+            operationId: "ai.generateObject",
+            runtimeContext: { sessionId: "session-obj", myKey: "obj" },
+          }),
+        );
+        tel.onObjectStepStart({
+          callId,
+          stepNumber: 0,
+          provider: "openai",
+          modelId: "gpt-4.1-nano",
+          promptMessages: [{ role: "user", content: "hi" }],
+        });
+        tel.onObjectStepFinish({
+          callId,
+          stepNumber: 0,
+          finishReason: "stop",
+          objectText: '{"x":1}',
+        });
+        tel.onEnd(mkFinish(callId));
+
+        const llm = exporter
+          .getFinishedSpans()
+          .find((s) => s.name.startsWith("ai.llm "));
+        assert.ok(llm, "object llm span missing");
+        assert.equal(llm.attributes[SESSION_ID], "session-obj");
+        assert.equal(llm.attributes[META_KEY], "obj");
+      });
+
+      void it("does not set association attributes on children without runtimeContext", () => {
+        const tel = new LaminarAiSdkTelemetry({ createStepSpan: true });
+        const callId = "call-propagate-none";
+
+        tel.onStart(mkStartEvent(callId));
+        tel.onStepStart(mkStepStartEvent(callId, 0));
+        tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+        tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
+        startTool(tel, callId, "tc-3");
+        endTool(tel, callId, "tc-3");
+        tel.onStepFinish(mkStepEnd(callId, 0));
+        tel.onEnd(mkFinish(callId));
+
+        for (const span of exporter.getFinishedSpans()) {
+          assert.equal(span.attributes[USER_ID], undefined, span.name);
+          assert.equal(span.attributes[SESSION_ID], undefined, span.name);
+          assert.equal(
+            Object.keys(span.attributes).some((k) =>
+              k.startsWith(`${ASSOCIATION_PROPERTIES}.metadata.`),
+            ),
+            false,
+            span.name,
+          );
+        }
+      });
+
+      void it("ignores non-string userId / sessionId", () => {
+        const tel = new LaminarAiSdkTelemetry();
+        const callId = "call-propagate-bad-ids";
+
+        tel.onStart(
+          mkStartEvent(callId, {
+            runtimeContext: { userId: 42, sessionId: { id: "x" } },
+          }),
+        );
+        tel.onStepStart(mkStepStartEvent(callId, 0));
+        tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+        tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
+        tel.onStepFinish(mkStepEnd(callId, 0));
+        tel.onEnd(mkFinish(callId));
+
+        for (const span of exporter.getFinishedSpans()) {
+          assert.equal(span.attributes[USER_ID], undefined, span.name);
+          assert.equal(span.attributes[SESSION_ID], undefined, span.name);
+          // Reserved keys never fall through to metadata either.
+          assert.equal(
+            span.attributes[`${ASSOCIATION_PROPERTIES}.metadata.userId`],
+            undefined,
+            span.name,
+          );
+        }
+      });
+
+      void it("keeps concurrent operations' properties separate", () => {
+        const tel = new LaminarAiSdkTelemetry();
+
+        tel.onStart(
+          mkStartEvent("call-a", {
+            runtimeContext: { userId: "user-a", myKey: "a" },
+          }),
+        );
+        tel.onStart(
+          mkStartEvent("call-b", {
+            runtimeContext: { userId: "user-b", myKey: "b" },
+          }),
+        );
+        for (const callId of ["call-a", "call-b"]) {
+          tel.onStepStart(mkStepStartEvent(callId, 0));
+          tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+          startTool(tel, callId, `tc-${callId}`, `tool-${callId}`);
+        }
+        for (const callId of ["call-b", "call-a"]) {
+          endTool(tel, callId, `tc-${callId}`, `tool-${callId}`);
+          tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
+          tel.onStepFinish(mkStepEnd(callId, 0));
+          tel.onEnd(mkFinish(callId));
+        }
+
+        const spans = exporter.getFinishedSpans();
+        for (const suffix of ["a", "b"]) {
+          const tool = spans.find(
+            (s) => s.name === `ai.tool tool-call-${suffix}`,
+          );
+          assert.ok(tool, `tool span ${suffix} missing`);
+          assert.equal(tool.attributes[USER_ID], `user-${suffix}`);
+          assert.equal(tool.attributes[META_KEY], suffix);
+          const llm = spans.find(
+            (s) =>
+              s.name.startsWith("ai.llm ") &&
+              s.parentSpanContext?.spanId === tool.parentSpanContext?.spanId,
+          );
+          assert.ok(llm, `llm span ${suffix} missing`);
+          assert.equal(llm.attributes[USER_ID], `user-${suffix}`);
+          assert.equal(llm.attributes[META_KEY], suffix);
+        }
+      });
+
+      void it("inherits association properties from an enclosing observe() and merges metadata", async () => {
+        const tel = new LaminarAiSdkTelemetry({ createStepSpan: true });
+        const callId = "call-in-observe";
+
+        await observe(
+          {
+            name: "outer",
+            userId: "outer-user",
+            sessionId: "outer-session",
+            metadata: { outerKey: "outer", myKey: "outer" },
+          },
+          async () => {
+            tel.onStart(
+              mkStartEvent(callId, {
+                runtimeContext: { sessionId: "inner-session", myKey: "inner" },
+              }),
+            );
+            tel.onStepStart(mkStepStartEvent(callId, 0));
+            tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+            tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
+            tel.onStepFinish(mkStepEnd(callId, 0));
+            tel.onEnd(mkFinish(callId));
+            await Promise.resolve();
+          },
+        );
+
+        const spans = exporter.getFinishedSpans();
+        const aiSpans = spans.filter((s) => s.name !== "outer");
+        assert.equal(aiSpans.length, 3);
+        for (const span of aiSpans) {
+          // Not overridden by runtimeContext → inherited from observe().
+          assert.equal(span.attributes[USER_ID], "outer-user", span.name);
+          // runtimeContext wins over the enclosing context.
+          assert.equal(span.attributes[SESSION_ID], "inner-session", span.name);
+          assert.equal(span.attributes[META_KEY], "inner", span.name);
+          // Parent metadata is merged in, not replaced.
+          assert.equal(
+            span.attributes[`${ASSOCIATION_PROPERTIES}.metadata.outerKey`],
+            "outer",
+            span.name,
+          );
+        }
+      });
+
+      void it("propagates into observe() and sub-agent spans inside executeTool", async () => {
+        const tel = new LaminarAiSdkTelemetry();
+        const outerCallId = "outer-propagate";
+        const innerCallId = "inner-propagate";
+
+        tel.onStart(
+          mkStartEvent(outerCallId, {
+            runtimeContext: {
+              userId: "user-outer",
+              sessionId: "session-outer",
+              tags: ["outer-tag"],
+              myKey: "outer",
+              outerOnly: "x",
+            },
+          }),
+        );
+        tel.onStepStart(mkStepStartEvent(outerCallId, 0));
+        tel.onLanguageModelCallStart(mkLlmCallStart(outerCallId));
+        tel.onLanguageModelCallEnd(mkLlmCallEnd(outerCallId));
+        startTool(tel, outerCallId, "tc-sub", "subagent");
+
+        await tel.executeTool({
+          callId: outerCallId,
+          toolCallId: "tc-sub",
+          execute: async () => {
+            // A user's observe() inside the tool body.
+            await observe({ name: "inside-tool" }, async () => {
+              await Promise.resolve();
+            });
+            // A nested sub-agent with its own runtimeContext.
+            tel.onStart(
+              mkStartEvent(innerCallId, {
+                operationId: "ai.streamText",
+                runtimeContext: { userId: "user-inner", myKey: "inner" },
+              }),
+            );
+            tel.onStepStart(mkStepStartEvent(innerCallId, 0));
+            tel.onLanguageModelCallStart(mkLlmCallStart(innerCallId));
+            tel.onLanguageModelCallEnd(mkLlmCallEnd(innerCallId));
+            tel.onStepFinish(mkStepEnd(innerCallId, 0));
+            tel.onEnd(mkFinish(innerCallId));
+            return "ok";
+          },
+        });
+
+        endTool(tel, outerCallId, "tc-sub", "subagent");
+        tel.onStepFinish(mkStepEnd(outerCallId, 0));
+        tel.onEnd(mkFinish(outerCallId));
+
+        const spans = exporter.getFinishedSpans();
+
+        const insideTool = spans.find((s) => s.name === "inside-tool");
+        assert.ok(insideTool, "observe span inside tool missing");
+        assert.equal(insideTool.attributes[USER_ID], "user-outer");
+        assert.equal(insideTool.attributes[SESSION_ID], "session-outer");
+        assert.equal(insideTool.attributes[META_KEY], "outer");
+        assert.equal(
+          insideTool.attributes[`${ASSOCIATION_PROPERTIES}.metadata.outerOnly`],
+          "x",
+        );
+        assert.equal(insideTool.attributes[TAGS_KEY], undefined);
+
+        const innerOp = spans.find((s) => s.name === "ai.streamText");
+        assert.ok(innerOp, "inner operation span missing");
+        const innerLlm = spans.find(
+          (s) =>
+            s.name.startsWith("ai.llm ") &&
+            s.parentSpanContext?.spanId === innerOp.spanContext().spanId,
+        );
+        assert.ok(innerLlm, "inner llm span missing");
+        for (const span of [innerOp, innerLlm]) {
+          // Inner runtimeContext overrides the outer operation...
+          assert.equal(span.attributes[USER_ID], "user-inner", span.name);
+          assert.equal(span.attributes[META_KEY], "inner", span.name);
+          // ...and inherits everything it doesn't override.
+          assert.equal(span.attributes[SESSION_ID], "session-outer", span.name);
+          assert.equal(
+            span.attributes[`${ASSOCIATION_PROPERTIES}.metadata.outerOnly`],
+            "x",
+            span.name,
+          );
+          assert.equal(span.attributes[TAGS_KEY], undefined, span.name);
+        }
+
+        // The outer tool span itself keeps the outer properties.
+        const outerTool = spans.find((s) => s.name === "ai.tool subagent");
+        assert.ok(outerTool);
+        assert.equal(outerTool.attributes[USER_ID], "user-outer");
+        assert.equal(outerTool.attributes[META_KEY], "outer");
+      });
     });
   });
 });
