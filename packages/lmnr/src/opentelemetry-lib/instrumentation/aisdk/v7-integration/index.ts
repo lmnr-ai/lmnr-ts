@@ -232,12 +232,19 @@ export class LaminarAiSdkTelemetry {
     // nested under it inherits them like any other Laminar association
     // properties — `observe()` / sub-agent `generateText` / OTel
     // instrumentations running inside a tool's `execute` (see executeTool).
-    // traceType / tracingLevel pass through from the parent untouched.
+    // Spread over the parent's value rather than going through
+    // `setRawAssociationProperties`: that rebuilds the object from a fixed key
+    // list and would drop keys like `tracing_level` (set by
+    // `withTracingLevel`), so nested work would lose the outer tracing level.
     const spanCtx = trace.setSpan(
-      LaminarContextManager.setRawAssociationProperties(
-        { ...parentAssociationProperties, ...associationProperties },
-        parentCtx,
-      ),
+      parentCtx.setValue(ASSOCIATION_PROPERTIES_KEY, {
+        ...parentAssociationProperties,
+        ...Object.fromEntries(
+          Object.entries(associationProperties).filter(
+            ([, value]) => value !== undefined,
+          ),
+        ),
+      }),
       span,
     );
 

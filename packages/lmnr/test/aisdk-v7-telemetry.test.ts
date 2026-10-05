@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
-
+import { TracingLevel } from "@lmnr-ai/types";
 import { context, SpanStatusCode, trace } from "@opentelemetry/api";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 
-import { observe } from "../src/decorators";
+import { observe, withTracingLevel } from "../src/decorators";
 import { Laminar } from "../src/laminar";
 import {
   _resetConfiguration,
@@ -1694,6 +1694,44 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
         assert.ok(outerTool);
         assert.equal(outerTool.attributes[USER_ID], "user-outer");
         assert.equal(outerTool.attributes[META_KEY], "outer");
+      });
+
+      void it("keeps an enclosing withTracingLevel for spans inside executeTool", async () => {
+        const tel = new LaminarAiSdkTelemetry();
+        const callId = "call-tracing-level";
+
+        await withTracingLevel(TracingLevel.META_ONLY, async () => {
+          tel.onStart(
+            mkStartEvent(callId, { runtimeContext: { userId: "u" } }),
+          );
+          tel.onStepStart(mkStepStartEvent(callId, 0));
+          tel.onLanguageModelCallStart(mkLlmCallStart(callId));
+          tel.onLanguageModelCallEnd(mkLlmCallEnd(callId));
+          startTool(tel, callId, "tc-level", "lookup");
+          await tel.executeTool({
+            callId,
+            toolCallId: "tc-level",
+            execute: async () => {
+              await observe({ name: "inside-tool" }, async () => {
+                await Promise.resolve();
+              });
+              return "ok";
+            },
+          });
+          endTool(tel, callId, "tc-level", "lookup");
+          tel.onStepFinish(mkStepEnd(callId, 0));
+          tel.onEnd(mkFinish(callId));
+        });
+
+        const insideTool = exporter
+          .getFinishedSpans()
+          .find((s) => s.name === "inside-tool");
+        assert.ok(insideTool, "observe span inside tool missing");
+        assert.equal(
+          insideTool.attributes["lmnr.internal.tracing_level"],
+          TracingLevel.META_ONLY,
+        );
+        assert.equal(insideTool.attributes[USER_ID], "u");
       });
     });
   });
