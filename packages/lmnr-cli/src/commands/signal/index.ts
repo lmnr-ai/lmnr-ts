@@ -38,6 +38,7 @@ type SignalCreateOpts = GlobalOpts & {
 };
 
 type SignalUpdateOpts = GlobalOpts & {
+  name?: string;
   schema?: string;
   prompt?: string;
   trigger?: string;
@@ -266,6 +267,7 @@ export const handleSignalUpdate = async (
   const trigger = parseTrigger(opts.trigger, opts.spanName ?? []);
 
   const patch = {
+    ...(opts.name !== undefined ? { name: validateName(opts.name) } : {}),
     ...(opts.prompt !== undefined
       ? { prompt: validatePrompt(opts.prompt) }
       : {}),
@@ -294,8 +296,8 @@ export const handleSignalUpdate = async (
 
   if (Object.keys(patch).length === 0) {
     throw new Error(
-      "Nothing to update. Pass at least one of --prompt, --schema, --trigger, " +
-        "--filter, --no-filters, --mode, --sample-rate, --no-sampling, " +
+      "Nothing to update. Pass at least one of --name, --prompt, --schema, " +
+        "--trigger, --filter, --no-filters, --mode, --sample-rate, --no-sampling, " +
         "--disabled, --no-disabled, --llm-profile-id, --model.",
     );
   }
