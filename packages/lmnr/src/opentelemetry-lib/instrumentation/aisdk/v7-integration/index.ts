@@ -43,18 +43,19 @@ import {
 } from "@opentelemetry/api";
 
 import { Laminar, type LaminarInitializeProps } from "../../../../laminar";
-import { initializeLogger, metadataToAttributes } from "../../../../utils";
+import { initializeLogger } from "../../../../utils";
 import { getTracer } from "../../../tracing";
 import {
   ASSOCIATION_PROPERTIES,
   LaminarAttributes,
-  SESSION_ID,
   SPAN_INPUT,
   SPAN_OUTPUT,
   SPAN_TYPE,
-  USER_ID,
 } from "../../../tracing/attributes";
-import { LaminarContextManager } from "../../../tracing/context";
+import {
+  ASSOCIATION_PROPERTIES_KEY,
+  LaminarContextManager,
+} from "../../../tracing/context";
 import { pushActiveLlmSpan, removeActiveLlmSpan } from "../active-llm-span";
 import { buildAiSdkInstrumentationAttributes } from "./package-versions";
 import {
@@ -65,6 +66,7 @@ import {
   type ToolState,
 } from "./types";
 import {
+  applyAssociationProperties,
   applyFinishReason,
   applyRequestModelAttributes,
   applyUsageToSpan,
@@ -73,6 +75,7 @@ import {
   compareHrTime,
   normalizeProvider,
   readSpanEndTime,
+  resolveAssociationProperties,
   serializeJSON,
   verbatimPromptString,
   verbatimStandardizedMessages,
@@ -188,7 +191,6 @@ export class LaminarAiSdkTelemetry {
       },
       parentCtx,
     );
-    const spanCtx = trace.setSpan(parentCtx, span);
 
     span.setAttribute(SPAN_TYPE, "DEFAULT");
     if (typeof event.operationId === "string") {
@@ -216,25 +218,35 @@ export class LaminarAiSdkTelemetry {
       span.setAttribute(SPAN_TYPE, "LLM");
     }
 
-    const allMetadata = {
-      ...(event.toolsContext ?? {}),
-      ...(event.runtimeContext ?? {}),
-    };
-    const { userId, sessionId, tags, ...metadata } = allMetadata;
-    if (sessionId) {
-      span.setAttribute(SESSION_ID, sessionId);
-    }
-    if (userId) {
-      span.setAttribute(USER_ID, userId);
-    }
-    if (
-      tags &&
-      Array.isArray(tags) &&
-      tags.every((tag) => typeof tag === "string")
-    ) {
+    const parentAssociationProperties: Record<string, any> =
+      parentCtx.getValue(ASSOCIATION_PROPERTIES_KEY) ?? {};
+    const { associationProperties, tags } = resolveAssociationProperties(
+      event,
+      parentAssociationProperties,
+    );
+    applyAssociationProperties(span, associationProperties);
+    if (tags) {
       span.setAttribute(`${ASSOCIATION_PROPERTIES}.tags`, tags);
     }
-    span.setAttributes(metadataToAttributes(metadata));
+    // Carry the resolved properties on the operation context so everything
+    // nested under it inherits them like any other Laminar association
+    // properties — `observe()` / sub-agent `generateText` / OTel
+    // instrumentations running inside a tool's `execute` (see executeTool).
+    // Spread over the parent's value rather than going through
+    // `setRawAssociationProperties`: that rebuilds the object from a fixed key
+    // list and would drop keys like `tracing_level` (set by
+    // `withTracingLevel`), so nested work would lose the outer tracing level.
+    const spanCtx = trace.setSpan(
+      parentCtx.setValue(ASSOCIATION_PROPERTIES_KEY, {
+        ...parentAssociationProperties,
+        ...Object.fromEntries(
+          Object.entries(associationProperties).filter(
+            ([, value]) => value !== undefined,
+          ),
+        ),
+      }),
+      span,
+    );
 
     if (this.recordInputs) {
       // generate/stream variants carry StandardizedPrompt (system + messages);
@@ -264,6 +276,7 @@ export class LaminarAiSdkTelemetry {
       operationId: event.operationId ?? "unknown",
       provider: event.provider,
       modelId: event.modelId,
+      associationProperties,
     });
   };
 
@@ -293,6 +306,7 @@ export class LaminarAiSdkTelemetry {
     const spanCtx = trace.setSpan(op.ctx, span);
     span.setAttribute(SPAN_TYPE, "DEFAULT");
     span.setAttributes(buildAiSdkInstrumentationAttributes());
+    applyAssociationProperties(span, op.associationProperties);
     span.setAttribute("ai.step.number", stepNumber);
 
     if (this.recordInputs) {
@@ -322,8 +336,9 @@ export class LaminarAiSdkTelemetry {
     const step = this.findLatestStep(callId);
     const stepNumber =
       step?.stepNumber ?? (event?.stepNumber as number | undefined) ?? 0;
-    const parentCtx = step?.ctx ?? this.operationByCallId.get(callId)?.ctx;
-    if (!parentCtx) return;
+    const op = this.operationByCallId.get(callId);
+    const parentCtx = step?.ctx ?? op?.ctx;
+    if (!op || !parentCtx) return;
 
     const tracer = getTracer();
     const span = tracer.startSpan(
@@ -333,6 +348,7 @@ export class LaminarAiSdkTelemetry {
     );
     span.setAttribute(SPAN_TYPE, "LLM");
     span.setAttributes(buildAiSdkInstrumentationAttributes());
+    applyAssociationProperties(span, op.associationProperties);
     applyRequestModelAttributes(span, event);
     if (this.recordInputs) {
       if (event.tools) {
@@ -542,6 +558,7 @@ export class LaminarAiSdkTelemetry {
     );
     span.setAttribute(SPAN_TYPE, "LLM");
     span.setAttributes(buildAiSdkInstrumentationAttributes());
+    applyAssociationProperties(span, op.associationProperties);
     applyRequestModelAttributes(span, event);
     if (this.recordInputs && Array.isArray(event?.promptMessages)) {
       // Same verbatim serialization the replay wrapper hashes — see
@@ -606,8 +623,9 @@ export class LaminarAiSdkTelemetry {
     // Parent the tool span under the current step, not the LLM span. LLM and
     // tool spans are flat siblings under the step.
     const step = this.findLatestStep(callId);
-    const parentCtx = step?.ctx ?? this.operationByCallId.get(callId)?.ctx;
-    if (!parentCtx) return;
+    const op = this.operationByCallId.get(callId);
+    const parentCtx = step?.ctx ?? op?.ctx;
+    if (!op || !parentCtx) return;
 
     const tracer = getTracer();
     const span = tracer.startSpan(
@@ -618,6 +636,7 @@ export class LaminarAiSdkTelemetry {
     const spanCtx = trace.setSpan(parentCtx, span);
     span.setAttribute(SPAN_TYPE, "TOOL");
     span.setAttributes(buildAiSdkInstrumentationAttributes());
+    applyAssociationProperties(span, op.associationProperties);
     if (toolName) span.setAttribute("ai.toolCall.name", toolName);
     span.setAttribute("ai.toolCall.id", toolCallId);
     if (this.recordInputs && toolCall?.input !== undefined) {
