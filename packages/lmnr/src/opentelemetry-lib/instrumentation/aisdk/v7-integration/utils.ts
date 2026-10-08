@@ -176,6 +176,26 @@ export const verbatimPromptString = (prompt: unknown): string | null => {
   }
 };
 
+// `decide` state → `gen_ai.input.messages`: one user message. A string stays
+// as is, a parts array goes through the prompt serializer (file bytes →
+// base64), and a JSON object is stringified into the content.
+export const buildDecisionInputMessages = (
+  state: unknown,
+): string | undefined => {
+  if (state === undefined || state === null) return undefined;
+  if (Array.isArray(state)) {
+    return (
+      verbatimPromptString([{ role: "user", content: state }]) ?? undefined
+    );
+  }
+  return serializeJSON([
+    {
+      role: "user",
+      content: typeof state === "string" ? state : serializeJSON(state),
+    },
+  ]);
+};
+
 export const verbatimPromptMessages = (prompt: unknown): unknown[] | null => {
   const serialized = verbatimPromptString(prompt);
   if (serialized === null) return null;

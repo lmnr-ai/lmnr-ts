@@ -16,7 +16,10 @@
 //     │   ...
 //
 // For embed / embedMany / rerank we create a single LLM span directly under
-// the operation span — there are no step or tool spans.
+// the operation span — there are no step or tool spans. `experimental_decide`
+// is likewise a single LLM span (`ai.decide`): state → user message in
+// `gen_ai.input.messages`, questions → `gen_ai.request.structured_output_schema`,
+// answers → one assistant message holding the answers JSON.
 //
 // Attribute strategy: verbatim. LLM spans carry `gen_ai.input.messages`
 // (the LanguageModel-level prompt through `stringifyPromptForTelemetry` —
@@ -68,6 +71,7 @@ import {
   applyFinishReason,
   applyRequestModelAttributes,
   applyUsageToSpan,
+  buildDecisionInputMessages,
   buildTextOutputMessages,
   buildVerbatimOutputMessages,
   compareHrTime,
@@ -729,6 +733,70 @@ export class LaminarAiSdkTelemetry {
 
   onRerankEnd = (): void => {
     // End-of-rerank data lands via onFinish which carries the full event.
+  };
+
+  // ------------------------------------------------------------------
+  // experimental_decide — single LLM span, closed on decide end
+  // ------------------------------------------------------------------
+
+  // `decide` uses a restricted dispatcher: the generic onStart / onEnd are
+  // NOT called, only these `experimental_onDecide*` hooks (the deprecated
+  // `experimental_onEvaluate*` names are only a fallback when these are
+  // absent, so defining just the new names never double-fires). Failures
+  // still route to the generic `onError({ callId, error })`, which closes the
+  // span because it lives in `operationByCallId`.
+  experimental_onDecideStart = (event: any): void => {
+    const callId: string | undefined = event?.callId;
+    if (!callId) return;
+    this.onStart(event);
+    const op = this.operationByCallId.get(callId);
+    if (!op) return;
+
+    op.span.setAttribute(SPAN_TYPE, "LLM");
+    applyRequestModelAttributes(op.span, event);
+    if (this.recordInputs) {
+      // Same mapping as the OpenAI Decisions API instrumentation: the state
+      // is the user message, the questions are the structured output schema.
+      const input = buildDecisionInputMessages(event.state);
+      if (input !== undefined) {
+        op.span.setAttribute("gen_ai.input.messages", input);
+      }
+      if (event.questions !== undefined) {
+        op.span.setAttribute(
+          "gen_ai.request.structured_output_schema",
+          serializeJSON(event.questions),
+        );
+      }
+    }
+  };
+
+  experimental_onDecideEnd = (event: any): void => {
+    const callId: string | undefined = event?.callId;
+    if (!callId) return;
+    const op = this.operationByCallId.get(callId);
+    if (!op) return;
+
+    if (typeof event.response?.modelId === "string") {
+      op.span.setAttribute(
+        LaminarAttributes.RESPONSE_MODEL,
+        event.response.modelId,
+      );
+    }
+    if (typeof event.response?.id === "string") {
+      op.span.setAttribute("gen_ai.response.id", event.response.id);
+    }
+    applyUsageToSpan(op.span, event.usage);
+    if (this.recordOutputs && event.answers !== undefined) {
+      op.span.setAttribute(
+        "gen_ai.output.messages",
+        serializeJSON([
+          { role: "assistant", content: serializeJSON(event.answers) },
+        ]),
+      );
+    }
+
+    op.span.setStatus({ code: SpanStatusCode.OK });
+    this.closeOperation(callId, op);
   };
 
   // ------------------------------------------------------------------

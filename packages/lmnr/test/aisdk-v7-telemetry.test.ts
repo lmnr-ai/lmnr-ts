@@ -620,6 +620,162 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     assert.equal(op.attributes["gen_ai.usage.input_tokens"], 3);
   });
 
+  void describe("experimental_decide", () => {
+    const questions = {
+      queue: {
+        type: "choice",
+        instructions: "Which support queue should handle this ticket?",
+        criteria: { billing: null, technical: null },
+      },
+      urgent: { type: "boolean", instructions: "Is this urgent?" },
+    };
+    const answers = {
+      queue: { type: "choice", value: "billing" },
+      urgent: { type: "boolean", probability: 0.91 },
+    };
+    const mkDecideStart = (
+      callId: string,
+      overrides: Record<string, unknown> = {},
+    ) => ({
+      callId,
+      operationId: "ai.decide",
+      provider: "openai.decision",
+      modelId: "gpt-6-luna",
+      state: "I was charged twice this month.",
+      questions,
+      maxRetries: 2,
+      headers: undefined,
+      providerOptions: undefined,
+      runtimeContext: undefined,
+      ...overrides,
+    });
+    const mkDecideEnd = (
+      callId: string,
+      overrides: Record<string, unknown> = {},
+    ) => ({
+      ...mkDecideStart(callId),
+      answers,
+      usage: { inputTokens: 40, outputTokens: 4, totalTokens: 44 },
+      warnings: [],
+      rounding: undefined,
+      providerMetadata: undefined,
+      response: {
+        id: "dec-123",
+        timestamp: new Date(0),
+        modelId: "gpt-6-luna-2026-09-01",
+      },
+      ...overrides,
+    });
+
+    void it("creates a single LLM span with questions as output schema", () => {
+      const tel = new LaminarAiSdkTelemetry();
+      tel.experimental_onDecideStart(
+        mkDecideStart("dec-1", {
+          functionId: "triage",
+          runtimeContext: { userId: "u-1", sessionId: "s-1" },
+        }),
+      );
+      tel.experimental_onDecideEnd(mkDecideEnd("dec-1"));
+
+      const spans = exporter.getFinishedSpans();
+      assert.equal(spans.length, 1);
+      const span = spans[0];
+      assert.equal(span.name, "ai.decide triage");
+      assert.equal(span.attributes[SPAN_TYPE], "LLM");
+      assert.equal(span.status.code, SpanStatusCode.OK);
+      assert.equal(span.attributes["gen_ai.system"], "openai");
+      assert.equal(span.attributes["gen_ai.request.model"], "gpt-6-luna");
+      assert.equal(
+        span.attributes["gen_ai.response.model"],
+        "gpt-6-luna-2026-09-01",
+      );
+      assert.equal(span.attributes["gen_ai.response.id"], "dec-123");
+      assert.equal(span.attributes[USER_ID], "u-1");
+      assert.equal(span.attributes[SESSION_ID], "s-1");
+      assert.equal(span.attributes["gen_ai.usage.input_tokens"], 40);
+      assert.equal(span.attributes["gen_ai.usage.output_tokens"], 4);
+      assert.deepEqual(
+        JSON.parse(span.attributes["gen_ai.input.messages"] as string),
+        [{ role: "user", content: "I was charged twice this month." }],
+      );
+      assert.deepEqual(
+        JSON.parse(
+          span.attributes["gen_ai.request.structured_output_schema"] as string,
+        ),
+        questions,
+      );
+      const output = JSON.parse(
+        span.attributes["gen_ai.output.messages"] as string,
+      );
+      assert.equal(output.length, 1);
+      assert.equal(output[0].role, "assistant");
+      assert.deepEqual(JSON.parse(output[0].content), answers);
+    });
+
+    void it("serializes object and parts-array state into one user message", () => {
+      const tel = new LaminarAiSdkTelemetry();
+      tel.experimental_onDecideStart(
+        mkDecideStart("dec-obj", { state: { ticket: "refund" } }),
+      );
+      tel.experimental_onDecideEnd(mkDecideEnd("dec-obj"));
+      tel.experimental_onDecideStart(
+        mkDecideStart("dec-parts", {
+          state: [
+            { type: "text", text: "look" },
+            {
+              type: "file",
+              mediaType: "image/png",
+              data: new Uint8Array([1, 2, 3]),
+            },
+          ],
+        }),
+      );
+      tel.experimental_onDecideEnd(mkDecideEnd("dec-parts"));
+
+      const [obj, parts] = exporter.getFinishedSpans();
+      assert.deepEqual(
+        JSON.parse(obj.attributes["gen_ai.input.messages"] as string),
+        [{ role: "user", content: '{"ticket":"refund"}' }],
+      );
+      const partsMsgs = JSON.parse(
+        parts.attributes["gen_ai.input.messages"] as string,
+      );
+      assert.equal(partsMsgs[0].role, "user");
+      assert.deepEqual(partsMsgs[0].content[0], { type: "text", text: "look" });
+      assert.equal(partsMsgs[0].content[1].data, "AQID");
+    });
+
+    void it("omits content when recordInputs/recordOutputs are false", () => {
+      const tel = new LaminarAiSdkTelemetry({
+        recordInputs: false,
+        recordOutputs: false,
+      });
+      tel.experimental_onDecideStart(mkDecideStart("dec-2"));
+      tel.experimental_onDecideEnd(mkDecideEnd("dec-2"));
+
+      const [span] = exporter.getFinishedSpans();
+      assert.equal(span.attributes["gen_ai.input.messages"], undefined);
+      assert.equal(
+        span.attributes["gen_ai.request.structured_output_schema"],
+        undefined,
+      );
+      assert.equal(span.attributes["gen_ai.output.messages"], undefined);
+      assert.equal(span.attributes["gen_ai.usage.input_tokens"], 40);
+    });
+
+    void it("closes the decide span as ERROR via onError", () => {
+      const tel = new LaminarAiSdkTelemetry();
+      tel.experimental_onDecideStart(mkDecideStart("dec-3"));
+      tel.onError({ callId: "dec-3", error: new Error("empty choices") });
+
+      const [span] = exporter.getFinishedSpans();
+      assert.equal(span.name, "ai.decide");
+      assert.equal(span.status.code, SpanStatusCode.ERROR);
+      assert.equal(span.status.message, "empty choices");
+      assert.equal(span.events[0]?.name, "exception");
+    });
+  });
+
   void it("records reasoning text via gen_ai.output.messages", () => {
     const tel = new LaminarAiSdkTelemetry();
     const callId = "call-think";
