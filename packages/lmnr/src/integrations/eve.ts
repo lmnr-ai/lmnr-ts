@@ -642,11 +642,12 @@ export class LaminarReporter implements EvalReporter {
           )
           .end();
       }
-      gradeTrace.span.end();
     } catch (error) {
       logger.warn(
         `Laminar eve reporter: failed to finish the grade trace: ${errorMessage(error)}`,
       );
+    } finally {
+      gradeTrace.span.end();
     }
   }
 }

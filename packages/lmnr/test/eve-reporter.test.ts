@@ -302,6 +302,28 @@ void describe("LaminarReporter for eve evals", () => {
     requests.done();
   });
 
+  void it("ends the grade span when its output cannot be serialized", async () => {
+    mockInit();
+    mockDatapoint();
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    const circularOutput: Record<string, unknown> = {};
+    circularOutput.self = circularOutput;
+
+    await reporter.onEvalComplete({
+      id: "a",
+      verdict: "failed",
+      result: { output: circularOutput },
+    });
+
+    assert.ok(
+      exporter
+        .getFinishedSpans()
+        .some((span) => span.name === "eve eval a"),
+      "expected the grade span to end despite the serialization error",
+    );
+  });
+
   void it("uses a fallback trace when eve's only context is unsampled", async () => {
     mockInit();
     const requests = mockDatapoint();
