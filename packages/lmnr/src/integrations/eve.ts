@@ -300,10 +300,15 @@ const normalizeTraceContexts = (
   contexts: readonly EveEvalTraceContext[],
 ): ValidEveTraceContext[] => contexts.filter(validTraceContext);
 
+const isSampledTraceContext = (context: ValidEveTraceContext): boolean =>
+  (context.traceFlags & 0x01) === 0x01;
+
 const selectTraceContext = (
   contexts: readonly ValidEveTraceContext[],
 ): ValidEveTraceContext | undefined =>
-  contexts.find((context) => context.primary === true) ?? contexts[0];
+  contexts.find(
+    (context) => context.primary === true && isSampledTraceContext(context),
+  ) ?? contexts.find(isSampledTraceContext);
 
 const traceContextMetadata = (contexts: readonly ValidEveTraceContext[]) =>
   contexts.map((context) => ({

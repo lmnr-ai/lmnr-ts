@@ -232,9 +232,12 @@ void describe("LaminarReporter for eve evals", () => {
       gradeSpan.parentSpanContext?.spanId ??
       (gradeSpan as unknown as { parentSpanId?: string }).parentSpanId;
     assert.strictEqual(parentSpanId, NATIVE_SPAN_ID);
+    const assertionSpan = spans.find((span) => span.name === "no-refusal");
+    assert.strictEqual(assertionSpan?.spanContext().traceId, NATIVE_TRACE_ID);
     assert.strictEqual(
-      spans.find((span) => span.name === "no-refusal")?.spanContext().traceId,
-      NATIVE_TRACE_ID,
+      assertionSpan?.parentSpanContext?.spanId ??
+        (assertionSpan as unknown as { parentSpanId?: string }).parentSpanId,
+      gradeSpan.spanContext().spanId,
     );
     requests.done();
   });
@@ -296,6 +299,84 @@ void describe("LaminarReporter for eve evals", () => {
     );
     assert.strictEqual(point.metadata.traceResolution, "reporter-fallback");
     assert.deepStrictEqual(point.metadata.traceContexts, []);
+    requests.done();
+  });
+
+  void it("uses a fallback trace when eve's only context is unsampled", async () => {
+    mockInit();
+    const requests = mockDatapoint();
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    await reporter.onEvalComplete(
+      { id: "a", verdict: "passed", result: { status: "waiting" } },
+      {
+        traceContexts: [
+          {
+            traceId: NATIVE_TRACE_ID,
+            spanId: NATIVE_SPAN_ID,
+            traceFlags: 0,
+            primary: true,
+            sessionId: "unsampled-session",
+          },
+        ],
+      },
+    );
+
+    const fallback = exporter
+      .getFinishedSpans()
+      .find((span) => span.name === "eve eval a");
+    assert.ok(fallback, "expected a recording reporter fallback span");
+    const point = requests.createBody().points[0];
+    assert.strictEqual(
+      point.traceId,
+      otelTraceIdToUUID(fallback.spanContext().traceId),
+    );
+    assert.strictEqual(point.metadata.traceResolution, "reporter-fallback");
+    assert.deepStrictEqual(point.metadata.traceContexts, [
+      {
+        traceId: NATIVE_TRACE_ID,
+        spanId: NATIVE_SPAN_ID,
+        traceFlags: 0,
+        primary: true,
+        sessionId: "unsampled-session",
+      },
+    ]);
+    requests.done();
+  });
+
+  void it("selects a sampled secondary context over an unsampled primary", async () => {
+    mockInit();
+    const requests = mockDatapoint();
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    await reporter.onEvalComplete(
+      { id: "a", verdict: "passed", result: { status: "waiting" } },
+      {
+        traceContexts: [
+          {
+            traceId: NATIVE_TRACE_ID,
+            spanId: NATIVE_SPAN_ID,
+            traceFlags: 0,
+            primary: true,
+          },
+          {
+            traceId: SECONDARY_TRACE_ID,
+            spanId: SECONDARY_SPAN_ID,
+            traceFlags: 1,
+            primary: false,
+          },
+        ],
+      },
+    );
+
+    const point = requests.createBody().points[0];
+    assert.strictEqual(point.traceId, otelTraceIdToUUID(SECONDARY_TRACE_ID));
+    assert.strictEqual(point.metadata.traceResolution, "eve-native");
+    assert.strictEqual(
+      point.metadata.selectedTraceContext.traceId,
+      SECONDARY_TRACE_ID,
+    );
+    assert.strictEqual(point.metadata.traceContexts.length, 2);
     requests.done();
   });
 
