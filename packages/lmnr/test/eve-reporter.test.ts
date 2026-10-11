@@ -317,9 +317,7 @@ void describe("LaminarReporter for eve evals", () => {
     });
 
     assert.ok(
-      exporter
-        .getFinishedSpans()
-        .some((span) => span.name === "eve eval a"),
+      exporter.getFinishedSpans().some((span) => span.name === "eve eval a"),
       "expected the grade span to end despite the serialization error",
     );
   });
