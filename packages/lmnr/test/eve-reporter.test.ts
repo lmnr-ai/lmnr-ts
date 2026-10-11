@@ -570,6 +570,49 @@ void describe("LaminarReporter for eve evals", () => {
     assert.deepStrictEqual(indices, [1, 0]);
   });
 
+  void it("keeps discovery indexes unique across concurrent completions", async () => {
+    mockInit();
+    const indices = new Map<string, number>();
+    nock(NOCK_URL)
+      .persist()
+      .post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`, (body: RequestBody) => {
+        indices.set(body.points[0].data, body.points[0].index);
+        return true;
+      })
+      .reply(200, {});
+    nock(NOCK_URL)
+      .persist()
+      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`))
+      .reply(200, {});
+
+    const count = 48;
+    const reporter = makeReporter();
+    await reporter.onRunStart(
+      Array.from({ length: count }, (_, i) => ({ id: `order-${i}` })),
+      {},
+    );
+    const order = Array.from({ length: count }, (_, i) => (i * 13) % count);
+    await Promise.all(
+      order.map((i) =>
+        reporter.onEvalComplete({
+          id: `order-${i}`,
+          verdict: "passed",
+          result: {},
+        }),
+      ),
+    );
+    assert.strictEqual(indices.size, count);
+    for (let i = 0; i < count; i++) {
+      assert.strictEqual(indices.get(`order-${i}`), i);
+    }
+    assert.strictEqual(
+      exporter
+        .getFinishedSpans()
+        .filter((span) => span.name.startsWith("eve eval order-")).length,
+      count,
+    );
+  });
+
   void it("does not report results when run initialization failed", async () => {
     nock(NOCK_URL).post("/v1/evals").reply(500, "boom");
     const reporter = makeReporter();
@@ -589,6 +632,119 @@ void describe("LaminarReporter for eve evals", () => {
     await assert.doesNotReject(() =>
       reporter.onEvalComplete({ id: "a", result: {}, assertions: [] }),
     );
+  });
+
+  void it("isolates API failures across consecutive evals", async () => {
+    mockInit();
+    nock(NOCK_URL)
+      .post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`)
+      .reply(500, "create error");
+    nock(NOCK_URL)
+      .post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`)
+      .twice()
+      .reply(200, {});
+    nock(NOCK_URL)
+      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`))
+      .reply(500, "update error");
+    nock(NOCK_URL)
+      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`))
+      .reply(200, {});
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }, { id: "b" }, { id: "c" }], {});
+    for (const id of ["a", "b", "c"]) {
+      await assert.doesNotReject(() =>
+        reporter.onEvalComplete({ id, verdict: "passed", result: {} }),
+      );
+      assert.ok(
+        exporter
+          .getFinishedSpans()
+          .some((span) => span.name === `eve eval ${id}`),
+      );
+    }
+    assert.deepStrictEqual(nock.pendingMocks(), []);
+  });
+
+  void it("fuzzes JSON-safe callback payloads without losing datapoints", async () => {
+    mockInit();
+    let created = 0;
+    let updated = 0;
+    nock(NOCK_URL)
+      .persist()
+      .post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`, () => {
+        created += 1;
+        return true;
+      })
+      .reply(200, {});
+    nock(NOCK_URL)
+      .persist()
+      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`), () => {
+        updated += 1;
+        return true;
+      })
+      .reply(200, {});
+
+    const count = 128;
+    const reporter = makeReporter();
+    await reporter.onRunStart(
+      Array.from({ length: count }, (_, i) => ({ id: `fuzz-${i}` })),
+      {},
+    );
+    let seed = 317;
+    const choose = <T>(values: T[]): T => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return values[(seed >>> 8) % values.length];
+    };
+    for (let i = 0; i < count; i++) {
+      const contexts = choose([
+        undefined,
+        {},
+        [
+          null,
+          { traceId: NATIVE_TRACE_ID, spanId: NATIVE_SPAN_ID, traceFlags: 1 },
+        ],
+        [{ traceId: NATIVE_TRACE_ID, spanId: NATIVE_SPAN_ID, traceFlags: 257 }],
+      ]);
+      const toolCalls = choose([undefined, [], [{ name: "tool" }], [null], {}]);
+      const assertions = choose([
+        undefined,
+        [],
+        [{ name: "gate", score: 1, severity: "gate" }],
+        [null],
+        "invalid",
+      ]);
+      const payload = {
+        id: `fuzz-${i}`,
+        verdict: "passed",
+        result: {
+          output: choose([null, "ok", { ok: true }]),
+          derived: { toolCalls },
+        },
+        assertions,
+      } as unknown as EveEvalResult;
+      await assert.doesNotReject(
+        () =>
+          reporter.onEvalComplete(payload, {
+            traceContexts: contexts,
+          } as EveEvalCompleteContext),
+        `seed=317 iteration=${i}`,
+      );
+      assert.strictEqual(
+        created,
+        i + 1,
+        `datapoint missing at seed=317 iteration=${i}`,
+      );
+      assert.strictEqual(
+        updated,
+        i + 1,
+        `scores missing at seed=317 iteration=${i}`,
+      );
+      assert.ok(
+        exporter
+          .getFinishedSpans()
+          .some((span) => span.name === `eve eval fuzz-${i}`),
+        `grade span missing at seed=317 iteration=${i}`,
+      );
+    }
   });
 
   void it("flushes spans on run complete", async () => {

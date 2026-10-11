@@ -234,8 +234,10 @@ const didAssertionPass = (assertion: EveAssertionResult): boolean => {
 };
 
 /** Keep Laminar's score columns stable across heterogeneous eve evals. */
-const resultToScores = (result: EveEvalResult): Record<string, number> => {
-  const assertions = result.assertions ?? [];
+const resultToScores = (
+  result: EveEvalResult,
+  assertions: readonly EveAssertionResult[],
+): Record<string, number> => {
   const gateAssertions = assertions.filter(
     (assertion) => assertion.severity === "gate",
   );
@@ -444,7 +446,11 @@ export class LaminarReporter implements EvalReporter {
         : this.nextFallbackIndex++;
     const task = result.result ?? {};
     const derived = task.derived ?? {};
-    const assertions = result.assertions ?? [];
+    const assertions = Array.isArray(result.assertions)
+      ? result.assertions.filter(
+          (assertion) => assertion != null && typeof assertion === "object",
+        )
+      : [];
     const evalDefinition =
       typeof result.id === "string" ? this.evalsById.get(result.id) : undefined;
     const evalDescription =
@@ -480,7 +486,7 @@ export class LaminarReporter implements EvalReporter {
           skipReason: result.skipReason,
           error: result.error,
           toolCalls: (Array.isArray(derived.toolCalls) ? derived.toolCalls : [])
-            .map((call) => call.name)
+            .map((call) => call?.name)
             .filter((name): name is string => typeof name === "string"),
           toolCallCount: derived.toolCallCount,
           parked: derived.parked,
@@ -494,7 +500,7 @@ export class LaminarReporter implements EvalReporter {
       await client.evals.updateDatapoint({
         evalId,
         datapointId,
-        scores: resultToScores(result),
+        scores: resultToScores(result, assertions),
         executorOutput: task.output ?? task.finalMessage ?? null,
       });
     } catch (error) {
