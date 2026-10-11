@@ -322,6 +322,69 @@ void describe("LaminarReporter for eve evals", () => {
     );
   });
 
+  void it("ignores invalid trace entries without rejecting the eval", async () => {
+    mockInit();
+    const requests = mockDatapoint();
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    await assert.doesNotReject(() =>
+      reporter.onEvalComplete(
+        { id: "a", verdict: "passed", result: {} },
+        {
+          traceContexts: [
+            null,
+            0,
+            "not-a-context",
+            { traceId: NATIVE_TRACE_ID, spanId: NATIVE_SPAN_ID, traceFlags: 1 },
+          ] as unknown as EveEvalCompleteContext["traceContexts"],
+        },
+      ),
+    );
+    assert.strictEqual(
+      requests.createBody().points[0].traceId,
+      otelTraceIdToUUID(NATIVE_TRACE_ID),
+    );
+    assert.ok(
+      exporter.getFinishedSpans().some((span) => span.name === "eve eval a"),
+    );
+    requests.done();
+  });
+
+  void it("reports a datapoint when derived tool calls are not an array", async () => {
+    mockInit();
+    const requests = mockDatapoint();
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    await reporter.onEvalComplete({
+      id: "a",
+      verdict: "passed",
+      result: {
+        derived: { toolCalls: {} } as unknown as NonNullable<
+          EveEvalResult["result"]
+        >["derived"],
+      },
+    });
+    assert.strictEqual(requests.createBody().points.length, 1);
+    requests.done();
+  });
+
+  void it("falls back when Eve supplies a non-array context field", async () => {
+    mockInit();
+    const requests = mockDatapoint();
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    await assert.doesNotReject(() =>
+      reporter.onEvalComplete({ id: "a", verdict: "passed", result: {} }, {
+        traceContexts: {},
+      } as unknown as EveEvalCompleteContext),
+    );
+    assert.strictEqual(
+      requests.createBody().points[0].metadata.traceResolution,
+      "reporter-fallback",
+    );
+    requests.done();
+  });
+
   void it("uses a fallback trace when eve's only context is unsampled", async () => {
     mockInit();
     const requests = mockDatapoint();
@@ -361,6 +424,28 @@ void describe("LaminarReporter for eve evals", () => {
         sessionId: "unsampled-session",
       },
     ]);
+    requests.done();
+  });
+
+  void it("rejects out-of-range trace flags instead of selecting a missing trace", async () => {
+    mockInit();
+    const requests = mockDatapoint();
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    await reporter.onEvalComplete(
+      { id: "a", verdict: "passed", result: {} },
+      {
+        traceContexts: [
+          { traceId: NATIVE_TRACE_ID, spanId: NATIVE_SPAN_ID, traceFlags: 257 },
+          { traceId: NATIVE_TRACE_ID, spanId: NATIVE_SPAN_ID, traceFlags: -1 },
+          { traceId: NATIVE_TRACE_ID, spanId: NATIVE_SPAN_ID, traceFlags: 1.5 },
+        ],
+      },
+    );
+
+    const point = requests.createBody().points[0];
+    assert.strictEqual(point.metadata.traceResolution, "reporter-fallback");
+    assert.deepStrictEqual(point.metadata.traceContexts, []);
     requests.done();
   });
 

@@ -288,17 +288,22 @@ interface ValidEveTraceContext {
 const validTraceContext = (
   context: EveEvalTraceContext,
 ): context is ValidEveTraceContext =>
+  context != null &&
   typeof context.traceId === "string" &&
   OTEL_TRACE_ID_RE.test(context.traceId) &&
   context.traceId !== ZERO_TRACE_ID &&
   typeof context.spanId === "string" &&
   OTEL_SPAN_ID_RE.test(context.spanId) &&
   context.spanId !== ZERO_SPAN_ID &&
-  Number.isInteger(context.traceFlags);
+  typeof context.traceFlags === "number" &&
+  Number.isInteger(context.traceFlags) &&
+  context.traceFlags >= 0 &&
+  context.traceFlags <= 255;
 
 const normalizeTraceContexts = (
   contexts: readonly EveEvalTraceContext[],
-): ValidEveTraceContext[] => contexts.filter(validTraceContext);
+): ValidEveTraceContext[] =>
+  Array.isArray(contexts) ? contexts.filter(validTraceContext) : [];
 
 const isSampledTraceContext = (context: ValidEveTraceContext): boolean =>
   (context.traceFlags & 0x01) === 0x01;
@@ -332,8 +337,9 @@ interface GradeTrace {
  * Reports eve eval results to Laminar.
  *
  * Eve 0.35+ gives reporters every native trace context observed during an eval.
- * The reporter links the datapoint to the first primary trace (or the first
- * trace when there is no primary), records every context in metadata, and adds
+ * The reporter links the datapoint to the first sampled primary trace (or the
+ * first sampled trace when there is no sampled primary), records every valid
+ * context in metadata, and adds
  * a small EVALUATION span to the selected native trace for the grade. When eve
  * reports no usable context, a reporter-owned fallback trace preserves the
  * result without pretending it contains agent work.
@@ -473,7 +479,7 @@ export class LaminarReporter implements EvalReporter {
           traceContexts: traceContextMetadata(gradeTrace.contexts),
           skipReason: result.skipReason,
           error: result.error,
-          toolCalls: (derived.toolCalls ?? [])
+          toolCalls: (Array.isArray(derived.toolCalls) ? derived.toolCalls : [])
             .map((call) => call.name)
             .filter((name): name is string => typeof name === "string"),
           toolCallCount: derived.toolCallCount,
