@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/client",
-  "version": "0.8.51",
+  "version": "0.8.52",
   "description": "HTTP client for Laminar AI API",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",

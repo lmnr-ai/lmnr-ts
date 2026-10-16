@@ -10,6 +10,7 @@ import type { GlobalOpts } from "../../auth/with-client";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
 import { renderTable } from "../../utils/table";
+import { collectTraceIds } from "./trace-ids";
 import {
   parseFilter,
   parseMode,
@@ -35,6 +36,11 @@ type SignalCreateOpts = GlobalOpts & {
   llmProfileId?: string;
   /** Model from the profile; self-hosted only, pass with --llm-profile-id. */
   model?: string;
+};
+
+type SignalBackfillOpts = GlobalOpts & {
+  /** Path to read more ids from; `-` reads stdin. */
+  file?: string;
 };
 
 type SignalUpdateOpts = GlobalOpts & {
@@ -331,5 +337,49 @@ export const handleSignalDelete = async (
   }
   logger.info(
     `Deleted signal "${signal.name}" (${signal.id}), its triggers, alerts, and events.`,
+  );
+};
+
+/** How many skipped ids the human output names before summarizing. */
+const MAX_MISSING_SHOWN = 10;
+
+/** `lmnr-cli signal backfill <signal> [trace-ids...] [--file <path|->]` */
+export const handleSignalBackfill = async (
+  client: LaminarClient,
+  ref: string,
+  traceIds: string[],
+  opts: SignalBackfillOpts,
+): Promise<void> => {
+  const ids = await collectTraceIds(traceIds, opts.file);
+  if (ids.length === 0) {
+    throw new Error(
+      "No trace ids given. Pass them as arguments or with --file <path> " +
+        "(--file - reads stdin).",
+    );
+  }
+
+  const signalId = await resolveSignalId(client, ref);
+  const result = await client.signals.backfill(signalId, ids);
+
+  const missing = result.missingTraceIds;
+  if (missing.length > 0) {
+    const shown = missing.slice(0, MAX_MISSING_SHOWN).join(", ");
+    const more =
+      missing.length > MAX_MISSING_SHOWN
+        ? ` and ${missing.length - MAX_MISSING_SHOWN} more`
+        : "";
+    logger.warn(
+      `Skipped ${missing.length} trace id(s) not found in this project: ` +
+        `${shown}${more}`,
+    );
+  }
+
+  if (opts.json) {
+    outputJson(result);
+    return;
+  }
+  logger.info(
+    `Backfill job ${result.jobId} started: ${result.totalTraces} trace(s) ` +
+      `queued for signal ${result.signalId}. Events show up as runs finish.`,
   );
 };
