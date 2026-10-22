@@ -69,20 +69,11 @@ This is a CLI for the Laminar agent observability platform.
   `validate.ts`. The wire has no shape for CLEARING the route back to the
   server's env LLM on update; do not invent one. Responses echo `llmProfileId`
   + `llmProfileName` (display only) + `model`.
-- **`signal backfill <signal> [traceIds...] [--file <path|->]`** posts an
-  explicit trace-id list to `/v1/cli/signals/{id}/backfill` (one realtime job;
-  `--json` prints the server's `{jobId, signalId, totalTraces,
-  missingTraceIds}`). `trace-ids.ts` only parses input syntax: whitespace /
-  comma separated ids, a JSON array of strings or `{id|trace_id|traceId}` rows
-  (`sql query --json`), or single-column CSV with an id header (`sql query`).
-  Multi-column CSV is an ERROR, since sending the other columns would just be a
-  400 full of costs and names. Id validity, dedupe and the 10k cap are the
-  server's (`signals/private/backfill.rs` in lmnr-private), whose 400 names the
-  bad ids — do not re-validate UUIDs here.
-- **`LMNR_LOG_LEVEL=debug` prints dotenv's banner on STDOUT**, so
-  `lmnr-cli sql query ... | lmnr-cli signal backfill X --file -` reads the
-  banner as trace ids. Pre-existing and debug-only; test pipes with the
-  default log level.
+- **`signal backfill <signal> <trace-ids...>`** posts the positional ids to
+  `/v1/cli/signals/{id}/backfill` (one realtime job; `--json` prints the
+  server's `{jobId, signalId, totalTraces}`). UUID validation, dedupe and the
+  10k cap are the server's (`signals/private/backfill.rs` in lmnr-private);
+  any malformed id fails the request. No `--file`/stdin input yet, by design.
 - lmnr-cli imports `@lmnr-ai/client` / `@lmnr-ai/types` from their built
   `dist`, so a new client method is invisible to the CLI (and its integration
   tests) until `pnpm --filter @lmnr-ai/types build && pnpm --filter

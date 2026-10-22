@@ -12,7 +12,6 @@ void describe("SignalsResource.backfill", () => {
       jobId: "job-1",
       signalId: SIGNAL_ID,
       totalTraces: 1,
-      missingTraceIds: [],
     };
     const mockFetch = mock.fn(() => ({ ok: true, json: () => result }));
     global.fetch = mockFetch as any;
@@ -60,8 +59,8 @@ void describe("SignalsResource.backfill", () => {
   void it("surfaces the server's {error} message", async () => {
     global.fetch = mock.fn(() => ({
       ok: false,
-      status: 403,
-      text: () => JSON.stringify({ error: "Signal is deactivated" }),
+      status: 404,
+      text: () => JSON.stringify({ error: "Signal not found" }),
     })) as any;
 
     const signals = new SignalsResource("https://api.test.com:443", {
@@ -69,7 +68,7 @@ void describe("SignalsResource.backfill", () => {
       key: "test-api-key",
     });
     await assert.rejects(signals.backfill(SIGNAL_ID, [TRACE_ID]), {
-      message: "403 Signal is deactivated",
+      message: "404 Signal not found",
     });
   });
 });

@@ -87,13 +87,10 @@ export interface SignalVersion {
 
 /**
  * `POST /signals/{id}/backfill` response: one signal job over the requested
- * traces. `totalTraces` counts the unique ids that were enqueued;
- * `missingTraceIds` lists requested ids with no spans in the project (also
- * where ids from another project end up), in request order.
+ * traces. `totalTraces` counts the unique ids that were enqueued.
  */
 export interface SignalBackfillResult {
   jobId: string;
   signalId: string;
   totalTraces: number;
-  missingTraceIds: string[];
 }

@@ -1,4 +1,4 @@
-import { execFile, spawn } from "child_process";
+import { execFile } from "child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import * as http from "http";
 import { tmpdir } from "os";
@@ -13,7 +13,6 @@ const CLI_PATH = path.resolve(__dirname, "../../src/index.ts");
 const SIGNAL_ID = "7143fab6-7a80-4d9f-81ed-4ee3d5d82254";
 const TRACE_A = "0198a7f2-0000-7000-8000-00000000000a";
 const TRACE_B = "0198a7f2-0000-7000-8000-00000000000b";
-const TRACE_MISSING = "0198a7f2-0000-7000-8000-0000000000ff";
 
 type CliResult = { stdout: string; stderr: string; exitCode: number };
 type Captured = { method?: string; url?: string; body: string };
@@ -93,40 +92,6 @@ describe("signal update CLI integration — with mock server", () => {
     }
   };
 
-  const cliArgs = (args: string[]): string[] => [
-    "tsx",
-    CLI_PATH,
-    ...args,
-    "--json",
-    "--project-id",
-    "fake-project",
-    "--base-url",
-    `http://localhost:${mockPort}`,
-    "--port",
-    String(mockPort),
-  ];
-
-  /** Like runCli, but pipes `stdin` into the process. */
-  const runCliWithStdin = (args: string[], stdin: string): Promise<CliResult> =>
-    new Promise((resolve) => {
-      const child = spawn("npx", cliArgs(args), {
-        cwd: path.resolve(__dirname, "../.."),
-        env: {
-          ...process.env,
-          LMNR_LOG_LEVEL: "silent",
-          XDG_CONFIG_HOME: credsDir,
-        },
-      });
-      let stdout = "";
-      let stderr = "";
-      child.stdout.on("data", (c) => (stdout += c));
-      child.stderr.on("data", (c) => (stderr += c));
-      child.on("close", (code) =>
-        resolve({ stdout, stderr, exitCode: code ?? 1 }),
-      );
-      child.stdin.end(stdin);
-    });
-
   beforeAll(async () => {
     credsDir = writeCredentialsFixture();
     mockServer = http.createServer((req, res) => {
@@ -162,14 +127,12 @@ describe("signal update CLI integration — with mock server", () => {
           req.url === `/v1/cli/signals/${SIGNAL_ID}/backfill`
         ) {
           const { traceIds } = JSON.parse(body) as { traceIds: string[] };
-          const unique = [...new Set(traceIds)];
           res.writeHead(200);
           res.end(
             JSON.stringify({
               jobId: "job-1",
               signalId: SIGNAL_ID,
-              totalTraces: unique.filter((t) => t !== TRACE_MISSING).length,
-              missingTraceIds: unique.filter((t) => t === TRACE_MISSING),
+              totalTraces: new Set(traceIds).size,
             }),
           );
         } else {
@@ -242,13 +205,13 @@ describe("signal update CLI integration — with mock server", () => {
     );
   });
 
-  it("backfill resolves the name and posts positional + comma ids", async () => {
+  it("backfill resolves the name and posts the positional ids", async () => {
     const { stdout, exitCode } = await runCli([
       "signal",
       "backfill",
       "Refund requests",
-      `${TRACE_A},${TRACE_B}`,
-      TRACE_MISSING,
+      TRACE_A,
+      TRACE_B,
     ]);
 
     expect(exitCode).toBe(0);
@@ -256,37 +219,11 @@ describe("signal update CLI integration — with mock server", () => {
       jobId: "job-1",
       signalId: SIGNAL_ID,
       totalTraces: 2,
-      missingTraceIds: [TRACE_MISSING],
     });
     const post = requests.find((r) => r.method === "POST");
     expect(post?.url).toBe(`/v1/cli/signals/${SIGNAL_ID}/backfill`);
     expect(JSON.parse(post?.body ?? "{}")).toEqual({
-      traceIds: [TRACE_A, TRACE_B, TRACE_MISSING],
-    });
-  });
-
-  it("backfill reads `sql query --json` rows from stdin", async () => {
-    const { stdout, exitCode } = await runCliWithStdin(
-      ["signal", "backfill", SIGNAL_ID, "--file", "-"],
-      JSON.stringify([{ id: TRACE_A }, { id: TRACE_B }]),
-    );
-
-    expect(exitCode).toBe(0);
-    expect(JSON.parse(stdout.trim()).totalTraces).toBe(2);
-    const post = requests.find((r) => r.method === "POST");
-    expect(JSON.parse(post?.body ?? "{}")).toEqual({
       traceIds: [TRACE_A, TRACE_B],
     });
-  });
-
-  it("backfill with no ids fails before calling the server", async () => {
-    const { stdout, exitCode } = await runCliWithStdin(
-      ["signal", "backfill", SIGNAL_ID, "--file", "-"],
-      "\n",
-    );
-
-    expect(exitCode).not.toBe(0);
-    expect(JSON.parse(stdout.trim()).error).toContain("No trace ids given");
-    expect(requests).toHaveLength(0);
   });
 });

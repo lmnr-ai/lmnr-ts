@@ -181,8 +181,8 @@ export class SignalsResource extends BaseResource {
 
   /**
    * Runs the signal over existing traces as one job. The server dedupes ids,
-   * skips the ones not in the project (`missingTraceIds`), and caps a request
-   * at 10,000 unique ids. A deactivated signal is rejected.
+   * rejects the request if any id is not a UUID, and caps it at 10,000 unique
+   * ids.
    */
   public async backfill(
     signalId: string,
