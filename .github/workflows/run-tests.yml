@@ -12,10 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Install pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/setup@v3.1.1
         with:
-          version: 11
-      - uses: actions/setup-node@v6
+          version: 12.14.0
+          runtime: node@24
       - run: pnpm install
       - run: npx playwright install
       - run: pnpm test

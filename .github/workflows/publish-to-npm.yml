@@ -29,7 +29,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository }}
           ref: ${{ github.sha }}
@@ -63,13 +63,12 @@ jobs:
             || fail "tag $RELEASE_TAG does not match lmnr-cli version $version"
 
           echo "Publishing $GITHUB_REPOSITORY@$GITHUB_SHA ($RELEASE_TAG, lmnr-cli $version)"
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+      - name: Install pnpm
+        uses: pnpm/setup@v3.1.1 # immutable tag
         with:
-          version: 11
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
+          version: 12.14.0
+          runtime: node@24
+      # github runners have old npm, get a new-ish version
       - run: npm install -g npm@12.2.1
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter lmnr-cli build
@@ -118,7 +117,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository }}
           ref: ${{ github.sha }}
@@ -152,13 +151,12 @@ jobs:
             || fail "tag $RELEASE_TAG does not match @lmnr-ai/lmnr version $version"
 
           echo "Publishing $GITHUB_REPOSITORY@$GITHUB_SHA ($RELEASE_TAG, version $version)"
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+      - name: Install pnpm
+        uses: pnpm/setup@v3.1.1 # immutable tag
         with:
-          version: 11
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
+          version: 12.14.0
+          runtime: node@24
+      # github runners have old npm, get a new-ish version
       - run: npm install -g npm@12.2.1
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
