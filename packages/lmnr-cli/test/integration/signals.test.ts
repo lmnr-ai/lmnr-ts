@@ -11,6 +11,8 @@ const exec = promisify(execFile);
 const CLI_PATH = path.resolve(__dirname, "../../src/index.ts");
 
 const SIGNAL_ID = "7143fab6-7a80-4d9f-81ed-4ee3d5d82254";
+const TRACE_A = "0198a7f2-0000-7000-8000-00000000000a";
+const TRACE_B = "0198a7f2-0000-7000-8000-00000000000b";
 
 type CliResult = { stdout: string; stderr: string; exitCode: number };
 type Captured = { method?: string; url?: string; body: string };
@@ -120,6 +122,19 @@ describe("signal update CLI integration — with mock server", () => {
           }
           res.writeHead(200);
           res.end(JSON.stringify(signal(patch.name ?? "Refund requests")));
+        } else if (
+          req.method === "POST" &&
+          req.url === `/v1/cli/signals/${SIGNAL_ID}/backfill`
+        ) {
+          const { traceIds } = JSON.parse(body) as { traceIds: string[] };
+          res.writeHead(200);
+          res.end(
+            JSON.stringify({
+              jobId: "job-1",
+              signalId: SIGNAL_ID,
+              totalTraces: new Set(traceIds).size,
+            }),
+          );
         } else {
           res.writeHead(404);
           res.end(JSON.stringify({ error: "not found" }));
@@ -188,5 +203,27 @@ describe("signal update CLI integration — with mock server", () => {
     expect(JSON.parse(stdout.trim()).error).toContain(
       'A signal named "Taken" already exists',
     );
+  });
+
+  it("backfill resolves the name and posts the positional ids", async () => {
+    const { stdout, exitCode } = await runCli([
+      "signal",
+      "backfill",
+      "Refund requests",
+      TRACE_A,
+      TRACE_B,
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.trim())).toEqual({
+      jobId: "job-1",
+      signalId: SIGNAL_ID,
+      totalTraces: 2,
+    });
+    const post = requests.find((r) => r.method === "POST");
+    expect(post?.url).toBe(`/v1/cli/signals/${SIGNAL_ID}/backfill`);
+    expect(JSON.parse(post?.body ?? "{}")).toEqual({
+      traceIds: [TRACE_A, TRACE_B],
+    });
   });
 });

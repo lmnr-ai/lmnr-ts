@@ -41,6 +41,7 @@ import { handleProjectLink } from "./commands/project/link";
 import { handleProjectMintKey } from "./commands/project/mint-key";
 import { handleSetup } from "./commands/setup";
 import {
+  handleSignalBackfill,
   handleSignalCreate,
   handleSignalDelete,
   handleSignalGet,
@@ -528,6 +529,28 @@ event it produced (in ClickHouse). A name must match exactly one signal.
 Examples:
   $ lmnr-cli signal delete "Refund requests"
   $ lmnr-cli signal delete 29b937f1-7e3c-4768-a5e3-7e891c2d7d0a --json
+`,
+    );
+
+  signalCmd
+    .command("backfill")
+    .description("Run a signal over existing traces, by trace id")
+    .argument("<signal>", "Signal id or name")
+    .argument("<trace-ids...>", "Trace ids, space-separated")
+    .action(withProjectClient(handleSignalBackfill))
+    .addHelpText(
+      "after",
+      `
+Starts one backfill job: the signal's prompt runs on each trace, exactly like a
+backfill from the UI, and its events appear as the runs finish. The signal's
+trigger and filters are NOT applied, because the ids already choose the traces.
+
+Duplicate ids are counted once. A malformed id fails the whole request. One job
+takes at most 10,000 unique ids.
+
+Examples:
+  $ lmnr-cli signal backfill "Refund requests" \\
+      0198a7f2-1c3e-7d55-9f3a-2b6f4e8c1a01 0198a7f2-1c3e-7d55-9f3a-2b6f4e8c1a02
 `,
     );
 

@@ -69,6 +69,15 @@ This is a CLI for the Laminar agent observability platform.
   `validate.ts`. The wire has no shape for CLEARING the route back to the
   server's env LLM on update; do not invent one. Responses echo `llmProfileId`
   + `llmProfileName` (display only) + `model`.
+- **`signal backfill <signal> <trace-ids...>`** posts the positional ids to
+  `/v1/cli/signals/{id}/backfill` (one realtime job; `--json` prints the
+  server's `{jobId, signalId, totalTraces}`). UUID validation, dedupe and the
+  10k cap are the server's (`signals/private/backfill.rs` in lmnr-private);
+  any malformed id fails the request. No `--file`/stdin input yet, by design.
+- lmnr-cli imports `@lmnr-ai/client` / `@lmnr-ai/types` from their built
+  `dist`, so a new client method is invisible to the CLI (and its integration
+  tests) until `pnpm --filter @lmnr-ai/types build && pnpm --filter
+  @lmnr-ai/client build`.
 
 # LLM profiles (`src/commands/llm-profile/`)
 
