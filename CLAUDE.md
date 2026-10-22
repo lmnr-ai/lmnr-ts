@@ -25,6 +25,15 @@ pnpm check-versions             # Verify package versions are aligned
 
 Work inside a specific package with `pnpm --filter @lmnr-ai/lmnr ...` or `cd packages/lmnr && pnpm ...`.
 
+## Releases (`.github/workflows/publish-to-npm.yml`)
+
+- A GitHub release triggers it. `cli-v<version>` tags publish `lmnr-cli`; any other tag (`<version>`) publishes types, client and lmnr. An optional `-post.N` suffix is stripped before the version check.
+- Each job checks out `github.repository` at `github.sha` with `persist-credentials: false` and fails unless the release tag points to that commit, the commit is on `main`, and the tag matches the package version (`packages/lmnr-cli` for the CLI, `packages/lmnr` for the SDK). So: bump versions on `main` first, then tag that commit.
+- The tag comes from `github.event.release.tag_name`, never `GITHUB_REF` / `github.ref`: those are intermittently empty on `release` events (actions/runner#2788, open since 2023). The provenance check's `--source-ref` is likewise built as `refs/tags/$RELEASE_TAG`.
+- After publishing, the job re-downloads each tarball and runs `gh attestation verify` on npm's SLSA provenance bundle (repo, commit, tag, signer workflow). `--digest-alg sha512` is required: npm attests sha512 digests, and without the flag the failure is an opaque `verifying with issuer "sigstore.dev"`. On success `gh` prints nothing when not on a TTY, so the step echoes its own success line.
+- The two jobs share that step through a YAML anchor (`&verify-provenance` / `*verify-provenance`). Keep the verification inline in the workflow. A local composite action would be loaded from the checked-out tree, which is the code being verified.
+- Actions and the npm CLI are pinned (`uses: owner/repo@<sha> # vX.Y.Z`, `npm@X.Y.Z`). Bump them by resolving the new tag's SHA (`gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`), not by switching back to a floating tag.
+
 ## Mastra Exporter (`packages/lmnr/src/opentelemetry-lib/instrumentation/mastra/`)
 
 Laminar ships its own `MastraExporter` (implements `ObservabilityExporter` from `@mastra/core/ai-tracing`) instead of relying on the `@mastra/laminar` package. Key non-obvious facts:
