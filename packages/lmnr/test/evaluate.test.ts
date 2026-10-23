@@ -4,7 +4,12 @@ import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import nock from "nock";
 
-import { evaluate, HumanEvaluator, Laminar } from "../src/index";
+import {
+  evaluate,
+  HumanEvaluator,
+  Laminar,
+  LaminarDataset,
+} from "../src/index";
 import {
   _resetConfiguration,
   initializeTracing,
@@ -342,5 +347,177 @@ void describe("evaluate", () => {
       humanEvaluatorSpans.map((span) => span.name).sort(),
       ["human_quality", "human_relevance"],
     );
+  });
+});
+
+// LAM-1909: evals stream datapoints through a semaphore sliding window and
+// retain nothing for the whole run.
+void describe("evaluate streaming", () => {
+  const baseUrl = "https://api.lmnr.ai";
+  const mockEvalId = "00000000-0000-0000-0000-000000000000";
+  const exporter = new InMemorySpanExporter();
+
+  const sleep = (ms: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  // A result save carries scores; the initial (partial) save does not.
+  const isResultSave = (body: RequestBody): boolean =>
+    (body.points ?? []).some((p: RequestBody) => "scores" in p);
+
+  const mockEvalInit = () =>
+    nock(baseUrl)
+      .post("/v1/evals")
+      .reply(200, { id: mockEvalId, projectId: "mock-project-id" });
+
+  const mockSavesOk = () =>
+    nock(baseUrl)
+      .post(`/v1/evals/${mockEvalId}/datapoints`)
+      .reply(200, {})
+      .persist();
+
+  void beforeEach(() => {
+    _resetConfiguration();
+    initializeTracing({ exporter, disableBatch: true });
+  });
+
+  void afterEach(() => {
+    exporter.reset();
+    nock.cleanAll();
+  });
+
+  void after(async () => {
+    await exporter.shutdown();
+  });
+
+  void it("pulls a LaminarDataset page by page without caching streamed pages", async () => {
+    const total = 5;
+    const pulledOffsets: number[] = [];
+    nock(baseUrl)
+      .get("/v1/datasets/datapoints")
+      .query(true)
+      .reply((uri) => {
+        const params = new URL(uri, baseUrl).searchParams;
+        const offset = Number(params.get("offset"));
+        const limit = Number(params.get("limit"));
+        pulledOffsets.push(offset);
+        const items = [];
+        for (let i = offset; i < Math.min(offset + limit, total); i++) {
+          items.push({
+            data: i,
+            id: `dp-${i}`,
+            createdAt: "2024-01-01T00:00:00Z",
+          });
+        }
+        return [200, { items, totalCount: total }];
+      })
+      .persist();
+    mockEvalInit();
+    mockSavesOk();
+
+    const dataset = new LaminarDataset<number, number>(undefined, {
+      id: "11111111-1111-1111-1111-111111111111",
+      fetchSize: 2,
+    });
+    const result = await evaluate({
+      data: dataset,
+      executor: (data) => data,
+      evaluators: {
+        parity: (output) => output % 2,
+        // All-null scores are left out of the averages instead of being NaN.
+        human: new HumanEvaluator(),
+      },
+      config: { projectApiKey: "test", concurrencyLimit: 2 },
+    });
+
+    assert.strictEqual(result?.errorMessage, undefined);
+    assert.deepStrictEqual(result?.averageScores, { parity: 0.4 });
+    // Page 0 is pulled once for the progress bar's length and then served
+    // from cache; every later page is pulled exactly once while streaming.
+    assert.deepStrictEqual(pulledOffsets, [0, 2, 4]);
+    const pages = (dataset as unknown as { pages: Map<number, unknown> }).pages;
+    assert.deepStrictEqual([...pages.keys()], [0]);
+  });
+
+  void it("keeps up to concurrencyLimit datapoints in flight", async () => {
+    mockEvalInit();
+    mockSavesOk();
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const result = await evaluate({
+      data: Array.from({ length: 10 }, (_, i) => ({ data: i })),
+      executor: async (data: number) => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await sleep(10);
+        inFlight -= 1;
+        return data;
+      },
+      evaluators: { value: (output: number) => output },
+      config: { projectApiKey: "test", concurrencyLimit: 3 },
+    });
+
+    assert.strictEqual(maxInFlight, 3);
+    assert.deepStrictEqual(result?.averageScores, { value: 4.5 });
+  });
+
+  void it("a failing datapoint does not stop the remaining ones", async () => {
+    mockEvalInit();
+    mockSavesOk();
+
+    const executed: number[] = [];
+    const result = await evaluate({
+      data: Array.from({ length: 6 }, (_, i) => ({ data: i })),
+      executor: async (data: number) => {
+        executed.push(data);
+        if (data === 1) {
+          throw new Error("boom");
+        }
+        await sleep(5);
+        return data;
+      },
+      evaluators: { value: (output: number) => output },
+      config: { projectApiKey: "test", concurrencyLimit: 2 },
+    });
+
+    assert.deepStrictEqual(
+      executed.sort((a, b) => a - b),
+      [0, 1, 2, 3, 4, 5],
+    );
+    assert.match(result?.errorMessage ?? "", /boom/);
+  });
+
+  void it("a failing result save does not abandon the remaining saves", async () => {
+    mockEvalInit();
+
+    let resultSaves = 0;
+    let completedResultSaves = 0;
+    nock(baseUrl)
+      .post(`/v1/evals/${mockEvalId}/datapoints`)
+      .reply(async (_uri, body) => {
+        if (!isResultSave(body as RequestBody)) {
+          return [200, {}];
+        }
+        resultSaves += 1;
+        // The first datapoint's result save fails at once; the others are
+        // still in flight when it does.
+        if (resultSaves === 1) {
+          return [500, { error: "save failed" }];
+        }
+        await sleep(30);
+        completedResultSaves += 1;
+        return [200, {}];
+      })
+      .persist();
+
+    const result = await evaluate({
+      data: Array.from({ length: 4 }, (_, i) => ({ data: i })),
+      executor: (data: number) => data,
+      evaluators: { value: (output: number) => output },
+      config: { projectApiKey: "test", concurrencyLimit: 1 },
+    });
+
+    assert.ok(result?.errorMessage, "expected the failed save to surface");
+    assert.strictEqual(completedResultSaves, 3);
   });
 });

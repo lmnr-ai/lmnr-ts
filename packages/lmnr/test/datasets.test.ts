@@ -232,22 +232,36 @@ void describe("seededPerm parity vectors", () => {
   }
 });
 
-void describe("LaminarDataset page-cached random access", () => {
-  // Fake client that pages over a synthetic dataset and counts pulls.
-  const makeFakeClient = (total: number, pullCounter: { n: number }) =>
-    ({
-      datasets: {
-        pull: ({ offset, limit }: { offset: number; limit: number }) => {
-          pullCounter.n += 1;
-          const items: Datapoint<number, number>[] = [];
-          for (let i = offset; i < Math.min(offset + limit, total); i++) {
-            items.push({ data: i, id: `id-${i}` as any, createdAt: `t-${i}` });
-          }
-          return Promise.resolve({ items, totalCount: total });
-        },
+// Fake client that pages over a synthetic dataset and counts pulls.
+const makeFakeClient = (total: number, pullCounter: { n: number }) =>
+  ({
+    datasets: {
+      pull: ({ offset, limit }: { offset: number; limit: number }) => {
+        pullCounter.n += 1;
+        const items: Datapoint<number, number>[] = [];
+        for (let i = offset; i < Math.min(offset + limit, total); i++) {
+          items.push({ data: i, id: `id-${i}` as any, createdAt: `t-${i}` });
+        }
+        return Promise.resolve({ items, totalCount: total });
       },
-    }) as unknown as LaminarClient;
+    },
+  }) as unknown as LaminarClient;
 
+// Number of pages a LaminarDataset currently holds in its page cache.
+const cachedPageCount = (ds: LaminarDataset<number, number>): number =>
+  (ds as unknown as { pages: Map<number, unknown> }).pages.size;
+
+const collect = async <D, T>(
+  ds: AsyncIterable<Datapoint<D, T>>,
+): Promise<D[]> => {
+  const out: D[] = [];
+  for await (const datapoint of ds) {
+    out.push(datapoint.data);
+  }
+  return out;
+};
+
+void describe("LaminarDataset page-cached random access", () => {
   void it("returns the correct datapoint for an arbitrary index", async () => {
     const counter = { n: 0 };
     const ds = new LaminarDataset<number, number>("d", { fetchSize: 3 });
@@ -331,6 +345,63 @@ void describe("LaminarDataset page-cached random access", () => {
     const out = await dataOf(chained);
     assert.strictEqual(out.length, 2);
     assert.ok(counter.n > 0, "expected the source to have fetched a page");
+  });
+});
+
+void describe("dataset async iteration (LAM-1909)", () => {
+  void it("LaminarDataset streams pages without retaining them", async () => {
+    const counter = { n: 0 };
+    const ds = new LaminarDataset<number, number>("d", { fetchSize: 3 });
+    ds.setClient(makeFakeClient(10, counter));
+    assert.deepStrictEqual(
+      await collect(ds),
+      Array.from({ length: 10 }, (_, i) => i),
+    );
+    // One pull per page (offsets 0, 3, 6, 9) and none of them cached.
+    assert.strictEqual(counter.n, 4);
+    assert.strictEqual(cachedPageCount(ds), 0);
+    // Streaming again re-pulls, since nothing was retained.
+    await collect(ds);
+    assert.strictEqual(counter.n, 8);
+  });
+
+  void it("LaminarDataset serves pages cached by size/get from memory", async () => {
+    const counter = { n: 0 };
+    const ds = new LaminarDataset<number, number>("d", { fetchSize: 3 });
+    ds.setClient(makeFakeClient(7, counter));
+    // `size()` caches page 0, exactly as the eval progress bar does.
+    assert.strictEqual(await ds.size(), 7);
+    assert.strictEqual(counter.n, 1);
+    assert.deepStrictEqual(await collect(ds), [0, 1, 2, 3, 4, 5, 6]);
+    // Page 0 came from the cache; only offsets 3 and 6 were pulled, and they
+    // were not added to the cache.
+    assert.strictEqual(counter.n, 3);
+    assert.strictEqual(cachedPageCount(ds), 1);
+  });
+
+  void it("LaminarDataset iterates an empty dataset with a single pull", async () => {
+    const counter = { n: 0 };
+    const ds = new LaminarDataset<number, number>("d", { fetchSize: 3 });
+    ds.setClient(makeFakeClient(0, counter));
+    assert.deepStrictEqual(await collect(ds), []);
+    assert.strictEqual(counter.n, 1);
+  });
+
+  void it("the base class falls back to size + get", async () => {
+    const ds = indexed(4);
+    assert.deepStrictEqual(await collect(ds), [0, 1, 2, 3]);
+    assert.deepStrictEqual(ds.getCalls, [0, 1, 2, 3]);
+    assert.strictEqual(ds.sizeCalls, 1);
+  });
+
+  void it("iterates a subsampled dataset in its resolved order", async () => {
+    const counter = { n: 0 };
+    const base = new LaminarDataset<number, number>("d", { fetchSize: 3 });
+    base.setClient(makeFakeClient(10, counter));
+    assert.deepStrictEqual(
+      await collect(base.select([7, 2, 5]).take(2)),
+      [7, 2],
+    );
   });
 });
 
