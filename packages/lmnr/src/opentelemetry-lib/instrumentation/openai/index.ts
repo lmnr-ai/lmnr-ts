@@ -370,6 +370,7 @@ const wrapResponsesMethod = (patchData: MethodPatchData, kind: ResponsesKind) =>
       instance: this,
       traceContent: patchData.traceContent,
       parentContext: LaminarContextManager.getContext(),
+      isRetrieve: kind === "retrieve",
     };
 
     let ended = false;
@@ -396,6 +397,7 @@ const wrapResponsesMethod = (patchData: MethodPatchData, kind: ResponsesKind) =>
           (error) =>
             safely(() => {
               const span = finishStream(startTime, state, params, options);
+              if (!span) return;
               if (error !== undefined) markSpanError(span, error);
               span.end();
             }),

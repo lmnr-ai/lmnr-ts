@@ -935,6 +935,37 @@ void describe("openai instrumentation", () => {
     assert.strictEqual(exporter.getFinishedSpans().length, 1);
   });
 
+  void it("does not re-emit a span when retrieving a recorded response", async () => {
+    respond = (url, method) => {
+      if (method === "POST") {
+        return jsonResponse(response({ id: "resp_seen" }));
+      }
+      assert.ok(url.includes("/responses/resp_seen"));
+      return jsonResponse(response({ id: "resp_seen" }));
+    };
+
+    const client = createClient();
+    await client.responses.create(RESPONSES_REQUEST);
+    assert.strictEqual(exporter.getFinishedSpans().length, 1);
+
+    await client.responses.retrieve("resp_seen");
+    assert.strictEqual(exporter.getFinishedSpans().length, 1);
+  });
+
+  void it("marks a retrieved cancelled response as failed", async () => {
+    respond = () =>
+      jsonResponse(
+        response({ id: "resp_unseen", status: "cancelled", output: [] }),
+      );
+
+    await createClient().responses.retrieve("resp_unseen");
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    assert.strictEqual(spans[0].status.code, SpanStatusCode.ERROR);
+    assert.strictEqual(spans[0].status.message, "Response cancelled");
+  });
+
   void it("omits content when traceContent is off", async () => {
     reinitialize({ traceContent: false });
     const client = createClient();

@@ -46,6 +46,21 @@ type TracedData = {
 // Request data of background responses that are not final yet, by id.
 const pendingResponses = new Map<string, TracedData>();
 
+// Ids of final responses that already have a span, oldest first, so a later
+// `retrieve` of the same response doesn't record the LLM call twice.
+const recordedResponses = new Set<string>();
+const MAX_RECORDED_RESPONSES = 1000;
+
+const markRecorded = (responseId: string): void => {
+  if (!responseId) return;
+  recordedResponses.delete(responseId);
+  recordedResponses.add(responseId);
+  if (recordedResponses.size > MAX_RECORDED_RESPONSES) {
+    const [oldest] = recordedResponses;
+    recordedResponses.delete(oldest);
+  }
+};
+
 export type StreamState = {
   outputText: string;
   outputBlocks: Record<string, unknown>;
@@ -232,7 +247,13 @@ export type SpanOptions = {
   // Laminar context active when the call was made, so the span created
   // after the fact still gets the caller's parent.
   parentContext: Context;
+  // A `retrieve` only re-reads a response, so it emits nothing for one that
+  // already has a span.
+  isRetrieve?: boolean;
 };
+
+const isDuplicate = (responseId: string, options: SpanOptions): boolean =>
+  Boolean(options.isRetrieve) && recordedResponses.has(responseId);
 
 const startResponseSpan = (
   data: TracedData,
@@ -255,10 +276,16 @@ const markFailed = (span: LaminarSpan, message: string): void => {
   span.setStatus({ code: SpanStatusCode.ERROR, message });
 };
 
-const failureMessage = (response: any): string | undefined =>
-  response?.status === "failed"
-    ? (response.error?.message ?? "Response failed")
-    : undefined;
+const failureMessage = (response: any): string | undefined => {
+  switch (response?.status) {
+    case "failed":
+      return response.error?.message ?? "Response failed";
+    case "cancelled":
+      return "Response cancelled";
+    default:
+      return undefined;
+  }
+};
 
 /**
  * A `create` / `retrieve` that returned a response object. The span is
@@ -279,6 +306,8 @@ export const processResponse = (
     return;
   }
   pendingResponses.delete(data.responseId);
+  if (isDuplicate(data.responseId, options)) return;
+  markRecorded(data.responseId);
 
   const span = startResponseSpan(data, options);
   const failure = failureMessage(response);
@@ -312,6 +341,7 @@ export const processCancel = (response: any, options: SpanOptions): void => {
   const existing = responseId ? pendingResponses.get(responseId) : undefined;
   if (!existing) return;
   pendingResponses.delete(responseId);
+  markRecorded(responseId);
   const data =
     tracedDataFromResponse(existing.startTime, response, {}) ?? existing;
   const span = startResponseSpan(data, options);
@@ -346,14 +376,15 @@ export const processStreamEvent = (state: StreamState, event: any): void => {
 
 /**
  * Emit the span of a finished (or abandoned) stream. Returns the span so the
- * caller can record a thrown iteration error before ending it.
+ * caller can record a thrown iteration error before ending it, or undefined
+ * when the stream re-read a response that already has a span.
  */
 export const finishStream = (
   startTime: HrTime,
   state: StreamState,
   params: any,
   options: SpanOptions,
-): LaminarSpan => {
+): LaminarSpan | undefined => {
   const snapshot = state.snapshot;
   let data: TracedData | undefined;
   if (snapshot) {
@@ -364,6 +395,8 @@ export const finishStream = (
         TERMINAL_STATUSES.has(snapshot.status) || !params?.background;
       if (finished) {
         pendingResponses.delete(data.responseId);
+        if (isDuplicate(data.responseId, options)) return undefined;
+        markRecorded(data.responseId);
       } else {
         pendingResponses.set(data.responseId, data);
       }
