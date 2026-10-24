@@ -1,15 +1,15 @@
 import { createContextKey } from "@opentelemetry/api";
 import { AsyncLocalStorage } from "async_hooks";
 
-// Laminar context key used to tell the OpenAI Responses API instrumentation
-// (once we add one to the TS SDK) that the current call is already being
-// tracked by the OpenAI Agents trace processor, so it should skip creating
-// a duplicate span for the same underlying HTTP request.
+// Laminar context key that tells the OpenAI instrumentation (`../openai`)
+// the current call is already tracked by the OpenAI Agents trace processor,
+// so it skips creating a duplicate span for the same underlying HTTP
+// request. Despite the name, it suppresses both `chat.completions.create`
+// and the Responses API; the name is kept for parity with the Python SDK.
 //
 // We keep the raw key string alongside the symbol because
 // @opentelemetry/api's createContextKey returns an opaque symbol and some
-// downstream code (or future OpenAI Responses instrumentation) may want to
-// reference the human-readable name.
+// downstream code may want to reference the human-readable name.
 export const DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY_RAW =
   "LMNR_DISABLE_OPENAI_RESPONSES_INSTRUMENTATION";
 export const DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY =

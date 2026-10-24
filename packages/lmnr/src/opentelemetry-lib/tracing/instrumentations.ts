@@ -4,7 +4,6 @@ import { Instrumentation } from "@opentelemetry/instrumentation";
 import { BedrockInstrumentation } from "@traceloop/instrumentation-bedrock";
 import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
 import { LangChainInstrumentation } from "@traceloop/instrumentation-langchain";
-import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
 import { PineconeInstrumentation } from "@traceloop/instrumentation-pinecone";
 import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
 import { TogetherInstrumentation } from "@traceloop/instrumentation-together";
@@ -20,6 +19,7 @@ import { CohereInstrumentation } from "../instrumentation/cohere";
 import { GoogleAIPlatformInstrumentation } from "../instrumentation/google-aiplatform";
 import { GoogleGenAiInstrumentation } from "../instrumentation/google-genai";
 import { KernelInstrumentation } from "../instrumentation/kernel";
+import { OpenAIInstrumentation } from "../instrumentation/openai";
 import { OpenAIAgentsInstrumentation } from "../instrumentation/openai-agents";
 import { OpencodeInstrumentation } from "../instrumentation/opencode";
 import { OpenRouterInstrumentation } from "../instrumentation/openrouter";
@@ -141,12 +141,10 @@ const initInstrumentations = (
   suppressContentTracing?: boolean,
   sessionRecordingOptions?: SessionRecordingOptions,
 ): Instrumentation[] => {
-  const enrichTokens = false;
   const instrumentations: Instrumentation[] = [];
 
   instrumentations.push(
     new OpenAIInstrumentation({
-      enrichTokens,
       traceContent: !suppressContentTracing,
     }),
   );
@@ -257,7 +255,6 @@ const manuallyInitInstrumentations = (
   suppressContentTracing?: boolean,
   sessionRecordingOptions?: SessionRecordingOptions,
 ): Instrumentation[] => {
-  const enrichTokens = false;
   const instrumentations: Instrumentation[] = [];
   let playwrightInstrumentation: PlaywrightInstrumentation | undefined;
 
@@ -270,7 +267,6 @@ const manuallyInitInstrumentations = (
 
   if (instrumentModules?.openAI) {
     const openAIInstrumentation = new OpenAIInstrumentation({
-      enrichTokens,
       traceContent: !suppressContentTracing,
     });
     instrumentations.push(openAIInstrumentation);
@@ -279,7 +275,6 @@ const manuallyInitInstrumentations = (
 
   if (instrumentModules?.OpenAI) {
     const openAIInstrumentation = new OpenAIInstrumentation({
-      enrichTokens,
       traceContent: !suppressContentTracing,
     });
     instrumentations.push(openAIInstrumentation);

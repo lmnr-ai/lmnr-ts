@@ -160,9 +160,9 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
       const spanType = mapSpanType(spanData);
       const name = spanName(span, spanData);
 
-      // Mark the context so any future OpenAI Responses API instrumentation
-      // (on the TS side) knows to skip — the agents run already records a
-      // matching span for this underlying HTTP call. Start from ROOT_CONTEXT
+      // Mark the context so the OpenAI instrumentation skips chat and
+      // responses calls — the agents run already records a matching span
+      // for this underlying HTTP call. Start from ROOT_CONTEXT
       // (not getContext()) so the per-trace parent we resolved above — rather
       // than whatever happens to be globally active on the shared stack —
       // determines hierarchy. This keeps concurrent traces isolated.
