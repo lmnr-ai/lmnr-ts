@@ -99,6 +99,8 @@
     "@ai-sdk/provider-v3": "npm:@ai-sdk/provider@ai-v6",
     "@aws-sdk/client-bedrock-runtime": "^3.1111.0",
     "@azure/openai": "^2.0.0",
+    "@google-cloud/aiplatform": "^7.7.0",
+    "@google-cloud/vertexai": "^1.12.0",
     "@google/genai": "^2.17.1",
     "@lmnr-ai/client": "workspace:*",
     "@lmnr-ai/types": "workspace:*",

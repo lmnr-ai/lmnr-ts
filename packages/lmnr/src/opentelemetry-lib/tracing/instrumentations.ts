@@ -17,6 +17,7 @@ import { StagehandV2Instrumentation } from "../../browser/stagehand/v2";
 import { StagehandInstrumentation as StagehandV3Instrumentation } from "../../browser/stagehand/v3";
 import { initializeLogger } from "../../utils";
 import { ClaudeAgentSDKInstrumentation } from "../instrumentation/claude-agent-sdk";
+import { GoogleAIPlatformInstrumentation } from "../instrumentation/google-aiplatform";
 import { GoogleGenAiInstrumentation } from "../instrumentation/google-genai";
 import { KernelInstrumentation } from "../instrumentation/kernel";
 import { OpenAIAgentsInstrumentation } from "../instrumentation/openai-agents";
@@ -221,6 +222,12 @@ const initInstrumentations = (
     }),
   );
 
+  instrumentations.push(
+    new GoogleAIPlatformInstrumentation({
+      traceContent: !suppressContentTracing,
+    }),
+  );
+
   instrumentations.push(new KernelInstrumentation());
 
   instrumentations.push(new ClaudeAgentSDKInstrumentation());
@@ -395,6 +402,16 @@ const manuallyInitInstrumentations = (
     instrumentations.push(googleGenAiInstrumentation);
     googleGenAiInstrumentation.manuallyInstrument(
       instrumentModules.google_genai,
+    );
+  }
+
+  if (instrumentModules?.google_aiplatform) {
+    const googleAIPlatformInstrumentation = new GoogleAIPlatformInstrumentation(
+      { traceContent: !suppressContentTracing },
+    );
+    instrumentations.push(googleAIPlatformInstrumentation);
+    googleAIPlatformInstrumentation.manuallyInstrument(
+      instrumentModules.google_aiplatform,
     );
   }
 
