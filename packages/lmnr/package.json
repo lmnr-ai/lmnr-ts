@@ -73,7 +73,6 @@
     "@traceloop/instrumentation-bedrock": "0.27.0",
     "@traceloop/instrumentation-chromadb": "0.27.0",
     "@traceloop/instrumentation-langchain": "0.27.0",
-    "@traceloop/instrumentation-openai": "0.27.0",
     "@traceloop/instrumentation-pinecone": "0.27.0",
     "@traceloop/instrumentation-qdrant": "0.27.0",
     "@traceloop/instrumentation-together": "0.27.0",
@@ -121,7 +120,7 @@
     "chromadb": "^3.5.0",
     "cohere-ai": "8.3.0",
     "nock": "^14.0.17",
-    "openai": "^7.4.0",
+    "openai": "^7.40.0",
     "playwright": "^1.63.0",
     "puppeteer": "25.7.0",
     "puppeteer-core": "25.7.0"

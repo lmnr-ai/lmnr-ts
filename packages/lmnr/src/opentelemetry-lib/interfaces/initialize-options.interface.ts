@@ -78,6 +78,10 @@ export interface InitializeOptions {
      */
     openAI?: any;
     /**
+     * The `openai` module namespace (`import * as openai from "openai"`) or
+     * the `OpenAI` class. For openai v3, pass the module or its `OpenAIApi`
+     * class.
+     *
      * @example
      * ```javascript
      * import { OpenAI } from "openai";
