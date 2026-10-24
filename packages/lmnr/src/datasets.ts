@@ -25,6 +25,18 @@ export abstract class EvaluationDataset<D, T> {
     index: number,
   ): Promise<Datapoint<D, T>> | Datapoint<D, T>;
 
+  // Iterate the dataset one datapoint at a time. Evals consume datasets
+  // through this, never by materializing them, so a subclass that can stream
+  // (see `LaminarDataset`) overrides it to keep peak memory bounded. The
+  // default walks `get`, so custom datasets, which only implement the
+  // size + by-index contract, keep working unchanged.
+  public async *[Symbol.asyncIterator](): AsyncGenerator<Datapoint<D, T>> {
+    const size = await this.size();
+    for (let i = 0; i < size; i++) {
+      yield await this.get(i);
+    }
+  }
+
   // The underlying remote-backed source dataset, resolved through any depth of
   // chaining. `undefined` when the dataset has no remote source.
   public sourceDataset(): LaminarDataset<D, T> | undefined {
@@ -176,7 +188,7 @@ export class LaminarDataset<D, T> extends EvaluationDataset<D, T> {
     }
     // Drop a failed fetch from the cache so it can be retried; a successful
     // page stays cached and is never fetched again.
-    const pending = this.doFetchPage(offset).catch((err) => {
+    const pending = this.pullPage(offset).catch((err) => {
       this.pages.delete(offset);
       throw err;
     });
@@ -184,7 +196,10 @@ export class LaminarDataset<D, T> extends EvaluationDataset<D, T> {
     return pending;
   }
 
-  private async doFetchPage(offset: number): Promise<Datapoint<D, T>[]> {
+  // Fetch one page from the API WITHOUT caching it. `len` is still learned
+  // from the response, since it costs nothing and is what lets the async
+  // iterator know when to stop.
+  private async pullPage(offset: number): Promise<Datapoint<D, T>[]> {
     if (!this.client) {
       throw new Error("Client not set");
     }
@@ -227,6 +242,28 @@ export class LaminarDataset<D, T> extends EvaluationDataset<D, T> {
       );
     }
     return page[local];
+  }
+
+  // Stream the dataset page by page, retaining at most one page. Pages already
+  // cached by `size` / `get` are served from memory; every other page is
+  // pulled, yielded and then dropped, so a full eval run over a huge dataset
+  // never holds more than `fetchSize` datapoints at once. `get` / `size` keep
+  // their accumulate-and-cache behavior for random access.
+  public async *[Symbol.asyncIterator](): AsyncGenerator<Datapoint<D, T>> {
+    let offset = 0;
+    let yielded = 0;
+    while (this.len === null || yielded < this.len) {
+      const page = await (this.pages.get(offset) ?? this.pullPage(offset));
+      // An empty page before `len` datapoints have been seen means the
+      // dataset shrank (or the server disagrees with its own totalCount);
+      // stop rather than spin on empty pages.
+      if (page.length === 0) {
+        return;
+      }
+      yield* page;
+      yielded += page.length;
+      offset += this.fetchSize;
+    }
   }
 
   /**

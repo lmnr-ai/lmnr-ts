@@ -79,31 +79,6 @@ const withSessionMetadata = (
   return { ...(metadata ?? {}), [SESSION_METADATA_KEY]: sessionId };
 };
 
-const getAverageScores = <D, T, O>(
-  results: EvaluationDatapoint<D, T, O>[],
-): Record<string, number> => {
-  const perScoreValues: Record<string, number[]> = {};
-  for (const result of results) {
-    for (const key in result.scores) {
-      const score = result.scores[key];
-      if (perScoreValues[key] && score !== null) {
-        perScoreValues[key].push(score);
-      } else {
-        perScoreValues[key] = score !== null ? [score] : [];
-      }
-    }
-  }
-
-  const averageScores: Record<string, number> = {};
-  for (const key in perScoreValues) {
-    averageScores[key] =
-      perScoreValues[key].reduce((a, b) => a + b, 0) /
-      perScoreValues[key].length;
-  }
-
-  return averageScores;
-};
-
 /**
  * Configuration for the Evaluator
  */
@@ -342,7 +317,12 @@ export class Evaluation<D, T, O> {
   private traceDisableBatch: boolean = false;
   private traceExportTimeoutMillis?: number;
   private traceExportBatchSize: number = MAX_EXPORT_BATCH_SIZE;
-  private uploadPromises: Promise<any>[] = [];
+  // Pending background saves only; settled ones remove themselves (see
+  // `trackUpload`).
+  private uploadPromises: Set<Promise<void>> = new Set();
+  // The first failed background save, re-raised by `run` only after the
+  // remaining saves have drained.
+  private uploadError: { error: unknown } | undefined;
   private client: LaminarClient;
   // The remote source behind `data`, resolved once — it is invariant per run.
   private datasetSource: LaminarDataset<D, T> | undefined;
@@ -488,7 +468,6 @@ export class Evaluation<D, T, O> {
       }
     }
 
-    let resultDatapoints: EvaluationDatapoint<D, T, O>[];
     try {
       // Resolve the length first: a resolve-time failure (bad `select` index, a
       // failed fetch) must not leave an orphan evaluation on the server.
@@ -507,10 +486,15 @@ export class Evaluation<D, T, O> {
       process.stdout.write(`\nCheck results at ${url}\n`);
       this.progressReporter.start({ length });
 
-      resultDatapoints = await this.evaluateInBatches(evaluation.id);
-      const averageScores = getAverageScores(resultDatapoints);
-      if (this.uploadPromises.length > 0) {
+      const averageScores = await this.evaluateInBatches(evaluation.id);
+      // Wait for all background saves. Their failures were recorded rather
+      // than rejected, so every save finishes before the first failure is
+      // surfaced; failing fast would abandon the saves still in flight.
+      if (this.uploadPromises.size > 0) {
         await Promise.all(this.uploadPromises);
+      }
+      if (this.uploadError) {
+        throw this.uploadError.error;
       }
       this.progressReporter.stop({
         averageScores,
@@ -539,9 +523,14 @@ export class Evaluation<D, T, O> {
     }
   }
 
+  // Runs every datapoint and returns the average scores. Datapoints are
+  // streamed from `this.data` through a semaphore sliding window (up to
+  // `concurrencyLimit` in flight, no barrier between batches), and nothing
+  // accumulates for the whole run: scores are summed as each datapoint
+  // finishes, and finished tasks and saves drop their references.
   public async evaluateInBatches(
     evalId: StringUUID,
-  ): Promise<EvaluationDatapoint<D, T, O>[]> {
+  ): Promise<Record<string, number>> {
     const baseContext = LaminarContextManager.getContext();
     const currentAssociationProperties = (baseContext.getValue(
       ASSOCIATION_PROPERTIES_KEY,
@@ -555,35 +544,85 @@ export class Evaluation<D, T, O> {
     });
 
     return LaminarContextManager.runWithIsolatedContext<
-      Promise<EvaluationDatapoint<D, T, O>[]>
+      Promise<Record<string, number>>
     >([entityContext], async () => {
       const semaphore = new Semaphore(this.concurrencyLimit);
-      const tasks: Promise<[number, EvaluationDatapoint<D, T, O>]>[] = [];
+      const inFlight = new Set<Promise<void>>();
+      // Aggregate scores incrementally so result datapoints (with their full
+      // data/target/output payloads) are not retained for the whole run.
+      const scoreSums: Record<string, number> = {};
+      const scoreCounts: Record<string, number> = {};
+      let firstError: { error: unknown } | undefined;
 
       const evaluateTask = async (
         datapoint: Datapoint<D, T>,
         index: number,
-      ): Promise<[number, EvaluationDatapoint<D, T, O>]> => {
+      ): Promise<void> => {
         try {
           const result = await this.evaluateDatapoint(evalId, datapoint, index);
+          for (const [key, value] of Object.entries(result.scores ?? {})) {
+            if (value === null) {
+              continue;
+            }
+            scoreSums[key] = (scoreSums[key] ?? 0) + value;
+            scoreCounts[key] = (scoreCounts[key] ?? 0) + 1;
+          }
           this.progressReporter.update(1);
-          return [index, result];
+        } catch (error) {
+          // Recorded, NOT rethrown: every remaining datapoint is still
+          // scheduled and run, and the first error is thrown once the
+          // in-flight tasks drain. Catching here also keeps a failure from
+          // surfacing as an unhandled rejection while the loop below waits
+          // on the semaphore.
+          firstError ??= { error };
         } finally {
           semaphore.release();
         }
       };
 
-      for (let i = 0; i < (await this.getLength()); i++) {
+      // `LaminarDataset` streams from the API one page at a time and drops
+      // each page once consumed, so a huge dataset is never fully resident.
+      // The semaphore is acquired before a task is created, so at most
+      // `concurrencyLimit` datapoints are in flight (and referenced) at once.
+      let index = 0;
+      for await (const datapoint of this.data) {
         await semaphore.acquire();
-        const datapoint = Array.isArray(this.data)
-          ? this.data[i]
-          : await this.data.get(i);
-        tasks.push(evaluateTask(datapoint, i));
+        const task: Promise<void> = evaluateTask(datapoint, index++).finally(
+          () => inFlight.delete(task),
+        );
+        inFlight.add(task);
       }
-      const results = await Promise.all(tasks);
+      await Promise.all(inFlight);
 
-      return results.sort((a, b) => a[0] - b[0]).map(([, result]) => result);
+      if (firstError) {
+        throw firstError.error;
+      }
+
+      return Object.fromEntries(
+        Object.keys(scoreSums).map((key) => [
+          key,
+          scoreSums[key] / scoreCounts[key],
+        ]),
+      );
     });
+  }
+
+  // Keep a reference to a background save only while it is pending, so
+  // finished saves' payloads are not retained for the whole run. A failure is
+  // recorded on `uploadError`, NOT rethrown: `run` re-raises it only after the
+  // remaining saves have drained, so one failed save never abandons the
+  // others. Handling it immediately also keeps a failed save from surfacing as
+  // an unhandled rejection before `run` gets to await it.
+  private trackUpload(upload: Promise<unknown>) {
+    const tracked: Promise<void> = upload
+      .then(
+        () => undefined,
+        (error: unknown) => {
+          this.uploadError ??= { error };
+        },
+      )
+      .finally(() => this.uploadPromises.delete(tracked));
+    this.uploadPromises.add(tracked);
   }
 
   private async evaluateDatapoint(
@@ -723,12 +762,13 @@ export class Evaluation<D, T, O> {
           };
         }
 
-        const uploadPromise = this.client.evals.saveDatapoints({
-          evalId,
-          datapoints: [resultDatapoint],
-          groupName: this.groupName,
-        });
-        this.uploadPromises.push(uploadPromise);
+        this.trackUpload(
+          this.client.evals.saveDatapoints({
+            evalId,
+            datapoints: [resultDatapoint],
+            groupName: this.groupName,
+          }),
+        );
 
         return resultDatapoint;
       },
