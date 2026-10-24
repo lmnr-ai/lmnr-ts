@@ -1,7 +1,6 @@
 import { LaminarClient } from "@lmnr-ai/client";
 import { SessionRecordingOptions } from "@lmnr-ai/types";
 import { Instrumentation } from "@opentelemetry/instrumentation";
-import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { BedrockInstrumentation } from "@traceloop/instrumentation-bedrock";
 import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
 import { CohereInstrumentation } from "@traceloop/instrumentation-cohere";
@@ -16,6 +15,7 @@ import { PuppeteerInstrumentation } from "../../browser/puppeteer";
 import { StagehandV2Instrumentation } from "../../browser/stagehand/v2";
 import { StagehandInstrumentation as StagehandV3Instrumentation } from "../../browser/stagehand/v3";
 import { initializeLogger } from "../../utils";
+import { AnthropicInstrumentation } from "../instrumentation/anthropic";
 import { ClaudeAgentSDKInstrumentation } from "../instrumentation/claude-agent-sdk";
 import { GoogleAIPlatformInstrumentation } from "../instrumentation/google-aiplatform";
 import { GoogleGenAiInstrumentation } from "../instrumentation/google-genai";
