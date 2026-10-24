@@ -3,7 +3,6 @@ import { SessionRecordingOptions } from "@lmnr-ai/types";
 import { Instrumentation } from "@opentelemetry/instrumentation";
 import { BedrockInstrumentation } from "@traceloop/instrumentation-bedrock";
 import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
-import { CohereInstrumentation } from "@traceloop/instrumentation-cohere";
 import { LangChainInstrumentation } from "@traceloop/instrumentation-langchain";
 import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
 import { PineconeInstrumentation } from "@traceloop/instrumentation-pinecone";
@@ -17,6 +16,7 @@ import { StagehandInstrumentation as StagehandV3Instrumentation } from "../../br
 import { initializeLogger } from "../../utils";
 import { AnthropicInstrumentation } from "../instrumentation/anthropic";
 import { ClaudeAgentSDKInstrumentation } from "../instrumentation/claude-agent-sdk";
+import { CohereInstrumentation } from "../instrumentation/cohere";
 import { GoogleAIPlatformInstrumentation } from "../instrumentation/google-aiplatform";
 import { GoogleGenAiInstrumentation } from "../instrumentation/google-genai";
 import { KernelInstrumentation } from "../instrumentation/kernel";
