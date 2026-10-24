@@ -96,7 +96,7 @@
     "@ai-sdk/provider": "^4.0.21",
     "@ai-sdk/provider-v2": "npm:@ai-sdk/provider@ai-v5",
     "@ai-sdk/provider-v3": "npm:@ai-sdk/provider@ai-v6",
-    "@anthropic-ai/sdk": "^1.3.0",
+    "@anthropic-ai/sdk": "^1.1.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1111.0",
     "@azure/openai": "^2.0.0",
     "@google-cloud/aiplatform": "^7.7.0",
