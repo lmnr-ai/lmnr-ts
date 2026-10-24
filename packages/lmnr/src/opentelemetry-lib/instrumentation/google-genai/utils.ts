@@ -11,7 +11,7 @@ const LLM_USAGE_TOTAL_TOKENS = "llm.usage.total_tokens";
 /**
  * Set an attribute on a span only if the value is non-null, non-undefined, and non-empty.
  */
-function safeSetAttribute(
+export function safeSetAttribute(
   span: LaminarSpan,
   key: string,
   value: unknown,
@@ -107,13 +107,16 @@ function extractToolDefinitions(config: any): any[] {
 
 /**
  * Set request attributes on a span from generateContent params.
+ * Also used by the google-aiplatform (Vertex AI) instrumentation, which
+ * reshapes its requests into the same `{model, contents, config}` form.
  */
 export function setRequestAttributes(
   span: LaminarSpan,
   params: any,
   traceContent: boolean,
+  system: string = "gemini",
 ): void {
-  safeSetAttribute(span, LLM_SYSTEM, "gemini");
+  safeSetAttribute(span, LLM_SYSTEM, system);
 
   safeSetAttribute(span, LLM_REQUEST_MODEL, params?.model);
 

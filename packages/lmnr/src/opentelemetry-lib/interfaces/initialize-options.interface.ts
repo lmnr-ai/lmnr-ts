@@ -267,6 +267,22 @@ export interface InitializeOptions {
      */
     google_genai?: any;
     /**
+     * Google Cloud Vertex AI. Pass the `@google-cloud/vertexai` module,
+     * the `@google-cloud/aiplatform` module, or an array of both.
+     *
+     * @example
+     * ```javascript
+     * import * as vertexai from "@google-cloud/vertexai";
+     * import * as aiplatform from "@google-cloud/aiplatform";
+     * import Laminar from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   instrumentModules: { google_aiplatform: [vertexai, aiplatform] },
+     * });
+     * ```
+     */
+    google_aiplatform?: any;
+    /**
      * @example
      * ```javascript
      * import { OpenRouter } from "@openrouter/sdk";
