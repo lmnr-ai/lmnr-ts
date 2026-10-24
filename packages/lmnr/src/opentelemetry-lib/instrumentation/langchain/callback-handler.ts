@@ -70,8 +70,10 @@ const className = (serialized: any): string => {
   return typeof id === "string" ? id : "";
 };
 
+// `runName` comes first: LangChain resolves it from `config.runName` (set by
+// `withConfig({ runName })` or a graph) and falls back to `getName()` itself
 const runNameOf = (serialized: any, runName?: string): string => {
-  for (const name of [serialized?.kwargs?.name, runName, serialized?.name]) {
+  for (const name of [runName, serialized?.kwargs?.name, serialized?.name]) {
     if (typeof name === "string" && name) return name;
   }
   return className(serialized) || "unknown";

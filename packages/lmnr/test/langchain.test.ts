@@ -8,7 +8,7 @@ import { Document } from "@langchain/core/documents";
 import * as ChatModelsModule from "@langchain/core/language_models/chat_models";
 import * as LlmsModule from "@langchain/core/language_models/llms";
 import { BaseRetriever } from "@langchain/core/retrievers";
-import { RunnableLambda } from "@langchain/core/runnables";
+import { RunnableLambda, RunnableSequence } from "@langchain/core/runnables";
 import * as SingletonsModule from "@langchain/core/singletons";
 import { tool } from "@langchain/core/tools";
 import { FakeListChatModel, FakeLLM } from "@langchain/core/utils/testing";
@@ -267,6 +267,28 @@ void describe("LangChain instrumentation", () => {
       spans[0].attributes["gen_ai.operation.name"],
       "text_completion",
     );
+  });
+
+  void it("prefers an explicit run name over the constructor name", async () => {
+    // A named sequence serializes its name into `kwargs.name`
+    const chain = RunnableSequence.from(
+      [
+        RunnableLambda.from((x: string) => `${x}a`),
+        RunnableLambda.from((x: string) => `${x}b`),
+      ],
+      "ctor_name",
+    );
+    await chain.withConfig({ runName: "run_override" }).invoke("x");
+    await chain.invoke("y");
+
+    const roots = exporter
+      .getFinishedSpans()
+      .filter((span) => span.name.endsWith(".workflow"))
+      .map((span) => span.name);
+    assert.deepStrictEqual(roots, [
+      "run_override.workflow",
+      "ctor_name.workflow",
+    ]);
   });
 
   void it("nests spans created inside a runnable under its run", async () => {
