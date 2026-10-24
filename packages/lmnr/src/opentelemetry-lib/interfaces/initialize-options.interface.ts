@@ -118,7 +118,7 @@ export interface InitializeOptions {
     /**
      * @example
      * ```javascript
-     * import cohere from "cohere-ai";
+     * import * as cohere from "cohere-ai";
      * import Laminar from "@lmnr-ai/lmnr";
      *
      * Laminar.initialize({
