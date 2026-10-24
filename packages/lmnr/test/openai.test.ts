@@ -950,6 +950,62 @@ void describe("openai instrumentation", () => {
 
     await client.responses.retrieve("resp_seen");
     assert.strictEqual(exporter.getFinishedSpans().length, 1);
+
+    // A streamed retrieve that ends before any snapshot is skipped too.
+    respond = (url) => {
+      assert.ok(url.includes("stream=true"));
+      return responsesSseResponse([]);
+    };
+    const stream = await client.responses.retrieve("resp_seen", {
+      stream: true,
+    });
+    for await (const _ of stream) {
+      // drain
+    }
+    assert.strictEqual(exporter.getFinishedSpans().length, 1);
+  });
+
+  void it("spans an unfinished background stream once, on retrieve", async () => {
+    respond = (url, method) => {
+      if (method === "POST") {
+        return responsesSseResponse(
+          RESPONSES_STREAM_EVENTS.map((event) =>
+            event.response
+              ? { ...event, response: { ...event.response, id: "resp_bgs" } }
+              : event,
+          ),
+        );
+      }
+      assert.ok(url.includes("/responses/resp_bgs"));
+      return jsonResponse(response({ id: "resp_bgs" }));
+    };
+
+    const client = createClient();
+    const stream = await client.responses.create({
+      ...RESPONSES_REQUEST,
+      background: true,
+      stream: true,
+    });
+    for await (const event of stream) {
+      if (event.type === "response.output_text.delta") break;
+    }
+    // Still running server-side: the span waits for the final response.
+    assert.strictEqual(exporter.getFinishedSpans().length, 0);
+
+    await client.responses.retrieve("resp_bgs");
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(spans.length, 1);
+    const span = spans[0];
+    assert.strictEqual(span.attributes["gen_ai.response.id"], "resp_bgs");
+    assert.strictEqual(span.attributes["gen_ai.usage.output_tokens"], 5);
+    assert.strictEqual(span.attributes["gen_ai.request.model"], MODEL);
+    assert.deepStrictEqual(parseJsonAttr(span, "gen_ai.input.messages"), [
+      { role: "system", content: "Be brief." },
+      { role: "user", content: "Weather in Paris?" },
+    ]);
+
+    await client.responses.retrieve("resp_bgs");
+    assert.strictEqual(exporter.getFinishedSpans().length, 1);
   });
 
   void it("marks a retrieved cancelled response as failed", async () => {

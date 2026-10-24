@@ -377,7 +377,9 @@ export const processStreamEvent = (state: StreamState, event: any): void => {
 /**
  * Emit the span of a finished (or abandoned) stream. Returns the span so the
  * caller can record a thrown iteration error before ending it, or undefined
- * when the stream re-read a response that already has a span.
+ * when no span is due: the stream re-read a response that already has one,
+ * or it left a background response unfinished, which is stashed for the
+ * `retrieve` / `cancel` that sees it finish.
  */
 export const finishStream = (
   startTime: HrTime,
@@ -386,23 +388,12 @@ export const finishStream = (
   options: SpanOptions,
 ): LaminarSpan | undefined => {
   const snapshot = state.snapshot;
-  let data: TracedData | undefined;
-  if (snapshot) {
-    data = tracedDataFromResponse(startTime, snapshot, params);
-    if (data) {
-      // Only an unfinished background response can be picked up later.
-      const finished =
-        TERMINAL_STATUSES.has(snapshot.status) || !params?.background;
-      if (finished) {
-        pendingResponses.delete(data.responseId);
-        if (isDuplicate(data.responseId, options)) return undefined;
-        markRecorded(data.responseId);
-      } else {
-        pendingResponses.set(data.responseId, data);
-      }
-    }
+  if (isDuplicate(snapshot?.id ?? params?.response_id ?? "", options)) {
+    return undefined;
   }
-  data ??= tracedDataFromRequest(startTime, params);
+  let data =
+    (snapshot && tracedDataFromResponse(startTime, snapshot, params)) ||
+    tracedDataFromRequest(startTime, params);
   // The final snapshot is authoritative; accumulated items and text fill in
   // what an early exit never received a snapshot for.
   data = {
@@ -410,6 +401,23 @@ export const finishStream = (
     outputBlocks: { ...state.outputBlocks, ...data.outputBlocks },
     outputText: data.outputText || state.outputText || undefined,
   };
+
+  if (snapshot && data.responseId) {
+    // An unfinished background response keeps running server-side: emitting
+    // here would count it a second time once it is retrieved. A stream that
+    // failed is reported now instead, since nothing may ever retrieve it.
+    // Only background responses can be retrieved while still running.
+    const unfinished =
+      (params?.background || options.isRetrieve) &&
+      !TERMINAL_STATUSES.has(snapshot.status) &&
+      state.errorMessage === undefined;
+    if (unfinished) {
+      pendingResponses.set(data.responseId, data);
+      return undefined;
+    }
+    pendingResponses.delete(data.responseId);
+    markRecorded(data.responseId);
+  }
 
   const span = startResponseSpan(data, options);
   const failure = state.errorMessage ?? failureMessage(snapshot);
