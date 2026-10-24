@@ -148,6 +148,43 @@ This is the main `@lmnr-ai/lmnr` SDK package — OpenTelemetry-based tracing for
 - Tests (`test/openai.test.ts`) keep one nock-cassette case; everything else uses a stub `fetch` + `maxRetries: 0` routed by URL path and method. Chat streams are `data: <json>\n\n` … `data: [DONE]\n\n`; Responses streams are `event: <type>\ndata: <json>\n\n`; both need `content-type: text/event-stream`.
 - Not ported yet: the Python rollout/debugger caching wrappers. The user scoped LAM-2409 to the basics.
 
+# LangChain Instrumentation (`src/opentelemetry-lib/instrumentation/langchain/`) — LAM-2405
+
+- This is a port of the Python SDK's `instrumentation/langchain` + `langgraph`. It replaces `@traceloop/instrumentation-langchain`, and that dependency is gone. `@langchain/*` packages are devDeps only, so `src` uses `import type` or `any`.
+- **Span shapes match Python:**
+  - The root run is `${name}.workflow` (`gen_ai.operation.name=invoke_agent`, `gen_ai.agent.name/id`).
+  - Child chains are `execute_task ${name}`.
+  - Tools are `execute_tool ${name}`, TOOL type.
+  - Retrievers are `vector_db_retrieve ${name}`.
+  - LLMs are `${name}.chat` / `${name}.completion`, LLM type.
+  - `thread_id` → `gen_ai.conversation.id`. `langchain.tags` / `langchain.metadata` are also set.
+  - LangChain wraps a non-object chain input as `{input: ...}` before the callback sees it, so the root `lmnr.span.input` is `{"input":"Hello?"}`.
+- **The callback handler is injected by patching `CallbackManager._configureSync`**, not by asking users to pass `callbacks`. If the original returns `undefined` (no callbacks configured anywhere), the wrapper re-calls it with `[handler]`. Otherwise it calls `addHandler(handler, true)` unless a handler named `HANDLER_NAME` is already there. One module-level handler instance serves every run.
+- **JS tools serialize as `{type:"not_implemented"}`**, so `handleToolStart` never sees a tool description (Python's `serialized` has it). `gen_ai.tool.description` is therefore set only for serializable tools.
+- **Context propagation into user code goes through `AsyncLocalStorageProvider.runWithConfig`**, patched on the prototype of `AsyncLocalStorageProviderSingleton`. LangChain calls it around every runnable body. The wrapper runs `fn` under the run's ctx (`handler.contextFor(parentRunId)`) through both OTel `context.with` and `LaminarContextManager.runWithIsolatedContext`. That is what nests a user `observe()` or an OpenAI call inside a lambda / graph node under its `execute_task` span. Skip either context and the child parents to the root or detaches.
+- **Handoff to Laminar's native provider instrumentations:**
+  - `BaseChatModel.prototype._generateUncached` / `_streamIterator` (and the `BaseLLM` equivalents) are wrapped to set `LLM_CALL_KEY = {mode, recorded}` on the context.
+  - `mode="handoff"` applies when `_llmType()` ∈ `{openai, azure_openai, anthropic}` and the call isn't cached (no `startedRunManagers`). The handler then opens no LLM span and stashes what it needs in `handedOff`.
+  - `Laminar._startSpan` flips `recorded=true` when it starts a span under a handoff call. It reads `LLM_CALL_KEY` from `llm-call.ts`, which is import-free on purpose to avoid a cycle.
+  - On end or error, `recordUnrecordedHandoff` builds the LLM span retroactively (original start time) only if nothing recorded it. That covers a provider instrumentation that is disabled or never patched.
+  - Every other model gets `mode="own"`: the handler records the LLM span and the context gets `suppressTracing`, so provider SDK spans underneath are dropped. `startRun` ignores the suppression for runs started under an `own` call (tools a model invokes, stream consumers).
+- **`@langchain/anthropic` bundles its OWN `@anthropic-ai/sdk` copy (0.129 vs the 1.x devDep).** Auto-instrumentation patches every copy it sees. For manual instrumentation the user must pass the copy LangChain uses, or the handoff falls back to the retroactive `ChatAnthropic.chat` span. The test resolves it with `createRequire(require.resolve("@langchain/anthropic"))("@anthropic-ai/sdk")`.
+- **LangGraph topology is published through a module-level `AsyncLocalStorage`**:
+  - `Pregel.prototype._streamIterator` is wrapped to compute nodes and edges from the sync `getGraph()` (WeakMap-cached per graph).
+  - The result goes in a fresh holder per iterator. `handler.takeTopology()` reads and clears it in the root run's `handleChainStart`.
+  - Only the graph's own root run carries `lmnr.association.properties.langgraph.nodes/edges`.
+  - A per-iterator holder (not a module variable) is what keeps concurrent graphs apart, which is pinned by `keeps concurrent graph runs apart`.
+- **Patch targets / file hooks.** Auto-instrumentation registers `InstrumentationNodeModuleFile` hooks on `@langchain/core` internals at `>=0.3.0`: `dist/callbacks/manager`, `dist/singletons/async_local_storage/index`, `dist/singletons/index`, `dist/language_models/chat_models`, `dist/language_models/llms`. Each is registered twice, as `.cjs` and `.js`. For `@langchain/langgraph` the hook is `dist/pregel/index` at `>=0.2.0`. Only `require`d (CJS) internals are hooked: ESM imports of these deep files bypass require-in-the-middle, so ESM users must use manual instrumentation. Modules loaded before `initialize()` are not patched either.
+- **Manual instrumentation is `instrumentModules.langchain = { callbackManagerModule, singletonsModule, chatModelsModule, llmsModule, langgraphModule }`**, passed as the module namespaces (`import * as`). `callbackManagerModule` alone (the traceloop-era shape) still yields chain spans, but without `chatModelsModule` there is no handoff. Chat model calls would then be recorded by both LangChain and the provider instrumentation, so `manuallyInstrument` warns. `patchMethod` keeps the original in a non-enumerable symbol record on the target and skips already-patched targets, so re-`initialize()` never double-wraps.
+- Use `Object.getOwnPropertyDescriptor` rather than `Object.hasOwn` for own-property checks. The root `tsconfig` lib is below es2022, so `hasOwn` fails `pnpm typecheck`, while biome's `useObjectHasOwn` rewrites `Object.prototype.hasOwnProperty.call` back to `hasOwn`.
+- Tests (`test/langchain.test.ts`) need no cassettes. They use fakes from `@langchain/core/utils/testing` plus `ChatOpenAI({configuration:{fetch}})` / `ChatAnthropic({clientOptions:{fetch}})` with `maxRetries: 0`. Provider patches persist across `_resetConfiguration()`, so a "provider not instrumented" case uses a fake model whose `_llmType()` returns `"openai"` instead of un-patching the SDK.
+- Not ported yet:
+  - the OpenAI `traceparent` header injection;
+  - the rollout/debugger caching wrappers;
+  - Google GenAI / Groq handoff (both are `own` today);
+  - Python's `response_format` exclusion from invocation params;
+  - `RemoteGraph`.
+
 # Stagehand v3 Instrumentation (`src/browser/stagehand/v3/`)
 
 - `page.sendCDP(method, params)` was added in `@browserbasehq/stagehand` **3.0.2** (2025-11-14). Only **3.0.0** (2025-10-29) and **3.0.1** (2025-10-31) lack it — on those versions Page's `mainSession` is private and there is no `sendCDP`, so CDP calls must go through `page.getSessionForFrame(page.mainFrameId()).send(method, params)` (both methods are public on 3.0.0/3.0.1 Page). Use the `sendCDP(page, method, params)` helper in `cdp-helpers.ts` — it probes `page.sendCDP` first, falls back to `getSessionForFrame`, and throws if neither exists. Without this fallback, recording injection silently fails on 3.0.0/3.0.1 with `page.sendCDP is not a function` and no rrweb events reach the backend even though spans still flow. Stagehand PR #983 (merged pre-3.0.2) made `sendCDP` public specifically for external CDP-based instrumentations like ours; the v3 instrumentation itself landed Dec 2025 when 3.0.5 was latest, so 3.0.0/3.0.1 are the only versions that were ever shipped without the needed API.

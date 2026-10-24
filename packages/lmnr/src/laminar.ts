@@ -38,6 +38,10 @@ import {
   instrumentClaudeAgentQuery,
 } from "./opentelemetry-lib/instrumentation/claude-agent-sdk";
 import {
+  LLM_CALL_KEY,
+  LlmCall,
+} from "./opentelemetry-lib/instrumentation/langchain/llm-call";
+import {
   forceFlush,
   getSpanProcessor,
   getTracer,
@@ -175,16 +179,16 @@ export class Laminar {
    * @example
    * import { Laminar } from '@lmnr-ai/lmnr';
    * import { OpenAI } from 'openai';
-   * import * as ChainsModule from "langchain/chains";
+   * import * as CallbackManagerModule from "@langchain/core/callbacks/manager";
    *
-   * // Initialize Laminar while auto-instrumenting Langchain and OpenAI modules.
+   * // Initialize Laminar while instrumenting LangChain and OpenAI modules.
    * Laminar.initialize({
    *   projectApiKey: "<LMNR_PROJECT_API_KEY>",
    *   instrumentModules: {
    *     langchain: {
-   *       chainsModule: ChainsModule
+   *       callbackManagerModule: CallbackManagerModule
    *     },
-   *     openAI: OpenAI
+   *     OpenAI: OpenAI
    *   }
    * });
    *
@@ -1097,6 +1101,16 @@ export class Laminar {
       getTracer().startSpan(name, { attributes, startTime }, entityContext),
     );
     span.activated = activated ?? false;
+    if (spanType === "LLM") {
+      // A LangChain model call handed off to a provider instrumentation was
+      // recorded, so LangChain must not record it a second time
+      const llmCall = entityContext.getValue(LLM_CALL_KEY) as
+        | LlmCall
+        | undefined;
+      if (llmCall?.mode === "handoff" && span.isRecording()) {
+        llmCall.recorded = true;
+      }
+    }
 
     if (input) {
       span.setInput(input);

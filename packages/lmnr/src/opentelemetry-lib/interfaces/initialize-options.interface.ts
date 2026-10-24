@@ -158,20 +158,38 @@ export interface InitializeOptions {
     /**
      * @example
      * ```javascript
-     * import ChainsModule from "langchain/chains";
+     * import * as CallbackManagerModule from "@langchain/core/callbacks/manager";
+     * import * as ChatModelsModule from "@langchain/core/language_models/chat_models";
+     * import * as LlmsModule from "@langchain/core/language_models/llms";
+     * import * as SingletonsModule from "@langchain/core/singletons";
+     * import * as LanggraphModule from "@langchain/langgraph";
      * import Laminar from "@lmnr-ai/lmnr";
      *
      * Laminar.initialize({
      *   instrumentModules: {
      *     langchain: {
-     *       chainsModule: ChainsModule,
+     *       callbackManagerModule: CallbackManagerModule,
+     *       singletonsModule: SingletonsModule,
+     *       chatModelsModule: ChatModelsModule,
+     *       llmsModule: LlmsModule,
+     *       langgraphModule: LanggraphModule,
      *     },
      *   },
      * });
      * ```
+     *
+     * `callbackManagerModule` records the LangChain runs. `singletonsModule`
+     * nests spans created inside chains, tools and graph nodes under them.
+     * The model modules hand OpenAI and Anthropic calls off to Laminar's
+     * provider instrumentations, so each call is recorded once.
+     * `langgraphModule` records the graph topology on the graph's root span.
      */
     langchain?: {
       callbackManagerModule?: any;
+      singletonsModule?: any;
+      chatModelsModule?: any;
+      llmsModule?: any;
+      langgraphModule?: any;
     };
     /**
      * @deprecated llamaIndex JS package is deprecated. This is a no-op and will be removed
