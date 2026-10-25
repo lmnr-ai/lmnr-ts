@@ -333,3 +333,23 @@ export const handleSignalDelete = async (
     `Deleted signal "${signal.name}" (${signal.id}), its triggers, alerts, and events.`,
   );
 };
+
+/** `lmnr-cli signal backfill <signal> <trace-ids...>` */
+export const handleSignalBackfill = async (
+  client: LaminarClient,
+  ref: string,
+  traceIds: string[],
+  opts: GlobalOpts,
+): Promise<void> => {
+  const signalId = await resolveSignalId(client, ref);
+  const result = await client.signals.backfill(signalId, traceIds);
+
+  if (opts.json) {
+    outputJson(result);
+    return;
+  }
+  logger.info(
+    `Backfill job ${result.jobId} started: ${result.totalTraces} trace(s) ` +
+      `queued for signal ${result.signalId}. Events show up as runs finish.`,
+  );
+};

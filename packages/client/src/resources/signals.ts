@@ -1,5 +1,6 @@
 import {
   type Signal,
+  type SignalBackfillResult,
   type SignalFilter,
   type SignalMode,
   type SignalStructuredOutput,
@@ -176,5 +177,28 @@ export class SignalsResource extends BaseResource {
       await this.raiseSignalError(response);
     }
     return response.json() as Promise<Signal>;
+  }
+
+  /**
+   * Runs the signal over existing traces as one job. The server dedupes ids,
+   * rejects the request if any id is not a UUID, and caps it at 10,000 unique
+   * ids.
+   */
+  public async backfill(
+    signalId: string,
+    traceIds: string[],
+  ): Promise<SignalBackfillResult> {
+    const response = await fetch(
+      `${this.baseHttpUrl}${this.apiPrefix}/signals/${signalId}/backfill`,
+      {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({ traceIds }),
+      },
+    );
+    if (!response.ok) {
+      await this.raiseSignalError(response);
+    }
+    return response.json() as Promise<SignalBackfillResult>;
   }
 }

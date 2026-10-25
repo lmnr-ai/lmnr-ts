@@ -84,3 +84,13 @@ export interface SignalVersion {
   definition: SignalDefinition;
   createdAt: string;
 }
+
+/**
+ * `POST /signals/{id}/backfill` response: one signal job over the requested
+ * traces. `totalTraces` counts the unique ids that were enqueued.
+ */
+export interface SignalBackfillResult {
+  jobId: string;
+  signalId: string;
+  totalTraces: number;
+}
