@@ -89,6 +89,7 @@ export interface LaminarInitializeProps {
   metadata?: Record<string, any>;
   inheritGlobalContext?: boolean;
   spanProcessor?: SpanProcessor;
+  release?: string;
 }
 
 type LaminarAttributesProp = Record<
@@ -171,6 +172,10 @@ export class Laminar {
    * and you want Laminar spans to be children of the existing spans.
    * @param {SpanProcessor} props.spanProcessor - The span processor to use. If passed, some of
    * the other options will be ignored.
+   * @param {string} props.release - The release of the running code, usually its git commit
+   * SHA. Laminar groups an agent's traces into versions by release. If not specified, read
+   * from the LMNR_RELEASE environment variable, common deploy platform variables (Vercel,
+   * Render, Railway, Heroku, Cloud Run, ...), or the checked-out git commit.
    *
    * @example
    * import { Laminar } from '@lmnr-ai/lmnr';
@@ -208,6 +213,7 @@ export class Laminar {
     metadata,
     inheritGlobalContext,
     spanProcessor,
+    release,
   }: LaminarInitializeProps = {}) {
     if (this.isInitialized) {
       logger.warn(
@@ -280,6 +286,7 @@ export class Laminar {
       traceExportTimeoutMillis,
       sessionRecordingOptions,
       spanProcessor,
+      release,
     });
 
     // Build the debug runtime only after tracing is up. It has no dependency on

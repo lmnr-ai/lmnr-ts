@@ -475,6 +475,12 @@ export interface InitializeOptions {
   flushBySize?: boolean;
 
   /**
+   * The release of the running code, usually its git commit SHA, stamped on
+   * every span. Optional. If not provided, detected from the environment.
+   */
+  release?: string;
+
+  /**
    * The timeout for sending traces data. Optional.
    * Defaults to 30 seconds.
    */

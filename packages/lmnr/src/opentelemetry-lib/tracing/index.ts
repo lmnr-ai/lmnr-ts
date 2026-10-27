@@ -63,6 +63,7 @@ export const startTracing = (options: InitializeOptions) => {
     flushBySize: options.flushBySize,
     exporter: options.exporter,
     disableBatch: options.disableBatch,
+    release: options.release,
   });
 
   const newProvider = new NodeTracerProvider({
