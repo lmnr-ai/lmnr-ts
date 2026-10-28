@@ -146,7 +146,8 @@ class LaminarEnvironment(BaseEnvironment):
                 "dockerfile": f"FROM {docker_image}\n",
                 "contextHashes": [],
             }
-        key = os.path.relpath(self.environment_dir, Path.cwd())
+        # lmnr-cli writes the keys with "/" on every OS (`dockerfileKey`).
+        key = Path(os.path.relpath(self.environment_dir, Path.cwd())).as_posix()
         spec = images.get("dockerfiles", {}).get(key)
         if spec is None:
             raise LaminarEnvironmentError(

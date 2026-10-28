@@ -164,6 +164,17 @@ export const findTaskDockerfiles = async (
 };
 
 /**
+ * `ImageMap.dockerfiles` key for a task's `environment/` dir: relative to the
+ * suite dir, always with `/`. A detached run's map is built on the user's
+ * machine (possibly Windows) and looked up in a Linux orchestrator.
+ */
+export const dockerfileKey = (
+  suiteDir: string,
+  envDir: string,
+  paths: path.PlatformPath = path,
+): string => paths.relative(suiteDir, envDir).split(paths.sep).join("/");
+
+/**
  * Make sure Laminar can build every image the suites use: `lmnr.yaml` images
  * and per-task Dockerfiles. Daytona builds and caches them by content, so an
  * unchanged image costs one `contextExists` call.
@@ -186,7 +197,7 @@ export const ensureRemoteImages = async (
     const suiteDir = path.join(evalsDir, suite);
     const dockerfiles: Record<string, ImageSpec> = {};
     for (const envDir of await findTaskDockerfiles(suiteDir)) {
-      const key = path.relative(suiteDir, envDir);
+      const key = dockerfileKey(suiteDir, envDir);
       dockerfiles[key] = await ensureContext(
         client,
         `${suite}/${key}`,

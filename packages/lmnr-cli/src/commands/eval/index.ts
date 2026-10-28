@@ -146,11 +146,15 @@ const projectKey = async (): Promise<string> => {
   return found.value;
 };
 
-/** The Laminar API URL as the Python SDK reads it (`LMNR_BASE_URL`, port inline). */
-const laminarBaseUrl = (opts: GlobalOpts): string => {
+/**
+ * The Laminar API URL as the Python SDK reads it (`LMNR_BASE_URL`, port
+ * inline). An explicit port replaces one already in the URL, as in
+ * `LaminarClient`, so a `.env` with both doesn't yield `host:8000:8000`.
+ */
+export const laminarBaseUrl = (opts: GlobalOpts): string => {
   const base = resolveBaseUrl(opts.baseUrl).replace(/\/+$/, "");
   const port = opts.port ?? envHttpPort();
-  return port ? `${base}:${port}` : base;
+  return port ? `${base.replace(/:\d{1,5}$/, "")}:${port}` : base;
 };
 
 /**

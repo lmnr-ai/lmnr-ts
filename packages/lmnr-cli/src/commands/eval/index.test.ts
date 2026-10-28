@@ -15,8 +15,18 @@ import { unpackTar } from "modern-tar";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { harborArgs } from "./harbor";
-import { findTaskDockerfiles, loadImageDefs, packBuildContext } from "./images";
-import { parseEnvFlags, parsePositiveInt, resolveTemplateEnv } from "./index";
+import {
+  dockerfileKey,
+  findTaskDockerfiles,
+  loadImageDefs,
+  packBuildContext,
+} from "./images";
+import {
+  laminarBaseUrl,
+  parseEnvFlags,
+  parsePositiveInt,
+  resolveTemplateEnv,
+} from "./index";
 import { discoverSuites, packEvalsDir } from "./pack";
 import {
   buildJobConfig,
@@ -268,6 +278,19 @@ void describe("images", () => {
       path.join(root, "s/tasks/own/environment"),
     ]);
   });
+
+  void it("keys per-task Dockerfiles with / on every OS", () => {
+    expect(
+      dockerfileKey(
+        "C:\\evals\\s",
+        "C:\\evals\\s\\tasks\\own\\environment",
+        path.win32,
+      ),
+    ).toBe("tasks/own/environment");
+    expect(
+      dockerfileKey("/evals/s", "/evals/s/tasks/own/environment", path.posix),
+    ).toBe("tasks/own/environment");
+  });
 });
 
 void describe("harborArgs", () => {
@@ -309,6 +332,27 @@ void describe("parseEnvFlags", () => {
     expect(() => parseEnvFlags(["MISSING"], {})).toThrow(/not set/);
     expect(() => parseEnvFlags(["=1"], {})).toThrow(/Invalid --env/);
     expect(() => parseEnvFlags(["1A=1"], {})).toThrow(/Invalid --env/);
+  });
+});
+
+void describe("laminarBaseUrl", () => {
+  const saved = { ...process.env };
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  void it("lets an explicit port replace one already in the URL", () => {
+    delete process.env.LMNR_HTTP_PORT;
+    const baseUrl = "http://localhost:8000/";
+    expect(laminarBaseUrl({ baseUrl })).toBe("http://localhost:8000");
+    expect(laminarBaseUrl({ baseUrl, port: 9000 })).toBe(
+      "http://localhost:9000",
+    );
+    process.env.LMNR_HTTP_PORT = "8000";
+    expect(laminarBaseUrl({ baseUrl })).toBe("http://localhost:8000");
+    expect(laminarBaseUrl({ baseUrl: "https://lmnr.example.com" })).toBe(
+      "https://lmnr.example.com:8000",
+    );
   });
 });
 
