@@ -1,56 +1,44 @@
-import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
-import { buffer } from "node:stream/consumers";
-import { pipeline } from "node:stream/promises";
-import { createGzip } from "node:zlib";
 
-import type { LaminarClient } from "@lmnr-ai/client";
+import { LaminarClient } from "@lmnr-ai/client";
 import { InvalidArgumentError } from "commander";
-import { type FileSource, packTar } from "modern-tar/fs";
 
+import { version } from "../../../package.json";
+import { buildLaminarClient } from "../../auth/client";
+import { envHttpPort, resolveBaseUrl } from "../../auth/resolve";
 import type { GlobalOpts } from "../../auth/with-client";
 import { DEFAULT_FRONTEND_URL } from "../../constants";
-import { archiveTooLarge, invalidEvalsDir } from "../../errors";
+import {
+  archiveTooLarge,
+  harborFailed,
+  invalidEvalsDir,
+  missingEnv,
+} from "../../errors";
+import { findEnvKey } from "../../utils/env-file";
 import { readLocalProjectFile } from "../../utils/local-project-file";
 import { initializeLogger } from "../../utils/logger";
-import { outputJson, printData } from "../../utils/output";
+import { outputJson } from "../../utils/output";
+import { buildLocalImages, runHarborSuite } from "./harbor";
+import { ensureRemoteImages, type ImageMap, loadImageDefs } from "./images";
+import { discoverSuites, packEvalsDir } from "./pack";
+import {
+  buildJobConfig,
+  findTemplateVars,
+  loadSuiteConfig,
+  type RunOverrides,
+  type TemplateVars,
+} from "./suites";
 
 const logger = initializeLogger();
 
 /** The server's cap on the uploaded archive (`MAX_ARCHIVE_BYTES`). */
 export const MAX_ARCHIVE_BYTES = 100 * 1024 * 1024;
-
-/** A suite is an archive-root directory holding a Harbor JobConfig. */
-const SUITE_CONFIG = "harbor.yaml";
-
-/**
- * Never uploaded: VCS data, dependency/build caches, and local env files. The
- * last matter most — the archive is readable by the eval's code in the
- * sandbox, so secrets go through `--env`, not files.
- */
-const EXCLUDED_DIRS = new Set([
-  ".git",
-  "node_modules",
-  ".venv",
-  "venv",
-  "__pycache__",
-  ".pytest_cache",
-  ".mypy_cache",
-  ".ruff_cache",
-]);
-const isExcludedFile = (name: string) =>
-  name === ".env" || name.startsWith(".env.") || name === ".DS_Store";
-
-export interface EvalsArchive {
-  archive: Buffer;
-  /** Suite directory names found at the root, sorted. */
-  suites: string[];
-  fileCount: number;
-  skippedSymlinks: string[];
-}
+const API_KEY_VAR = "LMNR_PROJECT_API_KEY";
 
 interface EvalRunOpts extends GlobalOpts {
-  dataset?: string[];
+  remote?: boolean;
+  attach?: boolean;
+  suite?: string[];
   task?: string[];
   nAttempts?: number;
   nConcurrent?: number;
@@ -58,7 +46,19 @@ interface EvalRunOpts extends GlobalOpts {
   env?: string[];
 }
 
-/** Commander parser for `--n-attempts` / `--n-concurrent` (server: `NonZeroU32`). */
+/**
+ * A detached run, written here and read back by `eval orchestrate` in the
+ * orchestrator sandbox, which runs this same CLI version.
+ */
+export interface RunSpec {
+  suites: string[];
+  overrides: Omit<RunOverrides, "remote">;
+  /** Values for the suites' `${VAR}` placeholders and `--env` flags. */
+  env: Record<string, string>;
+  images: Record<string, ImageMap>;
+}
+
+/** Commander parser for `--n-attempts` / `--n-concurrent`. */
 export const parsePositiveInt = (raw: string): number => {
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 1 || n > 0xffffffff) {
@@ -68,9 +68,9 @@ export const parsePositiveInt = (raw: string): number => {
 };
 
 /**
- * Turn repeatable `--env` flags into the run's env map. `KEY=VALUE` is taken
- * as-is; a bare `KEY` is read from the current environment, so secrets stay out
- * of shell history.
+ * Turn repeatable `--env` flags into an env map. `KEY=VALUE` is taken as-is; a
+ * bare `KEY` is read from the current environment, so secrets stay out of
+ * shell history.
  */
 export const parseEnvFlags = (
   entries: string[],
@@ -101,104 +101,253 @@ export const parseEnvFlags = (
   return out;
 };
 
-/** Walk `root`, returning archive entries (POSIX paths relative to `root`). */
-const collectFiles = async (
-  root: string,
-): Promise<{ files: FileSource[]; skippedSymlinks: string[] }> => {
-  const files: FileSource[] = [];
-  const skippedSymlinks: string[] = [];
-  const walk = async (dir: string, rel: string) => {
-    const entries = await readdir(dir, { withFileTypes: true });
-    entries.sort((a, b) => a.name.localeCompare(b.name));
-    for (const entry of entries) {
-      const source = path.join(dir, entry.name);
-      const target = rel ? `${rel}/${entry.name}` : entry.name;
-      if (entry.isSymbolicLink()) {
-        // The sandbox extracts with Python's `filter="data"`, which rejects
-        // links that escape the archive; skipping keeps uploads predictable.
-        skippedSymlinks.push(target);
-      } else if (entry.isDirectory()) {
-        if (!EXCLUDED_DIRS.has(entry.name)) {
-          await walk(source, target);
-        }
-      } else if (entry.isFile() && !isExcludedFile(entry.name)) {
-        files.push({ type: "file", source, target });
-      }
-    }
-  };
-  await walk(root, "");
-  return { files, skippedSymlinks };
+/**
+ * Values for `${VAR}` placeholders: the process env first, then `.env.local` /
+ * `.env` in `cwd`. Only referenced names are read, never whole files.
+ */
+export const resolveTemplateEnv = async (
+  vars: TemplateVars,
+  cwd: string,
+): Promise<{ env: Record<string, string>; missing: string[] }> => {
+  const env: Record<string, string> = {};
+  const missing: string[] = [];
+  for (const name of [...vars.required, ...vars.optional].sort()) {
+    const found = await findEnvKey(cwd, name);
+    if (found) env[name] = found.value;
+    else if (vars.required.has(name)) missing.push(name);
+  }
+  return { env, missing };
+};
+
+const selectSuites = async (
+  evalsDir: string,
+  requested: string[] | undefined,
+): Promise<string[]> => {
+  const suites = await discoverSuites(evalsDir);
+  if (!requested?.length) return suites;
+  const unknown = requested.filter((s) => !suites.includes(s));
+  if (unknown.length > 0) {
+    throw invalidEvalsDir(
+      `Unknown --suite ${unknown.join(", ")}. ` +
+        `Suites in ${evalsDir}: ${suites.join(", ")}`,
+    );
+  }
+  return requested;
+};
+
+const projectKey = async (): Promise<string> => {
+  const found = await findEnvKey(process.cwd(), API_KEY_VAR);
+  if (!found) {
+    throw missingEnv(
+      `${API_KEY_VAR} is not set. Results are reported with a project API ` +
+        "key: run `lmnr-cli setup` to write one to .env, or export it.",
+    );
+  }
+  return found.value;
+};
+
+/** The Laminar API URL as the Python SDK reads it (`LMNR_BASE_URL`, port inline). */
+const laminarBaseUrl = (opts: GlobalOpts): string => {
+  const base = resolveBaseUrl(opts.baseUrl).replace(/\/+$/, "");
+  const port = opts.port ?? envHttpPort();
+  return port ? `${base}:${port}` : base;
 };
 
 /**
- * Validate an evals folder and pack its CONTENTS (suites at the archive root,
- * no `evals/` prefix — that is where the sandbox looks) into a `.tar.gz`.
+ * Remote runs call the API as the logged-in user, or with the project API key
+ * when there is no login (CI).
  */
-export const packEvalsDir = async (dir: string): Promise<EvalsArchive> => {
-  const root = path.resolve(dir);
-  const rootStat = await stat(root).catch(() => null);
-  if (!rootStat?.isDirectory()) {
-    throw invalidEvalsDir(`Evals folder not found: ${root}`);
+const buildRemoteClient = async (opts: GlobalOpts): Promise<LaminarClient> => {
+  try {
+    return await buildLaminarClient({
+      projectId: opts.projectId,
+      baseUrl: opts.baseUrl,
+      port: opts.port,
+    });
+  } catch (error) {
+    const key = await findEnvKey(process.cwd(), API_KEY_VAR);
+    if (!key) throw error;
+    logger.debug("No CLI login; using LMNR_PROJECT_API_KEY");
+    return new LaminarClient({
+      baseUrl: resolveBaseUrl(opts.baseUrl),
+      port: opts.port ?? envHttpPort(),
+      auth: { type: "apiKey", key: key.value },
+    });
   }
+};
 
-  const { files, skippedSymlinks } = await collectFiles(root);
-  const suites = files
-    .map((f) => f.target.split("/"))
-    .filter((parts) => parts.length === 2 && parts[1] === SUITE_CONFIG)
-    .map((parts) => parts[0])
-    .sort();
-  if (suites.length === 0) {
-    throw invalidEvalsDir(
-      `No suites in ${root}: expected <suite>/${SUITE_CONFIG} directly ` +
-        "inside it. Pass the evals folder itself, not its parent or a suite.",
-    );
-  }
-
-  const gzip = createGzip();
-  const [, archive] = await Promise.all([
-    pipeline(packTar(files), gzip),
-    buffer(gzip),
-  ]);
-  return { archive, suites, fileCount: files.length, skippedSymlinks };
+const evaluationsUrl = async (
+  projectId: string | undefined,
+): Promise<string | undefined> => {
+  const id = projectId || (await readLocalProjectFile())?.projectId;
+  if (!id) return undefined;
+  const frontend =
+    process.env.LMNR_FRONTEND_URL?.trim().replace(/\/+$/, "") ||
+    DEFAULT_FRONTEND_URL;
+  return `${frontend}/project/${id}/evaluations`;
 };
 
 const formatMiB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 
-const evaluationsUrl = (projectId: string | undefined): string | undefined => {
-  if (!projectId) return undefined;
-  const frontend =
-    process.env.LMNR_FRONTEND_URL?.trim().replace(/\/+$/, "") ||
-    DEFAULT_FRONTEND_URL;
-  return `${frontend}/project/${projectId}/evaluations`;
+/**
+ * Run each suite with Harbor in turn. With `images`, trials run in Laminar
+ * sandboxes; without, on local Docker. Returns the suites that failed.
+ */
+const runSuites = async (
+  evalsDir: string,
+  suites: string[],
+  overrides: RunOverrides,
+  env: Record<string, string>,
+  images?: Record<string, ImageMap>,
+): Promise<string[]> => {
+  const grpcPort = (await findEnvKey(process.cwd(), "LMNR_GRPC_PORT"))?.value;
+  const failed: string[] = [];
+  for (const suite of suites) {
+    const suiteDir = path.join(evalsDir, suite);
+    const config = buildJobConfig(await loadSuiteConfig(suiteDir), overrides);
+    logger.info(
+      `Running suite ${suite} ${images ? "in Laminar sandboxes" : "on local Docker"}`,
+    );
+    const code = await runHarborSuite({
+      suite,
+      suiteDir,
+      config,
+      env,
+      images: images?.[suite],
+      grpcPort,
+    });
+    if (code !== 0) {
+      logger.error(`harbor run failed for suite ${suite} (exit ${code})`);
+      failed.push(suite);
+    }
+  }
+  return failed;
+};
+
+const reportAttached = async (
+  mode: "local" | "remote",
+  suites: string[],
+  failed: string[],
+  opts: GlobalOpts,
+) => {
+  const url = await evaluationsUrl(opts.projectId);
+  if (opts.json) {
+    outputJson({ mode, suites, failed, url });
+  } else if (url) {
+    logger.info(`Results are in evaluations grouped by suite: ${url}`);
+  }
+  if (failed.length > 0) {
+    throw harborFailed(`harbor run failed for: ${failed.join(", ")}`);
+  }
 };
 
 /**
- * `lmnr-cli eval run [dir]`: pack the evals folder, upload it, and start a
- * hosted run. Returns as soon as the sandbox starts; results land in the
- * project as evaluations grouped by suite name.
+ * `lmnr-cli eval run [dir]`: run Harbor suites locally on Docker (default), or
+ * with `--remote` in Laminar sandboxes, detached unless `--attach`.
  */
 export const handleEvalRun = async (
-  client: LaminarClient,
   dir: string,
   opts: EvalRunOpts,
 ): Promise<void> => {
-  // Parse --env before the (slow) pack so a missing variable fails fast.
-  const env = opts.env ? parseEnvFlags(opts.env) : undefined;
+  // Parse --env before anything slow so a missing variable fails fast.
+  const explicitEnv = opts.env ? parseEnvFlags(opts.env) : {};
+  const evalsDir = path.resolve(dir);
+  const suites = await selectSuites(evalsDir, opts.suite);
 
-  const { archive, suites, fileCount, skippedSymlinks } =
-    await packEvalsDir(dir);
+  const vars: TemplateVars = { required: new Set(), optional: new Set() };
+  for (const suite of suites) {
+    const found = await findTemplateVars(path.join(evalsDir, suite));
+    for (const name of found.required) vars.required.add(name);
+    for (const name of found.optional) vars.optional.add(name);
+  }
+  const { env: templateEnv, missing } = await resolveTemplateEnv(
+    vars,
+    process.cwd(),
+  );
+  const stillMissing = missing.filter((name) => !(name in explicitEnv));
+  if (stillMissing.length > 0) {
+    throw missingEnv(
+      `The suites reference unset variables: ${stillMissing.join(", ")}. ` +
+        "Export them, add them to .env, or pass --env KEY=VALUE.",
+    );
+  }
+  const env = { ...templateEnv, ...explicitEnv };
+  const overrides: Omit<RunOverrides, "remote"> = {
+    tasks: opts.task,
+    nAttempts: opts.nAttempts,
+    nConcurrent: opts.nConcurrent,
+    model: opts.model,
+    extraAgentEnv: Object.keys(explicitEnv),
+  };
+
+  if (!opts.remote) {
+    if (opts.attach) {
+      throw new Error("--attach only applies with --remote.");
+    }
+    const harborEnv = {
+      ...env,
+      [API_KEY_VAR]: await projectKey(),
+      LMNR_BASE_URL: laminarBaseUrl(opts),
+    };
+    await buildLocalImages(await loadImageDefs(evalsDir));
+    const failed = await runSuites(
+      evalsDir,
+      suites,
+      { ...overrides, remote: false },
+      harborEnv,
+    );
+    await reportAttached("local", suites, failed, opts);
+    return;
+  }
+
+  const client = await buildRemoteClient(opts);
+  if (opts.attach) {
+    const harborEnv = {
+      ...env,
+      [API_KEY_VAR]: await projectKey(),
+      LMNR_BASE_URL: laminarBaseUrl(opts),
+    };
+    const images = await ensureRemoteImages(client, evalsDir, suites);
+    const failed = await runSuites(
+      evalsDir,
+      suites,
+      { ...overrides, remote: true },
+      harborEnv,
+      images,
+    );
+    await reportAttached("remote", suites, failed, opts);
+    return;
+  }
+
+  await startDetachedRun(client, evalsDir, suites, overrides, env, opts);
+};
+
+const startDetachedRun = async (
+  client: LaminarClient,
+  evalsDir: string,
+  suites: string[],
+  overrides: Omit<RunOverrides, "remote">,
+  env: Record<string, string>,
+  opts: EvalRunOpts,
+) => {
+  // The orchestrator gets its own short-lived key and URL from the server.
+  const dropped = Object.keys(env).filter((k) => k.startsWith("LMNR_"));
+  const runEnv = Object.fromEntries(
+    Object.entries(env).filter(([k]) => !k.startsWith("LMNR_")),
+  );
+  if (dropped.length > 0) {
+    logger.warn(
+      `Not sending ${dropped.join(", ")}: detached runs report with their own key.`,
+    );
+  }
+
+  const images = await ensureRemoteImages(client, evalsDir, suites);
+  const { archive, fileCount, skippedSymlinks } = await packEvalsDir(evalsDir);
   if (skippedSymlinks.length > 0) {
     logger.warn(
       `Skipped ${skippedSymlinks.length} symlink(s): ` +
         skippedSymlinks.slice(0, 5).join(", ") +
         (skippedSymlinks.length > 5 ? ", ..." : ""),
-    );
-  }
-  const unknown = (opts.dataset ?? []).filter((d) => !suites.includes(d));
-  if (unknown.length > 0) {
-    throw invalidEvalsDir(
-      `Unknown --dataset ${unknown.join(", ")}. ` +
-        `Suites in ${path.resolve(dir)}: ${suites.join(", ")}`,
     );
   }
   if (archive.length > MAX_ARCHIVE_BYTES) {
@@ -208,35 +357,52 @@ export const handleEvalRun = async (
         "build output) from the folder.",
     );
   }
-  const datasets = opts.dataset?.length ? opts.dataset : suites;
 
   logger.info(
     `Uploading ${fileCount} files (${formatMiB(archive.length)}), ` +
       `suites: ${suites.join(", ")}`,
   );
   const { uploadId } = await client.hostedEvals.upload(archive);
-
+  const spec: RunSpec = { suites, overrides, env: runEnv, images };
   const { sandboxId } = await client.hostedEvals.startRun({
     uploadId,
-    datasets: opts.dataset,
-    tasks: opts.task,
-    nAttempts: opts.nAttempts,
-    nConcurrent: opts.nConcurrent,
-    model: opts.model,
-    env,
+    cliVersion: version,
+    spec: spec as unknown as Record<string, unknown>,
   });
 
-  // Same resolution as the client: --project-id, else .lmnr/project.json.
-  const url = evaluationsUrl(
-    opts.projectId || (await readLocalProjectFile())?.projectId,
-  );
+  const url = await evaluationsUrl(opts.projectId);
   if (opts.json) {
-    outputJson({ uploadId, sandboxId, datasets, url });
+    outputJson({ mode: "detached", uploadId, sandboxId, suites, url });
     return;
   }
-  logger.info(`Started hosted eval run, suites: ${datasets.join(", ")}`);
+  logger.info(`Started detached run in sandbox ${sandboxId}`);
   if (url) {
-    logger.info(`Results appear as evaluations grouped by suite: ${url}`);
+    logger.info(`Results appear in evaluations grouped by suite: ${url}`);
   }
-  printData(sandboxId);
+};
+
+/**
+ * `lmnr-cli eval orchestrate` (hidden): the detached run's entry point inside
+ * its orchestrator sandbox. The evals folder is the cwd; the spec, project key
+ * and API URL come from the env the app-server set.
+ */
+export const handleEvalOrchestrate = async (): Promise<void> => {
+  const raw = process.env.LMNR_EVAL_RUN;
+  if (!raw) throw missingEnv("LMNR_EVAL_RUN is not set.");
+  const spec = JSON.parse(raw) as RunSpec;
+  const harborEnv = {
+    ...spec.env,
+    [API_KEY_VAR]: await projectKey(),
+    LMNR_BASE_URL: laminarBaseUrl({}),
+  };
+  const failed = await runSuites(
+    process.cwd(),
+    spec.suites,
+    { ...spec.overrides, remote: true },
+    harborEnv,
+    spec.images,
+  );
+  if (failed.length > 0) {
+    throw harborFailed(`harbor run failed for: ${failed.join(", ")}`);
+  }
 };

@@ -26,7 +26,11 @@ import {
   handleDebugSessionSetName,
   handleDebugSessionSummary,
 } from "./commands/debug";
-import { handleEvalRun, parsePositiveInt } from "./commands/eval";
+import {
+  handleEvalOrchestrate,
+  handleEvalRun,
+  parsePositiveInt,
+} from "./commands/eval";
 import {
   handleLlmProfileCreate,
   handleLlmProfileDelete,
@@ -558,11 +562,10 @@ Examples:
   const evalCmd = program
     .command("eval")
     .alias("evals")
-    .description("Run Harbor evals in Laminar-hosted sandboxes")
+    .description("Run Harbor evals locally or in Laminar sandboxes")
     .option(
       "--project-id <id>",
-      "Target project id. Defaults to the linked .lmnr/project.json. " +
-        "Run `lmnr-cli login` first.",
+      "Target project id for --remote. Defaults to the linked .lmnr/project.json",
     )
     .option(
       "--base-url <url>",
@@ -577,14 +580,22 @@ Examples:
 
   evalCmd
     .command("run")
-    .description("Upload an evals folder and start a hosted run")
+    .description("Run the evals folder's Harbor suites")
     .argument(
       "[dir]",
       "Evals folder (one <suite>/harbor.yaml per suite)",
       "evals",
     )
     .option(
-      "--dataset <suite>",
+      "--remote",
+      "Run trials in Laminar sandboxes instead of local Docker (detached)",
+    )
+    .option(
+      "--attach",
+      "With --remote, orchestrate from this machine and wait for the results",
+    )
+    .option(
+      "--suite <name>",
       "Suite to run (repeatable). Omitted → every suite",
       collectFlag,
     )
@@ -606,31 +617,51 @@ Examples:
     .option("--model <name>", "Agent model override. Omitted → harbor.yaml")
     .option(
       "--env <KEY[=VALUE]>",
-      "Agent env var (repeatable). A bare KEY is read from your environment",
+      "Extra agent env var (repeatable). A bare KEY is read from your environment",
       collectFlag,
     )
-    .action(withProjectClient(handleEvalRun))
+    .action(withLocalOpts(handleEvalRun))
     .addHelpText(
       "after",
       `
-Packs the folder's contents into a .tar.gz, uploads it, and starts a run in a
-Laminar sandbox that runs \`harbor run\` for each suite. Returns once the run
-has started; results appear in the project's evaluations, grouped by suite.
+Runs \`harbor run\` (pinned Harbor + Laminar plugin, via uvx) for each suite:
+a directory directly inside [dir] holding a harbor.yaml (a Harbor JobConfig).
+Every trial is reported to Laminar as an evaluation datapoint, grouped by suite.
 
-Each suite is a directory directly inside [dir] holding a harbor.yaml
-(a Harbor JobConfig). .git, node_modules, virtualenvs, caches and .env files
-are never uploaded, and symlinks are skipped. Pass secrets such as LLM API
-keys with --env, not as files. The packed folder must be under 100 MiB.
+Modes:
+  (default)          Trials run on local Docker. Needs uv, Docker and
+                     LMNR_PROJECT_API_KEY (written to .env by \`lmnr-cli setup\`).
+  --remote           Uploads the folder and starts the run in a Laminar sandbox,
+                     then returns. Needs \`lmnr-cli login\` (or LMNR_PROJECT_API_KEY).
+  --remote --attach  Orchestrates from this machine; trials run in Laminar
+                     sandboxes. Needs uv and LMNR_PROJECT_API_KEY.
 
-The sandbox id is printed to stdout; in --json mode a
-{"uploadId","sandboxId","datasets","url"} object is printed instead.
+Images: tasks name their image with docker_image in task.toml. Images listed in
+[dir]/lmnr.yaml are built from their Dockerfile on every run (docker build
+locally, by Laminar for --remote):
+
+  images:
+    myapp-evals:
+      dockerfile: image/Dockerfile   # relative to [dir]
+      context: ..                    # build context, default: the Dockerfile's dir
+
+Secrets: \`\${VAR}\` placeholders in harbor.yaml and task.toml are filled from
+your environment or .env / .env.local; a missing one fails the run before it
+starts. For --remote they are sent with the run, never uploaded as files
+(.env*, .git, node_modules, virtualenvs, caches and jobs/ are never packed).
 
 Examples:
   $ lmnr-cli eval run
-  $ lmnr-cli eval run ./evals --dataset hello --task "hello-*" --n-attempts 2
-  $ lmnr-cli eval run --env ANTHROPIC_API_KEY --model anthropic/claude-sonnet-5-5
+  $ lmnr-cli eval run ./evals --suite support --task "refund-*" --n-attempts 3
+  $ lmnr-cli eval run --remote --n-concurrent 20
+  $ lmnr-cli eval run --remote --attach --model anthropic/claude-sonnet-5-5
 `,
     );
+
+  evalCmd
+    .command("orchestrate", { hidden: true })
+    .description("Run a detached run's suites (inside its Laminar sandbox)")
+    .action(withLocalOpts(handleEvalOrchestrate));
 
   const llmProfileCmd = program
     .command("llm-profile")
@@ -1321,7 +1352,7 @@ Authentication:
   Run \`lmnr-cli setup\` to login, link this directory, write a project API key to
   ./.env, and install the Laminar skill 
   \`lmnr-cli login\` authenticates as a user. Every project command
-  (sql / dataset / eval / project / debug) runs on that user session and
+  (sql / dataset / eval --remote / project / debug) runs on that user session and
   targets a project via --project-id or the linked .lmnr/project.json.
 
 Examples:
@@ -1337,7 +1368,7 @@ Examples:
   lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a dataset
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json # Query spans
   lmnr-cli sql schema                                      # Show available tables
-  lmnr-cli eval run ./evals                                # Run Harbor evals in Laminar sandboxes
+  lmnr-cli eval run --remote                               # Run Harbor evals in Laminar sandboxes
   lmnr-cli debug session new                               # Mint a fresh debug session
   lmnr-cli debug session open                              # Open the session in the browser
   lmnr-cli debug session set-name "title"                  # Rename the current debug session

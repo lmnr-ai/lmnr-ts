@@ -4,6 +4,7 @@ import {
   mkdtemp,
   rm,
   symlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,7 +14,16 @@ import { gunzipSync } from "node:zlib";
 import { unpackTar } from "modern-tar";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { packEvalsDir, parseEnvFlags, parsePositiveInt } from "./index";
+import { harborArgs } from "./harbor";
+import { findTaskDockerfiles, loadImageDefs, packBuildContext } from "./images";
+import { parseEnvFlags, parsePositiveInt, resolveTemplateEnv } from "./index";
+import { discoverSuites, packEvalsDir } from "./pack";
+import {
+  buildJobConfig,
+  findTemplateVars,
+  globToRegExp,
+  LAMINAR_ENVIRONMENT_IMPORT_PATH,
+} from "./suites";
 
 let root: string;
 
@@ -23,8 +33,8 @@ const write = async (rel: string, content = "x") => {
   await writeFile(file, content);
 };
 
-const entriesOf = async (archive: Buffer) =>
-  (await unpackTar(gunzipSync(archive))).filter(
+const filesOf = async (archive: Buffer, gzip = true) =>
+  (await unpackTar(gzip ? gunzipSync(archive) : archive)).filter(
     (e) => e.header.type === "file",
   );
 
@@ -36,31 +46,26 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-void describe("packEvalsDir", () => {
-  void it("packs the folder's contents with suites at the archive root", async () => {
+void describe("discoverSuites / packEvalsDir", () => {
+  void it("finds suites and packs the folder's contents at the archive root", async () => {
     await write("hello/harbor.yaml", "agents: []");
     await write("hello/tasks/hello-world/task.toml");
     await write("other/harbor.yaml");
-    await write("README.md");
+    await write("lmnr.yaml");
 
-    const { archive, suites, fileCount } = await packEvalsDir(root);
-
-    expect(suites).toEqual(["hello", "other"]);
+    expect(await discoverSuites(root)).toEqual(["hello", "other"]);
+    const { archive, fileCount } = await packEvalsDir(root);
     expect(fileCount).toBe(4);
-    const names = (await entriesOf(archive)).map((e) => e.header.name).sort();
+    const names = (await filesOf(archive)).map((e) => e.header.name).sort();
     expect(names).toEqual([
-      "README.md",
       "hello/harbor.yaml",
       "hello/tasks/hello-world/task.toml",
+      "lmnr.yaml",
       "other/harbor.yaml",
     ]);
-    const config = (await entriesOf(archive)).find(
-      (e) => e.header.name === "hello/harbor.yaml",
-    );
-    expect(Buffer.from(config!.data!).toString()).toBe("agents: []");
   });
 
-  void it("never uploads env files, VCS data, deps or caches", async () => {
+  void it("never uploads env files, VCS data, deps, caches or job output", async () => {
     await write("hello/harbor.yaml");
     await write(".env", "SECRET=1");
     await write("hello/.env.local", "SECRET=1");
@@ -68,11 +73,12 @@ void describe("packEvalsDir", () => {
     await write("hello/node_modules/pkg/index.js");
     await write("hello/.venv/bin/python");
     await write("hello/tasks/t/__pycache__/x.pyc");
+    await write("hello/jobs/2026-10-28__12-00-00/result.json");
     await write("hello/tasks/t/environment/Dockerfile");
 
     const { archive } = await packEvalsDir(root);
 
-    const names = (await entriesOf(archive)).map((e) => e.header.name).sort();
+    const names = (await filesOf(archive)).map((e) => e.header.name).sort();
     expect(names).toEqual([
       "hello/harbor.yaml",
       "hello/tasks/t/environment/Dockerfile",
@@ -88,7 +94,7 @@ void describe("packEvalsDir", () => {
     const { archive, skippedSymlinks } = await packEvalsDir(root);
 
     expect(skippedSymlinks).toEqual(["hello/passwd"]);
-    const script = (await entriesOf(archive)).find(
+    const script = (await filesOf(archive)).find(
       (e) => e.header.name === "hello/tasks/t/tests/test.sh",
     );
     expect(script!.header.mode! & 0o111).toBe(0o111);
@@ -96,17 +102,197 @@ void describe("packEvalsDir", () => {
 
   void it("rejects a folder without suites at its root", async () => {
     await write("evals/hello/harbor.yaml");
-
-    await expect(packEvalsDir(root)).rejects.toMatchObject({
+    await expect(discoverSuites(root)).rejects.toMatchObject({
       code: "invalid_evals_dir",
       exitCode: 16,
     });
+    await expect(
+      discoverSuites(path.join(root, "missing")),
+    ).rejects.toMatchObject({ code: "invalid_evals_dir" });
+  });
+});
+
+void describe("buildJobConfig", () => {
+  const base = {
+    environment: { type: "docker", kwargs: { x: 1 }, env: { A: "1" } },
+    agents: [{ import_path: "agent.agent:MyAgent", env: { K: "${K}" } }],
+    datasets: [{ path: "tasks" }],
+    tasks: [{ path: "extra/alpha" }, { path: "extra/beta" }],
+  };
+
+  void it("routes remote trials to the Laminar environment", () => {
+    const job = buildJobConfig(base, { remote: true });
+    expect(job.environment).toEqual({
+      env: { A: "1" },
+      import_path: LAMINAR_ENVIRONMENT_IMPORT_PATH,
+    });
+    expect(base.environment.type).toBe("docker");
   });
 
-  void it("rejects a missing folder", async () => {
-    await expect(
-      packEvalsDir(path.join(root, "missing")),
-    ).rejects.toMatchObject({ code: "invalid_evals_dir" });
+  void it("leaves local runs on the suite's environment", () => {
+    expect(buildJobConfig(base, { remote: false }).environment).toEqual(
+      base.environment,
+    );
+  });
+
+  void it("applies attempts, concurrency, task filters, model and --env", () => {
+    const job = buildJobConfig(base, {
+      remote: false,
+      nAttempts: 3,
+      nConcurrent: 8,
+      tasks: ["al*"],
+      model: "anthropic/claude-sonnet-5-5",
+      extraAgentEnv: ["K", "EXTRA"],
+    });
+    expect(job.n_attempts).toBe(3);
+    expect(job.n_concurrent_trials).toBe(8);
+    expect(job.datasets).toEqual([{ path: "tasks", task_names: ["al*"] }]);
+    expect(job.tasks).toEqual([{ path: "extra/alpha" }]);
+    expect(job.agents).toEqual([
+      {
+        import_path: "agent.agent:MyAgent",
+        model_name: "anthropic/claude-sonnet-5-5",
+        env: { K: "${K}", EXTRA: "${EXTRA}" },
+      },
+    ]);
+  });
+
+  void it("materializes Harbor's default agent to apply a model", () => {
+    expect(buildJobConfig({}, { remote: false, model: "m" }).agents).toEqual([
+      { name: "oracle", model_name: "m" },
+    ]);
+  });
+
+  void it("matches task globs like fnmatch", () => {
+    expect(globToRegExp("hello-*").test("hello-world")).toBe(true);
+    expect(globToRegExp("case-?").test("case-12")).toBe(false);
+    expect(globToRegExp("case-[!0-4]").test("case-7")).toBe(true);
+    expect(globToRegExp("a.b").test("axb")).toBe(false);
+  });
+});
+
+void describe("template env", () => {
+  void it("finds ${VAR} placeholders in harbor.yaml and task.toml", async () => {
+    await write(
+      "s/harbor.yaml",
+      "agents:\n  - env:\n      OPENAI_API_KEY: ${OPENAI_API_KEY}\n      M: ${MODEL:-gpt}\n",
+    );
+    await write(
+      "s/tasks/t/task.toml",
+      '[verifier.env]\nJUDGE_KEY = "${JUDGE_KEY}"\n',
+    );
+    await write("s/jobs/old/task.toml", '[x]\nY = "${IGNORED}"\n');
+
+    const vars = await findTemplateVars(path.join(root, "s"));
+    expect([...vars.required].sort()).toEqual(["JUDGE_KEY", "OPENAI_API_KEY"]);
+    expect([...vars.optional]).toEqual(["MODEL"]);
+  });
+
+  void it("resolves from the process env, then .env files, and lists missing ones", async () => {
+    await write(".env", "FROM_FILE=file-value\nUNUSED=1\n");
+    process.env.LMNR_TEST_FROM_ENV = "env-value";
+    try {
+      const { env, missing } = await resolveTemplateEnv(
+        {
+          required: new Set(["LMNR_TEST_FROM_ENV", "FROM_FILE", "NOPE"]),
+          optional: new Set(["ALSO_NOPE"]),
+        },
+        root,
+      );
+      expect(env).toEqual({
+        FROM_FILE: "file-value",
+        LMNR_TEST_FROM_ENV: "env-value",
+      });
+      expect(missing).toEqual(["NOPE"]);
+    } finally {
+      delete process.env.LMNR_TEST_FROM_ENV;
+    }
+  });
+});
+
+void describe("images", () => {
+  void it("reads lmnr.yaml images relative to the evals folder", async () => {
+    await write(
+      "evals/lmnr.yaml",
+      "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n    context: ..\n  plain:\n    dockerfile: plain/Dockerfile\n",
+    );
+    const defs = await loadImageDefs(path.join(root, "evals"));
+    expect(defs).toEqual([
+      {
+        name: "app-evals",
+        dockerfile: path.join(root, "evals/image/Dockerfile"),
+        context: root,
+      },
+      {
+        name: "plain",
+        dockerfile: path.join(root, "evals/plain/Dockerfile"),
+        context: path.join(root, "evals/plain"),
+      },
+    ]);
+    expect(await loadImageDefs(root)).toEqual([]);
+  });
+
+  void it("packs a deterministic build context that honors .dockerignore", async () => {
+    await write("ctx/Dockerfile", "FROM python:3.12-slim\nCOPY app /app\n");
+    await write("ctx/app/main.py", "print(1)");
+    await write("ctx/data/big.bin", "ignored");
+    await write("ctx/.git/HEAD", "ignored");
+    await write("ctx/.env", "SECRET=1");
+    await write("ctx/app/.env.local", "SECRET=1");
+    await write("ctx/.dockerignore", "data/\n");
+    const dockerfile = path.join(root, "ctx/Dockerfile");
+
+    const first = await packBuildContext(dockerfile, path.join(root, "ctx"));
+    await utimes(path.join(root, "ctx/app/main.py"), new Date(), new Date());
+    const second = await packBuildContext(dockerfile, path.join(root, "ctx"));
+
+    expect(first.dockerfile).toContain("COPY app /app");
+    expect(second.hash).toBe(first.hash);
+    const names = (await filesOf(first.tar, false))
+      .map((e) => e.header.name)
+      .sort();
+    expect(names).toEqual([".dockerignore", "Dockerfile", "app/main.py"]);
+  });
+
+  void it("finds per-task Dockerfiles only where no docker_image is set", async () => {
+    await write("s/tasks/own/task.toml", "[environment]\ncpus = 1\n");
+    await write("s/tasks/own/environment/Dockerfile", "FROM alpine");
+    await write(
+      "s/tasks/shared/task.toml",
+      '[environment]\ndocker_image = "app-evals"\n',
+    );
+    await write("s/tasks/shared/environment/Dockerfile", "FROM alpine");
+    await write("s/tasks/data-only/task.toml", "");
+
+    expect(await findTaskDockerfiles(path.join(root, "s"))).toEqual([
+      path.join(root, "s/tasks/own/environment"),
+    ]);
+  });
+});
+
+void describe("harborArgs", () => {
+  void it("runs the pinned Harbor with the Laminar plugin, grouped by suite", () => {
+    expect(harborArgs("/tmp/job.json", "support")).toEqual([
+      "--python",
+      "3.13",
+      "--from",
+      "harbor==0.25.0",
+      "--with",
+      "lmnr==0.8.3",
+      "harbor",
+      "run",
+      "-c",
+      "/tmp/job.json",
+      "--yes",
+      "--plugin",
+      "laminar",
+      "--pk",
+      "group_name=support",
+    ]);
+    expect(harborArgs("/tmp/job.json", "s", "8001").slice(-2)).toEqual([
+      "--pk",
+      "grpc_port=8001",
+    ]);
   });
 });
 
@@ -119,11 +305,8 @@ void describe("parseEnvFlags", () => {
     ).toEqual({ A: "1", B: "x=y", C: "", OPENAI_API_KEY: "sk" });
   });
 
-  void it("errors on an unset bare KEY", () => {
+  void it("errors on an unset bare KEY or an invalid key", () => {
     expect(() => parseEnvFlags(["MISSING"], {})).toThrow(/not set/);
-  });
-
-  void it("errors on an invalid key", () => {
     expect(() => parseEnvFlags(["=1"], {})).toThrow(/Invalid --env/);
     expect(() => parseEnvFlags(["1A=1"], {})).toThrow(/Invalid --env/);
   });

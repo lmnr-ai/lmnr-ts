@@ -1,70 +1,84 @@
 import { BaseResource, type LaminarAuth } from "./index";
 
-/**
- * Run overrides for {@link HostedEvalsResource.startRun}. Everything except
- * `uploadId` defaults to each suite's `harbor.yaml`.
- */
+/** Starts a detached run. See {@link HostedEvalsResource.startRun}. */
 export interface StartHostedEvalRunOptions {
   /** Id returned by {@link HostedEvalsResource.upload}. */
   uploadId: string;
-  /** Suites (archive-root dirs with a `harbor.yaml`) to run. Omitted → all. */
-  datasets?: string[];
-  /** Task name globs to include. Omitted → every task. */
-  tasks?: string[];
-  nAttempts?: number;
-  nConcurrent?: number;
-  model?: string;
-  /** Agent env vars (e.g. LLM API keys), merged over each agent's `env`. */
-  env?: Record<string, string>;
+  /** The orchestrator runs `lmnr-cli@<cliVersion>`, so the spec format matches. */
+  cliVersion: string;
+  /** Run spec written by lmnr-cli and read back by the same CLI version. */
+  spec: Record<string, unknown>;
 }
 
 /**
- * Hosted evals: run a Harbor `evals/` folder in Laminar-managed sandboxes.
- * Two steps — upload the `.tar.gz` of the folder's contents, then start a run
- * against the returned `uploadId`. The run reports into the project as regular
- * evaluations; v0 returns no run status or evaluation id.
+ * Hosted evals: Harbor evals with trials in Laminar-managed sandboxes.
+ *
+ * - Build contexts: `contextExists` / `uploadContext` store a Docker build
+ *   context (uncompressed tar, named by its md5) that trial images are built from.
+ * - Detached runs: `upload` the `.tar.gz` of the evals folder, then `startRun`
+ *   to orchestrate it in a Laminar sandbox. Results land in the project as
+ *   regular evaluations; v0 returns no run status.
  */
 export class HostedEvalsResource extends BaseResource {
   constructor(baseHttpUrl: string, auth: LaminarAuth) {
     super(baseHttpUrl, auth);
   }
 
+  public async contextExists(hash: string): Promise<boolean> {
+    const response = await fetch(this.url(`/contexts/${hash}`), {
+      headers: this.headers(),
+    });
+    if (!response.ok) {
+      await this.raiseError(response);
+    }
+    return ((await response.json()) as { exists: boolean }).exists;
+  }
+
+  /** `hash` must be the md5 of `tar`; the server verifies it. */
+  public async uploadContext(hash: string, tar: Uint8Array): Promise<void> {
+    const response = await fetch(this.url(`/contexts/${hash}`), {
+      method: "PUT",
+      headers: { ...this.headers(), "Content-Type": "application/x-tar" },
+      body: tar as Uint8Array<ArrayBuffer>,
+    });
+    if (!response.ok) {
+      await this.raiseError(response);
+    }
+  }
+
   /**
    * Upload a `.tar.gz` of the `evals/` folder's contents (suites at the archive
-   * root, not under an `evals/` prefix). Sent as the raw request body; the
-   * server caps it at 100 MiB.
+   * root). Sent as the raw request body; the server caps it at 100 MiB.
    */
   public async upload(archive: Uint8Array): Promise<{ uploadId: string }> {
-    const response = await fetch(
-      `${this.baseHttpUrl}${this.apiPrefix}/hosted-evals/uploads`,
-      {
-        method: "POST",
-        headers: { ...this.headers(), "Content-Type": "application/gzip" },
-        body: archive,
-      },
-    );
+    const response = await fetch(this.url("/uploads"), {
+      method: "POST",
+      headers: { ...this.headers(), "Content-Type": "application/gzip" },
+      body: archive as Uint8Array<ArrayBuffer>,
+    });
     if (!response.ok) {
       await this.raiseError(response);
     }
     return (await response.json()) as { uploadId: string };
   }
 
-  /** Start a run in a new sandbox. Returns once the sandbox has started. */
+  /** Start a detached run. Returns once its orchestrator sandbox has started. */
   public async startRun(
     options: StartHostedEvalRunOptions,
   ): Promise<{ sandboxId: string }> {
-    const response = await fetch(
-      `${this.baseHttpUrl}${this.apiPrefix}/hosted-evals/runs`,
-      {
-        method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify(options),
-      },
-    );
+    const response = await fetch(this.url("/runs"), {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify(options),
+    });
     if (!response.ok) {
       await this.raiseError(response);
     }
     return (await response.json()) as { sandboxId: string };
+  }
+
+  private url(path: string): string {
+    return `${this.baseHttpUrl}${this.apiPrefix}/hosted-evals${path}`;
   }
 
   /** Surface the server's `{error}` message instead of the raw JSON body. */

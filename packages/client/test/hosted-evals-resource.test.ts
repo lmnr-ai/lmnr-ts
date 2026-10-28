@@ -44,9 +44,8 @@ void describe("HostedEvalsResource", () => {
 
     const options = {
       uploadId: "up-1",
-      tasks: ["hello-*"],
-      nAttempts: 2,
-      env: { OPENAI_API_KEY: "sk" },
+      cliVersion: "0.5.3",
+      spec: { suites: ["hello"], env: { OPENAI_API_KEY: "sk" } },
     };
     const result = await new HostedEvalsResource("https://api.test.com:443", {
       type: "apiKey",
@@ -70,8 +69,39 @@ void describe("HostedEvalsResource", () => {
     await assert.rejects(
       new HostedEvalsResource("https://api.test.com:443", userToken).startRun({
         uploadId: "nope",
+        cliVersion: "0.5.3",
+        spec: {},
       }),
       { message: "400 No archive uploaded for this uploadId" },
     );
+  });
+
+  void it("checks and uploads build contexts by hash", async () => {
+    const mockFetch = mock.fn((_url: string, init?: { method?: string }) =>
+      init?.method === "PUT"
+        ? { ok: true }
+        : { ok: true, json: () => ({ exists: false }) },
+    );
+    global.fetch = mockFetch as any;
+    const resource = new HostedEvalsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "k",
+    });
+    const hash = "0123456789abcdef0123456789abcdef";
+
+    assert.strictEqual(await resource.contextExists(hash), false);
+    const tar = new Uint8Array([1, 2, 3]);
+    await resource.uploadContext(hash, tar);
+
+    const [existsUrl] = mockFetch.mock.calls[0].arguments as any;
+    assert.strictEqual(
+      existsUrl,
+      `https://api.test.com:443/v1/hosted-evals/contexts/${hash}`,
+    );
+    const [uploadUrl, init] = mockFetch.mock.calls[1].arguments as any;
+    assert.strictEqual(uploadUrl, existsUrl);
+    assert.strictEqual(init.method, "PUT");
+    assert.strictEqual(init.body, tar);
+    assert.strictEqual(init.headers["Content-Type"], "application/x-tar");
   });
 });

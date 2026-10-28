@@ -123,7 +123,8 @@ export async function findEnvKey(
  * LMNR_* config keys the CLI hydrates from a project `.env.local` / `.env`.
  * Curated on purpose — we do NOT slurp the whole file, so unrelated app secrets
  * (model API keys, etc.) never enter the CLI process. Notable exclusions:
- *  - `LMNR_GRPC_PORT`: the CLI is REST-only (no gRPC), so it has no use for it.
+ *  - `LMNR_GRPC_PORT`: the CLI is REST-only (no gRPC). `eval run` looks it up
+ *    itself to hand to Harbor's Laminar plugin.
  *  - `LMNR_LOG_LEVEL`: loggers are built at module-import time (before
  *    `loadLocalEnv` runs), so hydrating it here would silently have no effect.
  *  - `LMNR_PROJECT_ID`: the project comes from `--project-id` or
