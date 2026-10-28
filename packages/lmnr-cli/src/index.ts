@@ -11,6 +11,12 @@ import {
 } from "./auth/with-client";
 import { handleAsk } from "./commands/ask";
 import {
+  handleChartDelete,
+  handleChartUpsert,
+  handleDashboardDelete,
+  handleDashboardUpsert,
+} from "./commands/dashboard";
+import {
   handleDatasetDelete,
   handleDatasetGet,
   handleDatasetsCreate,
@@ -740,6 +746,169 @@ through the profile — re-route or delete those signals first.
 
 Examples:
   $ lmnr-cli llm-profile delete 3f6c9f1e-8f4b-4b0e-9d3a-2f4f4a6d8b11
+`,
+    );
+
+  const dashboardCmd = program
+    .command("dashboard")
+    .alias("dashboards")
+    .description("Create, rename, and delete dashboards and their SQL charts")
+    .option(
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+        "Run `lmnr-cli login` first.",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option("--json", "Output structured JSON to stdout");
+
+  const DASHBOARD_READ_HELP = `
+Find dashboard and chart ids with SQL:
+  $ lmnr-cli sql query "SELECT id, name FROM dashboards"
+  $ lmnr-cli sql query "SELECT id, name, dashboard_id FROM dashboard_charts"
+`;
+
+  dashboardCmd
+    .command("upsert")
+    .description("Create a dashboard, or rename one with --id")
+    .argument("<name>", "Dashboard name")
+    .option("--id <dashboard-id>", "Rename this dashboard instead of creating")
+    .action(withProjectClient(handleDashboardUpsert))
+    .addHelpText(
+      "after",
+      `
+Prints the dashboard's id and URL (--json: {id, projectId, name, createdAt,
+dashboardUrl}). Add charts with \`lmnr-cli dashboard chart upsert <id>\`.
+${DASHBOARD_READ_HELP}
+Examples:
+  $ lmnr-cli dashboard upsert "Agent health"
+  $ lmnr-cli dashboard upsert "Agent health (prod)" \\
+      --id 5b0e6f0c-2d7a-4a59-9d55-3f0d9c1b7e21
+`,
+    );
+
+  dashboardCmd
+    .command("delete")
+    .description("Delete a dashboard and all of its charts")
+    .argument("<dashboard-id>", "Dashboard id")
+    .action(withProjectClient(handleDashboardDelete))
+    .addHelpText(
+      "after",
+      `
+Deletion is permanent. A project's last dashboard cannot be deleted.
+${DASHBOARD_READ_HELP}
+Examples:
+  $ lmnr-cli dashboard delete 5b0e6f0c-2d7a-4a59-9d55-3f0d9c1b7e21
+`,
+    );
+
+  const chartCmd = dashboardCmd
+    .command("chart")
+    .alias("charts")
+    .description("Create, update, and delete charts on a dashboard");
+
+  chartCmd
+    .command("upsert")
+    .description(
+      "Create or update charts (one via flags, or a batch via --file)",
+    )
+    .argument("<dashboard-id>", "Dashboard id")
+    .option(
+      "--chart-id <chart-id>",
+      "Update this chart (omitted fields are kept). Omit to create a chart",
+    )
+    .option("--name <name>", "Chart title")
+    .option("--query <sql>", "ClickHouse SELECT the chart runs (see below)")
+    .option(
+      "--query-file <path>",
+      "Read the query from a file ('-' for stdin) instead of --query",
+    )
+    .option("--type <type>", "line | bar | horizontalBar | table")
+    .option(
+      "--x <column>",
+      'Result column for the x axis ("time" for charts over time)',
+    )
+    .option("--y <column>", "Result column for the y axis")
+    .option(
+      "--breakdown <column>",
+      "Result column that splits rows into one series per value",
+    )
+    .option("--display-mode <mode>", "total | average | none")
+    .option(
+      "--layout <x,y,w,h>",
+      "Grid position on the 12-column grid. Omit to keep an existing " +
+        "chart's position or auto-place a new one",
+    )
+    .option(
+      "--file <path>",
+      "JSON array of chart entries ('-' for stdin) to write in one call. " +
+        "Cannot be combined with the single-chart flags",
+    )
+    .action(withProjectClient(handleChartUpsert))
+    .addHelpText(
+      "after",
+      `
+Every query is test-run over the last 24h before anything is saved, and a batch
+is all-or-nothing. A query must:
+  - filter its time column with the dashboard's time picker:
+      start_time >= {start_time:DateTime64} AND start_time <= {end_time:DateTime64}
+    (signal_events: timestamp). No other parameters, no literal dates.
+  - for line/bar charts over time, bucket with
+      toStartOfInterval(start_time, toInterval(1, {interval_unit:String})) AS time
+    and pass --x time.
+  - name real result columns in --x / --y / --breakdown. Set --breakdown
+    whenever the query groups by a column besides x (GROUP BY time, status →
+    --breakdown status).
+Table charts need no --x/--y and no LIMIT (the dashboard paginates).
+
+--query and --type are sent together: changing a chart's query or config needs
+both, plus every mapping the chart uses. Name and layout change alone.
+
+Layout: charts given a --layout are placed exactly; other charts on the
+dashboard are pushed down out of their way. To rearrange a dashboard, send
+every chart with its new layout in one --file batch.
+
+--file entries use the API shape (at most 30 per call):
+  [{"id": "<chart-id, omit to create>", "name": "...", "query": "...",
+    "config": {"type": "line", "x": "time", "y": "n", "breakdown": "status",
+               "displayMode": "total"},
+    "layout": {"x": 0, "y": 0, "w": 6, "h": 6}}]
+${DASHBOARD_READ_HELP}
+Examples:
+  $ lmnr-cli dashboard chart upsert 5b0e6f0c-... --name "Spans per hour" \\
+      --type line --x time --y n --query "SELECT
+        toStartOfInterval(start_time, toInterval(1, {interval_unit:String})) AS time,
+        count() AS n FROM spans
+        WHERE start_time >= {start_time:DateTime64}
+          AND start_time <= {end_time:DateTime64}
+        GROUP BY time ORDER BY time"
+  $ lmnr-cli dashboard chart upsert 5b0e6f0c-... --chart-id 9a1c... \\
+      --name "Spans / hour" --layout 0,0,12,6
+  $ lmnr-cli dashboard chart upsert 5b0e6f0c-... --file charts.json --json
+`,
+    );
+
+  chartCmd
+    .command("delete")
+    .description("Delete charts from a dashboard")
+    .argument("<dashboard-id>", "Dashboard id")
+    .argument("<chart-ids...>", "Chart ids, space-separated")
+    .action(withProjectClient(handleChartDelete))
+    .addHelpText(
+      "after",
+      `
+Remaining charts keep their positions. Ids that are not charts on this
+dashboard are skipped (--json: {deleted, requested}).
+${DASHBOARD_READ_HELP}
+Examples:
+  $ lmnr-cli dashboard chart delete 5b0e6f0c-... 9a1c... 0d3e...
 `,
     );
 
