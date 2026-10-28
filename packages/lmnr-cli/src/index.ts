@@ -26,6 +26,7 @@ import {
   handleDebugSessionSetName,
   handleDebugSessionSummary,
 } from "./commands/debug";
+import { handleEvalRun, parsePositiveInt } from "./commands/eval";
 import {
   handleLlmProfileCreate,
   handleLlmProfileDelete,
@@ -551,6 +552,83 @@ takes at most 10,000 unique ids.
 Examples:
   $ lmnr-cli signal backfill "Refund requests" \\
       0198a7f2-1c3e-7d55-9f3a-2b6f4e8c1a01 0198a7f2-1c3e-7d55-9f3a-2b6f4e8c1a02
+`,
+    );
+
+  const evalCmd = program
+    .command("eval")
+    .alias("evals")
+    .description("Run Harbor evals in Laminar-hosted sandboxes")
+    .option(
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+        "Run `lmnr-cli login` first.",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option("--json", "Output structured JSON to stdout");
+
+  evalCmd
+    .command("run")
+    .description("Upload an evals folder and start a hosted run")
+    .argument(
+      "[dir]",
+      "Evals folder (one <suite>/harbor.yaml per suite)",
+      "evals",
+    )
+    .option(
+      "--dataset <suite>",
+      "Suite to run (repeatable). Omitted → every suite",
+      collectFlag,
+    )
+    .option(
+      "--task <glob>",
+      "Task name glob to include (repeatable). Omitted → every task",
+      collectFlag,
+    )
+    .option(
+      "--n-attempts <n>",
+      "Attempts per task. Omitted → harbor.yaml",
+      parsePositiveInt,
+    )
+    .option(
+      "--n-concurrent <n>",
+      "Concurrent trials. Omitted → harbor.yaml",
+      parsePositiveInt,
+    )
+    .option("--model <name>", "Agent model override. Omitted → harbor.yaml")
+    .option(
+      "--env <KEY[=VALUE]>",
+      "Agent env var (repeatable). A bare KEY is read from your environment",
+      collectFlag,
+    )
+    .action(withProjectClient(handleEvalRun))
+    .addHelpText(
+      "after",
+      `
+Packs the folder's contents into a .tar.gz, uploads it, and starts a run in a
+Laminar sandbox that runs \`harbor run\` for each suite. Returns once the run
+has started; results appear in the project's evaluations, grouped by suite.
+
+Each suite is a directory directly inside [dir] holding a harbor.yaml
+(a Harbor JobConfig). .git, node_modules, virtualenvs, caches and .env files
+are never uploaded, and symlinks are skipped. Pass secrets such as LLM API
+keys with --env, not as files. The packed folder must be under 100 MiB.
+
+The sandbox id is printed to stdout; in --json mode a
+{"uploadId","sandboxId","datasets","url"} object is printed instead.
+
+Examples:
+  $ lmnr-cli eval run
+  $ lmnr-cli eval run ./evals --dataset hello --task "hello-*" --n-attempts 2
+  $ lmnr-cli eval run --env ANTHROPIC_API_KEY --model anthropic/claude-sonnet-5-5
 `,
     );
 
@@ -1243,7 +1321,7 @@ Authentication:
   Run \`lmnr-cli setup\` to login, link this directory, write a project API key to
   ./.env, and install the Laminar skill 
   \`lmnr-cli login\` authenticates as a user. Every project command
-  (sql / dataset / project / debug) runs on that user session and
+  (sql / dataset / eval / project / debug) runs on that user session and
   targets a project via --project-id or the linked .lmnr/project.json.
 
 Examples:
@@ -1259,6 +1337,7 @@ Examples:
   lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a dataset
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json # Query spans
   lmnr-cli sql schema                                      # Show available tables
+  lmnr-cli eval run ./evals                                # Run Harbor evals in Laminar sandboxes
   lmnr-cli debug session new                               # Mint a fresh debug session
   lmnr-cli debug session open                              # Open the session in the browser
   lmnr-cli debug session set-name "title"                  # Rename the current debug session
