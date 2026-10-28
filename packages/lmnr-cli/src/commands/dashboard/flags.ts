@@ -57,13 +57,13 @@ export const readSource = (path: string): string =>
 /** `x,y,w,h` on the 12-column grid. Bounds are checked server-side. */
 export const parseLayout = (raw: string): DashboardChartLayout => {
   const parts = raw.split(",").map((p) => p.trim());
-  const nums = parts.map(Number);
-  if (parts.length !== 4 || nums.some((n) => !Number.isInteger(n))) {
+  // A regex, not `Number`: `Number("")` is 0, so "0,0,6," would pass as h=0.
+  if (parts.length !== 4 || parts.some((p) => !/^-?\d+$/.test(p))) {
     throw new Error(
       `--layout must be four integers "x,y,w,h" (e.g. "0,0,6,6"), got "${raw}"`,
     );
   }
-  const [x, y, w, h] = nums;
+  const [x, y, w, h] = parts.map(Number);
   return { x, y, w, h };
 };
 
