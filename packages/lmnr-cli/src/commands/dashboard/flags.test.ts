@@ -30,6 +30,12 @@ void describe("parseLayout", () => {
     expect(() => parseLayout("0,0,6,a")).toThrow(/four integers/);
     expect(() => parseLayout("0,0,6.5,4")).toThrow(/four integers/);
   });
+
+  void it("rejects empty fields instead of reading them as 0", () => {
+    expect(() => parseLayout("0,0,6,")).toThrow(/four integers/);
+    expect(() => parseLayout("0,,6,6")).toThrow(/four integers/);
+    expect(() => parseLayout("0, ,6,6")).toThrow(/four integers/);
+  });
 });
 
 void describe("buildChartFromFlags", () => {
