@@ -1115,6 +1115,24 @@ void describe("lmnr-atif TypeScript SDK shapes", () => {
     assert.equal(reason, "stop");
   });
 
+  void it("semconv tool results read result too", () => {
+    // The Cohere instrumentations write `result` instead of `response`.
+    const [messages] = normalizeCall(
+      [
+        {
+          role: "tool",
+          parts: [
+            { type: "tool_call_response", id: "c1", result: { temp: 18 } },
+          ],
+        },
+      ],
+      null,
+    );
+    assert.deepStrictEqual(messages, [
+      { role: "tool", tool_call_id: "c1", content: '{"temp": 18}' },
+    ]);
+  });
+
   void it("chat tool calls with top-level arguments", () => {
     const [, output] = normalizeCall(
       [],

@@ -426,10 +426,15 @@ const semconvParts = (
         toolCall(get(part, "id"), get(part, "name"), get(part, "arguments")),
       );
     } else if (kind === "tool_call_response") {
+      // The conventions name the payload `response`; the Cohere
+      // instrumentations (both SDKs) write `result`.
+      const response = has(part, "response")
+        ? get(part, "response")
+        : get(part, "result");
       sinkPush(sink, "tool_results", {
         role: "tool",
         tool_call_id: pyStr(or(get(part, "id"), "")),
-        content: resultContent(get(part, "response"), media),
+        content: resultContent(response, media),
       });
     } else if (kind === "blob") {
       result.push(
