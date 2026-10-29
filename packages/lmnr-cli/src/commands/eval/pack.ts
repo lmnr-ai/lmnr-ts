@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { buffer } from "node:stream/consumers";
 import { pipeline } from "node:stream/promises";
@@ -6,36 +6,23 @@ import { createGzip } from "node:zlib";
 
 import { type FileSource, packTar } from "modern-tar/fs";
 
-import { invalidEvalsDir } from "../../errors";
-
-/** A suite is a directory directly inside the evals folder holding a Harbor JobConfig. */
-export const SUITE_CONFIG = "harbor.yaml";
+import { SKIPPED_DIRS } from "./suites";
 
 /**
- * Never uploaded: VCS data, dependency/build caches, Harbor job output and
- * local env files. The last matter most — uploads are readable by eval code in
- * the sandbox, so secrets travel as env vars, never as files.
+ * Never uploaded, besides `SKIPPED_DIRS`: local env files matter most — uploads
+ * are readable by eval code in the sandbox, so secrets travel as env vars,
+ * never as files.
  */
-const EXCLUDED_DIRS = new Set([
-  ".git",
-  "node_modules",
-  ".venv",
-  "venv",
-  "__pycache__",
-  ".pytest_cache",
-  ".mypy_cache",
-  ".ruff_cache",
-  "jobs",
-]);
 const isExcludedFile = (name: string) =>
   name === ".env" || name.startsWith(".env.") || name === ".DS_Store";
 
-export interface WalkResult {
+interface WalkResult {
   /** Archive entries, POSIX paths relative to the walked root, sorted. */
   files: FileSource[];
   skippedSymlinks: string[];
 }
 
+/** Fixed ownership and mtime: the upload carries no local user names or times. */
 const fileEntry = (source: string, target: string): FileSource => ({
   type: "file",
   source,
@@ -47,11 +34,8 @@ const fileEntry = (source: string, target: string): FileSource => ({
   gname: "",
 });
 
-/**
- * Walk `root` for packing, minus the upload exclusions. Entries get fixed
- * ownership and mtime so the same tree always packs to the same bytes.
- */
-export const walkFiles = async (root: string): Promise<WalkResult> => {
+/** Walk `root` for packing, minus the upload exclusions. */
+const walkFiles = async (root: string): Promise<WalkResult> => {
   const files: FileSource[] = [];
   const skippedSymlinks: string[] = [];
   const walk = async (dir: string, rel: string) => {
@@ -65,7 +49,7 @@ export const walkFiles = async (root: string): Promise<WalkResult> => {
         // that escape the archive; skipping keeps uploads predictable.
         skippedSymlinks.push(target);
       } else if (entry.isDirectory()) {
-        if (!EXCLUDED_DIRS.has(entry.name)) await walk(source, target);
+        if (!SKIPPED_DIRS.has(entry.name)) await walk(source, target);
       } else if (entry.isFile() && !isExcludedFile(entry.name)) {
         files.push(fileEntry(source, target));
       }
@@ -84,36 +68,11 @@ const packFiles = async (files: FileSource[]): Promise<Buffer> => {
   return archive;
 };
 
-export interface EvalsArchive {
+interface EvalsArchive {
   archive: Buffer;
   fileCount: number;
   skippedSymlinks: string[];
 }
-
-/** Suite directory names directly inside `dir`, sorted. */
-export const discoverSuites = async (dir: string): Promise<string[]> => {
-  const root = path.resolve(dir);
-  const rootStat = await stat(root).catch(() => null);
-  if (!rootStat?.isDirectory()) {
-    throw invalidEvalsDir(`Evals folder not found: ${root}`);
-  }
-  const entries = await readdir(root, { withFileTypes: true });
-  const suites: string[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory() || EXCLUDED_DIRS.has(entry.name)) continue;
-    const config = await stat(path.join(root, entry.name, SUITE_CONFIG)).catch(
-      () => null,
-    );
-    if (config?.isFile()) suites.push(entry.name);
-  }
-  if (suites.length === 0) {
-    throw invalidEvalsDir(
-      `No suites in ${root}: expected <suite>/${SUITE_CONFIG} directly ` +
-        "inside it. Pass the evals folder itself, not its parent or a suite.",
-    );
-  }
-  return suites.sort();
-};
 
 /**
  * Pack the evals folder's CONTENTS (suites at the archive root, no `evals/`

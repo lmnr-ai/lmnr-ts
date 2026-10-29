@@ -68,12 +68,42 @@ void describe("push", () => {
     const config = await writeSavedImage();
     const image = await readSavedImage(root);
     expect(image.config).toBe(config);
+    expect(image.architecture).toBe("amd64");
     expect(image.diffIds).toEqual([diffA, diffB, diffA]);
     expect(image.layerFiles).toEqual([
       path.join(root, "blobs/sha256/a"),
       path.join(root, "blobs/sha256/b"),
       path.join(root, "blobs/sha256/a"),
     ]);
+  });
+
+  void it("rejects a save whose layers don't match the config's diff_ids", async () => {
+    await writeSavedImage();
+    await writeFile(
+      path.join(root, "manifest.json"),
+      JSON.stringify([
+        { Config: "blobs/sha256/config", Layers: ["blobs/sha256/a"] },
+      ]),
+    );
+    await expect(readSavedImage(root)).rejects.toMatchObject({
+      code: "docker_failed",
+      exitCode: 20,
+      message: "docker save listed 1 layers for 3 diff_ids",
+    });
+    await writeFile(path.join(root, "manifest.json"), "[]");
+    await expect(readSavedImage(root)).rejects.toMatchObject({
+      code: "docker_failed",
+      message: expect.stringMatching(/lists no image/),
+    });
+  });
+
+  void it("rejects zstd layers", async () => {
+    const file = path.join(root, "zstd");
+    await writeFile(file, Buffer.from([0x28, 0xb5, 0x2f, 0xfd, 0, 0]));
+    await expect(gzippedLayer(file)).rejects.toMatchObject({
+      code: "docker_failed",
+      message: expect.stringMatching(/zstd/),
+    });
   });
 
   void it("gzips uncompressed layers and passes gzip layers through", async () => {
@@ -109,7 +139,10 @@ void describe("push", () => {
     const { client, uploads } = fakeClient([diffA, diffB]);
     await expect(
       uploadSavedImage(client, "image app", await readSavedImage(root)),
-    ).rejects.toThrow(/built for arm64.*linux\/amd64/);
+    ).rejects.toMatchObject({
+      code: "docker_failed",
+      message: expect.stringMatching(/built for arm64.*linux\/amd64/),
+    });
     expect(uploads).toEqual([]);
   });
 });

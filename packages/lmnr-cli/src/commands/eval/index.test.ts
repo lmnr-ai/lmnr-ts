@@ -11,27 +11,25 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
 
+import { InvalidArgumentError } from "commander";
 import { unpackTar } from "modern-tar";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { harborArgs } from "./harbor";
+import { guardedDockerfile } from "./docker";
+import { laminarBaseUrl, parseEnvFlags, resolveTemplateEnv } from "./env";
+import { HARBOR_VERSION, harborArgs, LMNR_PYTHON_VERSION } from "./harbor";
 import {
   dockerfileKey,
   ensureRemoteImages,
   findTaskImages,
-  guardedDockerfile,
   type ImageDef,
   loadImageDefs,
 } from "./images";
-import {
-  laminarBaseUrl,
-  parseEnvFlags,
-  parsePositiveInt,
-  resolveTemplateEnv,
-} from "./index";
-import { discoverSuites, packEvalsDir } from "./pack";
+import { parsePositiveInt } from "./index";
+import { packEvalsDir } from "./pack";
 import {
   buildJobConfig,
+  discoverSuites,
   findTemplateVars,
   globToRegExp,
   LAMINAR_ENVIRONMENT_IMPORT_PATH,
@@ -133,7 +131,7 @@ void describe("buildJobConfig", () => {
   };
 
   void it("routes remote trials to the Laminar environment", () => {
-    const job = buildJobConfig(base, { remote: true });
+    const job = buildJobConfig(base, {}, true);
     expect(job.environment).toEqual({
       env: { A: "1" },
       import_path: LAMINAR_ENVIRONMENT_IMPORT_PATH,
@@ -142,20 +140,23 @@ void describe("buildJobConfig", () => {
   });
 
   void it("leaves local runs on the suite's environment", () => {
-    expect(buildJobConfig(base, { remote: false }).environment).toEqual(
+    expect(buildJobConfig(base, {}, false).environment).toEqual(
       base.environment,
     );
   });
 
   void it("applies attempts, concurrency, task filters, model and --env", () => {
-    const job = buildJobConfig(base, {
-      remote: false,
-      nAttempts: 3,
-      nConcurrent: 8,
-      tasks: ["al*"],
-      model: "anthropic/claude-sonnet-5-5",
-      extraAgentEnv: ["K", "EXTRA"],
-    });
+    const job = buildJobConfig(
+      base,
+      {
+        nAttempts: 3,
+        nConcurrent: 8,
+        tasks: ["al*"],
+        model: "anthropic/claude-sonnet-5-5",
+        extraAgentEnv: ["K", "EXTRA"],
+      },
+      false,
+    );
     expect(job.n_attempts).toBe(3);
     expect(job.n_concurrent_trials).toBe(8);
     expect(job.datasets).toEqual([{ path: "tasks", task_names: ["al*"] }]);
@@ -170,7 +171,7 @@ void describe("buildJobConfig", () => {
   });
 
   void it("materializes Harbor's default agent to apply a model", () => {
-    expect(buildJobConfig({}, { remote: false, model: "m" }).agents).toEqual([
+    expect(buildJobConfig({}, { model: "m" }, false).agents).toEqual([
       { name: "oracle", model_name: "m" },
     ]);
   });
@@ -293,9 +294,43 @@ void describe("images", () => {
     await expect(
       guardedDockerfile({ ...def, context: path.join(root, "missing") }),
     ).rejects.toThrow(/Build context not found/);
+    await expect(
+      guardedDockerfile({ ...def, dockerfile: path.join(root, "nope") }),
+    ).rejects.toMatchObject({
+      code: "invalid_evals_dir",
+      message: expect.stringMatching(/Dockerfile not found/),
+    });
+  });
+
+  void it("guards a build that has no ignore file of its own", async () => {
+    await write("bare/Dockerfile", "FROM alpine\n");
+    const dir = await guardedDockerfile({
+      name: "bare",
+      dockerfile: path.join(root, "bare/Dockerfile"),
+      context: path.join(root, "bare"),
+    });
+    try {
+      expect(
+        await readFile(path.join(dir, "Dockerfile.dockerignore"), "utf8"),
+      ).toBe(
+        [
+          "# Added by lmnr-cli",
+          ".git",
+          "**/.git",
+          ".env",
+          ".env.*",
+          "**/.env",
+          "**/.env.*",
+          "",
+        ].join("\n"),
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   void it("finds per-task Dockerfiles and the docker_images tasks use", async () => {
+    await write("s/harbor.yaml", "agents: []\n");
     await write("s/tasks/own/task.toml", "[environment]\ncpus = 1\n");
     await write("s/tasks/own/environment/Dockerfile", "FROM alpine");
     await write(
@@ -320,12 +355,34 @@ void describe("images", () => {
     expect(found.images.sort()).toEqual(["app-evals", "python:3.12-slim"]);
   });
 
-  void it("builds lmnr.yaml and per-task images, pulls the rest, each once", async () => {
+  void it("uses a task's own Dockerfile over its docker_image with force_build", async () => {
+    await write("s/harbor.yaml", "environment:\n  force_build: true\n");
+    await write(
+      "s/tasks/shared/task.toml",
+      '[environment]\ndocker_image = "app-evals"\n',
+    );
+    await write("s/tasks/shared/environment/Dockerfile", "FROM alpine");
+    await write(
+      "s/tasks/prebuilt/task.toml",
+      '[environment]\ndocker_image = "python:3.12-slim"\n',
+    );
+
+    const found = await findTaskImages(path.join(root, "s"));
+    expect(found.dockerfiles).toEqual([
+      path.join(root, "s/tasks/shared/environment"),
+    ]);
+    // Without a Dockerfile the task still starts from its docker_image.
+    expect(found.images).toEqual(["python:3.12-slim"]);
+  });
+
+  void it("builds referenced lmnr.yaml and per-task images, pulls the rest, each once", async () => {
     await write(
       "evals/lmnr.yaml",
-      "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n",
+      "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n" +
+        "  unused:\n    dockerfile: unused/Dockerfile\n",
     );
     for (const suite of ["a", "b"]) {
+      await write(`evals/${suite}/harbor.yaml`, "agents: []\n");
       await write(
         `evals/${suite}/tasks/shared/task.toml`,
         '[environment]\ndocker_image = "app-evals"\n',
@@ -339,9 +396,9 @@ void describe("images", () => {
     await write("evals/a/tasks/own/environment/Dockerfile", "FROM alpine");
     const calls: string[] = [];
     const pusher = {
-      build: async (def: ImageDef, label: string) => {
-        calls.push(`build ${label} ${path.relative(root, def.context)}`);
-        return `sha256:${label}`;
+      build: async (def: ImageDef) => {
+        calls.push(`build ${def.name} ${path.relative(root, def.context)}`);
+        return `sha256:${def.name}`;
       },
       pull: async (ref: string) => {
         calls.push(`pull ${ref}`);
@@ -349,24 +406,27 @@ void describe("images", () => {
       },
     };
 
-    const maps = await ensureRemoteImages(
+    const pushed = await ensureRemoteImages(
       path.join(root, "evals"),
       ["a", "b"],
       pusher,
     );
-    expect(calls).toEqual([
-      "build image app-evals evals/image",
+    // `unused` is in lmnr.yaml but no task references it: never built.
+    expect(calls.sort()).toEqual([
       `build a/tasks/own/environment ${path.join("evals", "a", "tasks", "own", "environment")}`,
+      `build app-evals ${path.join("evals", "image")}`,
       "pull python:3.12-slim",
     ]);
-    expect(maps.a?.images).toEqual({
-      "app-evals": { image: "sha256:image app-evals" },
-      "python:3.12-slim": { image: "sha256:python:3.12-slim" },
+    expect(pushed).toEqual({
+      images: {
+        "app-evals": "sha256:app-evals",
+        "python:3.12-slim": "sha256:python:3.12-slim",
+      },
+      dockerfiles: {
+        a: { "tasks/own/environment": "sha256:a/tasks/own/environment" },
+        b: {},
+      },
     });
-    expect(maps.a?.dockerfiles).toEqual({
-      "tasks/own/environment": { image: "sha256:a/tasks/own/environment" },
-    });
-    expect(maps.b?.dockerfiles).toEqual({});
   });
 
   void it("keys per-task Dockerfiles with / on every OS", () => {
@@ -389,9 +449,9 @@ void describe("harborArgs", () => {
       "--python",
       "3.13",
       "--from",
-      "harbor==0.25.0",
+      `harbor==${HARBOR_VERSION}`,
       "--with",
-      "lmnr==0.8.3",
+      `lmnr==${LMNR_PYTHON_VERSION}`,
       "harbor",
       "run",
       "-c",
@@ -420,6 +480,7 @@ void describe("parseEnvFlags", () => {
 
   void it("errors on an unset bare KEY or an invalid key", () => {
     expect(() => parseEnvFlags(["MISSING"], {})).toThrow(/not set/);
+    expect(() => parseEnvFlags(["MISSING"], {})).toThrow(InvalidArgumentError);
     expect(() => parseEnvFlags(["=1"], {})).toThrow(/Invalid --env/);
     expect(() => parseEnvFlags(["1A=1"], {})).toThrow(/Invalid --env/);
   });

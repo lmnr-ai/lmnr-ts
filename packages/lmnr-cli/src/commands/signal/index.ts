@@ -232,7 +232,7 @@ export const handleSignalCreate = async (
       : {}),
     ...(opts.disabled ? { disabled: true } : {}),
     // Pair-completeness / feature-gating / workspace membership are all
-    // enforced server-side; `raiseSignalError` surfaces the verbatim message.
+    // enforced server-side; `handleErrorMessage` surfaces the verbatim message.
     ...(opts.llmProfileId !== undefined
       ? { llmProfileId: opts.llmProfileId }
       : {}),

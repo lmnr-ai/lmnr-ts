@@ -3,12 +3,19 @@ import { copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-// cross-spawn: resolves Windows .cmd/.ps1 shims that node:child_process can't run by bare name.
-import spawn from "cross-spawn";
+import { harborFailed } from "../../errors";
+import { findEnvKey } from "../../utils/env-file";
+import { initializeLogger } from "../../utils/logger";
+import { type RemoteImages, type SuiteImages, suiteImages } from "./images";
+import { runCommand } from "./run-command";
+import {
+  buildJobConfig,
+  type JobConfig,
+  loadSuiteConfig,
+  type RunOverrides,
+} from "./suites";
 
-import { harborFailed, missingTool } from "../../errors";
-import { guardedDockerfile, type ImageDef, type ImageMap } from "./images";
-import type { JobConfig } from "./suites";
+const logger = initializeLogger();
 
 /**
  * Harbor and the Laminar plugin are pinned so a suite behaves the same on a
@@ -31,28 +38,6 @@ const environmentModulePath = (): string => {
   }
   throw new Error(`${ENVIRONMENT_MODULE} is missing from the lmnr-cli package`);
 };
-
-/** Exit code of `command`, with its output on our stderr (stdout stays data-only). */
-export const runCommand = (
-  command: string,
-  args: string[],
-  options: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
-): Promise<number> =>
-  new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      env: options.env,
-      stdio: ["inherit", 2, 2],
-    });
-    child.on("error", (error: NodeJS.ErrnoException) => {
-      reject(
-        error.code === "ENOENT"
-          ? missingTool(`\`${command}\` is not installed or not on PATH.`)
-          : error,
-      );
-    });
-    child.on("close", (code) => resolve(code ?? 1));
-  });
 
 export const harborArgs = (
   configPath: string,
@@ -78,14 +63,17 @@ export const harborArgs = (
   ...(grpcPort ? ["--pk", `grpc_port=${grpcPort}`] : []),
 ];
 
-export interface HarborRun {
+interface HarborRun {
   suite: string;
   suiteDir: string;
   config: JobConfig;
   /** Env for the Harbor process; `${VAR}` placeholders resolve against it. */
   env: Record<string, string>;
-  /** Set for remote trials: the images `lmnr_hosted_env.py` builds from. */
-  images?: ImageMap;
+  /**
+   * Set for remote trials: the pushed images `lmnr_hosted_env.py` starts
+   * sandboxes from.
+   */
+  images?: SuiteImages;
   /** Self-hosted Laminar's gRPC port, for the plugin's trace export. */
   grpcPort?: string;
 }
@@ -95,7 +83,7 @@ export interface HarborRun {
  * in harbor.yaml (datasets, jobs_dir) and custom agent imports resolve the
  * same way everywhere. Returns Harbor's exit code.
  */
-export const runHarborSuite = async (run: HarborRun): Promise<number> => {
+const runHarborSuite = async (run: HarborRun): Promise<number> => {
   const staging = await mkdtemp(path.join(tmpdir(), "lmnr-eval-"));
   try {
     const configPath = path.join(staging, "job.json");
@@ -132,36 +120,47 @@ export const runHarborSuite = async (run: HarborRun): Promise<number> => {
 };
 
 /**
- * `docker build` of `def` without `.git` or env files in the context (see
- * `guardedDockerfile`). `args` go before the context, e.g. `--platform`.
+ * Run each suite with Harbor in turn. With `images`, trials run in Laminar
+ * sandboxes; without, on local Docker. Returns the suites that failed.
  */
-export const dockerBuild = async (
-  def: ImageDef,
-  tag: string,
-  args: string[] = [],
-): Promise<void> => {
-  const dir = await guardedDockerfile(def);
-  try {
-    const code = await runCommand("docker", [
-      "build",
-      ...args,
-      "-f",
-      path.join(dir, "Dockerfile"),
-      "-t",
-      tag,
-      def.context,
-    ]);
+export const runSuites = async (
+  evalsDir: string,
+  suites: string[],
+  overrides: RunOverrides,
+  env: Record<string, string>,
+  images?: RemoteImages,
+): Promise<string[]> => {
+  const grpcPort = (await findEnvKey(process.cwd(), "LMNR_GRPC_PORT"))?.value;
+  const failed: string[] = [];
+  for (const suite of suites) {
+    const suiteDir = path.join(evalsDir, suite);
+    const config = buildJobConfig(
+      await loadSuiteConfig(suiteDir),
+      overrides,
+      images !== undefined,
+    );
+    logger.info(
+      `Running suite ${suite} ${images ? "in Laminar sandboxes" : "on local Docker"}`,
+    );
+    const code = await runHarborSuite({
+      suite,
+      suiteDir,
+      config,
+      env,
+      images: images && suiteImages(images, suite),
+      grpcPort,
+    });
     if (code !== 0) {
-      throw harborFailed(`docker build of ${def.name} failed (${code}).`);
+      logger.error(`harbor run failed for suite ${suite} (exit ${code})`);
+      failed.push(suite);
     }
-  } finally {
-    await rm(dir, { recursive: true, force: true });
   }
+  return failed;
 };
 
-/** Build `lmnr.yaml` images locally, tagged with the name tasks reference. */
-export const buildLocalImages = async (defs: ImageDef[]): Promise<void> => {
-  for (const def of defs) {
-    await dockerBuild(def, def.name);
+/** Fail the command when any suite's `harbor run` failed. */
+export const assertSuitesPassed = (failed: string[]): void => {
+  if (failed.length > 0) {
+    throw harborFailed(`harbor run failed for: ${failed.join(", ")}`);
   }
 };

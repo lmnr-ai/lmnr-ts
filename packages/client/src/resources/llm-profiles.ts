@@ -50,25 +50,6 @@ export class LlmProfilesResource extends BaseResource {
     super(baseHttpUrl, auth);
   }
 
-  /**
-   * Errors come back as `{error: string}` (matches the signals surface) with
-   * user-facing text, so unwrap the envelope before raising rather than
-   * showing the raw JSON body.
-   */
-  private async raiseLlmProfileError(response: Response): Promise<never> {
-    const body = await response.text();
-    let message = body;
-    try {
-      const parsed = JSON.parse(body) as { error?: unknown };
-      if (typeof parsed?.error === "string" && parsed.error.length > 0) {
-        message = parsed.error;
-      }
-    } catch {
-      // Not JSON (proxy error page etc.) — use it as-is.
-    }
-    throw new Error(`${response.status} ${message}`);
-  }
-
   private async request(
     method: string,
     path: string,
@@ -83,7 +64,7 @@ export class LlmProfilesResource extends BaseResource {
       },
     );
     if (!response.ok) {
-      await this.raiseLlmProfileError(response);
+      await this.handleErrorMessage(response);
     }
     return response;
   }

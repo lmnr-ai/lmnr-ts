@@ -6,8 +6,11 @@ export interface StartHostedEvalRunOptions {
   uploadId: string;
   /** The orchestrator runs `lmnr-cli@<cliVersion>`, so the spec format matches. */
   cliVersion: string;
-  /** Run spec written by lmnr-cli and read back by the same CLI version. */
-  spec: Record<string, unknown>;
+  /**
+   * Run spec written by lmnr-cli and read back by the same CLI version. Sent
+   * as JSON; the server passes it through without reading it.
+   */
+  spec: object;
 }
 
 /**
@@ -32,7 +35,7 @@ export class HostedEvalsResource extends BaseResource {
       body: JSON.stringify({ diffIds }),
     });
     if (!response.ok) {
-      await this.raiseError(response);
+      await this.handleErrorMessage(response);
     }
     return ((await response.json()) as { missing: string[] }).missing;
   }
@@ -43,17 +46,17 @@ export class HostedEvalsResource extends BaseResource {
    */
   public async uploadLayer(
     diffId: string,
-    gzipped: ReadableStream<Uint8Array> | Uint8Array,
+    gzipped: ReadableStream<Uint8Array>,
   ): Promise<{ digest: string; size: number }> {
     const response = await fetch(this.url(`/images/layers/${diffId}`), {
       method: "PUT",
       headers: { ...this.headers(), "Content-Type": "application/gzip" },
-      body: gzipped as BodyInit,
+      body: gzipped,
       // Required by Node's fetch for a streamed request body.
       duplex: "half",
     } as RequestInit);
     if (!response.ok) {
-      await this.raiseError(response);
+      await this.handleErrorMessage(response);
     }
     return (await response.json()) as { digest: string; size: number };
   }
@@ -69,7 +72,7 @@ export class HostedEvalsResource extends BaseResource {
       body: JSON.stringify({ config }),
     });
     if (!response.ok) {
-      await this.raiseError(response);
+      await this.handleErrorMessage(response);
     }
     return (await response.json()) as { image: string };
   }
@@ -85,7 +88,7 @@ export class HostedEvalsResource extends BaseResource {
       body: archive as Uint8Array<ArrayBuffer>,
     });
     if (!response.ok) {
-      await this.raiseError(response);
+      await this.handleErrorMessage(response);
     }
     return (await response.json()) as { uploadId: string };
   }
@@ -100,27 +103,12 @@ export class HostedEvalsResource extends BaseResource {
       body: JSON.stringify(options),
     });
     if (!response.ok) {
-      await this.raiseError(response);
+      await this.handleErrorMessage(response);
     }
     return (await response.json()) as { sandboxId: string };
   }
 
   private url(path: string): string {
     return `${this.baseHttpUrl}${this.apiPrefix}/hosted-evals${path}`;
-  }
-
-  /** Surface the server's `{error}` message instead of the raw JSON body. */
-  private async raiseError(response: Response): Promise<never> {
-    const body = await response.text();
-    let message = body;
-    try {
-      const parsed = JSON.parse(body) as { error?: unknown };
-      if (typeof parsed?.error === "string" && parsed.error.length > 0) {
-        message = parsed.error;
-      }
-    } catch {
-      // Not JSON (a proxy error page, an nginx 413) — use it as-is.
-    }
-    throw new Error(`${response.status} ${message}`);
   }
 }

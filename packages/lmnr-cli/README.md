@@ -51,12 +51,14 @@ See `lmnr-cli setup --help` for all flags.
 ## Authentication
 
 The CLI authenticates as a **user** via the OAuth Device Flow (`lmnr-cli login`).
-Every command runs on that user session — there is no project-API-key auth mode.
-Project commands (`sql`, `dataset`, `trace`, `debug`) target a project via
-`--project-id` or the `.lmnr/project.json` link written by `lmnr-cli setup`.
+Project commands (`sql`, `dataset`, `trace`, `debug`) run on that user session
+and target a project via `--project-id` or the `.lmnr/project.json` link written
+by `lmnr-cli setup`.
 
-The project API key that `setup` writes to `./.env` is for your **application's
-SDK** (trace ingestion) — the CLI itself never reads it.
+The project API key that `setup` writes to `./.env` (`LMNR_PROJECT_API_KEY`) is
+for your **application's SDK** (trace ingestion). The one CLI command that reads
+it is `eval run`: local and `--remote --attach` runs report results with it, and
+`--remote` uses it when there is no login (e.g. in CI).
 
 ### OAuth Device Flow
 
@@ -147,6 +149,30 @@ tied to a trace or evaluation), so it works the same for agent runs and evals
 (any `LMNR_DEBUG=1` program). Each call appends a new block, interleaved by time
 with the session's traces and evaluations. See the Laminar debugger docs:
 https://laminar.sh/docs/platform/debugger
+
+### `eval run` - Harbor evals
+
+Run the [Harbor](https://harborframework.com) suites in an evals folder
+(`<dir>/<suite>/harbor.yaml`, default `evals`) and report every trial to Laminar
+as an evaluation, grouped by suite.
+
+```bash
+lmnr-cli eval run                                  # trials on local Docker
+lmnr-cli eval run --suite support --task "refund-*"
+lmnr-cli eval run --remote                         # in Laminar sandboxes, detached
+lmnr-cli eval run --remote --attach                # in Laminar sandboxes, wait here
+```
+
+Every mode needs Docker; local and `--attach` runs also need
+[uv](https://docs.astral.sh/uv/) and `LMNR_PROJECT_API_KEY`. `--remote` pushes
+the images tasks use from your local Docker. See `lmnr-cli eval run --help` for
+images (`lmnr.yaml`), secrets and flags. Exit codes:
+
+- `16` invalid evals folder, or the packed folder is over the upload limit
+- `17` `uv` or `docker` is not installed
+- `18` a suite's `harbor run` failed
+- `19` an unset `${VAR}` placeholder or `LMNR_PROJECT_API_KEY`
+- `20` a Docker build, pull or save failed, or an image isn't linux/amd64
 
 ### `setup` - One-shot onboarding
 

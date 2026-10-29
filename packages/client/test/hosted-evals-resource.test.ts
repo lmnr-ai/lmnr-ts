@@ -74,6 +74,18 @@ void describe("HostedEvalsResource", () => {
       }),
       { message: "400 No archive uploaded for this uploadId" },
     );
+
+    global.fetch = mock.fn(() => ({
+      ok: false,
+      status: 413,
+      text: () => "Payload Too Large",
+    })) as any;
+    await assert.rejects(
+      new HostedEvalsResource("https://api.test.com:443", userToken).upload(
+        new Uint8Array([1]),
+      ),
+      { message: "413 Payload Too Large" },
+    );
   });
 
   void it("pushes an image: missing layers, a streamed layer, the config", async () => {

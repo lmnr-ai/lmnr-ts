@@ -2,7 +2,7 @@
  * Parse the signal flags into a request body. Domain rules (column allowlists,
  * sample-rate bounds, field-name regex) live in app-server; duplicating them
  * here drifted from the server and the UI, and a 400 `{error}` is already shown
- * verbatim by `SignalsResource.raiseSignalError`.
+ * verbatim by `SignalsResource` (`handleErrorMessage`).
  */
 
 import type {

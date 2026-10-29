@@ -26,11 +26,8 @@ import {
   handleDebugSessionSetName,
   handleDebugSessionSummary,
 } from "./commands/debug";
-import {
-  handleEvalOrchestrate,
-  handleEvalRun,
-  parsePositiveInt,
-} from "./commands/eval";
+import { handleEvalRun, parsePositiveInt } from "./commands/eval";
+import { handleEvalOrchestrate } from "./commands/eval/detached";
 import {
   handleLlmProfileCreate,
   handleLlmProfileDelete,
@@ -631,10 +628,11 @@ Every trial is reported to Laminar as an evaluation datapoint, grouped by suite.
 Modes:
   (default)          Trials run on local Docker. Needs uv, Docker and
                      LMNR_PROJECT_API_KEY (written to .env by \`lmnr-cli setup\`).
-  --remote           Uploads the folder and starts the run in a Laminar sandbox,
-                     then returns. Needs \`lmnr-cli login\` (or LMNR_PROJECT_API_KEY).
+  --remote           Pushes the images, uploads the folder and starts the run
+                     in a Laminar sandbox, then returns. Needs Docker and
+                     \`lmnr-cli login\` (or LMNR_PROJECT_API_KEY).
   --remote --attach  Orchestrates from this machine; trials run in Laminar
-                     sandboxes. Needs uv and LMNR_PROJECT_API_KEY.
+                     sandboxes. Needs uv, Docker and LMNR_PROJECT_API_KEY.
 
 Images: tasks name their image with docker_image in task.toml. Images listed in
 [dir]/lmnr.yaml are built from their Dockerfile with Docker on every run:
@@ -644,15 +642,23 @@ Images: tasks name their image with docker_image in task.toml. Images listed in
       dockerfile: image/Dockerfile   # relative to [dir]
       context: ..                    # build context, default: the Dockerfile's dir
 
-Builds honor .dockerignore and never get .git or .env* files. For --remote,
-every image (lmnr.yaml, a task's own environment/Dockerfile, or a registry
-image) is built or pulled for linux/amd64, and only layers Laminar doesn't have
-yet are uploaded.
+Every build lmnr-cli runs honors .dockerignore and never gets .git or .env*
+files. In local mode Harbor builds a task's own environment/Dockerfile itself,
+without that guard. For --remote, every image the tasks use (an lmnr.yaml
+image, a task's own environment/Dockerfile, or a registry image) is built or
+pulled for linux/amd64, and only layers Laminar doesn't have yet are uploaded.
 
 Secrets: \`\${VAR}\` placeholders in harbor.yaml and task.toml are filled from
 your environment or .env / .env.local; a missing one fails the run before it
 starts. For --remote they are sent with the run, never uploaded as files
 (.env*, .git, node_modules, virtualenvs, caches and jobs/ are never packed).
+
+Exit codes:
+  16  invalid_evals_dir / archive_too_large
+  17  missing_tool (uv or Docker not installed)
+  18  harbor_failed (a suite's harbor run failed)
+  19  missing_env (an unset \`\${VAR}\` or LMNR_PROJECT_API_KEY)
+  20  docker_failed (a docker build, pull or save failed, or a wrong platform)
 
 Examples:
   $ lmnr-cli eval run

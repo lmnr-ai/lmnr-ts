@@ -2,16 +2,17 @@
 
 Written next to the job config by `lmnr-cli eval run --remote` and loaded with
 `environment.import_path = "lmnr_hosted_env:LaminarEnvironment"`. Each trial
-runs in a Daytona sandbox that the Laminar app-server creates and proxies, so
+runs in a Laminar sandbox that the Laminar app-server creates and proxies, so
 this process only ever holds a Laminar project API key.
 
 Configuration (set by lmnr-cli):
   LMNR_PROJECT_API_KEY  project API key the sandbox routes authenticate with
   LMNR_BASE_URL         Laminar API URL, optionally with a port
-  LMNR_EVAL_IMAGES      JSON image map: {"images": {docker_image: spec},
-                        "dockerfiles": {env dir relative to cwd: spec}}, where
-                        spec is {"image": manifest digest} of an image lmnr-cli
-                        built or pulled, and pushed
+  LMNR_EVAL_IMAGES      JSON: {"images": {docker_image: digest},
+                        "dockerfiles": {task environment/ dir: digest}}, the
+                        manifest digests of images lmnr-cli built or pulled and
+                        pushed. Dockerfile keys are relative to the suite dir,
+                        which is Harbor's cwd, and always use "/".
 """
 
 from __future__ import annotations
@@ -29,10 +30,7 @@ from uuid import uuid4
 import httpx
 
 from harbor.environments.base import BaseEnvironment, ExecResult, SandboxBuildFailedError
-from harbor.environments.capabilities import (
-    EnvironmentCapabilities,
-    EnvironmentResourceCapabilities,
-)
+from harbor.environments.capabilities import EnvironmentResourceCapabilities
 from harbor.environments.definition import should_use_prebuilt_docker_image
 from harbor.environments.tar_transfer import (
     extract_dir_from_file,
@@ -45,7 +43,7 @@ ENVIRONMENT_TYPE = "laminar"
 DEFAULT_BASE_URL = "https://api.lmnr.ai"
 REQUEST_TIMEOUT = httpx.Timeout(300.0, connect=30.0)
 REQUEST_ATTEMPTS = 4
-FAILED_STATES = {"error", "build_failed", "destroyed", "destroying"}
+FAILED_STATES = {"error", "destroyed"}
 # A command can outlive its own `timeout` while the sandbox is torn down; give
 # up polling this long after it should have ended.
 POLL_GRACE_SEC = 300
@@ -84,10 +82,6 @@ class LaminarEnvironment(BaseEnvironment):
     @classmethod
     def resource_capabilities(cls) -> EnvironmentResourceCapabilities:
         return EnvironmentResourceCapabilities(cpu_request=True, memory_request=True)
-
-    @property
-    def capabilities(self) -> EnvironmentCapabilities:
-        return EnvironmentCapabilities()
 
     def _validate_definition(self):
         if (self.environment_dir / "docker-compose.yaml").exists():
@@ -142,16 +136,16 @@ class LaminarEnvironment(BaseEnvironment):
         if docker_image and should_use_prebuilt_docker_image(
             self.environment_dir, docker_image=docker_image, force_build=force_build
         ):
-            spec = images.get("images", {}).get(docker_image)
-            if spec is None:
+            digest = images.get("images", {}).get(docker_image)
+            if digest is None:
                 raise LaminarEnvironmentError(f"lmnr-cli didn't push image {docker_image}.")
-            return spec
+            return {"image": digest}
         # lmnr-cli writes the keys with "/" on every OS (`dockerfileKey`).
         key = Path(os.path.relpath(self.environment_dir, Path.cwd())).as_posix()
-        spec = images.get("dockerfiles", {}).get(key)
-        if spec is None:
+        digest = images.get("dockerfiles", {}).get(key)
+        if digest is None:
             raise LaminarEnvironmentError(f"lmnr-cli didn't build {key}/Dockerfile.")
-        return spec
+        return {"image": digest}
 
     def _resources(self) -> dict:
         resources = {}
@@ -177,10 +171,13 @@ class LaminarEnvironment(BaseEnvironment):
         await self.ensure_dirs(self._mount_targets(writable_only=True))
         await self._upload_environment_dir_after_start()
 
+    def _build_timeout(self) -> float:
+        return float(getattr(self.task_env_config, "build_timeout_sec", None) or 1800)
+
     async def _wait_for_snapshot(self, body: dict) -> None:
         """Sandboxes start from a snapshot per image and resource shape,
         created on first use; concurrent trials wait on the same one."""
-        timeout = float(getattr(self.task_env_config, "build_timeout_sec", None) or 1800)
+        timeout = self._build_timeout()
         deadline = time.monotonic() + timeout
         while True:
             status = await self._json("POST", "/images/snapshots", json=body)
@@ -199,7 +196,7 @@ class LaminarEnvironment(BaseEnvironment):
             await asyncio.sleep(2)
 
     async def _wait_until_started(self) -> None:
-        timeout = float(getattr(self.task_env_config, "build_timeout_sec", None) or 1800)
+        timeout = self._build_timeout()
         deadline = time.monotonic() + timeout
         while True:
             status = await self._json("GET", self._sandbox_path())
@@ -208,19 +205,12 @@ class LaminarEnvironment(BaseEnvironment):
                 return
             if state in FAILED_STATES:
                 reason = status.get("errorReason") or state
-                if state == "build_failed":
-                    raise SandboxBuildFailedError(
-                        f"Image build failed for '{self.environment_name}': {reason}"
-                    )
                 raise LaminarEnvironmentError(f"Sandbox {self._sandbox_id} is {state}: {reason}")
             if time.monotonic() > deadline:
                 raise LaminarEnvironmentError(
                     f"Sandbox {self._sandbox_id} did not start within {timeout:.0f}s (state {state})"
                 )
             await asyncio.sleep(2)
-
-    async def _upload_environment_dir_after_start(self) -> None:
-        await super()._upload_environment_dir_after_start()
 
     async def stop(self, delete: bool):
         try:

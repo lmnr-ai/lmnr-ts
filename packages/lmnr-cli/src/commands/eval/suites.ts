@@ -1,10 +1,28 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { parse as parseYaml } from "yaml";
 
 import { invalidEvalsDir } from "../../errors";
-import { SUITE_CONFIG } from "./pack";
+
+/** A suite is a directory directly inside the evals folder holding a Harbor JobConfig. */
+const SUITE_CONFIG = "harbor.yaml";
+
+/**
+ * Never walked into: VCS data, dependency/build caches and Harbor job output.
+ * Not packed for upload (`pack.ts`) and not searched for suites or tasks.
+ */
+export const SKIPPED_DIRS = new Set([
+  ".git",
+  "node_modules",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+  "jobs",
+]);
 
 /** `module:Class` Harbor loads for remote trials; the module is written by `harbor.ts`. */
 export const LAMINAR_ENVIRONMENT_IMPORT_PATH =
@@ -20,10 +38,34 @@ export interface RunOverrides {
   model?: string;
   /** `--env` names: referenced as `${KEY}` from every agent's env. */
   extraAgentEnv?: string[];
-  remote: boolean;
 }
 
 export type JobConfig = Record<string, unknown>;
+
+/** Suite directory names directly inside `dir`, sorted. */
+export const discoverSuites = async (dir: string): Promise<string[]> => {
+  const root = path.resolve(dir);
+  const rootStat = await stat(root).catch(() => null);
+  if (!rootStat?.isDirectory()) {
+    throw invalidEvalsDir(`Evals folder not found: ${root}`);
+  }
+  const entries = await readdir(root, { withFileTypes: true });
+  const suites: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || SKIPPED_DIRS.has(entry.name)) continue;
+    const config = await stat(path.join(root, entry.name, SUITE_CONFIG)).catch(
+      () => null,
+    );
+    if (config?.isFile()) suites.push(entry.name);
+  }
+  if (suites.length === 0) {
+    throw invalidEvalsDir(
+      `No suites in ${root}: expected <suite>/${SUITE_CONFIG} directly ` +
+        "inside it. Pass the evals folder itself, not its parent or a suite.",
+    );
+  }
+  return suites.sort();
+};
 
 export const loadSuiteConfig = async (suiteDir: string): Promise<JobConfig> => {
   const file = path.join(suiteDir, SUITE_CONFIG);
@@ -76,16 +118,18 @@ const taskName = (task: Record<string, unknown>): string =>
     : path.basename(typeof task.path === "string" ? task.path : "");
 
 /**
- * Apply CLI overrides to a suite's JobConfig. `harbor run` flags can't override
- * a `-c` config's datasets (`-i` requires `-p`) and `-m` only applies with
- * `-a`, so overrides are written into the config instead.
+ * Apply CLI overrides to a suite's JobConfig, and with `remote` route trials to
+ * Laminar sandboxes. `harbor run` flags can't override a `-c` config's datasets
+ * (`-i` requires `-p`) and `-m` only applies with `-a`, so overrides are
+ * written into the config instead.
  */
 export const buildJobConfig = (
   config: JobConfig,
   overrides: RunOverrides,
+  remote: boolean,
 ): JobConfig => {
   const job: JobConfig = structuredClone(config);
-  if (overrides.remote) {
+  if (remote) {
     // Trials run in Laminar sandboxes; provider-specific settings don't apply.
     const {
       type: _type,
@@ -144,21 +188,16 @@ const collectTemplates = (text: string, into: TemplateVars) => {
   }
 };
 
-/** Every `task.toml` under `suiteDir` (skipping job output and caches). */
+/** Every `task.toml` under `suiteDir`, outside `SKIPPED_DIRS`. */
 export const findTaskTomls = async (suiteDir: string): Promise<string[]> => {
   const found: string[] = [];
   const walk = async (dir: string) => {
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        if (
-          ["jobs", ".git", "node_modules", "__pycache__", ".venv"].includes(
-            entry.name,
-          )
-        ) {
-          continue;
+        if (!SKIPPED_DIRS.has(entry.name)) {
+          await walk(path.join(dir, entry.name));
         }
-        await walk(path.join(dir, entry.name));
       } else if (entry.isFile() && entry.name === "task.toml") {
         found.push(path.join(dir, entry.name));
       }
