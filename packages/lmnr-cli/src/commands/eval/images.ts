@@ -30,11 +30,14 @@ export interface ImageDef {
   include?: string[];
 }
 
-/** What a Laminar sandbox is built from (wire shape of `POST /sandboxes`). */
-export interface ImageSpec {
-  dockerfile: string;
-  contextHashes: string[];
-}
+/**
+ * What a Laminar sandbox starts from (wire shape of `POST /sandboxes`): an
+ * image pushed by `push.ts` (manifest digest), or a Dockerfile plus uploaded
+ * build contexts for Laminar to build.
+ */
+export type ImageSpec =
+  | { image: string }
+  | { dockerfile: string; contextHashes: string[] };
 
 /** Read by `lmnr_hosted_env.py` from `LMNR_EVAL_IMAGES`. */
 export interface ImageMap {
@@ -207,7 +210,7 @@ const ensureContext = async (
   client: LaminarClient,
   label: string,
   context: BuildContext,
-): Promise<ImageSpec> => {
+): Promise<{ dockerfile: string; contextHashes: string[] }> => {
   if (await client.hostedEvals.contextExists(context.hash)) {
     logger.info(`Build context for ${label} is unchanged`);
   } else {
@@ -255,22 +258,27 @@ export const dockerfileKey = (
 ): string => paths.relative(suiteDir, envDir).split(paths.sep).join("/");
 
 /**
- * Make sure Laminar can build every image the suites use: `lmnr.yaml` images
- * and per-task Dockerfiles. Daytona builds and caches them by content, so an
- * unchanged image costs one `contextExists` call.
+ * Make sure Laminar sandboxes can start every image the suites use.
+ * `lmnr.yaml` images go through `push` (built with local Docker and pushed,
+ * see `push.ts`) when given; otherwise they, like per-task Dockerfiles, are
+ * built by Daytona from an uploaded context, which it caches only by exact
+ * content: any change rebuilds the whole image.
  */
 export const ensureRemoteImages = async (
   client: LaminarClient,
   evalsDir: string,
   suites: string[],
+  push?: (def: ImageDef) => Promise<string>,
 ): Promise<Record<string, ImageMap>> => {
   const images: Record<string, ImageSpec> = {};
   for (const def of await loadImageDefs(evalsDir)) {
-    images[def.name] = await ensureContext(
-      client,
-      `image ${def.name}`,
-      await packBuildContext(def.dockerfile, def.context, def.include),
-    );
+    images[def.name] = push
+      ? { image: await push(def) }
+      : await ensureContext(
+          client,
+          `image ${def.name}`,
+          await packBuildContext(def.dockerfile, def.context, def.include),
+        );
   }
   const maps: Record<string, ImageMap> = {};
   for (const suite of suites) {

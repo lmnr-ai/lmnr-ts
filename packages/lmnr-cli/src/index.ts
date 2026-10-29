@@ -637,8 +637,9 @@ Modes:
                      sandboxes. Needs uv and LMNR_PROJECT_API_KEY.
 
 Images: tasks name their image with docker_image in task.toml. Images listed in
-[dir]/lmnr.yaml are built from their Dockerfile on every run (docker build
-locally, by Laminar for --remote):
+[dir]/lmnr.yaml are built from their Dockerfile with Docker on every run. For
+--remote they are built for linux/amd64 and only layers Laminar doesn't have yet
+are uploaded; without Docker, Laminar builds them from the uploaded context:
 
   images:
     myapp-evals:

@@ -21,6 +21,7 @@ import { outputJson } from "../../utils/output";
 import { buildLocalImages, runHarborSuite } from "./harbor";
 import { ensureRemoteImages, type ImageMap, loadImageDefs } from "./images";
 import { discoverSuites, packEvalsDir } from "./pack";
+import { buildAndPushImage, dockerAvailable } from "./push";
 import {
   buildJobConfig,
   findTemplateVars,
@@ -191,6 +192,31 @@ const evaluationsUrl = async (
   return `${frontend}/project/${id}/evaluations`;
 };
 
+/**
+ * Images for Laminar sandboxes. With Docker, `lmnr.yaml` images are built here
+ * and pushed layer by layer, so a change re-uploads and rebuilds only the
+ * layers it touches; without it, Laminar builds them from the uploaded context.
+ */
+const remoteImages = async (
+  client: LaminarClient,
+  evalsDir: string,
+  suites: string[],
+): Promise<Record<string, ImageMap>> => {
+  if (await dockerAvailable()) {
+    return ensureRemoteImages(client, evalsDir, suites, (def) =>
+      buildAndPushImage(client, def),
+    );
+  }
+  if ((await loadImageDefs(evalsDir)).length > 0) {
+    logger.warn(
+      "Docker isn't available, so Laminar builds the lmnr.yaml images from " +
+        "their build context: any change in it rebuilds the whole image. " +
+        "Start Docker to build here and upload only changed layers.",
+    );
+  }
+  return ensureRemoteImages(client, evalsDir, suites);
+};
+
 const formatMiB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 
 /**
@@ -311,7 +337,7 @@ export const handleEvalRun = async (
       [API_KEY_VAR]: await projectKey(),
       LMNR_BASE_URL: laminarBaseUrl(opts),
     };
-    const images = await ensureRemoteImages(client, evalsDir, suites);
+    const images = await remoteImages(client, evalsDir, suites);
     const failed = await runSuites(
       evalsDir,
       suites,
@@ -345,7 +371,7 @@ const startDetachedRun = async (
     );
   }
 
-  const images = await ensureRemoteImages(client, evalsDir, suites);
+  const images = await remoteImages(client, evalsDir, suites);
   const { archive, fileCount, skippedSymlinks } = await packEvalsDir(evalsDir);
   if (skippedSymlinks.length > 0) {
     logger.warn(

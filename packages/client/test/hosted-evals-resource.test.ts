@@ -104,4 +104,49 @@ void describe("HostedEvalsResource", () => {
     assert.strictEqual(init.body, tar);
     assert.strictEqual(init.headers["Content-Type"], "application/x-tar");
   });
+
+  void it("pushes an image: missing layers, a streamed layer, the config", async () => {
+    const responses: Record<string, unknown> = {
+      "/images/layers/missing": { missing: ["sha256:aa"] },
+      "/images/layers/sha256:aa": { digest: "sha256:bb", size: 3 },
+      "/images": { image: "sha256:cc" },
+    };
+    const mockFetch = mock.fn((url: string) => ({
+      ok: true,
+      json: () => responses[url.split("/hosted-evals")[1] ?? ""],
+    }));
+    global.fetch = mockFetch as any;
+    const resource = new HostedEvalsResource(
+      "https://api.test.com:443",
+      userToken,
+    );
+
+    assert.deepStrictEqual(
+      await resource.missingLayers(["sha256:aa", "sha256:dd"]),
+      ["sha256:aa"],
+    );
+    const layer = new ReadableStream<Uint8Array>();
+    assert.deepStrictEqual(await resource.uploadLayer("sha256:aa", layer), {
+      digest: "sha256:bb",
+      size: 3,
+    });
+    const config = '{"architecture":"amd64"}';
+    assert.deepStrictEqual(await resource.createImage(config), {
+      image: "sha256:cc",
+    });
+
+    const calls = mockFetch.mock.calls.map((c) => c.arguments as any);
+    assert.strictEqual(
+      calls[0][0],
+      "https://api.test.com:443/v1/cli/hosted-evals/images/layers/missing",
+    );
+    assert.deepStrictEqual(JSON.parse(calls[0][1].body), {
+      diffIds: ["sha256:aa", "sha256:dd"],
+    });
+    assert.strictEqual(calls[1][1].method, "PUT");
+    assert.strictEqual(calls[1][1].body, layer);
+    assert.strictEqual(calls[1][1].duplex, "half");
+    assert.strictEqual(calls[1][1].headers["Content-Type"], "application/gzip");
+    assert.deepStrictEqual(JSON.parse(calls[2][1].body), { config });
+  });
 });

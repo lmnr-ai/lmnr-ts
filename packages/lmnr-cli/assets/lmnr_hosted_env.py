@@ -10,7 +10,9 @@ Configuration (set by lmnr-cli):
   LMNR_BASE_URL         Laminar API URL, optionally with a port
   LMNR_EVAL_IMAGES      JSON image map: {"images": {docker_image: spec},
                         "dockerfiles": {env dir relative to cwd: spec}}, where
-                        spec is {"dockerfile": str, "contextHashes": [str]}
+                        spec is {"image": manifest digest} for an image lmnr-cli
+                        built and pushed, or {"dockerfile": str,
+                        "contextHashes": [str]} for Laminar to build
 """
 
 from __future__ import annotations
@@ -167,6 +169,8 @@ class LaminarEnvironment(BaseEnvironment):
 
     async def start(self, force_build: bool) -> None:
         body = {**self._image_spec(force_build), **self._resources()}
+        if "image" in body:
+            await self._wait_for_snapshot(body)
         created = await self._json("POST", "/sandboxes", json=body)
         self._sandbox_id = created["sandboxId"]
         self.logger.debug("Created Laminar sandbox %s", self._sandbox_id)
@@ -177,6 +181,27 @@ class LaminarEnvironment(BaseEnvironment):
             await self.exec(self._ensure_dirs_command([workdir], chmod=False), user="root")
         await self.ensure_dirs(self._mount_targets(writable_only=True))
         await self._upload_environment_dir_after_start()
+
+    async def _wait_for_snapshot(self, body: dict) -> None:
+        """A pushed image starts sandboxes from a snapshot per resource shape,
+        created on first use; concurrent trials wait on the same one."""
+        timeout = float(getattr(self.task_env_config, "build_timeout_sec", None) or 1800)
+        deadline = time.monotonic() + timeout
+        while True:
+            status = await self._json("POST", "/images/snapshots", json=body)
+            state = status.get("state")
+            if state == "ready":
+                return
+            if state == "failed":
+                raise SandboxBuildFailedError(
+                    f"Preparing the image for '{self.environment_name}' failed: "
+                    f"{status.get('errorReason') or 'unknown error'}"
+                )
+            if time.monotonic() > deadline:
+                raise LaminarEnvironmentError(
+                    f"The image for '{self.environment_name}' wasn't ready within {timeout:.0f}s"
+                )
+            await asyncio.sleep(2)
 
     async def _wait_until_started(self) -> None:
         timeout = float(getattr(self.task_env_config, "build_timeout_sec", None) or 1800)

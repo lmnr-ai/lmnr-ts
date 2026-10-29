@@ -13,8 +13,10 @@ export interface StartHostedEvalRunOptions {
 /**
  * Hosted evals: Harbor evals with trials in Laminar-managed sandboxes.
  *
+ * - Prebuilt images: `missingLayers` / `uploadLayer` / `createImage` push an
+ *   image built locally (layers named by their `diff_id`); trials start from it.
  * - Build contexts: `contextExists` / `uploadContext` store a Docker build
- *   context (uncompressed tar, named by its md5) that trial images are built from.
+ *   context (uncompressed tar, named by its md5) that Laminar builds images from.
  * - Detached runs: `upload` the `.tar.gz` of the evals folder, then `startRun`
  *   to orchestrate it in a Laminar sandbox. Results land in the project as
  *   regular evaluations; v0 returns no run status.
@@ -44,6 +46,56 @@ export class HostedEvalsResource extends BaseResource {
     if (!response.ok) {
       await this.raiseError(response);
     }
+  }
+
+  /** The image layers (by `diff_id`) the project hasn't uploaded yet. */
+  public async missingLayers(diffIds: string[]): Promise<string[]> {
+    const response = await fetch(this.url("/images/layers/missing"), {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ diffIds }),
+    });
+    if (!response.ok) {
+      await this.raiseError(response);
+    }
+    return ((await response.json()) as { missing: string[] }).missing;
+  }
+
+  /**
+   * Upload one image layer, gzip-compressed. `diffId` is the digest of its
+   * uncompressed tar, as listed in the image config's `rootfs.diff_ids`.
+   */
+  public async uploadLayer(
+    diffId: string,
+    gzipped: ReadableStream<Uint8Array> | Uint8Array,
+  ): Promise<{ digest: string; size: number }> {
+    const response = await fetch(this.url(`/images/layers/${diffId}`), {
+      method: "PUT",
+      headers: { ...this.headers(), "Content-Type": "application/gzip" },
+      body: gzipped as BodyInit,
+      // Required by Node's fetch for a streamed request body.
+      duplex: "half",
+    } as RequestInit);
+    if (!response.ok) {
+      await this.raiseError(response);
+    }
+    return (await response.json()) as { digest: string; size: number };
+  }
+
+  /**
+   * Push the image described by `config` (its config JSON, byte for byte) once
+   * its layers are uploaded. Returns the manifest digest trials start from.
+   */
+  public async createImage(config: string): Promise<{ image: string }> {
+    const response = await fetch(this.url("/images"), {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ config }),
+    });
+    if (!response.ok) {
+      await this.raiseError(response);
+    }
+    return (await response.json()) as { image: string };
   }
 
   /**
