@@ -8,6 +8,7 @@ export const PARENT_SPAN_IDS_PATH = "lmnr.span.parent_ids_path";
 export const SPAN_INSTRUMENTATION_SOURCE = "lmnr.span.instrumentation_source";
 export const SPAN_SDK_VERSION = "lmnr.span.sdk_version";
 export const SPAN_LANGUAGE_VERSION = "lmnr.span.language_version";
+export const SPAN_RELEASE = "lmnr.span.release";
 export const SPAN_INSTRUMENTATION_SCOPE_NAME =
   "lmnr.span.instrumentation_scope.name";
 export const SPAN_INSTRUMENTATION_SCOPE_VERSION =

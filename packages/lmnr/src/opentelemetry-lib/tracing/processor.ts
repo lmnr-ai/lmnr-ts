@@ -28,6 +28,7 @@ import {
   SPAN_INSTRUMENTATION_SOURCE,
   SPAN_LANGUAGE_VERSION,
   SPAN_PATH,
+  SPAN_RELEASE,
   SPAN_SDK_VERSION,
   TRACE_TYPE,
   USER_ID,
@@ -44,6 +45,7 @@ import {
   LaminarContextManager,
 } from "./context";
 import { LaminarSpanExporter } from "./exporter";
+import { detectRelease } from "./release";
 
 interface LaminarSpanProcessorOptions {
   /**
@@ -112,6 +114,12 @@ interface LaminarSpanProcessorOptions {
    * If not provided, the `port` option will be used.
    */
   httpPort?: number;
+
+  /**
+   * The release of the running code, usually its git commit SHA, stamped on
+   * every span. Optional. If not provided, detected from the environment.
+   */
+  release?: string;
 }
 
 export class LaminarSpanProcessor implements SpanProcessor {
@@ -119,6 +127,7 @@ export class LaminarSpanProcessor implements SpanProcessor {
   private logger: Logger;
   private readonly _spanIdToPath: Map<string, string[]> = new Map();
   private readonly _spanIdLists: Map<string, string[]> = new Map();
+  private readonly release: string | undefined;
 
   /**
    * @param {object} options - The options for the Laminar span processor.
@@ -134,9 +143,17 @@ export class LaminarSpanProcessor implements SpanProcessor {
    * @param {boolean} options.forceHttp - Whether to force HTTP and use OpenTelemetry
    * HTTP/protobuf exporter.
    * Not recommended with Laminar backends.
+   * @param {string} options.release - The release of the running code, usually
+   * its git commit SHA. Detected from the environment if not provided.
    */
   constructor(options: LaminarSpanProcessorOptions = {}) {
     this.logger = initializeLogger();
+    // Only this processor's `onStart` runs, so it carries a wrapped one's release.
+    const wrapped =
+      options.spanProcessor instanceof LaminarSpanProcessor
+        ? options.spanProcessor.release
+        : undefined;
+    this.release = detectRelease(options.release ?? wrapped);
     if (
       options.spanProcessor &&
       options.spanProcessor instanceof LaminarSpanProcessor
@@ -229,6 +246,11 @@ export class LaminarSpanProcessor implements SpanProcessor {
     const langVersion = getLangVersion();
     if (langVersion) {
       span.setAttribute(SPAN_LANGUAGE_VERSION, langVersion);
+    }
+    // On every span, not via global metadata: app-server groups an agent's
+    // traces into versions by it, so a span from a bare OTel tracer needs it too.
+    if (this.release) {
+      span.setAttribute(SPAN_RELEASE, this.release);
     }
 
     // Stamp global metadata (e.g. the debug run's `rollout.session_id`) onto
