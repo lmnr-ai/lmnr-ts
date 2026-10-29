@@ -7,7 +7,7 @@ import path from "node:path";
 import spawn from "cross-spawn";
 
 import { harborFailed, missingTool } from "../../errors";
-import { type ImageDef, type ImageMap, stageBuildContext } from "./images";
+import { guardedDockerfile, type ImageDef, type ImageMap } from "./images";
 import type { JobConfig } from "./suites";
 
 /**
@@ -132,28 +132,36 @@ export const runHarborSuite = async (run: HarborRun): Promise<number> => {
 };
 
 /**
- * Build `lmnr.yaml` images locally, tagged with the name tasks reference. An
- * image with `include` builds from a staged copy of just those paths.
+ * `docker build` of `def` without `.git` or env files in the context (see
+ * `guardedDockerfile`). `args` go before the context, e.g. `--platform`.
  */
+export const dockerBuild = async (
+  def: ImageDef,
+  tag: string,
+  args: string[] = [],
+): Promise<void> => {
+  const dir = await guardedDockerfile(def);
+  try {
+    const code = await runCommand("docker", [
+      "build",
+      ...args,
+      "-f",
+      path.join(dir, "Dockerfile"),
+      "-t",
+      tag,
+      def.context,
+    ]);
+    if (code !== 0) {
+      throw harborFailed(`docker build of ${def.name} failed (${code}).`);
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+};
+
+/** Build `lmnr.yaml` images locally, tagged with the name tasks reference. */
 export const buildLocalImages = async (defs: ImageDef[]): Promise<void> => {
   for (const def of defs) {
-    const context = def.include ? await stageBuildContext(def) : def.context;
-    try {
-      const code = await runCommand("docker", [
-        "build",
-        "-f",
-        def.dockerfile,
-        "-t",
-        def.name,
-        context,
-      ]);
-      if (code !== 0) {
-        throw harborFailed(
-          `docker build of image ${def.name} failed (${code}).`,
-        );
-      }
-    } finally {
-      if (def.include) await rm(context, { recursive: true, force: true });
-    }
+    await dockerBuild(def, def.name);
   }
 };

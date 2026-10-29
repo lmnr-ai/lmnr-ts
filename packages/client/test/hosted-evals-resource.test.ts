@@ -76,35 +76,6 @@ void describe("HostedEvalsResource", () => {
     );
   });
 
-  void it("checks and uploads build contexts by hash", async () => {
-    const mockFetch = mock.fn((_url: string, init?: { method?: string }) =>
-      init?.method === "PUT"
-        ? { ok: true }
-        : { ok: true, json: () => ({ exists: false }) },
-    );
-    global.fetch = mockFetch as any;
-    const resource = new HostedEvalsResource("https://api.test.com:443", {
-      type: "apiKey",
-      key: "k",
-    });
-    const hash = "0123456789abcdef0123456789abcdef";
-
-    assert.strictEqual(await resource.contextExists(hash), false);
-    const tar = new Uint8Array([1, 2, 3]);
-    await resource.uploadContext(hash, tar);
-
-    const [existsUrl] = mockFetch.mock.calls[0].arguments as any;
-    assert.strictEqual(
-      existsUrl,
-      `https://api.test.com:443/v1/hosted-evals/contexts/${hash}`,
-    );
-    const [uploadUrl, init] = mockFetch.mock.calls[1].arguments as any;
-    assert.strictEqual(uploadUrl, existsUrl);
-    assert.strictEqual(init.method, "PUT");
-    assert.strictEqual(init.body, tar);
-    assert.strictEqual(init.headers["Content-Type"], "application/x-tar");
-  });
-
   void it("pushes an image: missing layers, a streamed layer, the config", async () => {
     const responses: Record<string, unknown> = {
       "/images/layers/missing": { missing: ["sha256:aa"] },

@@ -36,7 +36,6 @@
     "csv-parser": "^3.2.0",
     "export-to-csv": "^1.4.0",
     "giget": "^3.2.0",
-    "ignore": "^7.0.14",
     "modern-tar": "^0.8.6",
     "open": "^11.0.0",
     "picocolors": "^1.1.1",

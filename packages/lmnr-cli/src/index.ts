@@ -637,17 +637,17 @@ Modes:
                      sandboxes. Needs uv and LMNR_PROJECT_API_KEY.
 
 Images: tasks name their image with docker_image in task.toml. Images listed in
-[dir]/lmnr.yaml are built from their Dockerfile with Docker on every run. For
---remote they are built for linux/amd64 and only layers Laminar doesn't have yet
-are uploaded:
+[dir]/lmnr.yaml are built from their Dockerfile with Docker on every run:
 
   images:
     myapp-evals:
       dockerfile: image/Dockerfile   # relative to [dir]
       context: ..                    # build context, default: the Dockerfile's dir
-      include: [agent/, shared/]     # optional: the only context paths sent to the build
 
-Without include the whole context is sent (minus .dockerignore, .git, .env*).
+Builds honor .dockerignore and never get .git or .env* files. For --remote,
+every image (lmnr.yaml, a task's own environment/Dockerfile, or a registry
+image) is built or pulled for linux/amd64, and only layers Laminar doesn't have
+yet are uploaded.
 
 Secrets: \`\${VAR}\` placeholders in harbor.yaml and task.toml are filled from
 your environment or .env / .env.local; a missing one fails the run before it

@@ -10,9 +10,8 @@ Configuration (set by lmnr-cli):
   LMNR_BASE_URL         Laminar API URL, optionally with a port
   LMNR_EVAL_IMAGES      JSON image map: {"images": {docker_image: spec},
                         "dockerfiles": {env dir relative to cwd: spec}}, where
-                        spec is {"image": manifest digest} for an image lmnr-cli
-                        built and pushed, or {"dockerfile": str,
-                        "contextHashes": [str]} for Laminar to build
+                        spec is {"image": manifest digest} of an image lmnr-cli
+                        built or pulled, and pushed
 """
 
 from __future__ import annotations
@@ -143,18 +142,15 @@ class LaminarEnvironment(BaseEnvironment):
         if docker_image and should_use_prebuilt_docker_image(
             self.environment_dir, docker_image=docker_image, force_build=force_build
         ):
-            # Images not built by lmnr-cli are pulled from their registry.
-            return images.get("images", {}).get(docker_image) or {
-                "dockerfile": f"FROM {docker_image}\n",
-                "contextHashes": [],
-            }
+            spec = images.get("images", {}).get(docker_image)
+            if spec is None:
+                raise LaminarEnvironmentError(f"lmnr-cli didn't push image {docker_image}.")
+            return spec
         # lmnr-cli writes the keys with "/" on every OS (`dockerfileKey`).
         key = Path(os.path.relpath(self.environment_dir, Path.cwd())).as_posix()
         spec = images.get("dockerfiles", {}).get(key)
         if spec is None:
-            raise LaminarEnvironmentError(
-                f"lmnr-cli didn't upload a build context for {key}/Dockerfile."
-            )
+            raise LaminarEnvironmentError(f"lmnr-cli didn't build {key}/Dockerfile.")
         return spec
 
     def _resources(self) -> dict:
@@ -169,8 +165,7 @@ class LaminarEnvironment(BaseEnvironment):
 
     async def start(self, force_build: bool) -> None:
         body = {**self._image_spec(force_build), **self._resources()}
-        if "image" in body:
-            await self._wait_for_snapshot(body)
+        await self._wait_for_snapshot(body)
         created = await self._json("POST", "/sandboxes", json=body)
         self._sandbox_id = created["sandboxId"]
         self.logger.debug("Created Laminar sandbox %s", self._sandbox_id)
@@ -183,7 +178,7 @@ class LaminarEnvironment(BaseEnvironment):
         await self._upload_environment_dir_after_start()
 
     async def _wait_for_snapshot(self, body: dict) -> None:
-        """A pushed image starts sandboxes from a snapshot per resource shape,
+        """Sandboxes start from a snapshot per image and resource shape,
         created on first use; concurrent trials wait on the same one."""
         timeout = float(getattr(self.task_env_config, "build_timeout_sec", None) or 1800)
         deadline = time.monotonic() + timeout

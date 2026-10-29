@@ -1,11 +1,9 @@
-import { createHash } from "node:crypto";
-import { lstat, readdir, stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { buffer } from "node:stream/consumers";
 import { pipeline } from "node:stream/promises";
 import { createGzip } from "node:zlib";
 
-import type { Ignore } from "ignore";
 import { type FileSource, packTar } from "modern-tar/fs";
 
 import { invalidEvalsDir } from "../../errors";
@@ -38,18 +36,6 @@ export interface WalkResult {
   skippedSymlinks: string[];
 }
 
-export interface WalkOptions {
-  /** Apply the evals-upload exclusions (VCS, caches, job output, env files). */
-  defaultExclusions: boolean;
-  /** Extra `.dockerignore`-style rules, relative to the root. */
-  ignore?: Ignore;
-  /**
-   * Walk only these files and directories (POSIX paths relative to the root)
-   * instead of the whole root. A missing one is an error.
-   */
-  include?: string[];
-}
-
 const fileEntry = (source: string, target: string): FileSource => ({
   type: "file",
   source,
@@ -62,18 +48,10 @@ const fileEntry = (source: string, target: string): FileSource => ({
 });
 
 /**
- * Walk `root` for packing. Entries get fixed ownership and mtime so the same
- * tree always packs to the same bytes (build contexts are cached by hash).
+ * Walk `root` for packing, minus the upload exclusions. Entries get fixed
+ * ownership and mtime so the same tree always packs to the same bytes.
  */
-export const walkFiles = async (
-  root: string,
-  { defaultExclusions, ignore, include }: WalkOptions,
-): Promise<WalkResult> => {
-  const skipDir = (name: string, target: string) =>
-    (defaultExclusions && EXCLUDED_DIRS.has(name)) ||
-    !!ignore?.ignores(`${target}/`);
-  const skipFile = (name: string, target: string) =>
-    (defaultExclusions && isExcludedFile(name)) || !!ignore?.ignores(target);
+export const walkFiles = async (root: string): Promise<WalkResult> => {
   const files: FileSource[] = [];
   const skippedSymlinks: string[] = [];
   const walk = async (dir: string, rel: string) => {
@@ -87,49 +65,17 @@ export const walkFiles = async (
         // that escape the archive; skipping keeps uploads predictable.
         skippedSymlinks.push(target);
       } else if (entry.isDirectory()) {
-        if (!skipDir(entry.name, target)) {
-          await walk(source, target);
-        }
-      } else if (entry.isFile() && !skipFile(entry.name, target)) {
+        if (!EXCLUDED_DIRS.has(entry.name)) await walk(source, target);
+      } else if (entry.isFile() && !isExcludedFile(entry.name)) {
         files.push(fileEntry(source, target));
       }
     }
   };
-  if (!include) {
-    await walk(root, "");
-    return { files, skippedSymlinks };
-  }
-  for (const target of include) {
-    const source = path.join(root, ...target.split("/"));
-    const entry = await lstat(source).catch(() => null);
-    if (!entry) {
-      throw invalidEvalsDir(`Included path not found: ${source}`);
-    }
-    const name = path.basename(source);
-    if (entry.isSymbolicLink()) {
-      skippedSymlinks.push(target);
-    } else if (entry.isDirectory()) {
-      if (!skipDir(name, target)) await walk(source, target);
-    } else if (entry.isFile() && !skipFile(name, target)) {
-      files.push(fileEntry(source, target));
-    }
-  }
-  // Overlapping paths (`app`, `app/main.py`) list a file twice; the archive
-  // needs each once, in an order that doesn't depend on how `include` is written.
-  const unique = [...new Map(files.map((f) => [f.target, f])).values()];
-  unique.sort((a, b) =>
-    a.target < b.target ? -1 : a.target > b.target ? 1 : 0,
-  );
-  return { files: unique, skippedSymlinks };
+  await walk(root, "");
+  return { files, skippedSymlinks };
 };
 
-export const packFiles = async (
-  files: FileSource[],
-  gzip: boolean,
-): Promise<Buffer> => {
-  if (!gzip) {
-    return buffer(packTar(files));
-  }
+const packFiles = async (files: FileSource[]): Promise<Buffer> => {
   const gz = createGzip();
   const [, archive] = await Promise.all([
     pipeline(packTar(files), gz),
@@ -137,9 +83,6 @@ export const packFiles = async (
   ]);
   return archive;
 };
-
-export const md5 = (data: Uint8Array): string =>
-  createHash("md5").update(data).digest("hex");
 
 export interface EvalsArchive {
   archive: Buffer;
@@ -177,9 +120,7 @@ export const discoverSuites = async (dir: string): Promise<string[]> => {
  * prefix — that is where the orchestrator runs from) into a `.tar.gz`.
  */
 export const packEvalsDir = async (dir: string): Promise<EvalsArchive> => {
-  const { files, skippedSymlinks } = await walkFiles(path.resolve(dir), {
-    defaultExclusions: true,
-  });
-  const archive = await packFiles(files, true);
+  const { files, skippedSymlinks } = await walkFiles(path.resolve(dir));
+  const archive = await packFiles(files);
   return { archive, fileCount: files.length, skippedSymlinks };
 };

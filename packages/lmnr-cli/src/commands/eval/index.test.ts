@@ -2,11 +2,9 @@ import {
   chmod,
   mkdir,
   mkdtemp,
-  readdir,
+  readFile,
   rm,
-  stat,
   symlink,
-  utimes,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,10 +17,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { harborArgs } from "./harbor";
 import {
   dockerfileKey,
-  findTaskDockerfiles,
+  ensureRemoteImages,
+  findTaskImages,
+  guardedDockerfile,
+  type ImageDef,
   loadImageDefs,
-  packBuildContext,
-  stageBuildContext,
 } from "./images";
 import {
   laminarBaseUrl,
@@ -46,8 +45,8 @@ const write = async (rel: string, content = "x") => {
   await writeFile(file, content);
 };
 
-const filesOf = async (archive: Buffer, gzip = true) =>
-  (await unpackTar(gzip ? gunzipSync(archive) : archive)).filter(
+const filesOf = async (archive: Buffer) =>
+  (await unpackTar(gunzipSync(archive))).filter(
     (e) => e.header.type === "file",
   );
 
@@ -245,112 +244,58 @@ void describe("images", () => {
     expect(await loadImageDefs(root)).toEqual([]);
   });
 
-  void it("packs a deterministic build context that honors .dockerignore", async () => {
-    await write("ctx/Dockerfile", "FROM python:3.12-slim\nCOPY app /app\n");
-    await write("ctx/app/main.py", "print(1)");
-    await write("ctx/data/big.bin", "ignored");
-    await write("ctx/.git/HEAD", "ignored");
-    await write("ctx/.env", "SECRET=1");
-    await write("ctx/app/.env.local", "SECRET=1");
-    await write("ctx/.dockerignore", "data/\n");
-    const dockerfile = path.join(root, "ctx/Dockerfile");
-
-    const first = await packBuildContext(dockerfile, path.join(root, "ctx"));
-    await utimes(path.join(root, "ctx/app/main.py"), new Date(), new Date());
-    const second = await packBuildContext(dockerfile, path.join(root, "ctx"));
-
-    expect(first.dockerfile).toContain("COPY app /app");
-    expect(second.hash).toBe(first.hash);
-    const names = (await filesOf(first.tar, false))
-      .map((e) => e.header.name)
-      .sort();
-    expect(names).toEqual([".dockerignore", "Dockerfile", "app/main.py"]);
-  });
-
-  void it("reads include as normalized paths inside the context", async () => {
-    await write(
-      "evals/lmnr.yaml",
-      "images:\n  app:\n    dockerfile: image/Dockerfile\n    context: ..\n    include: [agent/, ./shared/lib, 'tools\\\\cli']\n",
-    );
-    const [def] = await loadImageDefs(path.join(root, "evals"));
-    expect(def?.include).toEqual(["agent", "shared/lib", "tools/cli"]);
-
-    for (const bad of ["[]", "[../outside]", "[/abs]", "[.]", "[1]", "agent"]) {
-      await write(
-        "evals/lmnr.yaml",
-        `images:\n  app:\n    dockerfile: image/Dockerfile\n    include: ${bad}\n`,
-      );
-      await expect(loadImageDefs(path.join(root, "evals"))).rejects.toThrow(
-        /images\.app\.include/,
-      );
-    }
-  });
-
-  void it("stages only included paths, still honoring .dockerignore", async () => {
-    await write("repo/agent/main.py", "print(1)");
-    await write("repo/agent/.env", "SECRET=1");
-    await write("repo/shared/util.py", "x = 1");
-    await write("repo/shared/cache/blob.bin", "ignored");
-    await write("repo/other/huge.bin", "not included");
-    await write("repo/README.md", "not included");
-    await write("repo/.dockerignore", "shared/cache/\n");
-    await write("repo/evals/image/Dockerfile", "FROM python:3.12-slim\n");
+  void it("guards a build with the image's ignore rules plus .git and env files", async () => {
+    await write("repo/Dockerfile", "FROM alpine\nCOPY . /app\n");
+    await write("repo/.dockerignore", "data/\n!.env.example\n");
     const def = {
-      name: "app",
-      dockerfile: path.join(root, "repo/evals/image/Dockerfile"),
-      context: path.join(root, "repo"),
-    };
-
-    const staged = await stageBuildContext({
-      ...def,
-      include: ["shared", "agent", "agent/main.py"],
-    });
-    try {
-      const files = (
-        await readdir(staged, { recursive: true, withFileTypes: true })
-      )
-        .filter((entry) => entry.isFile())
-        .map((entry) =>
-          path.relative(staged, path.join(entry.parentPath, entry.name)),
-        )
-        .sort();
-      expect(files).toEqual([
-        path.join("agent", "main.py"),
-        path.join("shared", "util.py"),
-      ]);
-    } finally {
-      await rm(staged, { recursive: true, force: true });
-    }
-
-    await expect(
-      stageBuildContext({ ...def, include: ["agent", "missing"] }),
-    ).rejects.toThrow(/Included path not found/);
-  });
-
-  void it("stages included files for a local docker build", async () => {
-    await write("repo/agent/run.sh", "#!/bin/sh\necho hi\n");
-    await chmod(path.join(root, "repo/agent/run.sh"), 0o755);
-    await write("repo/other/huge.bin", "not included");
-    await write("repo/Dockerfile", "FROM alpine\n");
-    const staged = await stageBuildContext({
       name: "app",
       dockerfile: path.join(root, "repo/Dockerfile"),
       context: path.join(root, "repo"),
-      include: ["agent"],
-    });
+    };
+
+    const dir = await guardedDockerfile(def);
     try {
-      expect((await readdir(staged, { recursive: true })).sort()).toEqual([
-        "agent",
-        path.join("agent", "run.sh"),
+      expect(await readFile(path.join(dir, "Dockerfile"), "utf8")).toBe(
+        "FROM alpine\nCOPY . /app\n",
+      );
+      const rules = (
+        await readFile(path.join(dir, "Dockerfile.dockerignore"), "utf8")
+      ).split("\n");
+      // The guard comes last, so the image's own `!` rules can't undo it.
+      expect(rules.slice(0, 2)).toEqual(["data/", "!.env.example"]);
+      expect(rules.slice(2)).toEqual([
+        "# Added by lmnr-cli",
+        ".git",
+        "**/.git",
+        ".env",
+        ".env.*",
+        "**/.env",
+        "**/.env.*",
+        "",
       ]);
-      const mode = (await stat(path.join(staged, "agent/run.sh"))).mode;
-      expect(mode & 0o111).not.toBe(0);
     } finally {
-      await rm(staged, { recursive: true, force: true });
+      await rm(dir, { recursive: true, force: true });
     }
+
+    // A Dockerfile-specific ignore file wins over the context's, as in Docker.
+    await write("repo/Dockerfile.dockerignore", "only-this/\n");
+    const own = await guardedDockerfile(def);
+    try {
+      const rules = await readFile(
+        path.join(own, "Dockerfile.dockerignore"),
+        "utf8",
+      );
+      expect(rules.startsWith("only-this/\n# Added by lmnr-cli")).toBe(true);
+    } finally {
+      await rm(own, { recursive: true, force: true });
+    }
+
+    await expect(
+      guardedDockerfile({ ...def, context: path.join(root, "missing") }),
+    ).rejects.toThrow(/Build context not found/);
   });
 
-  void it("finds per-task Dockerfiles only where no docker_image is set", async () => {
+  void it("finds per-task Dockerfiles and the docker_images tasks use", async () => {
     await write("s/tasks/own/task.toml", "[environment]\ncpus = 1\n");
     await write("s/tasks/own/environment/Dockerfile", "FROM alpine");
     await write(
@@ -358,11 +303,70 @@ void describe("images", () => {
       '[environment]\ndocker_image = "app-evals"\n',
     );
     await write("s/tasks/shared/environment/Dockerfile", "FROM alpine");
+    await write(
+      "s/tasks/public/task.toml",
+      "[environment]\ndocker_image = 'python:3.12-slim'\n",
+    );
+    await write(
+      "s/tasks/again/task.toml",
+      '[environment]\ndocker_image = "app-evals"\n',
+    );
     await write("s/tasks/data-only/task.toml", "");
 
-    expect(await findTaskDockerfiles(path.join(root, "s"))).toEqual([
+    const found = await findTaskImages(path.join(root, "s"));
+    expect(found.dockerfiles).toEqual([
       path.join(root, "s/tasks/own/environment"),
     ]);
+    expect(found.images.sort()).toEqual(["app-evals", "python:3.12-slim"]);
+  });
+
+  void it("builds lmnr.yaml and per-task images, pulls the rest, each once", async () => {
+    await write(
+      "evals/lmnr.yaml",
+      "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n",
+    );
+    for (const suite of ["a", "b"]) {
+      await write(
+        `evals/${suite}/tasks/shared/task.toml`,
+        '[environment]\ndocker_image = "app-evals"\n',
+      );
+      await write(
+        `evals/${suite}/tasks/public/task.toml`,
+        '[environment]\ndocker_image = "python:3.12-slim"\n',
+      );
+    }
+    await write("evals/a/tasks/own/task.toml", "");
+    await write("evals/a/tasks/own/environment/Dockerfile", "FROM alpine");
+    const calls: string[] = [];
+    const pusher = {
+      build: async (def: ImageDef, label: string) => {
+        calls.push(`build ${label} ${path.relative(root, def.context)}`);
+        return `sha256:${label}`;
+      },
+      pull: async (ref: string) => {
+        calls.push(`pull ${ref}`);
+        return `sha256:${ref}`;
+      },
+    };
+
+    const maps = await ensureRemoteImages(
+      path.join(root, "evals"),
+      ["a", "b"],
+      pusher,
+    );
+    expect(calls).toEqual([
+      "build image app-evals evals/image",
+      `build a/tasks/own/environment ${path.join("evals", "a", "tasks", "own", "environment")}`,
+      "pull python:3.12-slim",
+    ]);
+    expect(maps.a?.images).toEqual({
+      "app-evals": { image: "sha256:image app-evals" },
+      "python:3.12-slim": { image: "sha256:python:3.12-slim" },
+    });
+    expect(maps.a?.dockerfiles).toEqual({
+      "tasks/own/environment": { image: "sha256:a/tasks/own/environment" },
+    });
+    expect(maps.b?.dockerfiles).toEqual({});
   });
 
   void it("keys per-task Dockerfiles with / on every OS", () => {

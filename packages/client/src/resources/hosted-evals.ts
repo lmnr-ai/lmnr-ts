@@ -13,10 +13,8 @@ export interface StartHostedEvalRunOptions {
 /**
  * Hosted evals: Harbor evals with trials in Laminar-managed sandboxes.
  *
- * - Prebuilt images: `missingLayers` / `uploadLayer` / `createImage` push an
- *   image built locally (layers named by their `diff_id`); trials start from it.
- * - Build contexts: `contextExists` / `uploadContext` store a Docker build
- *   context (uncompressed tar, named by its md5) that Laminar builds images from.
+ * - Images: `missingLayers` / `uploadLayer` / `createImage` push an image built
+ *   locally (layers named by their `diff_id`); trials start from it.
  * - Detached runs: `upload` the `.tar.gz` of the evals folder, then `startRun`
  *   to orchestrate it in a Laminar sandbox. Results land in the project as
  *   regular evaluations; v0 returns no run status.
@@ -24,28 +22,6 @@ export interface StartHostedEvalRunOptions {
 export class HostedEvalsResource extends BaseResource {
   constructor(baseHttpUrl: string, auth: LaminarAuth) {
     super(baseHttpUrl, auth);
-  }
-
-  public async contextExists(hash: string): Promise<boolean> {
-    const response = await fetch(this.url(`/contexts/${hash}`), {
-      headers: this.headers(),
-    });
-    if (!response.ok) {
-      await this.raiseError(response);
-    }
-    return ((await response.json()) as { exists: boolean }).exists;
-  }
-
-  /** `hash` must be the md5 of `tar`; the server verifies it. */
-  public async uploadContext(hash: string, tar: Uint8Array): Promise<void> {
-    const response = await fetch(this.url(`/contexts/${hash}`), {
-      method: "PUT",
-      headers: { ...this.headers(), "Content-Type": "application/x-tar" },
-      body: tar as Uint8Array<ArrayBuffer>,
-    });
-    if (!response.ok) {
-      await this.raiseError(response);
-    }
   }
 
   /** The image layers (by `diff_id`) the project hasn't uploaded yet. */

@@ -21,7 +21,7 @@ import { outputJson } from "../../utils/output";
 import { buildLocalImages, runHarborSuite } from "./harbor";
 import { ensureRemoteImages, type ImageMap, loadImageDefs } from "./images";
 import { discoverSuites, packEvalsDir } from "./pack";
-import { buildAndPushImage } from "./push";
+import { imagePusher } from "./push";
 import {
   buildJobConfig,
   findTemplateVars,
@@ -193,17 +193,15 @@ const evaluationsUrl = async (
 };
 
 /**
- * Images for Laminar sandboxes. `lmnr.yaml` images are built here with Docker
- * and pushed layer by layer, so a change re-uploads only the layers it touches.
+ * Images for Laminar sandboxes, built or pulled here with Docker and pushed
+ * layer by layer, so a change re-uploads only the layers it touches.
  */
 const remoteImages = (
   client: LaminarClient,
   evalsDir: string,
   suites: string[],
 ): Promise<Record<string, ImageMap>> =>
-  ensureRemoteImages(client, evalsDir, suites, (def) =>
-    buildAndPushImage(client, def),
-  );
+  ensureRemoteImages(evalsDir, suites, imagePusher(client));
 
 const formatMiB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 

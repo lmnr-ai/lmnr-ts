@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdtemp, open, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -11,8 +12,8 @@ import { unpackTar } from "modern-tar/fs";
 
 import { harborFailed, invalidEvalsDir } from "../../errors";
 import { initializeLogger } from "../../utils/logger";
-import { runCommand } from "./harbor";
-import { type ImageDef, stageBuildContext } from "./images";
+import { dockerBuild, runCommand } from "./harbor";
+import type { ImagePusher } from "./images";
 
 const logger = initializeLogger();
 
@@ -122,51 +123,64 @@ export const uploadSavedImage = async (
   return (await client.hostedEvals.createImage(image.config)).image;
 };
 
-/**
- * Build an `lmnr.yaml` image for Laminar sandboxes with local Docker and push
- * it through the Laminar API. Builds from the same files a local build gets
- * (`include`, `.dockerignore`, never `.git` / `.env*`), so nothing else is
- * baked into an image that leaves the machine. Returns the image digest.
- */
-export const buildAndPushImage = async (
+/** Local tag for an image pushed for a remote run, one per image. */
+const remoteTag = (label: string) =>
+  `lmnr-evals-remote:${createHash("sha256").update(label).digest("hex").slice(0, 16)}`;
+
+/** `docker save` the image tagged `tag` and push it through the Laminar API. */
+const saveAndUpload = async (
   client: LaminarClient,
-  def: ImageDef,
+  tag: string,
+  label: string,
 ): Promise<string> => {
-  const tag = `lmnr-evals-remote/${def.name.toLowerCase()}:latest`;
-  const context = await stageBuildContext(def);
   const work = await mkdtemp(path.join(tmpdir(), "lmnr-image-"));
   try {
-    logger.info(`Building image ${def.name} for ${REMOTE_PLATFORM}`);
-    const built = await runCommand("docker", [
-      "build",
-      "--platform",
-      REMOTE_PLATFORM,
-      "-f",
-      def.dockerfile,
-      "-t",
-      tag,
-      context,
-    ]);
-    if (built !== 0) {
-      throw harborFailed(
-        `docker build of image ${def.name} failed (${built}).`,
-      );
-    }
     const archive = path.join(work, "image.tar");
     const saved = await runCommand("docker", ["save", "-o", archive, tag]);
     if (saved !== 0) {
-      throw harborFailed(`docker save of image ${def.name} failed (${saved}).`);
+      throw harborFailed(`docker save of ${label} failed (${saved}).`);
     }
     const unpacked = path.join(work, "image");
     await pipeline(createReadStream(archive), unpackTar(unpacked));
     await rm(archive);
     return await uploadSavedImage(
       client,
-      `image ${def.name}`,
+      label,
       await readSavedImage(unpacked),
     );
   } finally {
-    await rm(context, { recursive: true, force: true });
     await rm(work, { recursive: true, force: true });
   }
 };
+
+/**
+ * Builds images for Laminar sandboxes with local Docker for `linux/amd64` and
+ * pushes them through the Laminar API, uploading only the layers it lacks.
+ */
+export const imagePusher = (client: LaminarClient): ImagePusher => ({
+  build: async (def, label) => {
+    const tag = remoteTag(label);
+    logger.info(`Building ${label} for ${REMOTE_PLATFORM}`);
+    await dockerBuild(def, tag, ["--platform", REMOTE_PLATFORM]);
+    return saveAndUpload(client, tag, label);
+  },
+  pull: async (ref) => {
+    // A `FROM`-only build fetches the linux/amd64 variant and saves like any
+    // built image, even when the registry serves a multi-platform index.
+    const label = `image ${ref}`;
+    const tag = remoteTag(label);
+    const dir = await mkdtemp(path.join(tmpdir(), "lmnr-pull-"));
+    try {
+      await writeFile(path.join(dir, "Dockerfile"), `FROM ${ref}\n`);
+      logger.info(`Pulling ${ref} for ${REMOTE_PLATFORM}`);
+      await dockerBuild(
+        { name: ref, dockerfile: path.join(dir, "Dockerfile"), context: dir },
+        tag,
+        ["--platform", REMOTE_PLATFORM],
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+    return saveAndUpload(client, tag, label);
+  },
+});

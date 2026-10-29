@@ -1,44 +1,29 @@
-import { copyFile, mkdir, mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type { LaminarClient } from "@lmnr-ai/client";
-import ignore from "ignore";
 import { parse as parseYaml } from "yaml";
 
 import { invalidEvalsDir } from "../../errors";
-import { initializeLogger } from "../../utils/logger";
-import { md5, packFiles, walkFiles } from "./pack";
 import { findTaskTomls } from "./suites";
-
-const logger = initializeLogger();
 
 /** Optional evals-folder config: the images tasks reference by `docker_image`. */
 export const LMNR_EVALS_CONFIG = "lmnr.yaml";
-/** The server's cap on one uploaded build context. */
-export const MAX_CONTEXT_BYTES = 1024 * 1024 * 1024;
 
 export interface ImageDef {
   /** The `docker_image` tasks use, e.g. `myapp-evals`. */
   name: string;
   dockerfile: string;
   context: string;
-  /**
-   * The only paths (POSIX, relative to `context`) sent to the build. Unset
-   * sends the whole context.
-   */
-  include?: string[];
 }
 
 /**
  * What a Laminar sandbox starts from (wire shape of `POST /sandboxes`): an
- * image pushed by `push.ts` (manifest digest), or, for a task's own
- * Dockerfile, the Dockerfile plus an uploaded build context for Laminar to
- * build.
+ * image pushed by `push.ts`, by manifest digest.
  */
-export type ImageSpec =
-  | { image: string }
-  | { dockerfile: string; contextHashes: string[] };
+export interface ImageSpec {
+  image: string;
+}
 
 /** Read by `lmnr_hosted_env.py` from `LMNR_EVAL_IMAGES`. */
 export interface ImageMap {
@@ -48,40 +33,18 @@ export interface ImageMap {
   dockerfiles: Record<string, ImageSpec>;
 }
 
+/** Builds and pushes images for Laminar sandboxes (`push.ts`). */
+export interface ImagePusher {
+  /** Build `def` with local Docker and push it. Returns the image digest. */
+  build: (def: ImageDef, label: string) => Promise<string>;
+  /** Push a registry image no task builds, e.g. `python:3.12-slim`. */
+  pull: (ref: string) => Promise<string>;
+}
+
 interface RawImage {
   dockerfile?: unknown;
   context?: unknown;
-  include?: unknown;
 }
-
-/** `images.<name>.include`: non-empty, every path a relative one inside the context. */
-const parseInclude = (raw: unknown, where: string): string[] | undefined => {
-  if (raw === undefined || raw === null) return undefined;
-  if (!Array.isArray(raw) || raw.length === 0) {
-    throw invalidEvalsDir(
-      `${where} must be a non-empty list of paths. Omit it to send the whole context.`,
-    );
-  }
-  return raw.map((entry) => {
-    if (typeof entry !== "string" || entry.trim() === "") {
-      throw invalidEvalsDir(`${where}: every entry must be a path.`);
-    }
-    const normalized = path.posix
-      .normalize(entry.trim().replace(/\\/g, "/"))
-      .replace(/\/+$/, "");
-    if (
-      path.posix.isAbsolute(normalized) ||
-      normalized === "." ||
-      normalized === ".." ||
-      normalized.startsWith("../")
-    ) {
-      throw invalidEvalsDir(
-        `${where}: "${entry}" must be a path inside the build context.`,
-      );
-    }
-    return normalized;
-  });
-};
 
 export const loadImageDefs = async (evalsDir: string): Promise<ImageDef[]> => {
   const file = path.join(evalsDir, LMNR_EVALS_CONFIG);
@@ -103,144 +66,95 @@ export const loadImageDefs = async (evalsDir: string): Promise<ImageDef[]> => {
       typeof raw.context === "string"
         ? path.resolve(evalsDir, raw.context)
         : path.dirname(dockerfile);
-    const include = parseInclude(
-      raw.include,
-      `${file}: images.${name}.include`,
-    );
-    defs.push({ name, dockerfile, context, ...(include && { include }) });
+    defs.push({ name, dockerfile, context });
   }
   return defs;
 };
 
 /**
- * `.dockerignore` rules the way `docker build` reads them, plus `.git` and env
- * files: contexts are stored with the sandbox provider, so local secrets stay
- * out even when `.dockerignore` forgets them.
+ * Never sent to a build, whatever `.dockerignore` says: images leave the
+ * machine for remote runs, and repo history or env files must not go with them.
  */
-const dockerIgnore = async (dockerfile: string, context: string) => {
-  const rules = ignore().add([".git", ".env", ".env.*"]);
+const ALWAYS_IGNORED = [
+  ".git",
+  "**/.git",
+  ".env",
+  ".env.*",
+  "**/.env",
+  "**/.env.*",
+];
+
+/** The ignore file `docker build` would use for `def`, if any. */
+const ownIgnoreRules = async (def: ImageDef): Promise<string> => {
   for (const file of [
-    `${dockerfile}.dockerignore`,
-    path.join(context, ".dockerignore"),
+    `${def.dockerfile}.dockerignore`,
+    path.join(def.context, ".dockerignore"),
   ]) {
     const text = await readFile(file, "utf8").catch(() => null);
-    if (text !== null) {
-      rules.add(text);
-      break;
-    }
+    if (text !== null) return text;
   }
-  return rules;
+  return "";
 };
-
-export interface BuildContext {
-  dockerfile: string;
-  tar: Buffer;
-  hash: string;
-}
 
 /**
- * The files a build gets: the context (or only its `include` paths), minus
- * `.dockerignore` matches, `.git`, env files and symlinks.
+ * Copy `def`'s Dockerfile into a new temp dir, next to a Dockerfile-specific
+ * ignore file: the image's own rules plus `ALWAYS_IGNORED`, last so no `!`
+ * rule overrides them. BuildKit reads `<Dockerfile>.dockerignore` instead of
+ * the context's `.dockerignore`, so building with `-f <dir>/Dockerfile` from
+ * the real context leaves those files out without copying the context. The
+ * caller removes the dir.
  */
-const contextFiles = async (
-  dockerfile: string,
-  context: string,
-  include?: string[],
-) => {
-  const { files, skippedSymlinks } = await walkFiles(context, {
-    defaultExclusions: false,
-    ignore: await dockerIgnore(dockerfile, context),
-    include,
-  });
-  if (skippedSymlinks.length > 0) {
-    logger.warn(
-      `Skipped symlinks in build context ${context}: ` +
-        skippedSymlinks.join(", "),
-    );
-  }
-  return files;
-};
-
-/** A task's `environment/` dir as a build context for Laminar to build. */
-export const packBuildContext = async (
-  dockerfile: string,
-  context: string,
-): Promise<BuildContext> => {
+export const guardedDockerfile = async (def: ImageDef): Promise<string> => {
   const [content, contextStat] = await Promise.all([
-    readFile(dockerfile, "utf8").catch(() => null),
-    stat(context).catch(() => null),
+    readFile(def.dockerfile, "utf8").catch(() => null),
+    stat(def.context).catch(() => null),
   ]);
   if (content === null) {
-    throw invalidEvalsDir(`Dockerfile not found: ${dockerfile}`);
+    throw invalidEvalsDir(`Dockerfile not found: ${def.dockerfile}`);
   }
   if (!contextStat?.isDirectory()) {
-    throw invalidEvalsDir(`Build context not found: ${context}`);
+    throw invalidEvalsDir(`Build context not found: ${def.context}`);
   }
-  const tar = await packFiles(await contextFiles(dockerfile, context), false);
-  if (tar.length > MAX_CONTEXT_BYTES) {
-    throw invalidEvalsDir(
-      `Build context ${context} is ${tar.length} bytes, over the 1 GiB ` +
-        "limit. Exclude build output and data with a .dockerignore.",
-    );
-  }
-  return { dockerfile: content, tar, hash: md5(tar) };
-};
-
-/**
- * Copy an image's included files into a new temp dir for `docker build`, so
- * local and remote builds get the same files and `.env*` / `.git` never reach
- * an image. The caller removes the dir.
- */
-export const stageBuildContext = async (def: ImageDef): Promise<string> => {
-  const files = await contextFiles(def.dockerfile, def.context, def.include);
+  const rules = await ownIgnoreRules(def);
   const dir = await mkdtemp(path.join(tmpdir(), "lmnr-build-"));
-  for (const file of files) {
-    const target = path.join(dir, ...file.target.split("/"));
-    await mkdir(path.dirname(target), { recursive: true });
-    await copyFile(file.source as string, target);
-  }
+  await writeFile(path.join(dir, "Dockerfile"), content);
+  await writeFile(
+    path.join(dir, "Dockerfile.dockerignore"),
+    [rules.trimEnd(), "# Added by lmnr-cli", ...ALWAYS_IGNORED, ""].join("\n"),
+  );
   return dir;
 };
 
-/** Upload a context unless the project already has it. */
-const ensureContext = async (
-  client: LaminarClient,
-  label: string,
-  context: BuildContext,
-): Promise<{ dockerfile: string; contextHashes: string[] }> => {
-  if (await client.hostedEvals.contextExists(context.hash)) {
-    logger.info(`Build context for ${label} is unchanged`);
-  } else {
-    logger.info(
-      `Uploading build context for ${label} ` +
-        `(${(context.tar.length / 1024 / 1024).toFixed(1)} MiB)`,
-    );
-    await client.hostedEvals.uploadContext(context.hash, context.tar);
-  }
-  return { dockerfile: context.dockerfile, contextHashes: [context.hash] };
-};
+const DOCKER_IMAGE = /^\s*docker_image\s*=\s*["']([^"']+)["']/m;
 
-const DOCKER_IMAGE_LINE = /^\s*docker_image\s*=/m;
+export interface TaskImages {
+  /** Task `environment/` dirs Harbor builds from their own Dockerfile. */
+  dockerfiles: string[];
+  /** `docker_image`s the tasks use, each once. */
+  images: string[];
+}
 
-/** Task `environment/` dirs Harbor would build from their own Dockerfile. */
-export const findTaskDockerfiles = async (
-  suiteDir: string,
-): Promise<string[]> => {
-  const dirs: string[] = [];
+/**
+ * What the suite's tasks start from. A task with `docker_image` uses that
+ * image even when it also has a Dockerfile, as Harbor does.
+ */
+export const findTaskImages = async (suiteDir: string): Promise<TaskImages> => {
+  const dockerfiles: string[] = [];
+  const images = new Set<string>();
   for (const toml of await findTaskTomls(suiteDir)) {
+    const image = DOCKER_IMAGE.exec(await readFile(toml, "utf8"))?.[1];
+    if (image) {
+      images.add(image);
+      continue;
+    }
     const envDir = path.join(path.dirname(toml), "environment");
     const hasDockerfile = await stat(path.join(envDir, "Dockerfile")).then(
       (s) => s.isFile(),
       () => false,
     );
-    if (
-      hasDockerfile &&
-      !DOCKER_IMAGE_LINE.test(await readFile(toml, "utf8"))
-    ) {
-      dirs.push(envDir);
-    }
+    if (hasDockerfile) dockerfiles.push(envDir);
   }
-  return dirs;
+  return { dockerfiles, images: [...images] };
 };
 
 /**
@@ -255,33 +169,35 @@ export const dockerfileKey = (
 ): string => paths.relative(suiteDir, envDir).split(paths.sep).join("/");
 
 /**
- * Make sure Laminar sandboxes can start every image the suites use.
- * `lmnr.yaml` images go through `push` (built with local Docker and pushed,
- * see `push.ts`). Per-task Dockerfiles are built by Daytona from an uploaded
- * context, which it caches only by exact content: any change rebuilds the
- * whole image.
+ * Push every image the suites use, so Laminar sandboxes can start from them:
+ * `lmnr.yaml` images and per-task Dockerfiles are built here, other
+ * `docker_image`s are pulled. Each is pushed once per run.
  */
 export const ensureRemoteImages = async (
-  client: LaminarClient,
   evalsDir: string,
   suites: string[],
-  push: (def: ImageDef) => Promise<string>,
+  pusher: ImagePusher,
 ): Promise<Record<string, ImageMap>> => {
   const images: Record<string, ImageSpec> = {};
   for (const def of await loadImageDefs(evalsDir)) {
-    images[def.name] = { image: await push(def) };
+    images[def.name] = { image: await pusher.build(def, `image ${def.name}`) };
   }
   const maps: Record<string, ImageMap> = {};
   for (const suite of suites) {
     const suiteDir = path.join(evalsDir, suite);
+    const tasks = await findTaskImages(suiteDir);
     const dockerfiles: Record<string, ImageSpec> = {};
-    for (const envDir of await findTaskDockerfiles(suiteDir)) {
+    for (const envDir of tasks.dockerfiles) {
       const key = dockerfileKey(suiteDir, envDir);
-      dockerfiles[key] = await ensureContext(
-        client,
-        `${suite}/${key}`,
-        await packBuildContext(path.join(envDir, "Dockerfile"), envDir),
-      );
+      const def = {
+        name: `${suite}/${key}`,
+        dockerfile: path.join(envDir, "Dockerfile"),
+        context: envDir,
+      };
+      dockerfiles[key] = { image: await pusher.build(def, def.name) };
+    }
+    for (const ref of tasks.images) {
+      images[ref] ??= { image: await pusher.pull(ref) };
     }
     maps[suite] = { images, dockerfiles };
   }
