@@ -900,6 +900,38 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     ]);
   });
 
+  void it("onError marks the model call that was still open as failed", () => {
+    // AI SDK skips onLanguageModelCallEnd for a call that throws (e.g. an
+    // APICallError). The LLM span must carry the exception event: that is
+    // what app-server and the trajectory file read as a failure.
+    const tel = new LaminarAiSdkTelemetry();
+    tel.onStart(mkStartEvent("call-failed"));
+    tel.onStepStart(mkStepStartEvent("call-failed", 0));
+    tel.onLanguageModelCallStart(mkLlmCallStart("call-failed"));
+    tel.onStart(mkStartEvent("call-other"));
+    tel.onStepStart(mkStepStartEvent("call-other", 0));
+    tel.onLanguageModelCallStart(mkLlmCallStart("call-other"));
+    tel.onError({ callId: "call-failed", error: new TypeError("bad model") });
+
+    const llm = exporter
+      .getFinishedSpans()
+      .find((s) => s.name.startsWith("ai.llm "));
+    assert.ok(llm);
+    assert.equal(llm.status.code, 2);
+    const events = llm.events.filter((e) => e.name === "exception");
+    assert.equal(events.length, 1);
+    assert.equal(events[0].attributes?.["exception.message"], "bad model");
+    // The other operation's call is untouched (still open).
+    assert.equal(exporter.getFinishedSpans().length, 2);
+    tel.onEnd(mkFinish("call-other"));
+    const other = exporter
+      .getFinishedSpans()
+      .filter((s) => s.name.startsWith("ai.llm "))
+      .find((s) => s !== llm);
+    assert.ok(other);
+    assert.notEqual(other.status.code, 2);
+  });
+
   void it("onFinish closes orphaned tool spans for the callId", () => {
     const tel = new LaminarAiSdkTelemetry();
     const callId = "call-tool-orphan";

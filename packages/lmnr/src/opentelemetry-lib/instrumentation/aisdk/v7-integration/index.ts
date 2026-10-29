@@ -912,6 +912,16 @@ export class LaminarAiSdkTelemetry {
     if (!targetOp || !targetCallId) return;
 
     recordSpanError(targetOp.span, err);
+    // A model call still open here is the one that failed: AI SDK skips
+    // `onLanguageModelCallEnd` for it. Without this, the sweep below ends it
+    // as a successful call with no output (app-server and the trajectory file
+    // decide failure by the `exception` event).
+    const prefix = `${targetCallId}:`;
+    for (const [key, llm] of this.llmByKey) {
+      if (key.startsWith(prefix)) {
+        recordSpanError(llm.span, err);
+      }
+    }
 
     // End child spans + the operation span tied to this callId so we don't
     // leak if `onError` is terminal (no subsequent `onFinish`). If `onFinish`

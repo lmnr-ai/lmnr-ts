@@ -833,6 +833,409 @@ void describe("lmnr-atif normalizer", () => {
   });
 });
 
+// -- shapes only the TypeScript SDK records -----------------------------------
+
+void describe("lmnr-atif TypeScript SDK shapes", () => {
+  void it("ai sdk prompt parts", () => {
+    const [messages, output] = normalizeCall(
+      [
+        { role: "system", content: "Be brief." },
+        { role: "user", content: [{ type: "text", text: "weather?" }] },
+        {
+          role: "assistant",
+          content: [
+            { type: "reasoning", text: "use the tool" },
+            {
+              type: "tool-call",
+              toolCallId: "c1",
+              toolName: "weather",
+              input: { city: "Paris" },
+              providerOptions: { openai: {} },
+            },
+            {
+              type: "tool-call",
+              toolCallId: "c2",
+              toolName: "weather",
+              input: "{}",
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "c1",
+              toolName: "weather",
+              output: { type: "json", value: { temp_c: 18 } },
+            },
+            {
+              type: "tool-result",
+              toolCallId: "c2",
+              toolName: "weather",
+              output: { type: "error-text", value: "no city" },
+            },
+            {
+              type: "tool-approval-response",
+              approvalId: "a1",
+              approved: true,
+            },
+          ],
+        },
+      ],
+      [
+        {
+          role: "assistant",
+          content: [
+            { type: "source", sourceType: "url", id: "s1", url: "https://x" },
+            { type: "text", text: "18C." },
+          ],
+        },
+      ],
+    );
+    assert.deepStrictEqual(messages, [
+      { role: "system", content: "Be brief." },
+      { role: "user", content: "weather?" },
+      {
+        role: "assistant",
+        content: "",
+        reasoning_content: "use the tool",
+        tool_calls: [
+          {
+            tool_call_id: "c1",
+            function_name: "weather",
+            arguments: { city: "Paris" },
+          },
+          { tool_call_id: "c2", function_name: "weather", arguments: {} },
+        ],
+      },
+      { role: "tool", tool_call_id: "c1", content: '{"temp_c": 18}' },
+      { role: "tool", tool_call_id: "c2", content: "no city", _is_error: true },
+    ]);
+    assert.deepStrictEqual(output, { role: "assistant", content: "18C." });
+  });
+
+  const outputs: [object, unknown, boolean][] = [
+    [{ type: "text", value: "done" }, "done", false],
+    [{ type: "json", value: ["a", "é"] }, '["a", "é"]', false],
+    [{ type: "json", value: "quoted" }, '"quoted"', false],
+    [{ type: "error-json", value: { code: 1 } }, '{"code": 1}', true],
+    [{ type: "execution-denied", reason: "not allowed" }, "not allowed", false],
+    [
+      {
+        type: "content",
+        value: [
+          { type: "text", text: "a" },
+          { type: "text", text: "b" },
+        ],
+      },
+      [
+        { type: "text", text: "a" },
+        { type: "text", text: "b" },
+      ],
+      false,
+    ],
+  ];
+  for (const [toolOutput, content, isError] of outputs) {
+    void it(`ai sdk tool result output ${JSON.stringify(toolOutput)}`, () => {
+      const part = {
+        type: "tool-result",
+        toolCallId: "c1",
+        toolName: "t",
+        output: toolOutput,
+      };
+      const [messages] = normalizeCall(
+        [{ role: "tool", content: [part] }],
+        null,
+      );
+      const expected: Record<string, unknown> = {
+        role: "tool",
+        tool_call_id: "c1",
+        content,
+      };
+      if (isError) {
+        expected._is_error = true;
+      }
+      assert.deepStrictEqual(messages, [expected]);
+    });
+  }
+
+  void it("ai sdk provider-executed tool result in output", () => {
+    const [, output] = normalizeCall(
+      [],
+      [
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "ws",
+              toolName: "web_search",
+              input: "{}",
+              providerExecuted: true,
+            },
+            {
+              type: "tool-result",
+              toolCallId: "ws",
+              toolName: "web_search",
+              result: { hits: 0 },
+              isError: true,
+            },
+          ],
+        },
+      ],
+    );
+    assert.deepStrictEqual(output, {
+      role: "assistant",
+      content: "",
+      tool_calls: [
+        { tool_call_id: "ws", function_name: "web_search", arguments: {} },
+      ],
+    });
+  });
+
+  void it("ai sdk file parts", () => {
+    const stored: [string, string][] = [];
+    const sink = (data: string, mediaType: string) => {
+      stored.push([data, mediaType]);
+      return "images/x.png";
+    };
+    const [messages] = normalizeCall(
+      [
+        {
+          role: "user",
+          content: [
+            { type: "file", mediaType: "image/png", data: "iVBORw0KGgo=" },
+            {
+              type: "file",
+              mediaType: "image/jpeg",
+              data: { type: "url", url: "https://x/cat.jpg" },
+            },
+            {
+              type: "file",
+              mediaType: "image/png",
+              data: { type: "data", data: "AA==" },
+            },
+            {
+              type: "file",
+              mediaType: "application/pdf",
+              filename: "a.pdf",
+              data: "x",
+            },
+          ],
+        },
+      ],
+      null,
+      sink,
+    );
+    assert.deepStrictEqual(stored, [
+      ["iVBORw0KGgo=", "image/png"],
+      ["AA==", "image/png"],
+    ]);
+    assert.deepStrictEqual(messages[0].content, [
+      {
+        type: "image",
+        source: { media_type: "image/png", path: "images/x.png" },
+      },
+      {
+        type: "image",
+        source: { media_type: "image/jpeg", path: "https://x/cat.jpg" },
+      },
+      {
+        type: "image",
+        source: { media_type: "image/png", path: "images/x.png" },
+      },
+      { type: "text", text: "[file: a.pdf]" },
+    ]);
+  });
+
+  void it("otel semconv parts", () => {
+    const [messages, output, reason] = normalizeCall(
+      [
+        { role: "system", parts: [{ type: "text", content: "Be brief." }] },
+        { role: "user", parts: [{ type: "text", content: "weather?" }] },
+        {
+          role: "assistant",
+          parts: [
+            { type: "reasoning", content: "use the tool" },
+            {
+              type: "tool_call",
+              id: "c1",
+              name: "weather",
+              arguments: { city: "Paris" },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          parts: [{ type: "tool_call_response", id: "c1", response: "18C" }],
+        },
+        {
+          role: "user",
+          parts: [
+            { type: "uri", mime_type: "image/png", uri: "https://x/a.png" },
+          ],
+        },
+      ],
+      [
+        {
+          role: "assistant",
+          parts: [{ type: "text", content: "18C." }],
+          finish_reason: "stop",
+        },
+      ],
+    );
+    assert.deepStrictEqual(messages, [
+      { role: "system", content: "Be brief." },
+      { role: "user", content: "weather?" },
+      {
+        role: "assistant",
+        content: "",
+        reasoning_content: "use the tool",
+        tool_calls: [
+          {
+            tool_call_id: "c1",
+            function_name: "weather",
+            arguments: { city: "Paris" },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: "c1", content: "18C" },
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { media_type: "image/png", path: "https://x/a.png" },
+          },
+        ],
+      },
+    ]);
+    assert.deepStrictEqual(output, { role: "assistant", content: "18C." });
+    assert.equal(reason, "stop");
+  });
+
+  void it("chat tool calls with top-level arguments", () => {
+    const [, output] = normalizeCall(
+      [],
+      [
+        {
+          role: "model",
+          content: "Checking.",
+          tool_calls: [
+            { id: "c1", name: "weather", arguments: '{"city": "Paris"}' },
+          ],
+        },
+      ],
+    );
+    assert.ok(output !== null);
+    assert.deepStrictEqual(output.tool_calls, [
+      {
+        tool_call_id: "c1",
+        function_name: "weather",
+        arguments: { city: "Paris" },
+      },
+    ]);
+  });
+
+  const toolAttributes: Record<string, unknown>[] = [
+    { "ai.toolCall.id": "c1", "ai.toolCall.name": "lookup" },
+    { "gen_ai.tool.call.id": "c1" },
+    { "gen_ai.tool.name": "lookup" },
+    { "ai.toolCall.name": "lookup" },
+  ];
+  for (const attributes of toolAttributes) {
+    void it(`tool spans are matched by their tool name and call id ${JSON.stringify(attributes)}`, () => {
+      // AI SDK (`ai.tool <name>`) and OTel GenAI (`execute_tool <name>`) TOOL
+      // span names decorate the tool's name, so the attributes decide.
+      const trajectory = buildTrajectory([
+        record(1, null, "root", "DEFAULT", 0, 5),
+        llm(
+          2,
+          0,
+          1,
+          [{ role: "user", content: "go" }],
+          toolCallOutput("c1", "lookup", {}),
+        ),
+        record(3, 1, "ai.tool lookup", "TOOL", 1.1, 1.2, {
+          "lmnr.span.output": '"found"',
+          ...attributes,
+        }),
+      ]);
+      assert.ok(trajectory !== null);
+      assert.deepStrictEqual(
+        trajectory.steps.map((s: any) => s.source),
+        ["user", "agent"],
+      );
+      assert.deepStrictEqual(resultsOf(trajectory.steps[1]), ["found"]);
+    });
+  }
+
+  void it("unmatched and implicit subagent tool spans use the tool name", () => {
+    const hi = [{ role: "user", content: "hi" }];
+    const yo = [{ role: "assistant", content: "yo" }];
+    const helperCall = llm(5, 3, 4, hi, yo);
+    const trajectory = buildTrajectory([
+      record(1, null, "root", "DEFAULT", 0, 10),
+      llm(2, 0, 1, hi, yo),
+      record(3, 1, "execute_tool search", "TOOL", 2, 2.5, {
+        "gen_ai.tool.name": "search",
+      }),
+      record(4, 1, "ai.tool research", "TOOL", 3, 5, {
+        "ai.toolCall.name": "research",
+      }),
+      record(5, 4, helperCall.name, "LLM", 3, 4, helperCall.attributes),
+    ]);
+    assert.ok(trajectory !== null);
+    const names = trajectory.steps
+      .slice(2)
+      .map((s: any) => s.tool_calls[0].function_name);
+    assert.deepStrictEqual(names, ["search", "research"]);
+    assert.equal(trajectory.subagent_trajectories[0].agent.name, "research");
+  });
+
+  void it("a failed call without output does not leak into the next input", () => {
+    // A call with no output (it failed) is still an agent step, and a reader
+    // adds its empty assistant message to the next call's input (§6.4). A
+    // retry with the same input therefore needs an `input_messages` override.
+    const ask = { role: "user", content: "What's the weather in Paris?" };
+    const system = { role: "system", content: "Use the tools." };
+    const error = { type: "NotFoundError", message: "404 no such model" };
+    const failed = llm(2, 0, 1, [ask], null);
+    delete failed.attributes["gen_ai.output.messages"];
+    failed.error = error;
+    const records = [
+      record(1, null, "agent", "DEFAULT", 0, 5),
+      failed,
+      llm(3, 2, 3, [system, ask], [{ role: "assistant", content: "Sunny" }]),
+      llm(4, 3, 4, [ask], [{ role: "assistant", content: "Sunny again" }]),
+    ];
+    const trajectory = buildTrajectory(records);
+    assert.ok(trajectory !== null);
+    const steps = trajectory.steps;
+    const ext = TrajectoryExtension.read(trajectory);
+    assert.deepStrictEqual(
+      steps.map((s: any) => s.source),
+      ["user", "agent", "agent", "agent"],
+    );
+    assert.deepStrictEqual(steps[1].extra.lmnr.error, error);
+    [1, 2, 3].forEach((index, i) => {
+      const [actual] = normalizeCall(
+        JSON.parse(
+          records[i + 1].attributes["gen_ai.input.messages"] as string,
+        ),
+        null,
+      );
+      const rebuilt = reader.inputMessages(steps, index, ext);
+      assert.deepStrictEqual(
+        comparable(rebuilt),
+        comparable(actual),
+        `${index}`,
+      );
+    });
+  });
+});
+
 // -- Python semantics (TS only) ---------------------------------------------
 
 void describe("lmnr-atif Python semantics", () => {

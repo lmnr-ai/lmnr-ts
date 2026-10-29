@@ -437,7 +437,7 @@ class Builder {
       [childScope, childAgent] = [span.id, marker];
     } else if (span.isTool && span.hostsLlm()) {
       this.boundaries.set(span.id, "implicit");
-      [childScope, childAgent] = [span.id, span.record.name];
+      [childScope, childAgent] = [span.id, toolName(span)];
     } else if (marker !== null) {
       childAgent = marker;
     }
@@ -663,7 +663,12 @@ class Builder {
         overrides[k].tool_definitions = call.tools;
       }
 
-      base = [...conversation, ...(call.output !== null ? [call.output] : [])];
+      // A call without output (a failed one) is still a step, and a reader
+      // adds its empty assistant message to the next input (§6.4).
+      base = [
+        ...conversation,
+        call.output !== null ? call.output : { role: "assistant", content: "" },
+      ];
       prevCallIds = dicts(get(call.output ?? {}, "tool_calls")).map((c) =>
         pyStr(get(c, "tool_call_id")),
       );
@@ -1089,7 +1094,7 @@ class Builder {
     totals.addTime(span.start, span.end);
     const callId = `lmnr-${span.id}`;
     const args = span.jsonAttr("lmnr.span.input");
-    const call = toolCall(callId, span.record.name || "tool", args, true);
+    const call = toolCall(callId, toolName(span) || "tool", args, true);
     Object.assign(call.extra.lmnr, {
       span_id: span.id,
       start_time: formatTime(span.start),
@@ -1169,7 +1174,7 @@ class Builder {
     } else if (this.boundaries.get(boundary.id) === "agent") {
       name = boundary.agentMarker || boundary.record.name;
     } else {
-      name = boundary.record.name;
+      name = toolName(boundary);
     }
     const agent: JsonObject = { name: name || "agent", version: this.release };
     const models = counter(
@@ -1279,18 +1284,39 @@ const toolMatches = (
   tool: JsonObject,
 ): boolean => {
   if (strategy === 0) {
-    return pyEquals(
-      get(span.attrs, "gen_ai.tool.call.id"),
-      get(tool, "tool_call_id"),
-    );
+    return pyEquals(toolCallId(span), get(tool, "tool_call_id"));
   }
-  if (span.record.name !== get(tool, "function_name")) {
+  if (toolName(span) !== get(tool, "function_name")) {
     return false;
   }
   return (
     strategy === 2 ||
     pyEquals(span.jsonAttr("lmnr.span.input"), get(tool, "arguments"))
   );
+};
+
+/** The id of the tool call a TOOL span executed (`ai.toolCall.id`: the AI
+ * SDK). */
+const toolCallId = (span: Span): unknown => {
+  for (const key of ["gen_ai.tool.call.id", "ai.toolCall.id"]) {
+    if (has(span.attrs, key)) {
+      return span.attrs[key];
+    }
+  }
+  return null;
+};
+
+/** The name of the tool a TOOL span ran. Span names often decorate it:
+ * `execute_tool <name>` (OpenTelemetry GenAI conventions), `ai.tool <name>`
+ * (AI SDK), `<name>.tool` (MCP). */
+const toolName = (span: Span): string => {
+  for (const key of ["gen_ai.tool.name", "ai.toolCall.name"]) {
+    const value = get(span.attrs, key);
+    if (typeof value === "string" && value) {
+      return value;
+    }
+  }
+  return span.record.name;
 };
 
 const providerOf = (span: Span): string | null => {
