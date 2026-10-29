@@ -21,7 +21,7 @@ import { outputJson } from "../../utils/output";
 import { buildLocalImages, runHarborSuite } from "./harbor";
 import { ensureRemoteImages, type ImageMap, loadImageDefs } from "./images";
 import { discoverSuites, packEvalsDir } from "./pack";
-import { buildAndPushImage, dockerAvailable } from "./push";
+import { buildAndPushImage } from "./push";
 import {
   buildJobConfig,
   findTemplateVars,
@@ -193,29 +193,17 @@ const evaluationsUrl = async (
 };
 
 /**
- * Images for Laminar sandboxes. With Docker, `lmnr.yaml` images are built here
- * and pushed layer by layer, so a change re-uploads and rebuilds only the
- * layers it touches; without it, Laminar builds them from the uploaded context.
+ * Images for Laminar sandboxes. `lmnr.yaml` images are built here with Docker
+ * and pushed layer by layer, so a change re-uploads only the layers it touches.
  */
-const remoteImages = async (
+const remoteImages = (
   client: LaminarClient,
   evalsDir: string,
   suites: string[],
-): Promise<Record<string, ImageMap>> => {
-  if (await dockerAvailable()) {
-    return ensureRemoteImages(client, evalsDir, suites, (def) =>
-      buildAndPushImage(client, def),
-    );
-  }
-  if ((await loadImageDefs(evalsDir)).length > 0) {
-    logger.warn(
-      "Docker isn't available, so Laminar builds the lmnr.yaml images from " +
-        "their build context: any change in it rebuilds the whole image. " +
-        "Start Docker to build here and upload only changed layers.",
-    );
-  }
-  return ensureRemoteImages(client, evalsDir, suites);
-};
+): Promise<Record<string, ImageMap>> =>
+  ensureRemoteImages(client, evalsDir, suites, (def) =>
+    buildAndPushImage(client, def),
+  );
 
 const formatMiB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 

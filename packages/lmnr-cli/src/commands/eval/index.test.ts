@@ -286,7 +286,7 @@ void describe("images", () => {
     }
   });
 
-  void it("packs only included paths, still honoring .dockerignore", async () => {
+  void it("stages only included paths, still honoring .dockerignore", async () => {
     await write("repo/agent/main.py", "print(1)");
     await write("repo/agent/.env", "SECRET=1");
     await write("repo/shared/util.py", "x = 1");
@@ -295,26 +295,35 @@ void describe("images", () => {
     await write("repo/README.md", "not included");
     await write("repo/.dockerignore", "shared/cache/\n");
     await write("repo/evals/image/Dockerfile", "FROM python:3.12-slim\n");
-    const dockerfile = path.join(root, "repo/evals/image/Dockerfile");
-    const context = path.join(root, "repo");
+    const def = {
+      name: "app",
+      dockerfile: path.join(root, "repo/evals/image/Dockerfile"),
+      context: path.join(root, "repo"),
+    };
 
-    const packed = await packBuildContext(dockerfile, context, [
-      "shared",
-      "agent",
-      "agent/main.py",
-    ]);
-    const names = (await filesOf(packed.tar, false)).map((e) => e.header.name);
-    expect(names).toEqual(["agent/main.py", "shared/util.py"]);
-
-    // Order and overlap in `include` don't change the bytes, so the hash is stable.
-    const reordered = await packBuildContext(dockerfile, context, [
-      "agent",
-      "shared",
-    ]);
-    expect(reordered.hash).toBe(packed.hash);
+    const staged = await stageBuildContext({
+      ...def,
+      include: ["shared", "agent", "agent/main.py"],
+    });
+    try {
+      const files = (
+        await readdir(staged, { recursive: true, withFileTypes: true })
+      )
+        .filter((entry) => entry.isFile())
+        .map((entry) =>
+          path.relative(staged, path.join(entry.parentPath, entry.name)),
+        )
+        .sort();
+      expect(files).toEqual([
+        path.join("agent", "main.py"),
+        path.join("shared", "util.py"),
+      ]);
+    } finally {
+      await rm(staged, { recursive: true, force: true });
+    }
 
     await expect(
-      packBuildContext(dockerfile, context, ["agent", "missing"]),
+      stageBuildContext({ ...def, include: ["agent", "missing"] }),
     ).rejects.toThrow(/Included path not found/);
   });
 

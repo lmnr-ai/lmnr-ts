@@ -32,8 +32,9 @@ export interface ImageDef {
 
 /**
  * What a Laminar sandbox starts from (wire shape of `POST /sandboxes`): an
- * image pushed by `push.ts` (manifest digest), or a Dockerfile plus uploaded
- * build contexts for Laminar to build.
+ * image pushed by `push.ts` (manifest digest), or, for a task's own
+ * Dockerfile, the Dockerfile plus an uploaded build context for Laminar to
+ * build.
  */
 export type ImageSpec =
   | { image: string }
@@ -160,10 +161,10 @@ const contextFiles = async (
   return files;
 };
 
+/** A task's `environment/` dir as a build context for Laminar to build. */
 export const packBuildContext = async (
   dockerfile: string,
   context: string,
-  include?: string[],
 ): Promise<BuildContext> => {
   const [content, contextStat] = await Promise.all([
     readFile(dockerfile, "utf8").catch(() => null),
@@ -175,24 +176,20 @@ export const packBuildContext = async (
   if (!contextStat?.isDirectory()) {
     throw invalidEvalsDir(`Build context not found: ${context}`);
   }
-  const tar = await packFiles(
-    await contextFiles(dockerfile, context, include),
-    false,
-  );
+  const tar = await packFiles(await contextFiles(dockerfile, context), false);
   if (tar.length > MAX_CONTEXT_BYTES) {
     throw invalidEvalsDir(
       `Build context ${context} is ${tar.length} bytes, over the 1 GiB ` +
-        "limit. List only what the Dockerfile copies under include, or " +
-        "exclude build output and data with a .dockerignore.",
+        "limit. Exclude build output and data with a .dockerignore.",
     );
   }
   return { dockerfile: content, tar, hash: md5(tar) };
 };
 
 /**
- * Copy an image's included files into a new temp dir, so a local `docker
- * build` gets exactly what a remote build gets: a path missing from `include`
- * fails here first. The caller removes the dir.
+ * Copy an image's included files into a new temp dir for `docker build`, so
+ * local and remote builds get the same files and `.env*` / `.git` never reach
+ * an image. The caller removes the dir.
  */
 export const stageBuildContext = async (def: ImageDef): Promise<string> => {
   const files = await contextFiles(def.dockerfile, def.context, def.include);
@@ -260,25 +257,19 @@ export const dockerfileKey = (
 /**
  * Make sure Laminar sandboxes can start every image the suites use.
  * `lmnr.yaml` images go through `push` (built with local Docker and pushed,
- * see `push.ts`) when given; otherwise they, like per-task Dockerfiles, are
- * built by Daytona from an uploaded context, which it caches only by exact
- * content: any change rebuilds the whole image.
+ * see `push.ts`). Per-task Dockerfiles are built by Daytona from an uploaded
+ * context, which it caches only by exact content: any change rebuilds the
+ * whole image.
  */
 export const ensureRemoteImages = async (
   client: LaminarClient,
   evalsDir: string,
   suites: string[],
-  push?: (def: ImageDef) => Promise<string>,
+  push: (def: ImageDef) => Promise<string>,
 ): Promise<Record<string, ImageMap>> => {
   const images: Record<string, ImageSpec> = {};
   for (const def of await loadImageDefs(evalsDir)) {
-    images[def.name] = push
-      ? { image: await push(def) }
-      : await ensureContext(
-          client,
-          `image ${def.name}`,
-          await packBuildContext(def.dockerfile, def.context, def.include),
-        );
+    images[def.name] = { image: await push(def) };
   }
   const maps: Record<string, ImageMap> = {};
   for (const suite of suites) {

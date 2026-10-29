@@ -7,7 +7,6 @@ import { pipeline } from "node:stream/promises";
 import { createGzip } from "node:zlib";
 
 import type { LaminarClient } from "@lmnr-ai/client";
-import spawn from "cross-spawn";
 import { unpackTar } from "modern-tar/fs";
 
 import { harborFailed, invalidEvalsDir } from "../../errors";
@@ -30,14 +29,6 @@ export interface SavedImage {
   /** Each layer's file, in the same order. */
   layerFiles: string[];
 }
-
-/** Whether `docker` runs and reaches its daemon. */
-export const dockerAvailable = (): Promise<boolean> =>
-  new Promise((resolve) => {
-    const child = spawn("docker", ["version"], { stdio: "ignore" });
-    child.on("error", () => resolve(false));
-    child.on("close", (code) => resolve(code === 0));
-  });
 
 /**
  * Read an unpacked `docker save` archive. Both image stores write a
