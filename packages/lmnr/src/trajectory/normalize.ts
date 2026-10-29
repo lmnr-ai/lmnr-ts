@@ -23,6 +23,13 @@
  *   `file_data`. Gemini calls often have no id, so the k-th call without one
  *   in a conversation gets the id `<name>_<k>` (marked `synthetic_id`), and
  *   its response is matched by name in order.
+ * - Vercel AI SDK (LanguageModel prompts, as the TypeScript SDK records them):
+ *   `tool-call` parts (`toolCallId`, `toolName`, `input`), `role: "tool"`
+ *   messages of `tool-result` parts (`output: {type, value}`, `error-*` types
+ *   are failures), `reasoning` parts, and `file` parts with a `mediaType`.
+ * - OpenTelemetry GenAI semantic conventions: `{role, parts}` with typed parts
+ *   (`text`, `reasoning`, `tool_call`, `tool_call_response`, `blob`, `uri`,
+ *   `file`), as LangChain.js records its own LLM spans.
  *
  * Anything else degrades to role + text. Nothing here throws on bad input.
  *
@@ -82,6 +89,15 @@ const ROLE_ALIASES = new Map([
   ["human", "user"],
   ["ai", "assistant"],
   ["function", "tool"],
+]);
+
+// Blocks with nothing the model reads as text: redacted reasoning, AI SDK
+// reasoning images, citations, and tool approval responses.
+const SKIPPED_BLOCKS = new Set([
+  "redacted_thinking",
+  "reasoning-file",
+  "source",
+  "tool-approval-response",
 ]);
 
 /** First present key, for snake_case / camelCase variants. */
@@ -274,7 +290,7 @@ const parts = (
       if (truthy(text)) {
         sinkPush(sink, "reasoning", pyStr(text));
       }
-    } else if (kind === "redacted_thinking") {
+    } else if (SKIPPED_BLOCKS.has(kind)) {
       continue;
     } else if (kind === "tool_use") {
       sinkPush(
@@ -289,6 +305,24 @@ const parts = (
         content: resultContent(get(block, "content"), media),
         ...(get(block, "is_error") === true ? { _is_error: true } : {}),
       });
+    } else if (kind === "tool-call") {
+      sinkPush(
+        sink,
+        "tool_calls",
+        toolCall(
+          get(block, "toolCallId"),
+          get(block, "toolName"),
+          get(block, "input"),
+        ),
+      );
+    } else if (kind === "tool-result") {
+      const [content, isError] = aiSdkToolOutput(block, media);
+      sinkPush(sink, "tool_results", {
+        role: "tool",
+        tool_call_id: pyStr(or(get(block, "toolCallId"), "")),
+        content,
+        ...(isError ? { _is_error: true } : {}),
+      });
     } else if (["image", "input_image", "image_url"].includes(kind)) {
       const source = asDict(get(block, "source"));
       const imageUrl = get(block, "image_url");
@@ -301,6 +335,8 @@ const parts = (
           media,
         ),
       );
+    } else if (kind === "file" && has(block, "mediaType")) {
+      result.push(aiSdkFile(block, media));
     } else if (["document", "file", "input_file"].includes(kind)) {
       result.push(
         textPart(
@@ -311,6 +347,107 @@ const parts = (
       result.push(textPart("[audio]"));
     } else {
       result.push(textPart(pyJsonDumps(block)));
+    }
+  }
+  return result;
+};
+
+/**
+ * Content of an AI SDK `tool-result` part, and whether the tool failed.
+ *
+ * Prompt parts carry `output: {type, value}`; results a provider executed
+ * itself (in a call's output) carry `result` and `isError` instead.
+ */
+const aiSdkToolOutput = (
+  block: JsonObject,
+  media: MediaSink | null,
+): [any, boolean] => {
+  const output = asDict(get(block, "output"));
+  if (!truthy(output)) {
+    return [
+      resultContent(get(block, "result"), media),
+      get(block, "isError") === true,
+    ];
+  }
+  const kind = get(output, "type");
+  if (kind === "execution-denied") {
+    return [pyStr(or(get(output, "reason"), "")), false];
+  }
+  if (kind === "json" || kind === "error-json") {
+    // A JSON value, not content parts; providers send it serialized.
+    const value = pyJsonDumps(get(output, "value"));
+    return [value, kind === "error-json"];
+  }
+  return [resultContent(get(output, "value"), media), kind === "error-text"];
+};
+
+/** An AI SDK `file` part. `data` is base64 or a URL string, or (v7)
+ * `{type: "data", data}` / `{type: "url", url}`. */
+const aiSdkFile = (block: JsonObject, media: MediaSink | null): JsonObject => {
+  let data = get(block, "data");
+  let url = null;
+  if (isDict(data)) {
+    const source = asDict(data);
+    url = get(source, "type") === "url" ? get(source, "url") : null;
+    data = get(source, "type") === "data" ? get(source, "data") : null;
+  } else if (
+    typeof data === "string" &&
+    ["http://", "https://", "data:"].some((p) => data.startsWith(p))
+  ) {
+    url = data;
+    data = null;
+  }
+  const mediaType = get(block, "mediaType");
+  if (typeof mediaType === "string" && mediaType.startsWith("image/")) {
+    return mediaPart(mediaType, data, url, media);
+  }
+  return textPart(`[file: ${pyStr(or(get(block, "filename"), ""))}]`);
+};
+
+/** Typed parts of the OpenTelemetry GenAI semantic conventions. */
+const semconvParts = (
+  partsRaw: unknown,
+  media: MediaSink | null,
+  sink: Sink,
+): JsonObject[] => {
+  const result: JsonObject[] = [];
+  for (const part of dicts(partsRaw)) {
+    const kind = get(part, "type");
+    if (kind === "text") {
+      result.push(textPart(pyStr(or(get(part, "content"), ""))));
+    } else if (kind === "reasoning" || kind === "thinking") {
+      if (truthy(get(part, "content"))) {
+        sinkPush(sink, "reasoning", pyStr(part.content));
+      }
+    } else if (kind === "tool_call") {
+      sinkPush(
+        sink,
+        "tool_calls",
+        toolCall(get(part, "id"), get(part, "name"), get(part, "arguments")),
+      );
+    } else if (kind === "tool_call_response") {
+      // The conventions name the payload `response`; the Cohere
+      // instrumentations (both SDKs) write `result`.
+      const response = has(part, "response")
+        ? get(part, "response")
+        : get(part, "result");
+      sinkPush(sink, "tool_results", {
+        role: "tool",
+        tool_call_id: pyStr(or(get(part, "id"), "")),
+        content: resultContent(response, media),
+      });
+    } else if (kind === "blob") {
+      result.push(
+        mediaPart(get(part, "mime_type"), get(part, "content"), null, media),
+      );
+    } else if (kind === "uri") {
+      result.push(
+        mediaPart(get(part, "mime_type"), null, get(part, "uri"), media),
+      );
+    } else if (kind === "file") {
+      result.push(textPart(`[file: ${pyStr(or(get(part, "file_id"), ""))}]`));
+    } else {
+      result.push(textPart(pyJsonDumps(part)));
     }
   }
   return result;
@@ -520,7 +657,12 @@ class Conversation {
     const sink: Sink = {};
     let contentParts: JsonObject[];
     if (has(item, "parts")) {
-      contentParts = geminiParts(or(get(item, "parts"), []), this.media, sink);
+      const partsRaw: unknown = or(get(item, "parts"), []);
+      if (dicts(partsRaw).some((p) => has(p, "type"))) {
+        contentParts = semconvParts(partsRaw, this.media, sink);
+      } else {
+        contentParts = geminiParts(partsRaw, this.media, sink);
+      }
     } else {
       const content = get(item, "content");
       if (Array.isArray(content)) {
@@ -545,7 +687,7 @@ class Conversation {
         toolCall(
           get(call, "id"),
           or(get(fn, "name"), get(call, "name")),
-          get(fn, "arguments"),
+          has(fn, "arguments") ? get(fn, "arguments") : get(call, "arguments"),
         ),
       );
     }
@@ -560,6 +702,11 @@ class Conversation {
 
     if (role === "tool") {
       this.closeAssistant();
+      if (truthy(sink.tool_results) && contentParts.length === 0) {
+        // AI SDK and semconv tool messages hold their results as parts.
+        this.messages.push(...sink.tool_results);
+        return;
+      }
       const message: Message = {
         role: "tool",
         tool_call_id: pyStr(
