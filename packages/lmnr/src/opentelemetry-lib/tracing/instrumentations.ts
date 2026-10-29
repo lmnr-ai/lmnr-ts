@@ -60,13 +60,19 @@ export const initializeLaminarInstrumentations = (
   options: {
     baseUrl?: string;
     apiKey?: string;
+    // False in local-only mode: nothing, browser sessions included, goes to
+    // Laminar.
+    exportSpans?: boolean;
     httpPort?: number;
     suppressContentTracing?: boolean;
     instrumentModules?: InitializeOptions["instrumentModules"];
     sessionRecordingOptions?: SessionRecordingOptions;
   } = {},
 ) => {
-  const apiKey = options.apiKey ?? process.env.LMNR_PROJECT_API_KEY;
+  const apiKey =
+    options.exportSpans === false
+      ? undefined
+      : (options.apiKey ?? process.env.LMNR_PROJECT_API_KEY);
 
   // Only create client if we have an API key. That is, only send browser
   // session events to Laminar backend, but not other OTEL backends.

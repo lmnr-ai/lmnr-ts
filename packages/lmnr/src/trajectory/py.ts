@@ -13,6 +13,8 @@
  * objects put integer-like keys first. No golden case depends on them.
  */
 
+import { hasOwn } from "@lmnr-ai/types";
+
 export type Json = any;
 export type JsonObject = Record<string, any>;
 
@@ -21,9 +23,7 @@ export const isDict = (value: unknown): value is JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** `key in obj`, own keys only (`"constructor" in {}` is true in JS). */
-export const has = (obj: JsonObject, key: string): boolean =>
-  // biome-ignore lint/suspicious/noPrototypeBuiltins: `Object.hasOwn` is ES2022
-  Object.prototype.hasOwnProperty.call(obj, key);
+export const has: (obj: JsonObject, key: string) => boolean = hasOwn;
 
 /** `obj.get(key)`: undefined when absent, never an inherited property. */
 export const get = (obj: JsonObject, key: string): any =>

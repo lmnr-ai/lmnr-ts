@@ -28,6 +28,7 @@ let spanProcessor: LaminarSpanProcessor;
 let tracerProvider: TracerProvider | undefined;
 let _baseHttpUrl: string = "https://api.lmnr.ai:443";
 let _apiKey: string | undefined;
+let _exportSpans = true;
 
 /**
  * Initializes the Tracing SDK.
@@ -39,10 +40,12 @@ let _apiKey: string | undefined;
 export const startTracing = (options: InitializeOptions) => {
   _baseHttpUrl = `${options.baseHttpUrl ?? options.baseUrl}:${options.httpPort ?? 443}`;
   _apiKey = options.apiKey;
+  _exportSpans = options.exportSpans ?? true;
 
   const instrumentations = initializeLaminarInstrumentations({
     baseUrl: _baseHttpUrl,
     apiKey: _apiKey,
+    exportSpans: _exportSpans,
     suppressContentTracing: !shouldSendTraces(),
     instrumentModules: options.instrumentModules,
     sessionRecordingOptions: options.sessionRecordingOptions,
@@ -64,6 +67,8 @@ export const startTracing = (options: InitializeOptions) => {
     exporter: options.exporter,
     disableBatch: options.disableBatch,
     release: options.release,
+    trajectoryPath: options.trajectoryPath,
+    exportSpans: _exportSpans,
   });
 
   const newProvider = new NodeTracerProvider({
@@ -126,6 +131,7 @@ export const patchModules = (
   const instrumentations = initializeLaminarInstrumentations({
     baseUrl: _baseHttpUrl,
     apiKey: _apiKey,
+    exportSpans: _exportSpans,
     instrumentModules: modules,
     suppressContentTracing: !shouldSendTraces(),
     sessionRecordingOptions: _configuration?.sessionRecordingOptions,
@@ -217,6 +223,15 @@ export const forceFlush = async () => {
   // Wait for pending stream processing with 5 second timeout
   await waitForPendingStreams(5000);
   await spanProcessor.forceFlush();
+};
+
+/**
+ * Stop the trajectory collector's snapshots and exit hook, and write the
+ * final file. `Laminar.shutdown()` only flushes the processor (a later
+ * `initialize()` builds a new one), so the old collector must be stopped here.
+ */
+export const shutdownTrajectory = () => {
+  spanProcessor?.trajectory?.shutdown();
 };
 
 export const clearSpanProcessor = () => {

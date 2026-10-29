@@ -46,6 +46,7 @@ import {
   getSpanProcessor,
   getTracer,
   patchModules,
+  shutdownTrajectory,
 } from "./opentelemetry-lib/tracing";
 import {
   ASSOCIATION_PROPERTIES,
@@ -94,6 +95,7 @@ export interface LaminarInitializeProps {
   inheritGlobalContext?: boolean;
   spanProcessor?: SpanProcessor;
   release?: string;
+  writeTrajectory?: boolean;
 }
 
 type LaminarAttributesProp = Record<
@@ -180,6 +182,19 @@ export class Laminar {
    * SHA. Laminar groups an agent's traces into versions by release. If not specified, read
    * from the LMNR_RELEASE environment variable, common deploy platform variables (Vercel,
    * Render, Railway, Heroku, Cloud Run, ...), or the checked-out git commit.
+   * @param {boolean} props.writeTrajectory - Whether `LMNR_TRAJECTORY_PATH` (see below)
+   * applies to this process. Set to false in a process whose environment is meant
+   * for an agent it runs, so its own spans are still exported. Defaults to true.
+   *
+   * Environment variables:
+   * - `LMNR_TRAJECTORY_PATH`: write the run as an lmnr-atif trajectory (Harbor's ATIF
+   *   format with Laminar's extensions) to this file, and do NOT export spans to
+   *   Laminar, so no API key is needed. The path may contain `{trace_id}` (one file
+   *   per trace) and `{pid}`. Inline images go to an `images/` directory next to it.
+   *   The file is written on `Laminar.flush()` / `Laminar.shutdown()`, on process
+   *   exit, and as a snapshot at most every 2 seconds while spans end.
+   * - `LMNR_TRAJECTORY_FORCE_EXPORT`: with `LMNR_TRAJECTORY_PATH`, also export spans to
+   *   Laminar as usual (an API key is then required). The file says `exported: true`.
    *
    * @example
    * import { Laminar } from '@lmnr-ai/lmnr';
@@ -197,7 +212,7 @@ export class Laminar {
    *   }
    * });
    *
-   * @throws {Error} - If project API key is not set
+   * @throws {Error} - If project API key is not set and spans are exported
    */
   public static initialize({
     projectApiKey,
@@ -218,6 +233,7 @@ export class Laminar {
     inheritGlobalContext,
     spanProcessor,
     release,
+    writeTrajectory = true,
   }: LaminarInitializeProps = {}) {
     if (this.isInitialized) {
       logger.warn(
@@ -227,8 +243,29 @@ export class Laminar {
     }
     const key = projectApiKey ?? process?.env?.LMNR_PROJECT_API_KEY;
 
-    // Validate that either API key or OTEL configuration is present
-    validateTracingConfig(key);
+    // `loadEnv()` has already copied `.env*` files into `process.env`, so
+    // ignoring the variable here covers them too.
+    const trajectoryPath = writeTrajectory
+      ? process?.env?.LMNR_TRAJECTORY_PATH || undefined
+      : undefined;
+    const exportSpans =
+      trajectoryPath === undefined ||
+      isTruthy(process?.env?.LMNR_TRAJECTORY_FORCE_EXPORT);
+
+    // Validate that either API key or OTEL configuration is present. Local-only
+    // mode (a trajectory path without force-export) exports nothing.
+    if (exportSpans) {
+      validateTracingConfig(key);
+    }
+    if (trajectoryPath !== undefined) {
+      logger.info(
+        `Writing the trajectory to ${trajectoryPath}` +
+          (exportSpans
+            ? "; spans are also exported to Laminar."
+            : "; spans are not exported to Laminar" +
+              " (set LMNR_TRAJECTORY_FORCE_EXPORT=true to export them too)."),
+      );
+    }
 
     this.projectApiKey = key ?? "";
     let url = baseUrl ?? process?.env?.LMNR_BASE_URL;
@@ -291,6 +328,8 @@ export class Laminar {
       sessionRecordingOptions,
       spanProcessor,
       release,
+      trajectoryPath,
+      exportSpans,
     });
 
     // Build the debug runtime only after tracing is up. It has no dependency on
@@ -1233,6 +1272,10 @@ export class Laminar {
       // fallback.
       getRuntime()?.emitPointer();
       await forceFlush();
+      // The processor is not shut down (initialize() can build a new one), so
+      // stop its trajectory snapshots and exit hook explicitly. This also
+      // writes the final file.
+      shutdownTrajectory();
       // Unlike Python where asynchronous nature of `BatchSpanProcessor.forceFlush()`
       // forces us to actually use `SpanProcessor.shutdown()` and make any
       // further interactions with OTEL API impossible, here we call

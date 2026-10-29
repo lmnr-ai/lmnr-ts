@@ -1,0 +1,159 @@
+[
+  {
+    "scope": "https://api.openai.com:443",
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body": {
+      "model": "gpt-5.4-nano",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Answer with the get_weather tool."
+        },
+        {
+          "role": "user",
+          "content": "What's the weather in Paris?"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "Current weather in a city",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": ["city"]
+            }
+          }
+        }
+      ]
+    },
+    "status": 200,
+    "response": [
+      "1b1b04201c07762cf80e2684d5d5674493f317babd7211b55a8745a1efc2dc3a252edf3422a6bb8801ff73b9777c76c8c7f467eb37b707dead410d9ea485918694cdb58fce57f363202807f469b37e75a1be0580e9e99519671139b6b78da81a8f7ad3b427df5c1da6dea0ef94037e37f56750e8166562e803128883f57c065859e539559658f5c2354279ef661529520299e8494a86eb9e6478929f24701670be3d0317a0bb77a60c7193f732057cd00021d0a3e89f407489b321be1ea6819fb4d1c154b747f9866a30e0fd073c069c65ead540f504efe0cfbc6fe0dd023db4a059e05ed004c4381625e94ec26480188db6b12b0458256853b88179f99f827c7881e91b7aaf2f78275dfd0ccb6b0ffeb1c12b7a64a8908b62b5adbd0785324e07c3e31c98d6a693b49db746cffaddefabacc2e006f9135680ba54170b33985c3026c224136b8c48438f0f5bb9dd98ee593dec5918cf611a96fa5f505af164829bfdc4ed4a931460f84408a98972f2d14cbed4d0ee739c1f63e5db05009913e994090ccfecc104c3a82f7b0f"
+    ],
+    "rawHeaders": {
+      "access-control-expose-headers": "X-Request-ID, CF-Ray, CF-Ray",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cf-cache-status": "DYNAMIC",
+      "cf-ray": "a52427aebbe4c4ac-PDX",
+      "connection": "keep-alive",
+      "content-encoding": "br",
+      "content-type": "application/json",
+      "date": "Thu, 29 Oct 2026 18:13:40 GMT",
+      "openai-organization": "redacted",
+      "openai-processing-ms": "3513",
+      "openai-project": "redacted",
+      "openai-version": "2020-10-01",
+      "server": "cloudflare",
+      "set-cookie": "redacted",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-openai-proxy-wasm": "v0.1",
+      "x-ratelimit-limit-requests": "30000",
+      "x-ratelimit-limit-tokens": "180000000",
+      "x-ratelimit-remaining-requests": "29999",
+      "x-ratelimit-remaining-tokens": "179999982",
+      "x-ratelimit-reset-requests": "2ms",
+      "x-ratelimit-reset-tokens": "0s",
+      "x-request-id": "req_58f662776c67461891dd68a4766c3c1e"
+    },
+    "responseIsBinary": false
+  },
+  {
+    "scope": "https://api.openai.com:443",
+    "method": "POST",
+    "path": "/v1/chat/completions",
+    "body": {
+      "model": "gpt-5.4-nano",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Answer with the get_weather tool."
+        },
+        {
+          "role": "user",
+          "content": "What's the weather in Paris?"
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call_Sj2dcatB9h4hRiHhyjhXjakd",
+              "type": "function",
+              "function": {
+                "name": "get_weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            }
+          ],
+          "refusal": null,
+          "annotations": []
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_Sj2dcatB9h4hRiHhyjhXjakd",
+          "content": "Sunny, 21C in Paris"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "Current weather in a city",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": ["city"]
+            }
+          }
+        }
+      ]
+    },
+    "status": 200,
+    "response": [
+      "1b1c03202c8b77882b23ddf0b9f4d313554b41c85f14c7713d54b707ab4114acf03ae5540a30b282e4f4dd6efc9ff309dd3bdeb709457364b6488cccd6f5168bdbfff37b1544492904d5e851eb28b0749dba7971147a2c3f56735a810d5ecbf22e93c244b3cdc6608f22628f48334fcf7d2b7a2a606d2293bfa5fdd409c53afd55d66b1adedae9f2d6b464ea9cba9a0b08915ed87b8104ac41eef34e32177653c61df908fb73396d8211b0e36114e5da001420b3406601a9fe00780f7280e84143f6d049822526bd0ac065ec9a2dfb274e4ea0c3f5cb73186ed9e88fcedf2c18e893effb53e20ef1bd27eb650a796a7eb37fdf70e119214b0a82473ed3035df7b11e77f71d4e4bd94f5bc86e7d8d9f91db8e31ee2b98d41129faa2aba2c1a419a6bc1f2d9da4b6b3d10f2d22745f867d1f7768ae790cfe663d94a32fa335608653621ff440933c9b48150bb4fc13a2b7c3adf385983a901c9782193eb4065518c977267d"
+    ],
+    "rawHeaders": {
+      "access-control-expose-headers": "X-Request-ID, CF-Ray, CF-Ray",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cf-cache-status": "DYNAMIC",
+      "cf-ray": "a52427cdaf22c4ac-PDX",
+      "connection": "keep-alive",
+      "content-encoding": "br",
+      "content-type": "application/json",
+      "date": "Thu, 29 Oct 2026 18:13:41 GMT",
+      "openai-organization": "redacted",
+      "openai-processing-ms": "579",
+      "openai-project": "redacted",
+      "openai-version": "2020-10-01",
+      "server": "cloudflare",
+      "set-cookie": "redacted",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "transfer-encoding": "chunked",
+      "x-content-type-options": "nosniff",
+      "x-openai-proxy-wasm": "v0.1",
+      "x-ratelimit-limit-requests": "30000",
+      "x-ratelimit-limit-tokens": "180000000",
+      "x-ratelimit-remaining-requests": "29999",
+      "x-ratelimit-remaining-tokens": "179999976",
+      "x-ratelimit-reset-requests": "2ms",
+      "x-ratelimit-reset-tokens": "0s",
+      "x-request-id": "req_6360740ab5b04639a53bf6d5ec35740c"
+    },
+    "responseIsBinary": false
+  }
+]

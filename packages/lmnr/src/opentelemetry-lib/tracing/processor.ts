@@ -46,6 +46,7 @@ import {
 } from "./context";
 import { LaminarSpanExporter } from "./exporter";
 import { detectRelease } from "./release";
+import { TrajectoryCollector } from "./trajectory";
 
 interface LaminarSpanProcessorOptions {
   /**
@@ -120,10 +121,35 @@ interface LaminarSpanProcessorOptions {
    * every span. Optional. If not provided, detected from the environment.
    */
   release?: string;
+
+  /**
+   * Write the run as an lmnr-atif trajectory file here
+   * (`LMNR_TRAJECTORY_PATH`). May contain `{trace_id}` and `{pid}`. Optional.
+   */
+  trajectoryPath?: string;
+
+  /**
+   * Whether to export spans to Laminar. Optional. Defaults to true. False
+   * (with `trajectoryPath`) is local-only: no exporter and no batch
+   * processor are created, and `exporter` / a wrapped LaminarSpanProcessor's
+   * pipeline are not used. A `spanProcessor` that isn't a
+   * LaminarSpanProcessor is the caller's own pipeline and still runs.
+   */
+  exportSpans?: boolean;
 }
 
 export class LaminarSpanProcessor implements SpanProcessor {
-  private instance: BatchSpanProcessor | SimpleSpanProcessor;
+  // Both undefined in local-only mode (`LMNR_TRAJECTORY_PATH` without
+  // force-export): spans go to the trajectory file and nowhere else. Every use
+  // checks; there is deliberately no discarding exporter, since OTel's
+  // exporter interfaces change between releases.
+  private instance: SpanProcessor | undefined;
+  private exporter: SpanExporter | undefined;
+  /**
+   * Writes the trajectory file, when there is one. Fed from `onStart` /
+   * `onEnd`, so it sees exactly the spans that would be exported.
+   */
+  readonly trajectory: TrajectoryCollector | undefined;
   private logger: Logger;
   private readonly _spanIdToPath: Map<string, string[]> = new Map();
   private readonly _spanIdLists: Map<string, string[]> = new Map();
@@ -154,20 +180,24 @@ export class LaminarSpanProcessor implements SpanProcessor {
         ? options.spanProcessor.release
         : undefined;
     this.release = detectRelease(options.release ?? wrapped);
+    const exportSpans = options.exportSpans ?? true;
     if (
       options.spanProcessor &&
       options.spanProcessor instanceof LaminarSpanProcessor
     ) {
-      this.instance = options.spanProcessor.instance;
+      // Its pipeline exports to Laminar, so local-only mode doesn't use it.
+      if (exportSpans) {
+        this.instance = options.spanProcessor.instance;
+        this.exporter = options.spanProcessor.exporter;
+      }
       // Set by reference, so that updates from the inside are reflected here.
       this._spanIdToPath = options.spanProcessor._spanIdToPath;
       this._spanIdLists = options.spanProcessor._spanIdLists;
     } else if (options.spanProcessor) {
-      this.instance = options.spanProcessor as
-        | BatchSpanProcessor
-        | SimpleSpanProcessor;
-    } else {
+      this.instance = options.spanProcessor;
+    } else if (exportSpans) {
       const exporter = options.exporter ?? new LaminarSpanExporter(options);
+      this.exporter = exporter;
       const batchConfig = {
         maxExportBatchSize: options.maxExportBatchSize ?? 512,
         exportTimeoutMillis: options.traceExportTimeoutMillis ?? 30000,
@@ -183,14 +213,29 @@ export class LaminarSpanProcessor implements SpanProcessor {
         this.instance = new BatchSpanProcessor(exporter, batchConfig);
       }
     }
+    // Only this processor's `onStart` / `onEnd` run when it wraps another
+    // LaminarSpanProcessor, so without a path of its own it takes over that
+    // one's collector. Either way exactly one collector records each span;
+    // a wrapped collector that isn't taken over records nothing.
+    this.trajectory = options.trajectoryPath
+      ? new TrajectoryCollector(
+          options.trajectoryPath,
+          exportSpans,
+          this.release,
+        )
+      : options.spanProcessor instanceof LaminarSpanProcessor
+        ? options.spanProcessor.trajectory
+        : undefined;
   }
 
-  forceFlush(): Promise<void> {
-    return this.instance.forceFlush();
+  async forceFlush(): Promise<void> {
+    this.trajectory?.write();
+    await this.instance?.forceFlush();
   }
 
-  shutdown(): Promise<void> {
-    return this.instance.shutdown();
+  async shutdown(): Promise<void> {
+    this.trajectory?.shutdown();
+    await this.instance?.shutdown();
   }
 
   onStart(spanArg: any, parentContext: Context): void {
@@ -307,7 +352,17 @@ export class LaminarSpanProcessor implements SpanProcessor {
       this.recordDebugTraceId(span);
     }
 
-    this.instance.onStart(span, parentContext);
+    if (this.trajectory !== undefined) {
+      try {
+        this.trajectory.onStart(span as unknown as Span);
+      } catch (e) {
+        this.logger.debug(
+          `Failed to track span for the trajectory: ${String(e)}`,
+        );
+      }
+    }
+
+    this.instance?.onStart(span as unknown as Span, parentContext);
   }
 
   /**
@@ -333,7 +388,16 @@ export class LaminarSpanProcessor implements SpanProcessor {
     this._spanIdLists.delete(spanId);
     this._spanIdToPath.delete(spanId);
     makeSpanOtelV2Compatible(span);
-    this.instance.onEnd(span as Span);
+    if (this.trajectory !== undefined) {
+      try {
+        this.trajectory.onEnd(span as Span);
+      } catch (e) {
+        this.logger.debug(
+          `Failed to record span for the trajectory: ${String(e)}`,
+        );
+      }
+    }
+    this.instance?.onEnd(span as Span);
   }
 
   /**

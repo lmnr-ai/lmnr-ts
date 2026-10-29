@@ -20,13 +20,16 @@ export const initializeTracing = (options: InitializeOptions) => {
   }
 
   // Only set defaults if not already provided and if we have an API key
-  // (when using OTEL env vars, we don't need a baseUrl or API key)
-  const apiKey = options.apiKey ?? process.env.LMNR_PROJECT_API_KEY;
-  if (!options.baseUrl && apiKey) {
-    options.baseUrl = process.env.LMNR_BASE_URL || "https://api.lmnr.ai:8443";
-  }
-  if (!options.apiKey) {
-    options.apiKey = apiKey;
+  // (when using OTEL env vars, we don't need a baseUrl or API key).
+  // Local-only mode exports nothing, so it reads no key at all.
+  if (options.exportSpans !== false) {
+    const apiKey = options.apiKey ?? process.env.LMNR_PROJECT_API_KEY;
+    if (!options.baseUrl && apiKey) {
+      options.baseUrl = process.env.LMNR_BASE_URL || "https://api.lmnr.ai:8443";
+    }
+    if (!options.apiKey) {
+      options.apiKey = apiKey;
+    }
   }
 
   _configuration = Object.freeze(options);
