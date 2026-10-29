@@ -7,11 +7,8 @@ import {
   LaminarInstrumentationConfig,
   PatchedMethod,
 } from "../shared/base";
-import {
-  recordError,
-  setRequestAttributes,
-  setResponseAttributes,
-} from "./utils";
+import { finishSpan, safely } from "../shared/utils";
+import { setRequestAttributes, setResponseAttributes } from "./utils";
 
 export class TypeSafeInstrumentation extends LaminarInstrumentation {
   constructor(config?: LaminarInstrumentationConfig) {
@@ -70,7 +67,9 @@ const wrapSystemOne = (patched: PatchedMethod) =>
       spanType: "LLM",
     });
     span.setAttribute("gen_ai.system", "typesafe");
-    setRequestAttributes(span, request, this?.defaultModel, traceContent);
+    safely(() =>
+      setRequestAttributes(span, request, this?.defaultModel, traceContent),
+    );
 
     // `systemOne` returns an APIPromise whose `then` triggers the SDK's body
     // parse, and `asResponse()` hands the caller the same Response object. So
@@ -84,15 +83,11 @@ const wrapSystemOne = (patched: PatchedMethod) =>
       );
     } catch (error) {
       // Synchronous request validation, e.g. an empty questions map.
-      recordError(span, error);
-      span.end();
+      finishSpan(span, error);
       throw error;
     }
 
-    const onError = (error: unknown) => {
-      recordError(span, error);
-      span.end();
-    };
+    const onError = (error: unknown) => finishSpan(span, error);
     // Recording must never break the caller: any surprise from a future
     // APIPromise shape degrades to a span without response attributes.
     try {
@@ -112,7 +107,7 @@ const wrapSystemOne = (patched: PatchedMethod) =>
       } else if (typeof promise?.then === "function") {
         // Defensive: a parsed result has the same shape as the raw body.
         promise.then((result: any) => {
-          setResponseAttributes(span, result, traceContent);
+          safely(() => setResponseAttributes(span, result, traceContent));
           span.end();
         }, onError);
       } else {

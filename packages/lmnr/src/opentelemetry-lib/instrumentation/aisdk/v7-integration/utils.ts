@@ -1,7 +1,11 @@
 import { LanguageModelV4Prompt } from "@ai-sdk/provider";
 import type { HrTime, Span } from "@opentelemetry/api";
 
-import { metadataToAttributes } from "../../../../utils";
+import {
+  metadataToAttributes,
+  toJson,
+  toJsonOrString,
+} from "../../../../utils";
 import {
   LaminarAttributes,
   SESSION_ID,
@@ -9,15 +13,6 @@ import {
 } from "../../../tracing/attributes";
 import { stringifyPromptForTelemetry } from "../utils";
 import type { AssociationProperties } from "./types";
-
-export const serializeJSON = (value: unknown): string => {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return "[unserializable]";
-  }
-};
 
 export const normalizeProvider = (
   provider: string | undefined,
@@ -104,11 +99,7 @@ export const buildVerbatimOutputMessages = (
   content: any[] | undefined,
 ): string | undefined => {
   if (!Array.isArray(content) || content.length === 0) return undefined;
-  try {
-    return JSON.stringify([{ role: "assistant", content }]);
-  } catch {
-    return undefined;
-  }
+  return toJson([{ role: "assistant", content }]);
 };
 
 // Fallback output shape for paths where the verbatim provider content is not
@@ -244,12 +235,7 @@ export const buildDecisionInputMessages = (
       verbatimPromptString([{ role: "user", content: state }]) ?? undefined
     );
   }
-  return serializeJSON([
-    {
-      role: "user",
-      content: typeof state === "string" ? state : serializeJSON(state),
-    },
-  ]);
+  return toJson([{ role: "user", content: toJsonOrString(state) }]);
 };
 
 export const verbatimPromptMessages = (prompt: unknown): unknown[] | null => {

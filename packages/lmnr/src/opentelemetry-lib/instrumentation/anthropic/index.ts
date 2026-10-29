@@ -1,9 +1,6 @@
-import { context, SpanStatusCode } from "@opentelemetry/api";
+import { context } from "@opentelemetry/api";
 import { isTracingSuppressed } from "@opentelemetry/core";
 
-import { Laminar } from "../../../laminar";
-import { initializeLogger } from "../../../utils";
-import { LaminarSpan } from "../../tracing/span";
 import {
   InstrumentedModule,
   LaminarInstrumentation,
@@ -11,39 +8,19 @@ import {
   PatchedMethod,
 } from "../shared/base";
 import {
+  finishSpan,
+  instrumentStream,
+  isAsyncIterable,
+  safely,
+  traceCall,
+} from "../shared/utils";
+import {
   createStreamState,
   processStreamEvent,
   setRequestAttributes,
   setResponseAttributes,
   setStreamingResponseAttributes,
 } from "./utils";
-
-const logger = initializeLogger();
-
-const markSpanError = (span: LaminarSpan, error: unknown): void => {
-  span.recordException(error as Error);
-  span.setAttribute(
-    "error.type",
-    (error as Error)?.constructor?.name ?? "Error",
-  );
-  span.setStatus({ code: SpanStatusCode.ERROR });
-};
-
-/**
- * Attribute extraction must never break the user's call.
- */
-const safely = (fn: () => void): void => {
-  try {
-    fn();
-  } catch (error) {
-    logger.debug(`Failed to set anthropic span attributes: ${String(error)}`);
-  }
-};
-
-const isAsyncIterable = (value: any): boolean =>
-  value !== null &&
-  typeof value === "object" &&
-  typeof value[Symbol.asyncIterator] === "function";
 
 /**
  * Resolve the `Anthropic` client class from the module namespace, its default
@@ -131,99 +108,27 @@ const wrapCreate = (patched: PatchedMethod, spanName: string) =>
     });
     safely(() => setRequestAttributes(span, params, traceContent));
 
-    let result: any;
-    try {
-      // Boxed so `withSpan` doesn't chain onto the APIPromise, which would
-      // turn it into a plain Promise without `withResponse()`/`asResponse()`.
-      result = Laminar.withSpan(span, () => ({
-        value: original.call(this, params, ...rest),
-      })).value;
-    } catch (error) {
-      markSpanError(span, error);
-      span.end();
-      throw error;
-    }
-
-    let ended = false;
-    const fail = (error: unknown) => {
-      if (ended) return;
-      ended = true;
-      markSpanError(span, error);
-      span.end();
-    };
-    const succeed = (data: any) => {
-      if (ended) return data;
-      if (params?.stream && isAsyncIterable(data)) {
-        ended = true;
-        instrumentStream(data, span, traceContent);
+    return traceCall(
+      span,
+      () => original.call(this, params, ...rest),
+      (data) => {
+        if (params?.stream && isAsyncIterable(data)) {
+          // Aggregate the raw stream events as the caller iterates them.
+          const state = createStreamState();
+          instrumentStream(data, {
+            onEvent: (event) => processStreamEvent(state, event),
+            onDone: (error) => {
+              safely(() =>
+                setStreamingResponseAttributes(span, state, traceContent),
+              );
+              finishSpan(span, error);
+            },
+          });
+          return data;
+        }
+        safely(() => setResponseAttributes(span, data, traceContent));
+        span.end();
         return data;
-      }
-      ended = true;
-      safely(() => setResponseAttributes(span, data, traceContent));
-      span.end();
-      return data;
-    };
-
-    if (typeof result?._thenUnwrap === "function") {
-      // `APIPromise`: transform its parsed body in place so the caller keeps
-      // `withResponse()` / `asResponse()`. Request failures (HTTP errors,
-      // connection errors) reject the raw response promise.
-      const responsePromise =
-        typeof result._responseProps === "function"
-          ? result._responseProps()
-          : result.responsePromise;
-      if (typeof responsePromise?.then === "function") {
-        responsePromise.then(undefined, fail);
-      }
-      return result._thenUnwrap(succeed);
-    }
-    if (typeof result?.then === "function") {
-      return result.then(succeed, (error: unknown) => {
-        fail(error);
-        throw error;
-      });
-    }
-    return succeed(result);
+      },
+    );
   };
-
-/**
- * Aggregate the events of an SDK `Stream` as the caller iterates it, and end
- * the span when iteration finishes. The stream object itself is kept, so
- * `tee()`, `toReadableStream()` and `controller` keep working.
- */
-const instrumentStream = (
-  stream: any,
-  span: LaminarSpan,
-  traceContent: boolean,
-): void => {
-  const originalIterator = stream[Symbol.asyncIterator].bind(stream);
-  const state = createStreamState();
-  let ended = false;
-  const end = (error?: unknown) => {
-    if (ended) return;
-    ended = true;
-    safely(() => setStreamingResponseAttributes(span, state, traceContent));
-    if (error !== undefined) {
-      markSpanError(span, error);
-    } else {
-      span.setStatus({ code: SpanStatusCode.OK });
-    }
-    span.end();
-  };
-
-  stream[Symbol.asyncIterator] = async function* () {
-    const iterable = { [Symbol.asyncIterator]: originalIterator };
-    try {
-      for await (const event of iterable) {
-        safely(() => processStreamEvent(state, event));
-        yield event;
-      }
-    } catch (error) {
-      end(error);
-      throw error;
-    } finally {
-      // Normal completion, or the caller stopped iterating early.
-      end();
-    }
-  };
-};

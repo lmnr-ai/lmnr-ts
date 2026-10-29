@@ -16,7 +16,7 @@
   - HTTP and connection errors reject the raw response promise (`_responseProps()`, or `responsePromise` in 0.x). `fail` is attached there.
   - Thenables that are not an APIPromise fall back to `.then`.
   - Known gap: a caller who only uses `asResponse()` never parses the body, so the span never ends.
-- **Streams are wrapped in place.** Only `stream[Symbol.asyncIterator]` is replaced on the instance; the SDK `Stream` object is returned as is.
+- **Streams are wrapped in place** with the shared `instrumentStream`, which wraps the `Stream#iterator` instance field (`[Symbol.asyncIterator]()` calls `this.iterator()`); the SDK `Stream` object is returned as is.
   - `tee()`, `toReadableStream()` and `MessageStream` all iterate through `this[Symbol.asyncIterator]()`, so they are covered and `controller` keeps working.
   - The span ends on completion, on error, or in `finally` when the caller breaks early.
   - Events are folded from the raw `RawMessageStreamEvent`s (`processStreamEvent`). `message_delta.usage` is cumulative and may carry `null`s, so non-null values replace earlier ones rather than adding to them.

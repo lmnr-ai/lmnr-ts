@@ -36,7 +36,6 @@
 
 import * as diagnosticsChannel from "node:diagnostics_channel";
 
-import { errorMessage } from "@lmnr-ai/types";
 import {
   context as contextApi,
   type HrTime,
@@ -46,10 +45,13 @@ import {
 } from "@opentelemetry/api";
 
 import { Laminar, type LaminarInitializeProps } from "../../../../laminar";
-import { initializeLogger } from "../../../../utils";
+import { toJson, toJsonOrString } from "../../../../utils";
 import { getTracer } from "../../../tracing";
 import {
   ASSOCIATION_PROPERTIES,
+  GEN_AI_INPUT_MESSAGES,
+  GEN_AI_OUTPUT_MESSAGES,
+  GEN_AI_TOOL_DEFINITIONS,
   LaminarAttributes,
   SPAN_INPUT,
   SPAN_OUTPUT,
@@ -59,6 +61,7 @@ import {
   ASSOCIATION_PROPERTIES_KEY,
   LaminarContextManager,
 } from "../../../tracing/context";
+import { recordSpanError, safeSetAttribute, toError } from "../../shared/utils";
 import { pushActiveLlmSpan, removeActiveLlmSpan } from "../active-llm-span";
 import { buildAiSdkInstrumentationAttributes } from "./package-versions";
 import {
@@ -80,7 +83,6 @@ import {
   normalizeProvider,
   readSpanEndTime,
   resolveAssociationProperties,
-  serializeJSON,
   verbatimPromptString,
   verbatimStandardizedMessages,
 } from "./utils";
@@ -150,8 +152,6 @@ export class LaminarAiSdkTelemetry {
   // serialization the replay wrapper hashes, so recording level == replay
   // level for the debugger cache.
   private readonly promptByCallId = new Map<string, string>();
-
-  private readonly logger = initializeLogger();
 
   constructor(options: LaminarAiSdkTelemetryOptions = {}) {
     this.recordInputs = options.recordInputs ?? true;
@@ -262,14 +262,15 @@ export class LaminarAiSdkTelemetry {
       ) {
         const msgs = verbatimStandardizedMessages(event);
         if (msgs.length > 0) {
-          span.setAttribute(SPAN_INPUT, serializeJSON(msgs));
+          safeSetAttribute(span, SPAN_INPUT, toJsonOrString(msgs));
         }
       } else if (event.value !== undefined) {
-        span.setAttribute(SPAN_INPUT, serializeJSON(event.value));
+        safeSetAttribute(span, SPAN_INPUT, toJsonOrString(event.value));
       } else if (event.query !== undefined || event.documents !== undefined) {
-        span.setAttribute(
+        safeSetAttribute(
+          span,
           SPAN_INPUT,
-          serializeJSON({ query: event.query, documents: event.documents }),
+          toJsonOrString({ query: event.query, documents: event.documents }),
         );
       }
     }
@@ -316,7 +317,7 @@ export class LaminarAiSdkTelemetry {
     if (this.recordInputs) {
       const msgs = verbatimStandardizedMessages(event);
       if (msgs.length > 0) {
-        span.setAttribute(SPAN_INPUT, serializeJSON(msgs));
+        safeSetAttribute(span, SPAN_INPUT, toJsonOrString(msgs));
       }
     }
 
@@ -356,16 +357,7 @@ export class LaminarAiSdkTelemetry {
     applyRequestModelAttributes(span, event);
     if (this.recordInputs) {
       if (event.tools) {
-        try {
-          span.setAttribute(
-            "gen_ai.tool.definitions",
-            JSON.stringify(event.tools),
-          );
-        } catch (e) {
-          this.logger.debug(
-            `Failed to record span tool definitions: ${errorMessage(e)}`,
-          );
-        }
+        safeSetAttribute(span, GEN_AI_TOOL_DEFINITIONS, toJson(event.tools));
       }
       // Verbatim LanguageModel-level prompt, stashed by onStepStart. This is
       // the exact serialization the replay wrapper hashes, so the server-side
@@ -379,7 +371,7 @@ export class LaminarAiSdkTelemetry {
       // attribute is the safer failure mode.
       const serialized = this.promptByCallId.get(callId);
       if (serialized !== undefined) {
-        span.setAttribute("gen_ai.input.messages", serialized);
+        span.setAttribute(GEN_AI_INPUT_MESSAGES, serialized);
       }
     }
 
@@ -424,7 +416,7 @@ export class LaminarAiSdkTelemetry {
         Array.isArray(event.content) ? (event.content as any[]) : undefined,
       );
       if (outputMessages) {
-        span.setAttribute("gen_ai.output.messages", outputMessages);
+        span.setAttribute(GEN_AI_OUTPUT_MESSAGES, outputMessages);
       }
     }
 
@@ -495,7 +487,7 @@ export class LaminarAiSdkTelemetry {
       if (this.recordOutputs && llm.textDeltas.length > 0) {
         const outputMessages = buildTextOutputMessages(llm.textDeltas.join(""));
         if (outputMessages) {
-          llm.span.setAttribute("gen_ai.output.messages", outputMessages);
+          llm.span.setAttribute(GEN_AI_OUTPUT_MESSAGES, outputMessages);
         }
       }
       // onLanguageModelCallEnd never fired (it deletes the key on the normal
@@ -569,7 +561,7 @@ export class LaminarAiSdkTelemetry {
       // onLanguageModelCallStart.
       const serialized = verbatimPromptString(event.promptMessages);
       if (serialized !== null) {
-        span.setAttribute("gen_ai.input.messages", serialized);
+        span.setAttribute(GEN_AI_INPUT_MESSAGES, serialized);
       }
     }
     this.llmByKey.set(stepKey(callId, 0), { span, textDeltas: [] });
@@ -604,7 +596,7 @@ export class LaminarAiSdkTelemetry {
     if (this.recordOutputs && typeof event.objectText === "string") {
       const outputMessages = buildTextOutputMessages(event.objectText);
       if (outputMessages) {
-        llm.span.setAttribute("gen_ai.output.messages", outputMessages);
+        llm.span.setAttribute(GEN_AI_OUTPUT_MESSAGES, outputMessages);
       }
     }
     llm.span.setStatus({ code: SpanStatusCode.OK });
@@ -644,9 +636,9 @@ export class LaminarAiSdkTelemetry {
     if (toolName) span.setAttribute("ai.toolCall.name", toolName);
     span.setAttribute("ai.toolCall.id", toolCallId);
     if (this.recordInputs && toolCall?.input !== undefined) {
-      const serialized = serializeJSON(toolCall.input);
-      span.setAttribute("ai.toolCall.args", serialized);
-      span.setAttribute(SPAN_INPUT, serialized);
+      const serialized = toJsonOrString(toolCall.input);
+      safeSetAttribute(span, "ai.toolCall.args", serialized);
+      safeSetAttribute(span, SPAN_INPUT, serialized);
     }
     this.toolByCallId.set(toolCallId, { span, ctx: spanCtx, callId });
   };
@@ -665,25 +657,17 @@ export class LaminarAiSdkTelemetry {
     if (output && typeof output === "object") {
       if (output.type === "tool-error") {
         const err = output.error;
-        const message =
-          err instanceof Error
-            ? err.message
-            : typeof err === "string"
-              ? err
-              : serializeJSON(err);
-        tool.span.recordException(
-          err instanceof Error ? err : new Error(message),
-        );
-        tool.span.setStatus({ code: SpanStatusCode.ERROR, message });
+        const { message } = toError(err);
+        recordSpanError(tool.span, err);
         if (this.recordOutputs) {
           tool.span.setAttribute(SPAN_OUTPUT, message);
           tool.span.setAttribute("ai.toolCall.error", message);
         }
       } else if (output.type === "tool-result") {
         if (this.recordOutputs && output.output !== undefined) {
-          const serialized = serializeJSON(output.output);
-          tool.span.setAttribute("ai.toolCall.result", serialized);
-          tool.span.setAttribute(SPAN_OUTPUT, serialized);
+          const serialized = toJsonOrString(output.output);
+          safeSetAttribute(tool.span, "ai.toolCall.result", serialized);
+          safeSetAttribute(tool.span, SPAN_OUTPUT, serialized);
         }
         tool.span.setStatus({ code: SpanStatusCode.OK });
       }
@@ -778,12 +762,13 @@ export class LaminarAiSdkTelemetry {
       // is the user message, the questions are the structured output schema.
       const input = buildDecisionInputMessages(event.state);
       if (input !== undefined) {
-        op.span.setAttribute("gen_ai.input.messages", input);
+        op.span.setAttribute(GEN_AI_INPUT_MESSAGES, input);
       }
       if (event.questions !== undefined) {
-        op.span.setAttribute(
+        safeSetAttribute(
+          op.span,
           "gen_ai.request.structured_output_schema",
-          serializeJSON(event.questions),
+          toJsonOrString(event.questions),
         );
       }
     }
@@ -806,11 +791,10 @@ export class LaminarAiSdkTelemetry {
     }
     applyUsageToSpan(op.span, event.usage);
     if (this.recordOutputs && event.answers !== undefined) {
-      op.span.setAttribute(
-        "gen_ai.output.messages",
-        serializeJSON([
-          { role: "assistant", content: serializeJSON(event.answers) },
-        ]),
+      safeSetAttribute(
+        op.span,
+        GEN_AI_OUTPUT_MESSAGES,
+        toJson([{ role: "assistant", content: toJsonOrString(event.answers) }]),
       );
     }
 
@@ -873,8 +857,12 @@ export class LaminarAiSdkTelemetry {
       }
       // Rerank: ranking array is small enough to serialize.
       if (Array.isArray(event.ranking)) {
-        op.span.setAttribute("ai.rerank.ranking", serializeJSON(event.ranking));
-        op.span.setAttribute(SPAN_OUTPUT, serializeJSON(event.ranking));
+        safeSetAttribute(
+          op.span,
+          "ai.rerank.ranking",
+          toJsonOrString(event.ranking),
+        );
+        safeSetAttribute(op.span, SPAN_OUTPUT, toJsonOrString(event.ranking));
       }
     }
 
@@ -898,12 +886,7 @@ export class LaminarAiSdkTelemetry {
       event && typeof event === "object" && "error" in event
         ? event.error
         : event;
-    const err =
-      rawError instanceof Error
-        ? rawError
-        : new Error(
-            typeof rawError === "string" ? rawError : serializeJSON(rawError),
-          );
+    const err = toError(rawError);
     const eventCallId: string | undefined =
       event && typeof event === "object" && typeof event.callId === "string"
         ? event.callId
@@ -928,11 +911,7 @@ export class LaminarAiSdkTelemetry {
     }
     if (!targetOp || !targetCallId) return;
 
-    targetOp.span.recordException(err);
-    targetOp.span.setStatus({
-      code: SpanStatusCode.ERROR,
-      message: err.message,
-    });
+    recordSpanError(targetOp.span, err);
 
     // End child spans + the operation span tied to this callId so we don't
     // leak if `onError` is terminal (no subsequent `onFinish`). If `onFinish`
@@ -963,9 +942,7 @@ export class LaminarAiSdkTelemetry {
       const reasonStr =
         reason instanceof Error
           ? reason.message
-          : typeof reason === "string"
-            ? reason
-            : serializeJSON(reason);
+          : (toJsonOrString(reason) ?? "");
       if (reasonStr.length > 0) {
         op.span.setAttribute("ai.response.abortReason", reasonStr);
       }
@@ -1040,7 +1017,7 @@ export class LaminarAiSdkTelemetry {
             llm.textDeltas.join(""),
           );
           if (outputMessages) {
-            llm.span.setAttribute("gen_ai.output.messages", outputMessages);
+            llm.span.setAttribute(GEN_AI_OUTPUT_MESSAGES, outputMessages);
           }
         }
         llm.span.end();

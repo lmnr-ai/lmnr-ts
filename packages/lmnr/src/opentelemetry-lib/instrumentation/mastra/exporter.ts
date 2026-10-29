@@ -16,10 +16,14 @@ import {
   normalizeOtelSpanId,
   normalizeOtelTraceId,
   otelSpanIdToUUID,
+  parseJson,
+  toJson,
+  toJsonOrString,
 } from "../../../utils";
 import { getLangVersion } from "../../../version";
 import {
   ASSOCIATION_PROPERTIES,
+  GEN_AI_OUTPUT_MESSAGES,
   LaminarAttributes,
   SESSION_ID,
   SPAN_IDS_PATH,
@@ -53,8 +57,6 @@ import {
   mapLaminarSpanType,
   normalizeInputMessages,
   normalizeProvider,
-  serializeJSON,
-  stringifyArgs,
   toAttributeValue,
 } from "./utils";
 
@@ -808,10 +810,10 @@ export class MastraExporter {
       this.applyToolAttributes(span, attributes);
     } else {
       if (span.input !== undefined) {
-        attributes[SPAN_INPUT] = serializeJSON(span.input);
+        attributes[SPAN_INPUT] = toJsonOrString(span.input);
       }
       if (span.output !== undefined) {
-        attributes[SPAN_OUTPUT] = serializeJSON(span.output);
+        attributes[SPAN_OUTPUT] = toJsonOrString(span.output);
       }
     }
 
@@ -867,9 +869,9 @@ export class MastraExporter {
     }
 
     if (messages.length > 0) {
-      attributes["ai.prompt.messages"] = serializeJSON(messages);
+      attributes["ai.prompt.messages"] = toJsonOrString(messages);
     } else if (span.input !== undefined) {
-      attributes[SPAN_INPUT] = serializeJSON(span.input);
+      attributes[SPAN_INPUT] = toJsonOrString(span.input);
     }
 
     const out = span.output;
@@ -885,12 +887,11 @@ export class MastraExporter {
               toolCallType: tc.toolCallType ?? "function",
               toolCallId: tc.toolCallId,
               toolName: tc.toolName,
-              args: stringifyArgs(tc.args ?? tc.input),
+              args: toJsonOrString(tc.args ?? tc.input),
             }))
           : [];
       if (normalizedToolCalls.length > 0) {
-        attributes["ai.response.toolCalls"] =
-          JSON.stringify(normalizedToolCalls);
+        attributes["ai.response.toolCalls"] = toJson(normalizedToolCalls);
       }
       // Emit OTel GenAI semconv `gen_ai.output.messages` with a `thinking`
       // part when this step had reasoning chunks. Laminar's backend
@@ -905,27 +906,20 @@ export class MastraExporter {
           parts.push({ type: "text", content: outObj.text });
         }
         for (const tc of normalizedToolCalls) {
-          let argsObj: unknown = tc.args;
-          if (typeof argsObj === "string") {
-            try {
-              argsObj = JSON.parse(argsObj);
-            } catch {
-              // leave as string; backend still accepts it
-            }
-          }
           parts.push({
             type: "tool_call",
             id: tc.toolCallId,
             name: tc.toolName,
-            arguments: argsObj,
+            // A string that isn't JSON stays a string; the backend accepts it.
+            arguments: parseJson(tc.args),
           });
         }
-        attributes["gen_ai.output.messages"] = JSON.stringify([
+        attributes[GEN_AI_OUTPUT_MESSAGES] = toJson([
           { role: "assistant", parts },
         ]);
       }
     } else if (out !== undefined) {
-      attributes[SPAN_OUTPUT] = serializeJSON(out);
+      attributes[SPAN_OUTPUT] = toJsonOrString(out);
     }
   }
 
@@ -934,10 +928,10 @@ export class MastraExporter {
     attributes: Record<string, any>,
   ): void {
     if (span.input !== undefined) {
-      attributes[SPAN_INPUT] = serializeJSON(span.input);
+      attributes[SPAN_INPUT] = toJsonOrString(span.input);
     }
     if (span.output !== undefined) {
-      attributes[SPAN_OUTPUT] = serializeJSON(span.output);
+      attributes[SPAN_OUTPUT] = toJsonOrString(span.output);
     }
     const toolAttrs = span.attributes ?? {};
     // Strip the `tool: 'x'` prefix Mastra prepends so the displayed name is

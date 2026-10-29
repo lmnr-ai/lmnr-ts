@@ -1,7 +1,6 @@
 import { context, diag } from "@opentelemetry/api";
 import { isTracingSuppressed } from "@opentelemetry/core";
 
-import { Laminar } from "../../../laminar";
 import { LaminarSpan } from "../../tracing/span";
 import {
   InstrumentedModule,
@@ -9,9 +8,14 @@ import {
   LaminarInstrumentationConfig,
 } from "../shared/base";
 import {
+  callWithSpan,
+  finishSpan,
   isAsyncIterable,
+  safely,
+  traceCall,
+} from "../shared/utils";
+import {
   ResourceKind,
-  recordError,
   responsesInputMessages,
   setRequestAttributes,
   setResponseAttributes,
@@ -155,7 +159,7 @@ const patchResourceMethod = (
 
   const original = resource[method].bind(resource);
 
-  resource[method] = async (request: any, options?: any) => {
+  resource[method] = (request: any, options?: any) => {
     if (isTracingSuppressed(context.active())) {
       return original(request, options);
     }
@@ -167,23 +171,22 @@ const patchResourceMethod = (
       spanType: "LLM",
     });
     span.setAttribute("gen_ai.system", "openrouter");
-    setRequestAttributes(span, kind, request?.[requestKey], traceContent);
+    safely(() =>
+      setRequestAttributes(span, kind, request?.[requestKey], traceContent),
+    );
 
-    try {
-      const response = await Laminar.withSpan(span, () =>
-        original(request, options),
-      );
-      if (isAsyncIterable(response)) {
-        return wrapStream(span, kind, response, traceContent);
-      }
-      setResponseAttributes(span, kind, response, traceContent);
-      span.end();
-      return response;
-    } catch (error) {
-      recordError(span, error);
-      span.end();
-      throw error;
-    }
+    return traceCall(
+      span,
+      () => original(request, options),
+      (response) => {
+        if (isAsyncIterable(response)) {
+          return wrapStream(span, kind, response, traceContent);
+        }
+        safely(() => setResponseAttributes(span, kind, response, traceContent));
+        span.end();
+        return response;
+      },
+    );
   };
   resource[WRAPPED_SYMBOL] = true;
 };
@@ -206,21 +209,21 @@ const patchCallModel = (proto: any, state: PatchState): void => {
     const tools = Array.isArray(request?.tools)
       ? request.tools.map((tool: any) => wrapTool(tool, span, instrumentation))
       : undefined;
+    let result: any;
     try {
-      const result = Laminar.withSpan(span, () =>
+      result = callWithSpan(span, () =>
         originalCallModel.call(
           this,
           tools ? { ...request, tools } : request,
           options,
         ),
       );
-      instrumentModelResult(result, span, instrumentation);
-      return result;
     } catch (error) {
-      recordError(span, error);
-      span.end();
+      finishSpan(span, error);
       throw error;
     }
+    instrumentModelResult(result, span, instrumentation);
+    return result;
   };
 };
 
@@ -239,25 +242,20 @@ const wrapTool = (
     function: {
       ...fn,
       execute: (input: any, ctx: any) =>
-        Laminar.withSpan(parentSpan, () => {
+        callWithSpan(parentSpan, () => {
           const span = instrumentation.startSpan({
             name: fn.name,
             spanType: "TOOL",
             input: traceContent ? input : undefined,
           });
-          return Laminar.withSpan(
+          return traceCall(
             span,
-            async () => {
-              try {
-                const result = await execute(input, ctx);
-                if (traceContent) span.setOutput(result);
-                return result;
-              } catch (error) {
-                recordError(span, error);
-                throw error;
-              }
+            () => execute(input, ctx),
+            (result) => {
+              if (traceContent) safely(() => span.setOutput(result));
+              span.end();
+              return result;
             },
-            true,
           );
         }),
     },
@@ -284,17 +282,17 @@ const instrumentModelResult = (
     if (typeof result[method] !== "function") continue;
     const original = result[method].bind(result);
     result[method] = (...args: any[]) =>
-      Laminar.withSpan(parentSpan, () => {
+      callWithSpan(parentSpan, () => {
         const span = instrumentation.startSpan({
           name: "openrouter.responses",
           spanType: "LLM",
         });
         span.setAttribute("gen_ai.system", "openrouter");
-        return Laminar.withSpan(
+        return traceCall(
           span,
-          async () => {
-            try {
-              const response = await original(...args);
+          () => original(...args),
+          (response) => {
+            safely(() => {
               setRequestAttributes(
                 span,
                 "responses",
@@ -302,13 +300,10 @@ const instrumentModelResult = (
                 traceContent,
               );
               setResponseAttributes(span, "responses", response, traceContent);
-              return response;
-            } catch (error) {
-              recordError(span, error);
-              throw error;
-            }
+            });
+            span.end();
+            return response;
           },
-          true,
         );
       });
   }
@@ -322,14 +317,11 @@ const instrumentModelResult = (
     promise.then(
       () => {
         if (traceContent && result.finalResponse?.output) {
-          parentSpan.setOutput(result.finalResponse.output);
+          safely(() => parentSpan.setOutput(result.finalResponse.output));
         }
         parentSpan.end();
       },
-      (error: unknown) => {
-        recordError(parentSpan, error);
-        parentSpan.end();
-      },
+      (error: unknown) => finishSpan(parentSpan, error),
     );
     return execution;
   };

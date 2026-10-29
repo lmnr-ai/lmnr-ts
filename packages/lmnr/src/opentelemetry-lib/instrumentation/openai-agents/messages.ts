@@ -1,11 +1,15 @@
 import type { Span } from "@opentelemetry/api";
 
-import { initializeLogger } from "../../../utils";
+import { initializeLogger, toJson } from "../../../utils";
 import {
+  GEN_AI_INPUT_MESSAGES,
+  GEN_AI_OUTPUT_MESSAGES,
+  GEN_AI_TOOL_DEFINITIONS,
   LaminarAttributes,
   SPAN_INPUT,
   SPAN_OUTPUT,
 } from "../../tracing/attributes";
+import { safeSetAttribute } from "../shared/utils";
 import { getFirstNotNull, modelAsDict, normalizeMessages } from "./helpers";
 
 const logger = initializeLogger();
@@ -20,10 +24,10 @@ export const setLmnrSpanIo = (
   outputData: any,
 ): void => {
   if (inputData !== undefined && inputData !== null) {
-    lmnrSpan.setAttribute(SPAN_INPUT, JSON.stringify(inputData));
+    safeSetAttribute(lmnrSpan, SPAN_INPUT, toJson(inputData));
   }
   if (outputData !== undefined && outputData !== null) {
-    lmnrSpan.setAttribute(SPAN_OUTPUT, JSON.stringify(outputData));
+    safeSetAttribute(lmnrSpan, SPAN_OUTPUT, toJson(outputData));
   }
 };
 
@@ -46,7 +50,7 @@ export const setGenAiInputMessages = (
     });
   }
   if (messages.length > 0) {
-    lmnrSpan.setAttribute("gen_ai.input.messages", JSON.stringify(messages));
+    safeSetAttribute(lmnrSpan, GEN_AI_INPUT_MESSAGES, toJson(messages));
   }
 };
 
@@ -59,7 +63,7 @@ export const setGenAiOutputMessages = (
   }
   const messages = normalizeMessages(outputData, "assistant");
   if (messages.length > 0) {
-    lmnrSpan.setAttribute("gen_ai.output.messages", JSON.stringify(messages));
+    safeSetAttribute(lmnrSpan, GEN_AI_OUTPUT_MESSAGES, toJson(messages));
   }
 };
 
@@ -91,7 +95,7 @@ export const setGenAiOutputMessagesFromResponse = (
     output: outputItems,
   };
 
-  lmnrSpan.setAttribute("gen_ai.output.messages", JSON.stringify(result));
+  safeSetAttribute(lmnrSpan, GEN_AI_OUTPUT_MESSAGES, toJson(result));
 };
 
 // ---------------------------------------------------------------------------
@@ -140,7 +144,7 @@ export const setToolDefinitionsFromResponse = (
   }
 
   if (toolDefs.length > 0) {
-    lmnrSpan.setAttribute("gen_ai.tool.definitions", JSON.stringify(toolDefs));
+    safeSetAttribute(lmnrSpan, GEN_AI_TOOL_DEFINITIONS, toJson(toolDefs));
   }
 };
 

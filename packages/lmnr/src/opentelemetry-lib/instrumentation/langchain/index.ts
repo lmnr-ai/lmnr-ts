@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { Context, context, diag } from "@opentelemetry/api";
 import { isTracingSuppressed, suppressTracing } from "@opentelemetry/core";
 
-import { initializeLogger } from "../../../utils";
+import { initializeLogger, toJson } from "../../../utils";
 import { LaminarContextManager } from "../../tracing/context";
 import {
   InstrumentedFile,
@@ -227,8 +227,8 @@ const graphTopology = (
     conditional: Boolean(edge.conditional),
   }));
   const topology = {
-    "langgraph.nodes": JSON.stringify(nodes),
-    "langgraph.edges": JSON.stringify(edges),
+    "langgraph.nodes": toJson(nodes) ?? "[]",
+    "langgraph.edges": toJson(edges) ?? "[]",
   };
   topologyCache.set(pregel, topology);
   return topology;

@@ -80,6 +80,40 @@ void describe("observeExperimentalDecorator", () => {
     );
   });
 
+  void it("records shared objects in observe() payloads, and marks only cycles", async () => {
+    const shared = { city: "Paris" };
+    const input: any = { from: shared, to: shared };
+    input.self = input;
+    await observe(
+      { name: "shared" },
+      async (_arg: unknown) => {
+        const output: any = {
+          items: [shared, shared],
+          at: new Map([["k", 1]]),
+        };
+        output.items.push(output);
+        return output;
+      },
+      input,
+    );
+
+    const [span] = exporter.getFinishedSpans();
+    assert.deepStrictEqual(
+      JSON.parse(span.attributes["lmnr.span.input"] as string),
+      { from: shared, to: shared, self: "[Circular reference]" },
+    );
+    assert.deepStrictEqual(
+      JSON.parse(span.attributes["lmnr.span.output"] as string),
+      { items: [shared, shared, "[Circular reference]"], at: [["k", 1]] },
+    );
+  });
+
+  void it("records a null observe() output as null", async () => {
+    await observe({ name: "nothing" }, async () => null);
+    const [span] = exporter.getFinishedSpans();
+    assert.strictEqual(span.attributes["lmnr.span.output"], "null");
+  });
+
   void it("uses method name as default span name", async () => {
     class TestService {
       @observeExperimentalDecorator({})

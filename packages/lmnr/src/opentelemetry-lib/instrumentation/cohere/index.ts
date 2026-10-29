@@ -1,9 +1,6 @@
-import { context, SpanStatusCode } from "@opentelemetry/api";
+import { context } from "@opentelemetry/api";
 import { isTracingSuppressed } from "@opentelemetry/core";
 
-import { Laminar } from "../../../laminar";
-import { initializeLogger } from "../../../utils";
-import { LaminarSpan } from "../../tracing/span";
 import {
   InstrumentedModule,
   LaminarInstrumentation,
@@ -11,15 +8,19 @@ import {
   PatchedMethod,
 } from "../shared/base";
 import {
-  ChatStreamAccumulator,
+  finishSpan,
+  instrumentStream,
+  isAsyncIterable,
+  safely,
+  traceCall,
+} from "../shared/utils";
+import {
   createV1ChatStreamAccumulator,
   createV2ChatStreamAccumulator,
   RequestType,
   setRequestAttributes,
   setResponseAttributes,
 } from "./utils";
-
-const logger = initializeLogger();
 
 type MethodSpec = {
   method: string;
@@ -49,34 +50,6 @@ const V2_METHODS: MethodSpec[] = [
   { method: "rerank", requestType: "rerank", streaming: false },
   { method: "embed", requestType: "embedding", streaming: false },
 ];
-
-const markSpanError = (span: LaminarSpan, error: unknown): void => {
-  span.recordException(error as Error);
-  span.setAttribute(
-    "error.type",
-    (error as Error)?.constructor?.name ?? "Error",
-  );
-  span.setStatus({
-    code: SpanStatusCode.ERROR,
-    message: (error as Error)?.message,
-  });
-};
-
-/**
- * Attribute extraction must never break the user's call.
- */
-const safely = (fn: () => void): void => {
-  try {
-    fn();
-  } catch (error) {
-    logger.debug(`Failed to set cohere span attributes: ${String(error)}`);
-  }
-};
-
-const isAsyncIterable = (value: any): boolean =>
-  value !== null &&
-  typeof value === "object" &&
-  typeof value[Symbol.asyncIterator] === "function";
 
 /**
  * The prototype in `proto`'s chain that defines `method`, so subclasses
@@ -224,111 +197,36 @@ const wrapMethod = (
       ),
     );
 
-    let result: any;
-    try {
-      // Boxed so `withSpan` doesn't chain onto the `HttpResponsePromise`,
-      // which would turn it into a plain Promise without `withRawResponse()`.
-      result = Laminar.withSpan(span, () => ({
-        value: original.call(this, request, ...rest),
-      })).value;
-    } catch (error) {
-      markSpanError(span, error);
-      span.end();
-      throw error;
-    }
-
-    let ended = false;
-    const fail = (error: unknown) => {
-      if (ended) return;
-      ended = true;
-      markSpanError(span, error);
-      span.end();
-    };
-    const succeed = (data: any) => {
-      if (ended) return data;
-      ended = true;
-      if (streaming && isAsyncIterable(data)) {
-        const accumulator = isV2
-          ? createV2ChatStreamAccumulator()
-          : createV1ChatStreamAccumulator();
-        instrumentStream(data, span, accumulator, isV2, traceContent);
+    return traceCall(
+      span,
+      () => original.call(this, request, ...rest),
+      (data) => {
+        if (streaming && isAsyncIterable(data)) {
+          const accumulator = isV2
+            ? createV2ChatStreamAccumulator()
+            : createV1ChatStreamAccumulator();
+          instrumentStream(data, {
+            onEvent: (event) => accumulator.add(event),
+            onDone: (error) => {
+              safely(() =>
+                setResponseAttributes(
+                  span,
+                  accumulator.response(),
+                  "chat",
+                  isV2,
+                  traceContent,
+                ),
+              );
+              finishSpan(span, error);
+            },
+          });
+          return data;
+        }
+        safely(() =>
+          setResponseAttributes(span, data, requestType, isV2, traceContent),
+        );
+        span.end();
         return data;
-      }
-      safely(() =>
-        setResponseAttributes(span, data, requestType, isV2, traceContent),
-      );
-      span.end();
-      return data;
-    };
-    const rethrow = (error: unknown) => {
-      fail(error);
-      throw error;
-    };
-
-    if (
-      typeof result?.withRawResponse === "function" &&
-      typeof result.constructor?.fromPromise === "function"
-    ) {
-      // `HttpResponsePromise`: rebuild it around the traced `{ data,
-      // rawResponse }` promise so the caller keeps `withRawResponse()`.
-      return result.constructor.fromPromise(
-        result
-          .withRawResponse()
-          .then((raw: any) => ({ ...raw, data: succeed(raw?.data) }), rethrow),
-      );
-    }
-    if (typeof result?.then === "function") {
-      return result.then(succeed, rethrow);
-    }
-    return succeed(result);
-  };
-
-/**
- * Aggregate the events of an SDK `Stream` as the caller iterates it, and end
- * the span when iteration finishes, fails, or is abandoned early.
- */
-const instrumentStream = (
-  stream: any,
-  span: LaminarSpan,
-  accumulator: ChatStreamAccumulator,
-  isV2: boolean,
-  traceContent: boolean,
-): void => {
-  const originalIterator = stream[Symbol.asyncIterator].bind(stream);
-  let ended = false;
-  const end = (error?: unknown) => {
-    if (ended) return;
-    ended = true;
-    safely(() =>
-      setResponseAttributes(
-        span,
-        accumulator.response(),
-        "chat",
-        isV2,
-        traceContent,
-      ),
+      },
     );
-    if (error !== undefined) {
-      markSpanError(span, error);
-    } else {
-      span.setStatus({ code: SpanStatusCode.OK });
-    }
-    span.end();
   };
-
-  stream[Symbol.asyncIterator] = async function* () {
-    const iterable = { [Symbol.asyncIterator]: originalIterator };
-    try {
-      for await (const event of iterable) {
-        safely(() => accumulator.add(event));
-        yield event;
-      }
-    } catch (error) {
-      end(error);
-      throw error;
-    } finally {
-      // Normal completion, or the caller stopped iterating early.
-      end();
-    }
-  };
-};

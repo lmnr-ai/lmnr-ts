@@ -1,15 +1,15 @@
 import { Context, HrTime, SpanStatusCode } from "@opentelemetry/api";
 
-import { LaminarSpan } from "../../tracing/span";
-import { safeSetAttribute } from "../google-genai/utils";
-import type { LaminarInstrumentation } from "../shared/base";
+import { toJson } from "../../../utils";
 import {
-  INPUT_MESSAGES,
-  OUTPUT_MESSAGES,
-  setClientAttributes,
-  TOOL_DEFINITIONS,
-  toJson,
-} from "./utils";
+  GEN_AI_INPUT_MESSAGES,
+  GEN_AI_OUTPUT_MESSAGES,
+  GEN_AI_TOOL_DEFINITIONS,
+} from "../../tracing/attributes";
+import { LaminarSpan } from "../../tracing/span";
+import type { LaminarInstrumentation } from "../shared/base";
+import { recordSpanError, safeSetAttribute } from "../shared/utils";
+import { setClientAttributes } from "./utils";
 
 export const RESPONSE_SPAN_NAME = "openai.response";
 
@@ -235,9 +235,17 @@ const setDataAttributes = (
   );
 
   if (traceContent) {
-    safeSetAttribute(span, INPUT_MESSAGES, toJson(buildInputMessages(data)));
-    safeSetAttribute(span, OUTPUT_MESSAGES, toJson(buildOutputMessages(data)));
-    safeSetAttribute(span, TOOL_DEFINITIONS, toJson(data.tools));
+    safeSetAttribute(
+      span,
+      GEN_AI_INPUT_MESSAGES,
+      toJson(buildInputMessages(data)),
+    );
+    safeSetAttribute(
+      span,
+      GEN_AI_OUTPUT_MESSAGES,
+      toJson(buildOutputMessages(data)),
+    );
+    safeSetAttribute(span, GEN_AI_TOOL_DEFINITIONS, toJson(data.tools));
   }
 };
 
@@ -268,13 +276,6 @@ const startResponseSpan = (
   });
   setDataAttributes(span, data, options.instance, instrumentation.traceContent);
   return span;
-};
-
-// `setStatus(ERROR)` alone doesn't mark a span failed in Laminar; the
-// `exception` event does.
-const markFailed = (span: LaminarSpan, message: string): void => {
-  span.recordException(new Error(message));
-  span.setStatus({ code: SpanStatusCode.ERROR, message });
 };
 
 const failureMessage = (response: any): string | undefined => {
@@ -313,7 +314,7 @@ export const processResponse = (
   const span = startResponseSpan(data, options);
   const failure = failureMessage(response);
   if (failure !== undefined) {
-    markFailed(span, failure);
+    recordSpanError(span, new Error(failure));
   } else {
     span.setStatus({ code: SpanStatusCode.OK });
   }
@@ -346,7 +347,7 @@ export const processCancel = (response: any, options: SpanOptions): void => {
   const data =
     tracedDataFromResponse(existing.startTime, response, {}) ?? existing;
   const span = startResponseSpan(data, options);
-  markFailed(span, "Response cancelled");
+  recordSpanError(span, new Error("Response cancelled"));
   span.end();
 };
 
@@ -423,7 +424,7 @@ export const finishStream = (
   const span = startResponseSpan(data, options);
   const failure = state.errorMessage ?? failureMessage(snapshot);
   if (failure !== undefined) {
-    markFailed(span, failure);
+    recordSpanError(span, new Error(failure));
   } else {
     span.setStatus({ code: SpanStatusCode.OK });
   }

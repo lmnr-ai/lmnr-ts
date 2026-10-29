@@ -1,16 +1,14 @@
+import { toJson } from "../../../utils";
+import {
+  GEN_AI_INPUT_MESSAGES,
+  GEN_AI_OUTPUT_MESSAGES,
+  GEN_AI_TOOL_DEFINITIONS,
+} from "../../tracing/attributes";
 import { LaminarSpan } from "../../tracing/span";
-import { safeSetAttribute } from "../google-genai/utils";
+import { safeSetAttribute } from "../shared/utils";
 
-export const INPUT_MESSAGES = "gen_ai.input.messages";
-export const OUTPUT_MESSAGES = "gen_ai.output.messages";
-export const TOOL_DEFINITIONS = "gen_ai.tool.definitions";
 export const STRUCTURED_OUTPUT_SCHEMA =
   "gen_ai.request.structured_output_schema";
-
-export const toJson = (value: unknown): string | undefined => {
-  if (value === undefined || value === null) return undefined;
-  return JSON.stringify(value);
-};
 
 /**
  * Base URL of the client behind a resource instance. openai >= 4 resources
@@ -126,10 +124,10 @@ export const setChatPromptAttributes = (
   span: LaminarSpan,
   params: any,
 ): void => {
-  safeSetAttribute(span, INPUT_MESSAGES, toJson(params?.messages));
+  safeSetAttribute(span, GEN_AI_INPUT_MESSAGES, toJson(params?.messages));
   safeSetAttribute(
     span,
-    TOOL_DEFINITIONS,
+    GEN_AI_TOOL_DEFINITIONS,
     toJson(params?.functions ?? params?.tools),
   );
 };
@@ -143,11 +141,11 @@ export const setCompletionPromptAttributes = (
     const prompts = Array.isArray(prompt) ? prompt : [prompt];
     safeSetAttribute(
       span,
-      INPUT_MESSAGES,
+      GEN_AI_INPUT_MESSAGES,
       toJson(prompts.map((content) => ({ role: "user", content }))),
     );
   }
-  safeSetAttribute(span, TOOL_DEFINITIONS, toJson(params?.functions));
+  safeSetAttribute(span, GEN_AI_TOOL_DEFINITIONS, toJson(params?.functions));
 };
 
 export const setEmbeddingsPromptAttributes = (
@@ -159,7 +157,7 @@ export const setEmbeddingsPromptAttributes = (
   const inputs = Array.isArray(input) ? input : [input];
   safeSetAttribute(
     span,
-    INPUT_MESSAGES,
+    GEN_AI_INPUT_MESSAGES,
     toJson(inputs.map((content) => ({ content }))),
   );
 };
@@ -213,7 +211,7 @@ export const setResponseAttributes = (span: LaminarSpan, response: any) => {
 
 export const setChoicesAttributes = (span: LaminarSpan, response: any) => {
   if (Array.isArray(response?.choices)) {
-    safeSetAttribute(span, OUTPUT_MESSAGES, toJson(response.choices));
+    safeSetAttribute(span, GEN_AI_OUTPUT_MESSAGES, toJson(response.choices));
   }
 };
 
@@ -333,11 +331,11 @@ export const setDecisionRequestAttributes = (
   if (typeof input === "string") {
     safeSetAttribute(
       span,
-      INPUT_MESSAGES,
+      GEN_AI_INPUT_MESSAGES,
       toJson([{ role: "user", content: input }]),
     );
   } else if (Array.isArray(input)) {
-    safeSetAttribute(span, INPUT_MESSAGES, toJson(input));
+    safeSetAttribute(span, GEN_AI_INPUT_MESSAGES, toJson(input));
   }
   // Questions are the output schema, not part of the prompt: a synthetic
   // system message would count as a new system prompt on every edit.
@@ -377,7 +375,7 @@ export const setDecisionResponseAttributes = (
   if (traceContent && Array.isArray(response.answers)) {
     safeSetAttribute(
       span,
-      OUTPUT_MESSAGES,
+      GEN_AI_OUTPUT_MESSAGES,
       toJson([{ role: "assistant", content: toJson(response.answers) }]),
     );
   }

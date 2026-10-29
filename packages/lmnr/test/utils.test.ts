@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { z } from "zod/v3";
 
 import { modelToProvider, prettyPrintZodSchema } from "../src/browser/utils";
+import { parseJson, toJson } from "../src/utils";
 
 void describe("prettyPrintZodSchema", () => {
   void it("formats a simple object schema", () => {
@@ -251,5 +252,73 @@ void describe("modelToProvider", () => {
     assert.equal(modelToProvider("cerebras-2.5-sonnet"), "cerebras");
     assert.equal(modelToProvider("groq-3.5-sonnet"), "groq");
     assert.equal(modelToProvider("command-r7b"), undefined);
+  });
+});
+
+void describe("toJson", () => {
+  void it("serializes an object shared between two fields", () => {
+    const args = { city: "Paris" };
+    const message = {
+      tool_calls: [{ name: "get_weather", args }],
+      content: [{ type: "tool_call", args }],
+    };
+    assert.deepStrictEqual(JSON.parse(toJson(message)!), message);
+  });
+
+  void it("replaces a cycle with [Circular reference]", () => {
+    const node: any = { name: "a", child: { name: "b" } };
+    node.child.parent = node;
+    node.siblings = [node];
+    assert.deepStrictEqual(JSON.parse(toJson(node)!), {
+      name: "a",
+      child: { name: "b", parent: "[Circular reference]" },
+      siblings: ["[Circular reference]"],
+    });
+  });
+
+  void it("serializes a Map as its entries and detects cycles through it", () => {
+    const map = new Map<string, unknown>([["a", 1]]);
+    map.set("self", map);
+    assert.strictEqual(
+      toJson({ map }),
+      '{"map":[["a",1],["self","[Circular reference]"]]}',
+    );
+  });
+
+  void it("stringifies bigints and keeps toJSON", () => {
+    assert.strictEqual(toJson({ n: BigInt(5) }), '{"n":"5"}');
+    assert.strictEqual(
+      toJson({ at: new Date("2026-01-01T00:00:00.000Z") }),
+      '{"at":"2026-01-01T00:00:00.000Z"}',
+    );
+  });
+
+  void it("gives undefined for nullish, unrepresentable and throwing values", () => {
+    assert.strictEqual(toJson(undefined), undefined);
+    assert.strictEqual(toJson(null), undefined);
+    assert.strictEqual(
+      toJson(() => 1),
+      undefined,
+    );
+    const throwing = {
+      get boom() {
+        throw new Error("boom");
+      },
+    };
+    assert.strictEqual(toJson(throwing), undefined);
+  });
+
+  void it("quotes strings and keeps nested nulls", () => {
+    assert.strictEqual(toJson("hi"), '"hi"');
+    assert.strictEqual(toJson({ a: null }), '{"a":null}');
+  });
+});
+
+void describe("parseJson", () => {
+  void it("parses JSON strings and hands back anything else", () => {
+    assert.deepStrictEqual(parseJson('{"a":1}'), { a: 1 });
+    assert.strictEqual(parseJson("not json"), "not json");
+    const value = { a: 1 };
+    assert.strictEqual(parseJson(value), value);
   });
 });

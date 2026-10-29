@@ -146,6 +146,22 @@ void describe("span interface tests", () => {
     assert.strictEqual(span.attributes["lmnr.span.output"], undefined);
   });
 
+  void it("serializes cycles and shared objects in setInput / setOutput", () => {
+    const shared = { city: "Paris" };
+    const node: any = { a: shared, b: shared };
+    node.self = node;
+    const span = Laminar.startSpan({ name: "test" }) as LaminarSpan;
+    assert.doesNotThrow(() => span.setInput(node));
+    span.setOutput(null);
+    span.end();
+    const [exported] = exporter.getFinishedSpans();
+    assert.deepStrictEqual(
+      JSON.parse(exported.attributes["lmnr.span.input"] as string),
+      { a: shared, b: shared, self: "[Circular reference]" },
+    );
+    assert.strictEqual(exported.attributes["lmnr.span.output"], "null");
+  });
+
   void it("stamps global metadata on spans built without observe / startActiveSpan", () => {
     // Mirrors a pure auto-instrumentation trace: no observe / startActiveSpan,
     // so no association properties are on the OTEL context. Global metadata

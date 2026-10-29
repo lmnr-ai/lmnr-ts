@@ -1,42 +1,22 @@
-import { SpanStatusCode } from "@opentelemetry/api";
-
+import { toJson } from "../../../utils";
+import {
+  GEN_AI_INPUT_MESSAGES,
+  GEN_AI_OUTPUT_MESSAGES,
+  GEN_AI_TOOL_DEFINITIONS,
+} from "../../tracing/attributes";
 import { LaminarSpan } from "../../tracing/span";
+import {
+  recordSpanError,
+  safely,
+  safeSetAttribute,
+  traceAsyncIterable,
+} from "../shared/utils";
 
 // Re-export attribute keys we use frequently
 const LLM_REQUEST_MODEL = "gen_ai.request.model";
 const LLM_RESPONSE_MODEL = "gen_ai.response.model";
 const LLM_SYSTEM = "gen_ai.system";
 const LLM_USAGE_TOTAL_TOKENS = "llm.usage.total_tokens";
-
-/**
- * Set an attribute on a span only if the value is non-null, non-undefined, and non-empty.
- */
-export function safeSetAttribute(
-  span: LaminarSpan,
-  key: string,
-  value: unknown,
-): void {
-  if (value === null || value === undefined) return;
-  if (typeof value === "string" && value.length === 0) return;
-  if (Array.isArray(value) && value.length === 0) return;
-  span.setAttribute(key, value as any);
-}
-
-/**
- * Convert an SDK object to a plain JSON-serializable object.
- */
-function toDict(obj: unknown): unknown {
-  if (obj === null || obj === undefined) return obj;
-  if (typeof obj !== "object") return obj;
-  if (Array.isArray(obj)) return obj.map(toDict);
-  const result: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-    if (v !== undefined) {
-      result[k] = toDict(v);
-    }
-  }
-  return result;
-}
 
 /**
  * Normalize contents to an array of {role, parts} message objects.
@@ -57,7 +37,7 @@ function contentToMessages(
     ) {
       messages.push({
         role: "system",
-        ...(toDict(systemInstruction) as Record<string, any>),
+        ...(systemInstruction as Record<string, any>),
       });
     }
   }
@@ -69,11 +49,11 @@ function contentToMessages(
       if (typeof item === "string") {
         messages.push({ role: "user", content: item });
       } else {
-        messages.push(toDict(item));
+        messages.push(item);
       }
     }
   } else if (contents && typeof contents === "object") {
-    messages.push(toDict(contents));
+    messages.push(contents);
   }
 
   return messages;
@@ -94,12 +74,12 @@ function extractToolDefinitions(config: any): any[] {
     // Tool can be a Tool object with functionDeclarations
     if (tool.functionDeclarations) {
       for (const fd of tool.functionDeclarations) {
-        tools.push(toDict(fd));
+        tools.push(fd);
       }
     }
     // Or it could be a single FunctionDeclaration-like object
     if (tool.name && !tool.functionDeclarations) {
-      tools.push(toDict(tool));
+      tools.push(tool);
     }
   }
   return tools;
@@ -147,7 +127,7 @@ export function setRequestAttributes(
       safeSetAttribute(
         span,
         "gen_ai.request.stop_sequences",
-        JSON.stringify(config.stopSequences),
+        toJson(config.stopSequences),
       );
     }
 
@@ -156,18 +136,14 @@ export function setRequestAttributes(
       safeSetAttribute(
         span,
         "gen_ai.request.structured_output_schema",
-        JSON.stringify(toDict(outputSchema)),
+        toJson(outputSchema),
       );
     }
 
     // Tool definitions
     const toolDefs = extractToolDefinitions(config);
     if (toolDefs.length > 0) {
-      safeSetAttribute(
-        span,
-        "gen_ai.tool.definitions",
-        JSON.stringify(toolDefs),
-      );
+      safeSetAttribute(span, GEN_AI_TOOL_DEFINITIONS, toJson(toolDefs));
     }
   }
 
@@ -178,7 +154,7 @@ export function setRequestAttributes(
       config?.systemInstruction,
     );
     if (messages.length > 0) {
-      safeSetAttribute(span, "gen_ai.input.messages", JSON.stringify(messages));
+      safeSetAttribute(span, GEN_AI_INPUT_MESSAGES, toJson(messages));
     }
   }
 }
@@ -244,7 +220,7 @@ export function setResponseAttributes(
           toolCalls.push({
             name: part.functionCall.name,
             id: part.functionCall.id,
-            arguments: JSON.stringify(toDict(part.functionCall.args)),
+            arguments: toJson(part.functionCall.args),
           });
         }
       }
@@ -259,11 +235,7 @@ export function setResponseAttributes(
     }
 
     if (outputMessages.length > 0) {
-      safeSetAttribute(
-        span,
-        "gen_ai.output.messages",
-        JSON.stringify(outputMessages),
-      );
+      safeSetAttribute(span, GEN_AI_OUTPUT_MESSAGES, toJson(outputMessages));
     }
   }
 }
@@ -293,17 +265,18 @@ function mergeTextParts(parts: any[]): any[] {
 }
 
 /**
- * Wrap a streaming async generator to accumulate response data and set span attributes
- * when iteration completes, throws, or is terminated early by the consumer.
+ * Wrap a streaming async generator to accumulate response data and set span
+ * attributes when iteration completes, throws, or is terminated early by the
+ * consumer.
  *
  * generateContentStream returns Promise<AsyncGenerator<GenerateContentResponse>>.
  * This wraps the inner async generator.
  */
-export function wrapStreamingResponse(
+export const wrapStreamingResponse = (
   span: LaminarSpan,
   asyncGen: AsyncGenerator<any>,
   traceContent: boolean,
-): AsyncGenerator<any> {
+): AsyncGenerator<any> => {
   const accumulatedParts: any[] = [];
   let promptTokenCount: number | undefined;
   let candidatesTokenCount: number | undefined;
@@ -314,112 +287,86 @@ export function wrapStreamingResponse(
   let modelVersion: string | undefined;
   let sawUsageMetadata = false;
 
-  async function* wrapper(): AsyncGenerator<any> {
-    let streamError: unknown;
-    let finalizeError: unknown;
-    try {
-      for await (const chunk of asyncGen) {
-        // Accumulate parts
-        if (chunk?.candidates) {
-          for (const candidate of chunk.candidates) {
-            const parts = candidate?.content?.parts;
-            if (parts) {
-              accumulatedParts.push(...parts);
-            }
-            if (candidate?.content?.role && !role) {
-              role = candidate.content.role;
-            }
-          }
+  const onEvent = (chunk: any) => {
+    // Accumulate parts
+    if (chunk?.candidates) {
+      for (const candidate of chunk.candidates) {
+        const parts = candidate?.content?.parts;
+        if (parts) {
+          accumulatedParts.push(...parts);
         }
-
-        // Accumulate usage
-        const usage = chunk?.usageMetadata;
-        if (usage) {
-          sawUsageMetadata = true;
-          if (
-            promptTokenCount === undefined &&
-            usage.promptTokenCount !== undefined
-          ) {
-            promptTokenCount = usage.promptTokenCount;
-          }
-          if (usage.candidatesTokenCount !== undefined) {
-            candidatesTokenCount = usage.candidatesTokenCount;
-          }
-          if (usage.thoughtsTokenCount !== undefined) {
-            thoughtsTokenCount = usage.thoughtsTokenCount;
-          }
-          if (usage.totalTokenCount !== undefined) {
-            totalTokenCount = usage.totalTokenCount;
-          }
-          if (
-            cachedContentTokenCount === undefined &&
-            usage.cachedContentTokenCount !== undefined
-          ) {
-            cachedContentTokenCount = usage.cachedContentTokenCount;
-          }
+        if (candidate?.content?.role && !role) {
+          role = candidate.content.role;
         }
-
-        if (chunk?.modelVersion && !modelVersion) {
-          modelVersion = chunk.modelVersion;
-        }
-
-        yield chunk;
-      }
-    } catch (error) {
-      streamError = error;
-      span.setAttribute(
-        "error.type",
-        (error as Error).constructor?.name ?? "Error",
-      );
-      span.recordException(error as Error);
-      span.setStatus({ code: SpanStatusCode.ERROR });
-      throw error;
-    } finally {
-      try {
-        const hasResponseData =
-          modelVersion !== undefined ||
-          role !== undefined ||
-          accumulatedParts.length > 0 ||
-          sawUsageMetadata;
-        if (hasResponseData) {
-          const mergedParts = mergeTextParts(accumulatedParts);
-          const compoundResponse = {
-            modelVersion,
-            candidates: [
-              {
-                content: {
-                  role: role ?? "model",
-                  parts: mergedParts,
-                },
-              },
-            ],
-            usageMetadata: {
-              promptTokenCount,
-              candidatesTokenCount,
-              thoughtsTokenCount,
-              totalTokenCount,
-              cachedContentTokenCount,
-            },
-          };
-
-          setResponseAttributes(span, compoundResponse, traceContent);
-        }
-      } catch (caughtFinalizeError) {
-        // Do not override the original stream error.
-        if (!streamError) {
-          finalizeError = caughtFinalizeError;
-        }
-      } finally {
-        span.end();
       }
     }
-    if (finalizeError) {
-      if (finalizeError instanceof Error) {
-        throw finalizeError;
-      }
-      throw new Error("Failed to finalize google-genai stream span");
-    }
-  }
 
-  return wrapper();
-}
+    // Accumulate usage
+    const usage = chunk?.usageMetadata;
+    if (usage) {
+      sawUsageMetadata = true;
+      if (
+        promptTokenCount === undefined &&
+        usage.promptTokenCount !== undefined
+      ) {
+        promptTokenCount = usage.promptTokenCount;
+      }
+      if (usage.candidatesTokenCount !== undefined) {
+        candidatesTokenCount = usage.candidatesTokenCount;
+      }
+      if (usage.thoughtsTokenCount !== undefined) {
+        thoughtsTokenCount = usage.thoughtsTokenCount;
+      }
+      if (usage.totalTokenCount !== undefined) {
+        totalTokenCount = usage.totalTokenCount;
+      }
+      if (
+        cachedContentTokenCount === undefined &&
+        usage.cachedContentTokenCount !== undefined
+      ) {
+        cachedContentTokenCount = usage.cachedContentTokenCount;
+      }
+    }
+
+    if (chunk?.modelVersion && !modelVersion) {
+      modelVersion = chunk.modelVersion;
+    }
+  };
+
+  const setAccumulatedResponse = () => {
+    const hasResponseData =
+      modelVersion !== undefined ||
+      role !== undefined ||
+      accumulatedParts.length > 0 ||
+      sawUsageMetadata;
+    if (!hasResponseData) return;
+    const compoundResponse = {
+      modelVersion,
+      candidates: [
+        {
+          content: {
+            role: role ?? "model",
+            parts: mergeTextParts(accumulatedParts),
+          },
+        },
+      ],
+      usageMetadata: {
+        promptTokenCount,
+        candidatesTokenCount,
+        thoughtsTokenCount,
+        totalTokenCount,
+        cachedContentTokenCount,
+      },
+    };
+    setResponseAttributes(span, compoundResponse, traceContent);
+  };
+
+  return traceAsyncIterable(asyncGen, {
+    onEvent,
+    onDone: (error) => {
+      if (error !== undefined) recordSpanError(span, error);
+      safely(setAccumulatedResponse);
+      span.end();
+    },
+  });
+};
