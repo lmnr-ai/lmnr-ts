@@ -29,6 +29,7 @@ import {
   _resetConfiguration,
   initializeTracing,
 } from "../src/opentelemetry-lib/configuration";
+import { toJson } from "../src/opentelemetry-lib/instrumentation/langchain/span-utils";
 
 // @langchain/anthropic depends on its own copy of the Anthropic SDK, and
 // that copy is the one that has to be instrumented
@@ -692,5 +693,30 @@ void describe("LangChain instrumentation", () => {
     assert.notStrictEqual(CallbackManager._configureSync, original);
     const manager: any = CallbackManager._configureSync();
     assert.ok(manager === undefined || manager.handlers);
+  });
+});
+
+void describe("toJson", () => {
+  void it("serializes an object shared between two fields", () => {
+    const args = { city: "Paris" };
+    const message = {
+      tool_calls: [{ name: "get_weather", args }],
+      content: [{ type: "tool_call", args }],
+    };
+    assert.deepStrictEqual(JSON.parse(toJson(message)), message);
+  });
+
+  void it("replaces a cycle with [Circular]", () => {
+    const node: any = { name: "a", child: { name: "b" } };
+    node.child.parent = node;
+    assert.deepStrictEqual(JSON.parse(toJson(node)), {
+      name: "a",
+      child: { name: "b", parent: "[Circular]" },
+    });
+  });
+
+  void it("stringifies bigints and top-level undefined", () => {
+    assert.strictEqual(toJson({ n: BigInt(5) }), '{"n":"5"}');
+    assert.strictEqual(toJson(undefined), "null");
   });
 });
