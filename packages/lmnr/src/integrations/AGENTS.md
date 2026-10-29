@@ -1,0 +1,11 @@
+# eve reporter (`eve.ts`)
+
+`LaminarReporter` targets eve 0.35+'s trace-aware reporter lifecycle from [vercel/eve#1980](https://github.com/vercel/eve/pull/1980). It keeps narrow local type mirrors so `eve` remains optional.
+
+- **Use eve's native trace contexts; never patch `ClientSession.send`.** `onEvalComplete` receives every trace observed across all sessions. Select the first sampled primary trace, otherwise the first sampled trace, and retain every structurally valid context in datapoint metadata. Unsampled contexts (`traceFlags & 0x01 === 0`) identify traces that eve did not record, so they must never become the datapoint trace; use a reporter fallback when no sampled context exists. A Laminar datapoint still accepts only one `traceId`.
+- **The agent must export eve's native OTel spans to Laminar.** Configure `otelIntegration({ spanProcessors: [new LaminarSpanProcessor()] })` under `agent/instrumentation/`, using the same project key as the reporter. No `traceChannelRequests` or `WORKFLOW_TRACE_MODE=continuous` workaround is needed.
+- **Attach the grade to the selected native trace.** The reporter creates a short EVALUATION span as a remote child of eve's reported span context and EVALUATOR children for assertions. If eve reports no sampled valid context (including an uninstrumented target), create a reporter-owned fallback trace instead. Both paths stamp `SPAN_TYPE` and `TRACE_TYPE`.
+- **Multiple traces are not collapsed.** Later turns and secondary sessions may live on other traces. They remain discoverable in `metadata.traceContexts`, but the datapoint links only to the selected trace until Laminar supports multiple trace links.
+- **Keep reporter and agent destinations on the same project.** Datapoints use the reporter's client; runner grade spans use the initialized Laminar pipeline; eve agent spans use the agent's `otelIntegration`. A key mismatch creates unresolved links.
+- **`ensureTracing()` passes `instrumentModules: {}` and only flushes.** Registering a reporter is not consent to patch the runner's libraries. Never shut down a provider that may belong to the host. `propagateTraceContext` remains as a deprecated no-op for source compatibility.
+- A normal single-turn eval may finish `status: "waiting"`; this means the session is parked, not failed. Eve supplies flat assertions rather than a pre-aggregated score map.

@@ -1,0 +1,26 @@
+# Anthropic instrumentation — LAM-2406
+
+- This is a port of the Python SDK's `opentelemetry_lib/opentelemetry/instrumentation/anthropic`. It replaces `@traceloop/instrumentation-anthropic`, and that dependency is gone. The attribute shapes match Python:
+  - `gen_ai.input.messages` puts the system prompt first as `{role:"system"}`, then the messages verbatim.
+  - `gen_ai.output.messages` is `[{role, content, stop_reason}]`, with the response's content blocks verbatim.
+  - `gen_ai.usage.input_tokens` is input plus cache_read plus cache_creation.
+  - `llm.usage.total_tokens` is set on non-streaming spans only.
+  - `gen_ai.tool.definitions` sits behind the `traceContent` gate. The structured-output schema does not.
+- **Only `create` is patched**, on `Messages`, `Beta.Messages` and the legacy `Completions` prototypes:
+  - In the SDK, `messages.parse()` calls `this.create()`, and `messages.stream()` (`MessageStream`) calls `messages.create({stream:true})`. So patching `parse`/`stream` as well would nest a second span.
+  - `Completions` does not exist in `@anthropic-ai/sdk` 1.x. It is resolved optionally, and the test drives it through a fake class.
+  - Prototypes are reached through the client class (`Anthropic.Messages`, `Anthropic.Beta.Messages`). `resolveClientClass` accepts the module namespace, the default export, or the class itself, so `instrumentModules: { anthropic }` works with both `import * as` and `import Anthropic from`.
+- **`create` returns an `APIPromise`, and the wrapper MUST keep it one.** Users call `.withResponse()` / `.asResponse()` on it.
+  - `Laminar.withSpan` chains `.catch().finally()` onto any returned promise, which yields a plain Promise and drops those helpers. So the original call is boxed (`withSpan(span, () => ({ value: original() })).value`).
+  - The span is finished through `result._thenUnwrap(succeed)`, which returns a new APIPromise with the helpers intact.
+  - HTTP and connection errors reject the raw response promise (`_responseProps()`, or `responsePromise` in 0.x). `fail` is attached there.
+  - Thenables that are not an APIPromise fall back to `.then`.
+  - Known gap: a caller who only uses `asResponse()` never parses the body, so the span never ends.
+- **Streams are wrapped in place.** Only `stream[Symbol.asyncIterator]` is replaced on the instance; the SDK `Stream` object is returned as is.
+  - `tee()`, `toReadableStream()` and `MessageStream` all iterate through `this[Symbol.asyncIterator]()`, so they are covered and `controller` keeps working.
+  - The span ends on completion, on error, or in `finally` when the caller breaks early.
+  - Events are folded from the raw `RawMessageStreamEvent`s (`processStreamEvent`). `message_delta.usage` is cumulative and may carry `null`s, so non-null values replace earlier ones rather than adding to them.
+  - A stream that is never iterated never ends its span, same as Python.
+- **`@anthropic-ai/sdk` 1.x has its own built-in OTel tracing** (`client._tracer`, off via `openTelemetry: false` / `ANTHROPIC_OPEN_TELEMETRY=false`). It reads the GLOBAL tracer provider, and Laminar deliberately never registers one, so those spans never reach Laminar and nothing is duplicated. If Laminar ever starts registering globally, revisit this.
+- Tests (`test/anthropic.test.ts`) need no cassettes. They pass a stub `fetch` to the client: JSON for messages, and `event: <type>\ndata: <json>\n\n` with content-type `text/event-stream` for streams. Set `maxRetries: 0` for error cases.
+- Not ported yet: the Python rollout/debugger caching wrappers. The user scoped LAM-2406 to the basics.
