@@ -644,6 +644,9 @@ locally, by Laminar for --remote):
     myapp-evals:
       dockerfile: image/Dockerfile   # relative to [dir]
       context: ..                    # build context, default: the Dockerfile's dir
+      include: [agent/, shared/]     # optional: the only context paths sent to the build
+
+Without include the whole context is sent (minus .dockerignore, .git, .env*).
 
 Secrets: \`\${VAR}\` placeholders in harbor.yaml and task.toml are filled from
 your environment or .env / .env.local; a missing one fails the run before it

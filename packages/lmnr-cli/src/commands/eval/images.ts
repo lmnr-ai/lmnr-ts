@@ -1,4 +1,5 @@
-import { readFile, stat } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import type { LaminarClient } from "@lmnr-ai/client";
@@ -22,6 +23,11 @@ export interface ImageDef {
   name: string;
   dockerfile: string;
   context: string;
+  /**
+   * The only paths (POSIX, relative to `context`) sent to the build. Unset
+   * sends the whole context.
+   */
+  include?: string[];
 }
 
 /** What a Laminar sandbox is built from (wire shape of `POST /sandboxes`). */
@@ -41,7 +47,37 @@ export interface ImageMap {
 interface RawImage {
   dockerfile?: unknown;
   context?: unknown;
+  include?: unknown;
 }
+
+/** `images.<name>.include`: non-empty, every path a relative one inside the context. */
+const parseInclude = (raw: unknown, where: string): string[] | undefined => {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw invalidEvalsDir(
+      `${where} must be a non-empty list of paths. Omit it to send the whole context.`,
+    );
+  }
+  return raw.map((entry) => {
+    if (typeof entry !== "string" || entry.trim() === "") {
+      throw invalidEvalsDir(`${where}: every entry must be a path.`);
+    }
+    const normalized = path.posix
+      .normalize(entry.trim().replace(/\\/g, "/"))
+      .replace(/\/+$/, "");
+    if (
+      path.posix.isAbsolute(normalized) ||
+      normalized === "." ||
+      normalized === ".." ||
+      normalized.startsWith("../")
+    ) {
+      throw invalidEvalsDir(
+        `${where}: "${entry}" must be a path inside the build context.`,
+      );
+    }
+    return normalized;
+  });
+};
 
 export const loadImageDefs = async (evalsDir: string): Promise<ImageDef[]> => {
   const file = path.join(evalsDir, LMNR_EVALS_CONFIG);
@@ -63,7 +99,11 @@ export const loadImageDefs = async (evalsDir: string): Promise<ImageDef[]> => {
       typeof raw.context === "string"
         ? path.resolve(evalsDir, raw.context)
         : path.dirname(dockerfile);
-    defs.push({ name, dockerfile, context });
+    const include = parseInclude(
+      raw.include,
+      `${file}: images.${name}.include`,
+    );
+    defs.push({ name, dockerfile, context, ...(include && { include }) });
   }
   return defs;
 };
@@ -94,9 +134,33 @@ export interface BuildContext {
   hash: string;
 }
 
+/**
+ * The files a build gets: the context (or only its `include` paths), minus
+ * `.dockerignore` matches, `.git`, env files and symlinks.
+ */
+const contextFiles = async (
+  dockerfile: string,
+  context: string,
+  include?: string[],
+) => {
+  const { files, skippedSymlinks } = await walkFiles(context, {
+    defaultExclusions: false,
+    ignore: await dockerIgnore(dockerfile, context),
+    include,
+  });
+  if (skippedSymlinks.length > 0) {
+    logger.warn(
+      `Skipped symlinks in build context ${context}: ` +
+        skippedSymlinks.join(", "),
+    );
+  }
+  return files;
+};
+
 export const packBuildContext = async (
   dockerfile: string,
   context: string,
+  include?: string[],
 ): Promise<BuildContext> => {
   const [content, contextStat] = await Promise.all([
     readFile(dockerfile, "utf8").catch(() => null),
@@ -108,18 +172,34 @@ export const packBuildContext = async (
   if (!contextStat?.isDirectory()) {
     throw invalidEvalsDir(`Build context not found: ${context}`);
   }
-  const { files } = await walkFiles(context, {
-    defaultExclusions: false,
-    ignore: await dockerIgnore(dockerfile, context),
-  });
-  const tar = await packFiles(files, false);
+  const tar = await packFiles(
+    await contextFiles(dockerfile, context, include),
+    false,
+  );
   if (tar.length > MAX_CONTEXT_BYTES) {
     throw invalidEvalsDir(
       `Build context ${context} is ${tar.length} bytes, over the 1 GiB ` +
-        "limit. Exclude build output and data with a .dockerignore.",
+        "limit. List only what the Dockerfile copies under include, or " +
+        "exclude build output and data with a .dockerignore.",
     );
   }
   return { dockerfile: content, tar, hash: md5(tar) };
+};
+
+/**
+ * Copy an image's included files into a new temp dir, so a local `docker
+ * build` gets exactly what a remote build gets: a path missing from `include`
+ * fails here first. The caller removes the dir.
+ */
+export const stageBuildContext = async (def: ImageDef): Promise<string> => {
+  const files = await contextFiles(def.dockerfile, def.context, def.include);
+  const dir = await mkdtemp(path.join(tmpdir(), "lmnr-build-"));
+  for (const file of files) {
+    const target = path.join(dir, ...file.target.split("/"));
+    await mkdir(path.dirname(target), { recursive: true });
+    await copyFile(file.source as string, target);
+  }
+  return dir;
 };
 
 /** Upload a context unless the project already has it. */
@@ -189,7 +269,7 @@ export const ensureRemoteImages = async (
     images[def.name] = await ensureContext(
       client,
       `image ${def.name}`,
-      await packBuildContext(def.dockerfile, def.context),
+      await packBuildContext(def.dockerfile, def.context, def.include),
     );
   }
   const maps: Record<string, ImageMap> = {};

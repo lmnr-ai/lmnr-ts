@@ -2,7 +2,9 @@ import {
   chmod,
   mkdir,
   mkdtemp,
+  readdir,
   rm,
+  stat,
   symlink,
   utimes,
   writeFile,
@@ -20,6 +22,7 @@ import {
   findTaskDockerfiles,
   loadImageDefs,
   packBuildContext,
+  stageBuildContext,
 } from "./images";
 import {
   laminarBaseUrl,
@@ -262,6 +265,80 @@ void describe("images", () => {
       .map((e) => e.header.name)
       .sort();
     expect(names).toEqual([".dockerignore", "Dockerfile", "app/main.py"]);
+  });
+
+  void it("reads include as normalized paths inside the context", async () => {
+    await write(
+      "evals/lmnr.yaml",
+      "images:\n  app:\n    dockerfile: image/Dockerfile\n    context: ..\n    include: [agent/, ./shared/lib, 'tools\\\\cli']\n",
+    );
+    const [def] = await loadImageDefs(path.join(root, "evals"));
+    expect(def?.include).toEqual(["agent", "shared/lib", "tools/cli"]);
+
+    for (const bad of ["[]", "[../outside]", "[/abs]", "[.]", "[1]", "agent"]) {
+      await write(
+        "evals/lmnr.yaml",
+        `images:\n  app:\n    dockerfile: image/Dockerfile\n    include: ${bad}\n`,
+      );
+      await expect(loadImageDefs(path.join(root, "evals"))).rejects.toThrow(
+        /images\.app\.include/,
+      );
+    }
+  });
+
+  void it("packs only included paths, still honoring .dockerignore", async () => {
+    await write("repo/agent/main.py", "print(1)");
+    await write("repo/agent/.env", "SECRET=1");
+    await write("repo/shared/util.py", "x = 1");
+    await write("repo/shared/cache/blob.bin", "ignored");
+    await write("repo/other/huge.bin", "not included");
+    await write("repo/README.md", "not included");
+    await write("repo/.dockerignore", "shared/cache/\n");
+    await write("repo/evals/image/Dockerfile", "FROM python:3.12-slim\n");
+    const dockerfile = path.join(root, "repo/evals/image/Dockerfile");
+    const context = path.join(root, "repo");
+
+    const packed = await packBuildContext(dockerfile, context, [
+      "shared",
+      "agent",
+      "agent/main.py",
+    ]);
+    const names = (await filesOf(packed.tar, false)).map((e) => e.header.name);
+    expect(names).toEqual(["agent/main.py", "shared/util.py"]);
+
+    // Order and overlap in `include` don't change the bytes, so the hash is stable.
+    const reordered = await packBuildContext(dockerfile, context, [
+      "agent",
+      "shared",
+    ]);
+    expect(reordered.hash).toBe(packed.hash);
+
+    await expect(
+      packBuildContext(dockerfile, context, ["agent", "missing"]),
+    ).rejects.toThrow(/Included path not found/);
+  });
+
+  void it("stages included files for a local docker build", async () => {
+    await write("repo/agent/run.sh", "#!/bin/sh\necho hi\n");
+    await chmod(path.join(root, "repo/agent/run.sh"), 0o755);
+    await write("repo/other/huge.bin", "not included");
+    await write("repo/Dockerfile", "FROM alpine\n");
+    const staged = await stageBuildContext({
+      name: "app",
+      dockerfile: path.join(root, "repo/Dockerfile"),
+      context: path.join(root, "repo"),
+      include: ["agent"],
+    });
+    try {
+      expect((await readdir(staged, { recursive: true })).sort()).toEqual([
+        "agent",
+        path.join("agent", "run.sh"),
+      ]);
+      const mode = (await stat(path.join(staged, "agent/run.sh"))).mode;
+      expect(mode & 0o111).not.toBe(0);
+    } finally {
+      await rm(staged, { recursive: true, force: true });
+    }
   });
 
   void it("finds per-task Dockerfiles only where no docker_image is set", async () => {

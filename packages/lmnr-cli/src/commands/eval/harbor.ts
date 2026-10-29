@@ -7,7 +7,7 @@ import path from "node:path";
 import spawn from "cross-spawn";
 
 import { harborFailed, missingTool } from "../../errors";
-import type { ImageDef, ImageMap } from "./images";
+import { type ImageDef, type ImageMap, stageBuildContext } from "./images";
 import type { JobConfig } from "./suites";
 
 /**
@@ -131,19 +131,29 @@ export const runHarborSuite = async (run: HarborRun): Promise<number> => {
   }
 };
 
-/** Build `lmnr.yaml` images locally, tagged with the name tasks reference. */
+/**
+ * Build `lmnr.yaml` images locally, tagged with the name tasks reference. An
+ * image with `include` builds from a staged copy of just those paths.
+ */
 export const buildLocalImages = async (defs: ImageDef[]): Promise<void> => {
   for (const def of defs) {
-    const code = await runCommand("docker", [
-      "build",
-      "-f",
-      def.dockerfile,
-      "-t",
-      def.name,
-      def.context,
-    ]);
-    if (code !== 0) {
-      throw harborFailed(`docker build of image ${def.name} failed (${code}).`);
+    const context = def.include ? await stageBuildContext(def) : def.context;
+    try {
+      const code = await runCommand("docker", [
+        "build",
+        "-f",
+        def.dockerfile,
+        "-t",
+        def.name,
+        context,
+      ]);
+      if (code !== 0) {
+        throw harborFailed(
+          `docker build of image ${def.name} failed (${code}).`,
+        );
+      }
+    } finally {
+      if (def.include) await rm(context, { recursive: true, force: true });
     }
   }
 };

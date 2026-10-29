@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readdir, stat } from "node:fs/promises";
+import { lstat, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { buffer } from "node:stream/consumers";
 import { pipeline } from "node:stream/promises";
@@ -43,7 +43,23 @@ export interface WalkOptions {
   defaultExclusions: boolean;
   /** Extra `.dockerignore`-style rules, relative to the root. */
   ignore?: Ignore;
+  /**
+   * Walk only these files and directories (POSIX paths relative to the root)
+   * instead of the whole root. A missing one is an error.
+   */
+  include?: string[];
 }
+
+const fileEntry = (source: string, target: string): FileSource => ({
+  type: "file",
+  source,
+  target,
+  mtime: new Date(0),
+  uid: 0,
+  gid: 0,
+  uname: "",
+  gname: "",
+});
 
 /**
  * Walk `root` for packing. Entries get fixed ownership and mtime so the same
@@ -51,7 +67,7 @@ export interface WalkOptions {
  */
 export const walkFiles = async (
   root: string,
-  { defaultExclusions, ignore }: WalkOptions,
+  { defaultExclusions, ignore, include }: WalkOptions,
 ): Promise<WalkResult> => {
   const skipDir = (name: string, target: string) =>
     (defaultExclusions && EXCLUDED_DIRS.has(name)) ||
@@ -75,21 +91,36 @@ export const walkFiles = async (
           await walk(source, target);
         }
       } else if (entry.isFile() && !skipFile(entry.name, target)) {
-        files.push({
-          type: "file",
-          source,
-          target,
-          mtime: new Date(0),
-          uid: 0,
-          gid: 0,
-          uname: "",
-          gname: "",
-        });
+        files.push(fileEntry(source, target));
       }
     }
   };
-  await walk(root, "");
-  return { files, skippedSymlinks };
+  if (!include) {
+    await walk(root, "");
+    return { files, skippedSymlinks };
+  }
+  for (const target of include) {
+    const source = path.join(root, ...target.split("/"));
+    const entry = await lstat(source).catch(() => null);
+    if (!entry) {
+      throw invalidEvalsDir(`Included path not found: ${source}`);
+    }
+    const name = path.basename(source);
+    if (entry.isSymbolicLink()) {
+      skippedSymlinks.push(target);
+    } else if (entry.isDirectory()) {
+      if (!skipDir(name, target)) await walk(source, target);
+    } else if (entry.isFile() && !skipFile(name, target)) {
+      files.push(fileEntry(source, target));
+    }
+  }
+  // Overlapping paths (`app`, `app/main.py`) list a file twice; the archive
+  // needs each once, in an order that doesn't depend on how `include` is written.
+  const unique = [...new Map(files.map((f) => [f.target, f])).values()];
+  unique.sort((a, b) =>
+    a.target < b.target ? -1 : a.target > b.target ? 1 : 0,
+  );
+  return { files: unique, skippedSymlinks };
 };
 
 export const packFiles = async (
