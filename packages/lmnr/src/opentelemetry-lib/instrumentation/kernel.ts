@@ -1,23 +1,17 @@
 // biome-ignore-all lint/complexity/noBannedTypes: instrumentation wraps arbitrary Functions
 import type * as KernelSDK from "@onkernel/sdk";
 
-import { observe } from "../../decorators";
 import { Laminar } from "../../laminar";
 import {
   InstrumentedModule,
-  instrumentationScopeAttributes,
+  instrumentedObserve,
   LaminarInstrumentation,
   PatchedMethod,
 } from "./shared/base";
 
 const KERNEL = "@onkernel/sdk";
 
-/** Stamp the span `observe()` just opened, which is the current one. */
-const stampObservedSpan = (): void => {
-  Laminar.getCurrentSpan()?.setAttributes(
-    instrumentationScopeAttributes(KERNEL),
-  );
-};
+const observe = instrumentedObserve(KERNEL);
 
 const WRAPPED_BROWSER_METHODS: (keyof KernelSDK.Kernel.Browsers)[] = [
   "create",
@@ -134,10 +128,8 @@ export class KernelInstrumentation extends LaminarInstrumentation {
           spanType,
           input: plugin.formatInput(args),
         },
-        async (innerArgs: any[]) => {
-          stampObservedSpan();
-          return await original.bind(this).apply(this, innerArgs);
-        },
+        async (innerArgs: any[]) =>
+          await original.bind(this).apply(this, innerArgs),
         args,
       );
     };
@@ -238,7 +230,6 @@ export class KernelInstrumentation extends LaminarInstrumentation {
             spanType: "DEFAULT",
           },
           async (innerCtx: any, innerPayload: any) => {
-            stampObservedSpan();
             const result = await handler(innerCtx, innerPayload);
             return result;
           },

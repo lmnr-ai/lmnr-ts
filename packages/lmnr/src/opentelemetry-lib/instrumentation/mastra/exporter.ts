@@ -34,6 +34,7 @@ import {
 } from "../../tracing/attributes";
 import { LaminarContextManager } from "../../tracing/context";
 import { getSpanProcessor, getTracerProvider } from "../../tracing/index";
+import { instrumentationScopeAttributes } from "../shared/base";
 import {
   AISdkMessage,
   MastraExportedSpan,
@@ -763,6 +764,8 @@ export class MastraExporter {
     attributes[SPAN_TYPE] = laminarSpanType;
     attributes[SPAN_INSTRUMENTATION_SOURCE] = "javascript";
     attributes[SPAN_SDK_VERSION] = SDK_VERSION;
+    // The exporter implements `@mastra/core`'s `ObservabilityExporter`.
+    Object.assign(attributes, instrumentationScopeAttributes("@mastra/core"));
     const langVersion = getLangVersion();
     if (langVersion) attributes[SPAN_LANGUAGE_VERSION] = langVersion;
 

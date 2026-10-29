@@ -12,6 +12,9 @@ import { RECORDER } from "./recorder";
 
 export const LMNR_SEND_EVENTS_FUNCTION_NAME = "lmnrSendEvents";
 
+/** Instrumentation scope of the spans the Stagehand instrumentations produce. */
+export const STAGEHAND_PACKAGE = "@browserbasehq/stagehand";
+
 const logger = initializeLogger();
 
 interface LmnrWindow extends Window {

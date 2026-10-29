@@ -189,6 +189,11 @@ void describe("Stagehand v3 instrumentation — wrap guards", () => {
         names.includes("stagehand.apiClient.act"),
         `Expected stagehand.apiClient.act span, got: ${names.join(", ")}`,
       );
+      const actSpan = spans.find((s) => s.name === "stagehand.apiClient.act");
+      assert.strictEqual(
+        actSpan?.attributes["lmnr.span.instrumentation_scope.name"],
+        "@browserbasehq/stagehand",
+      );
 
       await instance.close();
     } finally {

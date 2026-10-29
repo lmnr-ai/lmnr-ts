@@ -13,6 +13,7 @@ import {
 } from "../src/opentelemetry-lib/configuration";
 import {
   InstrumentedModule,
+  instrumentedObserve,
   LaminarInstrumentation,
   LaminarInstrumentationConfig,
   PatchedMethod,
@@ -233,6 +234,30 @@ void describe("LaminarInstrumentation", () => {
     assert.doesNotThrow(() =>
       new FakeInstrumentation().manuallyInstrument({ unrelated: true }),
     );
+  });
+
+  void it("stamps the spans instrumentedObserve opens, and only those", async () => {
+    const observe = instrumentedObserve(FAKE_PACKAGE);
+
+    const result = await observe(
+      { name: "outer" },
+      async (a: number, b: number) => {
+        Laminar.startActiveSpan({ name: "inner" }).end();
+        return a + b;
+      },
+      1,
+      2,
+    );
+
+    assert.strictEqual(result, 3);
+    const spans = exporter.getFinishedSpans();
+    const outer = spans.find((s) => s.name === "outer")!;
+    const inner = spans.find((s) => s.name === "inner")!;
+    assert.strictEqual(outer.attributes[SCOPE_NAME], FAKE_PACKAGE);
+    assert.strictEqual(outer.attributes[SCOPE_VERSION], FAKE_VERSION);
+    assert.strictEqual(outer.attributes["lmnr.span.input"], "[1,2]");
+    // User code running inside is not attributed to the library.
+    assert.strictEqual(inner.attributes[SCOPE_NAME], undefined);
   });
 
   void it("records the version the module hook reports", () => {

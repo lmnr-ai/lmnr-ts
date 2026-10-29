@@ -5,6 +5,7 @@ import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
 import { LaminarContextManager } from "../../tracing/context";
 import { LaminarSpan } from "../../tracing/span";
+import { instrumentationScopeAttributes } from "../shared/base";
 import { buildHeaders, restoreContextFromHeaders } from "./helpers";
 
 /**
@@ -281,6 +282,8 @@ class ActivityInboundInterceptor {
         parentSpanContext: restored.laminarCtx,
         input: this.recordActivityArgs ? input.args : undefined,
       });
+      // Activities run on the worker.
+      span.setAttributes(instrumentationScopeAttributes("@temporalio/worker"));
 
       return Laminar.withSpan(
         span,

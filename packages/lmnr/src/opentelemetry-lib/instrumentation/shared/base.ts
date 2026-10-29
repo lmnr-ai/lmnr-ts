@@ -7,6 +7,7 @@ import {
 } from "@opentelemetry/instrumentation";
 
 import { version as SDK_VERSION } from "../../../../package.json";
+import { observe } from "../../../decorators";
 import { Laminar } from "../../../laminar";
 import {
   SPAN_INSTRUMENTATION_SCOPE_NAME,
@@ -84,6 +85,32 @@ export const instrumentationScopeAttributes = (
     ...(version ? { [SPAN_INSTRUMENTATION_SCOPE_VERSION]: version } : {}),
   };
 };
+
+/**
+ * An `observe()` that stamps every span it opens with the instrumentation
+ * scope of `packageName`. Instrumentations that build their spans with
+ * `observe()` (browser automation, kernel) use it in place of `observe`:
+ *
+ *     const laminarObserve = instrumentedObserve("@browserbasehq/stagehand");
+ */
+export const instrumentedObserve =
+  (packageName: string) =>
+  <A extends unknown[], R>(
+    options: Parameters<typeof observe>[0],
+    fn: (...args: A) => R,
+    ...args: A
+  ): R =>
+    observe(
+      options,
+      (...innerArgs: A) => {
+        // `observe()` activates its span before calling `fn`.
+        Laminar.getCurrentSpan()?.setAttributes(
+          instrumentationScopeAttributes(packageName),
+        );
+        return fn(...innerArgs);
+      },
+      ...args,
+    );
 
 /**
  * Set `target[key]`, redefining it when a plain assignment would fail: a

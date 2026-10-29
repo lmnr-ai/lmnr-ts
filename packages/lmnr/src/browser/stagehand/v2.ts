@@ -8,8 +8,12 @@ import {
 import { z } from "zod/v3";
 
 import { version as SDK_VERSION } from "../../../package.json";
-import { observe as laminarObserve } from "../../decorators";
 import { Laminar } from "../../laminar";
+import {
+  instrumentationScopeAttributes,
+  instrumentedObserve,
+} from "../../opentelemetry-lib/instrumentation/shared/base";
+import { recordPackageVersion } from "../../opentelemetry-lib/instrumentation/shared/package-version";
 import { LaminarContextManager } from "../../opentelemetry-lib/tracing/context";
 import { newUUID, StringUUID } from "../../utils";
 import { PlaywrightInstrumentation } from "../playwright";
@@ -17,8 +21,11 @@ import {
   cleanStagehandLLMClient,
   nameArgsOrCopy,
   prettyPrintZodSchema,
+  STAGEHAND_PACKAGE,
 } from "../utils";
 import { createLLMClientCreateChatCompletionWrapper } from "./shared-llm-wrapper";
+
+const laminarObserve = instrumentedObserve(STAGEHAND_PACKAGE);
 
 // Stagehand interfaces:
 type AvailableModel = string;
@@ -156,6 +163,7 @@ export class StagehandV2Instrumentation extends InstrumentationBase {
 
   private patch(moduleExports: any, moduleVersion?: string) {
     diag.debug(`patching stagehand ${moduleVersion}`);
+    recordPackageVersion(STAGEHAND_PACKAGE, moduleVersion);
     // Check if Stagehand is non-configurable
     const descriptor = Object.getOwnPropertyDescriptor(
       moduleExports,
@@ -283,6 +291,9 @@ export class StagehandV2Instrumentation extends InstrumentationBase {
         const parentSpan = Laminar.startSpan({
           name: "Stagehand",
         });
+        parentSpan.setAttributes(
+          instrumentationScopeAttributes(STAGEHAND_PACKAGE),
+        );
         instrumentation.playwrightInstrumentation.setParentSpanForSession(
           sessionId,
           parentSpan,
