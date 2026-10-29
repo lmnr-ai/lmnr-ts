@@ -18,6 +18,7 @@
  * and fork handling.
  */
 
+import { hasOwn } from "@lmnr-ai/types";
 import { HrTime } from "@opentelemetry/api";
 import { hrTime, otperformance } from "@opentelemetry/core";
 import type { ReadableSpan, Span } from "@opentelemetry/sdk-trace-base";
@@ -67,10 +68,6 @@ const OPENROUTER_METADATA_PREFIX = "trace.metadata.openrouter.";
 
 type Attributes = Record<string, unknown>;
 
-const has = (attributes: Attributes, key: string): boolean =>
-  // biome-ignore lint/suspicious/noPrototypeBuiltins: Object.hasOwn is ES2022
-  Object.prototype.hasOwnProperty.call(attributes, key);
-
 /**
  * The span's type as app-server sees it (`traces/spans.rs`), so the file and
  * the Laminar UI agree on what is an LLM or tool call: `span_type()`, plus the
@@ -80,7 +77,7 @@ const has = (attributes: Attributes, key: string): boolean =>
 export const spanType = (attributes: Attributes, name: string = ""): string => {
   if (
     name === "ai.toolCall" ||
-    AI_SDK_TOOL_CALL.some((key) => has(attributes, key))
+    AI_SDK_TOOL_CALL.some((key) => hasOwn(attributes, key))
   ) {
     return "TOOL";
   }
@@ -93,7 +90,7 @@ export const spanType = (attributes: Attributes, name: string = ""): string => {
 
 /** `span_type()` in app-server's `traces/spans.rs`. */
 const baseSpanType = (attributes: Attributes): string => {
-  if (has(attributes, SPAN_TYPE)) {
+  if (hasOwn(attributes, SPAN_TYPE)) {
     const explicit = attributes[SPAN_TYPE];
     return typeof explicit === "string" && SPAN_TYPES.has(explicit)
       ? explicit
@@ -125,14 +122,14 @@ const baseSpanType = (attributes: Attributes): string => {
     return "DEFAULT";
   }
   if (
-    has(attributes, "gen_ai.tool.call.arguments") ||
-    has(attributes, "gen_ai.tool.call.result")
+    hasOwn(attributes, "gen_ai.tool.call.arguments") ||
+    hasOwn(attributes, "gen_ai.tool.call.result")
   ) {
     return "TOOL";
   }
   if (
     ["gen_ai.system", "gen_ai.request.model", "gen_ai.response.model"].some(
-      (k) => has(attributes, k),
+      (k) => hasOwn(attributes, k),
     )
   ) {
     return "LLM";
@@ -153,10 +150,10 @@ const keep = (key: string, attributes: Attributes, kind: string): boolean => {
     return true;
   }
   if (key === SPAN_INPUT) {
-    return !(kind === "LLM" && has(attributes, "gen_ai.input.messages"));
+    return !(kind === "LLM" && hasOwn(attributes, "gen_ai.input.messages"));
   }
   if (key === SPAN_OUTPUT) {
-    return !(kind === "LLM" && has(attributes, "gen_ai.output.messages"));
+    return !(kind === "LLM" && hasOwn(attributes, "gen_ai.output.messages"));
   }
   return [SESSION_ID, RELEASE, SPAN_TYPE, ...AI_SDK_TOOL_CALL].includes(key);
 };

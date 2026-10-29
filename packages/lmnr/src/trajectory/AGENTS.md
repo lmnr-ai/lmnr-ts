@@ -14,7 +14,7 @@ TS port of the Python SDK's `lmnr/sdk/trajectory/` (lmnr-python PRs #402 / #405 
 - **Keep each file line-comparable with its Python twin**: same function names (camelCase), same order, same structure, so a fix can be mirrored by diffing the two. Don't improve an algorithm while porting; the golden suite pins the output, and an improvement belongs in both SDKs (Python first).
 - **Python semantics go through `py.ts`, never ad hoc**:
   - `truthy(x)` / `or(a, b, ...)` for `if x:` / `a or b` (`[]` and `{}` are falsy in Python, truthy in JS). Every Python truthiness check, including `or` chains, must use them.
-  - `get(obj, key)` / `has(obj, key)` for `dict.get` / `in`: own keys only (`"constructor" in {}` is true in JS). Copy objects with spread or `Object.fromEntries`, never `obj[key] = v` with a key from data (`__proto__`).
+  - `get(obj, key)` / `has(obj, key)` for `dict.get` / `in` (`has` is `hasOwn` from `@lmnr-ai/types`, which the tracing collector uses too): own keys only (`"constructor" in {}` is true in JS). Copy objects with spread or `Object.fromEntries`, never `obj[key] = v` with a key from data (`__proto__`).
   - `pyEquals` / `pyIn` for `==` / `in` (`1 == 1.0`, `True == 1`, deep, dict order ignored). `isNone` for `is None` (missing key and JSON null are both None).
   - `pyStr` for `str()` (`"True"`, `"None"`, single-quoted reprs), including inside f-strings.
   - `pyJsonDumps` for `json.dumps(value, ensure_ascii=False)`: Python's `", "` / `": "` separators and float repr (`1e-07`). Golden strings contain e.g. `"{\"temp_c\": 18}"`, so `JSON.stringify` fails them. Pass `{ ensureAscii: true }` where Python calls bare `json.dumps` (`normalize.ts` non-string content).
