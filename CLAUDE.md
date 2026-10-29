@@ -34,6 +34,20 @@ Work inside a specific package with `pnpm --filter @lmnr-ai/lmnr ...` or `cd pac
 - The two jobs share that step through a YAML anchor (`&verify-provenance` / `*verify-provenance`). Keep the verification inline in the workflow. A local composite action would be loaded from the checked-out tree, which is the code being verified.
 - Actions and the npm CLI are pinned (`uses: owner/repo@<sha> # vX.Y.Z`, `npm@X.Y.Z`). Bump them by resolving the new tag's SHA (`gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`), not by switching back to a floating tag.
 
+## OpenTelemetry dependency ranges (`packages/lmnr/package.json`)
+
+- **Every 0.x OTel package is capped `<0.300.0`**, and the stable packages are capped at `^2.0.0`.
+  - The 0.x packages are `instrumentation`, `sdk-node`, `exporter-trace-otlp-*`, `otlp-*-exporter-base`.
+  - The stable ones are `core`, `resources`, `sdk-trace-*`, `context-async-hooks`.
+  - Together those caps keep the SDK on one OTel release line.
+- **Why the cap:** `0.300.0` ships with the OTel 3.0 line (`core` / `resources` 3.0.0), and its packages peer on `@opentelemetry/api >=1.10.0`. Every `2.x` stable package peers on `api <1.10.0`.
+- **What broke before the cap:** with the old open `>=0.200.0` ranges, a fresh `npm install` picked `instrumentation@0.300.0` and gave it the SDK's nested `api@1.9.1`, which has no `logs` export.
+  - `Laminar.initialize()` then threw `Cannot read properties of undefined (reading 'getLogger')` in `InstrumentationAbstract`'s constructor.
+  - Verified on the published `0.8.52`.
+  - Existing lockfiles and `pnpm` installs of this repo were unaffected, so CI never saw it.
+- Moving to OTel 3.0 / api 1.10 is its own migration: raise the 0.x caps, the `^2.0.0` caps and `api` together. Raising just one range brings the crash back.
+- **Check dependency changes with a clean npm install**: `pnpm pack`, then `npm i <tarball>` in an empty dir and call `Laminar.initialize()`. The workspace lockfile hides resolution problems like this one.
+
 ## Mastra Exporter (`packages/lmnr/src/opentelemetry-lib/instrumentation/mastra/`)
 
 Laminar ships its own `MastraExporter` (implements `ObservabilityExporter` from `@mastra/core/ai-tracing`) instead of relying on the `@mastra/laminar` package. Key non-obvious facts:
