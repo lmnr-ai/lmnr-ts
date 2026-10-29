@@ -84,12 +84,12 @@ const withSessionMetadata = (
  */
 interface EvaluationConfig {
   /**
-   * The number of data points to evaluate in parallel at a time. Defaults to 5.
+   * The number of Trials to run in parallel at a time. Defaults to 5.
    */
   concurrencyLimit?: number;
   /**
    * How many Trials (independent executions) to run per Task. Each Trial gets
-   * its own trace and datapoint id; all Trials of a Task share its `taskId`
+   * its own trace and id; all Trials of a Task share its `taskId`
    * and `index`.
    * Must be a positive integer. Defaults to 1.
    */
@@ -149,10 +149,10 @@ interface EvaluationConfig {
 }
 
 /**
- * Returns a resolver that makes Task ids unique within one run. A later source
- * datapoint whose id is already taken is renamed `id#2`, `id#3`, ...; the same
- * source datapoint seen again (e.g. `select([0, 0])`) keeps its id, since
- * those are Trials of one Task.
+ * Returns a resolver that makes Task ids unique within one run. A later Task
+ * whose id is already taken is renamed `id#2`, `id#3`, ...; the same source
+ * row seen again (e.g. `select([0, 0])`) keeps its id, since those are Trials
+ * of one Task.
  */
 const createTaskIdResolver = () => {
   const taskIdBySource = new Map<number, string>();
@@ -170,7 +170,7 @@ const createTaskIdResolver = () => {
     if (taskId !== requested && !warned) {
       warned = true;
       logger.warn(
-        `Duplicate taskId "${requested}" across different datapoints; ` +
+        `Duplicate taskId "${requested}" across different Tasks; ` +
           `renamed to "${taskId}". Later duplicates are renamed the same way.`,
       );
     }
@@ -181,7 +181,7 @@ const createTaskIdResolver = () => {
 };
 
 /**
- * Datapoint is a single data point in the evaluation. `D` is the type of the input data,
+ * Datapoint is one Task (test case) in the evaluation. `D` is the type of the input data,
  * `T` is the type of the target data.
  */
 export type Datapoint<D, T> = {
@@ -579,11 +579,11 @@ export class Evaluation<D, T, O> {
     }
   }
 
-  // Runs every datapoint and returns the average scores. Datapoints are
-  // streamed from `this.data` through a semaphore sliding window (up to
-  // `concurrencyLimit` in flight, no barrier between batches), and nothing
-  // accumulates for the whole run: scores are summed as each datapoint
-  // finishes, and finished tasks and saves drop their references.
+  // Runs every Trial of every Task and returns the average scores. Tasks are
+  // streamed from `this.data` and their Trials run through a semaphore sliding
+  // window (up to `concurrencyLimit` in flight, no barrier between batches),
+  // and nothing accumulates for the whole run: scores are summed as each Trial
+  // finishes, and finished Trials and saves drop their references.
   public async evaluateInBatches(
     evalId: StringUUID,
   ): Promise<Record<string, number>> {
@@ -604,24 +604,19 @@ export class Evaluation<D, T, O> {
     >([entityContext], async () => {
       const semaphore = new Semaphore(this.concurrencyLimit);
       const inFlight = new Set<Promise<void>>();
-      // Aggregate scores incrementally so result datapoints (with their full
+      // Aggregate scores incrementally so Trial results (with their full
       // data/target/output payloads) are not retained for the whole run.
       const scoreSums: Record<string, number> = {};
       const scoreCounts: Record<string, number> = {};
       let firstError: { error: unknown } | undefined;
 
-      const evaluateTask = async (
-        datapoint: Datapoint<D, T>,
+      const runTrial = async (
+        task: Datapoint<D, T>,
         index: number,
         taskId: string,
       ): Promise<void> => {
         try {
-          const result = await this.evaluateDatapoint(
-            evalId,
-            datapoint,
-            index,
-            taskId,
-          );
+          const result = await this.evaluateTrial(evalId, task, index, taskId);
           for (const [key, value] of Object.entries(result.scores ?? {})) {
             if (value === null) {
               continue;
@@ -631,9 +626,9 @@ export class Evaluation<D, T, O> {
           }
           this.progressReporter.update(1);
         } catch (error) {
-          // Recorded, NOT rethrown: every remaining datapoint is still
+          // Recorded, NOT rethrown: every remaining Trial is still
           // scheduled and run, and the first error is thrown once the
-          // in-flight tasks drain. Catching here also keeps a failure from
+          // in-flight Trials drain. Catching here also keeps a failure from
           // surfacing as an unhandled rejection while the loop below waits
           // on the semaphore.
           firstError ??= { error };
@@ -644,30 +639,30 @@ export class Evaluation<D, T, O> {
 
       // `LaminarDataset` streams from the API one page at a time and drops
       // each page once consumed, so a huge dataset is never fully resident.
-      // The semaphore is acquired before a task is created, so at most
-      // `concurrencyLimit` datapoints are in flight (and referenced) at once.
+      // The semaphore is acquired before a Trial is started, so at most
+      // `concurrencyLimit` Trials are in flight (and referenced) at once.
       // Task ids are resolved in iteration order, so renames are
-      // deterministic. Trials of one datapoint share its index.
+      // deterministic. Trials of one Task share its index.
       const resolveTaskId = createTaskIdResolver();
       const data = this.data;
       let viewIndex = 0;
-      for await (const datapoint of data) {
+      for await (const task of data) {
         const sourceIndex =
           data instanceof EvaluationDataset
             ? await data.sourceIndex(viewIndex)
             : viewIndex;
         const taskId = resolveTaskId(
-          datapoint.taskId ?? String(sourceIndex),
+          task.taskId ?? String(sourceIndex),
           sourceIndex,
         );
         for (let trial = 0; trial < this.trials; trial++) {
           await semaphore.acquire();
-          const task: Promise<void> = evaluateTask(
-            datapoint,
+          const inFlightTrial: Promise<void> = runTrial(
+            task,
             viewIndex,
             taskId,
-          ).finally(() => inFlight.delete(task));
-          inFlight.add(task);
+          ).finally(() => inFlight.delete(inFlightTrial));
+          inFlight.add(inFlightTrial);
         }
         viewIndex++;
       }
@@ -704,9 +699,9 @@ export class Evaluation<D, T, O> {
     this.uploadPromises.add(tracked);
   }
 
-  private async evaluateDatapoint(
+  private async evaluateTrial(
     evalId: StringUUID,
-    datapoint: Datapoint<D, T>,
+    task: Datapoint<D, T>,
     index: number,
     taskId: string,
   ): Promise<EvaluationDatapoint<D, T, O>> {
@@ -718,18 +713,18 @@ export class Evaluation<D, T, O> {
           .setAttribute(SPAN_TYPE, "EVALUATION");
         const executorSpan = Laminar.startSpan({
           name: "executor",
-          input: datapoint.data,
+          input: task.data,
         });
         executorSpan.setAttribute(SPAN_TYPE, "EXECUTOR");
         const executorSpanId = otelSpanIdToUUID(
           executorSpan.spanContext().spanId,
         );
-        const datapointId = newUUID();
-        const partialDatapoint = {
-          id: datapointId,
-          data: datapoint.data,
-          target: datapoint.target,
-          metadata: datapoint.metadata,
+        const trialId = newUUID();
+        const partialTrial = {
+          id: trialId,
+          data: task.data,
+          target: task.target,
+          metadata: task.metadata,
           traceId: otelTraceIdToUUID(
             trace.getSpan(LaminarContextManager.getContext())!.spanContext()
               .traceId,
@@ -741,31 +736,31 @@ export class Evaluation<D, T, O> {
 
         // Add dataset link if data comes from a (possibly chained) remote
         // dataset.
-        if (this.datasetSource?.id && datapoint.id && datapoint.createdAt) {
-          partialDatapoint.datasetLink = {
+        if (this.datasetSource?.id && task.id && task.createdAt) {
+          partialTrial.datasetLink = {
             datasetId: this.datasetSource.id,
-            datapointId: datapoint.id,
-            createdAt: datapoint.createdAt,
+            datapointId: task.id,
+            createdAt: task.createdAt,
           };
         }
 
-        // first create the datapoint in the database and await
+        // first save the Trial (without output) and await
         await this.client.evals.saveDatapoints({
           evalId,
-          datapoints: [partialDatapoint],
+          datapoints: [partialTrial],
           groupName: this.groupName,
         });
 
         const output = await Laminar.withSpan(
           executorSpan,
           async () => {
-            const result = await this.executor(datapoint.data);
+            const result = await this.executor(task.data);
             Laminar.setSpanOutput(result);
             return result;
           },
           true,
         );
-        const target = datapoint.target;
+        const target = task.target;
 
         let scores: Record<string, number | null> = {};
         for (const [evaluatorName, evaluator] of Object.entries(
@@ -799,8 +794,8 @@ export class Evaluation<D, T, O> {
               }
             },
             output,
-            datapoint.target,
-            datapoint.data,
+            task.target,
+            task.data,
           );
 
           if (evaluator instanceof HumanEvaluator) {
@@ -818,12 +813,12 @@ export class Evaluation<D, T, O> {
           }
         }
 
-        const resultDatapoint = {
-          id: datapointId,
+        const trialResult = {
+          id: trialId,
           executorOutput: output,
-          data: datapoint.data,
+          data: task.data,
           target,
-          metadata: datapoint.metadata,
+          metadata: task.metadata,
           scores,
           traceId: otelTraceIdToUUID(
             trace.getSpan(LaminarContextManager.getContext())!.spanContext()
@@ -836,23 +831,23 @@ export class Evaluation<D, T, O> {
 
         // Add dataset link if data comes from a (possibly chained) remote
         // dataset.
-        if (this.datasetSource?.id && datapoint.id && datapoint.createdAt) {
-          resultDatapoint.datasetLink = {
+        if (this.datasetSource?.id && task.id && task.createdAt) {
+          trialResult.datasetLink = {
             datasetId: this.datasetSource.id,
-            datapointId: datapoint.id,
-            createdAt: datapoint.createdAt,
+            datapointId: task.id,
+            createdAt: task.createdAt,
           };
         }
 
         this.trackUpload(
           this.client.evals.saveDatapoints({
             evalId,
-            datapoints: [resultDatapoint],
+            datapoints: [trialResult],
             groupName: this.groupName,
           }),
         );
 
-        return resultDatapoint;
+        return trialResult;
       },
     );
   }

@@ -352,7 +352,7 @@ void describe("evaluate", () => {
   });
 });
 
-// LAM-1909: evals stream datapoints through a semaphore sliding window and
+// LAM-1909: evals stream Trials through a semaphore sliding window and
 // retain nothing for the whole run.
 void describe("evaluate streaming", () => {
   const baseUrl = "https://api.lmnr.ai";
@@ -549,7 +549,7 @@ void describe("evaluate streaming", () => {
     );
   });
 
-  void it("keeps up to concurrencyLimit datapoints in flight", async () => {
+  void it("keeps up to concurrencyLimit Trials in flight", async () => {
     mockEvalInit();
     mockSavesOk();
 
@@ -572,7 +572,7 @@ void describe("evaluate streaming", () => {
     assert.deepStrictEqual(result?.averageScores, { value: 4.5 });
   });
 
-  void it("a failing datapoint does not stop the remaining ones", async () => {
+  void it("a failing Trial does not stop the remaining ones", async () => {
     mockEvalInit();
     mockSavesOk();
 
@@ -610,7 +610,7 @@ void describe("evaluate streaming", () => {
           return [200, {}];
         }
         resultSaves += 1;
-        // The first datapoint's result save fails at once; the others are
+        // The first Trial's result save fails at once; the others are
         // still in flight when it does.
         if (resultSaves === 1) {
           return [500, { error: "save failed" }];

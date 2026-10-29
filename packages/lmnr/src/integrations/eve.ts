@@ -150,7 +150,7 @@ export type EveEvalVerdict = "passed" | "failed" | "scored" | "skipped";
 export interface EveEvalResult {
   /** Path-derived eval id (e.g. "weather"). */
   id?: string;
-  /** 1-based attempt number, present only when the run repeats evals. */
+  /** 1-based Trial number (eve calls it `attempt`), present only when the run repeats evals. */
   attempt?: number;
   /** Execution result (output, session, derived facts). */
   result?: EveEvalTaskResult;
@@ -341,7 +341,7 @@ interface GradeTrace {
  * Reports eve eval results to Laminar.
  *
  * Eve 0.35+ gives reporters every native trace context observed during an eval.
- * The reporter links the datapoint to the first sampled primary trace (or the
+ * The reporter links each Trial to the first sampled primary trace (or the
  * first sampled trace when there is no sampled primary), records every valid
  * context in metadata, and adds
  * a small EVALUATION span to the selected native trace for the grade. When eve
@@ -468,13 +468,13 @@ export class LaminarReporter implements EvalReporter {
     });
 
     try {
-      const datapointId = await client.evals.createDatapoint({
+      const trialId = await client.evals.createDatapoint({
         evalId,
         data: result.id ?? null,
         target: task.finalMessage ?? null,
         index,
-        // Repeated attempts of one eval share its id: they are Trials of one
-        // Task, never renamed.
+        // eve's repeated attempts of one eval share its id: they are Trials of
+        // one Task, never renamed.
         taskId: typeof result.id === "string" ? result.id : undefined,
         traceId: gradeTrace.traceId,
         metadata: {
@@ -505,7 +505,7 @@ export class LaminarReporter implements EvalReporter {
 
       await client.evals.updateDatapoint({
         evalId,
-        datapointId,
+        datapointId: trialId,
         scores: resultToScores(result, assertions),
         executorOutput: task.output ?? task.finalMessage ?? null,
       });
@@ -539,8 +539,8 @@ export class LaminarReporter implements EvalReporter {
       if (ourKey && tracingKey && ourKey !== tracingKey) {
         logger.warn(
           "Laminar eve reporter: Laminar is already initialized with a different " +
-            "project API key. eve eval spans go to that project while datapoints go " +
-            "to the reporter's, so datapoint trace ids will not resolve. Point both " +
+            "project API key. eve eval spans go to that project while Trials go " +
+            "to the reporter's, so Trial trace ids will not resolve. Point both " +
             "at the same project.",
         );
       }
