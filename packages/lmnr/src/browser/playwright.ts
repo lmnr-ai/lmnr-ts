@@ -11,8 +11,9 @@ import type * as PlaywrightLib from "playwright";
 import type { Browser, BrowserContext, Page } from "playwright";
 
 import { version as SDK_VERSION } from "../../package.json";
-import { observe } from "../decorators";
 import { Laminar } from "../laminar";
+import { instrumentedObserve } from "../opentelemetry-lib/instrumentation/shared/base";
+import { recordPackageVersion } from "../opentelemetry-lib/instrumentation/shared/package-version";
 import { TRACE_HAS_BROWSER_SESSION } from "../opentelemetry-lib/tracing/attributes";
 import { LaminarContextManager } from "../opentelemetry-lib/tracing/context";
 import {
@@ -32,6 +33,10 @@ import {
 } from "./utils";
 
 const logger = initializeLogger();
+
+const PLAYWRIGHT = "playwright";
+
+const observe = instrumentedObserve(PLAYWRIGHT);
 
 export class PlaywrightInstrumentation extends InstrumentationBase {
   private _patchedBrowsers: Set<Browser> = new Set();
@@ -69,7 +74,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
   protected init(): InstrumentationModuleDefinition {
     const module = new InstrumentationNodeModuleDefinition(
-      "playwright",
+      PLAYWRIGHT,
       // TODO: test if the older versions work
       [">=1.0.0"],
       this.patch.bind(this),
@@ -111,6 +116,7 @@ export class PlaywrightInstrumentation extends InstrumentationBase {
 
   private patch(moduleExports: typeof PlaywrightLib, moduleVersion?: string) {
     diag.debug(`patching playwright ${moduleVersion}`);
+    recordPackageVersion(PLAYWRIGHT, moduleVersion);
     const browsers = ["chromium", "firefox", "webkit"] as const;
 
     for (const browserType of browsers) {

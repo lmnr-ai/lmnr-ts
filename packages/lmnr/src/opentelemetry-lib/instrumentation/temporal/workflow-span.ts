@@ -4,8 +4,11 @@ import { type Span } from "@opentelemetry/api";
 import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
 import { LaminarSpan } from "../../tracing/span";
+import { instrumentationScopeAttributes } from "../shared/base";
 
 const logger = initializeLogger();
+
+const TEMPORAL_CLIENT = "@temporalio/client";
 
 // Minimal structural view of the WorkflowClient methods we patch. The real
 // types live in @temporalio/client, which is a soft peer-dep we don't import.
@@ -102,6 +105,7 @@ const wrapHandle = (handle: WorkflowHandleLike, span: Span): void => {
         name,
         parentSpanContext: childSpanContext(),
       });
+      childSpan.setAttributes(instrumentationScopeAttributes(TEMPORAL_CLIENT));
       try {
         const res = await orig(...args);
         childSpan.end();
@@ -167,6 +171,7 @@ export const patchWorkflowClient = (clientModule: {
         name: workflowName(args),
         input: workflowArgs(args),
       });
+      span.setAttributes(instrumentationScopeAttributes(TEMPORAL_CLIENT));
       try {
         const handle = await Laminar.withSpan(
           span,
@@ -195,6 +200,7 @@ export const patchWorkflowClient = (clientModule: {
       name: workflowName(args),
       input: workflowArgs(args),
     });
+    span.setAttributes(instrumentationScopeAttributes(TEMPORAL_CLIENT));
     try {
       const res = await Laminar.withSpan(
         span,

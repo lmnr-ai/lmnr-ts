@@ -1,10 +1,8 @@
 import { readdirSync } from "node:fs";
 import { join, sep } from "node:path";
 
-import {
-  SPAN_INSTRUMENTATION_SCOPE_NAME,
-  SPAN_INSTRUMENTATION_SCOPE_VERSION,
-} from "../../../tracing/attributes";
+import { instrumentationScopeAttributes } from "../../shared/base";
+import { getPackageVersion } from "../../shared/package-version";
 
 /**
  * Installed versions of the `ai` package and any `@ai-sdk/*` packages
@@ -17,18 +15,6 @@ export interface AiSdkPackageVersions {
 }
 
 let cached: AiSdkPackageVersions | undefined;
-
-const readPackageVersion = (specifier: string): string | undefined => {
-  try {
-    // biome-ignore lint/style/noCommonJs: dynamic package version resolution needs CJS resolve
-    const pkg = require(`${specifier}/package.json`);
-    return typeof pkg?.version === "string"
-      ? (pkg.version as string)
-      : undefined;
-  } catch {
-    return undefined;
-  }
-};
 
 /**
  * A `node_modules` search-path entry is a package-manager-internal virtual
@@ -79,7 +65,7 @@ const discoverAiSdkPackages = (): Record<string, string> => {
 
   for (const entry of findAiSdkScopeEntries(searchPaths)) {
     const specifier = `@ai-sdk/${entry}`;
-    const version = readPackageVersion(specifier);
+    const version = getPackageVersion(specifier);
     if (version) packages[specifier] = version;
   }
   return packages;
@@ -95,7 +81,7 @@ export const getAiSdkPackageVersions = (): AiSdkPackageVersions => {
   if (cached) return cached;
   try {
     cached = {
-      aiVersion: readPackageVersion("ai"),
+      aiVersion: getPackageVersion("ai"),
       aiSdkPackages: discoverAiSdkPackages(),
     };
   } catch {
@@ -114,11 +100,8 @@ export const buildAiSdkInstrumentationAttributes = (): Record<
   string,
   string
 > => {
-  const { aiVersion, aiSdkPackages } = getAiSdkPackageVersions();
-  const attributes: Record<string, string> = {
-    [SPAN_INSTRUMENTATION_SCOPE_NAME]: "ai",
-  };
-  if (aiVersion) attributes[SPAN_INSTRUMENTATION_SCOPE_VERSION] = aiVersion;
+  const { aiSdkPackages } = getAiSdkPackageVersions();
+  const attributes = instrumentationScopeAttributes("ai");
   for (const [pkg, version] of Object.entries(aiSdkPackages)) {
     attributes[`lmnr.span.instrumentation.${pkg}.version`] = version;
   }

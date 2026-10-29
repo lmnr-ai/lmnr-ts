@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -12,6 +14,14 @@ import {
 } from "../src/opentelemetry-lib/configuration";
 
 const MODEL = "claude-sonnet-4-5";
+
+// `@anthropic-ai/sdk`'s `exports` map hides package.json from `require`.
+const ANTHROPIC_VERSION = JSON.parse(
+  readFileSync(
+    join(__dirname, "../node_modules/@anthropic-ai/sdk/package.json"),
+    "utf8",
+  ),
+).version;
 
 const MESSAGE_RESPONSE = {
   id: "msg_01",
@@ -221,6 +231,14 @@ void describe("anthropic instrumentation", () => {
     const span = spans[0];
     assert.strictEqual(span.name, "anthropic.chat");
     assert.strictEqual(span.attributes["lmnr.span.type"], "LLM");
+    assert.strictEqual(
+      span.attributes["lmnr.span.instrumentation_scope.name"],
+      "@anthropic-ai/sdk",
+    );
+    assert.strictEqual(
+      span.attributes["lmnr.span.instrumentation_scope.version"],
+      ANTHROPIC_VERSION,
+    );
     assert.strictEqual(span.attributes["gen_ai.system"], "anthropic");
     assert.strictEqual(span.attributes["gen_ai.request.model"], MODEL);
     assert.strictEqual(span.attributes["gen_ai.request.max_tokens"], 1024);

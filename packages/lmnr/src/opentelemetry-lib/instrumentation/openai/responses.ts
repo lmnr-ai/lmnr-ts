@@ -1,8 +1,8 @@
 import { Context, HrTime, SpanStatusCode } from "@opentelemetry/api";
 
-import { Laminar } from "../../../laminar";
 import { LaminarSpan } from "../../tracing/span";
 import { safeSetAttribute } from "../google-genai/utils";
+import type { LaminarInstrumentation } from "../shared/base";
 import {
   INPUT_MESSAGES,
   OUTPUT_MESSAGES,
@@ -243,7 +243,7 @@ const setDataAttributes = (
 
 export type SpanOptions = {
   instance: any;
-  traceContent: boolean;
+  instrumentation: LaminarInstrumentation;
   // Laminar context active when the call was made, so the span created
   // after the fact still gets the caller's parent.
   parentContext: Context;
@@ -259,13 +259,14 @@ const startResponseSpan = (
   data: TracedData,
   options: SpanOptions,
 ): LaminarSpan => {
-  const span = Laminar.startSpan({
+  const { instrumentation } = options;
+  const span = instrumentation.startSpan({
     name: RESPONSE_SPAN_NAME,
     spanType: "LLM",
     startTime: data.startTime,
     context: options.parentContext,
-  }) as LaminarSpan;
-  setDataAttributes(span, data, options.instance, options.traceContent);
+  });
+  setDataAttributes(span, data, options.instance, instrumentation.traceContent);
   return span;
 };
 

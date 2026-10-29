@@ -2,29 +2,19 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import { Context, context, diag } from "@opentelemetry/api";
 import { isTracingSuppressed, suppressTracing } from "@opentelemetry/core";
-import {
-  InstrumentationBase,
-  InstrumentationModuleDefinition,
-  InstrumentationNodeModuleDefinition,
-  InstrumentationNodeModuleFile,
-} from "@opentelemetry/instrumentation";
 
-import { version as SDK_VERSION } from "../../../../package.json";
 import { initializeLogger } from "../../../utils";
 import { LaminarContextManager } from "../../tracing/context";
+import {
+  InstrumentedFile,
+  InstrumentedModule,
+  LaminarInstrumentation,
+  LaminarInstrumentationConfig,
+} from "../shared/base";
 import { HANDLER_NAME, LaminarCallbackHandler } from "./callback-handler";
 import { LLM_CALL_KEY, LlmCall } from "./llm-call";
 
 const logger = initializeLogger();
-
-const PATCH_DATA_SYMBOL = Symbol("lmnr.langchain.patchData");
-
-// Original methods, keyed by method name
-type PatchData = Record<string, (...args: any[]) => any>;
-
-// Patch data lives on the exact object it wraps, never an inherited one.
-const hasOwnPatchData = (target: any): boolean =>
-  Object.getOwnPropertyDescriptor(target, PATCH_DATA_SYMBOL) !== undefined;
 
 /**
  * Model classes whose provider SDK Laminar instruments itself (`_llmType()`).
@@ -91,50 +81,6 @@ const wrapIterator = (
     return this;
   },
 });
-
-/**
- * Replace the own method `target[method]` with `wrap(original)`. Already
- * patched methods are left alone, so repeated initialization never
- * double-wraps.
- */
-const patchMethod = (
-  target: any,
-  method: string,
-  wrap: (original: (...args: any[]) => any) => (...args: any[]) => any,
-): void => {
-  if (
-    !target ||
-    !Object.getOwnPropertyDescriptor(target, method) ||
-    typeof target[method] !== "function"
-  ) {
-    return;
-  }
-  if (!hasOwnPatchData(target)) {
-    Object.defineProperty(target, PATCH_DATA_SYMBOL, {
-      value: {},
-      enumerable: false,
-      writable: true,
-      configurable: true,
-    });
-  }
-  const patchData: PatchData = target[PATCH_DATA_SYMBOL];
-  if (patchData[method]) return;
-  const original = target[method];
-  patchData[method] = original;
-  target[method] = wrap(original);
-};
-
-const unpatchMethod = (target: any, method: string): void => {
-  if (!target || !hasOwnPatchData(target)) return;
-  const patchData: PatchData = target[PATCH_DATA_SYMBOL];
-  const original = patchData[method];
-  if (!original) return;
-  target[method] = original;
-  delete patchData[method];
-  if (Object.keys(patchData).length === 0) {
-    delete target[PATCH_DATA_SYMBOL];
-  }
-};
 
 /**
  * Inject the handler into every `CallbackManager` LangChain configures.
@@ -366,86 +312,63 @@ const CORE_FILES = {
  * LLM span. Other model calls are recorded by the handler, with provider
  * instrumentations underneath suppressed.
  */
-export class LangChainInstrumentation extends InstrumentationBase {
-  private traceContent: boolean;
-
-  constructor(config?: { traceContent?: boolean }) {
-    super("@lmnr/langchain-instrumentation", SDK_VERSION, {
-      enabled: true,
-    });
-    this.traceContent = config?.traceContent ?? true;
+export class LangChainInstrumentation extends LaminarInstrumentation {
+  constructor(config?: LaminarInstrumentationConfig) {
+    super("langchain", config);
   }
 
-  protected init(): InstrumentationModuleDefinition[] {
-    const coreFiles = (
+  protected modules(): InstrumentedModule[] {
+    // Each internal file is hooked both as `.cjs` and `.js`.
+    const files = (
       names: string[],
       patch: (exports: any) => void,
       unpatch: (exports: any) => void,
-    ) =>
+    ): InstrumentedFile[] =>
       names.flatMap((name) =>
-        [".cjs", ".js"].map(
-          (extension) =>
-            new InstrumentationNodeModuleFile(
-              `${name}${extension}`,
-              [">=0.3.0"],
-              (exports: any) => {
-                patch.call(this, exports);
-                return exports;
-              },
-              (exports: any) => {
-                if (exports) unpatch.call(this, exports);
-              },
-            ),
-        ),
+        [".cjs", ".js"].map((extension) => ({
+          name: `${name}${extension}`,
+          patch,
+          unpatch,
+        })),
       );
 
-    const core = new InstrumentationNodeModuleDefinition(
-      "@langchain/core",
-      [">=0.3.0"],
-      undefined,
-      undefined,
-      [
-        ...coreFiles(
-          CORE_FILES.callbackManager,
-          this.patchCallbackManager,
-          this.unpatchCallbackManager,
-        ),
-        ...coreFiles(
-          CORE_FILES.singletons,
-          this.patchSingletons,
-          this.unpatchSingletons,
-        ),
-        ...coreFiles(
-          CORE_FILES.chatModels,
-          this.patchChatModels,
-          this.unpatchChatModels,
-        ),
-        ...coreFiles(CORE_FILES.llms, this.patchLlms, this.unpatchLlms),
-      ],
-    );
-
-    const langgraph = new InstrumentationNodeModuleDefinition(
-      "@langchain/langgraph",
-      [">=0.2.0"],
-      undefined,
-      undefined,
-      [".cjs", ".js"].map(
-        (extension) =>
-          new InstrumentationNodeModuleFile(
-            `@langchain/langgraph/dist/pregel/index${extension}`,
-            [">=0.2.0"],
-            (exports: any) => {
-              this.patchLanggraph(exports);
-              return exports;
-            },
-            (exports: any) => {
-              if (exports) this.unpatchLanggraph(exports);
-            },
+    return [
+      {
+        name: "@langchain/core",
+        supportedVersions: [">=0.3.0"],
+        files: [
+          ...files(
+            CORE_FILES.callbackManager,
+            (exports) => this.patchCallbackManager(exports),
+            (exports) => this.unpatchCallbackManager(exports),
           ),
-      ),
-    );
-
-    return [core, langgraph];
+          ...files(
+            CORE_FILES.singletons,
+            (exports) => this.patchSingletons(exports),
+            (exports) => this.unpatchSingletons(exports),
+          ),
+          ...files(
+            CORE_FILES.chatModels,
+            (exports) => this.patchChatModels(exports),
+            (exports) => this.unpatchChatModels(exports),
+          ),
+          ...files(
+            CORE_FILES.llms,
+            (exports) => this.patchLlms(exports),
+            (exports) => this.unpatchLlms(exports),
+          ),
+        ],
+      },
+      {
+        name: "@langchain/langgraph",
+        supportedVersions: [">=0.2.0"],
+        files: files(
+          ["@langchain/langgraph/dist/pregel/index"],
+          (exports) => this.patchLanggraph(exports),
+          (exports) => this.unpatchLanggraph(exports),
+        ),
+      },
+    ];
   }
 
   /**
@@ -453,7 +376,7 @@ export class LangChainInstrumentation extends InstrumentationBase {
    * modules are what lets OpenAI and Anthropic calls be recorded once, by the
    * provider instrumentation, instead of twice.
    */
-  public manuallyInstrument(modules: LangChainModules): void {
+  public override manuallyInstrument(modules: LangChainModules): void {
     const {
       callbackManagerModule,
       singletonsModule,
@@ -503,7 +426,7 @@ export class LangChainInstrumentation extends InstrumentationBase {
   private patchCallbackManager(moduleExports: any): void {
     diag.debug("Patching @langchain/core CallbackManager");
     handler.traceContent = this.traceContent;
-    patchMethod(
+    this.patchOwnMethod(
       moduleExports?.CallbackManager,
       "_configureSync",
       wrapConfigureSync,
@@ -511,12 +434,12 @@ export class LangChainInstrumentation extends InstrumentationBase {
   }
 
   private unpatchCallbackManager(moduleExports: any): void {
-    unpatchMethod(moduleExports?.CallbackManager, "_configureSync");
+    this.unwrapMethod(moduleExports?.CallbackManager, "_configureSync");
   }
 
   private patchSingletons(moduleExports: any): void {
     diag.debug("Patching @langchain/core AsyncLocalStorageProvider");
-    patchMethod(
+    this.patchOwnMethod(
       singletonPrototype(moduleExports),
       "runWithConfig",
       wrapRunWithConfig,
@@ -524,7 +447,7 @@ export class LangChainInstrumentation extends InstrumentationBase {
   }
 
   private unpatchSingletons(moduleExports: any): void {
-    unpatchMethod(singletonPrototype(moduleExports), "runWithConfig");
+    this.unwrapMethod(singletonPrototype(moduleExports), "runWithConfig");
   }
 
   private patchChatModels(moduleExports: any): void {
@@ -546,18 +469,18 @@ export class LangChainInstrumentation extends InstrumentationBase {
   }
 
   private patchModel(proto: any): void {
-    patchMethod(proto, "_generateUncached", wrapGenerateUncached);
-    patchMethod(proto, "_streamIterator", wrapModelStreamIterator);
+    this.patchOwnMethod(proto, "_generateUncached", wrapGenerateUncached);
+    this.patchOwnMethod(proto, "_streamIterator", wrapModelStreamIterator);
   }
 
   private unpatchModel(proto: any): void {
-    unpatchMethod(proto, "_generateUncached");
-    unpatchMethod(proto, "_streamIterator");
+    this.unwrapMethod(proto, "_generateUncached");
+    this.unwrapMethod(proto, "_streamIterator");
   }
 
   private patchLanggraph(moduleExports: any): void {
     diag.debug("Patching @langchain/langgraph Pregel");
-    patchMethod(
+    this.patchOwnMethod(
       pregelPrototype(moduleExports),
       "_streamIterator",
       wrapPregelStreamIterator,
@@ -565,6 +488,19 @@ export class LangChainInstrumentation extends InstrumentationBase {
   }
 
   private unpatchLanggraph(moduleExports: any): void {
-    unpatchMethod(pregelPrototype(moduleExports), "_streamIterator");
+    this.unwrapMethod(pregelPrototype(moduleExports), "_streamIterator");
+  }
+
+  /**
+   * Wrap `target[method]` only where `target` itself defines it, so a
+   * subclass prototype is never patched on top of its parent's wrapper.
+   */
+  private patchOwnMethod(
+    target: any,
+    method: string,
+    wrap: (original: (...args: any[]) => any) => (...args: any[]) => any,
+  ): void {
+    if (!target || !Object.getOwnPropertyDescriptor(target, method)) return;
+    this.wrapMethod(target, method, ({ original }) => wrap(original));
   }
 }

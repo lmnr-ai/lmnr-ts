@@ -10,6 +10,7 @@ import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
 import { LaminarContextManager } from "../../tracing/context";
 import { LaminarSpan } from "../../tracing/span";
+import { instrumentationScopeAttributes } from "../shared/base";
 import { LLM_CALL_KEY, LlmCall } from "./llm-call";
 import {
   retrieverOutput,
@@ -471,6 +472,7 @@ export class LaminarCallbackHandler {
       context: parentContext,
       startTime,
     }) as LaminarSpan;
+    span.setAttributes(instrumentationScopeAttributes("@langchain/core"));
     if (attributes) {
       span.setAttributes(attributes);
     }

@@ -153,6 +153,10 @@ void describe("temporal workflow span", () => {
     assert.ok(span, "workflow span should be finished after result()");
     assert.equal(span!.attributes[SPAN_INPUT], JSON.stringify([1, "x"]));
     assert.equal(span!.attributes[SPAN_OUTPUT], JSON.stringify({ ok: true }));
+    assert.equal(
+      span!.attributes["lmnr.span.instrumentation_scope.name"],
+      "@temporalio/client",
+    );
   });
 
   void it("records a cancel child span and ends the workflow span", async () => {
@@ -221,6 +225,10 @@ void describe("temporal workflow span", () => {
     assert.ok(span);
     assert.equal(span!.attributes[SPAN_INPUT], JSON.stringify([42, "y"]));
     assert.equal(span!.attributes[SPAN_OUTPUT], JSON.stringify({ done: true }));
+    assert.equal(
+      span!.attributes["lmnr.span.instrumentation_scope.name"],
+      "@temporalio/worker",
+    );
   });
 
   void it("omits activity args when recordActivityArgs is false", async () => {

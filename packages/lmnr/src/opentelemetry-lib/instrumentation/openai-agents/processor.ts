@@ -15,6 +15,7 @@ import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
 import { LaminarContextManager } from "../../tracing/context";
 import { LaminarSpan } from "../../tracing/span";
+import { instrumentationScopeAttributes } from "../shared/base";
 import {
   DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY,
   mapSpanType,
@@ -25,6 +26,8 @@ import {
 import { applySpanData, applySpanError } from "./span-data";
 
 const logger = initializeLogger();
+
+const AGENTS = "@openai/agents";
 
 interface SpanEntry {
   lmnrSpan: OtelSpan;
@@ -181,6 +184,7 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
         parentSpanContext,
         context: ctx,
       });
+      lmnrSpan.setAttributes(instrumentationScopeAttributes(AGENTS));
 
       const key = span.spanId;
       if (!key) {
@@ -377,6 +381,7 @@ export class LaminarAgentsTraceProcessor implements TracingProcessor {
       name: "agents.trace",
       context: ROOT_CONTEXT,
     });
+    rootSpan.setAttributes(instrumentationScopeAttributes(AGENTS));
     const state: TraceState = {
       rootSpan,
       spans: new Map(),

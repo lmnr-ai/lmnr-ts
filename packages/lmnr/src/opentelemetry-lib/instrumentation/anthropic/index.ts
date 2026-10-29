@@ -1,15 +1,15 @@
-import { context, diag, SpanStatusCode } from "@opentelemetry/api";
+import { context, SpanStatusCode } from "@opentelemetry/api";
 import { isTracingSuppressed } from "@opentelemetry/core";
-import {
-  InstrumentationBase,
-  InstrumentationModuleDefinition,
-  InstrumentationNodeModuleDefinition,
-} from "@opentelemetry/instrumentation";
 
-import { version as SDK_VERSION } from "../../../../package.json";
 import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
 import { LaminarSpan } from "../../tracing/span";
+import {
+  InstrumentedModule,
+  LaminarInstrumentation,
+  LaminarInstrumentationConfig,
+  PatchedMethod,
+} from "../shared/base";
 import {
   createStreamState,
   processStreamEvent,
@@ -19,17 +19,6 @@ import {
 } from "./utils";
 
 const logger = initializeLogger();
-
-const PATCH_DATA_SYMBOL = Symbol("lmnr.anthropic.patchData");
-
-type MethodPatchData = {
-  traceContent: boolean;
-  original: (...args: any[]) => any;
-};
-
-// Patch data lives on the exact prototype it wraps, never an inherited one.
-const hasOwnPatchData = (proto: any): boolean =>
-  Object.getOwnPropertyDescriptor(proto, PATCH_DATA_SYMBOL) !== undefined;
 
 const markSpanError = (span: LaminarSpan, error: unknown): void => {
   span.recordException(error as Error);
@@ -75,112 +64,71 @@ const resolveClientClass = (mod: any): any => {
  * `messages.stream()` (and their beta counterparts) delegate to `create`, so
  * they are traced through it without nesting a second span.
  */
-export class AnthropicInstrumentation extends InstrumentationBase {
-  private traceContent: boolean;
-
-  constructor(config?: { traceContent?: boolean }) {
-    super("@lmnr/anthropic-instrumentation", SDK_VERSION, {
-      enabled: true,
-    });
-    this.traceContent = config?.traceContent ?? true;
-  }
-
-  protected init(): InstrumentationModuleDefinition {
-    return new InstrumentationNodeModuleDefinition(
-      "@anthropic-ai/sdk",
-      [">=0.9.1"],
-      this.patch.bind(this),
-      this.unpatch.bind(this),
-    );
+export class AnthropicInstrumentation extends LaminarInstrumentation {
+  constructor(config?: LaminarInstrumentationConfig) {
+    super("anthropic", config);
   }
 
   /**
-   * Accepts the `@anthropic-ai/sdk` module namespace or the `Anthropic`
-   * class (the module's default export).
+   * Manual instrumentation accepts the `@anthropic-ai/sdk` module namespace
+   * or the `Anthropic` class (the module's default export).
    */
-  public manuallyInstrument(module: any): void {
-    if (!resolveClientClass(module)) {
-      diag.warn(
-        "Could not find the Anthropic client in anthropic manual " +
-          "instrumentation input. Pass the @anthropic-ai/sdk module.",
-      );
-      return;
-    }
-    diag.debug("Manually instrumenting @anthropic-ai/sdk");
-    this.patch(module);
-  }
-
-  private patch(moduleExports: any): any {
-    diag.debug("Patching @anthropic-ai/sdk");
-    const [completions, ...messages] = this.resourcePrototypes(moduleExports);
-    this.patchCreate(completions, "anthropic.completion");
-    for (const proto of messages) {
-      this.patchCreate(proto, "anthropic.chat");
-    }
-    return moduleExports;
-  }
-
-  private unpatch(moduleExports: any): void {
-    diag.debug("Unpatching @anthropic-ai/sdk");
-    for (const proto of this.resourcePrototypes(moduleExports)) {
-      if (!proto || !hasOwnPatchData(proto)) continue;
-      proto.create = proto[PATCH_DATA_SYMBOL].original;
-      delete proto[PATCH_DATA_SYMBOL];
-    }
-  }
-
-  /**
-   * `[Completions, Messages, Beta.Messages]` prototypes; entries are
-   * undefined where the installed SDK version lacks the resource.
-   */
-  private resourcePrototypes(moduleExports: any): any[] {
-    const client = resolveClientClass(moduleExports);
+  protected modules(): InstrumentedModule[] {
     return [
-      client?.Completions?.prototype,
-      client?.Messages?.prototype,
-      client?.Beta?.Messages?.prototype,
+      {
+        name: "@anthropic-ai/sdk",
+        supportedVersions: [">=0.9.1"],
+        patch: (moduleExports) => this.patch(moduleExports),
+        unpatch: (moduleExports) => this.unpatch(moduleExports),
+        accepts: (input) => resolveClientClass(input) !== undefined,
+      },
     ];
   }
 
-  /**
-   * Replace `proto.create` with a traced wrapper. Re-patching an already
-   * patched prototype only refreshes `traceContent`, so repeated
-   * initialization never double-wraps.
-   */
-  private patchCreate(proto: any, spanName: string): void {
-    if (!proto || typeof proto.create !== "function") return;
-
-    if (hasOwnPatchData(proto)) {
-      proto[PATCH_DATA_SYMBOL].traceContent = this.traceContent;
-      return;
+  private patch(moduleExports: any): void {
+    const [completions, ...messages] = resourcePrototypes(moduleExports);
+    this.wrapMethod(completions, "create", (patched) =>
+      wrapCreate(patched, "anthropic.completion"),
+    );
+    for (const proto of messages) {
+      this.wrapMethod(proto, "create", (patched) =>
+        wrapCreate(patched, "anthropic.chat"),
+      );
     }
+  }
 
-    const patchData: MethodPatchData = {
-      traceContent: this.traceContent,
-      original: proto.create,
-    };
-    Object.defineProperty(proto, PATCH_DATA_SYMBOL, {
-      value: patchData,
-      writable: true,
-      configurable: true,
-      enumerable: false,
-    });
-    proto.create = wrapCreate(patchData, spanName);
+  private unpatch(moduleExports: any): void {
+    for (const proto of resourcePrototypes(moduleExports)) {
+      this.unwrapMethod(proto, "create");
+    }
   }
 }
 
-const wrapCreate = (patchData: MethodPatchData, spanName: string) =>
+/**
+ * `[Completions, Messages, Beta.Messages]` prototypes; entries are undefined
+ * where the installed SDK version lacks the resource.
+ */
+const resourcePrototypes = (moduleExports: any): any[] => {
+  const client = resolveClientClass(moduleExports);
+  return [
+    client?.Completions?.prototype,
+    client?.Messages?.prototype,
+    client?.Beta?.Messages?.prototype,
+  ];
+};
+
+const wrapCreate = (patched: PatchedMethod, spanName: string) =>
   function (this: any, params: any, ...rest: any[]) {
-    const { original } = patchData;
+    const { instrumentation, original } = patched;
     if (isTracingSuppressed(context.active())) {
       return original.call(this, params, ...rest);
     }
 
-    const traceContent = patchData.traceContent;
-    const span = Laminar.startSpan({
+    const { traceContent } = instrumentation;
+    const span = instrumentation.startSpan({
       name: spanName,
       spanType: "LLM",
-    }) as LaminarSpan;
+    });
     safely(() => setRequestAttributes(span, params, traceContent));
 
     let result: any;

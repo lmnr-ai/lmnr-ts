@@ -9,8 +9,12 @@ import {
 } from "@opentelemetry/instrumentation";
 
 import { version as SDK_VERSION } from "../../../../package.json";
-import { observe as laminarObserve } from "../../../decorators";
 import { Laminar } from "../../../laminar";
+import {
+  instrumentationScopeAttributes,
+  instrumentedObserve,
+} from "../../../opentelemetry-lib/instrumentation/shared/base";
+import { recordPackageVersion } from "../../../opentelemetry-lib/instrumentation/shared/package-version";
 import { TRACE_HAS_BROWSER_SESSION } from "../../../opentelemetry-lib/tracing/attributes";
 import { LaminarContextManager } from "../../../opentelemetry-lib/tracing/context";
 import { newUUID, otelTraceIdToUUID, StringUUID } from "../../../utils";
@@ -18,6 +22,7 @@ import {
   modelToProvider,
   nameArgsOrCopy,
   prettyPrintZodSchema,
+  STAGEHAND_PACKAGE,
 } from "../../utils";
 import {
   createLLMClientCreateChatCompletionWrapper,
@@ -36,6 +41,8 @@ import {
   TargetInfoChangedEvent,
   V3RecorderState,
 } from "./types";
+
+const laminarObserve = instrumentedObserve(STAGEHAND_PACKAGE);
 
 /**
  * Guarded _wrap: only wraps `target[methodName]` if it exists as a function.
@@ -127,6 +134,7 @@ export class StagehandInstrumentation extends InstrumentationBase {
 
   private patch(moduleExports: any, moduleVersion?: string) {
     diag.debug(`patching stagehand ${moduleVersion}`);
+    recordPackageVersion(STAGEHAND_PACKAGE, moduleVersion);
 
     // Check if Stagehand is non-configurable
     const descriptor = Object.getOwnPropertyDescriptor(
@@ -259,6 +267,9 @@ export class StagehandInstrumentation extends InstrumentationBase {
         const parentSpan = Laminar.startSpan({
           name: "Stagehand",
         });
+        parentSpan.setAttributes(
+          instrumentationScopeAttributes(STAGEHAND_PACKAGE),
+        );
         instrumentation.sessionIdToParentSpan.set(sessionId, parentSpan);
 
         instrumentation.stagehandInstanceToSessionId.set(this, sessionId);

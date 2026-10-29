@@ -1,14 +1,13 @@
 import { context, diag } from "@opentelemetry/api";
 import { isTracingSuppressed } from "@opentelemetry/core";
-import {
-  InstrumentationBase,
-  InstrumentationModuleDefinition,
-  InstrumentationNodeModuleDefinition,
-} from "@opentelemetry/instrumentation";
 
-import { version as SDK_VERSION } from "../../../../package.json";
 import { Laminar } from "../../../laminar";
 import { LaminarSpan } from "../../tracing/span";
+import {
+  InstrumentedModule,
+  LaminarInstrumentation,
+  LaminarInstrumentationConfig,
+} from "../shared/base";
 import {
   isAsyncIterable,
   ResourceKind,
@@ -35,80 +34,50 @@ const RESOURCE_METHODS: Record<
 const RESOURCE_KINDS = Object.keys(RESOURCE_METHODS) as ResourceKind[];
 
 type PatchState = {
-  traceContent: boolean;
+  instrumentation: LaminarInstrumentation;
   chat: PropertyDescriptor | undefined;
   responses: PropertyDescriptor | undefined;
   embeddings: PropertyDescriptor | undefined;
   callModel: ((...args: any[]) => any) | undefined;
 };
 
-export class OpenRouterInstrumentation extends InstrumentationBase {
-  private traceContent: boolean;
-
-  constructor(config?: { traceContent?: boolean }) {
-    super("@lmnr/openrouter-instrumentation", SDK_VERSION, { enabled: true });
-    this.traceContent = config?.traceContent ?? true;
+export class OpenRouterInstrumentation extends LaminarInstrumentation {
+  constructor(config?: LaminarInstrumentationConfig) {
+    super("openrouter", config);
   }
 
-  protected init(): InstrumentationModuleDefinition {
-    return new InstrumentationNodeModuleDefinition(
-      "@openrouter/sdk",
-      [">=1.0.0"],
-      this.patch.bind(this),
-      this.unpatch.bind(this),
-    );
-  }
-
-  public manuallyInstrument(openRouterModule: any): void {
-    diag.debug("Manually instrumenting @openrouter/sdk");
-    const OpenRouterClass = this.resolveOpenRouterClass(openRouterModule);
-    if (OpenRouterClass) {
-      this.patchOpenRouterClass(OpenRouterClass);
-    } else {
-      diag.warn(
-        "Could not find OpenRouter class in openrouter manual instrumentation input. " +
-          "Pass either the OpenRouter class or the module object with an OpenRouter export.",
-      );
-    }
-  }
-
-  private patch(moduleExports: any): any {
-    diag.debug("Patching @openrouter/sdk");
-    const OpenRouterClass = this.resolveOpenRouterClass(moduleExports);
-    if (OpenRouterClass) {
-      this.patchOpenRouterClass(OpenRouterClass);
-    }
-    return moduleExports;
-  }
-
-  private unpatch(moduleExports: any): void {
-    diag.debug("Unpatching @openrouter/sdk");
-    const OpenRouterClass = this.resolveOpenRouterClass(moduleExports);
-    if (OpenRouterClass) {
-      this.unpatchOpenRouterClass(OpenRouterClass);
-    }
-  }
-
-  private resolveOpenRouterClass(moduleOrClass: any): any {
-    if (typeof moduleOrClass === "function") {
-      return moduleOrClass;
-    }
-    if (typeof moduleOrClass?.OpenRouter === "function") {
-      return moduleOrClass.OpenRouter;
-    }
-    return undefined;
+  /**
+   * Manual instrumentation accepts the `OpenRouter` class or the module
+   * object with an `OpenRouter` export.
+   */
+  protected modules(): InstrumentedModule[] {
+    return [
+      {
+        name: "@openrouter/sdk",
+        supportedVersions: [">=1.0.0"],
+        patch: (moduleExports) => {
+          const OpenRouterClass = resolveOpenRouterClass(moduleExports);
+          if (OpenRouterClass) this.patchOpenRouterClass(OpenRouterClass);
+        },
+        unpatch: (moduleExports) => {
+          const OpenRouterClass = resolveOpenRouterClass(moduleExports);
+          if (OpenRouterClass) this.unpatchOpenRouterClass(OpenRouterClass);
+        },
+        accepts: (input) => resolveOpenRouterClass(input) !== undefined,
+      },
+    ];
   }
 
   private patchOpenRouterClass(OpenRouterClass: any): void {
     const proto = OpenRouterClass.prototype;
     const existing = proto[PATCH_STATE_SYMBOL] as PatchState | undefined;
     if (existing) {
-      existing.traceContent = this.traceContent;
+      existing.instrumentation = this;
       return;
     }
 
     const state: PatchState = {
-      traceContent: this.traceContent,
+      instrumentation: this,
       chat: Object.getOwnPropertyDescriptor(proto, "chat"),
       responses: Object.getOwnPropertyDescriptor(proto, "responses"),
       embeddings: Object.getOwnPropertyDescriptor(proto, "embeddings"),
@@ -142,6 +111,16 @@ export class OpenRouterInstrumentation extends InstrumentationBase {
     delete proto[PATCH_STATE_SYMBOL];
   }
 }
+
+const resolveOpenRouterClass = (moduleOrClass: any): any => {
+  if (typeof moduleOrClass === "function") {
+    return moduleOrClass;
+  }
+  if (typeof moduleOrClass?.OpenRouter === "function") {
+    return moduleOrClass.OpenRouter;
+  }
+  return undefined;
+};
 
 const patchResourceGetter = (
   proto: any,
@@ -181,11 +160,12 @@ const patchResourceMethod = (
       return original(request, options);
     }
 
-    const { traceContent } = state;
-    const span = Laminar.startSpan({
+    const { instrumentation } = state;
+    const { traceContent } = instrumentation;
+    const span = instrumentation.startSpan({
       name: `openrouter.${kind}`,
       spanType: "LLM",
-    }) as LaminarSpan;
+    });
     span.setAttribute("gen_ai.system", "openrouter");
     setRequestAttributes(span, kind, request?.[requestKey], traceContent);
 
@@ -216,14 +196,15 @@ const patchCallModel = (proto: any, state: PatchState): void => {
       return originalCallModel.call(this, request, options);
     }
 
-    const { traceContent } = state;
-    const span = Laminar.startSpan({
+    const { instrumentation } = state;
+    const { traceContent } = instrumentation;
+    const span = instrumentation.startSpan({
       name: "openrouter.call_model",
       input: traceContent ? responsesInputMessages(request) : undefined,
-    }) as LaminarSpan;
+    });
 
     const tools = Array.isArray(request?.tools)
-      ? request.tools.map((tool: any) => wrapTool(tool, span, traceContent))
+      ? request.tools.map((tool: any) => wrapTool(tool, span, instrumentation))
       : undefined;
     try {
       const result = Laminar.withSpan(span, () =>
@@ -233,7 +214,7 @@ const patchCallModel = (proto: any, state: PatchState): void => {
           options,
         ),
       );
-      instrumentModelResult(result, span, traceContent);
+      instrumentModelResult(result, span, instrumentation);
       return result;
     } catch (error) {
       recordError(span, error);
@@ -246,8 +227,9 @@ const patchCallModel = (proto: any, state: PatchState): void => {
 const wrapTool = (
   tool: any,
   parentSpan: LaminarSpan,
-  traceContent: boolean,
+  instrumentation: LaminarInstrumentation,
 ) => {
+  const { traceContent } = instrumentation;
   const fn = tool?.function;
   if (typeof fn?.execute !== "function" || fn.eventSchema) return tool;
 
@@ -258,11 +240,11 @@ const wrapTool = (
       ...fn,
       execute: (input: any, ctx: any) =>
         Laminar.withSpan(parentSpan, () => {
-          const span = Laminar.startSpan({
+          const span = instrumentation.startSpan({
             name: fn.name,
             spanType: "TOOL",
             input: traceContent ? input : undefined,
-          }) as LaminarSpan;
+          });
           return Laminar.withSpan(
             span,
             async () => {
@@ -290,8 +272,9 @@ const wrapTool = (
 const instrumentModelResult = (
   result: any,
   parentSpan: LaminarSpan,
-  traceContent: boolean,
+  instrumentation: LaminarInstrumentation,
 ): void => {
+  const { traceContent } = instrumentation;
   if (!result || typeof result.executeToolsIfNeeded !== "function") {
     parentSpan.end();
     return;
@@ -302,10 +285,10 @@ const instrumentModelResult = (
     const original = result[method].bind(result);
     result[method] = (...args: any[]) =>
       Laminar.withSpan(parentSpan, () => {
-        const span = Laminar.startSpan({
+        const span = instrumentation.startSpan({
           name: "openrouter.responses",
           spanType: "LLM",
-        }) as LaminarSpan;
+        });
         span.setAttribute("gen_ai.system", "openrouter");
         return Laminar.withSpan(
           span,

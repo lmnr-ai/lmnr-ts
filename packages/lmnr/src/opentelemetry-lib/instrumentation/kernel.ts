@@ -1,15 +1,17 @@
 // biome-ignore-all lint/complexity/noBannedTypes: instrumentation wraps arbitrary Functions
 import type * as KernelSDK from "@onkernel/sdk";
-import { diag } from "@opentelemetry/api";
-import {
-  InstrumentationBase,
-  InstrumentationModuleDefinition,
-  InstrumentationNodeModuleDefinition,
-} from "@opentelemetry/instrumentation";
 
-import { version as SDK_VERSION } from "../../../package.json";
-import { observe } from "../../decorators";
 import { Laminar } from "../../laminar";
+import {
+  InstrumentedModule,
+  instrumentedObserve,
+  LaminarInstrumentation,
+  PatchedMethod,
+} from "./shared/base";
+
+const KERNEL = "@onkernel/sdk";
+
+const observe = instrumentedObserve(KERNEL);
 
 const WRAPPED_BROWSER_METHODS: (keyof KernelSDK.Kernel.Browsers)[] = [
   "create",
@@ -38,190 +40,209 @@ const WRAPPED_PROCESS_METHODS: (keyof KernelSDK.Kernel.Browsers.Process)[] = [
   "stdoutStream",
 ];
 
-export class KernelInstrumentation extends InstrumentationBase {
+export class KernelInstrumentation extends LaminarInstrumentation {
   constructor() {
-    super("@lmnr/kernel-instrumentation", SDK_VERSION, {
-      enabled: true,
-    });
+    super("kernel");
   }
 
-  protected init(): InstrumentationModuleDefinition {
-    const module = new InstrumentationNodeModuleDefinition(
-      "@onkernel/sdk",
-      [">=0.7.0"],
-      this.patch.bind(this),
-      this.unpatch.bind(this),
-    );
-
-    return module;
+  protected modules(): InstrumentedModule[] {
+    return [
+      {
+        name: KERNEL,
+        supportedVersions: [">=0.7.0"],
+        patch: (moduleExports) => this.patch(moduleExports),
+        unpatch: (moduleExports) => this.unpatch(moduleExports),
+        accepts: (input) => typeof input?.Kernel?.Browsers === "function",
+      },
+    ];
   }
 
-  public manuallyInstrument(kernelModule: typeof KernelSDK) {
+  private patch(kernelModule: typeof KernelSDK): void {
     // Instrument resource classes
     for (const wrappedMethod of WRAPPED_BROWSER_METHODS) {
-      this._wrap(
+      this.wrapMethod(
         kernelModule.Kernel.Browsers.prototype,
         wrappedMethod,
-        this.patchMethod("Browser", wrappedMethod, "DEFAULT"),
+        (patched) =>
+          this.patchMethod(patched, "Browser", wrappedMethod, "DEFAULT"),
       );
     }
     for (const wrappedMethod of WRAPPED_COMPUTER_METHODS) {
-      if (wrappedMethod === "captureScreenshot") {
-        this._wrap(
-          kernelModule.Kernel.Browsers.Computer.prototype,
-          wrappedMethod,
-          this.patchTakeScreenshot(),
-        );
-      } else {
-        this._wrap(
-          kernelModule.Kernel.Browsers.Computer.prototype,
-          wrappedMethod,
-          this.patchMethod("Computer", wrappedMethod, "TOOL"),
-        );
-      }
+      this.wrapMethod(
+        kernelModule.Kernel.Browsers.Computer.prototype,
+        wrappedMethod,
+        wrappedMethod === "captureScreenshot"
+          ? (patched) => this.patchTakeScreenshot(patched)
+          : (patched) =>
+              this.patchMethod(patched, "Computer", wrappedMethod, "TOOL"),
+      );
     }
     for (const wrappedMethod of WRAPPED_PROCESS_METHODS) {
-      this._wrap(
+      this.wrapMethod(
         kernelModule.Kernel.Browsers.Process.prototype,
         wrappedMethod,
-        this.patchProcessMethod(wrappedMethod),
+        (patched) => this.patchProcessMethod(patched, wrappedMethod),
       );
     }
 
     // Wrap the Kernel.app() factory method to patch KernelApp.action()
-    this._wrap(kernelModule.Kernel.prototype, "app", this.patchAppFactory());
+    this.wrapMethod(kernelModule.Kernel.prototype, "app", (patched) =>
+      this.patchAppFactory(patched),
+    );
+  }
+
+  private unpatch(moduleExports: typeof KernelSDK): void {
+    // Unwrap resource classes
+    for (const wrappedMethod of WRAPPED_BROWSER_METHODS) {
+      this.unwrapMethod(moduleExports.Kernel.Browsers.prototype, wrappedMethod);
+    }
+    for (const wrappedMethod of WRAPPED_COMPUTER_METHODS) {
+      this.unwrapMethod(
+        moduleExports.Kernel.Browsers.Computer.prototype,
+        wrappedMethod,
+      );
+    }
+    for (const wrappedMethod of WRAPPED_PROCESS_METHODS) {
+      this.unwrapMethod(
+        moduleExports.Kernel.Browsers.Process.prototype,
+        wrappedMethod,
+      );
+    }
+
+    // Unwrap Kernel.app
+    this.unwrapMethod(moduleExports.Kernel.prototype, "app");
   }
 
   private patchMethod(
+    { original }: PatchedMethod,
     className: string,
     method: string,
     spanType: "DEFAULT" | "TOOL",
-  ): any {
+  ) {
     const plugin = this;
-    return (original: (...args: any[]) => KernelSDK.APIPromise<unknown>) =>
-      async function (this: any, ...args: any[]) {
-        // Use observe() to automatically handle span lifecycle, input/output capture, and errors
-        return await observe(
-          {
-            name: `${className}.${method}`,
-            spanType,
-            input: plugin.formatInput(args),
-          },
-          async (innerArgs: any[]) =>
-            await original.bind(this).apply(this, innerArgs),
-          args,
-        );
-      };
-  }
-
-  private patchTakeScreenshot(): any {
-    const plugin = this;
-    return (original: (...args: any[]) => KernelSDK.APIPromise<unknown>) =>
-      async function (this: any, ...args: any[]) {
-        // Use observe() to automatically handle span lifecycle, input/output capture, and errors
-        const span = Laminar.startSpan({
-          name: `Computer.captureScreenshot`,
-          spanType: "TOOL",
+    return async function (this: any, ...args: any[]) {
+      // Use observe() to automatically handle span lifecycle, input/output capture, and errors
+      return await observe(
+        {
+          name: `${className}.${method}`,
+          spanType,
           input: plugin.formatInput(args),
-        });
-        try {
-          const res = (await original
-            .bind(this)
-            .apply(this, args)) as KernelSDK.APIPromise<unknown>;
-          // We could actually parse binary and decode here, but we would need to consume
-          // the api response byte stream, which may break the subsequent operations
-          // on the response.
-          span.setAttribute("lmnr.span.output", "<BASE64_ENCODED_IMAGE>");
-          return res;
-        } finally {
-          span.end();
-        }
-      };
+        },
+        async (innerArgs: any[]) =>
+          await original.bind(this).apply(this, innerArgs),
+        args,
+      );
+    };
   }
 
-  private patchProcessMethod(method: string): any {
+  private patchTakeScreenshot({ instrumentation, original }: PatchedMethod) {
     const plugin = this;
-    return (original: (...args: any[]) => KernelSDK.APIPromise<unknown>) =>
-      async function (this: any, ...args: any[]) {
-        // First parameter of spawn and exec is the session ID, for others its PID (string)
-        const input = ["spawn", "exec"].includes(method)
-          ? plugin.formatInput(args)
-          : plugin.formatProcessInput(args);
-        const span = Laminar.startSpan({
-          name: `Process.${method}`,
-          spanType: "TOOL",
-          input,
-        });
-        try {
-          const result = await (original
-            .bind(this)
-            .apply(this, args) as KernelSDK.APIPromise<{
-            stderr_b64?: string;
-            stdout_b64?: string;
-          }>);
-          const output = {
-            ...(result?.stderr_b64
-              ? {
-                  stderr: Buffer.from(result.stderr_b64, "base64").toString(
-                    "utf-8",
-                  ),
-                }
-              : {}),
-            ...(result?.stdout_b64
-              ? {
-                  stdout: Buffer.from(result.stdout_b64, "base64").toString(
-                    "utf-8",
-                  ),
-                }
-              : {}),
-            ...result,
-          };
-          span.setAttribute("lmnr.span.output", JSON.stringify(output));
-          return result;
-        } finally {
-          span.end();
-        }
-      };
+    return async function (this: any, ...args: any[]) {
+      const span = instrumentation.startSpan({
+        name: `Computer.captureScreenshot`,
+        spanType: "TOOL",
+        input: plugin.formatInput(args),
+      });
+      try {
+        const res = (await original
+          .bind(this)
+          .apply(this, args)) as KernelSDK.APIPromise<unknown>;
+        // We could actually parse binary and decode here, but we would need to consume
+        // the api response byte stream, which may break the subsequent operations
+        // on the response.
+        span.setAttribute("lmnr.span.output", "<BASE64_ENCODED_IMAGE>");
+        return res;
+      } finally {
+        span.end();
+      }
+    };
   }
 
-  private patchAppFactory() {
+  private patchProcessMethod(
+    { instrumentation, original }: PatchedMethod,
+    method: string,
+  ) {
     const plugin = this;
-    return (original: Function) =>
-      function (this: any, name: string): any {
-        // Call the original app() method to get the KernelApp instance
-        const kernelApp = original.call(this, name);
-
-        // Patch the action method on the returned KernelApp instance
-        plugin._wrap(kernelApp, "action", plugin.patchKernelAppAction());
-
-        return kernelApp;
-      };
-  }
-
-  private patchKernelAppAction() {
-    return (original: any) =>
-      function (this: any, name: string, handler: Function): any {
-        // Wrap the handler with observe
-        const wrappedHandler = async (context: any, payload?: any) => {
-          const result = await observe(
-            {
-              name: `action.${name}`,
-              spanType: "DEFAULT",
-            },
-            async (innerCtx: any, innerPayload: any) => {
-              const result = await handler(innerCtx, innerPayload);
-              return result;
-            },
-            context,
-            payload,
-          );
-          await Laminar.flush();
-          return result;
+    return async function (this: any, ...args: any[]) {
+      // First parameter of spawn and exec is the session ID, for others its PID (string)
+      const input = ["spawn", "exec"].includes(method)
+        ? plugin.formatInput(args)
+        : plugin.formatProcessInput(args);
+      const span = instrumentation.startSpan({
+        name: `Process.${method}`,
+        spanType: "TOOL",
+        input,
+      });
+      try {
+        const result = await (original
+          .bind(this)
+          .apply(this, args) as KernelSDK.APIPromise<{
+          stderr_b64?: string;
+          stdout_b64?: string;
+        }>);
+        const output = {
+          ...(result?.stderr_b64
+            ? {
+                stderr: Buffer.from(result.stderr_b64, "base64").toString(
+                  "utf-8",
+                ),
+              }
+            : {}),
+          ...(result?.stdout_b64
+            ? {
+                stdout: Buffer.from(result.stdout_b64, "base64").toString(
+                  "utf-8",
+                ),
+              }
+            : {}),
+          ...result,
         };
+        span.setAttribute("lmnr.span.output", JSON.stringify(output));
+        return result;
+      } finally {
+        span.end();
+      }
+    };
+  }
 
-        // Register the wrapped handler with the original action method
-        return original.call(this, name, wrappedHandler);
+  private patchAppFactory({ original }: PatchedMethod) {
+    const plugin = this;
+    return function (this: any, name: string): any {
+      // Call the original app() method to get the KernelApp instance
+      const kernelApp = original.call(this, name);
+
+      // Patch the action method on the returned KernelApp instance
+      plugin.wrapMethod(kernelApp, "action", (patched) =>
+        plugin.patchKernelAppAction(patched),
+      );
+
+      return kernelApp;
+    };
+  }
+
+  private patchKernelAppAction({ original }: PatchedMethod) {
+    return function (this: any, name: string, handler: Function): any {
+      // Wrap the handler with observe
+      const wrappedHandler = async (context: any, payload?: any) => {
+        const result = await observe(
+          {
+            name: `action.${name}`,
+            spanType: "DEFAULT",
+          },
+          async (innerCtx: any, innerPayload: any) => {
+            const result = await handler(innerCtx, innerPayload);
+            return result;
+          },
+          context,
+          payload,
+        );
+        await Laminar.flush();
+        return result;
       };
+
+      // Register the wrapped handler with the original action method
+      return original.call(this, name, wrappedHandler);
+    };
   }
 
   private formatInput(args: unknown[]): unknown[] {
@@ -252,35 +273,5 @@ export class KernelInstrumentation extends InstrumentationBase {
       return [{ processID: args[0] }, ...args.slice(1)];
     }
     return args;
-  }
-
-  private patch(moduleExports: typeof KernelSDK): any {
-    diag.debug("Patching @onkernel/sdk");
-    this.manuallyInstrument(moduleExports);
-    return moduleExports;
-  }
-
-  private unpatch(moduleExports: typeof KernelSDK): void {
-    diag.debug("Unpatching @onkernel/sdk");
-
-    // Unwrap resource classes
-    for (const wrappedMethod of WRAPPED_BROWSER_METHODS) {
-      this._unwrap(moduleExports.Kernel.Browsers.prototype, wrappedMethod);
-    }
-    for (const wrappedMethod of WRAPPED_COMPUTER_METHODS) {
-      this._unwrap(
-        moduleExports.Kernel.Browsers.Computer.prototype,
-        wrappedMethod,
-      );
-    }
-    for (const wrappedMethod of WRAPPED_PROCESS_METHODS) {
-      this._unwrap(
-        moduleExports.Kernel.Browsers.Process.prototype,
-        wrappedMethod,
-      );
-    }
-
-    // Unwrap Kernel.app
-    this._unwrap(moduleExports.Kernel.prototype, "app");
   }
 }

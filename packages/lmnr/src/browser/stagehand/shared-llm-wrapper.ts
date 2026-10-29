@@ -1,10 +1,12 @@
 import { trace } from "@opentelemetry/api";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
-import { observe as laminarObserve } from "../../decorators";
+import { instrumentedObserve } from "../../opentelemetry-lib/instrumentation/shared/base";
 import { SPAN_TYPE } from "../../opentelemetry-lib/tracing/attributes";
 import { LaminarContextManager } from "../../opentelemetry-lib/tracing/context";
-import { modelToProvider } from "../utils";
+import { modelToProvider, STAGEHAND_PACKAGE } from "../utils";
+
+const laminarObserve = instrumentedObserve(STAGEHAND_PACKAGE);
 
 export interface GlobalLLMClientOptions {
   provider: "openai" | "anthropic" | "cerebras" | "groq" | (string & {});

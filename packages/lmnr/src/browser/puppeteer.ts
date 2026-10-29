@@ -12,7 +12,11 @@ import type { Browser, BrowserContext, Page } from "puppeteer";
 import type * as PuppeteerCoreLib from "puppeteer-core";
 
 import { version as SDK_VERSION } from "../../package.json";
-import { observe } from "../decorators";
+import { instrumentedObserve } from "../opentelemetry-lib/instrumentation/shared/base";
+import {
+  getPackageVersion,
+  recordPackageVersion,
+} from "../opentelemetry-lib/instrumentation/shared/package-version";
 import { TRACE_HAS_BROWSER_SESSION } from "../opentelemetry-lib/tracing/attributes";
 import { LaminarContextManager } from "../opentelemetry-lib/tracing/context";
 import {
@@ -32,6 +36,20 @@ import {
 } from "./utils";
 
 const logger = initializeLogger();
+
+/**
+ * `puppeteer` wraps `puppeteer-core` and both hooks patch the same browser
+ * classes, so a page can't tell which one launched it. Attribute it to
+ * `puppeteer` when that is installed, and to `puppeteer-core` otherwise.
+ */
+const observe = <A extends unknown[], R>(
+  options: { name: string },
+  fn: (...args: A) => R,
+  ...args: A
+): R =>
+  instrumentedObserve(
+    getPackageVersion("puppeteer") ? "puppeteer" : "puppeteer-core",
+  )(options, fn, ...args);
 
 export class PuppeteerInstrumentation extends InstrumentationBase {
   private _patchedBrowsers: Set<Browser> = new Set();
@@ -56,7 +74,10 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
       // and apparently no big breaking changes afterwards
       // https://github.com/puppeteer/puppeteer/releases
       [">=19.0.0"],
-      this.patch.bind(this),
+      (moduleExports: any, moduleVersion?: string) => {
+        recordPackageVersion("puppeteer", moduleVersion);
+        return this.patch(moduleExports, moduleVersion);
+      },
       this.unpatch.bind(this),
     );
 
@@ -64,7 +85,10 @@ export class PuppeteerInstrumentation extends InstrumentationBase {
       new InstrumentationNodeModuleDefinition(
         "puppeteer-core",
         [">=19.0.0"],
-        this.patch.bind(this),
+        (moduleExports: any, moduleVersion?: string) => {
+          recordPackageVersion("puppeteer-core", moduleVersion);
+          return this.patch(moduleExports, moduleVersion);
+        },
         this.unpatch.bind(this),
       );
 

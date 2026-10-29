@@ -117,6 +117,10 @@ void describe("MastraExporter — OTel context linking", () => {
       parentSpanId,
       "Mastra root should be parented to the observe() span",
     );
+    assert.strictEqual(
+      s.attributes["lmnr.span.instrumentation_scope.name"],
+      "@mastra/core",
+    );
   });
 
   void it("descendant Mastra spans stay on the rewritten trace id", async () => {
