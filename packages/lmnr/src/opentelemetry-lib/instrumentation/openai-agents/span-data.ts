@@ -1,6 +1,8 @@
-import { type Span, SpanStatusCode } from "@opentelemetry/api";
+import type { Span } from "@opentelemetry/api";
 
+import { toJson } from "../../../utils";
 import { LaminarAttributes } from "../../tracing/attributes";
+import { recordSpanError, safeSetAttribute } from "../shared/utils";
 import {
   getCurrentSystemInstructions,
   nameFromSpanData,
@@ -25,12 +27,7 @@ export const applySpanError = (lmnrSpan: Span, span: any): void => {
   if (!error) {
     return;
   }
-  try {
-    const message = error.message ?? String(error);
-    lmnrSpan.setStatus({ code: SpanStatusCode.ERROR, message });
-  } catch {
-    // ignore
-  }
+  recordSpanError(lmnrSpan, error);
 };
 
 // ---------------------------------------------------------------------------
@@ -175,10 +172,7 @@ const applyCustomSpanData = (lmnrSpan: Span, spanData: any): void => {
   }
   const customData = spanData?.data;
   if (customData !== undefined && customData !== null) {
-    lmnrSpan.setAttribute(
-      "openai.agents.custom.data",
-      JSON.stringify(customData),
-    );
+    safeSetAttribute(lmnrSpan, "openai.agents.custom.data", toJson(customData));
   }
 };
 
@@ -189,7 +183,7 @@ const applyMcpSpanData = (lmnrSpan: Span, spanData: any): void => {
   }
   const result = spanData?.result;
   if (result !== undefined && result !== null) {
-    lmnrSpan.setAttribute("openai.agents.mcp.result", JSON.stringify(result));
+    safeSetAttribute(lmnrSpan, "openai.agents.mcp.result", toJson(result));
   }
 };
 

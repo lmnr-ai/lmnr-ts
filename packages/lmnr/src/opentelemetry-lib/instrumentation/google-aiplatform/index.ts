@@ -1,11 +1,8 @@
-import { context, SpanStatusCode } from "@opentelemetry/api";
+import { context } from "@opentelemetry/api";
 import { isTracingSuppressed } from "@opentelemetry/core";
 
-import { Laminar } from "../../../laminar";
-import { initializeLogger } from "../../../utils";
 import { LaminarSpan } from "../../tracing/span";
 import {
-  safeSetAttribute,
   setRequestAttributes,
   setResponseAttributes,
 } from "../google-genai/utils";
@@ -16,40 +13,25 @@ import {
   PatchedMethod,
 } from "../shared/base";
 import {
+  callWithSpan,
+  finishSpan,
+  recordSpanError,
+  safely,
+  safeSetAttribute,
+  traceCall,
+} from "../shared/utils";
+import {
   setPredictRequestAttributes,
   setPredictResponseAttributes,
   toGenAiParams,
   VERTEX_AI_SYSTEM,
 } from "./utils";
 
-const logger = initializeLogger();
-
 const VERTEXAI = "@google-cloud/vertexai";
 const AIPLATFORM = "@google-cloud/aiplatform";
 
 const GENERATIVE_MODEL_CLASSES = ["GenerativeModel", "GenerativeModelPreview"];
 const GENERATIVE_MODEL_METHODS = ["generateContent", "generateContentStream"];
-
-const markSpanError = (span: LaminarSpan, error: unknown): void => {
-  span.setAttribute(
-    "error.type",
-    (error as Error)?.constructor?.name ?? "Error",
-  );
-  span.setStatus({ code: SpanStatusCode.ERROR });
-};
-
-/**
- * Attribute extraction must never break the user's call.
- */
-const safely = (fn: () => void): void => {
-  try {
-    fn();
-  } catch (error) {
-    logger.debug(
-      `Failed to set google-aiplatform span attributes: ${String(error)}`,
-    );
-  }
-};
 
 /**
  * Instruments Google Cloud Vertex AI:
@@ -167,31 +149,26 @@ const wrapGenerateContent = (patched: PatchedMethod) =>
       ),
     );
 
-    return Laminar.withSpan(
+    return traceCall(
       span,
-      async () => {
-        try {
-          const result = await original.call(this, request, ...rest);
-          safely(() =>
-            setGenerateContentResponseAttributes(
-              span,
-              result?.response,
-              params.model,
-              instrumentation.traceContent,
-            ),
-          );
-          return result;
-        } catch (error) {
-          markSpanError(span, error);
-          throw error;
-        }
+      () => original.call(this, request, ...rest),
+      (result) => {
+        safely(() =>
+          setGenerateContentResponseAttributes(
+            span,
+            result?.response,
+            params.model,
+            instrumentation.traceContent,
+          ),
+        );
+        span.end();
+        return result;
       },
-      true,
     );
   };
 
 const wrapGenerateContentStream = (patched: PatchedMethod) =>
-  async function (this: any, request: any, ...rest: any[]) {
+  function (this: any, request: any, ...rest: any[]) {
     const { instrumentation, original } = patched;
     if (isTracingSuppressed(context.active())) {
       return original.call(this, request, ...rest);
@@ -211,44 +188,34 @@ const wrapGenerateContentStream = (patched: PatchedMethod) =>
       ),
     );
 
-    let result: any;
-    try {
-      // withSpan records the exception if the call rejects.
-      result = await Laminar.withSpan(span, () =>
-        original.call(this, request, ...rest),
-      );
-    } catch (error) {
-      markSpanError(span, error);
-      span.end();
-      throw error;
-    }
-
-    // `result.response` aggregates the stream on its own tee'd branch, so
-    // it settles even if the caller never drains `result.stream`.
-    const aggregated = result?.response;
-    if (aggregated && typeof aggregated.then === "function") {
-      aggregated.then(
-        (response: any) => {
-          safely(() =>
-            setGenerateContentResponseAttributes(
-              span,
-              response,
-              params.model,
-              instrumentation.traceContent,
-            ),
+    return traceCall(
+      span,
+      () => original.call(this, request, ...rest),
+      (result) => {
+        // `result.response` aggregates the stream on its own tee'd branch, so
+        // it settles even if the caller never drains `result.stream`.
+        const aggregated = result?.response;
+        if (aggregated && typeof aggregated.then === "function") {
+          aggregated.then(
+            (response: any) => {
+              safely(() =>
+                setGenerateContentResponseAttributes(
+                  span,
+                  response,
+                  params.model,
+                  instrumentation.traceContent,
+                ),
+              );
+              span.end();
+            },
+            (error: unknown) => finishSpan(span, error),
           );
+        } else {
           span.end();
-        },
-        (error: unknown) => {
-          span.recordException(error as Error);
-          markSpanError(span, error);
-          span.end();
-        },
-      );
-    } else {
-      span.end();
-    }
-    return result;
+        }
+        return result;
+      },
+    );
   };
 
 const wrapPredict = (patched: PatchedMethod) =>
@@ -279,8 +246,7 @@ const wrapPredict = (patched: PatchedMethod) =>
         ...rest: any[]
       ) {
         if (error) {
-          span.recordException(error as Error);
-          markSpanError(span, error);
+          recordSpanError(span, error);
         } else {
           safely(() =>
             setPredictResponseAttributes(
@@ -294,33 +260,27 @@ const wrapPredict = (patched: PatchedMethod) =>
         return callback.call(this, error, response, ...rest);
       };
       try {
-        return Laminar.withSpan(span, () => original.apply(this, wrappedArgs));
+        return callWithSpan(span, () => original.apply(this, wrappedArgs));
       } catch (error) {
-        markSpanError(span, error);
-        span.end();
+        finishSpan(span, error);
         throw error;
       }
     }
 
-    return Laminar.withSpan(
+    return traceCall(
       span,
-      async () => {
-        try {
-          const result = await original.apply(this, args);
-          safely(() =>
-            setPredictResponseAttributes(
-              span,
-              Array.isArray(result) ? result[0] : result,
-              instrumentation.traceContent,
-            ),
-          );
-          return result;
-        } catch (error) {
-          markSpanError(span, error);
-          throw error;
-        }
+      () => original.apply(this, args),
+      (result) => {
+        safely(() =>
+          setPredictResponseAttributes(
+            span,
+            Array.isArray(result) ? result[0] : result,
+            instrumentation.traceContent,
+          ),
+        );
+        span.end();
+        return result;
       },
-      true,
     );
   };
 

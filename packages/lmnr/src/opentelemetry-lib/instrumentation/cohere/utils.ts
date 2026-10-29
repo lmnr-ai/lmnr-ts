@@ -1,10 +1,13 @@
+import { parseJson, toJson } from "../../../utils";
+import {
+  GEN_AI_INPUT_MESSAGES,
+  GEN_AI_OUTPUT_MESSAGES,
+  GEN_AI_TOOL_DEFINITIONS,
+} from "../../tracing/attributes";
 import { LaminarSpan } from "../../tracing/span";
-import { safeSetAttribute } from "../google-genai/utils";
+import { safeSetAttribute } from "../shared/utils";
 
 export const COHERE_SYSTEM = "cohere";
-
-const INPUT_MESSAGES = "gen_ai.input.messages";
-const OUTPUT_MESSAGES = "gen_ai.output.messages";
 
 export type RequestType = "chat" | "completion" | "rerank" | "embedding";
 
@@ -33,18 +36,9 @@ const asInt = (value: unknown): number | undefined =>
     ? Math.trunc(value)
     : undefined;
 
-const maybeJson = (value: unknown): unknown => {
-  if (typeof value !== "string") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-};
-
 const textPart = (text: unknown): Part => ({
   type: "text",
-  content: typeof text === "string" ? text : JSON.stringify(text),
+  content: typeof text === "string" ? text : toJson(text),
 });
 
 const imagePart = (url: string): Part => {
@@ -112,7 +106,7 @@ const v2ToolCallParts = (toolCalls: unknown): Part[] =>
     };
     const args = toolCall?.function?.arguments;
     if (args !== undefined && args !== null) {
-      part.arguments = maybeJson(args);
+      part.arguments = parseJson(args);
     }
     return part;
   });
@@ -258,7 +252,7 @@ export const setRequestAttributes = (
       : v1ChatInput(params);
     const tools = toolDefinitions(params?.tools);
     if (tools.length > 0) {
-      span.setAttribute("gen_ai.tool.definitions", JSON.stringify(tools));
+      safeSetAttribute(span, GEN_AI_TOOL_DEFINITIONS, toJson(tools));
     }
   } else if (requestType === "completion") {
     messages = params?.prompt
@@ -271,7 +265,7 @@ export const setRequestAttributes = (
   }
 
   if (messages.length > 0) {
-    span.setAttribute(INPUT_MESSAGES, JSON.stringify(messages));
+    safeSetAttribute(span, GEN_AI_INPUT_MESSAGES, toJson(messages));
   }
 };
 
@@ -358,7 +352,7 @@ export const setResponseAttributes = (
   // embeddings have no message output: the vectors are not worth the payload
 
   if (output.length > 0 && traceContent) {
-    span.setAttribute(OUTPUT_MESSAGES, JSON.stringify(output));
+    safeSetAttribute(span, GEN_AI_OUTPUT_MESSAGES, toJson(output));
   }
 };
 

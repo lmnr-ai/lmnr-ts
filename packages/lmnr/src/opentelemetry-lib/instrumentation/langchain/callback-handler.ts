@@ -1,5 +1,5 @@
 import type { HrTime } from "@opentelemetry/api";
-import { Context, context, SpanStatusCode, trace } from "@opentelemetry/api";
+import { Context, context, trace } from "@opentelemetry/api";
 import {
   hrTime,
   isTracingSuppressed,
@@ -7,10 +7,11 @@ import {
 } from "@opentelemetry/core";
 
 import { Laminar } from "../../../laminar";
-import { initializeLogger } from "../../../utils";
+import { initializeLogger, parseJson, toJson } from "../../../utils";
 import { LaminarContextManager } from "../../tracing/context";
 import { LaminarSpan } from "../../tracing/span";
 import { instrumentationScopeAttributes } from "../shared/base";
+import { recordSpanError, safeSetAttribute } from "../shared/utils";
 import { LLM_CALL_KEY, LlmCall } from "./llm-call";
 import {
   retrieverOutput,
@@ -19,7 +20,6 @@ import {
   setCompletionRequest,
   setRequestAttributes,
   setResponseAttributes,
-  toJson,
 } from "./span-utils";
 import { detectVendorFromClass } from "./vendor-detection";
 
@@ -481,7 +481,7 @@ export class LaminarCallbackHandler {
     }
     const sanitized = sanitizeMetadata(metadata);
     if (Object.keys(sanitized).length > 0) {
-      span.setAttribute("langchain.metadata", toJson(sanitized));
+      safeSetAttribute(span, "langchain.metadata", toJson(sanitized));
     }
     return span;
   }
@@ -625,14 +625,16 @@ export class LaminarCallbackHandler {
       // error), but its entry must still go: a failed root call has no parent
       // `endRun` to clear it.
       try {
-        this.recordUnrecordedHandoff(runId, (span) => markError(span, error));
+        this.recordUnrecordedHandoff(runId, (span) =>
+          recordSpanError(span, error),
+        );
       } finally {
         this.handedOff.delete(runId);
       }
       return;
     }
     try {
-      markError(run.span, error);
+      recordSpanError(run.span, error);
     } finally {
       this.endRun(runId);
     }
@@ -669,21 +671,7 @@ const llmAttributes = (
   };
 };
 
-const markError = (span: LaminarSpan, error: any): void => {
-  span.setAttribute("error.type", error?.constructor?.name ?? "Error");
-  span.recordException(error);
-  span.setStatus({
-    code: SpanStatusCode.ERROR,
-    message: error?.message ?? String(error),
-  });
-};
-
 const parseJsonObject = (input: unknown): unknown => {
-  if (typeof input !== "string") return input;
-  try {
-    const parsed = JSON.parse(input);
-    return parsed !== null && typeof parsed === "object" ? parsed : input;
-  } catch {
-    return input;
-  }
+  const parsed = parseJson(input);
+  return parsed !== null && typeof parsed === "object" ? parsed : input;
 };

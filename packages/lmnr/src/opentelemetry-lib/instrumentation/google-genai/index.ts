@@ -1,12 +1,12 @@
-import { context, diag, SpanStatusCode } from "@opentelemetry/api";
+import { context, diag } from "@opentelemetry/api";
 import { isTracingSuppressed } from "@opentelemetry/core";
 
-import { Laminar } from "../../../laminar";
 import {
   InstrumentedModule,
   LaminarInstrumentation,
   LaminarInstrumentationConfig,
 } from "../shared/base";
+import { safely, traceCall } from "../shared/utils";
 import {
   setRequestAttributes,
   setResponseAttributes,
@@ -139,7 +139,7 @@ export class GoogleGenAiInstrumentation extends LaminarInstrumentation {
     const originalGenerateContent = models.generateContent.bind(models);
     const originalGenerateContentStream =
       models.generateContentStream.bind(models);
-    models.generateContent = async function (params: any) {
+    models.generateContent = function (params: any) {
       if (isTracingSuppressed(context.active())) {
         return originalGenerateContent(params);
       }
@@ -151,29 +151,20 @@ export class GoogleGenAiInstrumentation extends LaminarInstrumentation {
         spanType: "LLM",
       });
 
-      setRequestAttributes(span, params, traceContent);
+      safely(() => setRequestAttributes(span, params, traceContent));
 
-      return Laminar.withSpan(
+      return traceCall(
         span,
-        async () => {
-          try {
-            const response = await originalGenerateContent(params);
-            setResponseAttributes(span, response, traceContent);
-            return response;
-          } catch (error) {
-            span.setAttribute(
-              "error.type",
-              (error as Error).constructor?.name ?? "Error",
-            );
-            span.setStatus({ code: SpanStatusCode.ERROR });
-            throw error;
-          }
+        () => originalGenerateContent(params),
+        (response) => {
+          safely(() => setResponseAttributes(span, response, traceContent));
+          span.end();
+          return response;
         },
-        true,
       );
     };
 
-    models.generateContentStream = async function (params: any) {
+    models.generateContentStream = function (params: any) {
       if (isTracingSuppressed(context.active())) {
         return originalGenerateContentStream(params);
       }
@@ -185,21 +176,13 @@ export class GoogleGenAiInstrumentation extends LaminarInstrumentation {
         spanType: "LLM",
       });
 
-      setRequestAttributes(span, params, traceContent);
+      safely(() => setRequestAttributes(span, params, traceContent));
 
-      try {
-        const asyncGen = await originalGenerateContentStream(params);
-        return wrapStreamingResponse(span, asyncGen, traceContent);
-      } catch (error) {
-        span.setAttribute(
-          "error.type",
-          (error as Error).constructor?.name ?? "Error",
-        );
-        span.recordException(error as Error);
-        span.setStatus({ code: SpanStatusCode.ERROR });
-        span.end();
-        throw error;
-      }
+      return traceCall(
+        span,
+        () => originalGenerateContentStream(params),
+        (asyncGen) => wrapStreamingResponse(span, asyncGen, traceContent),
+      );
     };
 
     models[WRAPPED_SYMBOL] = true;

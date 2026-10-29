@@ -1,5 +1,10 @@
+import { toJson } from "../../../utils";
+import {
+  GEN_AI_INPUT_MESSAGES,
+  GEN_AI_OUTPUT_MESSAGES,
+} from "../../tracing/attributes";
 import { LaminarSpan } from "../../tracing/span";
-import { safeSetAttribute } from "../google-genai/utils";
+import { safeSetAttribute } from "../shared/utils";
 
 export const VERTEX_AI_SYSTEM = "vertex_ai";
 
@@ -126,7 +131,7 @@ export const setPredictRequestAttributes = (
     return record ? toInputMessages(record) : [];
   });
   if (messages.length > 0) {
-    safeSetAttribute(span, "gen_ai.input.messages", JSON.stringify(messages));
+    safeSetAttribute(span, GEN_AI_INPUT_MESSAGES, toJson(messages));
   }
 };
 
@@ -184,11 +189,7 @@ export const setPredictResponseAttributes = (
     .filter((content: string | undefined) => content !== undefined)
     .map((content: string) => ({ role: "assistant", content }));
   if (outputMessages.length > 0) {
-    safeSetAttribute(
-      span,
-      "gen_ai.output.messages",
-      JSON.stringify(outputMessages),
-    );
+    safeSetAttribute(span, GEN_AI_OUTPUT_MESSAGES, toJson(outputMessages));
   }
 };
 

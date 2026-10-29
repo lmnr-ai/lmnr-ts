@@ -31,6 +31,7 @@ import {
   otelSpanIdToUUID,
   otelTraceIdToUUID,
   StringUUID,
+  toJson,
   truncateSpanPayload,
 } from "../../utils";
 import {
@@ -77,6 +78,15 @@ const currentDebugContext = (): DebugContext | undefined => {
 // We decided to implement raw otel Span interface and have _span: SdkSpan because SdkSpan
 // discourages use of its constructor directly in favour of Tracer.startSpan()
 // We are using constructor directly because we're implementing Tracer interface as well.
+// Strings are recorded as they are. `null` is `"null"`, as it always was;
+// `undefined` reaches `truncateSpanPayload` and `setAttribute` ignores it.
+const serializePayload = (payload: unknown): string =>
+  (typeof payload === "string"
+    ? payload
+    : payload === null
+      ? "null"
+      : toJson(payload)) as string;
+
 export class LaminarSpan implements Span, ReadableSpan {
   private _span: SdkSpan;
   // Whether the span is started by Laminar.startActiveSpan()
@@ -234,8 +244,7 @@ export class LaminarSpan implements Span, ReadableSpan {
   }
 
   public setInput(input: any): void {
-    const finalInput =
-      typeof input === "string" ? input : JSON.stringify(input);
+    const finalInput = serializePayload(input);
     this._span.setAttribute(
       SPAN_INPUT,
       truncateSpanPayload(finalInput, "input"),
@@ -243,8 +252,7 @@ export class LaminarSpan implements Span, ReadableSpan {
   }
 
   public setOutput(output: any): void {
-    const finalOutput =
-      typeof output === "string" ? output : JSON.stringify(output);
+    const finalOutput = serializePayload(output);
     this._span.setAttribute(
       SPAN_OUTPUT,
       truncateSpanPayload(finalOutput, "output"),

@@ -1,12 +1,15 @@
 import { SpanStatusCode } from "@opentelemetry/api";
 
+import { toJson } from "../../../utils";
+import {
+  GEN_AI_INPUT_MESSAGES,
+  GEN_AI_OUTPUT_MESSAGES,
+  GEN_AI_TOOL_DEFINITIONS,
+} from "../../tracing/attributes";
 import { LaminarSpan } from "../../tracing/span";
-import { safeSetAttribute } from "../google-genai/utils";
+import { safeSetAttribute } from "../shared/utils";
 
 export const ANTHROPIC_SYSTEM = "anthropic";
-
-const INPUT_MESSAGES = "gen_ai.input.messages";
-const OUTPUT_MESSAGES = "gen_ai.output.messages";
 
 /**
  * Accumulated state of a streamed response, built from its raw stream events.
@@ -27,11 +30,6 @@ export const createStreamState = (): StreamState => ({
   blocks: [],
   completion: "",
 });
-
-const toJson = (value: unknown): string | undefined => {
-  if (value === undefined || value === null) return undefined;
-  return JSON.stringify(value);
-};
 
 const extractStructuredOutputSchema = (params: any): string | undefined => {
   // `output_format` is the older parameter; a raw dict may be the bare schema.
@@ -94,8 +92,12 @@ export const setRequestAttributes = (
   );
 
   if (traceContent) {
-    safeSetAttribute(span, INPUT_MESSAGES, toJson(buildInputMessages(params)));
-    safeSetAttribute(span, "gen_ai.tool.definitions", toJson(params?.tools));
+    safeSetAttribute(
+      span,
+      GEN_AI_INPUT_MESSAGES,
+      toJson(buildInputMessages(params)),
+    );
+    safeSetAttribute(span, GEN_AI_TOOL_DEFINITIONS, toJson(params?.tools));
   }
 
   safeSetAttribute(
@@ -163,7 +165,7 @@ export const setResponseAttributes = (
     } else if (Array.isArray(response.content)) {
       output.content.push(...response.content);
     }
-    safeSetAttribute(span, OUTPUT_MESSAGES, toJson([output]));
+    safeSetAttribute(span, GEN_AI_OUTPUT_MESSAGES, toJson([output]));
   }
 
   span.setStatus({ code: SpanStatusCode.OK });
@@ -288,6 +290,6 @@ export const setStreamingResponseAttributes = (
     if (state.stopReason) {
       output.stop_reason = state.stopReason;
     }
-    safeSetAttribute(span, OUTPUT_MESSAGES, toJson([output]));
+    safeSetAttribute(span, GEN_AI_OUTPUT_MESSAGES, toJson([output]));
   }
 };

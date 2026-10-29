@@ -6,10 +6,15 @@
  * retriever spans carry their raw inputs and outputs in `lmnr.span.input` /
  * `lmnr.span.output`.
  */
-import { LaminarSpan } from "../../tracing/span";
 
-const INPUT_MESSAGES = "gen_ai.input.messages";
-const OUTPUT_MESSAGES = "gen_ai.output.messages";
+import { parseJson, toJson } from "../../../utils";
+import {
+  GEN_AI_INPUT_MESSAGES,
+  GEN_AI_OUTPUT_MESSAGES,
+  GEN_AI_TOOL_DEFINITIONS,
+} from "../../tracing/attributes";
+import { LaminarSpan } from "../../tracing/span";
+import { safeSetAttribute } from "../shared/utils";
 
 const ROLE_BY_MESSAGE_TYPE: Record<string, string> = {
   human: "user",
@@ -42,54 +47,6 @@ const asRecord = (value: unknown): Record<string, any> =>
 
 const isInt = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value);
-
-/**
- * `JSON.stringify` that never throws: cycles become `"[Circular]"` and bigints
- * strings.
- *
- * Only an object that is its own ancestor is a cycle. The same object reached
- * twice through different paths is serialized both times: LangChain messages
- * share objects between `tool_calls` and provider content blocks, and a
- * "seen anywhere" set replaced the second copy with `"[Circular]"`.
- */
-export const toJson = (value: unknown): string => {
-  // The objects on the path from the root to the current holder (`this`)
-  const ancestors: object[] = [];
-  try {
-    return (
-      JSON.stringify(value, function (this: unknown, _key, item: unknown) {
-        if (typeof item === "bigint") return item.toString();
-        if (item === null || typeof item !== "object") return item;
-        while (
-          ancestors.length > 0 &&
-          ancestors[ancestors.length - 1] !== this
-        ) {
-          ancestors.pop();
-        }
-        if (ancestors.includes(item)) return "[Circular]";
-        ancestors.push(item);
-        return item;
-      }) ?? "null"
-    );
-  } catch {
-    return String(value);
-  }
-};
-
-const maybeJson = (value: unknown): unknown => {
-  if (typeof value !== "string") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-};
-
-const setIfPresent = (span: LaminarSpan, key: string, value: unknown) => {
-  if (value === undefined || value === null) return;
-  if (typeof value === "string" && value.length === 0) return;
-  span.setAttribute(key, value as any);
-};
 
 export const messageType = (message: any): string => {
   const type = message?.type ?? message?._getType?.() ?? message?.getType?.();
@@ -159,7 +116,7 @@ export const toolCallsToParts = (toolCalls: unknown): Record<string, any>[] => {
     };
     const args = toolCall.args ?? fn.arguments;
     if (args !== undefined && args !== null) {
-      part.arguments = maybeJson(args);
+      part.arguments = parseJson(args);
     }
     parts.push(part);
   }
@@ -199,7 +156,7 @@ export const messageToDict = (message: any): Record<string, any> => {
       type: "tool_call",
       id: "",
       name: functionCall.name || "",
-      arguments: maybeJson(functionCall.arguments),
+      arguments: parseJson(functionCall.arguments),
     });
   }
   return { role, parts };
@@ -237,7 +194,7 @@ export const setRequestAttributes = (
     model =
       typeof lsModelName === "string" && lsModelName ? lsModelName : undefined;
   }
-  setIfPresent(span, "gen_ai.request.model", model);
+  safeSetAttribute(span, "gen_ai.request.model", model);
 
   const param = (...keys: string[]): unknown => {
     for (const source of [params, serializedKwargs]) {
@@ -279,7 +236,7 @@ export const setRequestAttributes = (
       if (parameters) definition.parameters = parameters;
       return definition;
     });
-    span.setAttribute("gen_ai.tool.definitions", toJson(definitions));
+    safeSetAttribute(span, GEN_AI_TOOL_DEFINITIONS, toJson(definitions));
   }
 
   return model;
@@ -295,7 +252,7 @@ export const setChatRequest = (
     (batch ?? []).map(messageToDict),
   );
   if (inputMessages.length > 0) {
-    span.setAttribute(INPUT_MESSAGES, toJson(inputMessages));
+    safeSetAttribute(span, GEN_AI_INPUT_MESSAGES, toJson(inputMessages));
   }
 };
 
@@ -310,7 +267,7 @@ export const setCompletionRequest = (
     parts: [{ type: "text", content: prompt }],
   }));
   if (inputMessages.length > 0) {
-    span.setAttribute(INPUT_MESSAGES, toJson(inputMessages));
+    safeSetAttribute(span, GEN_AI_INPUT_MESSAGES, toJson(inputMessages));
   }
 };
 
@@ -378,8 +335,12 @@ const setUsage = (span: LaminarSpan, response: any): void => {
   span.setAttribute("gen_ai.usage.input_tokens", inputTokens);
   span.setAttribute("gen_ai.usage.output_tokens", outputTokens);
   span.setAttribute("llm.usage.total_tokens", inputTokens + outputTokens);
-  setIfPresent(span, "gen_ai.usage.cache_read_input_tokens", cacheReadTokens);
-  setIfPresent(
+  safeSetAttribute(
+    span,
+    "gen_ai.usage.cache_read_input_tokens",
+    cacheReadTokens,
+  );
+  safeSetAttribute(
     span,
     "gen_ai.usage.cache_creation_input_tokens",
     cacheCreationTokens,
@@ -420,11 +381,11 @@ export const setResponseAttributes = (
   traceContent: boolean,
 ): void => {
   const { model, id } = responseModelAndId(response);
-  setIfPresent(span, "gen_ai.response.model", model ?? requestModel);
+  safeSetAttribute(span, "gen_ai.response.model", model ?? requestModel);
   if (requestModel === undefined) {
-    setIfPresent(span, "gen_ai.request.model", model);
+    safeSetAttribute(span, "gen_ai.request.model", model);
   }
-  setIfPresent(span, "gen_ai.response.id", id);
+  safeSetAttribute(span, "gen_ai.response.id", id);
   setUsage(span, response);
 
   const outputMessages: Record<string, any>[] = [];
@@ -448,7 +409,7 @@ export const setResponseAttributes = (
     span.setAttribute("gen_ai.response.finish_reasons", finishReasons);
   }
   if (outputMessages.length > 0) {
-    span.setAttribute(OUTPUT_MESSAGES, toJson(outputMessages));
+    safeSetAttribute(span, GEN_AI_OUTPUT_MESSAGES, toJson(outputMessages));
   }
 };
 

@@ -11,6 +11,7 @@ import { Laminar } from "../../laminar";
 import {
   deserializeLaminarSpanContext,
   initializeLogger,
+  toJson,
   truncateSpanPayload,
   tryToOtelSpanContext,
 } from "../../utils";
@@ -279,35 +280,14 @@ export function observeBase<
   );
 }
 
-const normalizePayload = (payload: unknown, seen: WeakSet<any>): unknown => {
-  if (payload instanceof Map) {
-    return Array.from(payload.entries());
-  } else if (Array.isArray(payload)) {
-    return payload.map((value) => normalizePayload(value, seen));
-  } else if (!payload) {
-    return payload;
-  } else if (typeof payload === "object") {
-    if (seen.has(payload)) {
-      return "[Circular reference]";
-    }
-    seen.add(payload);
-
-    // serialize object one by one
-    const output: any = {};
-    Object.entries(payload as any).forEach(([key, value]) => {
-      output[key] = normalizePayload(value, seen);
-    });
-    return output;
-  }
-
-  return payload;
-};
-
+// `toJson` skips `null`, but an observed `null` has always been recorded as
+// `"null"`. `undefined` is handed through to `truncateSpanPayload`, and
+// `setAttribute` ignores it.
 const serialize = (
   payload: unknown,
   kind: "input" | "output" = "output",
 ): string =>
   truncateSpanPayload(
-    JSON.stringify(normalizePayload(payload, new WeakSet())),
+    (payload === null ? "null" : toJson(payload)) as string,
     kind,
   );

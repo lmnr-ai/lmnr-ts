@@ -1,6 +1,18 @@
 import { SpanStatusCode } from "@opentelemetry/api";
 
+import { toJson } from "../../../utils";
+import {
+  GEN_AI_INPUT_MESSAGES,
+  GEN_AI_OUTPUT_MESSAGES,
+  GEN_AI_TOOL_DEFINITIONS,
+} from "../../tracing/attributes";
 import { LaminarSpan } from "../../tracing/span";
+import {
+  instrumentStream,
+  recordSpanError,
+  safely,
+  safeSetAttribute,
+} from "../shared/utils";
 
 export type ResourceKind = "chat" | "responses" | "embeddings";
 
@@ -12,28 +24,6 @@ const TERMINAL_RESPONSE_EVENTS = new Set([
 
 // A `responses` result in one of these states carries no usable completion.
 const ERROR_RESPONSE_STATUSES = new Set(["failed", "incomplete"]);
-
-const safeSetAttribute = (
-  span: LaminarSpan,
-  key: string,
-  value: unknown,
-): void => {
-  if (value === null || value === undefined) return;
-  if (typeof value === "string" && value.length === 0) return;
-  span.setAttribute(key, value as any);
-};
-
-export const recordError = (span: LaminarSpan, error: unknown): void => {
-  span.setAttribute(
-    "error.type",
-    (error as Error)?.constructor?.name ?? "Error",
-  );
-  span.recordException(error as Error);
-  span.setStatus({ code: SpanStatusCode.ERROR });
-};
-
-export const isAsyncIterable = (value: unknown): value is AsyncIterable<any> =>
-  typeof (value as any)?.[Symbol.asyncIterator] === "function";
 
 export const responsesInputMessages = (request: any): any[] => {
   const messages: any[] = [];
@@ -78,8 +68,8 @@ export const setRequestAttributes = (
     if (traceContent && request?.input !== undefined) {
       safeSetAttribute(
         span,
-        "gen_ai.input.messages",
-        JSON.stringify(embeddingsInputMessages(request.input)),
+        GEN_AI_INPUT_MESSAGES,
+        toJson(embeddingsInputMessages(request.input)),
       );
     }
     return;
@@ -113,7 +103,7 @@ export const setRequestAttributes = (
     safeSetAttribute(
       span,
       "gen_ai.request.structured_output_schema",
-      JSON.stringify(schema),
+      toJson(schema),
     );
   }
   if (request?.stream) {
@@ -122,16 +112,12 @@ export const setRequestAttributes = (
 
   if (!traceContent) return;
   if (Array.isArray(request?.tools) && request.tools.length > 0) {
-    safeSetAttribute(
-      span,
-      "gen_ai.tool.definitions",
-      JSON.stringify(request.tools),
-    );
+    safeSetAttribute(span, GEN_AI_TOOL_DEFINITIONS, toJson(request.tools));
   }
   const messages =
     kind === "chat" ? request?.messages : responsesInputMessages(request);
   if (Array.isArray(messages) && messages.length > 0) {
-    safeSetAttribute(span, "gen_ai.input.messages", JSON.stringify(messages));
+    safeSetAttribute(span, GEN_AI_INPUT_MESSAGES, toJson(messages));
   }
 };
 
@@ -228,7 +214,7 @@ export const setResponseAttributes = (
   if (!traceContent || kind === "embeddings") return;
   const output = kind === "chat" ? response.choices : response.output;
   if (Array.isArray(output) && output.length > 0) {
-    safeSetAttribute(span, "gen_ai.output.messages", JSON.stringify(output));
+    safeSetAttribute(span, GEN_AI_OUTPUT_MESSAGES, toJson(output));
   }
 };
 
@@ -296,8 +282,8 @@ const responseFromStreamEvents = (events: any[]): any => {
 };
 
 /**
- * Replaces the stream's async iterator so the span is finalized once the
- * consumer finishes (or abandons) iteration. The stream object is returned as-is.
+ * Instruments the stream in place so the span is finalized once the consumer
+ * finishes (or abandons) iteration. The stream object is returned as-is.
  */
 export const wrapStream = <T extends AsyncIterable<any>>(
   span: LaminarSpan,
@@ -305,31 +291,20 @@ export const wrapStream = <T extends AsyncIterable<any>>(
   stream: T,
   traceContent: boolean,
 ): T => {
-  const originalIterator = stream[Symbol.asyncIterator].bind(stream);
-
-  async function* wrapper(): AsyncGenerator<any> {
-    const chunks: any[] = [];
-    try {
-      for await (const chunk of { [Symbol.asyncIterator]: originalIterator }) {
-        chunks.push(chunk);
-        yield chunk;
-      }
-    } catch (error) {
-      recordError(span, error);
-      throw error;
-    } finally {
-      try {
+  const chunks: any[] = [];
+  instrumentStream(stream, {
+    onEvent: (chunk) => chunks.push(chunk),
+    onDone: (error) => {
+      if (error !== undefined) recordSpanError(span, error);
+      safely(() => {
         const response =
           kind === "chat"
             ? aggregateChatChunks(chunks)
             : responseFromStreamEvents(chunks);
         setResponseAttributes(span, kind, response, traceContent);
-      } finally {
-        span.end();
-      }
-    }
-  }
-
-  (stream as any)[Symbol.asyncIterator] = wrapper;
+      });
+      span.end();
+    },
+  });
   return stream;
 };

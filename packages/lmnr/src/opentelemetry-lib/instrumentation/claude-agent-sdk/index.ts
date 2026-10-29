@@ -1,12 +1,13 @@
 // biome-ignore-all lint/complexity/noBannedTypes: instrumentation wraps arbitrary Functions
 import { Laminar } from "../../../laminar";
-import { initializeLogger } from "../../../utils";
+import { initializeLogger, toJson } from "../../../utils";
 import { SPAN_INPUT, SPAN_OUTPUT } from "../../tracing/attributes";
 import {
   InstrumentedModule,
   instrumentationScopeAttributes,
   LaminarInstrumentation,
 } from "../shared/base";
+import { recordSpanError, safeSetAttribute } from "../shared/utils";
 import {
   buildProxyFlagSettings,
   createProxyInstance,
@@ -58,9 +59,10 @@ export function instrumentClaudeAgentQuery(
     });
     span.setAttributes(instrumentationScopeAttributes(CLAUDE_AGENT_SDK));
 
-    span.setAttribute(
+    safeSetAttribute(
+      span,
       SPAN_INPUT,
-      JSON.stringify({
+      toJson({
         prompt: typeof params.prompt === "string" ? params.prompt : "<stream>",
       }),
     );
@@ -229,14 +231,12 @@ export function instrumentClaudeAgentQuery(
           yield message;
         }
       } catch (error) {
-        Laminar.withSpan(span, () => {
-          span.recordException(error as Error);
-        });
+        recordSpanError(span, error);
         throw error;
       } finally {
         // Stop this proxy instance
         stopProxyInstance(proxyInstance);
-        span.setAttribute(SPAN_OUTPUT, JSON.stringify(collected));
+        safeSetAttribute(span, SPAN_OUTPUT, toJson(collected));
         span.end();
       }
     };

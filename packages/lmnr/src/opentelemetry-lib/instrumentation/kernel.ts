@@ -2,12 +2,14 @@
 import type * as KernelSDK from "@onkernel/sdk";
 
 import { Laminar } from "../../laminar";
+import { toJson } from "../../utils";
 import {
   InstrumentedModule,
   instrumentedObserve,
   LaminarInstrumentation,
   PatchedMethod,
 } from "./shared/base";
+import { safeSetAttribute } from "./shared/utils";
 
 const KERNEL = "@onkernel/sdk";
 
@@ -197,7 +199,7 @@ export class KernelInstrumentation extends LaminarInstrumentation {
             : {}),
           ...result,
         };
-        span.setAttribute("lmnr.span.output", JSON.stringify(output));
+        safeSetAttribute(span, "lmnr.span.output", toJson(output));
         return result;
       } finally {
         span.end();

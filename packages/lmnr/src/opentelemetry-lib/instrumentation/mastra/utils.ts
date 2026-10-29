@@ -1,5 +1,6 @@
 import { HrTime } from "@opentelemetry/api";
 
+import { toJson, toJsonOrString } from "../../../utils";
 import { LaminarAttributes } from "../../tracing/attributes";
 import {
   AISdkContentPart,
@@ -36,15 +37,6 @@ export const mapLaminarSpanType = (spanType: string): LaminarSpanType => {
   }
 };
 
-export const serializeJSON = (value: unknown): string => {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return "[unserializable]";
-  }
-};
-
 type AttrPrimitive = string | number | boolean;
 export const toAttributeValue = (
   value: unknown,
@@ -62,7 +54,7 @@ export const toAttributeValue = (
     if (value.every((v) => typeof v === "number")) return value;
     if (value.every((v) => typeof v === "boolean")) return value;
   }
-  return serializeJSON(value);
+  return toJson(value);
 };
 
 export const extractMessages = (input: unknown): unknown[] | undefined => {
@@ -93,7 +85,7 @@ export const normalizeInputMessages = (raw: unknown[]): AISdkMessage[] => {
     }
     out.push({
       role: "user",
-      content: typeof m === "string" ? m : serializeJSON(m),
+      content: toJsonOrString(m) ?? String(m),
     });
   }
   return out;
@@ -144,22 +136,6 @@ export const cleanMastraToolName = (
   name: string | undefined,
 ): string | undefined =>
   name?.replace(/^(?:mcp_tool|tool):\s*'?(.*?)'?(?:\s+on\s+'[^']*')?$/, "$1");
-
-// Tool-call args are sometimes a string (already-serialized JSON), sometimes
-// an object — stringify the latter so `ai.response.toolCalls` is always a
-// JSON-string at the AI SDK boundary. Mirror `serializeJSON`'s guard so
-// unserializable inputs (BigInt, circular refs) degrade the arg payload
-// rather than bubbling up and causing the caller's outer catch to drop the
-// whole LLM span.
-export const stringifyArgs = (raw: unknown): string | undefined => {
-  if (raw === undefined) return undefined;
-  if (typeof raw === "string") return raw;
-  try {
-    return JSON.stringify(raw);
-  } catch {
-    return "[unserializable]";
-  }
-};
 
 export const formatUsage = (
   usage?: MastraUsageStats,

@@ -373,6 +373,74 @@ export const getDirname = () => {
   return process.cwd();
 };
 
+export const CIRCULAR_REFERENCE = "[Circular reference]";
+
+/**
+ * `JSON.stringify` for span attributes. It never throws:
+ * - `null`, `undefined` and values JSON can't represent (a function, a symbol)
+ *   give `undefined`, so the attribute is skipped. So does a value whose
+ *   serialization throws (a throwing getter or `toJSON`).
+ * - bigints become strings, and a `Map` becomes its `[key, value]` entries.
+ * - an object that is its own ancestor becomes `"[Circular reference]"`. The
+ *   same object reached twice through different paths is serialized both
+ *   times: SDK payloads share objects (LangChain messages share tool-call args
+ *   between `tool_calls` and provider content blocks), and a "seen anywhere"
+ *   set would replace the second copy.
+ *
+ * Strings are serialized too (quoted). Callers that record strings as they are
+ * check for them first.
+ */
+export const toJson = (value: unknown): string | undefined => {
+  if (value === undefined || value === null) return undefined;
+  // The objects on the path from the root to the current holder (`this`).
+  // `holders[i]` is what JSON.stringify serializes; `sources[i]` is the value
+  // it came from, which differs when a Map is replaced by its entries.
+  const holders: object[] = [];
+  const sources: object[] = [];
+  try {
+    return JSON.stringify(
+      value,
+      function (this: unknown, _key: string, item: unknown) {
+        if (typeof item === "bigint") return item.toString();
+        if (item === null || typeof item !== "object") return item;
+        while (holders.length > 0 && holders[holders.length - 1] !== this) {
+          holders.pop();
+          sources.pop();
+        }
+        if (sources.includes(item)) return CIRCULAR_REFERENCE;
+        const replacement =
+          item instanceof Map ? Array.from(item.entries()) : item;
+        holders.push(replacement);
+        sources.push(item);
+        return replacement;
+      },
+    );
+  } catch (error) {
+    logger.debug(`Failed to serialize value to JSON: ${errorMessage(error)}`);
+    return undefined;
+  }
+};
+
+/**
+ * `toJson`, except that a string is returned as it is, for payloads where a
+ * string already is the serialized form.
+ */
+export const toJsonOrString = (value: unknown): string | undefined =>
+  typeof value === "string" ? value : toJson(value);
+
+/**
+ * `JSON.parse` that hands back the input when it is not a string or not valid
+ * JSON.
+ */
+export const parseJson = (value: unknown): unknown => {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+};
+
 export const MAX_MANUAL_SPAN_PAYLOAD_SIZE = 1024 * 1024 * 10; // 10MB
 export const TRUNCATION_SUFFIX = "...[Laminar: truncated]";
 

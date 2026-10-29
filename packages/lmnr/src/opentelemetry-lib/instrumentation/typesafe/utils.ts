@@ -1,25 +1,10 @@
-import { SpanStatusCode } from "@opentelemetry/api";
-
+import { toJson } from "../../../utils";
+import {
+  GEN_AI_INPUT_MESSAGES,
+  GEN_AI_OUTPUT_MESSAGES,
+} from "../../tracing/attributes";
 import { LaminarSpan } from "../../tracing/span";
-
-const safeSetAttribute = (
-  span: LaminarSpan,
-  key: string,
-  value: unknown,
-): void => {
-  if (value === null || value === undefined) return;
-  if (typeof value === "string" && value.length === 0) return;
-  span.setAttribute(key, value as any);
-};
-
-export const recordError = (span: LaminarSpan, error: unknown): void => {
-  span.setAttribute(
-    "error.type",
-    (error as Error)?.constructor?.name ?? "Error",
-  );
-  span.recordException(error as Error);
-  span.setStatus({ code: SpanStatusCode.ERROR });
-};
+import { safeSetAttribute } from "../shared/utils";
 
 export const setRequestAttributes = (
   span: LaminarSpan,
@@ -36,11 +21,11 @@ export const setRequestAttributes = (
 
   const state = request?.state;
   if (state !== null && state !== undefined) {
-    const content = typeof state === "string" ? state : JSON.stringify(state);
+    const content = typeof state === "string" ? state : toJson(state);
     safeSetAttribute(
       span,
-      "gen_ai.input.messages",
-      JSON.stringify([{ role: "user", content }]),
+      GEN_AI_INPUT_MESSAGES,
+      toJson([{ role: "user", content }]),
     );
   }
   const questions = request?.questions;
@@ -48,7 +33,7 @@ export const setRequestAttributes = (
     safeSetAttribute(
       span,
       "gen_ai.request.structured_output_schema",
-      JSON.stringify(questions),
+      toJson(questions),
     );
   }
 };
@@ -70,10 +55,8 @@ export const setResponseAttributes = (
   if (body.answers && traceContent) {
     safeSetAttribute(
       span,
-      "gen_ai.output.messages",
-      JSON.stringify([
-        { role: "assistant", content: JSON.stringify(body.answers) },
-      ]),
+      GEN_AI_OUTPUT_MESSAGES,
+      toJson([{ role: "assistant", content: toJson(body.answers) }]),
     );
   }
 };
