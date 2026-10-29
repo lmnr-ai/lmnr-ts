@@ -6,7 +6,8 @@
       "!**/node_modules/**",
       "!**/.next/**",
       "!examples/**",
-      "!assets/recorder/record.umd.min.cjs"
+      "!assets/recorder/record.umd.min.cjs",
+      "!spec/lmnr-atif/**"
     ]
   },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2 },
