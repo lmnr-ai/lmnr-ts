@@ -46,17 +46,28 @@ const isInt = (value: unknown): value is number =>
 /**
  * `JSON.stringify` that never throws: cycles become `"[Circular]"` and bigints
  * strings.
+ *
+ * Only an object that is its own ancestor is a cycle. The same object reached
+ * twice through different paths is serialized both times: LangChain messages
+ * share objects between `tool_calls` and provider content blocks, and a
+ * "seen anywhere" set replaced the second copy with `"[Circular]"`.
  */
 export const toJson = (value: unknown): string => {
-  const seen = new WeakSet<object>();
+  // The objects on the path from the root to the current holder (`this`)
+  const ancestors: object[] = [];
   try {
     return (
-      JSON.stringify(value, (_key, item) => {
+      JSON.stringify(value, function (this: unknown, _key, item: unknown) {
         if (typeof item === "bigint") return item.toString();
-        if (item !== null && typeof item === "object") {
-          if (seen.has(item)) return "[Circular]";
-          seen.add(item);
+        if (item === null || typeof item !== "object") return item;
+        while (
+          ancestors.length > 0 &&
+          ancestors[ancestors.length - 1] !== this
+        ) {
+          ancestors.pop();
         }
+        if (ancestors.includes(item)) return "[Circular]";
+        ancestors.push(item);
         return item;
       }) ?? "null"
     );
