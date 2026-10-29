@@ -67,14 +67,15 @@ export const finishSpan = (span: Span, error?: unknown): void => {
 };
 
 /**
- * Run attribute extraction, which must never break the user's call. A failure
- * is logged at debug level and gives `undefined`.
+ * Run instrumentation code (attribute extraction, stream hooks) that must
+ * never break the user's call. A failure is logged at debug level and gives
+ * `undefined`.
  */
 export const safely = <T>(fn: () => T): T | undefined => {
   try {
     return fn();
   } catch (error) {
-    logger.debug(`Failed to record span attributes: ${errorMessage(error)}`);
+    logger.debug(`Instrumentation code failed: ${errorMessage(error)}`);
     return undefined;
   }
 };
@@ -179,7 +180,7 @@ export const traceCall = (
     try {
       return onSuccess(data);
     } catch (error) {
-      logger.debug(`Failed to record span attributes: ${errorMessage(error)}`);
+      logger.debug(`Instrumentation code failed: ${errorMessage(error)}`);
       span.end();
       return data;
     }
