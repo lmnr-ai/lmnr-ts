@@ -34,6 +34,18 @@ Laminar.initialize() must be called
 - once in your application,
 - as early as possible, but after other instrumentation libraries
 
+### Environment variables
+
+| Variable | Meaning |
+| --- | --- |
+| `LMNR_PROJECT_API_KEY` | Project API key, if not passed to `initialize()` |
+| `LMNR_BASE_URL` | Laminar API base URL (default `https://api.lmnr.ai`) |
+| `LMNR_RELEASE` | Release (e.g. git SHA) stamped on spans; detected if unset |
+| `LMNR_TRAJECTORY_PATH` | Write the run as a trajectory file in Harbor's ATIF format (with Laminar's `lmnr-atif` extension) at this path instead of exporting spans; no API key needed. May contain `{trace_id}` (one file per trace) and `{pid}` |
+| `LMNR_TRAJECTORY_FORCE_EXPORT` | With `LMNR_TRAJECTORY_PATH`: also export spans to Laminar (needs an API key) |
+
+`Laminar.initialize({ writeTrajectory: false })` ignores `LMNR_TRAJECTORY_PATH`, for a process whose environment is meant for an agent it runs.
+
 ## Instrumentation
 
 In addition to automatic instrumentation, we provide a simple `@observe()` decorator.

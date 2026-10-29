@@ -25,9 +25,15 @@ TS port of the Python SDK's `lmnr/sdk/trajectory/` (lmnr-python PRs #402 / #405 
 - `SpanRecord` fields are snake_case on purpose: the record IS the language-neutral JSON form (`writer-golden/README.md`). `BuildOptions` is camelCase; the golden runner maps `project_id`. The default producer is `{name: "lmnr-ts", version}`; the golden runner overrides it with `lmnr-golden`.
 - Every bullet of lmnr-python's `src/lmnr/sdk/trajectory/AGENTS.md` (prefill outputs, concurrent tool matching, Gemini id collisions, empty system prompt, the input-copy bug, ...) applies here unchanged; the regression tests are ported by name in `test/trajectory-builder.test.ts`.
 
+## Writer (`writer.ts`)
+
+- Not part of the pure layer (it uses `node:fs` / `node:crypto`); the tracing collector (`opentelemetry-lib/tracing/trajectory.ts`, see the tracing AGENTS.md) is its only caller. Port of `writer.py`: `renderPath` (`{trace_id}`, `{pid}`, `~`), `writeJsonAtomic` (temp file in the same directory, then rename; `JSON.stringify(v, null, 2)`, which matches Python's `indent=2, ensure_ascii=False`), `mediaSink` (`images/<first 32 hex of sha256>.<ext>`, the four ATIF image types only, `null` on invalid base64: the regex is `b64decode(validate=True)`'s alphabet-and-padding check), `writeTrajectories` (one file per trace with `{trace_id}`, else one file; a file is `complete: false` when a trace it covers is still open).
+- **Everything is synchronous** on purpose: the final write runs in a process `exit` handler, which can't await.
+
 ## Tests
 
 - `test/trajectory-spec.test.ts` (from `test_lmnr_atif.py`): versions agree, fixtures validate, def keys, doc tables vs schema, reader.
 - `test/trajectory-builder.test.ts` (from `test_lmnr_atif_builder.py`): every golden case deep-equals `trajectory.json`, matches the schema, is deterministic, and **`reader rebuilds every call's input`**, the real correctness check (see the Python AGENTS.md). Plus the builder/normalizer unit tests and `py.ts` checks.
 - Schema validation uses `ajv/dist/2020` (the schema is draft 2020-12) with `strict: false`: ajv's strict mode is its own lint (it rejects `required` without `properties`), not JSON Schema validity.
+- `test/trajectory-writer.test.ts` (from `test_trajectory_writer.py`): writer, collector, `spanType` vs app-server, processor wiring, `Laminar.initialize` modes, and child-process checks (exit hook, unref'd timer, `.env` + `writeTrajectory: false`). Child scripts are `.mts` (top-level await needs ESM) run with `node --import <tsx loader>`; ad hoc scratch scripts importing workspace packages must live inside `packages/lmnr`, not `/tmp`, or `@opentelemetry/*` doesn't resolve. `test/trajectory-openai.test.ts`: the OpenAI tool loop end to end with a nock cassette and the reader round trip.
 - Harbor's validator isn't runnable from TS: `uv run --with harbor==0.25.0 python -m harbor.utils.trajectory_validator <file>`.

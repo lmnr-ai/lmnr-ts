@@ -522,4 +522,17 @@ export interface InitializeOptions {
    * Optional. Defaults to a new LaminarSpanProcessor.
    */
   spanProcessor?: SpanProcessor;
+
+  /**
+   * Write the run as an lmnr-atif trajectory file here. Optional.
+   * `Laminar.initialize` sets it from `LMNR_TRAJECTORY_PATH`.
+   */
+  trajectoryPath?: string;
+
+  /**
+   * Whether to export spans to Laminar. Optional. Defaults to true. False
+   * (local-only, with `trajectoryPath`) creates no exporter, needs no API key,
+   * and sends nothing to Laminar.
+   */
+  exportSpans?: boolean;
 }
