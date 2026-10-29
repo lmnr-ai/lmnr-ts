@@ -1,37 +1,43 @@
 // biome-ignore-all lint/complexity/noBannedTypes: instrumentation wraps arbitrary Functions
 import { diag } from "@opentelemetry/api";
-import {
-  InstrumentationBase,
-  InstrumentationModuleDefinition,
-  InstrumentationNodeModuleDefinition,
-} from "@opentelemetry/instrumentation";
 
-import { version as SDK_VERSION } from "../../../package.json";
 import { Laminar } from "../../laminar";
+import { InstrumentedModule, LaminarInstrumentation } from "./shared/base";
 
-export class OpencodeInstrumentation extends InstrumentationBase {
+export class OpencodeInstrumentation extends LaminarInstrumentation {
   constructor() {
-    super("lmnr-opencode-instrumentation", SDK_VERSION, { enabled: true });
+    super("opencode");
   }
 
-  protected init(): InstrumentationModuleDefinition {
-    return new InstrumentationNodeModuleDefinition(
-      "@opencode-ai/sdk",
-      [">=1.0.0"],
-      this.patch.bind(this),
-      this.unpatch.bind(this),
-    );
+  /**
+   * Manual instrumentation accepts the `OpencodeClient` class or the module
+   * object.
+   */
+  protected modules(): InstrumentedModule[] {
+    return [
+      {
+        name: "@opencode-ai/sdk",
+        supportedVersions: [">=1.0.0"],
+        patch: (moduleExports) => {
+          const SessionClass = this.resolveSessionClass(moduleExports);
+          if (SessionClass) this.patchSessionClass(SessionClass);
+        },
+        unpatch: (moduleExports) => {
+          const SessionClass = this.resolveSessionClass(moduleExports);
+          if (!SessionClass) return;
+          this.unwrapMethod(SessionClass.prototype, "prompt");
+          this.unwrapMethod(SessionClass.prototype, "promptAsync");
+        },
+        accepts: (input) =>
+          Boolean(input?.OpencodeClient) || typeof input === "function",
+      },
+    ];
   }
 
-  public manuallyInstrument(opencodeModule: any): void {
-    diag.debug("Manually instrumenting @opencode-ai/sdk");
-    const SessionClass = this.resolveSessionClass(opencodeModule);
-    if (SessionClass) {
-      this.patchSessionClass(SessionClass);
-    } else {
-      diag.warn(
-        "Could not find Session class in opencode manual instrumentation input. " +
-          "Pass the OpencodeClient class or the module object.",
+  private patchSessionClass(SessionClass: Function): void {
+    for (const method of ["prompt", "promptAsync"]) {
+      this.wrapMethod(SessionClass.prototype, method, ({ original }) =>
+        wrapPrompt(original),
       );
     }
   }
@@ -61,58 +67,35 @@ export class OpencodeInstrumentation extends InstrumentationBase {
     }
     return null;
   }
-
-  private patchSessionClass(SessionClass: Function): void {
-    this._wrap(SessionClass.prototype, "prompt", this.patchPromptMethod());
-    this._wrap(SessionClass.prototype, "promptAsync", this.patchPromptMethod());
-  }
-
-  private patchPromptMethod(): (original: Function) => Function {
-    return (original: Function) =>
-      function (this: any, ...args: any[]) {
-        const options = args[0];
-        if (options?.body?.parts && Array.isArray(options.body.parts)) {
-          const serializedContext = Laminar.serializeLaminarSpanContext();
-          if (serializedContext) {
-            options.body.parts = [
-              ...options.body.parts,
-              {
-                type: "text",
-                metadata: {
-                  lmnrSpanContext: serializedContext,
-                },
-                text: "",
-                ignored: true,
-                synthetic: true,
-              },
-            ];
-          } else {
-            diag.debug(
-              "OpencodeInstrumentation: no active Laminar span context to " +
-                "propagate. Opencode-side spans will start a new trace " +
-                "instead of being children of the caller's span.",
-            );
-          }
-        }
-        return original.apply(this, args);
-      };
-  }
-
-  private patch(moduleExports: any): any {
-    diag.debug("Patching @opencode-ai/sdk");
-    const SessionClass = this.resolveSessionClass(moduleExports);
-    if (SessionClass) {
-      this.patchSessionClass(SessionClass);
-    }
-    return moduleExports;
-  }
-
-  private unpatch(moduleExports: any): void {
-    diag.debug("Unpatching @opencode-ai/sdk");
-    const SessionClass = this.resolveSessionClass(moduleExports);
-    if (SessionClass) {
-      this._unwrap(SessionClass.prototype, "prompt");
-      this._unwrap(SessionClass.prototype, "promptAsync");
-    }
-  }
 }
+
+const wrapPrompt = (
+  original: (...args: any[]) => any,
+): ((...args: any[]) => any) =>
+  function (this: any, ...args: any[]) {
+    const options = args[0];
+    if (options?.body?.parts && Array.isArray(options.body.parts)) {
+      const serializedContext = Laminar.serializeLaminarSpanContext();
+      if (serializedContext) {
+        options.body.parts = [
+          ...options.body.parts,
+          {
+            type: "text",
+            metadata: {
+              lmnrSpanContext: serializedContext,
+            },
+            text: "",
+            ignored: true,
+            synthetic: true,
+          },
+        ];
+      } else {
+        diag.debug(
+          "OpencodeInstrumentation: no active Laminar span context to " +
+            "propagate. Opencode-side spans will start a new trace " +
+            "instead of being children of the caller's span.",
+        );
+      }
+    }
+    return original.apply(this, args);
+  };

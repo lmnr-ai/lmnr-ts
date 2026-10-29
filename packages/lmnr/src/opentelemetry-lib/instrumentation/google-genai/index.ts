@@ -1,14 +1,12 @@
 import { context, diag, SpanStatusCode } from "@opentelemetry/api";
 import { isTracingSuppressed } from "@opentelemetry/core";
-import {
-  InstrumentationBase,
-  InstrumentationModuleDefinition,
-  InstrumentationNodeModuleDefinition,
-} from "@opentelemetry/instrumentation";
 
-import { version as SDK_VERSION } from "../../../../package.json";
 import { Laminar } from "../../../laminar";
-import { LaminarSpan } from "../../tracing/span";
+import {
+  InstrumentedModule,
+  LaminarInstrumentation,
+  LaminarInstrumentationConfig,
+} from "../shared/base";
 import {
   setRequestAttributes,
   setResponseAttributes,
@@ -20,68 +18,36 @@ const CLASS_PATCH_DATA_SYMBOL = Symbol("lmnr.google-genai.classPatchData");
 
 type ClassPatchData = {
   instrumentation: GoogleGenAiInstrumentation;
-  traceContent: boolean;
   originalModelsDescriptor: PropertyDescriptor | undefined;
 };
 
-export class GoogleGenAiInstrumentation extends InstrumentationBase {
-  private traceContent: boolean;
-
-  constructor(config?: { traceContent?: boolean }) {
-    super("@lmnr/google-genai-instrumentation", SDK_VERSION, { enabled: true });
-    this.traceContent = config?.traceContent ?? true;
+export class GoogleGenAiInstrumentation extends LaminarInstrumentation {
+  constructor(config?: LaminarInstrumentationConfig) {
+    super("google-genai", config);
   }
 
-  protected init(): InstrumentationModuleDefinition {
-    return new InstrumentationNodeModuleDefinition(
-      "@google/genai",
-      [">=1.0.0"],
-      this.patch.bind(this),
-      this.unpatch.bind(this),
-    );
-  }
-
-  public manuallyInstrument(genaiModule: any): void {
-    diag.debug("Manually instrumenting @google/genai");
-    const GoogleGenAIClass = this.resolveGoogleGenAIClass(genaiModule);
-    if (GoogleGenAIClass) {
-      this.patchGoogleGenAIClass(GoogleGenAIClass);
-    } else {
-      diag.warn(
-        "Could not find GoogleGenAI class in google_genai manual instrumentation input. " +
-          "Pass either GoogleGenAI class or module object with GoogleGenAI export.",
-      );
-    }
-  }
-
-  private patch(moduleExports: any): any {
-    diag.debug("Patching @google/genai");
-    const GoogleGenAIClass = this.resolveGoogleGenAIClass(moduleExports);
-    if (GoogleGenAIClass) {
-      this.patchGoogleGenAIClass(GoogleGenAIClass);
-    }
-    return moduleExports;
-  }
-
-  private unpatch(moduleExports: any): void {
-    diag.debug("Unpatching @google/genai");
-    const GoogleGenAIClass = this.resolveGoogleGenAIClass(moduleExports);
-    if (GoogleGenAIClass) {
-      this.unpatchGoogleGenAIClass(GoogleGenAIClass);
-    }
-  }
-
-  private resolveGoogleGenAIClass(moduleOrClass: any): any {
-    if (typeof moduleOrClass === "function") {
-      return moduleOrClass;
-    }
-    if (
-      moduleOrClass?.GoogleGenAI &&
-      typeof moduleOrClass.GoogleGenAI === "function"
-    ) {
-      return moduleOrClass.GoogleGenAI;
-    }
-    return undefined;
+  /**
+   * Manual instrumentation accepts the `GoogleGenAI` class or the module
+   * object with a `GoogleGenAI` export.
+   */
+  protected modules(): InstrumentedModule[] {
+    return [
+      {
+        name: "@google/genai",
+        supportedVersions: [">=1.0.0"],
+        patch: (moduleExports) => {
+          const GoogleGenAIClass = resolveGoogleGenAIClass(moduleExports);
+          if (GoogleGenAIClass) this.patchGoogleGenAIClass(GoogleGenAIClass);
+        },
+        unpatch: (moduleExports) => {
+          const GoogleGenAIClass = resolveGoogleGenAIClass(moduleExports);
+          if (GoogleGenAIClass) {
+            this.unpatchGoogleGenAIClass(GoogleGenAIClass);
+          }
+        },
+        accepts: (input) => resolveGoogleGenAIClass(input) !== undefined,
+      },
+    ];
   }
 
   private patchGoogleGenAIClass(GoogleGenAIClass: any): void {
@@ -90,7 +56,6 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
       | undefined;
     if (classPatchData) {
       classPatchData.instrumentation = this;
-      classPatchData.traceContent = this.traceContent;
       return;
     }
 
@@ -107,7 +72,6 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
 
     const patchData: ClassPatchData = {
       instrumentation: this,
-      traceContent: this.traceContent,
       originalModelsDescriptor,
     };
     Object.defineProperty(GoogleGenAIClass, CLASS_PATCH_DATA_SYMBOL, {
@@ -180,19 +144,21 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
         return originalGenerateContent(params);
       }
 
-      const span = Laminar.startSpan({
+      const { instrumentation } = classPatchData;
+      const { traceContent } = instrumentation;
+      const span = instrumentation.startSpan({
         name: "gemini.generate_content",
         spanType: "LLM",
-      }) as LaminarSpan;
+      });
 
-      setRequestAttributes(span, params, classPatchData.traceContent);
+      setRequestAttributes(span, params, traceContent);
 
       return Laminar.withSpan(
         span,
         async () => {
           try {
             const response = await originalGenerateContent(params);
-            setResponseAttributes(span, response, classPatchData.traceContent);
+            setResponseAttributes(span, response, traceContent);
             return response;
           } catch (error) {
             span.setAttribute(
@@ -212,20 +178,18 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
         return originalGenerateContentStream(params);
       }
 
-      const span = Laminar.startSpan({
+      const { instrumentation } = classPatchData;
+      const { traceContent } = instrumentation;
+      const span = instrumentation.startSpan({
         name: "gemini.generate_content_stream",
         spanType: "LLM",
-      }) as LaminarSpan;
+      });
 
-      setRequestAttributes(span, params, classPatchData.traceContent);
+      setRequestAttributes(span, params, traceContent);
 
       try {
         const asyncGen = await originalGenerateContentStream(params);
-        return wrapStreamingResponse(
-          span,
-          asyncGen,
-          classPatchData.traceContent,
-        );
+        return wrapStreamingResponse(span, asyncGen, traceContent);
       } catch (error) {
         span.setAttribute(
           "error.type",
@@ -241,3 +205,13 @@ export class GoogleGenAiInstrumentation extends InstrumentationBase {
     models[WRAPPED_SYMBOL] = true;
   }
 }
+
+const resolveGoogleGenAIClass = (moduleOrClass: any): any => {
+  if (typeof moduleOrClass === "function") {
+    return moduleOrClass;
+  }
+  if (typeof moduleOrClass?.GoogleGenAI === "function") {
+    return moduleOrClass.GoogleGenAI;
+  }
+  return undefined;
+};

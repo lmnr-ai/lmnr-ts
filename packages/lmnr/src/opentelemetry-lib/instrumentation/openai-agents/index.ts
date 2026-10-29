@@ -1,13 +1,6 @@
 // biome-ignore-all lint/complexity/noBannedTypes: instrumentation wraps arbitrary Functions
-import { diag } from "@opentelemetry/api";
-import {
-  InstrumentationBase,
-  InstrumentationModuleDefinition,
-  InstrumentationNodeModuleDefinition,
-} from "@opentelemetry/instrumentation";
-
-import { version as SDK_VERSION } from "../../../../package.json";
 import { initializeLogger } from "../../../utils";
+import { InstrumentedModule, LaminarInstrumentation } from "../shared/base";
 import {
   runWithSystemInstructions,
   wrapStreamWithSystemInstructions,
@@ -28,7 +21,9 @@ type ModelRequestLike =
     }
   | undefined;
 
-const wrapGetResponse = (original: Function): Function =>
+const wrapGetResponse = (
+  original: (...args: any[]) => any,
+): ((...args: any[]) => any) =>
   function (this: any, request: ModelRequestLike, ...rest: any[]) {
     const systemInstructions = request?.systemInstructions;
     return runWithSystemInstructions(systemInstructions, () =>
@@ -36,7 +31,9 @@ const wrapGetResponse = (original: Function): Function =>
     );
   };
 
-const wrapGetStreamedResponse = (original: Function): Function =>
+const wrapGetStreamedResponse = (
+  original: (...args: any[]) => any,
+): ((...args: any[]) => any) =>
   function (this: any, request: ModelRequestLike, ...rest: any[]) {
     const systemInstructions = request?.systemInstructions;
     const source = original.call(this, request, ...rest) as AsyncIterable<any>;
@@ -57,40 +54,41 @@ type AgentsTracingModule = {
   addTraceProcessor?: (processor: any) => void;
 };
 
-export class OpenAIAgentsInstrumentation extends InstrumentationBase {
+export class OpenAIAgentsInstrumentation extends LaminarInstrumentation {
   private _processor: LaminarAgentsTraceProcessor | undefined;
-  private _wrappedPrototypes: WeakSet<object> = new WeakSet();
 
   constructor() {
-    super("@lmnr/openai-agents-instrumentation", SDK_VERSION, {
-      enabled: true,
-    });
+    super("openai-agents");
   }
 
-  protected init(): InstrumentationModuleDefinition[] {
+  /**
+   * Manual instrumentation accepts the `@openai/agents` module, or any object
+   * with `addTraceProcessor` and / or the model classes.
+   */
+  protected modules(): InstrumentedModule[] {
     return [
-      new InstrumentationNodeModuleDefinition(
-        "@openai/agents",
-        [">=0.0.1"],
-        this.patchAgents.bind(this),
-        this.unpatchAgents.bind(this),
-      ),
-      new InstrumentationNodeModuleDefinition(
-        "@openai/agents-openai",
-        [">=0.0.1"],
-        this.patchAgentsOpenAI.bind(this),
-        this.unpatchAgentsOpenAI.bind(this),
-      ),
+      {
+        name: "@openai/agents",
+        supportedVersions: [">=0.0.1"],
+        patch: (moduleExports) => {
+          this.registerProcessor(moduleExports as AgentsTracingModule);
+          // @openai/agents re-exports @openai/agents-openai, so model classes
+          // are here
+          this.patchModel(moduleExports as AgentsOpenAIModule);
+        },
+        unpatch: (moduleExports) =>
+          this.unpatchModel(moduleExports as AgentsOpenAIModule),
+        accepts: (input) => Boolean(input),
+      },
+      {
+        name: "@openai/agents-openai",
+        supportedVersions: [">=0.0.1"],
+        patch: (moduleExports) =>
+          this.patchModel(moduleExports as AgentsOpenAIModule),
+        unpatch: (moduleExports) =>
+          this.unpatchModel(moduleExports as AgentsOpenAIModule),
+      },
     ];
-  }
-
-  public manuallyInstrument(agentsModule: any) {
-    if (!agentsModule) {
-      logger.debug("@openai/agents module not provided, skipping");
-      return;
-    }
-    this.registerProcessor(agentsModule);
-    this.patchModel(agentsModule);
   }
 
   private registerProcessor(module: AgentsTracingModule) {
@@ -111,79 +109,29 @@ export class OpenAIAgentsInstrumentation extends InstrumentationBase {
     }
   }
 
+  // @openai/agents re-exports the model classes from @openai/agents-openai, so
+  // the same prototype is seen twice; `wrapMethod` only wraps it once.
   private patchModel(module: AgentsOpenAIModule) {
-    for (const cls of [
-      module.OpenAIResponsesModel,
-      module.OpenAIChatCompletionsModel,
-    ]) {
-      if (!cls || !cls.prototype) {
-        continue;
-      }
-      // @openai/agents re-exports the model classes from @openai/agents-openai,
-      // so we may see the same prototype twice. Skip if already wrapped to
-      // avoid double-wrapping getResponse/getStreamedResponse.
-      if (this._wrappedPrototypes.has(cls.prototype)) {
-        continue;
-      }
-      for (const method of MODEL_METHODS) {
-        if (typeof cls.prototype[method] !== "function") {
-          continue;
-        }
-        const wrapper =
-          method === "getResponse" ? wrapGetResponse : wrapGetStreamedResponse;
-        try {
-          this._wrap(cls.prototype, method, wrapper as any);
-        } catch (e) {
-          logger.debug(`Failed to wrap ${method}: ${String(e)}`);
-        }
-      }
-      this._wrappedPrototypes.add(cls.prototype);
+    for (const proto of modelPrototypes(module)) {
+      this.wrapMethod(proto, "getResponse", ({ original }) =>
+        wrapGetResponse(original),
+      );
+      this.wrapMethod(proto, "getStreamedResponse", ({ original }) =>
+        wrapGetStreamedResponse(original),
+      );
     }
   }
 
   private unpatchModel(module: AgentsOpenAIModule) {
-    for (const cls of [
-      module.OpenAIResponsesModel,
-      module.OpenAIChatCompletionsModel,
-    ]) {
-      if (!cls || !cls.prototype) {
-        continue;
-      }
-      if (!this._wrappedPrototypes.has(cls.prototype)) {
-        continue;
-      }
+    for (const proto of modelPrototypes(module)) {
       for (const method of MODEL_METHODS) {
-        try {
-          this._unwrap(cls.prototype, method);
-        } catch {
-          // ignore
-        }
+        this.unwrapMethod(proto, method);
       }
-      this._wrappedPrototypes.delete(cls.prototype);
     }
   }
-
-  private patchAgents(moduleExports: any): any {
-    diag.debug("Patching @openai/agents");
-    this.registerProcessor(moduleExports as AgentsTracingModule);
-    // @openai/agents re-exports @openai/agents-openai, so model classes are here
-    this.patchModel(moduleExports as AgentsOpenAIModule);
-    return moduleExports;
-  }
-
-  private unpatchAgents(moduleExports: any): void {
-    diag.debug("Unpatching @openai/agents");
-    this.unpatchModel(moduleExports as AgentsOpenAIModule);
-  }
-
-  private patchAgentsOpenAI(moduleExports: any): any {
-    diag.debug("Patching @openai/agents-openai");
-    this.patchModel(moduleExports as AgentsOpenAIModule);
-    return moduleExports;
-  }
-
-  private unpatchAgentsOpenAI(moduleExports: any): void {
-    diag.debug("Unpatching @openai/agents-openai");
-    this.unpatchModel(moduleExports as AgentsOpenAIModule);
-  }
 }
+
+const modelPrototypes = (module: AgentsOpenAIModule): any[] =>
+  [module?.OpenAIResponsesModel, module?.OpenAIChatCompletionsModel]
+    .map((cls) => cls?.prototype)
+    .filter(Boolean);

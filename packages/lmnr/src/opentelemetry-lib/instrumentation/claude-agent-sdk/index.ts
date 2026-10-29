@@ -1,15 +1,12 @@
 // biome-ignore-all lint/complexity/noBannedTypes: instrumentation wraps arbitrary Functions
-import { diag } from "@opentelemetry/api";
-import {
-  InstrumentationBase,
-  InstrumentationModuleDefinition,
-  InstrumentationNodeModuleDefinition,
-} from "@opentelemetry/instrumentation";
-
-import { version as SDK_VERSION } from "../../../../package.json";
 import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
 import { SPAN_INPUT, SPAN_OUTPUT } from "../../tracing/attributes";
+import {
+  InstrumentedModule,
+  instrumentationScopeAttributes,
+  LaminarInstrumentation,
+} from "../shared/base";
 import {
   buildProxyFlagSettings,
   createProxyInstance,
@@ -28,6 +25,8 @@ import {
 export { forceReleaseProxy };
 
 const logger = initializeLogger();
+
+const CLAUDE_AGENT_SDK = "@anthropic-ai/claude-agent-sdk";
 
 /**
  * Create an instrumented version of the claude-agent-sdk query function.
@@ -51,10 +50,13 @@ export function instrumentClaudeAgentQuery(
       return originalQuery(params);
     }
 
+    // Also called directly (`Laminar.instrumentClaudeAgentQuery`), without
+    // an instrumentation instance, so the scope is stamped by hand.
     const span = Laminar.startSpan({
       name: "query",
       spanType: "DEFAULT",
     });
+    span.setAttributes(instrumentationScopeAttributes(CLAUDE_AGENT_SDK));
 
     span.setAttribute(
       SPAN_INPUT,
@@ -243,61 +245,25 @@ export function instrumentClaudeAgentQuery(
   };
 }
 
-export class ClaudeAgentSDKInstrumentation extends InstrumentationBase {
+export class ClaudeAgentSDKInstrumentation extends LaminarInstrumentation {
   constructor() {
-    super("@lmnr/claude-agent-instrumentation", SDK_VERSION, {
-      enabled: true,
-    });
+    super("claude-agent");
   }
 
-  protected init(): InstrumentationModuleDefinition {
-    const module = new InstrumentationNodeModuleDefinition(
-      "@anthropic-ai/claude-agent-sdk",
-      [">=0.1.0"],
-      this.patch.bind(this),
-      this.unpatch.bind(this),
-    );
-
-    return module;
-  }
-
-  // { query?: typeof ClaudeAgentSDK.query }
-  public manuallyInstrument(claudeAgentModule: { query?: any }) {
-    // Only instrument the query function if provided
-    if (
-      claudeAgentModule.query &&
-      typeof claudeAgentModule.query === "function"
-    ) {
-      this._wrap(claudeAgentModule, "query", this.patchQuery());
-    } else {
-      logger.debug(
-        "query function not found in claudeAgentSDK module, skipping instrumentation",
-      );
-    }
-  }
-
-  private patchQuery(): any {
-    // casts to ClaudeAgentSDK.query
-    return (original: Function) => instrumentClaudeAgentQuery(original as any);
-  }
-
-  private patch(moduleExports: any): any {
-    // typeof ClaudeAgentSDK
-    diag.debug("Patching @anthropic-ai/claude-agent-sdk");
-
-    // Wrap the query function for automatic instrumentation
-    if (moduleExports.query && typeof moduleExports.query === "function") {
-      this._wrap(moduleExports, "query", this.patchQuery());
-    }
-
-    return moduleExports;
-  }
-
-  private unpatch(moduleExports: any): void {
-    // typeof ClaudeAgentSDK
-    diag.debug("Unpatching @anthropic-ai/claude-agent-sdk");
-
-    // Unwrap the query function
-    this._unwrap(moduleExports, "query");
+  /** Manual instrumentation accepts the module, or any `{ query }` object. */
+  protected modules(): InstrumentedModule[] {
+    return [
+      {
+        name: CLAUDE_AGENT_SDK,
+        supportedVersions: [">=0.1.0"],
+        patch: (moduleExports) => {
+          this.wrapMethod(moduleExports, "query", ({ original }) =>
+            instrumentClaudeAgentQuery(original),
+          );
+        },
+        unpatch: (moduleExports) => this.unwrapMethod(moduleExports, "query"),
+        accepts: (input) => typeof input?.query === "function",
+      },
+    ];
   }
 }

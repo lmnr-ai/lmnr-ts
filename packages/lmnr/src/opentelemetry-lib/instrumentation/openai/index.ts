@@ -1,17 +1,17 @@
-import { context, diag, SpanStatusCode } from "@opentelemetry/api";
+import { context, SpanStatusCode } from "@opentelemetry/api";
 import { hrTime, isTracingSuppressed } from "@opentelemetry/core";
-import {
-  InstrumentationBase,
-  InstrumentationModuleDefinition,
-  InstrumentationNodeModuleDefinition,
-} from "@opentelemetry/instrumentation";
 
-import { version as SDK_VERSION } from "../../../../package.json";
 import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
 import { LaminarContextManager } from "../../tracing/context";
 import { LaminarSpan } from "../../tracing/span";
 import { DISABLE_OPENAI_RESPONSES_INSTRUMENTATION_CONTEXT_KEY } from "../openai-agents/helpers";
+import {
+  InstrumentedModule,
+  LaminarInstrumentation,
+  LaminarInstrumentationConfig,
+  PatchedMethod,
+} from "../shared/base";
 import {
   createStreamState,
   finishStream,
@@ -35,19 +35,6 @@ import {
 } from "./utils";
 
 const logger = initializeLogger();
-
-const PATCH_DATA_SYMBOL = Symbol("lmnr.openai.patchData");
-
-type MethodPatchData = {
-  traceContent: boolean;
-  original: (...args: any[]) => any;
-};
-
-// Patch data lives on the exact prototype it wraps, never an inherited one.
-// One prototype can carry several patched methods (`Responses`), so the
-// data is keyed by method name.
-const hasOwnPatchData = (proto: any): boolean =>
-  Object.getOwnPropertyDescriptor(proto, PATCH_DATA_SYMBOL) !== undefined;
 
 const markSpanError = (span: LaminarSpan, error: unknown): void => {
   span.recordException(error as Error);
@@ -267,9 +254,9 @@ const V3_COMPLETION: Handler = {
   unwrapBody: unwrapAxiosBody,
 };
 
-const wrapMethod = (patchData: MethodPatchData, handler: Handler) =>
+const wrapMethod = (patched: PatchedMethod, handler: Handler) =>
   function (this: any, params: any, ...rest: any[]) {
-    const { original } = patchData;
+    const { instrumentation, original } = patched;
     if (
       isTracingSuppressed(context.active()) ||
       (handler.skipForAgents && isDisabledByAgents())
@@ -277,11 +264,11 @@ const wrapMethod = (patchData: MethodPatchData, handler: Handler) =>
       return original.call(this, params, ...rest);
     }
 
-    const traceContent = patchData.traceContent;
-    const span = Laminar.startSpan({
+    const { traceContent } = instrumentation;
+    const span = instrumentation.startSpan({
       name: handler.spanName,
       spanType: "LLM",
-    }) as LaminarSpan;
+    });
     safely(() => handler.setRequest(span, params, this, traceContent));
 
     let result: any;
@@ -357,9 +344,9 @@ const responsesParams = (kind: ResponsesKind, args: any[]): any => {
  * `responses.ts`), so a background response spans from its `create` to the
  * `retrieve` / `cancel` that sees it finish.
  */
-const wrapResponsesMethod = (patchData: MethodPatchData, kind: ResponsesKind) =>
+const wrapResponsesMethod = (patched: PatchedMethod, kind: ResponsesKind) =>
   function (this: any, ...args: any[]) {
-    const { original } = patchData;
+    const { instrumentation, original } = patched;
     if (isTracingSuppressed(context.active()) || isDisabledByAgents()) {
       return original.apply(this, args);
     }
@@ -368,7 +355,7 @@ const wrapResponsesMethod = (patchData: MethodPatchData, kind: ResponsesKind) =>
     const params = responsesParams(kind, args);
     const options: SpanOptions = {
       instance: this,
-      traceContent: patchData.traceContent,
+      instrumentation,
       parentContext: LaminarContextManager.getContext(),
       isRetrieve: kind === "retrieve",
     };
@@ -447,7 +434,7 @@ const resolveV3ApiClass = (mod: any): any => {
 type PatchTarget = {
   proto: any;
   method: string;
-  wrap: (patchData: MethodPatchData) => (...args: any[]) => any;
+  wrap: (patched: PatchedMethod) => (...args: any[]) => any;
 };
 
 const handlerTarget = (
@@ -457,13 +444,13 @@ const handlerTarget = (
 ): PatchTarget => ({
   proto,
   method,
-  wrap: (patchData) => wrapMethod(patchData, handler),
+  wrap: (patched) => wrapMethod(patched, handler),
 });
 
 const responsesTarget = (proto: any, kind: ResponsesKind): PatchTarget => ({
   proto,
   method: kind,
-  wrap: (patchData) => wrapResponsesMethod(patchData, kind),
+  wrap: (patched) => wrapResponsesMethod(patched, kind),
 });
 
 /**
@@ -503,92 +490,33 @@ const patchTargets = (moduleExports: any): PatchTarget[] => {
  *   so they are traced through it without nesting a second span.
  * - openai v3: `OpenAIApi#createChatCompletion` / `createCompletion`.
  */
-export class OpenAIInstrumentation extends InstrumentationBase {
-  private traceContent: boolean;
-
-  constructor(config?: { traceContent?: boolean }) {
-    super("@lmnr/openai-instrumentation", SDK_VERSION, {
-      enabled: true,
-    });
-    this.traceContent = config?.traceContent ?? true;
-  }
-
-  protected init(): InstrumentationModuleDefinition {
-    return new InstrumentationNodeModuleDefinition(
-      "openai",
-      [">=3.1.0"],
-      this.patch.bind(this),
-      this.unpatch.bind(this),
-    );
+export class OpenAIInstrumentation extends LaminarInstrumentation {
+  constructor(config?: LaminarInstrumentationConfig) {
+    super("openai", config);
   }
 
   /**
-   * Accepts the `openai` module namespace or the `OpenAI` class (the
-   * module's default export). For openai v3, the module or its `OpenAIApi`
-   * class.
+   * Manual instrumentation accepts the `openai` module namespace or the
+   * `OpenAI` class (the module's default export). For openai v3, the module
+   * or its `OpenAIApi` class.
    */
-  public manuallyInstrument(module: any): void {
-    if (!patchTargets(module).length) {
-      diag.warn(
-        "Could not find the OpenAI client in openai manual " +
-          "instrumentation input. Pass the openai module.",
-      );
-      return;
-    }
-    diag.debug("Manually instrumenting openai");
-    this.patch(module);
-  }
-
-  private patch(moduleExports: any): any {
-    diag.debug("Patching openai");
-    for (const target of patchTargets(moduleExports)) {
-      this.patchMethod(target);
-    }
-    return moduleExports;
-  }
-
-  private unpatch(moduleExports: any): void {
-    diag.debug("Unpatching openai");
-    for (const { proto, method } of patchTargets(moduleExports)) {
-      if (!proto || !hasOwnPatchData(proto)) continue;
-      const patchData = proto[PATCH_DATA_SYMBOL];
-      if (!patchData[method]) continue;
-      proto[method] = patchData[method].original;
-      delete patchData[method];
-      if (!Object.keys(patchData).length) {
-        delete proto[PATCH_DATA_SYMBOL];
-      }
-    }
-  }
-
-  /**
-   * Replace `proto[method]` with a traced wrapper. Re-patching an already
-   * patched method only refreshes `traceContent`, so repeated
-   * initialization never double-wraps.
-   */
-  private patchMethod({ proto, method, wrap }: PatchTarget): void {
-    if (!proto || typeof proto[method] !== "function") return;
-
-    if (!hasOwnPatchData(proto)) {
-      Object.defineProperty(proto, PATCH_DATA_SYMBOL, {
-        value: {},
-        writable: true,
-        configurable: true,
-        enumerable: false,
-      });
-    }
-    const existing: MethodPatchData | undefined =
-      proto[PATCH_DATA_SYMBOL][method];
-    if (existing) {
-      existing.traceContent = this.traceContent;
-      return;
-    }
-
-    const patchData: MethodPatchData = {
-      traceContent: this.traceContent,
-      original: proto[method],
-    };
-    proto[PATCH_DATA_SYMBOL][method] = patchData;
-    proto[method] = wrap(patchData);
+  protected modules(): InstrumentedModule[] {
+    return [
+      {
+        name: "openai",
+        supportedVersions: [">=3.1.0"],
+        patch: (moduleExports) => {
+          for (const { proto, method, wrap } of patchTargets(moduleExports)) {
+            this.wrapMethod(proto, method, wrap);
+          }
+        },
+        unpatch: (moduleExports) => {
+          for (const { proto, method } of patchTargets(moduleExports)) {
+            this.unwrapMethod(proto, method);
+          }
+        },
+        accepts: (input) => patchTargets(input).length > 0,
+      },
+    ];
   }
 }

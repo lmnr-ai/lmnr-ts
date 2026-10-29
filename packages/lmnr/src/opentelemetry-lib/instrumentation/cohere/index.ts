@@ -1,15 +1,15 @@
-import { context, diag, SpanStatusCode } from "@opentelemetry/api";
+import { context, SpanStatusCode } from "@opentelemetry/api";
 import { isTracingSuppressed } from "@opentelemetry/core";
-import {
-  InstrumentationBase,
-  InstrumentationModuleDefinition,
-  InstrumentationNodeModuleDefinition,
-} from "@opentelemetry/instrumentation";
 
-import { version as SDK_VERSION } from "../../../../package.json";
 import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
 import { LaminarSpan } from "../../tracing/span";
+import {
+  InstrumentedModule,
+  LaminarInstrumentation,
+  LaminarInstrumentationConfig,
+  PatchedMethod,
+} from "../shared/base";
 import {
   ChatStreamAccumulator,
   createV1ChatStreamAccumulator,
@@ -21,18 +21,10 @@ import {
 
 const logger = initializeLogger();
 
-const PATCH_DATA_SYMBOL = Symbol("lmnr.cohere.patchData");
-
 type MethodSpec = {
   method: string;
   requestType: RequestType;
   streaming: boolean;
-};
-
-type MethodPatchData = MethodSpec & {
-  isV2: boolean;
-  traceContent: boolean;
-  original: (...args: any[]) => any;
 };
 
 const SPAN_NAMES: Record<RequestType, string> = {
@@ -57,12 +49,6 @@ const V2_METHODS: MethodSpec[] = [
   { method: "rerank", requestType: "rerank", streaming: false },
   { method: "embed", requestType: "embedding", streaming: false },
 ];
-
-// Patch data lives on the exact prototype it wraps, never an inherited one.
-const ownPatchData = (
-  proto: any,
-): Record<string, MethodPatchData> | undefined =>
-  Object.getOwnPropertyDescriptor(proto, PATCH_DATA_SYMBOL)?.value;
 
 const markSpanError = (span: LaminarSpan, error: unknown): void => {
   span.recordException(error as Error);
@@ -154,125 +140,79 @@ const v2ClientPrototype = (mod: any): any => {
  * `CohereClientV2` binds its methods as instance fields in its constructor,
  * so clients created before instrumentation are not traced.
  */
-export class CohereInstrumentation extends InstrumentationBase {
-  private traceContent: boolean;
-
-  constructor(config?: { traceContent?: boolean }) {
-    super("@lmnr/cohere-instrumentation", SDK_VERSION, {
-      enabled: true,
-    });
-    this.traceContent = config?.traceContent ?? true;
-  }
-
-  protected init(): InstrumentationModuleDefinition {
-    return new InstrumentationNodeModuleDefinition(
-      "cohere-ai",
-      [">=7.0.0"],
-      this.patch.bind(this),
-      this.unpatch.bind(this),
-    );
+export class CohereInstrumentation extends LaminarInstrumentation {
+  constructor(config?: LaminarInstrumentationConfig) {
+    super("cohere", config);
   }
 
   /**
-   * Accepts the `cohere-ai` module namespace (`import * as cohere from
-   * "cohere-ai"`) or its default export.
+   * Manual instrumentation accepts the `cohere-ai` module namespace
+   * (`import * as cohere from "cohere-ai"`) or its default export.
    */
-  public manuallyInstrument(module: any): void {
-    if (!resolveModule(module)) {
-      diag.warn(
-        "Could not find CohereClient in cohere manual instrumentation " +
-          "input. Pass the cohere-ai module.",
-      );
-      return;
-    }
-    diag.debug("Manually instrumenting cohere-ai");
-    this.patch(module);
+  protected modules(): InstrumentedModule[] {
+    return [
+      {
+        name: "cohere-ai",
+        supportedVersions: [">=7.0.0"],
+        patch: (moduleExports) => this.patch(moduleExports),
+        unpatch: (moduleExports) => this.unpatch(moduleExports),
+        accepts: (input) => resolveModule(input) !== undefined,
+      },
+    ];
   }
 
-  private patch(moduleExports: any): any {
-    diag.debug("Patching cohere-ai");
-    for (const { proto, specs, isV2 } of this.targets(moduleExports)) {
+  private patch(moduleExports: any): void {
+    for (const { proto, specs, isV2 } of patchTargets(moduleExports)) {
       for (const spec of specs) {
-        this.patchMethod(definingPrototype(proto, spec.method), spec, isV2);
+        this.wrapMethod(
+          definingPrototype(proto, spec.method),
+          spec.method,
+          (patched) => wrapMethod(patched, spec, isV2),
+        );
       }
     }
-    return moduleExports;
   }
 
   private unpatch(moduleExports: any): void {
-    diag.debug("Unpatching cohere-ai");
-    for (const { proto, specs } of this.targets(moduleExports)) {
+    for (const { proto, specs } of patchTargets(moduleExports)) {
       for (const { method } of specs) {
-        const owner = definingPrototype(proto, method);
-        const patched = owner && ownPatchData(owner);
-        if (!patched?.[method]) continue;
-        owner[method] = patched[method].original;
-        delete patched[method];
+        this.unwrapMethod(definingPrototype(proto, method), method);
       }
     }
   }
-
-  private targets(
-    moduleExports: any,
-  ): { proto: any; specs: MethodSpec[]; isV2: boolean }[] {
-    const mod = resolveModule(moduleExports);
-    if (!mod) return [];
-    const v1 = mod.CohereClient.prototype;
-    const v2 = v2ClientPrototype(mod);
-    const targets = [{ proto: v1, specs: V1_METHODS, isV2: false }];
-    // Guard against an SDK where the v2 client is the v1 class itself.
-    if (v2 && definingPrototype(v2, "chat") !== definingPrototype(v1, "chat")) {
-      targets.push({ proto: v2, specs: V2_METHODS, isV2: true });
-    }
-    return targets;
-  }
-
-  /**
-   * Replace `proto[method]` with a traced wrapper. Re-patching an already
-   * patched method only refreshes `traceContent`, so repeated initialization
-   * never double-wraps.
-   */
-  private patchMethod(proto: any, spec: MethodSpec, isV2: boolean): void {
-    if (!proto) return;
-
-    let patched = ownPatchData(proto);
-    if (patched?.[spec.method]) {
-      patched[spec.method].traceContent = this.traceContent;
-      return;
-    }
-    if (!patched) {
-      patched = {};
-      Object.defineProperty(proto, PATCH_DATA_SYMBOL, {
-        value: patched,
-        writable: true,
-        configurable: true,
-        enumerable: false,
-      });
-    }
-
-    const patchData: MethodPatchData = {
-      ...spec,
-      isV2,
-      traceContent: this.traceContent,
-      original: proto[spec.method],
-    };
-    patched[spec.method] = patchData;
-    proto[spec.method] = wrapMethod(patchData);
-  }
 }
 
-const wrapMethod = (patchData: MethodPatchData) =>
+const patchTargets = (
+  moduleExports: any,
+): { proto: any; specs: MethodSpec[]; isV2: boolean }[] => {
+  const mod = resolveModule(moduleExports);
+  if (!mod) return [];
+  const v1 = mod.CohereClient.prototype;
+  const v2 = v2ClientPrototype(mod);
+  const targets = [{ proto: v1, specs: V1_METHODS, isV2: false }];
+  // Guard against an SDK where the v2 client is the v1 class itself.
+  if (v2 && definingPrototype(v2, "chat") !== definingPrototype(v1, "chat")) {
+    targets.push({ proto: v2, specs: V2_METHODS, isV2: true });
+  }
+  return targets;
+};
+
+const wrapMethod = (
+  patched: PatchedMethod,
+  { requestType, streaming }: MethodSpec,
+  isV2: boolean,
+) =>
   function (this: any, request: any, ...rest: any[]) {
-    const { original, requestType, streaming, isV2 } = patchData;
+    const { instrumentation, original } = patched;
     if (isTracingSuppressed(context.active())) {
       return original.call(this, request, ...rest);
     }
 
-    const traceContent = patchData.traceContent;
-    const span = Laminar.startSpan({
+    const { traceContent } = instrumentation;
+    const span = instrumentation.startSpan({
       name: SPAN_NAMES[requestType],
       spanType: "LLM",
-    }) as LaminarSpan;
+    });
     safely(() =>
       setRequestAttributes(
         span,
