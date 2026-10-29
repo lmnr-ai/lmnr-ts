@@ -570,6 +570,41 @@ void describe("LaminarReporter for eve evals", () => {
     assert.deepStrictEqual(indices, [1, 0]);
   });
 
+  void it("sends the eval id as taskId and keeps it across attempts", async () => {
+    mockInit();
+    const points: RequestBody[] = [];
+    nock(NOCK_URL)
+      .post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`, (body: RequestBody) => {
+        points.push(body.points[0]);
+        return true;
+      })
+      .twice()
+      .reply(200, {});
+    nock(NOCK_URL)
+      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`))
+      .twice()
+      .reply(200, {});
+
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    for (const attempt of [1, 2]) {
+      await reporter.onEvalComplete({
+        id: "a",
+        attempt,
+        verdict: "passed",
+        result: {},
+      });
+    }
+
+    assert.deepStrictEqual(
+      points.map((p) => [p.taskId, p.index, p.metadata.attempt]),
+      [
+        ["a", 0, 1],
+        ["a", 0, 2],
+      ],
+    );
+  });
+
   void it("keeps discovery indexes unique across concurrent completions", async () => {
     mockInit();
     const indices = new Map<string, number>();

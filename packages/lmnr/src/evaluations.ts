@@ -88,6 +88,13 @@ interface EvaluationConfig {
    */
   concurrencyLimit?: number;
   /**
+   * How many Trials (independent executions) to run per Task. Each Trial gets
+   * its own trace and datapoint id; all Trials of a Task share its `taskId`
+   * and `index`.
+   * Must be a positive integer. Defaults to 1.
+   */
+  trials?: number;
+  /**
    * The project API key to use for the evaluation. If not provided,
    * the API key from the environment variable `LMNR_PROJECT_API_KEY` will be used.
    */
@@ -142,6 +149,38 @@ interface EvaluationConfig {
 }
 
 /**
+ * Returns a resolver that makes Task ids unique within one run. A later source
+ * datapoint whose id is already taken is renamed `id#2`, `id#3`, ...; the same
+ * source datapoint seen again (e.g. `select([0, 0])`) keeps its id, since
+ * those are Trials of one Task.
+ */
+const createTaskIdResolver = () => {
+  const taskIdBySource = new Map<number, string>();
+  const takenTaskIds = new Set<string>();
+  let warned = false;
+  return (requested: string, sourceIndex: number): string => {
+    const existing = taskIdBySource.get(sourceIndex);
+    if (existing !== undefined) {
+      return existing;
+    }
+    let taskId = requested;
+    for (let n = 2; takenTaskIds.has(taskId); n++) {
+      taskId = `${requested}#${n}`;
+    }
+    if (taskId !== requested && !warned) {
+      warned = true;
+      logger.warn(
+        `Duplicate taskId "${requested}" across different datapoints; ` +
+          `renamed to "${taskId}". Later duplicates are renamed the same way.`,
+      );
+    }
+    taskIdBySource.set(sourceIndex, taskId);
+    takenTaskIds.add(taskId);
+    return taskId;
+  };
+};
+
+/**
  * Datapoint is a single data point in the evaluation. `D` is the type of the input data,
  * `T` is the type of the target data.
  */
@@ -163,6 +202,12 @@ export type Datapoint<D, T> = {
    * Optional ID of the datapoint (from dataset)
    */
   id?: StringUUID;
+  /**
+   * Optional stable id of the Task (test case) this datapoint represents.
+   * Defaults to the dataset row's `taskId`, then to the datapoint's position
+   * in the source data (before `take` / `select` / `shuffle`).
+   */
+  taskId?: string;
   /**
    * Optional creation timestamp (from dataset)
    */
@@ -314,6 +359,7 @@ export class Evaluation<D, T, O> {
   private name?: string;
   private metadata?: Record<string, any>;
   private concurrencyLimit: number = DEFAULT_CONCURRENCY;
+  private trials: number = 1;
   private traceDisableBatch: boolean = false;
   private traceExportTimeoutMillis?: number;
   private traceExportBatchSize: number = MAX_EXPORT_BATCH_SIZE;
@@ -350,6 +396,16 @@ export class Evaluation<D, T, O> {
         );
       }
     }
+
+    if (
+      config?.trials !== undefined &&
+      (!Number.isInteger(config.trials) || config.trials < 1)
+    ) {
+      throw new Error(
+        `trials must be a positive integer, got ${config.trials}`,
+      );
+    }
+    this.trials = config?.trials ?? 1;
 
     this.frontendPort = config?.frontendPort;
     this.progressReporter = new EvaluationReporter(
@@ -484,7 +540,7 @@ export class Evaluation<D, T, O> {
         this.frontendPort,
       );
       process.stdout.write(`\nCheck results at ${url}\n`);
-      this.progressReporter.start({ length });
+      this.progressReporter.start({ length: length * this.trials });
 
       const averageScores = await this.evaluateInBatches(evaluation.id);
       // Wait for all background saves. Their failures were recorded rather
@@ -557,9 +613,15 @@ export class Evaluation<D, T, O> {
       const evaluateTask = async (
         datapoint: Datapoint<D, T>,
         index: number,
+        taskId: string,
       ): Promise<void> => {
         try {
-          const result = await this.evaluateDatapoint(evalId, datapoint, index);
+          const result = await this.evaluateDatapoint(
+            evalId,
+            datapoint,
+            index,
+            taskId,
+          );
           for (const [key, value] of Object.entries(result.scores ?? {})) {
             if (value === null) {
               continue;
@@ -584,13 +646,30 @@ export class Evaluation<D, T, O> {
       // each page once consumed, so a huge dataset is never fully resident.
       // The semaphore is acquired before a task is created, so at most
       // `concurrencyLimit` datapoints are in flight (and referenced) at once.
-      let index = 0;
-      for await (const datapoint of this.data) {
-        await semaphore.acquire();
-        const task: Promise<void> = evaluateTask(datapoint, index++).finally(
-          () => inFlight.delete(task),
+      // Task ids are resolved in iteration order, so renames are
+      // deterministic. Trials of one datapoint share its index.
+      const resolveTaskId = createTaskIdResolver();
+      const data = this.data;
+      let viewIndex = 0;
+      for await (const datapoint of data) {
+        const sourceIndex =
+          data instanceof EvaluationDataset
+            ? await data.sourceIndex(viewIndex)
+            : viewIndex;
+        const taskId = resolveTaskId(
+          datapoint.taskId ?? String(sourceIndex),
+          sourceIndex,
         );
-        inFlight.add(task);
+        for (let trial = 0; trial < this.trials; trial++) {
+          await semaphore.acquire();
+          const task: Promise<void> = evaluateTask(
+            datapoint,
+            viewIndex,
+            taskId,
+          ).finally(() => inFlight.delete(task));
+          inFlight.add(task);
+        }
+        viewIndex++;
       }
       await Promise.all(inFlight);
 
@@ -629,6 +708,7 @@ export class Evaluation<D, T, O> {
     evalId: StringUUID,
     datapoint: Datapoint<D, T>,
     index: number,
+    taskId: string,
   ): Promise<EvaluationDatapoint<D, T, O>> {
     return observe(
       { name: "evaluation", traceType: "EVALUATION" },
@@ -656,6 +736,7 @@ export class Evaluation<D, T, O> {
           ),
           executorSpanId,
           index,
+          taskId,
         } as EvaluationDatapoint<D, T, O>;
 
         // Add dataset link if data comes from a (possibly chained) remote
@@ -750,6 +831,7 @@ export class Evaluation<D, T, O> {
           ),
           executorSpanId,
           index,
+          taskId,
         } as EvaluationDatapoint<D, T, O>;
 
         // Add dataset link if data comes from a (possibly chained) remote

@@ -150,6 +150,8 @@ export type EveEvalVerdict = "passed" | "failed" | "scored" | "skipped";
 export interface EveEvalResult {
   /** Path-derived eval id (e.g. "weather"). */
   id?: string;
+  /** 1-based attempt number, present only when the run repeats evals. */
+  attempt?: number;
   /** Execution result (output, session, derived facts). */
   result?: EveEvalTaskResult;
   /** Every assertion recorded by the eval's `test(t)`, in record order. */
@@ -471,9 +473,13 @@ export class LaminarReporter implements EvalReporter {
         data: result.id ?? null,
         target: task.finalMessage ?? null,
         index,
+        // Repeated attempts of one eval share its id: they are Trials of one
+        // Task, never renamed.
+        taskId: typeof result.id === "string" ? result.id : undefined,
         traceId: gradeTrace.traceId,
         metadata: {
           name: result.id,
+          attempt: result.attempt,
           verdict: result.verdict,
           status: task.status,
           description: evalDescription,

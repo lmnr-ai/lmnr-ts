@@ -5,6 +5,7 @@ import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
 import nock from "nock";
 
 import {
+  Dataset,
   evaluate,
   HumanEvaluator,
   Laminar,
@@ -87,6 +88,7 @@ void describe("evaluate", () => {
     assert.strictEqual(point.data.length, 150);
     assert.strictEqual(point.target.length, 150);
     assert.strictEqual(point.index, 0);
+    assert.strictEqual(point.taskId, "0");
     assert.deepStrictEqual(point.metadata, { test: "test" });
     assert.deepStrictEqual(point.scores, { test2: 0, test: 0 });
 
@@ -436,6 +438,115 @@ void describe("evaluate streaming", () => {
     assert.deepStrictEqual(pulledOffsets, [0, 2, 4]);
     const pages = (dataset as unknown as { pages: Map<number, unknown> }).pages;
     assert.deepStrictEqual([...pages.keys()], [0]);
+  });
+
+  const captureResultSaves = () => {
+    const saved: RequestBody[] = [];
+    nock(baseUrl)
+      .post(`/v1/evals/${mockEvalId}/datapoints`, (body: RequestBody) => {
+        if (isResultSave(body)) {
+          saved.push(...body.points);
+        }
+        return true;
+      })
+      .reply(200, {})
+      .persist();
+    return saved;
+  };
+
+  void it("runs each Task `trials` times sharing its index and renames duplicate taskIds", async () => {
+    mockEvalInit();
+    const saved = captureResultSaves();
+
+    const result = await evaluate({
+      data: [{ data: 0, taskId: "x" }, { data: 1, taskId: "x" }, { data: 2 }],
+      executor: (data: number) => data,
+      evaluators: { value: (output: number) => output },
+      config: { projectApiKey: "test", trials: 2 },
+    });
+
+    assert.strictEqual(result?.errorMessage, undefined);
+    const byIndex = saved.sort((a, b) => a.index - b.index);
+    assert.deepStrictEqual(
+      byIndex.map((p) => [p.index, p.data, p.taskId]),
+      [
+        [0, 0, "x"],
+        [0, 0, "x"],
+        [1, 1, "x#2"],
+        [1, 1, "x#2"],
+        [2, 2, "2"],
+        [2, 2, "2"],
+      ],
+    );
+    assert.strictEqual(new Set(byIndex.map((p) => p.id)).size, 6);
+    assert.strictEqual(new Set(byIndex.map((p) => p.traceId)).size, 6);
+  });
+
+  for (const [input, expected] of [
+    [
+      ["foo", "foo", "foo#2", "foo"],
+      ["foo", "foo#2", "foo#2#2", "foo#3"],
+    ],
+    [
+      ["foo", "foo#2", "foo"],
+      ["foo", "foo#2", "foo#3"],
+    ],
+  ]) {
+    void it(`renames duplicate taskIds ${input.join(",")} to unused ids`, async () => {
+      mockEvalInit();
+      const saved = captureResultSaves();
+
+      await evaluate({
+        data: input.map((taskId, data) => ({ data, taskId })),
+        executor: (data: number) => data,
+        evaluators: { value: (output: number) => output },
+        config: { projectApiKey: "test", concurrencyLimit: 1 },
+      });
+
+      assert.deepStrictEqual(
+        saved.sort((a, b) => a.index - b.index).map((p) => p.taskId),
+        expected,
+      );
+    });
+  }
+
+  void it("defaults taskId to the source index through chained transforms", async () => {
+    mockEvalInit();
+    const saved = captureResultSaves();
+
+    class ArrayDataset extends Dataset<number, number> {
+      size = () => 4;
+      get = (i: number) => ({ data: i * 10 });
+    }
+
+    await evaluate({
+      // The same source datapoint selected twice is two Trials, not renamed.
+      data: new ArrayDataset().select([3, 1, 3, 2]).take(3),
+      executor: (data: number) => data,
+      evaluators: { value: (output: number) => output },
+      config: { projectApiKey: "test" },
+    });
+
+    assert.deepStrictEqual(
+      saved.sort((a, b) => a.index - b.index).map((p) => [p.data, p.taskId]),
+      [
+        [30, "3"],
+        [10, "1"],
+        [30, "3"],
+      ],
+    );
+  });
+
+  void it("rejects a non-integer trials count", async () => {
+    await assert.rejects(
+      evaluate({
+        data: [{ data: 0 }],
+        executor: (data: number) => data,
+        evaluators: { value: (output: number) => output },
+        config: { projectApiKey: "test", trials: 1.5 },
+      }),
+      /trials must be a positive integer/,
+    );
   });
 
   void it("keeps up to concurrencyLimit datapoints in flight", async () => {

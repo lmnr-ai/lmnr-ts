@@ -33,6 +33,8 @@ export type EvaluationDatapoint<D, T, O> = {
   scores?: Record<string, number | null>;
   traceId: string;
   index: number;
+  /** Identifies the Task (test case); every Trial of a Task shares it. */
+  taskId?: string;
   executorSpanId?: string;
   datasetLink?: EvaluationDatapointDatasetLink;
 };
@@ -42,6 +44,8 @@ export interface Datapoint<D = any, T = any> {
   data: D;
   target?: T;
   metadata?: Record<string, any>;
+  /** Stable Task id. Missing on datapoints pulled from older servers. */
+  taskId?: string;
 }
 
 export type GetDatapointsResponse<D, T> = {

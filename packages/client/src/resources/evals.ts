@@ -125,6 +125,7 @@ export class EvalsResource extends BaseResource {
    * @param {T} [options.target] - The target/expected output for evaluators
    * @param {Record<string, any>} [options.metadata] - Optional metadata
    * @param {number} [options.index] - Optional index of the datapoint
+   * @param {string} [options.taskId] - Optional Task id shared by every Trial of the Task
    * @param {string} [options.traceId] - Optional trace ID
    * @returns {Promise<StringUUID>} The datapoint ID
    */
@@ -134,6 +135,7 @@ export class EvalsResource extends BaseResource {
     target,
     metadata,
     index,
+    taskId,
     traceId,
   }: {
     evalId: string;
@@ -141,6 +143,7 @@ export class EvalsResource extends BaseResource {
     target?: T;
     metadata?: Record<string, any>;
     index?: number;
+    taskId?: string;
     traceId?: string;
   }): Promise<StringUUID> {
     const datapointId = newUUID();
@@ -150,6 +153,7 @@ export class EvalsResource extends BaseResource {
       data,
       target,
       index: index ?? 0,
+      taskId,
       traceId: traceId ?? newUUID(),
       executorSpanId: newUUID(),
       metadata,
