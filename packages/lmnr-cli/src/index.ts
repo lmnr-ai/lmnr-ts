@@ -9,6 +9,13 @@ import {
   withProjectClient,
   withUserToken,
 } from "./auth/with-client";
+import {
+  handleAlertCreate,
+  handleAlertDelete,
+  handleAlertGet,
+  handleAlertList,
+  handleAlertUpdate,
+} from "./commands/alert";
 import { handleAsk } from "./commands/ask";
 import {
   handleDatasetDelete,
@@ -740,6 +747,174 @@ through the profile — re-route or delete those signals first.
 
 Examples:
   $ lmnr-cli llm-profile delete 3f6c9f1e-8f4b-4b0e-9d3a-2f4f4a6d8b11
+`,
+    );
+
+  const alertCmd = program
+    .command("alert")
+    .alias("alerts")
+    .description("Manage alerts that notify you when a signal fires")
+    .option(
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+        "Run `lmnr-cli login` first.",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option("--json", "Output structured JSON to stdout");
+
+  const ALERT_FILTER_HELP = `
+Filters (SIGNAL_EVENT only) run on the signal's extracted output: each column
+is one of the signal's payload fields (see \`lmnr-cli signal get <signal>\`).
+  --filter '<condition>'        repeatable; the conditions are ANDed together
+  --filter-group '[<cond>,...]' repeatable; each group is OR'ed with the rest
+A condition is {"column": "<field>", "operator": "<op>", "value": ...} with op
+one of eq | ne | gt | gte | lt | lte | includes | not_includes. The alert fires
+when every condition of at least one group matches. No filters = every event.
+`;
+
+  /** Flags shared by create and update; update adds the clearing negations. */
+  const addAlertShapeOptions = (cmd: Command): Command =>
+    cmd
+      .option("--name <name>", "Alert name")
+      .option(
+        "--severity <level>",
+        "info | warning | critical (repeatable). SIGNAL_EVENT alerts fire on " +
+          "events with these severities",
+        collectFlag,
+      )
+      .option(
+        "--skip-similar",
+        "Skip events similar to recent ones (needs clustering)",
+      )
+      .option("--no-skip-similar", "Notify on every matching event")
+      .option("--disabled", "Deactivate the alert")
+      .option("--no-disabled", "Activate the alert")
+      .option("--notify-me", "Send the alert to your email")
+      .option("--no-notify-me", "Don't send the alert to your email")
+      .option(
+        "--slack-channel <channel>",
+        "Slack channel id or #name in the connected workspace (repeatable). " +
+          "On update, REPLACES every Slack target",
+        collectFlag,
+      )
+      .option(
+        "--filter <json>",
+        "Filter condition on the signal's output (repeatable, ANDed)",
+        collectFlag,
+      )
+      .option(
+        "--filter-group <json>",
+        "JSON array of ANDed conditions; groups are OR'ed (repeatable)",
+        collectFlag,
+      );
+
+  alertCmd
+    .command("list")
+    .description("List alerts with their targets")
+    .option("--signal <signal>", "Only this signal's alerts (id or name)")
+    .action(withProjectClient(handleAlertList))
+    .addHelpText(
+      "after",
+      `
+Targets show "me" when your email is subscribed, plus each Slack channel.
+Other members' email subscriptions are never shown.
+
+Examples:
+  $ lmnr-cli alert list
+  $ lmnr-cli alert list --signal "Refund requests" --json
+`,
+    );
+
+  alertCmd
+    .command("get")
+    .description("Show one alert")
+    .argument("<alert-id>", "Alert id (see `lmnr-cli alert list`)")
+    .action(withProjectClient(handleAlertGet))
+    .addHelpText(
+      "after",
+      `
+Examples:
+  $ lmnr-cli alert get 1e0c7a4b-5d1f-4a43-9b8e-2f6e1c3d9a10 --json
+`,
+    );
+
+  addAlertShapeOptions(
+    alertCmd
+      .command("create")
+      .description("Create an alert on a signal")
+      .argument("<signal>", "Signal id or name")
+      .option(
+        "--type <type>",
+        "signal-event (each new event, default) | new-cluster (events form " +
+          "a new cluster; needs clustering)",
+      ),
+  )
+    .action(withProjectClient(handleAlertCreate))
+    .addHelpText(
+      "after",
+      `
+Defaults: name "<signal> alert", type signal-event, severity critical, and
+your email subscribed (pass --no-notify-me to skip it). Slack channels must be
+in the workspace's connected Slack (Settings → Integrations).
+${ALERT_FILTER_HELP}
+Examples:
+  $ lmnr-cli alert create "Refund requests"
+  $ lmnr-cli alert create "Refund requests" --name "Refunds → #support" \\
+      --severity warning --severity critical --slack-channel '#support'
+  $ lmnr-cli alert create "Refund requests" \\
+      --filter '{"column":"category","operator":"eq","value":"chargeback"}'
+  $ lmnr-cli alert create "Refund requests" --type new-cluster --no-notify-me \\
+      --slack-channel C0123456789
+`,
+    );
+
+  addAlertShapeOptions(
+    alertCmd
+      .command("update")
+      .description("Update an alert (only the flags you pass change)")
+      .argument("<alert-id>", "Alert id (see `lmnr-cli alert list`)")
+      .option("--no-slack-channels", "Remove every Slack target")
+      .option("--no-filters", "Remove every filter (fire on every event)"),
+  )
+    .action(withProjectClient(handleAlertUpdate))
+    .addHelpText(
+      "after",
+      `
+Partial update: omitted flags keep their stored values. --severity replaces
+the severity list, --slack-channel replaces every Slack target, and --filter /
+--filter-group replace every filter. --[no-]notify-me only adds or removes
+YOUR email; other members' subscriptions are untouched. The type and signal
+can't change: delete and re-create instead.
+${ALERT_FILTER_HELP}
+Examples:
+  $ lmnr-cli alert update 1e0c7a4b-... --disabled
+  $ lmnr-cli alert update 1e0c7a4b-... --severity info --severity warning
+  $ lmnr-cli alert update 1e0c7a4b-... --slack-channel '#oncall' --no-notify-me
+  $ lmnr-cli alert update 1e0c7a4b-... --no-filters
+`,
+    );
+
+  alertCmd
+    .command("delete")
+    .description("Delete an alert with its targets and filters")
+    .argument("<alert-id>", "Alert id (see `lmnr-cli alert list`)")
+    .action(withProjectClient(handleAlertDelete))
+    .addHelpText(
+      "after",
+      `
+Deletion is permanent and unsubscribes everyone, not just you. To stop only
+your own emails, use \`lmnr-cli alert update <alert-id> --no-notify-me\`.
+
+Examples:
+  $ lmnr-cli alert delete 1e0c7a4b-5d1f-4a43-9b8e-2f6e1c3d9a10
 `,
     );
 
