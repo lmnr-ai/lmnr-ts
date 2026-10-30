@@ -160,7 +160,7 @@ void describe("LaminarReporter for eve evals", () => {
     scope.done();
   });
 
-  void it("links a datapoint to eve's primary native trace", async () => {
+  void it("links a Trial to eve's primary native trace", async () => {
     mockInit();
     const requests = mockDatapoint();
     const reporter = makeReporter();
@@ -350,7 +350,7 @@ void describe("LaminarReporter for eve evals", () => {
     requests.done();
   });
 
-  void it("reports a datapoint when derived tool calls are not an array", async () => {
+  void it("reports a Trial when derived tool calls are not an array", async () => {
     mockInit();
     const requests = mockDatapoint();
     const reporter = makeReporter();
@@ -570,6 +570,41 @@ void describe("LaminarReporter for eve evals", () => {
     assert.deepStrictEqual(indices, [1, 0]);
   });
 
+  void it("sends the eval id as taskId and keeps it across Trials", async () => {
+    mockInit();
+    const points: RequestBody[] = [];
+    nock(NOCK_URL)
+      .post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`, (body: RequestBody) => {
+        points.push(body.points[0]);
+        return true;
+      })
+      .twice()
+      .reply(200, {});
+    nock(NOCK_URL)
+      .post(new RegExp(`/v1/evals/${MOCK_EVAL_ID}/datapoints/.+`))
+      .twice()
+      .reply(200, {});
+
+    const reporter = makeReporter();
+    await reporter.onRunStart([{ id: "a" }], {});
+    for (const trial of [1, 2]) {
+      await reporter.onEvalComplete({
+        id: "a",
+        attempt: trial,
+        verdict: "passed",
+        result: {},
+      });
+    }
+
+    assert.deepStrictEqual(
+      points.map((p) => [p.taskId, p.index, p.metadata.attempt]),
+      [
+        ["a", 0, 1],
+        ["a", 0, 2],
+      ],
+    );
+  });
+
   void it("keeps discovery indexes unique across concurrent completions", async () => {
     mockInit();
     const indices = new Map<string, number>();
@@ -622,7 +657,7 @@ void describe("LaminarReporter for eve evals", () => {
     assert.deepStrictEqual(exporter.getFinishedSpans(), []);
   });
 
-  void it("swallows datapoint errors so reporting never breaks the run", async () => {
+  void it("swallows Trial reporting errors so reporting never breaks the run", async () => {
     mockInit();
     nock(NOCK_URL)
       .post(`/v1/evals/${MOCK_EVAL_ID}/datapoints`)
@@ -664,7 +699,7 @@ void describe("LaminarReporter for eve evals", () => {
     assert.deepStrictEqual(nock.pendingMocks(), []);
   });
 
-  void it("fuzzes JSON-safe callback payloads without losing datapoints", async () => {
+  void it("fuzzes JSON-safe callback payloads without losing Trials", async () => {
     mockInit();
     let created = 0;
     let updated = 0;
@@ -731,7 +766,7 @@ void describe("LaminarReporter for eve evals", () => {
       assert.strictEqual(
         created,
         i + 1,
-        `datapoint missing at seed=317 iteration=${i}`,
+        `Trial missing at seed=317 iteration=${i}`,
       );
       assert.strictEqual(
         updated,

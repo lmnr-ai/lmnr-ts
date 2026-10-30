@@ -37,6 +37,13 @@ export abstract class EvaluationDataset<D, T> {
     }
   }
 
+  // Position of view `index` in the original source data, resolved through any
+  // depth of chaining. It is the default Task id, so it must not depend on
+  // `take` / `select` / `shuffle`.
+  public async sourceIndex(index: number): Promise<number> {
+    return index;
+  }
+
   // The underlying remote-backed source dataset, resolved through any depth of
   // chaining. `undefined` when the dataset has no remote source.
   public sourceDataset(): LaminarDataset<D, T> | undefined {
@@ -139,6 +146,11 @@ export class Transformed<D, T> extends EvaluationDataset<D, T> {
       );
     }
     return await this.base.get(indices[index]);
+  }
+
+  public async sourceIndex(index: number): Promise<number> {
+    const indices = await this.resolveIndices();
+    return await this.base.sourceIndex(indices[index]);
   }
 
   public sourceDataset(): LaminarDataset<D, T> | undefined {
