@@ -24,12 +24,14 @@ import {
   findTaskImages,
   type ImageDef,
   loadImageDefs,
+  localImageDefs,
 } from "./images";
 import { parsePositiveInt } from "./index";
 import { packEvalsDir } from "./pack";
 import {
   buildJobConfig,
   discoverSuites,
+  findTaskTomls,
   findTemplateVars,
   globToRegExp,
   LAMINAR_ENVIRONMENT_IMPORT_PATH,
@@ -205,17 +207,27 @@ void describe("template env", () => {
   void it("finds ${VAR} placeholders in harbor.yaml and task.toml", async () => {
     await write(
       "s/harbor.yaml",
-      "agents:\n  - env:\n      OPENAI_API_KEY: ${OPENAI_API_KEY}\n      M: ${MODEL:-gpt}\n",
+      "agents:\n  - env:\n      OPENAI_API_KEY: ${OPENAI_API_KEY}\n      M: ${MODEL:-gpt}\n" +
+        "datasets:\n  - path: tasks\n",
     );
     await write(
       "s/tasks/t/task.toml",
       '[verifier.env]\nJUDGE_KEY = "${JUDGE_KEY}"\n',
     );
     await write("s/jobs/old/task.toml", '[x]\nY = "${IGNORED}"\n');
+    await write("s/tasks/other/task.toml", '[x]\nY = "${OTHER_KEY}"\n');
 
-    const vars = await findTemplateVars(path.join(root, "s"));
-    expect([...vars.required].sort()).toEqual(["JUDGE_KEY", "OPENAI_API_KEY"]);
+    const vars = await findTemplateVars(path.join(root, "s"), {});
+    expect([...vars.required].sort()).toEqual([
+      "JUDGE_KEY",
+      "OPENAI_API_KEY",
+      "OTHER_KEY",
+    ]);
     expect([...vars.optional]).toEqual(["MODEL"]);
+
+    // A task --task leaves out doesn't need its variables.
+    const only = await findTemplateVars(path.join(root, "s"), { tasks: ["t"] });
+    expect([...only.required].sort()).toEqual(["JUDGE_KEY", "OPENAI_API_KEY"]);
   });
 
   void it("resolves from the process env, then .env files, and lists missing ones", async () => {
@@ -347,7 +359,7 @@ void describe("images", () => {
   });
 
   void it("finds per-task Dockerfiles and the docker_images tasks use", async () => {
-    await write("s/harbor.yaml", "agents: []\n");
+    await write("s/harbor.yaml", "datasets:\n  - path: tasks\n");
     await write("s/tasks/own/task.toml", "[environment]\ncpus = 1\n");
     await write("s/tasks/own/environment/Dockerfile", "FROM alpine");
     await write(
@@ -365,7 +377,7 @@ void describe("images", () => {
     );
     await write("s/tasks/data-only/task.toml", "");
 
-    const found = await findTaskImages(path.join(root, "s"));
+    const found = await findTaskImages(path.join(root, "s"), {});
     expect(found.dockerfiles).toEqual([
       path.join(root, "s/tasks/own/environment"),
     ]);
@@ -373,7 +385,10 @@ void describe("images", () => {
   });
 
   void it("uses a task's own Dockerfile over its docker_image with force_build", async () => {
-    await write("s/harbor.yaml", "environment:\n  force_build: true\n");
+    await write(
+      "s/harbor.yaml",
+      "environment:\n  force_build: true\ndatasets:\n  - path: tasks\n",
+    );
     await write(
       "s/tasks/shared/task.toml",
       '[environment]\ndocker_image = "app-evals"\n',
@@ -384,7 +399,7 @@ void describe("images", () => {
       '[environment]\ndocker_image = "python:3.12-slim"\n',
     );
 
-    const found = await findTaskImages(path.join(root, "s"));
+    const found = await findTaskImages(path.join(root, "s"), {});
     expect(found.dockerfiles).toEqual([
       path.join(root, "s/tasks/shared/environment"),
     ]);
@@ -399,7 +414,7 @@ void describe("images", () => {
         "  unused:\n    dockerfile: unused/Dockerfile\n",
     );
     for (const suite of ["a", "b"]) {
-      await write(`evals/${suite}/harbor.yaml`, "agents: []\n");
+      await write(`evals/${suite}/harbor.yaml`, "datasets:\n  - path: tasks\n");
       await write(
         `evals/${suite}/tasks/shared/task.toml`,
         '[environment]\ndocker_image = "app-evals"\n',
@@ -426,6 +441,7 @@ void describe("images", () => {
     const pushed = await ensureRemoteImages(
       path.join(root, "evals"),
       ["a", "b"],
+      {},
       pusher,
     );
     // `unused` is in lmnr.yaml but no task references it: never built.
@@ -444,6 +460,93 @@ void describe("images", () => {
         b: {},
       },
     });
+  });
+
+  void it("lists only the tasks the run includes, as Harbor resolves them", async () => {
+    await write(
+      "s/harbor.yaml",
+      [
+        "datasets:",
+        "  - path: tasks",
+        "    exclude_task_names: [skip-*]",
+        "  - name: terminal-bench",
+        "tasks:",
+        "  - path: ../shared/extra",
+        "  - name: org/registry-task",
+        "",
+      ].join("\n"),
+    );
+    for (const task of ["a-1", "a-2", "b-1", "skip-me"]) {
+      await write(`s/tasks/${task}/task.toml`, "");
+    }
+    await write("s/tasks/notes/README.md");
+    await write("s/unreferenced/task.toml", "");
+    await write("shared/extra/task.toml", "");
+    const suite = path.join(root, "s");
+    const rel = async (overrides: object) =>
+      (await findTaskTomls(suite, overrides)).map((f) =>
+        path.relative(root, path.dirname(f)).split(path.sep).join("/"),
+      );
+
+    expect(await rel({})).toEqual([
+      "s/tasks/a-1",
+      "s/tasks/a-2",
+      "s/tasks/b-1",
+      "shared/extra",
+    ]);
+    // --task replaces the datasets' task_names and filters `tasks` by name.
+    expect(await rel({ tasks: ["a-*"] })).toEqual([
+      "s/tasks/a-1",
+      "s/tasks/a-2",
+    ]);
+    expect(await rel({ tasks: ["extra", "skip-me"] })).toEqual([
+      "shared/extra",
+    ]);
+  });
+
+  void it("builds and pushes only the images of the tasks --task selects", async () => {
+    await write(
+      "evals/lmnr.yaml",
+      "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n" +
+        "  other:\n    dockerfile: other/Dockerfile\n",
+    );
+    await write("evals/s/harbor.yaml", "datasets:\n  - path: tasks\n");
+    await write(
+      "evals/s/tasks/app/task.toml",
+      '[environment]\ndocker_image = "app-evals"\n',
+    );
+    await write(
+      "evals/s/tasks/other/task.toml",
+      '[environment]\ndocker_image = "other"\n',
+    );
+    await write("evals/s/tasks/own/task.toml", "");
+    await write("evals/s/tasks/own/environment/Dockerfile", "FROM alpine");
+    const evals = path.join(root, "evals");
+    const built: string[] = [];
+    const pusher = {
+      build: async (def: ImageDef) => {
+        built.push(def.name);
+        return `sha256:${def.name}`;
+      },
+      pull: async (ref: string) => `sha256:${ref}`,
+    };
+
+    const pushed = await ensureRemoteImages(
+      evals,
+      ["s"],
+      { tasks: ["app"] },
+      pusher,
+    );
+    expect(built).toEqual(["app-evals"]);
+    expect(pushed).toEqual({
+      images: { "app-evals": "sha256:app-evals" },
+      dockerfiles: { s: {} },
+    });
+
+    const local = await localImageDefs(evals, ["s"], { tasks: ["app"] });
+    expect(local.map((def) => def.name)).toEqual(["app-evals"]);
+    const all = await localImageDefs(evals, ["s"], {});
+    expect(all.map((def) => def.name).sort()).toEqual(["app-evals", "other"]);
   });
 
   void it("keys per-task Dockerfiles with / on every OS", () => {

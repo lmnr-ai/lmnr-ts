@@ -4,7 +4,7 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 
 import { invalidEvalsDir } from "../../errors";
-import { findTaskTomls, loadSuiteConfig } from "./suites";
+import { findTaskTomls, loadSuiteConfig, type RunOverrides } from "./suites";
 
 /** Optional evals-folder config: the images tasks reference by `docker_image`. */
 const LMNR_EVALS_CONFIG = "lmnr.yaml";
@@ -71,6 +71,23 @@ export const loadImageDefs = async (evalsDir: string): Promise<ImageDef[]> => {
   return defs;
 };
 
+/**
+ * The `lmnr.yaml` images a local run's tasks start from. Harbor builds per-task
+ * Dockerfiles and pulls other images itself.
+ */
+export const localImageDefs = async (
+  evalsDir: string,
+  suites: string[],
+  overrides: RunOverrides,
+): Promise<ImageDef[]> => {
+  const used = new Set<string>();
+  for (const suite of suites) {
+    const tasks = await findTaskImages(path.join(evalsDir, suite), overrides);
+    for (const image of tasks.images) used.add(image);
+  }
+  return (await loadImageDefs(evalsDir)).filter((def) => used.has(def.name));
+};
+
 const DOCKER_IMAGE = /^\s*docker_image\s*=\s*["']([^"']+)["']/m;
 
 interface TaskImages {
@@ -81,20 +98,24 @@ interface TaskImages {
 }
 
 /**
- * What the suite's tasks start from, as Harbor decides it
+ * What the run's tasks in this suite start from (`findTaskTomls`, so `--task`
+ * applies), as Harbor decides it
  * (`should_use_prebuilt_docker_image`): a task's `docker_image`, unless the
  * suite sets `environment.force_build` and the task has its own
  * `environment/Dockerfile`, which is otherwise used only without a
  * `docker_image`.
  */
-export const findTaskImages = async (suiteDir: string): Promise<TaskImages> => {
+export const findTaskImages = async (
+  suiteDir: string,
+  overrides: RunOverrides,
+): Promise<TaskImages> => {
   const environment = (await loadSuiteConfig(suiteDir)).environment as
     | { force_build?: unknown }
     | undefined;
   const forceBuild = environment?.force_build === true;
   const dockerfiles: string[] = [];
   const images = new Set<string>();
-  for (const toml of await findTaskTomls(suiteDir)) {
+  for (const toml of await findTaskTomls(suiteDir, overrides)) {
     const image = DOCKER_IMAGE.exec(await readFile(toml, "utf8"))?.[1];
     const envDir = path.join(path.dirname(toml), "environment");
     const hasDockerfile = await stat(path.join(envDir, "Dockerfile")).then(
@@ -119,13 +140,14 @@ export const dockerfileKey = (
 ): string => paths.relative(suiteDir, envDir).split(paths.sep).join("/");
 
 /**
- * Push every image the suites' tasks use, so Laminar sandboxes can start from
+ * Push every image the run's tasks use, so Laminar sandboxes can start from
  * them: per-task Dockerfiles and the `lmnr.yaml` images tasks reference are
  * built here, other `docker_image`s are pulled. Each is pushed once per run.
  */
 export const ensureRemoteImages = async (
   evalsDir: string,
   suites: string[],
+  overrides: RunOverrides,
   pusher: ImagePusher,
 ): Promise<RemoteImages> => {
   const defs = new Map(
@@ -135,7 +157,7 @@ export const ensureRemoteImages = async (
   const dockerfiles: RemoteImages["dockerfiles"] = {};
   for (const suite of suites) {
     const suiteDir = path.join(evalsDir, suite);
-    const tasks = await findTaskImages(suiteDir);
+    const tasks = await findTaskImages(suiteDir, overrides);
     for (const ref of tasks.images) {
       if (images.has(ref)) continue;
       const def = defs.get(ref);

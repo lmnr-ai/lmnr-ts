@@ -28,7 +28,10 @@ const writeEvals = async () => {
     "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n",
   );
   for (const suite of ["a", "b"]) {
-    await write(`${suite}/harbor.yaml`, "environment:\n  type: docker\n");
+    await write(
+      `${suite}/harbor.yaml`,
+      "environment:\n  type: docker\ndatasets:\n  - path: tasks\n",
+    );
     await write(
       `${suite}/tasks/shared/task.toml`,
       '[environment]\ndocker_image = "app-evals"\n',

@@ -71,6 +71,7 @@ export const startRemoteRun = async (
   const images = await ensureRemoteImages(
     evalsDir,
     suites,
+    overrides,
     imagePusher(client),
   );
   logger.info(

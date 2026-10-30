@@ -10,7 +10,7 @@ const SUITE_CONFIG = "harbor.yaml";
 
 /**
  * Never walked into: VCS data, dependency/build caches and Harbor job output.
- * Not packed for upload (`pack.ts`) and not searched for suites or tasks.
+ * Not packed for upload (`pack.ts`) and not searched for suites.
  */
 export const SKIPPED_DIRS = new Set([
   ".git",
@@ -188,35 +188,73 @@ const collectTemplates = (text: string, into: TemplateVars) => {
   }
 };
 
-/** Every `task.toml` under `suiteDir`, outside `SKIPPED_DIRS`. */
-export const findTaskTomls = async (suiteDir: string): Promise<string[]> => {
-  const found: string[] = [];
-  const walk = async (dir: string) => {
-    const entries = await readdir(dir, { withFileTypes: true });
+const isFile = (file: string) =>
+  stat(file).then(
+    (s) => s.isFile(),
+    () => false,
+  );
+
+/**
+ * The `task.toml` of every local task the suite's run includes, as Harbor
+ * resolves them (`JobPlan.resolve_task_configs`): `tasks` entries with a
+ * `path`, plus each local dataset's child dirs holding a `task.toml`, matched
+ * by name against `task_names` / `exclude_task_names` (`--task` lands in
+ * `task_names`). `n_tasks` is ignored: Harbor counts only dirs that pass its
+ * full validation, so applying it here could skip a task that runs.
+ * Registry and git tasks are fetched by Harbor and not listed.
+ */
+export const findTaskTomls = async (
+  suiteDir: string,
+  overrides: RunOverrides,
+): Promise<string[]> => {
+  const job = buildJobConfig(await loadSuiteConfig(suiteDir), overrides, false);
+  const dirs: string[] = [];
+  for (const task of asRecords(job.tasks)) {
+    if (typeof task.path === "string" && !task.git_url && !task.name) {
+      dirs.push(path.resolve(suiteDir, task.path));
+    }
+  }
+  const patterns = (value: unknown) =>
+    Array.isArray(value) ? value.map((p) => globToRegExp(String(p))) : [];
+  for (const dataset of asRecords(job.datasets)) {
+    if (typeof dataset.path !== "string" || dataset.repo || dataset.name) {
+      continue;
+    }
+    const root = path.resolve(suiteDir, dataset.path);
+    const include = patterns(dataset.task_names);
+    const exclude = patterns(dataset.exclude_task_names);
+    const entries = await readdir(root, { withFileTypes: true }).catch(
+      () => [],
+    );
     for (const entry of entries) {
-      if (entry.isDirectory()) {
-        if (!SKIPPED_DIRS.has(entry.name)) {
-          await walk(path.join(dir, entry.name));
-        }
-      } else if (entry.isFile() && entry.name === "task.toml") {
-        found.push(path.join(dir, entry.name));
+      if (
+        entry.isDirectory() &&
+        (include.length === 0 || include.some((p) => p.test(entry.name))) &&
+        !exclude.some((p) => p.test(entry.name))
+      ) {
+        dirs.push(path.join(root, entry.name));
       }
     }
-  };
-  await walk(suiteDir);
-  return found.sort();
+  }
+  const tomls: string[] = [];
+  for (const dir of new Set(dirs)) {
+    const toml = path.join(dir, "task.toml");
+    if (await isFile(toml)) tomls.push(toml);
+  }
+  return tomls.sort();
 };
 
-/** `${VAR}` names referenced by the suite's harbor.yaml and task.toml files. */
+/** `${VAR}` names referenced by the suite's harbor.yaml and its tasks' task.toml files. */
 export const findTemplateVars = async (
   suiteDir: string,
+  overrides: RunOverrides,
 ): Promise<TemplateVars> => {
   const vars: TemplateVars = { required: new Set(), optional: new Set() };
   collectTemplates(
     await readFile(path.join(suiteDir, SUITE_CONFIG), "utf8"),
     vars,
   );
-  for (const file of await findTaskTomls(suiteDir)) {
+  for (const file of await findTaskTomls(suiteDir, overrides)) {
     collectTemplates(await readFile(file, "utf8"), vars);
   }
   for (const name of vars.required) vars.optional.delete(name);

@@ -6,7 +6,11 @@ import { envHttpPort, resolveBaseUrl } from "../../auth/resolve";
 import type { GlobalOpts } from "../../auth/with-client";
 import { missingEnv } from "../../errors";
 import { findEnvKey } from "../../utils/env-file";
-import { findTemplateVars, type TemplateVars } from "./suites";
+import {
+  findTemplateVars,
+  type RunOverrides,
+  type TemplateVars,
+} from "./suites";
 
 export const API_KEY_VAR = "LMNR_PROJECT_API_KEY";
 
@@ -69,11 +73,12 @@ export const resolveTemplateEnv = async (
 export const resolveRunEnv = async (
   evalsDir: string,
   suites: string[],
+  overrides: RunOverrides,
   explicitEnv: Record<string, string>,
 ): Promise<Record<string, string>> => {
   const vars: TemplateVars = { required: new Set(), optional: new Set() };
   for (const suite of suites) {
-    const found = await findTemplateVars(path.join(evalsDir, suite));
+    const found = await findTemplateVars(path.join(evalsDir, suite), overrides);
     for (const name of found.required) vars.required.add(name);
     for (const name of found.optional) vars.optional.add(name);
   }

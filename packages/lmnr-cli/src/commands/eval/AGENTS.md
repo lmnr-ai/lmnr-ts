@@ -16,7 +16,7 @@
 - Modules: `index.ts` (`eval run` flow, reporting), `remote.ts` (`RunSpec`,
   `startRemoteRun`, `eval orchestrate`), `env.ts` (`--env`, `${VAR}`
   resolution, the Harbor process env), `suites.ts` (suite discovery,
-  `SKIPPED_DIRS`, task.toml scan, `buildJobConfig`), `harbor.ts` (uvx/Harbor
+  `SKIPPED_DIRS`, the run's tasks (`findTaskTomls`), `buildJobConfig`), `harbor.ts` (uvx/Harbor
   only), `images.ts` (`lmnr.yaml`, what tasks start from, `ensureRemoteImages`),
   `docker.ts` (builds, the ignore guard, `imagePusher`), `push.ts` (`docker
   save` output → layer upload), `run-command.ts` (spawn; a missing binary is
@@ -41,13 +41,25 @@
   next to `dist/` or in the source tree.
 - **Images:** tasks name an image with `docker_image`; `<dir>/lmnr.yaml`
   `images: {name: {dockerfile, context}}` declares how to build it (paths
-  relative to `<dir>`). Local runs `docker build` all of those and let Harbor
-  handle the rest. What a task starts from mirrors Harbor's
+  relative to `<dir>`). Local runs `docker build` the ones the run's tasks
+  reference (`localImageDefs`) and let Harbor handle the rest.
+- **Which tasks a run includes** (`findTaskTomls`, used for images and
+  `${VAR}`s) mirrors Harbor's `JobPlan.resolve_task_configs` on the job config
+  after overrides: `tasks` entries with a local `path`, plus each local
+  dataset's child dirs with a `task.toml`, matched by DIRECTORY name (Harbor's
+  `LocalTaskId.get_name`, not `[task] name`) against `task_names` /
+  `exclude_task_names` with fnmatch. `--task` replaces every dataset's
+  `task_names` and filters `tasks` by name, so it narrows images too.
+  `n_tasks` is ignored (Harbor counts only fully valid dirs, so applying it
+  could skip a task that runs: over-pushing is the safe side). Task dirs no
+  dataset or `tasks` entry points at are never built. Checked against Harbor
+  0.25.0 on a fixture with excludes, a `../` task and `--task` globs.
+- What a task starts from mirrors Harbor's
   `should_use_prebuilt_docker_image` (`findTaskImages`): its `docker_image`,
   unless the suite's harbor.yaml sets `environment.force_build: true` and the
   task has `environment/Dockerfile`, which is otherwise used only without a
   `docker_image`.
-- **Remote runs push every image the selected suites' tasks use, from here**
+- **Remote runs push every image the run's tasks use, from here**
   (`ensureRemoteImages`): per-task `environment/Dockerfile`s and the
   `lmnr.yaml` images tasks reference are built (`pusher.build`; unreferenced
   `lmnr.yaml` images are skipped), other `docker_image`s are pulled
@@ -75,9 +87,9 @@
 - **Remote limitations:** a per-task Dockerfile `FROM <lmnr.yaml image>` does
   not work remotely and is not supported: remote pushes tag `lmnr.yaml` images
   `lmnr-evals-remote:<hash>`, not by name, so the `FROM` resolves to a
-  registry image or a stale local build. Only `task.toml` files under the suite dir are scanned, so tasks
-  from paths outside it or from git/registry datasets get no per-task
-  Dockerfile pushed, and their `docker_image`s aren't pushed either.
+  registry image or a stale local build. Tasks from git/registry datasets are
+  fetched by Harbor, so their per-task Dockerfiles and `docker_image`s aren't
+  pushed; local task paths outside the evals folder aren't packed either.
 - **Every build lmnr-cli runs excludes `.git` and `.env*` without copying the
   context** (`guardedDockerfile` in `docker.ts`, local `lmnr.yaml` builds too;
   local per-task Dockerfiles are built by Harbor, unguarded): the Dockerfile is
@@ -95,7 +107,8 @@
   non-amd64 image, zstd layers). Bad `--env` flags are commander
   `InvalidArgumentError`s.
 - **Secrets are Harbor `${VAR}` placeholders**, not flags: `findTemplateVars`
-  scans harbor.yaml + every task.toml, `resolveTemplateEnv` reads ONLY those
+  scans harbor.yaml + the run's task.toml files (`findTaskTomls`, so a task
+  `--task` leaves out needs none of its vars), `resolveTemplateEnv` reads ONLY those
   names from process env then `.env.local` / `.env` (`findEnvKey`), and a
   missing required one fails before anything runs (`resolveRunEnv`). The
   values become the Harbor process env (`harborEnv` adds the project key and
@@ -110,8 +123,8 @@
   in the orchestrator it is the run key). `--remote` calls the API as the logged-in user and falls back to
   the project key when there is no login (CI).
 - Uploads never contain `.env*`, `SKIPPED_DIRS` (`.git`, `node_modules`,
-  virtualenvs, caches, Harbor `jobs/` output; also skipped when finding suites
-  and tasks), and skip symlinks (sandboxes extract with Python
+  virtualenvs, caches, Harbor `jobs/` output; also skipped when finding
+  suites), and skip symlinks (sandboxes extract with Python
   `filter="data"`). Exec bits are kept (`tests/test.sh`); on Windows, which has
   none, `.sh` files are packed 0755 and the rest 0644 (Harbor's own rule,
   `needs_chmod`). Ownership and mtimes are fixed so local user names and times

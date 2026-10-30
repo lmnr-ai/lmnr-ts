@@ -15,7 +15,7 @@ import { outputJson } from "../../utils/output";
 import { buildLocalImages } from "./docker";
 import { API_KEY_VAR, harborEnv, parseEnvFlags, resolveRunEnv } from "./env";
 import { assertSuitesPassed, runSuites } from "./harbor";
-import { loadImageDefs } from "./images";
+import { localImageDefs } from "./images";
 import { startRemoteRun } from "./remote";
 import { discoverSuites, type RunOverrides } from "./suites";
 
@@ -117,7 +117,6 @@ export const handleEvalRun = async (
   const explicitEnv = opts.env ? parseEnvFlags(opts.env) : {};
   const evalsDir = path.resolve(dir);
   const suites = await selectSuites(evalsDir, opts.suite);
-  const env = await resolveRunEnv(evalsDir, suites, explicitEnv);
   const overrides: RunOverrides = {
     tasks: opts.task,
     nAttempts: opts.nAttempts,
@@ -125,10 +124,11 @@ export const handleEvalRun = async (
     model: opts.model,
     extraAgentEnv: Object.keys(explicitEnv),
   };
+  const env = await resolveRunEnv(evalsDir, suites, overrides, explicitEnv);
 
   if (!opts.remote) {
     const runEnv = await harborEnv(env, opts);
-    await buildLocalImages(await loadImageDefs(evalsDir));
+    await buildLocalImages(await localImageDefs(evalsDir, suites, overrides));
     const failed = await runSuites(evalsDir, suites, overrides, runEnv);
     await reportLocal(suites, failed, opts);
     return;
