@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 
 import { LaminarClient } from "@lmnr-ai/client";
-import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 import nock from "nock";
 
 import { EvaluationDataset, LaminarDataset } from "../src/datasets";

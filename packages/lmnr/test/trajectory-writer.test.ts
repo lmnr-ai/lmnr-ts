@@ -21,10 +21,10 @@ import {
   trace,
 } from "@opentelemetry/api";
 import {
-  BasicTracerProvider,
   InMemorySpanExporter,
   SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-base";
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 
 import { Laminar } from "../src/laminar";
 import { getSpanProcessor } from "../src/opentelemetry-lib/tracing";
@@ -110,7 +110,7 @@ void describe("trajectory writer", () => {
 class Harness {
   readonly exporter = new InMemorySpanExporter();
   readonly processor: LaminarSpanProcessor;
-  readonly provider: BasicTracerProvider;
+  readonly provider: TracerProvider;
   readonly tracer: Tracer;
 
   constructor(
@@ -127,7 +127,7 @@ class Harness {
     });
     // No background snapshots unless a test asks for them.
     this.collector.snapshotIntervalMs = options.snapshotIntervalMs ?? 0;
-    this.provider = new BasicTracerProvider({
+    this.provider = new TracerProvider({
       spanProcessors: [this.processor],
     });
     this.tracer = this.provider.getTracer("test");
@@ -618,7 +618,7 @@ void describe("LaminarSpanProcessor with a trajectory", () => {
   void it("local-only still runs a user's own span processor", async () => {
     const own = new InMemorySpanExporter();
     const h = harness(path.join(dir, "t.json"), false, {
-      spanProcessor: new SimpleSpanProcessor(own),
+      spanProcessor: new SimpleSpanProcessor({ exporter: own }),
     });
     toolLoop(h);
     await h.processor.forceFlush();
@@ -653,7 +653,7 @@ void describe("LaminarSpanProcessor with a trajectory", () => {
     });
     const outer = new LaminarSpanProcessor({ spanProcessor: wrapped });
     assert.equal(outer.trajectory, wrapped.trajectory);
-    const provider = new BasicTracerProvider({ spanProcessors: [outer] });
+    const provider = new TracerProvider({ spanProcessors: [outer] });
     const tracer = provider.getTracer("test");
     const root = tracer.startSpan("agent", {}, ROOT_CONTEXT);
     tracer

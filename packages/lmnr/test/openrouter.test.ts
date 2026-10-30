@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { OpenRouter, ToolType } from "@openrouter/sdk";
 import { context, SpanStatusCode } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
-import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 import nock from "nock";
 import { z } from "zod";
 

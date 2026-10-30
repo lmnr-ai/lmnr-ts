@@ -1,9 +1,10 @@
 import { TraceFlags } from "@opentelemetry/api";
 import {
   BatchSpanProcessor,
-  type BufferConfig,
+  type BatchSpanProcessorOptions,
   type ReadableSpan,
-} from "@opentelemetry/sdk-trace-base";
+  type SpanExporter,
+} from "@opentelemetry/sdk-trace";
 
 import { initializeLogger } from "../../utils";
 
@@ -88,7 +89,10 @@ export const approximateSpanSize = (span: ReadableSpan): number => {
   return total;
 };
 
-export type SizeLimitedBufferConfig = BufferConfig & {
+export type SizeLimitedBufferConfig = Omit<
+  BatchSpanProcessorOptions,
+  "exporter"
+> & {
   /**
    * Approximate maximum size, in bytes, of the spans buffered in one batch.
    * Defaults to {@link DEFAULT_MAX_EXPORT_BATCH_SIZE_BYTES}.
@@ -135,11 +139,8 @@ export class SizeLimitedBatchSpanProcessor extends BatchSpanProcessor {
   private readonly maxExportBatchSizeBytes: number;
   private pendingSizeBytes = 0;
 
-  constructor(
-    exporter: ConstructorParameters<typeof BatchSpanProcessor>[0],
-    config?: SizeLimitedBufferConfig,
-  ) {
-    super(exporter, config);
+  constructor(exporter: SpanExporter, config?: SizeLimitedBufferConfig) {
+    super({ ...config, exporter });
     this.maxExportBatchSizeBytes =
       config?.maxExportBatchSizeBytes ?? DEFAULT_MAX_EXPORT_BATCH_SIZE_BYTES;
   }

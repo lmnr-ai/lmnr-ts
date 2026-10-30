@@ -5,7 +5,7 @@ import * as aiplatform from "@google-cloud/aiplatform";
 import * as vertexai from "@google-cloud/vertexai";
 import { context, SpanStatusCode } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
-import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 
 import {
   _resetConfiguration,

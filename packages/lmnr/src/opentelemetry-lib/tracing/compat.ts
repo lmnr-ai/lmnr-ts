@@ -1,14 +1,39 @@
-// Forward-compatibility with OTel v2 / v0.200 SDKs
-import { SpanContext } from "@opentelemetry/api";
-import { ReadableSpan, Span as SdkSpan } from "@opentelemetry/sdk-trace-base";
+// Compatibility across OTel JS SDK v1 (0.5x), v2 (0.2xx) and v3 (0.3xx).
+//
+// Laminar's own TracerProvider and span processors come from the v3
+// `@opentelemetry/sdk-trace` (with `core` and `resources`), bundled into
+// dist so that it works on whichever `@opentelemetry/api` the host app has.
+// The spans it creates can still meet v1 code: a user's `spanProcessor` /
+// `exporter` passed to `Laminar.initialize`, or a v1 OTLP exporter deduped
+// from the host app. The helpers below bridge those span shapes. v3 spans
+// have the v2 shape.
+import { Context, SpanContext } from "@opentelemetry/api";
+import { ReadableSpan, Span as SdkSpan } from "@opentelemetry/sdk-trace";
 
-import { initializeLogger } from "../../utils";
+// Public option types for a span processor / exporter the user hands to
+// Laminar. The bundled `@opentelemetry/sdk-trace` types are inlined into our
+// .d.ts, and v1's span shape (and its own `ExportResultCode` enum) is not
+// assignable to them, so these are structural and take spans as `any`.
+// Every OTel JS SDK line satisfies them.
+export interface SpanProcessorCompat {
+  onStart(span: any, parentContext: Context): void;
+  onEnd(span: any): void;
+  forceFlush(): Promise<void>;
+  shutdown(): Promise<void>;
+}
 
-const logger = initializeLogger();
+export interface SpanExporterCompat {
+  export(
+    spans: any[],
+    resultCallback: (result: { code: number; error?: Error }) => void,
+  ): void;
+  shutdown(): Promise<void>;
+  forceFlush?(): Promise<void>;
+}
 
-// Type definitions that cover both OTel SDK v1 and v2
+// Type definitions that cover OTel SDK v1, v2 and v3
 // In v1: spans have parentSpanId and instrumentationLibrary
-// In v2: spans have parentSpanContext and instrumentationScope
+// In v2 and v3: spans have parentSpanContext and instrumentationScope
 export type OTelSpanCompat = SdkSpan &
   ReadableSpan & {
     parentSpanId?: string;
@@ -75,37 +100,4 @@ export const getParentSpanId = (
 ): string | undefined => {
   const spanAny = span as any;
   return spanAny.parentSpanContext?.spanId ?? spanAny.parentSpanId;
-};
-
-/**
- * Creates a Resource object compatible with both OTel v1 and v2.
- *
- * In v1, Resource is a class constructor: new Resource(attributes)
- * In v2, Resource class is not exported; use resourceFromAttributes(attributes) instead
- *
- * This function automatically detects which version is available and uses the appropriate API.
- */
-export const createResource = (attributes: Record<string, string>): any => {
-  // type IResource from `@opentelemetry/resources`
-  try {
-    // biome-ignore lint/style/noCommonJs: dynamically resolve dependencies to remain compatible with both versions
-    const resources = require("@opentelemetry/resources");
-
-    // v2 uses resourceFromAttributes (0.200+ SDK, 2.x API)
-    if (resources.resourceFromAttributes) {
-      return resources.resourceFromAttributes(attributes);
-    }
-
-    // v1 uses Resource constructor (0.57.x SDK, 1.x API)
-    if (resources.Resource) {
-      return new resources.Resource(attributes);
-    }
-
-    throw new Error("Unable to create Resource: neither v1 nor v2 API found");
-  } catch {
-    logger.debug(
-      "Laminar failed to @opentelemetry/resources, continuing without it",
-    );
-    return undefined;
-  }
 };
