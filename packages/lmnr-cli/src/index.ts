@@ -12,8 +12,6 @@ import {
 import {
   handleAlertCreate,
   handleAlertDelete,
-  handleAlertGet,
-  handleAlertList,
   handleAlertUpdate,
 } from "./commands/alert";
 import { handleAsk } from "./commands/ask";
@@ -753,7 +751,9 @@ Examples:
   const alertCmd = program
     .command("alert")
     .alias("alerts")
-    .description("Manage alerts that notify you when a signal fires")
+    .description(
+      "Create, update and delete alerts that notify you when a signal fires",
+    )
     .option(
       "--project-id <id>",
       "Target project id. Defaults to the linked .lmnr/project.json. " +
@@ -768,7 +768,15 @@ Examples:
       "Port for the Laminar API. Defaults to 443",
       (val) => parseInt(val, 10),
     )
-    .option("--json", "Output structured JSON to stdout");
+    .option("--json", "Output structured JSON to stdout")
+    .addHelpText(
+      "after",
+      `
+To list or inspect alerts, query them with SQL (alerts, alert_targets,
+alert_filters; see \`lmnr-cli sql schema\`):
+  $ lmnr-cli sql query "SELECT id, name, type, signal_id, metadata FROM alerts"
+`,
+    );
 
   const ALERT_FILTER_HELP = `
 Filters (SIGNAL_EVENT only) run on the signal's extracted output: each column
@@ -816,36 +824,6 @@ when every condition of at least one group matches. No filters = every event.
         collectFlag,
       );
 
-  alertCmd
-    .command("list")
-    .description("List alerts with their targets")
-    .option("--signal <signal>", "Only this signal's alerts (id or name)")
-    .action(withProjectClient(handleAlertList))
-    .addHelpText(
-      "after",
-      `
-Targets show "me" when your email is subscribed, plus each Slack channel.
-Other members' email subscriptions are never shown.
-
-Examples:
-  $ lmnr-cli alert list
-  $ lmnr-cli alert list --signal "Refund requests" --json
-`,
-    );
-
-  alertCmd
-    .command("get")
-    .description("Show one alert")
-    .argument("<alert-id>", "Alert id (see `lmnr-cli alert list`)")
-    .action(withProjectClient(handleAlertGet))
-    .addHelpText(
-      "after",
-      `
-Examples:
-  $ lmnr-cli alert get 1e0c7a4b-5d1f-4a43-9b8e-2f6e1c3d9a10 --json
-`,
-    );
-
   addAlertShapeOptions(
     alertCmd
       .command("create")
@@ -880,7 +858,7 @@ Examples:
     alertCmd
       .command("update")
       .description("Update an alert (only the flags you pass change)")
-      .argument("<alert-id>", "Alert id (see `lmnr-cli alert list`)")
+      .argument("<alert-id>", "Alert id (from the alerts SQL table)")
       .option("--no-slack-channels", "Remove every Slack target")
       .option("--no-filters", "Remove every filter (fire on every event)"),
   )
@@ -905,7 +883,7 @@ Examples:
   alertCmd
     .command("delete")
     .description("Delete an alert with its targets and filters")
-    .argument("<alert-id>", "Alert id (see `lmnr-cli alert list`)")
+    .argument("<alert-id>", "Alert id (from the alerts SQL table)")
     .action(withProjectClient(handleAlertDelete))
     .addHelpText(
       "after",

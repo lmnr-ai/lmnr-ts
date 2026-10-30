@@ -35,8 +35,9 @@ export type UpdateAlertOptions = Partial<
 >;
 
 /**
- * Alert CRUD over the CLI user-token surface (`/v1/cli/alerts`). Validation is
- * server-side and its error messages come back user-ready.
+ * Alert writes over the CLI user-token surface (`/v1/cli/alerts`). Validation
+ * is server-side and its error messages come back user-ready. Reads go through
+ * SQL (`alerts`, `alert_targets`, `alert_filters`).
  */
 export class AlertsResource extends BaseResource {
   constructor(baseHttpUrl: string, auth: LaminarAuth) {
@@ -78,18 +79,6 @@ export class AlertsResource extends BaseResource {
       await this.raiseAlertError(response);
     }
     return response.json() as Promise<T>;
-  }
-
-  /** The project's alerts, oldest first, optionally for one signal. */
-  public async list(signalId?: string): Promise<Alert[]> {
-    const query =
-      signalId !== undefined ? `?signalId=${encodeURIComponent(signalId)}` : "";
-    const body = await this.request<{ alerts?: Alert[] }>("GET", query);
-    return Array.isArray(body?.alerts) ? body.alerts : [];
-  }
-
-  public async get(alertId: string): Promise<Alert> {
-    return this.request("GET", `/${alertId}`);
   }
 
   public async create(options: CreateAlertOptions): Promise<Alert> {

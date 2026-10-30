@@ -4,7 +4,6 @@ import type { Alert } from "@lmnr-ai/types";
 import type { GlobalOpts } from "../../auth/with-client";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
-import { renderTable } from "../../utils/table";
 import { resolveSignalId } from "../signal";
 import {
   type AlertCreateFlagOpts,
@@ -14,16 +13,6 @@ import {
 } from "./flags";
 
 const logger = initializeLogger();
-
-type AlertListOpts = GlobalOpts & { signal?: string };
-
-const describeTargets = (alert: Alert): string => {
-  const targets = [
-    ...(alert.notifyMe ? ["me"] : []),
-    ...alert.slackChannels.map((c) => `#${c.channelName ?? c.channelId}`),
-  ];
-  return targets.length === 0 ? "-" : targets.join(", ");
-};
 
 const printAlert = (alert: Alert): void => {
   logger.info(`${alert.name} (${alert.id})`);
@@ -57,55 +46,6 @@ const printAlert = (alert: Alert): void => {
     });
   }
   logger.info(`  created:      ${alert.createdAt}`);
-};
-
-/** `lmnr-cli alert list [--signal <signal>]` */
-export const handleAlertList = async (
-  client: LaminarClient,
-  opts: AlertListOpts,
-): Promise<void> => {
-  const signalId =
-    opts.signal !== undefined
-      ? await resolveSignalId(client, opts.signal)
-      : undefined;
-  const alerts = await client.alerts.list(signalId);
-  if (opts.json) {
-    outputJson(alerts);
-    return;
-  }
-  if (alerts.length === 0) {
-    logger.info("No alerts. Create one with `lmnr-cli alert create <signal>`.");
-    return;
-  }
-  const rows = alerts.map((a) => [
-    a.id,
-    a.name,
-    a.type,
-    a.signalName ?? "(deleted)",
-    a.type === "SIGNAL_EVENT" ? a.severities.join(", ") : "-",
-    describeTargets(a),
-    a.disabled ? "disabled" : "active",
-  ]);
-  logger.info(
-    renderTable(
-      ["ID", "Name", "Type", "Signal", "Severities", "Targets", "Status"],
-      rows,
-    ),
-  );
-};
-
-/** `lmnr-cli alert get <alert-id>` */
-export const handleAlertGet = async (
-  client: LaminarClient,
-  alertId: string,
-  opts: GlobalOpts,
-): Promise<void> => {
-  const alert = await client.alerts.get(alertId);
-  if (opts.json) {
-    outputJson(alert);
-    return;
-  }
-  printAlert(alert);
 };
 
 /** `lmnr-cli alert create <signal>` */
