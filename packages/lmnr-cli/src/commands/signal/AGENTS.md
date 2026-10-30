@@ -24,7 +24,7 @@
   bounds, or field-name regexes here — they drift from `signals/service.rs`.
   `--filter` deliberately does not validate the column, so a bad one reaches the
   server and its 400 names the supported ones (shown verbatim via
-  `raiseSignalError`).
+  `handleErrorMessage`).
 - `signal update` is a PARTIAL patch, and the three firing flags are independent —
   changing `--mode` leaves the trigger and filters alone. Omitted flags leave
   stored values alone. `--no-sampling` sends `sampleRate: null` (clears the
@@ -35,17 +35,18 @@
   and the CLI shows that message verbatim.
 - `<signal>` accepts an id or a name. An ambiguous name is an ERROR listing the
   candidates rather than a silent pick — `update` / `delete` are destructive.
-- `SignalsResource` (`@lmnr-ai/client`) overrides error handling with its own
-  `raiseSignalError` instead of `BaseResource.handleError`: signal routes answer
-  `{error: "<message>"}` with user-facing text, and the shared handler would
-  print the raw JSON body at the user (`409 {"error":"..."}`).
+- `SignalsResource` (`@lmnr-ai/client`) raises errors with
+  `BaseResource.handleErrorMessage`, not `handleError`: signal routes answer
+  `{error: "<message>"}` with user-facing text, and `handleError` would print
+  the raw JSON body at the user (`409 {"error":"..."}`). `LlmProfilesResource`
+  and `HostedEvalsResource` do the same.
 - **`--llm-profile-id <uuid>` + `--model <name>` are self-hosted only and pass
   through untouched** (wire fields `llmProfileId` / `model` in the signals
   create/update body). They must be sent together (server rejects a half pair
   with a user-facing 400), on Laminar Cloud any pair is rejected, and on
   self-hosted `create` both are REQUIRED. All of that is enforced in
   `signals/service.rs::resolve_llm_route` and the messages are surfaced
-  verbatim by `raiseSignalError` — do NOT duplicate any of these rules in
+  verbatim by `handleErrorMessage` — do NOT duplicate any of these rules in
   `validate.ts`. The wire has no shape for CLEARING the route back to the
   server's env LLM on update; do not invent one. Responses echo `llmProfileId`
   + `llmProfileName` (display only) + `model`.

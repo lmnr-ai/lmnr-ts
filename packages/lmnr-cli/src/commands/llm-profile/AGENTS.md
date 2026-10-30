@@ -28,6 +28,6 @@
   header names (`LlmProfileSecretMasks`), which `printProfile` shows as-is.
 - Self-hosted only: on Laminar Cloud the server 404s every route with
   `{error: "LLM profiles are not available on this deployment"}` (same envelope
-  the signals routes use). `LlmProfilesResource.raiseLlmProfileError` unwraps
-  it for the same reason `SignalsResource` does — the raw JSON body is not
-  user-facing text.
+  the signals routes use). `LlmProfilesResource` unwraps it with
+  `handleErrorMessage` for the same reason `SignalsResource` does — the raw JSON
+  body is not user-facing text.
