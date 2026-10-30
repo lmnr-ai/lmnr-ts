@@ -38,6 +38,13 @@ export interface SetupOptions {
   baseUrl?: string;
   /** Explicit project id; disambiguates when >1 is accessible. Validated before linking. */
   projectId?: string;
+  /**
+   * Drop the banner and the success lines (✓ logged in / project / key already
+   * set / skill installed) for callers that print their own one-line status
+   * (`eval setup`). Warnings, prompts, the device flow and anything that changed
+   * on disk (link written, .env updated) still print.
+   */
+  quiet?: boolean;
 }
 
 export interface SetupResult {
@@ -54,14 +61,46 @@ export interface SetupResult {
   userEmail: string | null;
 }
 
+/** {@link runSetup}'s result: the `--json` payload plus whether the skill install was skipped. */
+export interface SetupRun extends SetupResult {
+  skillSkipped: boolean;
+}
+
 /**
- * Directory-scoped onboarding: log in if needed, resolve the project for this
- * directory (`.lmnr/project.json`) and enforce access, mint a project API key
- * only when one isn't already configured, install the Laminar skill, print a
- * summary. The minted key goes only into the project's env file, never into
- * credentials.json (which stores user-scoped tokens).
+ * Directory-scoped onboarding: run {@link runSetup}, then print the summary
+ * (`--json` result, or the human "Next steps").
  */
 export async function handleSetup(options: SetupOptions): Promise<void> {
+  const { skillSkipped: _skillSkipped, ...result } = await runSetup(options);
+
+  if (options.json === true) {
+    process.stdout.write(JSON.stringify(result) + "\n");
+    return;
+  }
+  const docsUrl = "https://laminar.sh/docs/tracing/integrations/overview";
+  const verifyCmd =
+    'lmnr-cli sql query "SELECT * FROM traces ORDER BY start_time DESC LIMIT 1" --json';
+  process.stdout.write(
+    "\nNext steps:\n" +
+      "  1. Instrument your project with Laminar using the installed skill or the docs:\n" +
+      `     ${pcOut.cyan(docsUrl)}\n` +
+      "  2. Run your project.\n" +
+      "  3. Verify instrumentation:\n" +
+      `     ${pcOut.green(verifyCmd)}\n` +
+      "  4. View your traces in the browser:\n" +
+      `     ${pcOut.cyan(result.frontendUrl)}\n`,
+  );
+}
+
+/**
+ * The setup steps, shared by `setup` and `eval setup`: log in if needed,
+ * resolve the project for this directory (`.lmnr/project.json`) and enforce
+ * access, mint a project API key only when one isn't already configured, and
+ * install the Laminar skill. Idempotent, so callers run it unconditionally.
+ * The minted key goes only into the project's env file, never into
+ * credentials.json (which stores user-scoped tokens).
+ */
+export async function runSetup(options: SetupOptions): Promise<SetupRun> {
   const writeEnv = options.writeEnv !== false;
   const frontendUrl = firstNonEmpty(
     options.frontendUrl,
@@ -74,8 +113,10 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     DEFAULT_BASE_URL,
   );
   const isJson = options.json === true;
+  // Success lines only; see SetupOptions.quiet.
+  const quiet = isJson || options.quiet === true;
 
-  if (!isJson) {
+  if (!quiet) {
     process.stderr.write(
       `\n${orange("Laminar CLI")} ${pc.dim(`v${version}`)}\n\n`,
     );
@@ -166,7 +207,7 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     }
   }
 
-  if (!isJson) {
+  if (!quiet) {
     process.stderr.write(
       `${pc.green("✓")} Logged in as ${creds.userEmail ?? "<unknown>"}\n`,
     );
@@ -189,7 +230,19 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
   const issuer = creds.issuer || frontendUrl;
   const userBaseUrl = baseUrl;
 
-  // --- 3. Key handling ------------------------------------------------------
+  // --- 3. Key handling + skill install --------------------------------------
+  // The skill download needs no auth, so it runs alongside the key probe/mint:
+  // one round trip of wall time instead of two. It is best-effort (never
+  // rejects), so a key failure exiting mid-download leaves nothing dangling.
+  const skillInstall = installSkill(cwd).catch((err: unknown) => {
+    if (!isJson) {
+      process.stderr.write(
+        `${pc.yellow("Warning")}: could not install Laminar skill (${errorMessage(err)}).\n`,
+      );
+    }
+    return { written: [], defaulted: false, skipped: true };
+  });
+
   // Shared with `project link` — probe/mint/write is `ensureProjectKey`.
   const { apiKey, envFileUpdated: envPath } = await ensureProjectKey({
     creds,
@@ -200,70 +253,34 @@ export async function handleSetup(options: SetupOptions): Promise<void> {
     userBaseUrl,
     writeEnv,
     isJson,
+    quiet,
   });
 
-  // --- 4. Skill install -----------------------------------------------------
-
-  let skillsInstalled: string[] = [];
-  try {
-    // Best-effort: returns skipped: true on failure rather than throwing, so
-    // setup never breaks here.
-    const skillResult = await installSkill(process.cwd());
-    skillsInstalled = skillResult.written;
-    if (!isJson) {
-      if (skillResult.skipped) {
-        process.stderr.write(pc.dim("  Laminar skill install skipped\n"));
-      } else if (skillResult.written.length > 0) {
-        // One mark for the whole skill, not one per file.
-        const note = skillResult.defaulted
-          ? pc.dim(" (no agent dir found; defaulted to .claude and .agents)")
-          : "";
-        process.stderr.write(
-          `${pc.green("✓")} Installed Laminar skill${note}\n`,
-        );
-      }
-    }
-  } catch (err) {
-    if (!isJson) {
-      process.stderr.write(
-        `${pc.yellow("Warning")}: could not install Laminar skill (${errorMessage(err)}).\n`,
-      );
+  const skillResult = await skillInstall;
+  if (!isJson) {
+    if (skillResult.skipped) {
+      process.stderr.write(pc.dim("  Laminar skill install skipped\n"));
+    } else if (!quiet && skillResult.written.length > 0) {
+      // One mark for the whole skill, not one per file.
+      const note = skillResult.defaulted
+        ? pc.dim(" (no agent dir found; defaulted to .claude and .agents)")
+        : "";
+      process.stderr.write(`${pc.green("✓")} Installed Laminar skill${note}\n`);
     }
   }
 
-  // --- 5. Summary -----------------------------------------------------------
-
-  const frontendLink = `${trimSlash(issuer)}/project/${link.projectId}/traces`;
-
-  const result: SetupResult = {
+  return {
     projectId: link.projectId,
     projectName: link.projectName ?? null,
     workspaceId: link.workspaceId ?? null,
     workspaceName: link.workspaceName ?? null,
     apiKey,
     envFileUpdated: envPath,
-    skillsInstalled,
-    frontendUrl: frontendLink,
+    skillsInstalled: skillResult.written,
+    frontendUrl: `${trimSlash(issuer)}/project/${link.projectId}/traces`,
     userEmail: creds.userEmail ?? null,
+    skillSkipped: skillResult.skipped,
   };
-
-  if (isJson) {
-    process.stdout.write(JSON.stringify(result) + "\n");
-  } else {
-    const docsUrl = "https://laminar.sh/docs/tracing/integrations/overview";
-    const verifyCmd =
-      'lmnr-cli sql query "SELECT * FROM traces ORDER BY start_time DESC LIMIT 1" --json';
-    process.stdout.write(
-      "\nNext steps:\n" +
-        "  1. Instrument your project with Laminar using the installed skill or the docs:\n" +
-        `     ${pcOut.cyan(docsUrl)}\n` +
-        "  2. Run your project.\n" +
-        "  3. Verify instrumentation:\n" +
-        `     ${pcOut.green(verifyCmd)}\n` +
-        "  4. View your traces in the browser:\n" +
-        `     ${pcOut.cyan(frontendLink)}\n`,
-    );
-  }
 }
 
 // ---------------------------------------------------------------------------

@@ -12,3 +12,11 @@
   key on a blip). The local helper is `probeProjectKey` in
   `src/commands/setup/index.ts`. The old standalone `GET /v1/project` probe
   (`src/auth/project-id.ts`) was DELETED — do not reintroduce a key-authed probe.
+- `handleSetup` = `runSetup` (the steps, returns the result) + its summary
+  printing. `eval setup` reuses `runSetup({quiet: true})`: `quiet` drops only
+  the banner and success lines (logged in, project, key already set, skill
+  installed); warnings, prompts, the device flow and on-disk changes (link
+  written, `.env` updated) still print. `ensureProjectKey` takes the same
+  `quiet`. The skill download starts before the key probe/mint and is awaited
+  after it (it needs no auth), so the two network waits overlap; `installSkill`
+  is best-effort and never rejects, so a key failure exiting mid-download is safe.
