@@ -271,9 +271,6 @@ importers:
       puppeteer-core:
         specifier: 25.7.0
         version: 25.7.0
-      undici:
-        specifier: ^7.30.1
-        version: 7.30.1
 
   packages/lmnr-cli:
     dependencies:
