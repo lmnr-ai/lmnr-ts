@@ -147,7 +147,9 @@ lmnr-cli sql schema
 | event_id | UUID |
 | updated_at | DateTime64 |
 
-### `evaluation_datapoints`
+### `evaluation_trials`
+
+One row per trial (one execution of a task). `evaluation_datapoints` still works as an alias. Rows sharing `task_id` within an evaluation are trials of the same task.
 
 | Column | Type |
 |--------|------|
@@ -158,6 +160,7 @@ lmnr-cli sql schema
 | metadata | String |
 | executor_output | String |
 | index | UInt64 |
+| task_id | String |
 | trace_id | UUID |
 | group_id | String |
 | scores | String |
@@ -176,3 +179,4 @@ lmnr-cli sql schema
 | data | String |
 | target | String |
 | metadata | String |
+| task_id | String |
