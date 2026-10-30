@@ -1,4 +1,5 @@
 export * from "./browser";
+export * from "./dashboards";
 export * from "./debug";
 export * from "./debug-session";
 export * from "./evaluation";

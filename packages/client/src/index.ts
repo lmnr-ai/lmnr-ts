@@ -1,5 +1,6 @@
 import { BrowserEventsResource } from "./resources/browser-events";
 import { CliResource } from "./resources/cli";
+import { DashboardsResource } from "./resources/dashboards";
 import { DatasetsResource } from "./resources/datasets";
 import { EvalsResource } from "./resources/evals";
 import { EvaluatorsResource } from "./resources/evaluators";
@@ -18,6 +19,7 @@ export class LaminarClient {
   private configuredUrl?: string;
   private _browserEvents: BrowserEventsResource;
   private _cli: CliResource;
+  private _dashboards: DashboardsResource;
   private _datasets: DatasetsResource;
   private _evals: EvalsResource;
   private _evaluators: EvaluatorsResource;
@@ -78,6 +80,7 @@ export class LaminarClient {
     this.baseUrl = `${baseUrlNoPort ?? "https://api.lmnr.ai"}:${httpPort}`;
     this._browserEvents = new BrowserEventsResource(this.baseUrl, this.auth);
     this._cli = new CliResource(this.baseUrl, this.auth);
+    this._dashboards = new DashboardsResource(this.baseUrl, this.auth);
     this._datasets = new DatasetsResource(this.baseUrl, this.auth);
     this._evals = new EvalsResource(this.baseUrl, this.auth);
     this._evaluators = new EvaluatorsResource(this.baseUrl, this.auth);
@@ -154,6 +157,10 @@ export class LaminarClient {
     return this._cli;
   }
 
+  public get dashboards() {
+    return this._dashboards;
+  }
+
   public get datasets() {
     return this._datasets;
   }
@@ -192,6 +199,7 @@ export class LaminarClient {
 }
 
 export type { CliProject, ProjectKeyProbe } from "./resources/cli";
+export type { DashboardChartInput } from "./resources/dashboards";
 export type { LaminarAuth } from "./resources/index";
 export type {
   CreateLlmProfileOptions,
