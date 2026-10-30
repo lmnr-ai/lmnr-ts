@@ -462,6 +462,39 @@ void describe("images", () => {
     });
   });
 
+  void it("follows linked task dirs and matches them by their target's name", async () => {
+    await write(
+      "s/harbor.yaml",
+      "datasets:\n  - path: tasks\n    exclude_task_names: [skip-*]\n",
+    );
+    await write("shared/refund-case/task.toml", "");
+    await write("shared/skip-case/task.toml", "");
+    await mkdir(path.join(root, "s/tasks"), { recursive: true });
+    await symlink(
+      path.join(root, "shared/refund-case"),
+      path.join(root, "s/tasks/linked"),
+    );
+    await symlink(
+      path.join(root, "shared/skip-case"),
+      path.join(root, "s/tasks/also-linked"),
+    );
+    await symlink(
+      path.join(root, "missing"),
+      path.join(root, "s/tasks/dangling"),
+    );
+    const suite = path.join(root, "s");
+    const dirs = async (tasks?: string[]) =>
+      (await findTaskTomls(suite, { tasks })).map((f) =>
+        path.basename(path.dirname(f)),
+      );
+
+    // Harbor names a linked dir after its target, so `skip-*` excludes
+    // `also-linked` and `--task refund-case` selects `linked`.
+    expect(await dirs()).toEqual(["linked"]);
+    expect(await dirs(["refund-case"])).toEqual(["linked"]);
+    expect(await dirs(["linked"])).toEqual([]);
+  });
+
   void it("lists only the tasks the run includes, as Harbor resolves them", async () => {
     await write(
       "s/harbor.yaml",

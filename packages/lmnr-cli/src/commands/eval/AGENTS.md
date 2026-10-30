@@ -50,7 +50,9 @@
   after overrides: `tasks` entries with a local `path`, plus each local
   dataset's child dirs with a `task.toml`, matched by DIRECTORY name (Harbor's
   `LocalTaskId.get_name`, not `[task] name`) against `task_names` /
-  `exclude_task_names` with fnmatch. `--task` replaces every dataset's
+  `exclude_task_names` with fnmatch; a symlinked task dir is followed and
+  named after its target, as Harbor resolves it (remote runs don't pack
+  symlinks, so such a task only runs locally). `--task` replaces every dataset's
   `task_names` and filters `tasks` by name, so it narrows images too.
   `n_tasks` is ignored (Harbor counts only fully valid dirs, so applying it
   could skip a task that runs: over-pushing is the safe side). Task dirs no

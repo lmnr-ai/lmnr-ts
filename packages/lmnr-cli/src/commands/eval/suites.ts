@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { parse as parseYaml } from "yaml";
@@ -227,12 +227,22 @@ export const findTaskTomls = async (
       () => [],
     );
     for (const entry of entries) {
+      const dir = path.join(root, entry.name);
+      // Harbor follows linked task dirs and names them after the target
+      // (`LocalTaskId.get_name` resolves the path).
+      let name = entry.name;
+      if (entry.isSymbolicLink()) {
+        const target = await realpath(dir).catch(() => null);
+        if (!target) continue;
+        name = path.basename(target);
+      } else if (!entry.isDirectory()) {
+        continue;
+      }
       if (
-        entry.isDirectory() &&
-        (include.length === 0 || include.some((p) => p.test(entry.name))) &&
-        !exclude.some((p) => p.test(entry.name))
+        (include.length === 0 || include.some((p) => p.test(name))) &&
+        !exclude.some((p) => p.test(name))
       ) {
-        dirs.push(path.join(root, entry.name));
+        dirs.push(dir);
       }
     }
   }

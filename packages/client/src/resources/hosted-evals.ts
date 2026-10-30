@@ -79,7 +79,7 @@ export class HostedEvalsResource extends BaseResource {
 
   /**
    * Upload a `.tar.gz` of the `evals/` folder's contents (suites at the archive
-   * root). Sent as the raw request body; the server caps it at 100 MiB.
+   * root). Sent as the raw request body; the server caps it at 1 GiB.
    */
   public async upload(archive: Uint8Array): Promise<{ uploadId: string }> {
     const response = await fetch(this.url("/uploads"), {
