@@ -24,7 +24,7 @@ const logger = initializeLogger();
  * between releases.
  */
 export const HARBOR_VERSION = "0.25.0";
-export const LMNR_PYTHON_VERSION = "0.8.3";
+export const LMNR_PYTHON_VERSION = "0.8.6";
 const PYTHON_VERSION = "3.13";
 const ENVIRONMENT_MODULE = "lmnr_hosted_env.py";
 
