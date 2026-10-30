@@ -279,6 +279,13 @@ class LaminarEnvironment(BaseEnvironment):
         while True:
             result = await self._json("GET", self._sandbox_path(f"/commands/{command_id}"))
             if result.get("exitCode") is not None:
+                truncated = [s for s in ("stdout", "stderr") if result.get(f"{s}Truncated")]
+                if truncated:
+                    self.logger.warning(
+                        "Laminar kept only the first 10 MiB of the command's %s in sandbox %s",
+                        " and ".join(truncated),
+                        self._sandbox_id,
+                    )
                 return ExecResult(
                     stdout=result.get("stdout") or "",
                     stderr=result.get("stderr") or "",

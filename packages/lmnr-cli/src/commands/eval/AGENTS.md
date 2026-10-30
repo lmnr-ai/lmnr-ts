@@ -34,7 +34,9 @@
   `SandboxBuildFailedError`. Requests retry transport errors, 429s and 5xx,
   except the two with side effects (`POST /sandboxes`, `POST .../commands`,
   `once=True`): those retry only when the request was never sent or got a 429,
-  so a timeout can't create a second sandbox or run a command twice. It
+  so a timeout can't create a second sandbox or run a command twice. The
+  server keeps the first 10 MiB of each command's stdout / stderr and flags a
+  cut (`stdoutTruncated` / `stderrTruncated`); `exec` logs a warning then. It
   subclasses Harbor internals, so bump `HARBOR_VERSION` only together with a
   remote run against the new version.
   `assets/` ships in the npm package (`files`); `environmentModulePath` finds it
