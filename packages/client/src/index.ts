@@ -1,4 +1,3 @@
-import { AlertsResource } from "./resources/alerts";
 import { BrowserEventsResource } from "./resources/browser-events";
 import { CliResource } from "./resources/cli";
 import { DashboardsResource } from "./resources/dashboards";
@@ -18,7 +17,6 @@ export class LaminarClient {
   private baseUrl: string;
   private auth: LaminarAuth;
   private configuredUrl?: string;
-  private _alerts: AlertsResource;
   private _browserEvents: BrowserEventsResource;
   private _cli: CliResource;
   private _dashboards: DashboardsResource;
@@ -80,7 +78,6 @@ export class LaminarClient {
       ?.replace(/\/$/, "")
       .replace(/:\d{1,5}$/g, "");
     this.baseUrl = `${baseUrlNoPort ?? "https://api.lmnr.ai"}:${httpPort}`;
-    this._alerts = new AlertsResource(this.baseUrl, this.auth);
     this._browserEvents = new BrowserEventsResource(this.baseUrl, this.auth);
     this._cli = new CliResource(this.baseUrl, this.auth);
     this._dashboards = new DashboardsResource(this.baseUrl, this.auth);
@@ -156,10 +153,6 @@ export class LaminarClient {
     return this._browserEvents;
   }
 
-  public get alerts() {
-    return this._alerts;
-  }
-
   public get cli() {
     return this._cli;
   }
@@ -205,10 +198,6 @@ export class LaminarClient {
   }
 }
 
-export type {
-  CreateAlertOptions,
-  UpdateAlertOptions,
-} from "./resources/alerts";
 export type { CliProject, ProjectKeyProbe } from "./resources/cli";
 export type { DashboardChartInput } from "./resources/dashboards";
 export type { LaminarAuth } from "./resources/index";
