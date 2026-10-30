@@ -110,6 +110,23 @@ void describe("discoverSuites / packEvalsDir", () => {
     expect(script!.header.mode! & 0o111).toBe(0o111);
   });
 
+  void it("marks shell scripts executable when packed on Windows", async () => {
+    await write("hello/harbor.yaml");
+    await write("hello/tasks/t/tests/test.sh", "#!/bin/sh");
+    await chmod(path.join(root, "hello/tasks/t/tests/test.sh"), 0o644);
+
+    const { archive } = await packEvalsDir(root, "win32");
+
+    const modes = Object.fromEntries(
+      (await filesOf(archive)).map((e) => [
+        e.header.name,
+        e.header.mode! & 0o777,
+      ]),
+    );
+    expect(modes["hello/tasks/t/tests/test.sh"]).toBe(0o755);
+    expect(modes["hello/harbor.yaml"]).toBe(0o644);
+  });
+
   void it("rejects a folder without suites at its root", async () => {
     await write("evals/hello/harbor.yaml");
     await expect(discoverSuites(root)).rejects.toMatchObject({

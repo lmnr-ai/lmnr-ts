@@ -44,6 +44,8 @@ DEFAULT_BASE_URL = "https://api.lmnr.ai"
 REQUEST_TIMEOUT = httpx.Timeout(300.0, connect=30.0)
 REQUEST_ATTEMPTS = 4
 FAILED_STATES = {"error", "destroyed"}
+# Failures that happen before the request reaches the server.
+NOT_SENT_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
 # A command can outlive its own `timeout` while the sandbox is torn down; give
 # up polling this long after it should have ended.
 POLL_GRACE_SEC = 300
@@ -103,22 +105,30 @@ class LaminarEnvironment(BaseEnvironment):
             self._client = httpx.AsyncClient(headers=self._headers, timeout=REQUEST_TIMEOUT)
         return self._client
 
-    async def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
+    async def _request(
+        self, method: str, path: str, *, once: bool = False, **kwargs
+    ) -> httpx.Response:
+        """Retries transport errors, 429s and 5xx. A `once` call has a side effect
+        (creating a sandbox, starting a command), so it is retried only when the
+        server can't have acted on it: the request was never sent, or a 429."""
         last_error: Exception | None = None
         for attempt in range(REQUEST_ATTEMPTS):
             try:
                 response = await self._http().request(method, f"{self._api}{path}", **kwargs)
             except httpx.TransportError as e:
+                if once and not isinstance(e, NOT_SENT_ERRORS):
+                    raise LaminarEnvironmentError(f"{method} {path} failed: {e}") from e
                 last_error = e
             else:
-                if response.status_code < 500 and response.status_code != 429:
+                status = response.status_code
+                if status != 429 and (status < 500 or once):
                     return response
                 last_error = LaminarEnvironmentError(_error_message(response))
             await asyncio.sleep(min(2**attempt, 10))
         raise LaminarEnvironmentError(f"{method} {path} failed: {last_error}")
 
-    async def _json(self, method: str, path: str, **kwargs) -> dict:
-        response = await self._request(method, path, **kwargs)
+    async def _json(self, method: str, path: str, *, once: bool = False, **kwargs) -> dict:
+        response = await self._request(method, path, once=once, **kwargs)
         if response.is_error:
             raise LaminarEnvironmentError(f"{method} {path}: {_error_message(response)}")
         return response.json() if response.content else {}
@@ -160,7 +170,7 @@ class LaminarEnvironment(BaseEnvironment):
     async def start(self, force_build: bool) -> None:
         body = {**self._image_spec(force_build), **self._resources()}
         await self._wait_for_snapshot(body)
-        created = await self._json("POST", "/sandboxes", json=body)
+        created = await self._json("POST", "/sandboxes", json=body, once=True)
         self._sandbox_id = created["sandboxId"]
         self.logger.debug("Created Laminar sandbox %s", self._sandbox_id)
         await self._wait_until_started()
@@ -258,7 +268,9 @@ class LaminarEnvironment(BaseEnvironment):
             )
             command = f"su {user_arg} -s /bin/bash -c {shlex.quote(command)}"
 
-        started = await self._json("POST", self._sandbox_path("/commands"), json={"command": command})
+        started = await self._json(
+            "POST", self._sandbox_path("/commands"), json={"command": command}, once=True
+        )
         command_id = started["commandId"]
         deadline = (
             time.monotonic() + timeout_sec + POLL_GRACE_SEC if timeout_sec else None

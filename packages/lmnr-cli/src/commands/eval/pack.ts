@@ -22,8 +22,18 @@ interface WalkResult {
   skippedSymlinks: string[];
 }
 
+/**
+ * Windows has no execute bits, so every file stats as non-executable there.
+ * Shell scripts get them back by extension, Harbor's own rule (`needs_chmod`).
+ */
+const windowsMode = (name: string) => (name.endsWith(".sh") ? 0o755 : 0o644);
+
 /** Fixed ownership and mtime: the upload carries no local user names or times. */
-const fileEntry = (source: string, target: string): FileSource => ({
+const fileEntry = (
+  source: string,
+  target: string,
+  platform: NodeJS.Platform,
+): FileSource => ({
   type: "file",
   source,
   target,
@@ -32,10 +42,14 @@ const fileEntry = (source: string, target: string): FileSource => ({
   gid: 0,
   uname: "",
   gname: "",
+  ...(platform === "win32" ? { mode: windowsMode(target) } : {}),
 });
 
 /** Walk `root` for packing, minus the upload exclusions. */
-const walkFiles = async (root: string): Promise<WalkResult> => {
+const walkFiles = async (
+  root: string,
+  platform: NodeJS.Platform,
+): Promise<WalkResult> => {
   const files: FileSource[] = [];
   const skippedSymlinks: string[] = [];
   const walk = async (dir: string, rel: string) => {
@@ -51,7 +65,7 @@ const walkFiles = async (root: string): Promise<WalkResult> => {
       } else if (entry.isDirectory()) {
         if (!SKIPPED_DIRS.has(entry.name)) await walk(source, target);
       } else if (entry.isFile() && !isExcludedFile(entry.name)) {
-        files.push(fileEntry(source, target));
+        files.push(fileEntry(source, target, platform));
       }
     }
   };
@@ -78,8 +92,14 @@ interface EvalsArchive {
  * Pack the evals folder's CONTENTS (suites at the archive root, no `evals/`
  * prefix — that is where the orchestrator runs from) into a `.tar.gz`.
  */
-export const packEvalsDir = async (dir: string): Promise<EvalsArchive> => {
-  const { files, skippedSymlinks } = await walkFiles(path.resolve(dir));
+export const packEvalsDir = async (
+  dir: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<EvalsArchive> => {
+  const { files, skippedSymlinks } = await walkFiles(
+    path.resolve(dir),
+    platform,
+  );
   const archive = await packFiles(files);
   return { archive, fileCount: files.length, skippedSymlinks };
 };
