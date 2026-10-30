@@ -182,6 +182,7 @@ export class DatasetsResource extends BaseResource {
               data: point.data,
               target: point.target ?? {},
               metadata: point.metadata ?? {},
+              taskId: point.taskId,
             })),
             createDataset,
           }),
