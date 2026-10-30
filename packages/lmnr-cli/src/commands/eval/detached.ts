@@ -14,7 +14,7 @@ import type { RunOverrides } from "./suites";
 const logger = initializeLogger();
 
 /** The server's cap on the uploaded archive (`MAX_ARCHIVE_BYTES`). */
-const MAX_ARCHIVE_BYTES = 100 * 1024 * 1024;
+const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024;
 
 /**
  * A detached run, written here and read back by `eval orchestrate` in the
