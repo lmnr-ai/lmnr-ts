@@ -122,6 +122,9 @@ export const handleEvalSetup = async (
   const setup = await runSetup({
     json: isJson,
     quiet: true,
+    // An agent caller can't answer the project picker: fail with a coded
+    // project_ambiguous (pass --project-id) instead of hanging on stdin.
+    interactive: canAsk,
     browser: options.browser,
     frontendUrl: options.frontendUrl,
     baseUrl: options.baseUrl,

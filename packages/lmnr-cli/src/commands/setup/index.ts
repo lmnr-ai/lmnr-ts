@@ -45,6 +45,13 @@ export interface SetupOptions {
    * on disk (link written, .env updated) still print.
    */
   quiet?: boolean;
+  /**
+   * Whether the user can answer a prompt on stdin. Defaults to `!json`.
+   * `eval setup` passes false when an agent is the caller (no TTY), so an
+   * ambiguous project fails with `project_ambiguous` instead of a picker that
+   * hangs on an open pipe or reads EOF.
+   */
+  interactive?: boolean;
 }
 
 export interface SetupResult {
@@ -368,11 +375,11 @@ async function resolveProjectViaCli(
   } else if (projects.length === 1) {
     chosen = projects[0];
   } else {
-    if (isJson) {
+    if (isJson || options.interactive === false) {
       failWith(
         isJson,
         projectAmbiguous(
-          `Multiple projects: pass --project-id <id>, or run setup interactively. ` +
+          `Multiple projects: pass --project-id <id>, or run the command in a terminal. ` +
             projects
               .map((p) => `${p.id} (${p.workspaceName}/${p.name})`)
               .join(", "),

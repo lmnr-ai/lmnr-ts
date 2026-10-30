@@ -209,3 +209,51 @@ describe("runSetup — quiet (eval setup)", () => {
     expect(JSON.parse(out)).not.toHaveProperty("skillSkipped");
   });
 });
+
+describe("runSetup — non-interactive (agent caller)", () => {
+  it("fails with project_ambiguous (7) instead of prompting", async () => {
+    h.safeReadCredentials.mockResolvedValue(VALID_CREDS);
+    h.refreshIfNeeded.mockResolvedValue(VALID_CREDS);
+    h.readLocalProjectFile.mockResolvedValue(null); // unlinked → resolve via CLI
+    h.findEnvKey.mockResolvedValue(null);
+    h.listProjects.mockResolvedValue([
+      { id: "p1", name: "A", workspaceId: "w1", workspaceName: "WS" },
+      { id: "p2", name: "B", workspaceId: "w1", workspaceName: "WS" },
+    ]);
+
+    await expect(
+      runSetup({ quiet: true, interactive: false, writeEnv: false }),
+    ).rejects.toThrow("process.exit(7)");
+    expect(h.promptProjectChoice).not.toHaveBeenCalled();
+    const err = stderrSpy.mock.calls
+      .map((c: unknown[]) => String(c[0]))
+      .join("");
+    expect(err).toContain("project_ambiguous");
+    expect(err).toContain("--project-id");
+  });
+
+  it("still picks the only project without asking", async () => {
+    h.safeReadCredentials.mockResolvedValue(VALID_CREDS);
+    h.refreshIfNeeded.mockResolvedValue(VALID_CREDS);
+    h.readLocalProjectFile.mockResolvedValue(null);
+    h.findEnvKey.mockResolvedValue(null);
+    h.listProjects.mockResolvedValue([
+      { id: "p1", name: "A", workspaceId: "w1", workspaceName: "WS" },
+    ]);
+    h.writeLocalProjectFile.mockResolvedValue("/tmp/.lmnr/project.json");
+    h.mintProjectApiKey.mockResolvedValue({ apiKey: "lmnr-key" });
+    h.installSkill.mockResolvedValue({
+      written: [],
+      defaulted: false,
+      skipped: false,
+    });
+
+    const result = await runSetup({
+      quiet: true,
+      interactive: false,
+      writeEnv: false,
+    });
+    expect(result.projectId).toBe("p1");
+    expect(h.promptProjectChoice).not.toHaveBeenCalled();
+  });
+});

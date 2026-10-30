@@ -116,6 +116,22 @@ describe("handleEvalSetup", () => {
     );
   });
 
+  it("never lets the setup steps prompt when an agent is the caller", async () => {
+    h.isAgentCaller.mockReturnValue(true);
+    await handleEvalSetup({});
+    expect(h.runSetup).toHaveBeenCalledWith(
+      expect.objectContaining({ interactive: false }),
+    );
+  });
+
+  it("lets the setup steps prompt for a person at a terminal", async () => {
+    h.answers = ["y", ""];
+    await handleEvalSetup({});
+    expect(h.runSetup).toHaveBeenCalledWith(
+      expect.objectContaining({ interactive: true }),
+    );
+  });
+
   it("prints the prompt and asks nothing when an agent is the caller", async () => {
     h.isAgentCaller.mockReturnValue(true);
     h.findInstalledAgents.mockReturnValue(["claude-code"]);
