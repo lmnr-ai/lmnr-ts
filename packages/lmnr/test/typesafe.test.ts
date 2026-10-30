@@ -7,7 +7,7 @@ import { after, afterEach, beforeEach, describe, it } from "node:test";
 
 import { context, SpanStatusCode } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
-import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 import {
   BadRequestError,
   choice,

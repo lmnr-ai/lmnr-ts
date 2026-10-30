@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 import { generateText, jsonSchema, stepCountIs, tool } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 

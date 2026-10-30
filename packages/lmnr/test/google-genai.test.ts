@@ -8,7 +8,7 @@ import * as genaiNamespace from "@google/genai";
 import { GoogleGenAI } from "@google/genai";
 import { context, SpanStatusCode } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
-import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 import nock from "nock";
 
 import {

@@ -1,8 +1,11 @@
 import { context, Tracer, TracerProvider, trace } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
-import { AlwaysOnSampler } from "@opentelemetry/sdk-trace-base";
-import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { resourceFromAttributes } from "@opentelemetry/resources";
+import {
+  AlwaysOnSampler,
+  TracerProvider as SdkTracerProvider,
+} from "@opentelemetry/sdk-trace";
 import {
   ATTR_SERVICE_NAME,
   ATTR_SERVICE_VERSION,
@@ -12,7 +15,6 @@ import { version as SDK_VERSION } from "../../../package.json";
 import { initializeLogger } from "../../utils";
 import { _configuration } from "../configuration";
 import { InitializeOptions } from "../interfaces";
-import { createResource } from "./compat";
 import { consumeStreamResult, waitForPendingStreams } from "./stream-utils";
 
 export { consumeStreamResult, waitForPendingStreams };
@@ -71,10 +73,10 @@ export const startTracing = (options: InitializeOptions) => {
     exportSpans: _exportSpans,
   });
 
-  const newProvider = new NodeTracerProvider({
+  const newProvider = new SdkTracerProvider({
     spanProcessors: [spanProcessor],
     sampler: new AlwaysOnSampler(),
-    resource: createResource({
+    resource: resourceFromAttributes({
       [ATTR_SERVICE_NAME]: "laminar-tracer-resource",
       [ATTR_SERVICE_VERSION]: SDK_VERSION,
     }),

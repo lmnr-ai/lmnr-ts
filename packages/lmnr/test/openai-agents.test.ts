@@ -4,7 +4,7 @@ import path from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 
 import { context, trace } from "@opentelemetry/api";
-import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 import nock from "nock";
 
 import { Laminar } from "../src/index";

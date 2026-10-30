@@ -3,12 +3,12 @@ import { describe, it } from "node:test";
 
 import { TraceFlags } from "@opentelemetry/api";
 import {
-  BasicTracerProvider,
   BatchSpanProcessor,
   type ReadableSpan,
   SimpleSpanProcessor,
   type SpanExporter,
-} from "@opentelemetry/sdk-trace-base";
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 
 import {
   approximateSpanSize,
@@ -73,12 +73,12 @@ const makeProcessor = ({
     scheduledDelayMillis,
     maxExportBatchSizeBytes,
   });
-  const provider = new BasicTracerProvider({ spanProcessors: [processor] });
+  const provider = new TracerProvider({ spanProcessors: [processor] });
   return { exporter, processor, tracer: provider.getTracer("test") };
 };
 
 const emit = (
-  tracer: ReturnType<BasicTracerProvider["getTracer"]>,
+  tracer: ReturnType<TracerProvider["getTracer"]>,
   name: string,
   payloadSize = 0,
 ) => {
@@ -279,7 +279,7 @@ void describe("SizeLimitedBatchSpanProcessor", () => {
         scheduledDelayMillis: NEVER_MILLIS,
         maxExportBatchSizeBytes: 10_000,
       });
-      const tracer = new BasicTracerProvider({
+      const tracer = new TracerProvider({
         spanProcessors: [processor],
       }).getTracer("test");
 

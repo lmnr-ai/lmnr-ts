@@ -22,7 +22,7 @@ import {
   ReadableSpan,
   type Span as SdkSpan,
   TimedEvent,
-} from "@opentelemetry/sdk-trace-base";
+} from "@opentelemetry/sdk-trace";
 
 import { getRuntime } from "../../debug";
 import {

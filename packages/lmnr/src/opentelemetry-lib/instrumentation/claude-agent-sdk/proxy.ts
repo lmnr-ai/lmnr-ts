@@ -1,6 +1,6 @@
 import { errorMessage } from "@lmnr-ai/types";
 import { trace } from "@opentelemetry/api";
-import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
+import type { ReadableSpan } from "@opentelemetry/sdk-trace";
 import * as fs from "fs";
 import * as net from "net";
 import * as os from "os";

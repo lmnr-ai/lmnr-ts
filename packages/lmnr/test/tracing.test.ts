@@ -3,7 +3,7 @@ import { after, afterEach, beforeEach, describe, it } from "node:test";
 
 import { type StringUUID } from "@lmnr-ai/types";
 import { context, type Span, trace } from "@opentelemetry/api";
-import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 
 import {
   Laminar,

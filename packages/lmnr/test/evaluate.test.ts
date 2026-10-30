@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 
-import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 import nock from "nock";
 
 import {

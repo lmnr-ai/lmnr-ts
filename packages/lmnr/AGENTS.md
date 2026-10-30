@@ -23,17 +23,23 @@ Module-specific notes live in nested `AGENTS.md` files next to the code (each wi
 
 ## OpenTelemetry dependency ranges (`packages/lmnr/package.json`)
 
-- **Every 0.x OTel package is capped `<0.300.0`**, and the stable packages are capped at `^2.0.0`.
-  - The 0.x packages are `instrumentation`, `sdk-node`, `exporter-trace-otlp-*`, `otlp-*-exporter-base`.
-  - The stable ones are `core`, `resources`, `sdk-trace-*`, `context-async-hooks`.
-  - Together those caps keep the SDK on one OTel release line.
-- **Why the cap:** `0.300.0` ships with the OTel 3.0 line (`core` / `resources` 3.0.0), and its packages peer on `@opentelemetry/api >=1.10.0`. Every `2.x` stable package peers on `api <1.10.0`.
-- **What broke before the cap:** with the old open `>=0.200.0` ranges, a fresh `npm install` picked `instrumentation@0.300.0` and gave it the SDK's nested `api@1.9.1`, which has no `logs` export.
-  - `Laminar.initialize()` then threw `Cannot read properties of undefined (reading 'getLogger')` in `InstrumentationAbstract`'s constructor.
-  - Verified on the published `0.8.52`.
-  - Existing lockfiles and `pnpm` installs of this repo were unaffected, so CI never saw it.
-- Moving to OTel 3.0 / api 1.10 is its own migration: raise the 0.x caps, the `^2.0.0` caps and `api` together. Raising just one range brings the crash back.
-- **Check dependency changes with a clean npm install**: `pnpm pack`, then `npm i <tarball>` in an empty dir and call `Laminar.initialize()`. The workspace lockfile hides resolution problems like this one.
+The SDK must work in host apps on OTel JS v1 (api 1.9, 0.5x), v2 (api 1.9, 0.2xx) and v3 (api 1.10, 0.3xx), and must share the host's `@opentelemetry/api` instance (LAM-2446).
+
+- **The invariant: no npm dependency of the SDK may peer on a range of `@opentelemetry/api` that excludes 1.9 or 1.10.**
+  - Every OTel 2.x stable package peers on `api <1.10.0`. Every 3.x package (and the 0.300 packages built on them) peers on `api >=1.10.0`.
+  - npm resolves each dependency on its own, and picks the highest version when the host doesn't have the package. It does NOT follow the host's api line.
+  - When such a package lands in `node_modules/@lmnr-ai/lmnr/node_modules`, npm nests a second `@opentelemetry/api` there to satisfy its peer. The SDK then has its own api instance, separate from the host's.
+  - A split api breaks globals both ways. The OTel api only accepts a registered global whose minor version is >= its own, and registrations must match versions exactly. Verified on the published `0.8.54` in a v3 app: lmnr got a nested `api@1.9.1`, and when `Laminar.initialize()` ran first, the host's `trace.setGlobalTracerProvider` returned `false` and the host's active span was invisible.
+- **So the version-locked OTel packages are bundled into dist, not dependencies** (`deps.alwaysBundle` in `tsdown.config.mts`, devDependencies at `^3.0.0` / `^0.300.0`): `core`, `resources`, `sdk-trace`, `exporter-trace-otlp-grpc` / `-proto`, `otlp-exporter-base`, `otlp-grpc-exporter-base`, `otlp-transformer`.
+  - The bundled v3 code only uses api symbols that also exist in api 1.9.1. Tree-shaking drops the logs/metrics serializers, so `SeverityNumber` / `ValueType` / `logs` (api 1.10 only) never get imported.
+  - **The ESM build is stricter than CJS.** `otlp-transformer@0.300`'s ESM statically imports `SeverityNumber`, so on api 1.9 the ESM entry fails at link time ("does not provide an export named"). CJS just gets `undefined`. After changing bundling, grep `dist/index.mjs` for its `import { ... } from "@opentelemetry/api"` line and check every name exists in api 1.9.1.
+  - There are no `.d.ts` references to the bundled packages either (rolldown-plugin-dts inlines them).
+- **The remaining runtime OTel deps accept both api lines:** `api` (`^1.9.1`, dedupes to the host's), `context-async-hooks` (`^1.30.1 || ^2.0.0 || ^3.0.0`; 3.x peers `api >=1.0.0 <1.11.0`), `semantic-conventions`, and `instrumentation`.
+- **`instrumentation` stays capped `<0.300.0`.** `0.300.0` reads `logs` from the api in `InstrumentationAbstract`'s constructor, so with api 1.9 `Laminar.initialize()` throws `Cannot read properties of undefined (reading 'getLogger')`. That's what broke the published `0.8.52`, where open `>=0.200.0` ranges let a fresh npm install pick 0.300. 0.2xx peers `api ^1.3.0`, so it runs on both lines. It can't be bundled: its require/import-in-the-middle hooks have to be the real packages.
+- `sdk-node` was a dependency but was never imported. It was removed because its 0.2xx pulled in the whole v2 SDK.
+- The `@traceloop/instrumentation-*` deps pin `core ^2.0.1`. In a v3 app those land under each traceloop package (they're hoisted to root), not under lmnr, so they don't split lmnr's api.
+- **Check dependency changes with clean npm installs, not just the workspace.** The lockfile hides resolution problems. Run `pnpm pack`, then `npm i <tarball>` into empty apps that already have each OTel line: v1 (`api@1.9.1`, `sdk-trace-base@1.30.1`), v2 without `sdk-trace` (`sdk-trace-base@2.0.0`), v2.12, v3 (`api@1.10.0`, `sdk-trace@3`, `sdk-node@0.300`), and fresh. In each, check that `require.resolve("@opentelemetry/api")` from the lmnr package equals the host's. Then run `Laminar.initialize()` + `observe()` from both the CJS and the ESM entry.
+- To run the test suite on api 1.10 locally, temporarily add `overrides: { "@opentelemetry/api": "1.10.0" }` to `pnpm-workspace.yaml`. The lockfile pins 1.9.1.
 
 ## Environment variables
 
