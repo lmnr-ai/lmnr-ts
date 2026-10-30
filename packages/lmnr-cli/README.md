@@ -57,8 +57,8 @@ by `lmnr-cli setup`.
 
 The project API key that `setup` writes to `./.env` (`LMNR_PROJECT_API_KEY`) is
 for your **application's SDK** (trace ingestion). The one CLI command that reads
-it is `eval run`: local and `--remote --attach` runs report results with it, and
-`--remote` uses it when there is no login (e.g. in CI).
+it is `eval run`: local runs report results with it, and `--remote` uses it
+when there is no login (e.g. in CI).
 
 ### OAuth Device Flow
 
@@ -160,11 +160,10 @@ as an evaluation, grouped by suite.
 lmnr-cli eval run                                  # trials on local Docker
 lmnr-cli eval run --suite support --task "refund-*"
 lmnr-cli eval run --remote                         # in Laminar sandboxes, detached
-lmnr-cli eval run --remote --attach                # in Laminar sandboxes, wait here
 ```
 
-Every mode needs Docker; local and `--attach` runs also need
-[uv](https://docs.astral.sh/uv/) and `LMNR_PROJECT_API_KEY`. `--remote` pushes
+Both modes need Docker; local runs also need [uv](https://docs.astral.sh/uv/)
+and `LMNR_PROJECT_API_KEY`. `--remote` pushes
 the images tasks use from your local Docker. See `lmnr-cli eval run --help` for
 images (`lmnr.yaml`), secrets and flags. Exit codes:
 

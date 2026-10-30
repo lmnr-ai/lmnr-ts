@@ -11,7 +11,8 @@
     /v1[/cli]/hosted-evals/runs {uploadId, cliVersion, spec}`. The server's
     orchestrator sandbox runs `npx lmnr-cli@<cliVersion> eval orchestrate`
     (hidden command), so `RunSpec` only has to stay readable by the SAME version.
-  - `--remote --attach`: Harbor runs here, trials in Laminar sandboxes.
+    There is no attached remote mode (Harbor here, trials remote): it was
+    dropped as unneeded; streaming results from detached runs is the follow-up.
 - Modules: `index.ts` (`eval run` flow, reporting), `detached.ts` (`RunSpec`,
   `startDetachedRun`, `eval orchestrate`), `env.ts` (`--env`, `${VAR}`
   resolution, the Harbor process env), `suites.ts` (suite discovery,
@@ -91,8 +92,8 @@
   17 `missing_tool`, 18 `harbor_failed` (Harbor runs only), 19 `missing_env`
   (also a missing or malformed `LMNR_EVAL_RUN` in `eval orchestrate`), 20
   `docker_failed` (build / pull / save, unreadable `docker save` output, a
-  non-amd64 image, zstd layers). `--attach` without `--remote` and bad `--env`
-  flags are commander `InvalidArgumentError`s.
+  non-amd64 image, zstd layers). Bad `--env` flags are commander
+  `InvalidArgumentError`s.
 - **Secrets are Harbor `${VAR}` placeholders**, not flags: `findTemplateVars`
   scans harbor.yaml + every task.toml, `resolveTemplateEnv` reads ONLY those
   names from process env then `.env.local` / `.env` (`findEnvKey`), and a
@@ -105,8 +106,8 @@
   URL).
 - `LMNR_GRPC_PORT` (env or `.env`) becomes `--pk grpc_port=`: the plugin
   exports spans over gRPC and defaults to 8443, so self-hosted traces need it.
-- Auth: local and attached need `LMNR_PROJECT_API_KEY` (the plugin reports
-  with it). `--remote` calls the API as the logged-in user and falls back to
+- Auth: local runs need `LMNR_PROJECT_API_KEY` (the plugin reports with it;
+  in the orchestrator it is the run key). `--remote` calls the API as the logged-in user and falls back to
   the project key when there is no login (CI).
 - Uploads never contain `.env*`, `SKIPPED_DIRS` (`.git`, `node_modules`,
   virtualenvs, caches, Harbor `jobs/` output; also skipped when finding suites

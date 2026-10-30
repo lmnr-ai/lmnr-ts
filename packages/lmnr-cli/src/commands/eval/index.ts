@@ -13,17 +13,16 @@ import { readLocalProjectFile } from "../../utils/local-project-file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
 import { startDetachedRun } from "./detached";
-import { buildLocalImages, imagePusher } from "./docker";
+import { buildLocalImages } from "./docker";
 import { API_KEY_VAR, harborEnv, parseEnvFlags, resolveRunEnv } from "./env";
 import { assertSuitesPassed, runSuites } from "./harbor";
-import { ensureRemoteImages, loadImageDefs } from "./images";
+import { loadImageDefs } from "./images";
 import { discoverSuites, type RunOverrides } from "./suites";
 
 const logger = initializeLogger();
 
 interface EvalRunOpts extends GlobalOpts {
   remote?: boolean;
-  attach?: boolean;
   suite?: string[];
   task?: string[];
   nAttempts?: number;
@@ -91,16 +90,15 @@ const evaluationsUrl = async (
   return `${frontend}/project/${id}/evaluations`;
 };
 
-/** Report a run that ran its suites from here (local or attached). */
-const reportFinished = async (
-  mode: "local" | "remote",
+/** Report a local run once its suites have finished. */
+const reportLocal = async (
   suites: string[],
   failed: string[],
   opts: GlobalOpts,
 ) => {
   const url = await evaluationsUrl(opts.projectId);
   if (opts.json) {
-    outputJson({ mode, suites, failed, url });
+    outputJson({ mode: "local", suites, failed, url });
   } else if (url) {
     logger.info(`Results are in evaluations grouped by suite: ${url}`);
   }
@@ -109,15 +107,12 @@ const reportFinished = async (
 
 /**
  * `lmnr-cli eval run [dir]`: run Harbor suites locally on Docker (default), or
- * with `--remote` in Laminar sandboxes, detached unless `--attach`.
+ * with `--remote` in Laminar sandboxes (detached: the run continues there).
  */
 export const handleEvalRun = async (
   dir: string,
   opts: EvalRunOpts,
 ): Promise<void> => {
-  if (opts.attach && !opts.remote) {
-    throw new InvalidArgumentError("--attach only applies with --remote.");
-  }
   // Parse --env before anything slow so a missing variable fails fast.
   const explicitEnv = opts.env ? parseEnvFlags(opts.env) : {};
   const evalsDir = path.resolve(dir);
@@ -135,23 +130,11 @@ export const handleEvalRun = async (
     const runEnv = await harborEnv(env, opts);
     await buildLocalImages(await loadImageDefs(evalsDir));
     const failed = await runSuites(evalsDir, suites, overrides, runEnv);
-    await reportFinished("local", suites, failed, opts);
+    await reportLocal(suites, failed, opts);
     return;
   }
 
   const client = await buildRemoteClient(opts);
-  if (opts.attach) {
-    const runEnv = await harborEnv(env, opts);
-    const images = await ensureRemoteImages(
-      evalsDir,
-      suites,
-      imagePusher(client),
-    );
-    const failed = await runSuites(evalsDir, suites, overrides, runEnv, images);
-    await reportFinished("remote", suites, failed, opts);
-    return;
-  }
-
   const { uploadId, sandboxId } = await startDetachedRun(
     client,
     evalsDir,

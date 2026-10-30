@@ -588,10 +588,6 @@ Examples:
       "Run trials in Laminar sandboxes instead of local Docker (detached)",
     )
     .option(
-      "--attach",
-      "With --remote, orchestrate from this machine and wait for the results",
-    )
-    .option(
       "--suite <name>",
       "Suite to run (repeatable). Omitted → every suite",
       collectFlag,
@@ -631,8 +627,6 @@ Modes:
   --remote           Pushes the images, uploads the folder and starts the run
                      in a Laminar sandbox, then returns. Needs Docker and
                      \`lmnr-cli login\` (or LMNR_PROJECT_API_KEY).
-  --remote --attach  Orchestrates from this machine; trials run in Laminar
-                     sandboxes. Needs uv, Docker and LMNR_PROJECT_API_KEY.
 
 Images: tasks name their image with docker_image in task.toml. Images listed in
 [dir]/lmnr.yaml are built from their Dockerfile with Docker on every run:
@@ -664,7 +658,7 @@ Examples:
   $ lmnr-cli eval run
   $ lmnr-cli eval run ./evals --suite support --task "refund-*" --n-attempts 3
   $ lmnr-cli eval run --remote --n-concurrent 20
-  $ lmnr-cli eval run --remote --attach --model anthropic/claude-sonnet-5-5
+  $ lmnr-cli eval run --remote --model anthropic/claude-sonnet-5-5
 `,
     );
 
