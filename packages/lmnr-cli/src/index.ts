@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { errorMessage } from "@lmnr-ai/types";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 
 import { version } from "../package.json";
 import {
@@ -28,6 +28,11 @@ import {
 } from "./commands/debug";
 import { handleEvalRun, parsePositiveInt } from "./commands/eval";
 import { handleEvalOrchestrate } from "./commands/eval/remote";
+import {
+  type EvalSetupOptions,
+  handleEvalSetup,
+  INSTRUMENTATION_CHOICES,
+} from "./commands/eval/setup";
 import {
   handleLlmProfileCreate,
   handleLlmProfileDelete,
@@ -56,6 +61,7 @@ import { handleSkillAdd, handleSkillUpdate } from "./commands/skill";
 import { handleSqlQuery } from "./commands/sql";
 import { handleSqlSchema } from "./commands/sql/schema";
 import { handleStatus } from "./commands/status";
+import { LAUNCHABLE_AGENTS } from "./utils/coding-agents";
 import { pc } from "./utils/colors";
 import { loadLocalEnv } from "./utils/env-file";
 import { withTrackingOptions } from "./utils/track-command";
@@ -559,10 +565,11 @@ Examples:
   const evalCmd = program
     .command("eval")
     .alias("evals")
-    .description("Run Harbor evals locally or in Laminar sandboxes")
+    .description("Set up and run Harbor evals, locally or in Laminar sandboxes")
     .option(
       "--project-id <id>",
-      "Target project id for --remote. Defaults to the linked .lmnr/project.json",
+      "Target project id for --remote, or the project `eval setup` links when " +
+        "you can access more than one. Defaults to the linked .lmnr/project.json",
     )
     .option(
       "--base-url <url>",
@@ -574,6 +581,64 @@ Examples:
       (val) => parseInt(val, 10),
     )
     .option("--json", "Output structured JSON to stdout");
+
+  evalCmd
+    .command("setup")
+    .description(
+      "Get this repo ready for `eval run` and hand the work to your coding agent",
+    )
+    .addOption(
+      new Option(
+        "--instrumentation <state>",
+        "Skip the instrumentation question: the agent is already instrumented " +
+          "with Laminar, should be instrumented, or should stay uninstrumented",
+      ).choices(INSTRUMENTATION_CHOICES),
+    )
+    .option(
+      "--agent <name>",
+      `Coding agent to open without asking which (${Object.keys(LAUNCHABLE_AGENTS).join(", ")})`,
+    )
+    .option(
+      "--print-prompt",
+      "Print the task for your coding agent instead of opening one",
+    )
+    .option("--copy", "Also copy the printed task to the clipboard")
+    .option("--no-browser", "Do not auto-open the device-flow URL")
+    .option(
+      "--frontend-url <url>",
+      "Frontend URL (issuer). Defaults to LMNR_FRONTEND_URL or https://laminar.sh",
+    )
+    .action(async (_opts, cmd: Command) => {
+      await handleEvalSetup(cmd.optsWithGlobals() as EvalSetupOptions);
+    })
+    .addHelpText(
+      "after",
+      `
+Steps:
+  1. Runs the \`lmnr-cli setup\` steps: log in, link the project, make sure
+     LMNR_PROJECT_API_KEY is configured, and install or refresh the Laminar
+     skill. Prints one line when everything was already in place.
+  2. Asks whether the agent you want to evaluate is instrumented with Laminar,
+     and if not, whether to instrument it.
+  3. Opens your coding agent (Claude Code, Codex, Cursor, Gemini CLI, OpenCode
+     or Copilot CLI, whichever is installed) with a short task: use the Laminar
+     skill to instrument the agent if you chose to, build the evals folder,
+     and run it with \`lmnr-cli eval run\`. With no agent installed, or if you
+     decline, the task is printed for you to paste.
+
+When a coding agent runs this command (no TTY, or an agent's env var such as
+CLAUDECODE), nothing is asked or opened: the task is printed on stdout for that
+agent to follow. Without --instrumentation, the task then tells the agent to
+check the instrumentation and ask you. --json prints {projectId, projectName,
+workspaceName, instrumentation, skillPath, prompt}.
+
+Examples:
+  $ lmnr-cli eval setup
+  $ lmnr-cli eval setup --agent codex
+  $ lmnr-cli eval setup --instrumentation add --print-prompt --copy
+  $ lmnr-cli eval setup --instrumentation already --json
+`,
+    );
 
   evalCmd
     .command("run")

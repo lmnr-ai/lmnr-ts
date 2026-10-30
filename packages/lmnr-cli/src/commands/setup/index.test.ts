@@ -55,7 +55,7 @@ vi.mock("../../auth/api-key", () => ({
 vi.mock("../../utils/install-skill", () => ({ installSkill: h.installSkill }));
 
 import { SessionExpiredError } from "../../auth/resolve";
-import { handleSetup } from "./index";
+import { handleSetup, runSetup } from "./index";
 
 const VALID_CREDS = {
   version: 1,
@@ -70,6 +70,7 @@ const VALID_CREDS = {
 
 let exitSpy: ReturnType<typeof vi.spyOn>;
 let stdoutSpy: ReturnType<typeof vi.spyOn>;
+let stderrSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -79,7 +80,7 @@ beforeEach(() => {
     throw new Error(`process.exit(${code})`);
   }) as never);
   stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-  vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 });
 
 afterEach(() => {
@@ -145,5 +146,114 @@ describe("handleSetup — expired session recovery", () => {
       handleSetup({ json: true, writeEnv: false, browser: false }),
     ).rejects.toThrow("process.exit(6)");
     expect(h.handleLogin).not.toHaveBeenCalled();
+  });
+});
+
+describe("runSetup — quiet (eval setup)", () => {
+  const alreadySetUp = () => {
+    h.safeReadCredentials.mockResolvedValue(VALID_CREDS);
+    h.refreshIfNeeded.mockResolvedValue(VALID_CREDS);
+    h.readLocalProjectFile.mockResolvedValue({
+      projectId: "proj-1",
+      projectName: "Proj",
+      workspaceName: "WS",
+    });
+    h.listProjects.mockResolvedValue([
+      { id: "proj-1", name: "Proj", workspaceId: "w1", workspaceName: "WS" },
+    ]);
+    h.findEnvKey.mockResolvedValue(null);
+    h.mintProjectApiKey.mockResolvedValue({ apiKey: "lmnr-key" });
+    h.installSkill.mockResolvedValue({
+      written: ["/repo/.claude/skills/laminar/SKILL.md"],
+      defaulted: false,
+      skipped: false,
+    });
+  };
+
+  it("drops the banner and success lines, and returns the result", async () => {
+    alreadySetUp();
+    const result = await runSetup({ quiet: true, writeEnv: false });
+    const err = stderrSpy.mock.calls
+      .map((c: unknown[]) => String(c[0]))
+      .join("");
+    expect(err).toBe("");
+    expect(stdoutSpy).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      projectId: "proj-1",
+      skillsInstalled: ["/repo/.claude/skills/laminar/SKILL.md"],
+      skillSkipped: false,
+    });
+  });
+
+  it("still says so when the skill install was skipped", async () => {
+    alreadySetUp();
+    h.installSkill.mockResolvedValue({
+      written: [],
+      defaulted: false,
+      skipped: true,
+    });
+    const result = await runSetup({ quiet: true, writeEnv: false });
+    const err = stderrSpy.mock.calls
+      .map((c: unknown[]) => String(c[0]))
+      .join("");
+    expect(err).toContain("Laminar skill install skipped");
+    expect(result.skillSkipped).toBe(true);
+  });
+
+  it("keeps skillSkipped out of setup's --json result", async () => {
+    alreadySetUp();
+    await handleSetup({ json: true, writeEnv: false });
+    const out = stdoutSpy.mock.calls
+      .map((c: unknown[]) => String(c[0]))
+      .join("");
+    expect(JSON.parse(out)).not.toHaveProperty("skillSkipped");
+  });
+});
+
+describe("runSetup — non-interactive (agent caller)", () => {
+  it("fails with project_ambiguous (7) instead of prompting", async () => {
+    h.safeReadCredentials.mockResolvedValue(VALID_CREDS);
+    h.refreshIfNeeded.mockResolvedValue(VALID_CREDS);
+    h.readLocalProjectFile.mockResolvedValue(null); // unlinked → resolve via CLI
+    h.findEnvKey.mockResolvedValue(null);
+    h.listProjects.mockResolvedValue([
+      { id: "p1", name: "A", workspaceId: "w1", workspaceName: "WS" },
+      { id: "p2", name: "B", workspaceId: "w1", workspaceName: "WS" },
+    ]);
+
+    await expect(
+      runSetup({ quiet: true, interactive: false, writeEnv: false }),
+    ).rejects.toThrow("process.exit(7)");
+    expect(h.promptProjectChoice).not.toHaveBeenCalled();
+    const err = stderrSpy.mock.calls
+      .map((c: unknown[]) => String(c[0]))
+      .join("");
+    expect(err).toContain("project_ambiguous");
+    expect(err).toContain("--project-id");
+  });
+
+  it("still picks the only project without asking", async () => {
+    h.safeReadCredentials.mockResolvedValue(VALID_CREDS);
+    h.refreshIfNeeded.mockResolvedValue(VALID_CREDS);
+    h.readLocalProjectFile.mockResolvedValue(null);
+    h.findEnvKey.mockResolvedValue(null);
+    h.listProjects.mockResolvedValue([
+      { id: "p1", name: "A", workspaceId: "w1", workspaceName: "WS" },
+    ]);
+    h.writeLocalProjectFile.mockResolvedValue("/tmp/.lmnr/project.json");
+    h.mintProjectApiKey.mockResolvedValue({ apiKey: "lmnr-key" });
+    h.installSkill.mockResolvedValue({
+      written: [],
+      defaulted: false,
+      skipped: false,
+    });
+
+    const result = await runSetup({
+      quiet: true,
+      interactive: false,
+      writeEnv: false,
+    });
+    expect(result.projectId).toBe("p1");
+    expect(h.promptProjectChoice).not.toHaveBeenCalled();
   });
 });

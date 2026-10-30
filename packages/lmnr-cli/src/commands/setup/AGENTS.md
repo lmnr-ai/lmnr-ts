@@ -12,3 +12,19 @@
   key on a blip). The local helper is `probeProjectKey` in
   `src/commands/setup/index.ts`. The old standalone `GET /v1/project` probe
   (`src/auth/project-id.ts`) was DELETED — do not reintroduce a key-authed probe.
+- `handleSetup` = `runSetup` (the steps, returns the result) + its summary
+  printing. `eval setup` reuses `runSetup({quiet: true})`: `quiet` drops only
+  the banner and success lines (logged in, project, key already set, skill
+  installed); warnings, prompts, the device flow and on-disk changes (link
+  written, `.env` updated) still print. `ensureProjectKey` takes the same
+  `quiet`. The skill download starts before the key probe/mint and is awaited
+  after it (it needs no auth), so the two network waits overlap; `installSkill`
+  is best-effort and never rejects, so a key failure exiting mid-download is safe.
+- `runSetup({interactive})` (default `!json`) gates the only stdin prompt in
+  the setup steps, the multi-project picker in `resolveProjectViaCli`. With
+  `interactive: false` an ambiguous project fails `project_ambiguous` (7) like
+  `--json` does. `eval setup` passes `interactive: canAsk`: under an agent the
+  picker printed and then either hung (stdin an open pipe, how agent runners
+  spawn commands) or read EOF and exited 0 having linked nothing. The device
+  flow (login, or the zero-projects create flow) is NOT a stdin prompt and
+  stays enabled for agent callers.

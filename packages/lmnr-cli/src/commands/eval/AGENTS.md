@@ -13,7 +13,26 @@
     orchestrator sandbox runs `npx lmnr-cli@<cliVersion> eval orchestrate`
     (hidden command), so `RunSpec` only has to stay readable by the SAME version.
     Streaming results back to the CLI is the follow-up.
-- Modules: `index.ts` (`eval run` flow, reporting), `remote.ts` (`RunSpec`,
+- `lmnr-cli eval setup` (`setup.ts`) gets a repo ready for `eval run`, then
+  hands the work to the user's coding agent. It runs the `setup` steps via
+  `runSetup({quiet: true})` (one `✓ Laminar ready` line when nothing changed),
+  asks "is the agent instrumented?" (default from `findLaminarSdk` in
+  `instrumentation.ts`, a manifest scan that only sets the default, never
+  skips the question) and, if not, "instrument it?", then builds a SHORT
+  prompt (`buildEvalSetupPrompt`). Keep it short: the how-to lives in the
+  `laminar` skill (instrumentation refs + `env-evals.md`), so the prompt
+  carries only the user's answers plus the installed `SKILL.md` path (named
+  explicitly because not every agent auto-loads `.claude`/`.agents` skills).
+  - Handoff: launch an installed agent CLI from `utils/coding-agents.ts`
+    (`LAUNCHABLE_AGENTS`), else the task is already on screen to paste.
+    Clipboard copy is opt-in (`--copy`, or a `[y/N]` question).
+  - When an agent is the caller (`isAgentCaller`: no TTY, or `CLAUDECODE` /
+    `AI_AGENT` / `CODEX_THREAD_ID` / `GEMINI_CLI` / ...), or with `--json` /
+    `--print-prompt`, nothing is asked or launched; the prompt goes to stdout.
+    Without `--instrumentation` the prompt is then the `unknown` variant,
+    which tells the agent to check and ask the user itself.
+- Modules: `index.ts` (`eval run` flow, reporting), `setup.ts` (`eval setup`),
+  `instrumentation.ts` (Laminar SDK manifest scan), `remote.ts` (`RunSpec`,
   `startRemoteRun`, `eval orchestrate`), `env.ts` (`--env`, `${VAR}`
   resolution, the Harbor process env), `suites.ts` (suite discovery,
   `SKIPPED_DIRS`, the run's tasks (`findTaskTomls`), `buildJobConfig`), `harbor.ts` (uvx/Harbor
@@ -131,3 +150,21 @@
   none, `.sh` files are packed 0755 and the rest 0644 (Harbor's own rule,
   `needs_chmod`). Ownership and mtimes are fixed so local user names and times
   don't leak.
+- **Agent CLI argv** (`LAUNCHABLE_AGENTS`), checked against each CLI's
+  `--help` in 2026-10: `claude <p>`, `codex <p>`, `cursor-agent <p>`,
+  `gemini -i <p>`, `opencode --prompt <p>`, `copilot -i <p>`. Always the
+  interactive form: `-p` is headless for Claude/Gemini/Copilot, and the user
+  must see and approve the edits. Cursor is detected as `cursor-agent`, not its
+  generic `agent` alias. Detection is a PATH lookup (`findOnPath`), never
+  `--version` (six probes would cost seconds). `launchAgent` ignores SIGINT
+  while the child runs (Ctrl-C belongs to the agent) and on Windows flattens
+  the prompt's newlines (cmd.exe ends the command line at one).
+- Testing `eval setup` end to end without a Laminar account: point
+  `XDG_CONFIG_HOME` at a dir with a `lmnr/credentials.json` whose
+  `accessTokenExpiresAt` is far in the future (no refresh call), serve
+  `GET /v1/cli/projects` and `POST /v1/cli/project` from a stub
+  (`LMNR_BASE_URL=http://localhost LMNR_HTTP_PORT=<port>`), put a fake
+  `claude` script first on PATH that records its argv, and drive the CLI in a
+  PTY (Python `pty.fork`). Run under `env -i`: a sandbox running inside Claude
+  Code has `CLAUDECODE` / `AI_AGENT` / `LMNR_PROJECT_API_KEY` set, which flips
+  the flow to the agent-caller path and makes the key probe fail.

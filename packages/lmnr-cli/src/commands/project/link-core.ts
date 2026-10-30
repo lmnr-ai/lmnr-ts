@@ -80,6 +80,8 @@ export async function ensureProjectKey(params: {
   userBaseUrl: string;
   writeEnv: boolean;
   isJson: boolean;
+  /** Skip the "key already set" success line (the caller prints its own status). */
+  quiet?: boolean;
   onKeyMismatch?: "fail" | "warn";
 }): Promise<EnsureKeyResult> {
   const {
@@ -132,7 +134,7 @@ export async function ensureProjectKey(params: {
     } else if (probe.status === "ok" && probe.projectId === link.projectId) {
       // Already set for this project — no mint, no write.
       needMint = false;
-      if (!isJson) {
+      if (!isJson && params.quiet !== true) {
         process.stderr.write(
           `${pc.green("✓")} Project API Key already set in ${where}\n`,
         );
