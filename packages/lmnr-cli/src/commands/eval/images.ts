@@ -109,7 +109,7 @@ export const findTaskImages = async (suiteDir: string): Promise<TaskImages> => {
 
 /**
  * `dockerfiles` key for a task's `environment/` dir: relative to the suite
- * dir, always with `/`. A detached run's map is built on the user's machine
+ * dir, always with `/`. A remote run's map is built on the user's machine
  * (possibly Windows) and looked up in a Linux orchestrator.
  */
 export const dockerfileKey = (

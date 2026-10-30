@@ -27,7 +27,7 @@ import {
   handleDebugSessionSummary,
 } from "./commands/debug";
 import { handleEvalRun, parsePositiveInt } from "./commands/eval";
-import { handleEvalOrchestrate } from "./commands/eval/detached";
+import { handleEvalOrchestrate } from "./commands/eval/remote";
 import {
   handleLlmProfileCreate,
   handleLlmProfileDelete,
@@ -585,7 +585,7 @@ Examples:
     )
     .option(
       "--remote",
-      "Run trials in Laminar sandboxes instead of local Docker (detached)",
+      "Run in Laminar sandboxes instead of local Docker; the CLI exits once the run starts",
     )
     .option(
       "--suite <name>",
@@ -664,7 +664,7 @@ Examples:
 
   evalCmd
     .command("orchestrate", { hidden: true })
-    .description("Run a detached run's suites (inside its Laminar sandbox)")
+    .description("Run a remote run's suites (inside its Laminar sandbox)")
     .action(withLocalOpts(handleEvalOrchestrate));
 
   const llmProfileCmd = program

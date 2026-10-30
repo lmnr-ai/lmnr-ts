@@ -19,7 +19,7 @@ const logger = initializeLogger();
 
 /**
  * Harbor and the Laminar plugin are pinned so a suite behaves the same on a
- * laptop, in CI and in a detached run's orchestrator, and because
+ * laptop, in CI and in a remote run's orchestrator, and because
  * `lmnr_hosted_env.py` subclasses Harbor's `BaseEnvironment`, whose API moves
  * between releases.
  */

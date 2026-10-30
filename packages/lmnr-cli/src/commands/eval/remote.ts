@@ -17,7 +17,7 @@ const logger = initializeLogger();
 const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024;
 
 /**
- * A detached run, written here and read back by `eval orchestrate` in the
+ * A remote run, written here and read back by `eval orchestrate` in the
  * orchestrator sandbox, which runs this same CLI version.
  */
 interface RunSpec extends RemoteImages {
@@ -33,7 +33,7 @@ const formatMiB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
  * Pack and upload the evals folder, push its images, and start the run in an
  * orchestrator sandbox. Returns once that sandbox has started.
  */
-export const startDetachedRun = async (
+export const startRemoteRun = async (
   client: LaminarClient,
   evalsDir: string,
   suites: string[],
@@ -47,7 +47,7 @@ export const startDetachedRun = async (
   );
   if (dropped.length > 0) {
     logger.warn(
-      `Not sending ${dropped.join(", ")}: detached runs report with their own key.`,
+      `Not sending ${dropped.join(", ")}: remote runs report with their own key.`,
     );
   }
 
@@ -103,7 +103,7 @@ const readRunSpec = (): RunSpec => {
 };
 
 /**
- * `lmnr-cli eval orchestrate` (hidden): the detached run's entry point inside
+ * `lmnr-cli eval orchestrate` (hidden): the remote run's entry point inside
  * its orchestrator sandbox. The evals folder is the cwd; the spec, project key
  * and API URL come from the env the app-server set.
  */

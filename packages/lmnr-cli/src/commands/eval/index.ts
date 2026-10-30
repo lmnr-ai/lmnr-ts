@@ -12,11 +12,11 @@ import { findEnvKey } from "../../utils/env-file";
 import { readLocalProjectFile } from "../../utils/local-project-file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
-import { startDetachedRun } from "./detached";
 import { buildLocalImages } from "./docker";
 import { API_KEY_VAR, harborEnv, parseEnvFlags, resolveRunEnv } from "./env";
 import { assertSuitesPassed, runSuites } from "./harbor";
 import { loadImageDefs } from "./images";
+import { startRemoteRun } from "./remote";
 import { discoverSuites, type RunOverrides } from "./suites";
 
 const logger = initializeLogger();
@@ -107,7 +107,7 @@ const reportLocal = async (
 
 /**
  * `lmnr-cli eval run [dir]`: run Harbor suites locally on Docker (default), or
- * with `--remote` in Laminar sandboxes (detached: the run continues there).
+ * with `--remote` in Laminar sandboxes (the run continues there; the CLI exits).
  */
 export const handleEvalRun = async (
   dir: string,
@@ -135,7 +135,7 @@ export const handleEvalRun = async (
   }
 
   const client = await buildRemoteClient(opts);
-  const { uploadId, sandboxId } = await startDetachedRun(
+  const { uploadId, sandboxId } = await startRemoteRun(
     client,
     evalsDir,
     suites,
@@ -144,10 +144,10 @@ export const handleEvalRun = async (
   );
   const url = await evaluationsUrl(opts.projectId);
   if (opts.json) {
-    outputJson({ mode: "detached", uploadId, sandboxId, suites, url });
+    outputJson({ mode: "remote", uploadId, sandboxId, suites, url });
     return;
   }
-  logger.info(`Started detached run in sandbox ${sandboxId}`);
+  logger.info(`Started remote run in sandbox ${sandboxId}`);
   if (url) {
     logger.info(`Results appear in evaluations grouped by suite: ${url}`);
   }

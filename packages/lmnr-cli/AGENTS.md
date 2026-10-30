@@ -43,7 +43,7 @@ If you are going to build out a new feature, make sure you read that article to 
 ## Nested AGENTS.md files
 
 - `src/commands/debug/AGENTS.md` - debug sessions, `.lmnr/debug-session.json` resolution and contract, notes as session blocks
-- `src/commands/eval/AGENTS.md` - `eval run` / `eval orchestrate` (Harbor evals): modes, remote image push, detached runs, exit codes
+- `src/commands/eval/AGENTS.md` - `eval run` / `eval orchestrate` (Harbor evals): modes, remote image push, remote runs, exit codes
 - `src/commands/llm-profile/AGENTS.md` - LLM profile CRUD, provider flags, update semantics
 - `src/commands/setup/AGENTS.md` - probing an existing project API key
 - `src/commands/signal/AGENTS.md` - trigger / filter / mode flags, repeatable flags, partial updates, backfill

@@ -159,7 +159,7 @@ as an evaluation, grouped by suite.
 ```bash
 lmnr-cli eval run                                  # trials on local Docker
 lmnr-cli eval run --suite support --task "refund-*"
-lmnr-cli eval run --remote                         # in Laminar sandboxes, detached
+lmnr-cli eval run --remote                         # in Laminar sandboxes
 ```
 
 Both modes need Docker; local runs also need [uv](https://docs.astral.sh/uv/)

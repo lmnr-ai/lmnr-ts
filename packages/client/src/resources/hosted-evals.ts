@@ -1,6 +1,6 @@
 import { BaseResource, type LaminarAuth } from "./index";
 
-/** Starts a detached run. See {@link HostedEvalsResource.startRun}. */
+/** Starts a remote run. See {@link HostedEvalsResource.startRun}. */
 export interface StartHostedEvalRunOptions {
   /** Id returned by {@link HostedEvalsResource.upload}. */
   uploadId: string;
@@ -18,7 +18,7 @@ export interface StartHostedEvalRunOptions {
  *
  * - Images: `missingLayers` / `uploadLayer` / `createImage` push an image built
  *   locally (layers named by their `diff_id`); trials start from it.
- * - Detached runs: `upload` the `.tar.gz` of the evals folder, then `startRun`
+ * - Remote runs: `upload` the `.tar.gz` of the evals folder, then `startRun`
  *   to orchestrate it in a Laminar sandbox. Results land in the project as
  *   regular evaluations; v0 returns no run status.
  */
@@ -93,7 +93,7 @@ export class HostedEvalsResource extends BaseResource {
     return (await response.json()) as { uploadId: string };
   }
 
-  /** Start a detached run. Returns once its orchestrator sandbox has started. */
+  /** Start a remote run. Returns once its orchestrator sandbox has started. */
   public async startRun(
     options: StartHostedEvalRunOptions,
   ): Promise<{ sandboxId: string }> {

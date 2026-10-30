@@ -4,11 +4,10 @@ import path from "node:path";
 
 import type { LaminarClient } from "@lmnr-ai/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import { handleEvalOrchestrate, startDetachedRun } from "./detached";
 import { imagePusher } from "./docker";
 import { runSuites } from "./harbor";
 import type { ImageDef } from "./images";
+import { handleEvalOrchestrate, startRemoteRun } from "./remote";
 import { runCommand } from "./run-command";
 
 vi.mock("./docker", () => ({ imagePusher: vi.fn() }));
@@ -48,7 +47,7 @@ const IMAGES = {
 };
 
 beforeEach(async () => {
-  root = await mkdtemp(path.join(tmpdir(), "lmnr-detached-"));
+  root = await mkdtemp(path.join(tmpdir(), "lmnr-remote-"));
 });
 
 afterEach(async () => {
@@ -58,7 +57,7 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-void describe("startDetachedRun", () => {
+void describe("startRemoteRun", () => {
   void it("sends one image map and per-suite Dockerfile digests", async () => {
     await writeEvals();
     vi.mocked(imagePusher).mockReturnValue({
@@ -70,7 +69,7 @@ void describe("startDetachedRun", () => {
       hostedEvals: { upload: async () => ({ uploadId: "up-1" }), startRun },
     } as unknown as LaminarClient;
 
-    const started = await startDetachedRun(
+    const started = await startRemoteRun(
       client,
       root,
       ["a", "b"],

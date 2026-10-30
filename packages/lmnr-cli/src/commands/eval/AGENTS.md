@@ -6,15 +6,15 @@
   suite dir so relative paths and custom agent imports resolve the same way
   everywhere. Harbor's stdout goes to OUR stderr; stdout is data only.
   - default: trials on local Docker; `lmnr.yaml` images are `docker build`-ed first.
-  - `--remote`: detached. Packs the folder (`pack.ts`) and checks the 1 GiB
+  - `--remote`: runs in Laminar sandboxes and the CLI exits once the run
+    starts. Packs the folder (`pack.ts`) and checks the 1 GiB
     cap BEFORE pushing images, then uploads it and `POST
     /v1[/cli]/hosted-evals/runs {uploadId, cliVersion, spec}`. The server's
     orchestrator sandbox runs `npx lmnr-cli@<cliVersion> eval orchestrate`
     (hidden command), so `RunSpec` only has to stay readable by the SAME version.
-    There is no attached remote mode (Harbor here, trials remote): it was
-    dropped as unneeded; streaming results from detached runs is the follow-up.
-- Modules: `index.ts` (`eval run` flow, reporting), `detached.ts` (`RunSpec`,
-  `startDetachedRun`, `eval orchestrate`), `env.ts` (`--env`, `${VAR}`
+    Streaming results back to the CLI is the follow-up.
+- Modules: `index.ts` (`eval run` flow, reporting), `remote.ts` (`RunSpec`,
+  `startRemoteRun`, `eval orchestrate`), `env.ts` (`--env`, `${VAR}`
   resolution, the Harbor process env), `suites.ts` (suite discovery,
   `SKIPPED_DIRS`, task.toml scan, `buildJobConfig`), `harbor.ts` (uvx/Harbor
   only), `images.ts` (`lmnr.yaml`, what tasks start from, `ensureRemoteImages`),
@@ -71,7 +71,7 @@
   into `RunSpec`. Each suite's Harbor gets `LMNR_EVAL_IMAGES = {images,
   dockerfiles: <that suite's>}` (`suiteImages`). Dockerfile keys are the env
   dir relative to the suite dir (Harbor's cwd), always with `/`
-  (`dockerfileKey`: a detached run looks a Windows-built map up on Linux).
+  (`dockerfileKey`: a remote run looks a Windows-built map up on Linux).
 - **Remote limitations:** a per-task Dockerfile `FROM <lmnr.yaml image>` does
   not work remotely and is not supported: remote pushes tag `lmnr.yaml` images
   `lmnr-evals-remote:<hash>`, not by name, so the `FROM` resolves to a
@@ -101,7 +101,7 @@
   values become the Harbor process env (`harborEnv` adds the project key and
   `LMNR_BASE_URL`), so Harbor fills agent, verifier and environment sections
   itself. `--env KEY[=V]` adds vars and references them from every agent as
-  `${KEY}`, so literal values never hit the job config. Detached runs send the
+  `${KEY}`, so literal values never hit the job config. Remote runs send the
   values in the spec and drop `LMNR_*` (the orchestrator gets its own key and
   URL).
 - `LMNR_GRPC_PORT` (env or `.env`) becomes `--pk grpc_port=`: the plugin
