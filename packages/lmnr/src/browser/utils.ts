@@ -5,6 +5,8 @@ import {
 } from "@lmnr-ai/types";
 import { Page as PlaywrightPage } from "playwright";
 import { Page as PuppeteerPage } from "puppeteer";
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 
 import { LaminarClient } from "..";
 import { initializeLogger } from "../utils";
@@ -151,6 +153,13 @@ const zodKind = (schema: any): string | undefined => {
   }
   return typeof def?.type === "string" ? def.type : undefined;
 };
+
+// Zod 4's toJSONSchema only reads `_zod`, so zod 3 schemas (Stagehand v2, or
+// v3 on zod 3.x) go through zod-to-json-schema, which duck-types them.
+export const zodToJsonSchemaCompat = (schema: any): unknown =>
+  schema?._zod
+    ? z.toJSONSchema(schema, { unrepresentable: "any" })
+    : zodToJsonSchema(schema);
 
 export const prettyPrintZodSchema = (schema: any, indent = 2): string => {
   if (zodKind(schema) !== "object") {

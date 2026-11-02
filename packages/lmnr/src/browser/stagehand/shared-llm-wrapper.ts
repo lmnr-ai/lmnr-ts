@@ -1,11 +1,14 @@
 import { errorMessage } from "@lmnr-ai/types";
 import { trace } from "@opentelemetry/api";
-import { z } from "zod";
 import { instrumentedObserve } from "../../opentelemetry-lib/instrumentation/shared/base";
 import { SPAN_TYPE } from "../../opentelemetry-lib/tracing/attributes";
 import { LaminarContextManager } from "../../opentelemetry-lib/tracing/context";
 import { initializeLogger } from "../../utils";
-import { modelToProvider, STAGEHAND_PACKAGE } from "../utils";
+import {
+  modelToProvider,
+  STAGEHAND_PACKAGE,
+  zodToJsonSchemaCompat,
+} from "../utils";
 
 const laminarObserve = instrumentedObserve(STAGEHAND_PACKAGE);
 const logger = initializeLogger();
@@ -162,11 +165,8 @@ export const createLLMClientCreateChatCompletionWrapper =
           // Set structured output schema if present
           if (innerOptions.response_model?.schema) {
             try {
-              const schema = z.toJSONSchema(
+              const schema = zodToJsonSchemaCompat(
                 innerOptions.response_model.schema,
-                {
-                  unrepresentable: "any",
-                },
               );
               if (schema) {
                 span.setAttributes({
