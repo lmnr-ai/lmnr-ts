@@ -33,6 +33,14 @@ Module-specific notes live in nested `AGENTS.md` files next to the code (each wi
   - Verified on the published `0.8.52`.
   - Existing lockfiles and `pnpm` installs of this repo were unaffected, so CI never saw it.
 - Moving to OTel 3.0 / api 1.10 is its own migration: raise the 0.x caps, the `^2.0.0` caps and `api` together. Raising just one range brings the crash back.
+- **Host SDK lines (v1 / v2 / v3) are handled at runtime by `src/opentelemetry-lib/tracing/sdk-compat.ts`.**
+  - Nothing else constructs SDK classes: `LaminarSpanProcessor`, `SizeLimitedBatchSpanProcessor` and `startTracing` go through `getSdkAdapter()` (`createSimpleSpanProcessor`, `createBatchSpanProcessor`, `createTracerProvider`, `createAlwaysOnSampler`).
+  - It `require`s `@opentelemetry/sdk-trace` first and falls back to `sdk-trace-base`. The constructor style is decided by which package resolved, NOT by version: `sdk-trace` 2.12+ / 3.x take `{ exporter, ...config }`, while `sdk-trace-base` 1.x / 2.x (including the deprecated 2.12 shim) are positional.
+  - `sdk-trace-node` and `sdk-node` are no longer dependencies: `BasicTracerProvider` / `TracerProvider` replace `NodeTracerProvider` (we never `register()`), and `sdk-node` was unused.
+  - `@opentelemetry/sdk-trace` is an optional peer (`^2.12.0 || ^3.0.0`). The `sdk-trace-base` dependency still installs a nested v2 tree for v3 hosts, so the adapter finds `sdk-trace` only when it is hoisted. Consequently a v3 host `npm ls` shows `invalid` peer ranges (`api <1.10` on the nested v2 packages). Runtime is fine.
+  - Flipping the default install line to v3 (api `^1.10`, `core` / `resources` / `sdk-trace` `^3`, 0.x `>=0.300.0 <0.400.0`, `engines.node >=22.15`) is the remaining step; it must move all ranges together, as above.
+  - Tests must not use `instanceof` against an `import`ed SDK class: the adapter `require`s, which can resolve a different build (CJS) than `import` (ESM). Compare constructor names instead.
+- **Host matrix**: `node test/sdk-matrix/run.mjs [v1|v2|v3]` packs the SDK, installs it next to each host SDK line in a temp dir, and runs `host-check.cjs`: Laminar next to a host-registered provider, `LaminarSpanProcessor` inside a host provider, and host spans through the real OTLP exporter. It needs network and is not part of `pnpm test`.
 - **Check dependency changes with a clean npm install**: `pnpm pack`, then `npm i <tarball>` in an empty dir and call `Laminar.initialize()`. The workspace lockfile hides resolution problems like this one.
 
 ## Environment variables
