@@ -1,7 +1,5 @@
 import { Context, context } from "@opentelemetry/api";
 import {
-  BatchSpanProcessor,
-  SimpleSpanProcessor,
   type Span,
   SpanExporter,
   SpanProcessor,
@@ -46,6 +44,7 @@ import {
 } from "./context";
 import { LaminarSpanExporter } from "./exporter";
 import { detectRelease } from "./release";
+import { getSdkAdapter } from "./sdk-compat";
 import { TrajectoryCollector } from "./trajectory";
 
 interface LaminarSpanProcessorOptions {
@@ -203,14 +202,17 @@ export class LaminarSpanProcessor implements SpanProcessor {
         exportTimeoutMillis: options.traceExportTimeoutMillis ?? 30000,
       };
       if (options.disableBatch) {
-        this.instance = new SimpleSpanProcessor(exporter);
+        this.instance = getSdkAdapter().createSimpleSpanProcessor(exporter);
       } else if (options.flushBySize) {
         this.instance = new SizeLimitedBatchSpanProcessor(exporter, {
           ...batchConfig,
           maxExportBatchSizeBytes: options.maxExportBatchSizeBytes,
         });
       } else {
-        this.instance = new BatchSpanProcessor(exporter, batchConfig);
+        this.instance = getSdkAdapter().createBatchSpanProcessor(
+          exporter,
+          batchConfig,
+        );
       }
     }
     // Only this processor's `onStart` / `onEnd` run when it wraps another
