@@ -167,14 +167,11 @@ jobs:
       - name: Run tests
         run: pnpm --filter @lmnr-ai/* test
 
-      - name: Publish types package
-        run: cd packages/types && pnpm publish --provenance --access public --no-git-checks
-
-      - name: Publish client package
-        run: cd packages/client && pnpm publish --provenance --access public --no-git-checks
-
-      - name: Publish main SDK package
-        run: cd packages/lmnr && pnpm publish --provenance --access public --no-git-checks
+      # Recursive publish skips versions already on npm, so a re-run after a
+      # partial failure only publishes what is missing. pnpm orders packages
+      # by dependency (types, client, lmnr).
+      - name: Publish SDK packages
+        run: pnpm --filter "@lmnr-ai/*" publish --provenance --access public --no-git-checks
 
       - name: Verify npm provenance
         env:
