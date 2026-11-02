@@ -31,9 +31,13 @@ export type PiSpanStatus =
   | { status: "ok" }
   | { status: "error"; error?: { name: string; message: string } };
 
-/** `TelemetryContext` from `@earendil-works/pi-telemetry`. */
+/**
+ * `TelemetryContext` from `@earendil-works/pi-telemetry`. `metrics` is left
+ * out on purpose: Laminar doesn't provide it, and declaring it as anything
+ * but Pi's `TelemetryMetrics` makes `Harness.open(…, { telemetry })` fail to
+ * type-check.
+ */
 export interface PiTelemetryContext {
-  readonly metrics?: unknown;
   readonly propagation?: PiTelemetryPropagation;
   startSpan<T>(
     options: PiSpanOptions,

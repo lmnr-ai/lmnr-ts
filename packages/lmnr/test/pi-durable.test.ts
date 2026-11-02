@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { afterEach, before, beforeEach, describe, it } from "node:test";
 
+import type {
+  Extension,
+  HarnessOptions,
+  Registry,
+} from "@earendil-works/pi-durable";
 import { context as otelContext } from "@opentelemetry/api";
 import { isTracingSuppressed } from "@opentelemetry/core";
 import {
@@ -15,6 +20,7 @@ import {
   initializeTracing,
 } from "../src/opentelemetry-lib/configuration";
 import {
+  LAMINAR_PI_EXTENSION_NAME,
   laminarPiDurable,
   PiDurableInstrumentation,
 } from "../src/opentelemetry-lib/instrumentation/pi-durable";
@@ -108,6 +114,16 @@ const reopenableStorage = () => {
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
+};
+
+// Compile-time only (tsc, not tsx): the README's wiring type-checks against
+// Pi's own types, so hosts need no casts.
+export const _readmeWiringTypeChecks = (
+  lmnr: ReturnType<typeof laminarPiDurable>,
+  registry: Registry,
+): Pick<HarnessOptions, "telemetry"> => {
+  registry.install(lmnr.extension satisfies Extension);
+  return { telemetry: lmnr.telemetry };
 };
 
 const byName = (spans: ReadableSpan[], name: string) =>
@@ -561,6 +577,53 @@ void describe("pi-durable", () => {
       instrumentation.disable();
       (instrumentation as any).unwrapMethod(piDurable.Harness, "open");
       _resetConfiguration();
+    }
+  });
+});
+
+void describe("pi-durable extension install", () => {
+  before(load);
+
+  void it("names the extension after the package", () => {
+    assert.equal(laminarPiDurable().extension.name, "@lmnr-ai/lmnr");
+  });
+
+  void it("never replaces a foreign extension of the same name", () => {
+    const foreign = { name: LAMINAR_PI_EXTENSION_NAME };
+    const registry = piDurable.createRegistry();
+    registry.install(foreign);
+    const instrumentation = new PiDurableInstrumentation();
+    try {
+      const options = instrumentation.instrumentOptions({ registry });
+      assert.equal(
+        registry.snapshot().extension(LAMINAR_PI_EXTENSION_NAME),
+        foreign,
+      );
+      // Telemetry is still passed, so runs keep their root span.
+      assert.ok(options.telemetry);
+    } finally {
+      instrumentation.disable();
+    }
+  });
+
+  void it("replaces an extension from another laminarPiDurable()", () => {
+    const registry = piDurable.createRegistry();
+    registry.install(App);
+    registry.install(laminarPiDurable().extension);
+    const instrumentation = new PiDurableInstrumentation();
+    try {
+      instrumentation.instrumentOptions({ registry });
+      const installed = registry.snapshot().installed();
+      assert.deepEqual(
+        installed.map((extension: any) => extension.name),
+        ["app", LAMINAR_PI_EXTENSION_NAME],
+      );
+      assert.equal(
+        installed[1],
+        (instrumentation as any).integration.extension,
+      );
+    } finally {
+      instrumentation.disable();
     }
   });
 });

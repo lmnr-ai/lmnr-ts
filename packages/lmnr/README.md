@@ -98,7 +98,8 @@ const lmnr = laminarPiDurable({
 });
 
 const registry = createRegistry();
-registry.install(lmnr.extension);
+registry.install(myExtension);
+registry.install(lmnr.extension); // last
 
 const harness = await Harness.open(
   await openNodeSqliteStorage("./session.sqlite"),
@@ -108,11 +109,13 @@ const harness = await Harness.open(
 ```
 
 - Both halves are needed: `telemetry` gives runs their trace (and carries it across restarts), and the extension's hooks record the LLM and TOOL spans. If a conversation selects its extensions explicitly (`settings.extensions` or `configure({ extensions: [...] })`), include `lmnr.extension`.
+- Install `lmnr.extension` last (or list it last). Pi passes each `beforeRequest` hook the messages as the hooks before it changed them, so LLM spans only show what was really sent when Laminar's hook runs after every extension that changes requests.
+- The extension is named `@lmnr-ai/lmnr`. Pi's `registry.install` replaces an installed extension of the same name, so don't give one of yours that name.
 - To send agent traces to another project than the rest of the app, pass `projectApiKey` (or your own `tracerProvider`). `Laminar.initialize()` isn't needed then; call `await lmnr.shutdown()` before the process exits.
 - Options: `sessionId` and `userId` (a string, or a function of the conversation), `metadata`, `spanNames` (`{ run, llm, tool }`, defaults `pi.run`, `pi.chat` and the tool name), and `systemPrompt` to report another system prompt than the one Pi sent.
 - Pi's own `pi.durable.*` spans are not exported. Generation runs with tracing suppressed, so Laminar's OpenAI, Anthropic and Google instrumentations don't add a second LLM span for the SDK calls pi-ai makes.
 
-Without code changes, `Laminar.initialize({ instrumentModules: { piDurable } })` patches `Harness.open` to pass the telemetry and install the extension in the Harness's registry:
+Without code changes, `Laminar.initialize({ instrumentModules: { piDurable } })` patches `Harness.open` to pass the telemetry and install the extension in the Harness's registry, after the extensions already in it (if the registry already has a non-Laminar extension named `@lmnr-ai/lmnr`, Laminar warns and leaves it in place):
 
 ```typescript
 import * as piDurable from "@earendil-works/pi-durable";

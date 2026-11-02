@@ -30,8 +30,19 @@ export type { PiDurableConversationInfo, PiDurableSpanNames };
 
 const logger = initializeLogger();
 
-/** Name of the extension; installing it again replaces it in a registry. */
-export const LAMINAR_PI_EXTENSION_NAME = "laminar";
+/**
+ * Name of the extension. Pi's `registry.install` replaces any extension with
+ * the same name, so it is the npm package name, which no one else picks.
+ */
+export const LAMINAR_PI_EXTENSION_NAME = "@lmnr-ai/lmnr";
+
+/** Marks extensions made by any copy of this SDK. */
+const LAMINAR_EXTENSION = Symbol.for("lmnr.pi-durable.extension");
+
+const isLaminarExtension = (extension: unknown): boolean =>
+  typeof extension === "object" &&
+  extension !== null &&
+  (extension as Record<symbol, unknown>)[LAMINAR_EXTENSION] === true;
 
 export interface LaminarPiDurableOptions {
   /**
@@ -123,7 +134,10 @@ const hookSafely = async (
  * a call `beforeTool` → `afterTool`. Hooks only observe; they never change a
  * request, a call or a result.
  */
-const createExtension = (): PiExtension => ({
+const createExtension = (): PiExtension =>
+  Object.defineProperty(buildExtension(), LAMINAR_EXTENSION, { value: true });
+
+const buildExtension = (): PiExtension => ({
   name: LAMINAR_PI_EXTENSION_NAME,
   hooks: [
     {
@@ -307,6 +321,31 @@ export class PiDurableInstrumentation extends LaminarInstrumentation {
     );
   }
 
+  /**
+   * `registry.install` replaces an extension of the same name, which would
+   * silently take another extension's tools and prompt away. Replacing one of
+   * Laminar's own is harmless (every copy dispatches through the phase's
+   * telemetry), so only a foreign extension of that name blocks the install.
+   */
+  private installExtension(registry: any, extension: PiExtension): void {
+    let existing: unknown;
+    try {
+      existing = registry.snapshot?.().extension?.(extension.name);
+    } catch {
+      existing = undefined;
+    }
+    if (existing !== undefined && !isLaminarExtension(existing)) {
+      logger.warn(
+        `pi-durable registry already has an extension named ` +
+          `"${extension.name}"; Laminar won't replace it, so LLM and tool ` +
+          "spans are not recorded. Rename that extension, or trace with " +
+          "laminarPiDurable().",
+      );
+      return;
+    }
+    registry.install(extension);
+  }
+
   /** `HarnessOptions` with Laminar's telemetry, its extension installed. */
   instrumentOptions(options: any): any {
     try {
@@ -325,7 +364,7 @@ export class PiDurableInstrumentation extends LaminarInstrumentation {
       }
       this.integration ??= laminarPiDurable();
       if (typeof options.registry?.install === "function") {
-        options.registry.install(this.integration.extension);
+        this.installExtension(options.registry, this.integration.extension);
       } else {
         logger.warn(
           "pi-durable registry has no install(); install Laminar's extension " +
