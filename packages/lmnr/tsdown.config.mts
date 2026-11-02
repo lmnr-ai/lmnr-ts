@@ -16,7 +16,6 @@ export default defineConfig({
       "puppeteer-core",
       "playwright",
       "esbuild",
-      "together-ai",
     ],
     alwaysBundle: [
       "@lmnr-ai/types",
