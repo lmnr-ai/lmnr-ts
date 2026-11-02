@@ -51,6 +51,12 @@ Apps run OTel JS v1 (api 1.9, 0.5x), v2 (api 1.9, 0.2xx) or v3 (api 1.10, 0.3xx)
   - `laminar-first.cjs`: `Laminar.initialize()` before the app's OTel, and the app's provider and spans must still work. This is a separate process because the registry is per process.
   - `esm-smoke.mjs`: the ESM entry.
   - When changing dependencies or bundling, also run it against the previous release's tarball (`LMNR_TARBALL=...`) to confirm the checks still fail where expected.
+  - **It runs unlocked third-party code, so it's hardened.** Each run resolves about 150 packages per app straight from npm, with no lockfile. Keep all of the following:
+    - in `sdk-matrix.yml`: `permissions: contents: read`, `persist-credentials: false`, actions pinned by commit SHA, and no secrets or `id-token`;
+    - in `run.mjs`: `npm i --ignore-scripts --before=<now - MIN_RELEASE_AGE_DAYS>`, and an exact `NEWEST_API`, not `@latest`.
+    - Before this, a compromised transitive package would have run its install script with a write-all `GITHUB_TOKEN` readable from `.git/config`: the repo's default token permissions, persisted by `actions/checkout`.
+    - npm publishing is unreachable from here regardless: it uses OIDC in `publish-to-npm.yml` only, triggered by `release`, and releases created with `GITHUB_TOKEN` don't start workflows.
+    - A version pinned in `HOSTS`, or a fresh dependency bump, has to be older than `MIN_RELEASE_AGE_DAYS` to install.
 - To run the unit tests on api 1.10 locally, temporarily add `overrides: { "@opentelemetry/api": "1.10.0" }` to `pnpm-workspace.yaml`. The lockfile pins 1.9.1.
 
 ## Environment variables

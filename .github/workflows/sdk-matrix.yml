@@ -5,6 +5,15 @@ name: OTel SDK host matrix
 # app's @opentelemetry/api and doesn't break the app's own tracing. The
 # workspace lockfile hides npm resolution problems, so `pnpm test` can't catch
 # these. See packages/lmnr/AGENTS.md "OpenTelemetry dependency ranges".
+#
+# The matrix installs third-party packages WITHOUT a lockfile (that is the
+# point of it), so treat everything after `pnpm install` as untrusted code:
+# - the token is read-only and not left in .git/config, so a compromised
+#   package can't push branches, create releases or edit PRs with it;
+# - run.mjs installs with `--ignore-scripts` and `--before` (skips versions
+#   published in the last few days, when most malicious ones are live);
+# - actions are pinned by commit SHA.
+# This job never needs secrets or `id-token`; keep it that way.
 on:
   pull_request:
     types: [opened, synchronize]
@@ -19,15 +28,22 @@ on:
       - pnpm-lock.yaml
       - .github/workflows/sdk-matrix.yml
 
+permissions:
+  contents: read
+
 jobs:
   sdk-matrix:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install pnpm
-        uses: pnpm/setup@v3.1.1
+        uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
         with:
           version: 12.14.0
           runtime: node@24
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - run: node packages/lmnr/test/sdk-matrix/run.mjs

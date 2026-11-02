@@ -11,12 +11,7 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   deps: {
-    neverBundle: [
-      "puppeteer",
-      "puppeteer-core",
-      "playwright",
-      "esbuild",
-    ],
+    neverBundle: ["puppeteer", "puppeteer-core", "playwright", "esbuild"],
     alwaysBundle: [
       "@lmnr-ai/types",
       "@lmnr-ai/client",

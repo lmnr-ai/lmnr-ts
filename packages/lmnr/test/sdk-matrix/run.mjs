@@ -58,10 +58,35 @@ const HOSTS = {
   fresh: [],
 };
 
+// The newest @opentelemetry/api the floor check compares against. Pinned
+// rather than `@latest`, because its code gets executed (to list its
+// exports); bump it when a new api minor ships.
+const NEWEST_API = "1.10.0";
+// Installs here have no lockfile, so they resolve whatever is on npm right
+// now. Skip versions published in the last few days, when most malicious
+// releases are still live, and never run install scripts: none of the checks
+// need them, and they're where a compromised package would run first.
+const MIN_RELEASE_AGE_DAYS = 3;
+const before = new Date(
+  Date.now() - MIN_RELEASE_AGE_DAYS * 24 * 60 * 60 * 1000,
+).toISOString();
+
 const run = (cmd, args, cwd) =>
   execFileSync(cmd, args, { cwd, stdio: "inherit" });
 const npmInstall = (args, cwd) =>
-  run("npm", ["i", "--silent", "--no-audit", "--no-fund", ...args], cwd);
+  run(
+    "npm",
+    [
+      "i",
+      "--silent",
+      "--no-audit",
+      "--no-fund",
+      "--ignore-scripts",
+      `--before=${before}`,
+      ...args,
+    ],
+    cwd,
+  );
 const scratch = (name) => {
   const dir = mkdtempSync(join(tmpdir(), `lmnr-${name}-`));
   writeFileSync(
@@ -99,7 +124,7 @@ step("api floor check", () => {
   npmInstall(
     [
       `api-floor@npm:@opentelemetry/api@${floor}`,
-      "api-newest@npm:@opentelemetry/api@latest",
+      `api-newest@npm:@opentelemetry/api@${NEWEST_API}`,
     ],
     dir,
   );
