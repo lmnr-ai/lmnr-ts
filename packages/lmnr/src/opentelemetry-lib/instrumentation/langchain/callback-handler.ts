@@ -20,6 +20,7 @@ import {
   setCompletionRequest,
   setRequestAttributes,
   setResponseAttributes,
+  withoutMessages,
 } from "./span-utils";
 import { detectVendorFromClass } from "./vendor-detection";
 
@@ -204,7 +205,7 @@ export class LaminarCallbackHandler {
         metadata,
       });
       if (span && this.traceContent) {
-        span.setInput(toJson(inputs));
+        span.setInput(toJson(withoutMessages(inputs)));
       }
     });
   }
@@ -212,7 +213,7 @@ export class LaminarCallbackHandler {
   public handleChainEnd(outputs: any, runId: string): void {
     dontThrow(() => {
       try {
-        this.setOutput(runId, outputs);
+        this.setOutput(runId, withoutMessages(outputs));
       } finally {
         this.endRun(runId);
       }

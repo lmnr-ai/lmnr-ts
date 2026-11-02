@@ -46,6 +46,14 @@ export const unsupportedAgent = (m: string) =>
   new CliError("unsupported_agent", 13, m);
 export const schemaFetchFailed = (m: string) =>
   new CliError("schema_fetch_failed", 15, m);
+export const invalidEvalsDir = (m: string) =>
+  new CliError("invalid_evals_dir", 16, m);
+export const archiveTooLarge = (m: string) =>
+  new CliError("archive_too_large", 16, m);
+export const missingTool = (m: string) => new CliError("missing_tool", 17, m);
+export const harborFailed = (m: string) => new CliError("harbor_failed", 18, m);
+export const missingEnv = (m: string) => new CliError("missing_env", 19, m);
+export const dockerFailed = (m: string) => new CliError("docker_failed", 20, m);
 
 /**
  * Bare exit codes for the two sites that DON'T go through `failWith`: each emits

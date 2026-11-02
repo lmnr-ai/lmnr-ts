@@ -44,6 +44,25 @@ class BaseResource {
     const errorMsg = await response.text();
     throw new Error(`${response.status} ${errorMsg}`);
   }
+
+  /**
+   * For routes that answer errors as `{error: "<message>"}` with user-facing
+   * text: raise that message instead of the raw JSON body, falling back to the
+   * body when it isn't that shape (a proxy error page, a plain-text 413).
+   */
+  protected async handleErrorMessage(response: Response): Promise<never> {
+    const body = await response.text();
+    let message = body;
+    try {
+      const parsed = JSON.parse(body) as { error?: unknown };
+      if (typeof parsed?.error === "string" && parsed.error.length > 0) {
+        message = parsed.error;
+      }
+    } catch {
+      // Not JSON — use it as-is.
+    }
+    throw new Error(`${response.status} ${message}`);
+  }
 }
 
 export { BaseResource };

@@ -5,7 +5,6 @@ import {
   InstrumentationModuleDefinition,
   InstrumentationNodeModuleDefinition,
 } from "@opentelemetry/instrumentation";
-import { z } from "zod/v3";
 
 import { version as SDK_VERSION } from "../../../package.json";
 import { Laminar } from "../../laminar";
@@ -539,11 +538,10 @@ export class StagehandV2Instrumentation extends InstrumentationBase {
       };
   }
 
-  // Stagehand uses zod 3.x, so we need to use the v3 version of zod
   private patchStagehandExtractHandlerTextExtract() {
     return (original: (...args: any[]) => Promise<any>) =>
       async function textExtract(this: any, ...args: any[]) {
-        const schema = args[0].schema as z.AnyZodObject;
+        const schema = args[0].schema;
         let prettySchema = schema?.shape;
         try {
           prettySchema = prettyPrintZodSchema(schema);
@@ -570,7 +568,7 @@ export class StagehandV2Instrumentation extends InstrumentationBase {
   private patchStagehandExtractHandlerDomExtract() {
     return (original: (...args: any[]) => Promise<any>) =>
       async function domExtract(this: any, ...args: any[]) {
-        const schema = args[0].schema as z.AnyZodObject;
+        const schema = args[0].schema;
         let prettySchema = schema?.shape;
         try {
           prettySchema = prettyPrintZodSchema(schema);

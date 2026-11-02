@@ -5,6 +5,7 @@ import { DashboardsResource } from "./resources/dashboards";
 import { DatasetsResource } from "./resources/datasets";
 import { EvalsResource } from "./resources/evals";
 import { EvaluatorsResource } from "./resources/evaluators";
+import { HostedEvalsResource } from "./resources/hosted-evals";
 import { type LaminarAuth } from "./resources/index";
 import { LlmProfilesResource } from "./resources/llm-profiles";
 import { RolloutSessionsResource } from "./resources/rollout-sessions";
@@ -25,6 +26,7 @@ export class LaminarClient {
   private _datasets: DatasetsResource;
   private _evals: EvalsResource;
   private _evaluators: EvaluatorsResource;
+  private _hostedEvals: HostedEvalsResource;
   private _llmProfiles: LlmProfilesResource;
   private _rolloutSessions: RolloutSessionsResource;
   private _signals: SignalsResource;
@@ -87,6 +89,7 @@ export class LaminarClient {
     this._datasets = new DatasetsResource(this.baseUrl, this.auth);
     this._evals = new EvalsResource(this.baseUrl, this.auth);
     this._evaluators = new EvaluatorsResource(this.baseUrl, this.auth);
+    this._hostedEvals = new HostedEvalsResource(this.baseUrl, this.auth);
     this._llmProfiles = new LlmProfilesResource(this.baseUrl, this.auth);
     this._rolloutSessions = new RolloutSessionsResource(
       this.baseUrl,
@@ -180,6 +183,10 @@ export class LaminarClient {
     return this._evaluators;
   }
 
+  public get hostedEvals() {
+    return this._hostedEvals;
+  }
+
   public get llmProfiles() {
     return this._llmProfiles;
   }
@@ -211,6 +218,7 @@ export type {
 } from "./resources/alerts";
 export type { CliProject, ProjectKeyProbe } from "./resources/cli";
 export type { DashboardChartInput } from "./resources/dashboards";
+export type { StartHostedEvalRunOptions } from "./resources/hosted-evals";
 export type { LaminarAuth } from "./resources/index";
 export type {
   CreateLlmProfileOptions,
