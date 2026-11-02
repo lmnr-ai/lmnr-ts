@@ -95,7 +95,7 @@ const printSignal = (signal: Signal): void => {
  * doesn't have to list first; an ambiguous substring is an error rather than a
  * silent pick, since update/delete are destructive.
  */
-const resolveSignalId = async (
+export const resolveSignalId = async (
   client: LaminarClient,
   ref: string,
 ): Promise<string> => {
