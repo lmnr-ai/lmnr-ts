@@ -13,7 +13,13 @@ import * as SingletonsModule from "@langchain/core/singletons";
 import { tool } from "@langchain/core/tools";
 import { FakeListChatModel, FakeLLM } from "@langchain/core/utils/testing";
 import * as LanggraphModule from "@langchain/langgraph";
-import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
+import {
+  Annotation,
+  END,
+  MessagesAnnotation,
+  START,
+  StateGraph,
+} from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
 import { SpanStatusCode } from "@opentelemetry/api";
 import {
@@ -588,6 +594,49 @@ void describe("LangChain instrumentation", () => {
     const second = findSpan(spans, "execute_task second");
     assert.strictEqual(parentOf(second, spans), root);
     assert.strictEqual(parentOf(findSpan(spans, "in_node"), spans), second);
+  });
+
+  void it("drops the graph state's messages from chain spans", async () => {
+    const State = Annotation.Root({
+      ...MessagesAnnotation.spec,
+      topic: Annotation<string>,
+    });
+    const graph = new StateGraph(State)
+      .addNode("answer", (state) => ({
+        messages: [{ role: "assistant", content: "Sunny" }],
+        topic: `${state.topic}!`,
+      }))
+      .addEdge(START, "answer")
+      .addEdge("answer", END)
+      .compile();
+
+    const result = await graph.invoke({
+      messages: [{ role: "user", content: "Weather?" }],
+      topic: "weather",
+    });
+    // The graph itself still sees the messages
+    assert.deepStrictEqual(
+      result.messages.map((m) => m.content),
+      ["Weather?", "Sunny"],
+    );
+
+    const spans = exporter.getFinishedSpans();
+    const root = findSpan(spans, "LangGraph.workflow");
+    const node = findSpan(spans, "execute_task answer");
+    const payload = (span: ReadableSpan, key: string) =>
+      JSON.parse(span.attributes[`lmnr.span.${key}`] as string);
+    assert.deepStrictEqual(payload(root, "input"), { topic: "weather" });
+    assert.deepStrictEqual(payload(root, "output"), { topic: "weather!" });
+    assert.deepStrictEqual(payload(node, "input"), { topic: "weather" });
+    assert.deepStrictEqual(payload(node, "output"), { topic: "weather!" });
+    for (const span of spans) {
+      for (const key of ["input", "output"]) {
+        const value = span.attributes[`lmnr.span.${key}`];
+        if (typeof value === "string") {
+          assert.ok(!value.includes("Weather?"), `${span.name} ${key}`);
+        }
+      }
+    }
   });
 
   void it("nests provider calls made inside graph nodes", async () => {
