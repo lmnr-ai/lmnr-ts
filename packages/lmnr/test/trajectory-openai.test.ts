@@ -75,7 +75,7 @@ void describe("trajectory file end to end", () => {
     initializeTracing({
       exporter,
       disableBatch: true,
-      instrumentModules: { openAI: OpenAI },
+      instrumentModules: { OpenAI },
       trajectoryPath: file,
       exportSpans: true,
     });
