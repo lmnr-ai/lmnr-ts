@@ -1,12 +1,17 @@
+import { errorMessage } from "@lmnr-ai/types";
 import { trace } from "@opentelemetry/api";
-import { zodToJsonSchema } from "zod-to-json-schema";
-
 import { instrumentedObserve } from "../../opentelemetry-lib/instrumentation/shared/base";
 import { SPAN_TYPE } from "../../opentelemetry-lib/tracing/attributes";
 import { LaminarContextManager } from "../../opentelemetry-lib/tracing/context";
-import { modelToProvider, STAGEHAND_PACKAGE } from "../utils";
+import { initializeLogger } from "../../utils";
+import {
+  modelToProvider,
+  STAGEHAND_PACKAGE,
+  zodToJsonSchemaCompat,
+} from "../utils";
 
 const laminarObserve = instrumentedObserve(STAGEHAND_PACKAGE);
+const logger = initializeLogger();
 
 export interface GlobalLLMClientOptions {
   provider: "openai" | "anthropic" | "cerebras" | "groq" | (string & {});
@@ -159,12 +164,20 @@ export const createLLMClientCreateChatCompletionWrapper =
 
           // Set structured output schema if present
           if (innerOptions.response_model?.schema) {
-            const schema = zodToJsonSchema(innerOptions.response_model.schema);
-            if (schema) {
-              span.setAttributes({
-                [`gen_ai.request.structured_output_schema`]:
-                  JSON.stringify(schema),
-              });
+            try {
+              const schema = zodToJsonSchemaCompat(
+                innerOptions.response_model.schema,
+              );
+              if (schema) {
+                span.setAttributes({
+                  [`gen_ai.request.structured_output_schema`]:
+                    JSON.stringify(schema),
+                });
+              }
+            } catch (e) {
+              logger.debug(
+                `Failed to convert response JSON schema to span attribute: ${errorMessage(e)}`,
+              );
             }
           }
 

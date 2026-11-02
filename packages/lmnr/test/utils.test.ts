@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { z } from "zod/v3";
+import { z } from "zod";
+import { z as z3 } from "zod/v3";
 
-import { modelToProvider, prettyPrintZodSchema } from "../src/browser/utils";
+import {
+  modelToProvider,
+  prettyPrintZodSchema,
+  zodToJsonSchemaCompat,
+} from "../src/browser/utils";
 import { parseJson, toJson } from "../src/utils";
 
 void describe("prettyPrintZodSchema", () => {
@@ -138,14 +143,13 @@ void describe("prettyPrintZodSchema", () => {
 
   void it("handles records", () => {
     const schema = z.object({
-      metadata: z.record(z.string()),
+      metadata: z.record(z.string(), z.string()),
       counts: z.record(z.string(), z.number()),
     });
 
     const result = prettyPrintZodSchema(schema);
     assert.equal(
       result,
-      // TS / Zod defaults unknown value type to z.string()
       "z.object({\n  metadata: z.record(z.string(), z.string()),\n" +
         "  counts: z.record(z.string(), z.number()),\n})",
     );
@@ -320,5 +324,24 @@ void describe("parseJson", () => {
     assert.strictEqual(parseJson("not json"), "not json");
     const value = { a: 1 };
     assert.strictEqual(parseJson(value), value);
+  });
+});
+
+void describe("zodToJsonSchemaCompat", () => {
+  void it("converts zod 4 schemas, tolerating unrepresentable types", () => {
+    const schema = z.object({
+      name: z.string(),
+      seen: z.map(z.string(), z.number()),
+    });
+    const result = zodToJsonSchemaCompat(schema) as any;
+    assert.equal(result.properties.name.type, "string");
+  });
+
+  void it("converts zod 3 schemas", () => {
+    const schema = z3.object({ name: z3.string().describe("n") });
+    const result = zodToJsonSchemaCompat(schema) as any;
+    assert.equal(result.type, "object");
+    assert.equal(result.properties.name.type, "string");
+    assert.equal(result.properties.name.description, "n");
   });
 });
