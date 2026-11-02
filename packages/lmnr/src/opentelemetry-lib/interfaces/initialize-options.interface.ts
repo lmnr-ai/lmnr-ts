@@ -180,18 +180,6 @@ export interface InitializeOptions {
     /**
      * @example
      * ```javascript
-     * import together from "together-ai";
-     * import Laminar from "@lmnr-ai/lmnr";
-     *
-     * Laminar.initialize({
-     *   instrumentModules: { together },
-     * });
-     * ```
-     */
-    together?: any;
-    /**
-     * @example
-     * ```javascript
      * import { GoogleGenAI } from "@google/genai";
      * import Laminar from "@lmnr-ai/lmnr";
      *
