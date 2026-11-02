@@ -458,6 +458,18 @@ export const sanitizeMetadata = (
   );
 };
 
+/**
+ * Drops a chain payload's `messages` key. LangGraph passes the whole graph
+ * state, conversation included, as every node's input and output. The
+ * messages are already on the LLM spans, so repeating them on each chain span
+ * only bloats the trace.
+ */
+export const withoutMessages = (payload: unknown): unknown => {
+  if (!isRecord(payload) || !("messages" in payload)) return payload;
+  const { messages: _messages, ...rest } = payload;
+  return rest;
+};
+
 export const retrieverOutput = (documents: unknown): unknown[] => {
   if (!Array.isArray(documents)) return [];
   return documents.map((document) => {
