@@ -60,6 +60,14 @@ export {
   MastraExporter,
   type MastraExporterOptions,
 } from "./opentelemetry-lib/instrumentation/mastra";
+export {
+  type LaminarPiDurable,
+  type LaminarPiDurableOptions,
+  laminarPiDurable,
+  type PiDurableConversationInfo,
+  PiDurableInstrumentation,
+  type PiDurableSpanNames,
+} from "./opentelemetry-lib/instrumentation/pi-durable";
 export { LaminarTemporalInterceptors } from "./opentelemetry-lib/instrumentation/temporal";
 export {
   LAMINAR_SPAN_CONTEXT_HEADER as LAMINAR_TEMPORAL_SPAN_CONTEXT_HEADER,

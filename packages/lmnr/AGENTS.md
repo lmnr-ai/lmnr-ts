@@ -62,6 +62,7 @@ LMNR_TRAJECTORY_FORCE_EXPORT  # With LMNR_TRAJECTORY_PATH: also export spans to 
 - `src/opentelemetry-lib/instrumentation/openai/AGENTS.md` - patch targets, streams, post-hoc Responses spans, Decisions
 - `src/opentelemetry-lib/instrumentation/openai-agents/AGENTS.md` - TS vs Python parity, parent resolution, out-of-order span ends
 - `src/opentelemetry-lib/instrumentation/openrouter/AGENTS.md` - per-resource methods, embeddings input shapes, `callModel`, cassettes
+- `src/opentelemetry-lib/instrumentation/pi-durable/AGENTS.md` - Pi Durable: telemetry adapter + hooks extension, run anchor in the carrier, synthesized root for restarts, settlement-based run end, generation-phase suppression
 - `src/opentelemetry-lib/instrumentation/temporal/AGENTS.md` - deterministic sandbox, header propagation, workflow lifecycle span
 - `src/browser/stagehand/v3/AGENTS.md` - `sendCDP` fallback for stagehand 3.0.0 / 3.0.1
 - `src/integrations/AGENTS.md` - eve `LaminarReporter`

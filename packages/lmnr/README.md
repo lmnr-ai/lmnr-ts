@@ -79,6 +79,49 @@ const poemWriter = async (topic = "turbulence") => {
 await observe({name: 'poemWriter'}, async () => await poemWriter('laminar flow'))
 ```
 
+### Pi Durable
+
+`laminarPiDurable()` traces a [Pi Durable](https://www.npmjs.com/package/@earendil-works/pi-durable) (`@earendil-works/pi-durable` 1.4+) Harness. Each run is one trace: a root span with the user's input and the final answer, an LLM span per model request (messages including the system prompt, tool definitions, tokens, cost) and a TOOL span per tool call. A run resumed after a restart, in a new process, continues its trace.
+
+```typescript
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { createRegistry, Harness } from "@earendil-works/pi-durable";
+import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { Laminar, laminarPiDurable } from "@lmnr-ai/lmnr";
+
+Laminar.initialize();
+
+const lmnr = laminarPiDurable({
+  userId: "user-123",
+  metadata: { app: "support-bot" },
+  // sessionId defaults to Pi's per-conversation session id
+});
+
+const registry = createRegistry();
+registry.install(lmnr.extension);
+
+const harness = await Harness.open(
+  await openNodeSqliteStorage("./session.sqlite"),
+  { models, registry, telemetry: lmnr.telemetry },
+  BACKGROUND_CONTEXT,
+);
+```
+
+- Both halves are needed: `telemetry` gives runs their trace (and carries it across restarts), and the extension's hooks record the LLM and TOOL spans. If a conversation selects its extensions explicitly (`settings.extensions` or `configure({ extensions: [...] })`), include `lmnr.extension`.
+- To send agent traces to another project than the rest of the app, pass `projectApiKey` (or your own `tracerProvider`). `Laminar.initialize()` isn't needed then; call `await lmnr.shutdown()` before the process exits.
+- Options: `sessionId` and `userId` (a string, or a function of the conversation), `metadata`, `spanNames` (`{ run, llm, tool }`, defaults `pi.run`, `pi.chat` and the tool name), and `systemPrompt` to report another system prompt than the one Pi sent.
+- Pi's own `pi.durable.*` spans are not exported. Generation runs with tracing suppressed, so Laminar's OpenAI, Anthropic and Google instrumentations don't add a second LLM span for the SDK calls pi-ai makes.
+
+Without code changes, `Laminar.initialize({ instrumentModules: { piDurable } })` patches `Harness.open` to pass the telemetry and install the extension in the Harness's registry:
+
+```typescript
+import * as piDurable from "@earendil-works/pi-durable";
+
+Laminar.initialize({ instrumentModules: { piDurable } });
+```
+
+pi-durable is ESM-only, so Laminar's `require` hook never sees it: pass the module as above, and initialize Laminar before the first `Harness.open()`. The patch changes the `Harness` object of the copy you pass. With Next.js, list `@earendil-works/pi-durable` in `serverExternalPackages`; if it is bundled instead, the app's bundled copy is not the one patched. When in doubt, use `laminarPiDurable()`.
+
 ## Evaluations
 
 ### Quickstart
