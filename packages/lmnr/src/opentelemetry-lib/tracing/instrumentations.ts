@@ -1,11 +1,6 @@
 import { LaminarClient } from "@lmnr-ai/client";
 import { SessionRecordingOptions } from "@lmnr-ai/types";
 import { Instrumentation } from "@opentelemetry/instrumentation";
-import { BedrockInstrumentation } from "@traceloop/instrumentation-bedrock";
-import { ChromaDBInstrumentation } from "@traceloop/instrumentation-chromadb";
-import { PineconeInstrumentation } from "@traceloop/instrumentation-pinecone";
-import { QdrantInstrumentation } from "@traceloop/instrumentation-qdrant";
-import { TogetherInstrumentation } from "@traceloop/instrumentation-together";
 
 import { PlaywrightInstrumentation } from "../../browser";
 import { PuppeteerInstrumentation } from "../../browser/puppeteer";
@@ -169,33 +164,7 @@ const initInstrumentations = (
   );
 
   instrumentations.push(
-    new BedrockInstrumentation({
-      traceContent: !suppressContentTracing,
-    }),
-  );
-
-  instrumentations.push(new PineconeInstrumentation());
-
-  instrumentations.push(
     new LangChainInstrumentation({
-      traceContent: !suppressContentTracing,
-    }),
-  );
-
-  instrumentations.push(
-    new TogetherInstrumentation({
-      traceContent: !suppressContentTracing,
-    }),
-  );
-
-  instrumentations.push(
-    new ChromaDBInstrumentation({
-      traceContent: !suppressContentTracing,
-    }),
-  );
-
-  instrumentations.push(
-    new QdrantInstrumentation({
       traceContent: !suppressContentTracing,
     }),
   );
@@ -267,21 +236,6 @@ const manuallyInitInstrumentations = (
   const instrumentations: Instrumentation[] = [];
   let playwrightInstrumentation: PlaywrightInstrumentation | undefined;
 
-  if (instrumentModules?.OpenAI && instrumentModules?.openAI) {
-    throw new Error(
-      "`openAI` is deprecated, but both `OpenAI` and `openAI` are provided. " +
-        "Please use `OpenAI` only.",
-    );
-  }
-
-  if (instrumentModules?.openAI) {
-    const openAIInstrumentation = new OpenAIInstrumentation({
-      traceContent: !suppressContentTracing,
-    });
-    instrumentations.push(openAIInstrumentation);
-    openAIInstrumentation.manuallyInstrument(instrumentModules.openAI);
-  }
-
   if (instrumentModules?.OpenAI) {
     const openAIInstrumentation = new OpenAIInstrumentation({
       traceContent: !suppressContentTracing,
@@ -298,12 +252,6 @@ const manuallyInitInstrumentations = (
     anthropicInstrumentation.manuallyInstrument(instrumentModules.anthropic);
   }
 
-  if (instrumentModules?.azureOpenAI) {
-    logger.warn(
-      "Azure OpenAI instrumentation is no longer supported. Not enabling any instrumentation.",
-    );
-  }
-
   if (instrumentModules?.cohere) {
     const cohereInstrumentation = new CohereInstrumentation({
       traceContent: !suppressContentTracing,
@@ -312,56 +260,12 @@ const manuallyInitInstrumentations = (
     cohereInstrumentation.manuallyInstrument(instrumentModules.cohere);
   }
 
-  if (instrumentModules?.bedrock) {
-    const bedrockInstrumentation = new BedrockInstrumentation({
-      traceContent: !suppressContentTracing,
-    });
-    instrumentations.push(bedrockInstrumentation);
-    bedrockInstrumentation.manuallyInstrument(instrumentModules.bedrock);
-  }
-
-  if (instrumentModules?.pinecone) {
-    const instrumentation = new PineconeInstrumentation();
-    instrumentations.push(instrumentation);
-    instrumentation.manuallyInstrument(instrumentModules.pinecone);
-  }
-
   if (instrumentModules?.langchain) {
     const langchainInstrumentation = new LangChainInstrumentation({
       traceContent: !suppressContentTracing,
     });
     instrumentations.push(langchainInstrumentation);
     langchainInstrumentation.manuallyInstrument(instrumentModules.langchain);
-  }
-
-  if (instrumentModules?.llamaIndex) {
-    logger.warn(
-      "Llamaindex JS is deprecated. Not enabling any instrumentation.",
-    );
-  }
-
-  if (instrumentModules?.chromadb) {
-    const chromadbInstrumentation = new ChromaDBInstrumentation({
-      traceContent: !suppressContentTracing,
-    });
-    instrumentations.push(chromadbInstrumentation);
-    chromadbInstrumentation.manuallyInstrument(instrumentModules.chromadb);
-  }
-
-  if (instrumentModules?.qdrant) {
-    const qdrantInstrumentation = new QdrantInstrumentation({
-      traceContent: !suppressContentTracing,
-    });
-    instrumentations.push(qdrantInstrumentation);
-    qdrantInstrumentation.manuallyInstrument(instrumentModules.qdrant);
-  }
-
-  if (instrumentModules?.together) {
-    const togetherInstrumentation = new TogetherInstrumentation({
-      traceContent: !suppressContentTracing,
-    });
-    instrumentations.push(togetherInstrumentation);
-    togetherInstrumentation.manuallyInstrument(instrumentModules.together);
   }
 
   if (instrumentModules?.playwright && client) {
