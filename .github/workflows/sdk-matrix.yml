@@ -1,0 +1,33 @@
+name: OTel SDK host matrix
+
+# Installs the packed @lmnr-ai/lmnr into scratch apps on each OpenTelemetry JS
+# SDK line (v1, v2.0, v2.12, v3, none) and checks that Laminar shares the
+# app's @opentelemetry/api and doesn't break the app's own tracing. The
+# workspace lockfile hides npm resolution problems, so `pnpm test` can't catch
+# these. See packages/lmnr/AGENTS.md "OpenTelemetry dependency ranges".
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - main
+      - "dev-*"
+    paths:
+      - packages/lmnr/package.json
+      - packages/lmnr/tsdown.config.mts
+      - packages/lmnr/src/opentelemetry-lib/**
+      - packages/lmnr/test/sdk-matrix/**
+      - pnpm-lock.yaml
+      - .github/workflows/sdk-matrix.yml
+
+jobs:
+  sdk-matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pnpm
+        uses: pnpm/setup@v3.1.1
+        with:
+          version: 12.14.0
+          runtime: node@24
+      - run: pnpm install
+      - run: node packages/lmnr/test/sdk-matrix/run.mjs

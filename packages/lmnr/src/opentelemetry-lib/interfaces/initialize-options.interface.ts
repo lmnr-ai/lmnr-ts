@@ -1,7 +1,11 @@
 import type { SessionRecordingOptions } from "@lmnr-ai/types";
-import { SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import type * as playwright from "playwright";
 import type * as puppeteer from "puppeteer";
+
+import type {
+  SpanExporterCompat,
+  SpanProcessorCompat,
+} from "../tracing/compat";
 
 /**
  * Options for initializing the Traceloop SDK.
@@ -413,7 +417,7 @@ export interface InitializeOptions {
    * The exporter to use. Warning: many other options will be ignored if this is provided. Optional.
    * Defaults to a new LaminarSpanExporter.
    */
-  exporter?: SpanExporter;
+  exporter?: SpanExporterCompat;
 
   /**
    * Options for browser session recording. Currently supports 'maskInputOptions'
@@ -426,7 +430,7 @@ export interface InitializeOptions {
    * The span processor to use. Warning: many other options will be ignored if this is provided.
    * Optional. Defaults to a new LaminarSpanProcessor.
    */
-  spanProcessor?: SpanProcessor;
+  spanProcessor?: SpanProcessorCompat;
 
   /**
    * Write the run as an lmnr-atif trajectory file here. Optional.
