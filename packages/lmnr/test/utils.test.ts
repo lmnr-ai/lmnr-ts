@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { z } from "zod/v3";
+import { z } from "zod";
 
 import { modelToProvider, prettyPrintZodSchema } from "../src/browser/utils";
 import { parseJson, toJson } from "../src/utils";
@@ -138,14 +138,13 @@ void describe("prettyPrintZodSchema", () => {
 
   void it("handles records", () => {
     const schema = z.object({
-      metadata: z.record(z.string()),
+      metadata: z.record(z.string(), z.string()),
       counts: z.record(z.string(), z.number()),
     });
 
     const result = prettyPrintZodSchema(schema);
     assert.equal(
       result,
-      // TS / Zod defaults unknown value type to z.string()
       "z.object({\n  metadata: z.record(z.string(), z.string()),\n" +
         "  counts: z.record(z.string(), z.number()),\n})",
     );

@@ -141,11 +141,19 @@ export const cleanStagehandLLMClient = (llmClient: object): object =>
       ),
   );
 
-// Stagehand uses zod 3.x or 4.x, so we need to support both versions via duck-typing
-export const prettyPrintZodSchema = (schema: any, indent = 2): string => {
-  // Use duck-typing instead of instanceof to support both Zod v3 and v4
+// Zod 3 schemas keep `_def.typeName` ("ZodString"); zod 4 keeps `_def.type`
+// ("string"). Normalize to the zod 4 spelling. Stagehand v2 only works with
+// zod 3, so both shapes have to be read by duck-typing, not by importing zod.
+const zodKind = (schema: any): string | undefined => {
   const def = schema?._def;
-  if (!def || def.typeName !== "ZodObject") {
+  if (typeof def?.typeName === "string") {
+    return def.typeName.replace(/^Zod/, "").toLowerCase();
+  }
+  return typeof def?.type === "string" ? def.type : undefined;
+};
+
+export const prettyPrintZodSchema = (schema: any, indent = 2): string => {
+  if (zodKind(schema) !== "object") {
     throw new Error("Not a Zod object schema");
   }
 
@@ -160,58 +168,62 @@ export const prettyPrintZodSchema = (schema: any, indent = 2): string => {
       const valDef = val?._def;
       if (!valDef) return "z.unknown()";
 
-      const typeName = valDef.typeName;
+      const typeName = zodKind(val);
 
-      if (typeName === "ZodString") {
+      if (typeName === "string") {
         return "z.string()";
       }
-      if (typeName === "ZodNumber") {
+      if (typeName === "number") {
         return "z.number()";
       }
-      if (typeName === "ZodBoolean") {
+      if (typeName === "boolean") {
         return "z.boolean()";
       }
-      if (typeName === "ZodArray") {
-        const elementType = valDef.type;
-        if (elementType?._def?.typeName === "ZodObject") {
+      if (typeName === "array") {
+        const elementType = valDef.element ?? valDef.type;
+        if (zodKind(elementType) === "object") {
           return `z.array(${prettyPrintZodSchema(elementType)})`;
         } else {
           return `z.array(${getBaseType(elementType)})`;
         }
       }
-      if (typeName === "ZodObject") {
+      if (typeName === "object") {
         return prettyPrintZodSchema(val);
       }
-      if (typeName === "ZodEnum") {
-        const enumValues = valDef.values;
+      if (typeName === "enum") {
+        const enumValues = valDef.entries
+          ? Object.values(valDef.entries)
+          : valDef.values;
         if (Array.isArray(enumValues)) {
           return `z.enum([${enumValues.map((v) => `'${v}'`).join(", ")}])`;
         }
         return "z.enum([...])";
       }
-      if (typeName === "ZodLiteral") {
-        const literalValue = valDef.value;
+      if (typeName === "literal") {
+        const literalValue = Array.isArray(valDef.values)
+          ? valDef.values[0]
+          : valDef.value;
         if (typeof literalValue === "string") {
           return `z.literal('${literalValue}')`;
         }
         return `z.literal(${literalValue})`;
       }
-      if (typeName === "ZodUnion") {
+      if (typeName === "union") {
         const options = valDef.options;
         if (Array.isArray(options)) {
           return `z.union([${options.map(getBaseType).join(", ")}])`;
         }
         return "z.union([...])";
       }
-      if (typeName === "ZodDate") {
+      if (typeName === "date") {
         return "z.date()";
       }
-      if (typeName === "ZodRecord") {
+      if (typeName === "record") {
         const keyType = valDef.keyType;
         const valueType = valDef.valueType;
 
         let keyTypeStr = "z.string()";
-        if (keyType && keyType._def?.typeName !== "ZodString") {
+        if (keyType && zodKind(keyType) !== "string") {
           keyTypeStr = getBaseType(keyType);
         }
 
@@ -222,7 +234,7 @@ export const prettyPrintZodSchema = (schema: any, indent = 2): string => {
 
         return `z.record(${keyTypeStr}, ${valueTypeStr})`;
       }
-      if (typeName === "ZodMap") {
+      if (typeName === "map") {
         const keyType = valDef.keyType;
         const valueType = valDef.valueType;
 
@@ -238,7 +250,7 @@ export const prettyPrintZodSchema = (schema: any, indent = 2): string => {
 
         return `z.map(${keyTypeStr}, ${valueTypeStr})`;
       }
-      if (typeName === "ZodTuple") {
+      if (typeName === "tuple") {
         const items = valDef.items;
 
         if (Array.isArray(items)) {
@@ -249,10 +261,10 @@ export const prettyPrintZodSchema = (schema: any, indent = 2): string => {
         }
         return "z.tuple([])";
       }
-      if (typeName === "ZodNullable") {
+      if (typeName === "nullable") {
         return `${getBaseType(valDef.innerType)}.nullable()`;
       }
-      if (typeName === "ZodOptional") {
+      if (typeName === "optional") {
         return `${getBaseType(valDef.innerType)}.optional()`;
       }
       // Add more type checks as needed
@@ -265,20 +277,20 @@ export const prettyPrintZodSchema = (schema: any, indent = 2): string => {
       let currentVal = val;
 
       // Check for .nullable() modifier using duck-typing
-      if (currentVal?._def?.typeName === "ZodNullable") {
+      if (zodKind(currentVal) === "nullable") {
         result = `${getBaseType(currentVal._def.innerType)}.nullable()`;
         currentVal = currentVal._def.innerType;
       }
 
       // Check for .optional() modifier using duck-typing
-      if (currentVal?._def?.typeName === "ZodOptional") {
+      if (zodKind(currentVal) === "optional") {
         if (!result.endsWith(".nullable()")) {
           result = `${getBaseType(currentVal._def.innerType)}.optional()`;
         }
       }
 
       // Check for description
-      const description = val?._def?.description;
+      const description = val?.description;
       if (typeof description === "string") {
         result += `.describe('${description.replace(/'/g, "\\'")}')`;
       }
