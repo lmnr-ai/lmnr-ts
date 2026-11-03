@@ -18,7 +18,6 @@ import {
   TimeInput,
   trace,
 } from "@opentelemetry/api";
-import { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 
 import {
   getRuntime,
@@ -58,6 +57,7 @@ import {
   TRACE_TYPE,
   USER_ID,
 } from "./opentelemetry-lib/tracing/attributes";
+import type { SpanProcessorCompat } from "./opentelemetry-lib/tracing/compat";
 import { LaminarContextManager } from "./opentelemetry-lib/tracing/context";
 import { LaminarSpan } from "./opentelemetry-lib/tracing/span";
 import {
@@ -93,7 +93,7 @@ export interface LaminarInitializeProps {
   sessionRecordingOptions?: SessionRecordingOptions;
   metadata?: Record<string, any>;
   inheritGlobalContext?: boolean;
-  spanProcessor?: SpanProcessor;
+  spanProcessor?: SpanProcessorCompat;
   release?: string;
   writeTrajectory?: boolean;
 }

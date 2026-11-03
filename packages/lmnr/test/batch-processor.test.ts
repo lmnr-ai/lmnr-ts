@@ -3,10 +3,12 @@ import { describe, it } from "node:test";
 
 import { TraceFlags } from "@opentelemetry/api";
 import {
-  BasicTracerProvider,
+  BatchSpanProcessor,
   type ReadableSpan,
+  SimpleSpanProcessor,
   type SpanExporter,
-} from "@opentelemetry/sdk-trace-base";
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 
 import {
   approximateSpanSize,
@@ -71,12 +73,12 @@ const makeProcessor = ({
     scheduledDelayMillis,
     maxExportBatchSizeBytes,
   });
-  const provider = new BasicTracerProvider({ spanProcessors: [processor] });
+  const provider = new TracerProvider({ spanProcessors: [processor] });
   return { exporter, processor, tracer: provider.getTracer("test") };
 };
 
 const emit = (
-  tracer: ReturnType<BasicTracerProvider["getTracer"]>,
+  tracer: ReturnType<TracerProvider["getTracer"]>,
   name: string,
   payloadSize = 0,
 ) => {
@@ -277,7 +279,7 @@ void describe("SizeLimitedBatchSpanProcessor", () => {
         scheduledDelayMillis: NEVER_MILLIS,
         maxExportBatchSizeBytes: 10_000,
       });
-      const tracer = new BasicTracerProvider({
+      const tracer = new TracerProvider({
         spanProcessors: [processor],
       }).getTracer("test");
 
@@ -381,19 +383,13 @@ void describe("approximateSpanSize", () => {
 void describe("LaminarSpanProcessor transport selection", () => {
   const instanceOf = (processor: LaminarSpanProcessor) =>
     (processor as unknown as { instance: unknown }).instance;
-  // The SDK adapter `require`s the SDK, which can resolve a different build
-  // than the one `import` gets here, so `instanceof` against an imported class
-  // is unreliable; the class name is stable across builds and SDK lines.
-  const constructorName = (instance: unknown) =>
-    (instance as { constructor: { name: string } }).constructor.name;
-
   void it("defaults to the plain upstream BatchSpanProcessor", () => {
     const processor = new LaminarSpanProcessor({
       exporter: new RecordingExporter(),
     });
     const instance = instanceOf(processor);
 
-    assert.equal(constructorName(instance), "BatchSpanProcessor");
+    assert.ok(instance instanceof BatchSpanProcessor);
     assert.ok(!(instance instanceof SizeLimitedBatchSpanProcessor));
   });
 
@@ -424,7 +420,7 @@ void describe("LaminarSpanProcessor transport selection", () => {
       disableBatch: true,
     });
 
-    assert.equal(constructorName(instanceOf(processor)), "SimpleSpanProcessor");
+    assert.ok(instanceOf(processor) instanceof SimpleSpanProcessor);
   });
 
   void it("lets disableBatch win over flushBySize", () => {
@@ -434,6 +430,6 @@ void describe("LaminarSpanProcessor transport selection", () => {
       flushBySize: true,
     });
 
-    assert.equal(constructorName(instanceOf(processor)), "SimpleSpanProcessor");
+    assert.ok(instanceOf(processor) instanceof SimpleSpanProcessor);
   });
 });

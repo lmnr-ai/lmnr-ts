@@ -1,7 +1,8 @@
 // Runs inside a scratch app that has the packed `@lmnr-ai/lmnr` plus ONE host
-// OTel SDK line installed (see run.mjs). Usage: node host-check.cjs <v1|v2|v3>
+// OTel SDK line installed (see run.mjs). Usage: node host-check.cjs <line>
 const assert = require("node:assert/strict");
 const http = require("node:http");
+const path = require("node:path");
 const { context, trace } = require("@opentelemetry/api");
 const {
   AsyncLocalStorageContextManager,
@@ -28,6 +29,15 @@ const describe = (exp) =>
     .sort();
 
 (async () => {
+  // 0. lmnr must resolve the app's `@opentelemetry/api`, not a nested copy:
+  // a second copy splits the process-wide OTel registry (see laminar-first.cjs).
+  const lmnrDir = path.dirname(require.resolve("@lmnr-ai/lmnr"));
+  assert.equal(
+    require.resolve("@opentelemetry/api", { paths: [lmnrDir] }),
+    require.resolve("@opentelemetry/api"),
+    "lmnr shares the app's @opentelemetry/api",
+  );
+
   // 1. Host owns the global provider; Laminar runs next to it.
   const hostExp = new sdk.InMemorySpanExporter();
   const cm = new AsyncLocalStorageContextManager();

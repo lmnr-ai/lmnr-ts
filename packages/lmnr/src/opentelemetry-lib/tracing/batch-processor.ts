@@ -1,14 +1,14 @@
 import { Context, TraceFlags } from "@opentelemetry/api";
-import type {
-  BufferConfig,
-  ReadableSpan,
-  Span,
-  SpanExporter,
-  SpanProcessor,
-} from "@opentelemetry/sdk-trace-base";
+import {
+  BatchSpanProcessor,
+  type BatchSpanProcessorOptions,
+  type ReadableSpan,
+  type Span,
+  type SpanExporter,
+  type SpanProcessor,
+} from "@opentelemetry/sdk-trace";
 
 import { initializeLogger } from "../../utils";
-import { getSdkAdapter } from "./sdk-compat";
 
 const logger = initializeLogger();
 
@@ -91,7 +91,10 @@ export const approximateSpanSize = (span: ReadableSpan): number => {
   return total;
 };
 
-export type SizeLimitedBufferConfig = BufferConfig & {
+export type SizeLimitedBufferConfig = Omit<
+  BatchSpanProcessorOptions,
+  "exporter"
+> & {
   /**
    * Approximate maximum size, in bytes, of the spans buffered in one batch.
    * Defaults to {@link DEFAULT_MAX_EXPORT_BATCH_SIZE_BYTES}.
@@ -102,9 +105,8 @@ export type SizeLimitedBufferConfig = BufferConfig & {
 /**
  * `BatchSpanProcessor` with a third, size-based flush trigger.
  *
- * Wraps an upstream `BatchSpanProcessor` instead of extending it: the SDK line
- * (`sdk-trace-base` or `sdk-trace`, which construct processors differently) is
- * only known at runtime, see `sdk-compat.ts`.
+ * Wraps an upstream `BatchSpanProcessor` instead of extending it, so only its
+ * public `SpanProcessor` surface is relied on.
  *
  * Opt-in via `Laminar.initialize({ flushBySize: true })`; the default transport
  * is the plain upstream `BatchSpanProcessor`.
@@ -145,10 +147,7 @@ export class SizeLimitedBatchSpanProcessor implements SpanProcessor {
 
   constructor(exporter: SpanExporter, config?: SizeLimitedBufferConfig) {
     const { maxExportBatchSizeBytes, ...bufferConfig } = config ?? {};
-    this.inner = getSdkAdapter().createBatchSpanProcessor(
-      exporter,
-      bufferConfig,
-    );
+    this.inner = new BatchSpanProcessor({ ...bufferConfig, exporter });
     this.maxExportBatchSizeBytes =
       maxExportBatchSizeBytes ?? DEFAULT_MAX_EXPORT_BATCH_SIZE_BYTES;
   }

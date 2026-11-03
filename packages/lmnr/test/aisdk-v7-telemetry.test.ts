@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { TracingLevel } from "@lmnr-ai/types";
 import { context, SpanStatusCode, trace } from "@opentelemetry/api";
-import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 
 import { observe, withTracingLevel } from "../src/decorators";
 import { Laminar } from "../src/laminar";

@@ -22,10 +22,7 @@ import {
 } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
 import { SpanStatusCode } from "@opentelemetry/api";
-import {
-  InMemorySpanExporter,
-  ReadableSpan,
-} from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter, ReadableSpan } from "@opentelemetry/sdk-trace";
 import OpenAI from "openai";
 import { z } from "zod";
 
