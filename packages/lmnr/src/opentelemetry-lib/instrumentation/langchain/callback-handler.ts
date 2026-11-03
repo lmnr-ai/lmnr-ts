@@ -21,7 +21,6 @@ import {
   setRequestAttributes,
   setResponseAttributes,
   smallState,
-  withoutMessages,
 } from "./span-utils";
 import { detectVendorFromClass } from "./vendor-detection";
 
@@ -37,8 +36,6 @@ type Run = {
   context: Context;
   children: string[];
   requestModel?: string;
-  // A chain run without a known parent (`${name}.workflow`)
-  isRoot?: boolean;
 };
 
 /**
@@ -207,10 +204,8 @@ export class LaminarCallbackHandler {
         tags,
         metadata,
       });
-      const run = span ? this.runs.get(runId) : undefined;
-      if (run) {
-        run.isRoot = isRoot;
-        this.setChainPayload(run, "input", inputs);
+      if (span) {
+        this.setChainPayload(runId, "input", inputs);
       }
     });
   }
@@ -218,8 +213,7 @@ export class LaminarCallbackHandler {
   public handleChainEnd(outputs: any, runId: string): void {
     dontThrow(() => {
       try {
-        const run = this.runs.get(runId);
-        if (run) this.setChainPayload(run, "output", outputs);
+        this.setChainPayload(runId, "output", outputs);
       } finally {
         this.endRun(runId);
       }
@@ -619,24 +613,20 @@ export class LaminarCallbackHandler {
   }
 
   private setChainPayload(
-    run: Run,
+    runId: string,
     key: "input" | "output",
     payload: any,
   ): void {
-    if (!this.traceContent) return;
-    // The root run is the caller's own invocation and is recorded once.
-    // Nested runs (graph nodes, sequence steps) repeat whole graph state, so
-    // they keep only known-small keys, and nothing if none are present.
-    let value = withoutMessages(payload);
-    if (!run.isRoot) {
-      const kept = smallState(payload);
-      if (Object.keys(kept).length === 0) return;
-      value = kept;
-    }
+    const run = this.runs.get(runId);
+    if (!run || !this.traceContent) return;
+    // Chain payloads are graph state or raw runnable input, repeated on every
+    // span; keep only known-small keys, and nothing if none match.
+    const kept = smallState(payload);
+    if (Object.keys(kept).length === 0) return;
     if (key === "input") {
-      run.span.setInput(toJson(value));
+      run.span.setInput(toJson(kept));
     } else {
-      run.span.setOutput(toJson(value));
+      run.span.setOutput(toJson(kept));
     }
   }
 
