@@ -407,6 +407,23 @@ export interface InitializeOptions {
      */
     openAIAgents?: any;
     /**
+     * Patch `Harness.open` of Pi Durable (`@earendil-works/pi-durable`) so
+     * every Harness is traced: Laminar's `telemetry` is passed and its
+     * extension installed in the Harness's registry. pi-durable is ESM-only,
+     * so pass the module, and initialize Laminar before the first
+     * `Harness.open()`. For options (session id, user id, a separate
+     * project), use `laminarPiDurable()` instead.
+     *
+     * @example
+     * ```typescript
+     * import * as piDurable from "@earendil-works/pi-durable";
+     * import { Laminar } from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({ instrumentModules: { piDurable } });
+     * ```
+     */
+    piDurable?: any;
+    /**
      * Auto-patch Temporal Worker and Client so that every `Worker.create()` and
      * `new Client()` call automatically includes Laminar's interceptors for
      * distributed trace context propagation.

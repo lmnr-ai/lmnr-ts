@@ -23,6 +23,7 @@ import { OpenAIInstrumentation } from "../instrumentation/openai";
 import { OpenAIAgentsInstrumentation } from "../instrumentation/openai-agents";
 import { OpencodeInstrumentation } from "../instrumentation/opencode";
 import { OpenRouterInstrumentation } from "../instrumentation/openrouter";
+import { PiDurableInstrumentation } from "../instrumentation/pi-durable";
 import {
   patchTemporalClient,
   patchTemporalWorker,
@@ -239,6 +240,8 @@ const initInstrumentations = (
   instrumentations.push(new OpencodeInstrumentation());
 
   instrumentations.push(new OpenAIAgentsInstrumentation());
+
+  instrumentations.push(new PiDurableInstrumentation());
 
   instrumentations.push(
     new OpenRouterInstrumentation({
@@ -458,6 +461,12 @@ const manuallyInitInstrumentations = (
     openAIAgentsInstrumentation.manuallyInstrument(
       instrumentModules.openAIAgents,
     );
+  }
+
+  if (instrumentModules?.piDurable) {
+    const piDurableInstrumentation = new PiDurableInstrumentation();
+    instrumentations.push(piDurableInstrumentation);
+    piDurableInstrumentation.manuallyInstrument(instrumentModules.piDurable);
   }
 
   if (instrumentModules?.temporal) {
