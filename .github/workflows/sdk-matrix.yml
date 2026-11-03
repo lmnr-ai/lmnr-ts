@@ -41,7 +41,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install pnpm
-        uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+        uses: pnpm/setup@v3.1.2 # immutable tag
         with:
           version: 12.14.0
           runtime: node@24
