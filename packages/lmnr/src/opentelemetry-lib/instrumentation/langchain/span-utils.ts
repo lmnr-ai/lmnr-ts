@@ -458,16 +458,54 @@ export const sanitizeMetadata = (
   );
 };
 
+// Graph state keys known to hold small values, in both camelCase and
+// snake_case. Best effort: anything else is dropped from chain spans.
+const SMALL_STATE_KEYS = new Set([
+  "maxSteps",
+  "max_steps",
+  "stepsTaken",
+  "steps_taken",
+  "executionId",
+  "execution_id",
+  "tokenUsage",
+  "token_usage",
+  "startTime",
+  "start_time",
+  "timeout",
+  "pendingWakeUp",
+  "pending_wake_up",
+  "pendingContinuation",
+  "pending_continuation",
+]);
+const SMALL_PROMPT_KEYS = new Set([
+  "model",
+  "fallbackModel",
+  "fallback_model",
+  "thinkingEffort",
+  "thinking_effort",
+]);
+
+const pickKeys = (
+  record: Record<string, any>,
+  keys: Set<string>,
+): Record<string, any> =>
+  Object.fromEntries(Object.entries(record).filter(([key]) => keys.has(key)));
+
 /**
- * Drops a chain payload's `messages` key. LangGraph passes the whole graph
- * state, conversation included, as every node's input and output. The
- * messages are already on the LLM spans, so repeating them on each chain span
- * only bloats the trace.
+ * Keeps only a chain payload's known-small keys. LangGraph graphs and nodes
+ * receive and return whole graph state, whose heavy parts
+ * (messages, prompts, tools, raw `input` / `kwargs`) vary by setup and repeat
+ * on every span. Rather than chase them, nothing is kept except an allowlist,
+ * so the result is often empty.
  */
-export const withoutMessages = (payload: unknown): unknown => {
-  if (!isRecord(payload) || !("messages" in payload)) return payload;
-  const { messages: _messages, ...rest } = payload;
-  return rest;
+export const smallState = (payload: unknown): Record<string, any> => {
+  if (!isRecord(payload)) return {};
+  const kept = pickKeys(payload, SMALL_STATE_KEYS);
+  if (isRecord(payload.prompt)) {
+    const prompt = pickKeys(payload.prompt, SMALL_PROMPT_KEYS);
+    if (Object.keys(prompt).length > 0) kept.prompt = prompt;
+  }
+  return kept;
 };
 
 export const retrieverOutput = (documents: unknown): unknown[] => {

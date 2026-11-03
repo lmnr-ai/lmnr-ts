@@ -240,10 +240,9 @@ void describe("LangChain instrumentation", () => {
       root.attributes["gen_ai.agent.name"],
       "RunnableSequence",
     );
-    assert.deepStrictEqual(
-      JSON.parse(root.attributes["lmnr.span.input"] as string),
-      { input: "Hello?" },
-    );
+    // LangChain wraps the bare input as `{input: ...}`, which is not a
+    // known-small state key
+    assert.strictEqual(root.attributes["lmnr.span.input"], undefined);
     assert.strictEqual(
       step.attributes["gen_ai.operation.name"],
       "execute_task",
@@ -596,7 +595,7 @@ void describe("LangChain instrumentation", () => {
     assert.strictEqual(parentOf(findSpan(spans, "in_node"), spans), second);
   });
 
-  void it("drops the graph state's messages from chain spans", async () => {
+  void it("does not record graph state on chain spans", async () => {
     const State = Annotation.Root({
       ...MessagesAnnotation.spec,
       topic: Annotation<string>,
@@ -623,12 +622,11 @@ void describe("LangChain instrumentation", () => {
     const spans = exporter.getFinishedSpans();
     const root = findSpan(spans, "LangGraph.workflow");
     const node = findSpan(spans, "execute_task answer");
-    const payload = (span: ReadableSpan, key: string) =>
-      JSON.parse(span.attributes[`lmnr.span.${key}`] as string);
-    assert.deepStrictEqual(payload(root, "input"), { topic: "weather" });
-    assert.deepStrictEqual(payload(root, "output"), { topic: "weather!" });
-    assert.deepStrictEqual(payload(node, "input"), { topic: "weather" });
-    assert.deepStrictEqual(payload(node, "output"), { topic: "weather!" });
+    // Chain spans, the root included, drop everything but known-small keys
+    for (const span of [root, node]) {
+      assert.strictEqual(span.attributes["lmnr.span.input"], undefined);
+      assert.strictEqual(span.attributes["lmnr.span.output"], undefined);
+    }
     for (const span of spans) {
       for (const key of ["input", "output"]) {
         const value = span.attributes[`lmnr.span.${key}`];
@@ -636,6 +634,52 @@ void describe("LangChain instrumentation", () => {
           assert.ok(!value.includes("Weather?"), `${span.name} ${key}`);
         }
       }
+    }
+  });
+
+  void it("keeps only known-small keys on chain spans", async () => {
+    const State = Annotation.Root({
+      ...MessagesAnnotation.spec,
+      prompt: Annotation<Record<string, unknown>>,
+      tools: Annotation<string[]>,
+      maxSteps: Annotation<number>,
+      stepsTaken: Annotation<number>,
+      executionId: Annotation<string>,
+    });
+    const graph = new StateGraph(State)
+      .addNode("step", (state) => ({
+        messages: [{ role: "assistant", content: "Done" }],
+        stepsTaken: state.stepsTaken + 1,
+      }))
+      .addEdge(START, "step")
+      .addEdge("step", END)
+      .compile();
+
+    await graph.invoke({
+      messages: [{ role: "user", content: "Go" }],
+      prompt: { messages: ["huge"], model: "gpt-5", thinkingEffort: "high" },
+      tools: ["search"],
+      maxSteps: 5,
+      stepsTaken: 0,
+      executionId: "exec-1",
+    });
+
+    const spans = exporter.getFinishedSpans();
+    const smallInput = {
+      maxSteps: 5,
+      stepsTaken: 0,
+      executionId: "exec-1",
+      prompt: { model: "gpt-5", thinkingEffort: "high" },
+    };
+    for (const [name, output] of [
+      ["LangGraph.workflow", { ...smallInput, stepsTaken: 1 }],
+      ["execute_task step", { stepsTaken: 1 }],
+    ] as const) {
+      const span = findSpan(spans, name);
+      const payload = (key: string) =>
+        JSON.parse(span.attributes[`lmnr.span.${key}`] as string);
+      assert.deepStrictEqual(payload("input"), smallInput);
+      assert.deepStrictEqual(payload("output"), output);
     }
   });
 

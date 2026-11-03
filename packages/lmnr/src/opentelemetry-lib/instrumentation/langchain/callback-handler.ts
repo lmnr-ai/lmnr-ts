@@ -20,7 +20,7 @@ import {
   setCompletionRequest,
   setRequestAttributes,
   setResponseAttributes,
-  withoutMessages,
+  smallState,
 } from "./span-utils";
 import { detectVendorFromClass } from "./vendor-detection";
 
@@ -204,8 +204,8 @@ export class LaminarCallbackHandler {
         tags,
         metadata,
       });
-      if (span && this.traceContent) {
-        span.setInput(toJson(withoutMessages(inputs)));
+      if (span) {
+        this.setChainPayload(runId, "input", inputs);
       }
     });
   }
@@ -213,7 +213,7 @@ export class LaminarCallbackHandler {
   public handleChainEnd(outputs: any, runId: string): void {
     dontThrow(() => {
       try {
-        this.setOutput(runId, withoutMessages(outputs));
+        this.setChainPayload(runId, "output", outputs);
       } finally {
         this.endRun(runId);
       }
@@ -609,6 +609,24 @@ export class LaminarCallbackHandler {
       finish(span, requestModel);
     } finally {
       span.end();
+    }
+  }
+
+  private setChainPayload(
+    runId: string,
+    key: "input" | "output",
+    payload: any,
+  ): void {
+    const run = this.runs.get(runId);
+    if (!run || !this.traceContent) return;
+    // Chain payloads are graph state or raw runnable input, repeated on every
+    // span; keep only known-small keys, and nothing if none match.
+    const kept = smallState(payload);
+    if (Object.keys(kept).length === 0) return;
+    if (key === "input") {
+      run.span.setInput(toJson(kept));
+    } else {
+      run.span.setOutput(toJson(kept));
     }
   }
 
