@@ -627,8 +627,9 @@ void describe("LangChain instrumentation", () => {
       JSON.parse(span.attributes[`lmnr.span.${key}`] as string);
     assert.deepStrictEqual(payload(root, "input"), { topic: "weather" });
     assert.deepStrictEqual(payload(root, "output"), { topic: "weather!" });
-    assert.deepStrictEqual(payload(node, "input"), { topic: "weather" });
-    assert.deepStrictEqual(payload(node, "output"), { topic: "weather!" });
+    // Nested chain spans drop everything but known-small keys
+    assert.strictEqual(node.attributes["lmnr.span.input"], undefined);
+    assert.strictEqual(node.attributes["lmnr.span.output"], undefined);
     for (const span of spans) {
       for (const key of ["input", "output"]) {
         const value = span.attributes[`lmnr.span.${key}`];
@@ -637,6 +638,45 @@ void describe("LangChain instrumentation", () => {
         }
       }
     }
+  });
+
+  void it("keeps only known-small keys on nested chain spans", async () => {
+    const State = Annotation.Root({
+      ...MessagesAnnotation.spec,
+      prompt: Annotation<Record<string, unknown>>,
+      tools: Annotation<string[]>,
+      maxSteps: Annotation<number>,
+      stepsTaken: Annotation<number>,
+      executionId: Annotation<string>,
+    });
+    const graph = new StateGraph(State)
+      .addNode("step", (state) => ({
+        messages: [{ role: "assistant", content: "Done" }],
+        stepsTaken: state.stepsTaken + 1,
+      }))
+      .addEdge(START, "step")
+      .addEdge("step", END)
+      .compile();
+
+    await graph.invoke({
+      messages: [{ role: "user", content: "Go" }],
+      prompt: { messages: ["huge"], model: "gpt-5", thinkingEffort: "high" },
+      tools: ["search"],
+      maxSteps: 5,
+      stepsTaken: 0,
+      executionId: "exec-1",
+    });
+
+    const node = findSpan(exporter.getFinishedSpans(), "execute_task step");
+    const payload = (key: string) =>
+      JSON.parse(node.attributes[`lmnr.span.${key}`] as string);
+    assert.deepStrictEqual(payload("input"), {
+      maxSteps: 5,
+      stepsTaken: 0,
+      executionId: "exec-1",
+      prompt: { model: "gpt-5", thinkingEffort: "high" },
+    });
+    assert.deepStrictEqual(payload("output"), { stepsTaken: 1 });
   });
 
   void it("nests provider calls made inside graph nodes", async () => {

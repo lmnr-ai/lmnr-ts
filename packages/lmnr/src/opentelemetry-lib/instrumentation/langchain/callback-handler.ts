@@ -20,6 +20,7 @@ import {
   setCompletionRequest,
   setRequestAttributes,
   setResponseAttributes,
+  smallState,
   withoutMessages,
 } from "./span-utils";
 import { detectVendorFromClass } from "./vendor-detection";
@@ -36,6 +37,8 @@ type Run = {
   context: Context;
   children: string[];
   requestModel?: string;
+  // A chain run without a known parent (`${name}.workflow`)
+  isRoot?: boolean;
 };
 
 /**
@@ -204,8 +207,10 @@ export class LaminarCallbackHandler {
         tags,
         metadata,
       });
-      if (span && this.traceContent) {
-        span.setInput(toJson(withoutMessages(inputs)));
+      const run = span ? this.runs.get(runId) : undefined;
+      if (run) {
+        run.isRoot = isRoot;
+        this.setChainPayload(run, "input", inputs);
       }
     });
   }
@@ -213,7 +218,8 @@ export class LaminarCallbackHandler {
   public handleChainEnd(outputs: any, runId: string): void {
     dontThrow(() => {
       try {
-        this.setOutput(runId, withoutMessages(outputs));
+        const run = this.runs.get(runId);
+        if (run) this.setChainPayload(run, "output", outputs);
       } finally {
         this.endRun(runId);
       }
@@ -609,6 +615,28 @@ export class LaminarCallbackHandler {
       finish(span, requestModel);
     } finally {
       span.end();
+    }
+  }
+
+  private setChainPayload(
+    run: Run,
+    key: "input" | "output",
+    payload: any,
+  ): void {
+    if (!this.traceContent) return;
+    // The root run is the caller's own invocation and is recorded once.
+    // Nested runs (graph nodes, sequence steps) repeat whole graph state, so
+    // they keep only known-small keys, and nothing if none are present.
+    let value = withoutMessages(payload);
+    if (!run.isRoot) {
+      const kept = smallState(payload);
+      if (Object.keys(kept).length === 0) return;
+      value = kept;
+    }
+    if (key === "input") {
+      run.span.setInput(toJson(value));
+    } else {
+      run.span.setOutput(toJson(value));
     }
   }
 
