@@ -89,8 +89,8 @@ jobs:
             name="$(jq -r .name "$GITHUB_WORKSPACE/$dir/package.json")"
             version="$(jq -r .version "$GITHUB_WORKSPACE/$dir/package.json")"
             spec="$(jq -rn --arg s "$name@$version" '$s | @uri')"
-            for attempt in $(seq 1 10); do
-              if tgz="$(npm pack "$name@$version" --silent)" \
+            for attempt in $(seq 1 40); do
+              if tgz="$(npm pack "$name@$version" --loglevel=error)" \
                 && curl -fsS "https://registry.npmjs.org/-/npm/v1/attestations/$spec" \
                   | jq -e 'first(.attestations[] | select(.predicateType == "https://slsa.dev/provenance/v1") | .bundle)' \
                   > bundle.json \
