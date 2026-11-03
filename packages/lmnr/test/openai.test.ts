@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { context, SpanStatusCode } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
-import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 import nock from "nock";
 import OpenAI from "openai";
 
@@ -40,7 +40,7 @@ void describe("openai instrumentation (recorded)", () => {
       exporter,
       disableBatch: true,
       instrumentModules: {
-        openAI: OpenAI,
+        OpenAI,
       },
     });
 
@@ -1129,17 +1129,6 @@ void describe("openai instrumentation", () => {
     assert.strictEqual(
       completionSpan.attributes["gen_ai.response.id"],
       "cmpl-1",
-    );
-  });
-
-  void it("rejects passing both OpenAI and openAI", () => {
-    _resetConfiguration();
-    assert.throws(() =>
-      initializeTracing({
-        exporter,
-        disableBatch: true,
-        instrumentModules: { OpenAI, openAI: OpenAI },
-      }),
     );
   });
 });

@@ -4,7 +4,7 @@ import { after, afterEach, beforeEach, describe, it } from "node:test";
 import {
   InMemorySpanExporter,
   type ReadableSpan,
-} from "@opentelemetry/sdk-trace-base";
+} from "@opentelemetry/sdk-trace";
 
 import { getTracer, Laminar, observe } from "../src/index";
 import {

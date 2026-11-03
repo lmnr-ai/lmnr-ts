@@ -6,7 +6,6 @@ import { PlaywrightInstrumentation } from "../../browser";
 import { PuppeteerInstrumentation } from "../../browser/puppeteer";
 import { StagehandV2Instrumentation } from "../../browser/stagehand/v2";
 import { StagehandInstrumentation as StagehandV3Instrumentation } from "../../browser/stagehand/v3";
-import { initializeLogger } from "../../utils";
 import { AnthropicInstrumentation } from "../instrumentation/anthropic";
 import { ClaudeAgentSDKInstrumentation } from "../instrumentation/claude-agent-sdk";
 import { CohereInstrumentation } from "../instrumentation/cohere";
@@ -25,8 +24,6 @@ import {
 } from "../instrumentation/temporal";
 import { TypeSafeInstrumentation } from "../instrumentation/typesafe";
 import { InitializeOptions } from "../interfaces";
-
-const logger = initializeLogger();
 
 /**
  * Initialize and return Laminar instrumentations.

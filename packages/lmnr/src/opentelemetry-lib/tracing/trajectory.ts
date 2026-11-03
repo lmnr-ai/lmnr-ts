@@ -20,8 +20,8 @@
 
 import { hasOwn } from "@lmnr-ai/types";
 import { HrTime } from "@opentelemetry/api";
-import { hrTime, otperformance } from "@opentelemetry/core";
-import type { ReadableSpan, Span } from "@opentelemetry/sdk-trace-base";
+import { hrTime } from "@opentelemetry/core";
+import type { ReadableSpan, Span } from "@opentelemetry/sdk-trace";
 
 import {
   BuildOptions,
@@ -213,7 +213,9 @@ const preciseStart = (span: ReadableSpan): number | undefined => {
     return undefined;
   }
   return Math.floor(
-    (otperformance.timeOrigin + sdk._performanceStartTime) * 1000,
+    // Global `performance`, which `otperformance` re-exported before core 3.0
+    // removed it, so this reads the same clock the SDK span did.
+    (performance.timeOrigin + sdk._performanceStartTime) * 1000,
   );
 };
 

@@ -8,7 +8,7 @@ import {
   diag,
   trace,
 } from "@opentelemetry/api";
-import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 
 import { StagehandInstrumentation } from "../src/browser/stagehand/v3";
 import { Laminar } from "../src/index";

@@ -9,10 +9,7 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import {
-  InMemorySpanExporter,
-  ReadableSpan,
-} from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter, ReadableSpan } from "@opentelemetry/sdk-trace";
 import nock from "nock";
 import OpenAI from "openai";
 
@@ -75,7 +72,7 @@ void describe("trajectory file end to end", () => {
     initializeTracing({
       exporter,
       disableBatch: true,
-      instrumentModules: { openAI: OpenAI },
+      instrumentModules: { OpenAI },
       trajectoryPath: file,
       exportSpans: true,
     });
