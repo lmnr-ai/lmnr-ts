@@ -167,7 +167,7 @@ void describe("openrouter instrumentation", () => {
     );
     assert.strictEqual(span.attributes["gen_ai.request.presence_penalty"], 0.3);
     assert.strictEqual(
-      span.attributes["gen_ai.request.reasoning_effort"],
+      span.attributes["gen_ai.request.reasoning.level"],
       "low",
     );
     assert.strictEqual(span.attributes["llm.user"], "user-123");
@@ -320,7 +320,7 @@ void describe("openrouter instrumentation", () => {
     );
     assert.strictEqual(span.attributes["gen_ai.request.presence_penalty"], 0.1);
     assert.strictEqual(
-      span.attributes["gen_ai.request.reasoning_effort"],
+      span.attributes["gen_ai.request.reasoning.level"],
       "low",
     );
     assert.strictEqual(span.attributes["llm.user"], "user-123");

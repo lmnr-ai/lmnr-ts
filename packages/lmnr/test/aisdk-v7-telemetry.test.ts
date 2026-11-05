@@ -1093,12 +1093,9 @@ void describe("AI SDK v7 LaminarTelemetry integration", () => {
     const spans = exporter.getFinishedSpans();
     const llm = spans.find((s) => s.name.startsWith("ai.llm "));
     assert.ok(llm);
-    assert.equal(llm.attributes["gen_ai.usage.cache_read_input_tokens"], 30);
-    assert.equal(
-      llm.attributes["gen_ai.usage.cache_creation_input_tokens"],
-      30,
-    );
-    assert.equal(llm.attributes["gen_ai.usage.reasoning_tokens"], 5);
+    assert.equal(llm.attributes["gen_ai.usage.cache_read.input_tokens"], 30);
+    assert.equal(llm.attributes["gen_ai.usage.cache_write.input_tokens"], 30);
+    assert.equal(llm.attributes["gen_ai.usage.reasoning.output_tokens"], 5);
   });
 
   void it("accumulates streaming text-delta chunks via firstChunk/finish lifecycle markers", () => {

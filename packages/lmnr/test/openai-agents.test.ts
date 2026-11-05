@@ -211,8 +211,8 @@ void describe("openai-agents messages helpers", () => {
     assert.strictEqual(captured["gen_ai.usage.input_tokens"], 25);
     assert.strictEqual(captured["gen_ai.usage.output_tokens"], 8);
     assert.strictEqual(captured["llm.usage.total_tokens"], 33);
-    assert.strictEqual(captured["gen_ai.usage.cache_read_input_tokens"], 4);
-    assert.strictEqual(captured["gen_ai.usage.reasoning_output_tokens"], 2);
+    assert.strictEqual(captured["gen_ai.usage.cache_read.input_tokens"], 4);
+    assert.strictEqual(captured["gen_ai.usage.reasoning.output_tokens"], 2);
     assert.strictEqual(captured["gen_ai.response.id"], "resp_456");
   });
 

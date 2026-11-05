@@ -109,7 +109,7 @@ export const setRequestAttributes = (
   span.setAttribute("llm.is_streaming", Boolean(params?.stream));
   safeSetAttribute(
     span,
-    "gen_ai.request.reasoning_effort",
+    "gen_ai.request.reasoning.level",
     params?.reasoning_effort,
   );
   safeSetAttribute(span, "openai.request.service_tier", params?.service_tier);
@@ -198,12 +198,12 @@ export const setResponseAttributes = (span: LaminarSpan, response: any) => {
   span.setAttribute("gen_ai.usage.output_tokens", usage.completion_tokens ?? 0);
   span.setAttribute("gen_ai.usage.input_tokens", usage.prompt_tokens ?? 0);
   span.setAttribute(
-    "gen_ai.usage.cache_read_input_tokens",
+    "gen_ai.usage.cache_read.input_tokens",
     usage.prompt_tokens_details?.cached_tokens ?? 0,
   );
   if (usage.completion_tokens_details) {
     span.setAttribute(
-      "gen_ai.usage.reasoning_tokens",
+      "gen_ai.usage.reasoning.output_tokens",
       usage.completion_tokens_details.reasoning_tokens ?? 0,
     );
   }
@@ -358,17 +358,17 @@ export const setDecisionResponseAttributes = (
     safeSetAttribute(span, "llm.usage.total_tokens", usage.total_tokens);
     safeSetAttribute(
       span,
-      "gen_ai.usage.cache_read_input_tokens",
+      "gen_ai.usage.cache_read.input_tokens",
       usage.input_tokens_details?.cached_tokens,
     );
     safeSetAttribute(
       span,
-      "gen_ai.usage.cache_creation_input_tokens",
+      "gen_ai.usage.cache_write.input_tokens",
       usage.input_tokens_details?.cache_write_tokens,
     );
     safeSetAttribute(
       span,
-      "gen_ai.usage.reasoning_tokens",
+      "gen_ai.usage.reasoning.output_tokens",
       usage.output_tokens_details?.reasoning_tokens,
     );
   }

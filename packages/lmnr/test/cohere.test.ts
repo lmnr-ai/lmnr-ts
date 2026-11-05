@@ -521,7 +521,7 @@ void describe("cohere instrumentation", () => {
     assert.strictEqual(span.attributes["gen_ai.usage.input_tokens"], 12);
     assert.strictEqual(span.attributes["gen_ai.usage.output_tokens"], 22);
     assert.strictEqual(
-      span.attributes["gen_ai.usage.cache_read_input_tokens"],
+      span.attributes["gen_ai.usage.cache_read.input_tokens"],
       5,
     );
     assert.deepStrictEqual(parseJsonAttr(span, "gen_ai.input.messages"), [
@@ -614,7 +614,7 @@ void describe("cohere instrumentation", () => {
     assert.strictEqual(span.attributes["gen_ai.usage.input_tokens"], 8);
     assert.strictEqual(span.attributes["gen_ai.usage.output_tokens"], 9);
     assert.strictEqual(
-      span.attributes["gen_ai.usage.cache_read_input_tokens"],
+      span.attributes["gen_ai.usage.cache_read.input_tokens"],
       2,
     );
     assert.deepStrictEqual(span.attributes["gen_ai.response.finish_reasons"], [

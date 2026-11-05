@@ -682,7 +682,7 @@ void describe("MastraExporter — OTel context linking", () => {
     assert.strictEqual(step.attributes["ai.response.text"], "hi back");
   });
 
-  void it("emits gen_ai.usage.reasoning_tokens from usage.outputDetails.reasoning", async () => {
+  void it("emits gen_ai.usage.reasoning.output_tokens from usage.outputDetails.reasoning", async () => {
     const { mastra, inMemory } = makeTestExporter();
     const traceId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
@@ -748,21 +748,21 @@ void describe("MastraExporter — OTel context linking", () => {
     assert.strictEqual(step.attributes["gen_ai.usage.output_tokens"], 250);
     assert.strictEqual(step.attributes["llm.usage.total_tokens"], 350);
     assert.strictEqual(
-      step.attributes["gen_ai.usage.reasoning_tokens"],
+      step.attributes["gen_ai.usage.reasoning.output_tokens"],
       200,
       "reasoning tokens must be surfaced as a standalone metric",
     );
     assert.strictEqual(
-      step.attributes["gen_ai.usage.cache_read_input_tokens"],
+      step.attributes["gen_ai.usage.cache_read.input_tokens"],
       40,
     );
     assert.strictEqual(
-      step.attributes["gen_ai.usage.cache_creation_input_tokens"],
+      step.attributes["gen_ai.usage.cache_write.input_tokens"],
       10,
     );
   });
 
-  void it("omits gen_ai.usage.reasoning_tokens when usage has no outputDetails.reasoning", async () => {
+  void it("omits gen_ai.usage.reasoning.output_tokens when usage has no outputDetails.reasoning", async () => {
     const { mastra, inMemory } = makeTestExporter();
     const traceId = "cccccccccccccccccccccccccccccccc";
 
@@ -821,7 +821,7 @@ void describe("MastraExporter — OTel context linking", () => {
     assert.strictEqual(step.attributes["gen_ai.usage.input_tokens"], 50);
     assert.strictEqual(step.attributes["gen_ai.usage.output_tokens"], 75);
     assert.strictEqual(
-      step.attributes["gen_ai.usage.reasoning_tokens"],
+      step.attributes["gen_ai.usage.reasoning.output_tokens"],
       undefined,
     );
   });
