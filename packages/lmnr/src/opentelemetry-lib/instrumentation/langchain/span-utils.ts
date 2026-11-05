@@ -349,12 +349,12 @@ const setUsage = (span: LaminarSpan, response: any): void => {
   span.setAttribute("llm.usage.total_tokens", inputTokens + outputTokens);
   safeSetAttribute(
     span,
-    "gen_ai.usage.cache_read_input_tokens",
+    "gen_ai.usage.cache_read.input_tokens",
     cacheReadTokens,
   );
   safeSetAttribute(
     span,
-    "gen_ai.usage.cache_creation_input_tokens",
+    "gen_ai.usage.cache_write.input_tokens",
     cacheCreationTokens,
   );
   safeSetAttribute(

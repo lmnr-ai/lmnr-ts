@@ -127,9 +127,9 @@ const setUsageAttributes = (
   if (includeTotal) {
     span.setAttribute("llm.usage.total_tokens", inputTokens + outputTokens);
   }
-  span.setAttribute("gen_ai.usage.cache_read_input_tokens", cacheReadTokens);
+  span.setAttribute("gen_ai.usage.cache_read.input_tokens", cacheReadTokens);
   span.setAttribute(
-    "gen_ai.usage.cache_creation_input_tokens",
+    "gen_ai.usage.cache_write.input_tokens",
     cacheCreationTokens,
   );
 };

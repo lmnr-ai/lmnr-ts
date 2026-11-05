@@ -446,10 +446,13 @@ void describe("openai instrumentation", () => {
     assert.strictEqual(span.attributes["gen_ai.usage.output_tokens"], 10);
     assert.strictEqual(span.attributes["llm.usage.total_tokens"], 30);
     assert.strictEqual(
-      span.attributes["gen_ai.usage.cache_read_input_tokens"],
+      span.attributes["gen_ai.usage.cache_read.input_tokens"],
       4,
     );
-    assert.strictEqual(span.attributes["gen_ai.usage.reasoning_tokens"], 2);
+    assert.strictEqual(
+      span.attributes["gen_ai.usage.reasoning.output_tokens"],
+      2,
+    );
     assert.strictEqual(span.status.code, SpanStatusCode.OK);
 
     assert.deepStrictEqual(
@@ -769,17 +772,20 @@ void describe("openai instrumentation", () => {
     );
     assert.strictEqual(span.attributes["gen_ai.response.id"], "resp_1");
     assert.strictEqual(
-      span.attributes["gen_ai.request.reasoning_effort"],
+      span.attributes["gen_ai.request.reasoning.level"],
       "low",
     );
     assert.strictEqual(span.attributes["gen_ai.usage.input_tokens"], 10);
     assert.strictEqual(span.attributes["gen_ai.usage.output_tokens"], 5);
     assert.strictEqual(span.attributes["llm.usage.total_tokens"], 15);
     assert.strictEqual(
-      span.attributes["gen_ai.usage.cache_read_input_tokens"],
+      span.attributes["gen_ai.usage.cache_read.input_tokens"],
       2,
     );
-    assert.strictEqual(span.attributes["gen_ai.usage.reasoning_tokens"], 1);
+    assert.strictEqual(
+      span.attributes["gen_ai.usage.reasoning.output_tokens"],
+      1,
+    );
     assert.strictEqual(span.status.code, SpanStatusCode.OK);
     assert.deepStrictEqual(parseJsonAttr(span, "gen_ai.input.messages"), [
       { role: "system", content: "Be brief." },

@@ -153,14 +153,14 @@ export const formatUsage = (
     out[LaminarAttributes.TOTAL_TOKEN_COUNT] = total;
   }
   if (typeof usage.inputDetails?.cacheWrite === "number") {
-    out["gen_ai.usage.cache_creation_input_tokens"] =
+    out["gen_ai.usage.cache_write.input_tokens"] =
       usage.inputDetails.cacheWrite;
   }
   if (typeof usage.inputDetails?.cacheRead === "number") {
-    out["gen_ai.usage.cache_read_input_tokens"] = usage.inputDetails.cacheRead;
+    out["gen_ai.usage.cache_read.input_tokens"] = usage.inputDetails.cacheRead;
   }
   if (typeof usage.outputDetails?.reasoning === "number") {
-    out["gen_ai.usage.reasoning_tokens"] = usage.outputDetails.reasoning;
+    out["gen_ai.usage.reasoning.output_tokens"] = usage.outputDetails.reasoning;
   }
   return out;
 };
