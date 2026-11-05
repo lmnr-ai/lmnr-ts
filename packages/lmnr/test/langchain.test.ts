@@ -62,7 +62,12 @@ const CHAT_COMPLETION = {
       finish_reason: "stop",
     },
   ],
-  usage: { prompt_tokens: 7, completion_tokens: 4, total_tokens: 11 },
+  usage: {
+    prompt_tokens: 7,
+    completion_tokens: 4,
+    total_tokens: 11,
+    completion_tokens_details: { reasoning_tokens: 2 },
+  },
 };
 
 const CHAT_CHUNKS = [
@@ -531,6 +536,13 @@ void describe("LangChain instrumentation", () => {
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "CustomChat.chat");
     assert.strictEqual(spans[0].attributes["lmnr.span.type"], "LLM");
+    assert.strictEqual(spans[0].attributes["gen_ai.usage.output_tokens"], 4);
+    // `completion_tokens_details.reasoning_tokens` →
+    // `usage_metadata.output_token_details.reasoning`
+    assert.strictEqual(
+      spans[0].attributes["gen_ai.usage.reasoning.output_tokens"],
+      2,
+    );
   });
 
   void it("records the LangGraph topology and thread id", async () => {
