@@ -11,6 +11,10 @@ import { initializeLogger, parseJson, toJson } from "../../../utils";
 import { LaminarContextManager } from "../../tracing/context";
 import { LaminarSpan } from "../../tracing/span";
 import { instrumentationScopeAttributes } from "../shared/base";
+import {
+  getPackageVersion,
+  recordPackageVersion,
+} from "../shared/package-version";
 import { recordSpanError, safeSetAttribute } from "../shared/utils";
 import { LLM_CALL_KEY, LlmCall } from "./llm-call";
 import {
@@ -473,7 +477,7 @@ export class LaminarCallbackHandler {
       context: parentContext,
       startTime,
     }) as LaminarSpan;
-    span.setAttributes(instrumentationScopeAttributes("@langchain/core"));
+    span.setAttributes(instrumentationScopeAttributes(CORE_PACKAGE));
     if (attributes) {
       span.setAttributes(attributes);
     }
@@ -505,6 +509,7 @@ export class LaminarCallbackHandler {
       runName?: string;
     },
   ): void {
+    recordCoreVersion(metadata);
     const name = runNameOf(llm, runName);
     const call = context.active().getValue(LLM_CALL_KEY) as LlmCall | undefined;
     if (call?.mode === "handoff") {
@@ -669,9 +674,29 @@ export class LaminarCallbackHandler {
     for (const childId of run.children) {
       this.endRun(childId);
     }
+    // The version may only have become known after this span started, from a
+    // model's metadata (`recordCoreVersion`)
+    run.span.setAttributes(instrumentationScopeAttributes(CORE_PACKAGE));
     run.span.end();
   }
 }
+
+const CORE_PACKAGE = "@langchain/core";
+
+/**
+ * Every LangChain language model records the `@langchain/core` version it was
+ * built against in `metadata.versions`. Use it when the version couldn't be
+ * resolved otherwise (no `require` hook ran and `package.json` isn't on disk,
+ * e.g. in a bundled app). The version cache is process-wide, so every span
+ * stamped afterwards gets it.
+ */
+const recordCoreVersion = (metadata: Record<string, any> | undefined): void => {
+  if (getPackageVersion(CORE_PACKAGE)) return;
+  const version = metadata?.versions?.[CORE_PACKAGE];
+  if (typeof version === "string") {
+    recordPackageVersion(CORE_PACKAGE, version);
+  }
+};
 
 const llmSpanName = (
   name: string,

@@ -35,6 +35,10 @@ import {
   _resetConfiguration,
   initializeTracing,
 } from "../src/opentelemetry-lib/configuration";
+import {
+  _setPackageVersionForTests,
+  getPackageVersion,
+} from "../src/opentelemetry-lib/instrumentation/shared/package-version";
 
 // @langchain/anthropic depends on its own copy of the Anthropic SDK, and
 // that copy is the one that has to be instrumented
@@ -514,6 +518,53 @@ void describe("LangChain instrumentation", () => {
     assert.strictEqual(spans.length, 1);
     assert.strictEqual(spans[0].name, "openai.chat");
     assert.strictEqual(spans[0].status.code, SpanStatusCode.ERROR);
+  });
+
+  void it("takes the @langchain/core version from model metadata when it can't be resolved", async (t) => {
+    const resolved = getPackageVersion("@langchain/core");
+    assert.ok(resolved);
+    // As in a bundled app: no require hook ran, no package.json on disk
+    _setPackageVersionForTests("@langchain/core", undefined);
+    t.after(() => _setPackageVersionForTests("@langchain/core", resolved));
+
+    await RunnableLambda.from((x: string) => x)
+      .pipe(new FakeListChatModel({ responses: ["Hi"] }))
+      .invoke("Hi");
+
+    const versionOf = (name: string) =>
+      findSpan(exporter.getFinishedSpans(), name).attributes[
+        "lmnr.span.instrumentation_scope.version"
+      ];
+    // Ended before any model ran
+    assert.strictEqual(versionOf("execute_task RunnableLambda"), undefined);
+    // Started after the model's metadata was seen
+    assert.strictEqual(versionOf("FakeListChatModel.chat"), resolved);
+    // Started before it, but still open
+    assert.strictEqual(versionOf("RunnableSequence.workflow"), resolved);
+  });
+
+  void it("takes the @langchain/core version from a handed-off model's metadata", async (t) => {
+    const resolved = getPackageVersion("@langchain/core");
+    _setPackageVersionForTests("@langchain/core", undefined);
+    t.after(() => _setPackageVersionForTests("@langchain/core", resolved));
+
+    await RunnableLambda.from((x: string) => x)
+      .pipe(chatOpenAI())
+      .invoke("Hi");
+
+    const spans = exporter.getFinishedSpans();
+    assert.strictEqual(
+      findSpan(spans, "RunnableSequence.workflow").attributes[
+        "lmnr.span.instrumentation_scope.version"
+      ],
+      resolved,
+    );
+    assert.strictEqual(
+      findSpan(spans, "openai.chat").attributes[
+        "lmnr.span.instrumentation_scope.name"
+      ],
+      "openai",
+    );
   });
 
   void it("records other models itself and suppresses provider spans", async () => {
