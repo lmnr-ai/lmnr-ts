@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/types",
-  "version": "0.8.58",
+  "version": "0.8.59",
   "description": "Shared types for Laminar AI SDK",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",

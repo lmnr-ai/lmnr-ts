@@ -3,10 +3,12 @@ This is a CLI for the Laminar agent observability platform.
 Command-specific notes live in nested `AGENTS.md` files next to the code (each with a `CLAUDE.md` symlink so Claude Code loads it on demand). Read the relevant one before editing a command; the index is at the bottom of this file.
 
 ## Output strategy
+
 - Logger (pino) always writes to stderr. This keeps stdout clean for data output for piping and agents.
 - Commands that support machine-readable output must accept a `--json` flag. This is added per command group (e.g. datasets), not globally, since interactive commands cannot support it.
 
 ## Package Boundaries
+
 - `lmnr-cli` is the standalone CLI (`npx lmnr-cli@latest`). It depends on
   `@lmnr-ai/client` for API calls, not the full `@lmnr-ai/lmnr` SDK.
 - `lmnr-cli` has NO dependency on `@lmnr-ai/lmnr`. The old `dev` command (the
@@ -23,6 +25,7 @@ Command-specific notes live in nested `AGENTS.md` files next to the code (each w
 ## Guideline Resources
 
 ### [Writing CLI Tools that AI Agents Actually Want To Use](https://dev.to/uenyioha/writing-cli-tools-that-ai-agents-actually-want-to-use-39no)
+
 Here are guidelines from the above article.
 
 If you are going to build out a new feature, make sure you read that article to understand important guidelines.

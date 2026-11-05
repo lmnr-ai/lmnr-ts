@@ -49,7 +49,7 @@
   verbatim by `handleErrorMessage` — do NOT duplicate any of these rules in
   `validate.ts`. The wire has no shape for CLEARING the route back to the
   server's env LLM on update; do not invent one. Responses echo `llmProfileId`
-  + `llmProfileName` (display only) + `model`.
+  - `llmProfileName` (display only) + `model`.
 - **`signal backfill <signal> <trace-ids...>`** posts the positional ids to
   `/v1/cli/signals/{id}/backfill` (one realtime job; `--json` prints the
   server's `{jobId, signalId, totalTraces}`). UUID validation, dedupe and the
