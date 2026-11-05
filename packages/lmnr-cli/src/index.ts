@@ -309,9 +309,7 @@ Examples:
       "ID of the trace to tag (UUID or OpenTelemetry format)",
     )
     .argument("<tags...>", "Tags to add to the trace")
-    .action(async (traceId: string, tags: string[], _options, cmd) => {
-      await handleTraceTagAdd(traceId, tags, cmd.optsWithGlobals());
-    });
+    .action(withProjectClient(handleTraceTagAdd));
 
   const signalCmd = program
     .command("signal")
