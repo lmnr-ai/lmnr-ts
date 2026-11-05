@@ -231,13 +231,12 @@ void describe("LangChain instrumentation", () => {
     assert.strictEqual(result.content, "Hi there");
 
     const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 3);
+    // The nested lambda is glue and gets no span
+    assert.strictEqual(spans.length, 2);
     const root = findSpan(spans, "RunnableSequence.workflow");
-    const step = findSpan(spans, "execute_task RunnableLambda");
     const llm = findSpan(spans, "FakeListChatModel.chat");
 
     assert.strictEqual(parentOf(root, spans), undefined);
-    assert.strictEqual(parentOf(step, spans), root);
     assert.strictEqual(parentOf(llm, spans), root);
     assert.strictEqual(root.spanContext().traceId, llm.spanContext().traceId);
 
@@ -252,10 +251,6 @@ void describe("LangChain instrumentation", () => {
     // LangChain wraps the bare input as `{input: ...}`, which is not a
     // known-small state key
     assert.strictEqual(root.attributes["lmnr.span.input"], undefined);
-    assert.strictEqual(
-      step.attributes["gen_ai.operation.name"],
-      "execute_task",
-    );
 
     assert.strictEqual(llm.attributes["lmnr.span.type"], "LLM");
     assert.strictEqual(llm.attributes["gen_ai.operation.name"], "chat");
@@ -314,17 +309,67 @@ void describe("LangChain instrumentation", () => {
 
     const spans = exporter.getFinishedSpans();
     const inner = findSpan(spans, "inner");
-    const lambdas = spans.filter(
-      (s) => s.name === "execute_task RunnableLambda",
-    );
-    assert.strictEqual(lambdas.length, 2);
-    const parent = parentOf(inner, spans);
-    assert.ok(parent && lambdas.includes(parent));
-    assert.deepStrictEqual(inner.attributes["lmnr.span.path"], [
+    // The lambdas are glue: the span nests under their parent
+    assert.deepStrictEqual(spans.map((s) => s.name).sort(), [
       "RunnableSequence.workflow",
-      "execute_task RunnableLambda",
       "inner",
     ]);
+    assert.strictEqual(
+      parentOf(inner, spans),
+      findSpan(spans, "RunnableSequence.workflow"),
+    );
+    assert.deepStrictEqual(inner.attributes["lmnr.span.path"], [
+      "RunnableSequence.workflow",
+      "inner",
+    ]);
+  });
+
+  void it("skips nested sequences and lambdas unless they are named", async () => {
+    const model = new FakeListChatModel({ responses: ["ok"] });
+    const inner = RunnableLambda.from((x: string) => x).pipe(
+      RunnableLambda.from(async (x: string) =>
+        observe({ name: "inner" }, async () => x.toUpperCase()),
+      ),
+    );
+    const chain = inner
+      .pipe(
+        RunnableLambda.from((x: string) => [
+          { role: "user", content: x },
+        ]).withConfig({ runName: "to_messages" }),
+      )
+      .pipe(model);
+
+    for await (const _ of await chain.stream("hi")) {
+      // drain
+    }
+    await chain.batch(["a", "b"]);
+
+    const spans = exporter.getFinishedSpans();
+    const roots = spans.filter((s) => s.name === "RunnableSequence.workflow");
+    assert.strictEqual(roots.length, 3);
+    assert.deepStrictEqual(
+      spans
+        .filter((s) => !roots.includes(s))
+        .map((s) => s.name)
+        .sort(),
+      [
+        "FakeListChatModel.chat",
+        "FakeListChatModel.chat",
+        "FakeListChatModel.chat",
+        "execute_task to_messages",
+        "execute_task to_messages",
+        "execute_task to_messages",
+        "inner",
+        "inner",
+        "inner",
+      ],
+    );
+    // Children of skipped runs parent to the nearest recorded ancestor
+    for (const span of spans) {
+      if (!roots.includes(span)) {
+        assert.ok(roots.includes(parentOf(span, spans)!), span.name);
+      }
+    }
   });
 
   void it("nests the chain under an enclosing observe span", async () => {
@@ -389,14 +434,12 @@ void describe("LangChain instrumentation", () => {
     await assert.rejects(chain.invoke("x"), /boom/);
 
     const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 3);
+    // The failing lambda is glue; its error surfaces on the root
+    assert.strictEqual(spans.length, 1);
     const root = findSpan(spans, "RunnableSequence.workflow");
     assert.strictEqual(root.status.code, SpanStatusCode.ERROR);
-    const failed = spans.filter((s) => s.status.code === SpanStatusCode.ERROR);
-    assert.strictEqual(failed.length, 2);
-    const step = failed.find((s) => s !== root)!;
-    assert.strictEqual(step.attributes["error.type"], "TypeError");
-    assert.strictEqual(step.status.message, "boom");
+    assert.strictEqual(root.attributes["error.type"], "TypeError");
+    assert.strictEqual(root.status.message, "boom");
   });
 
   void it("omits content when traceContent is off", async () => {
@@ -407,7 +450,7 @@ void describe("LangChain instrumentation", () => {
       .invoke("secret question");
 
     const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 3);
+    assert.strictEqual(spans.length, 2);
     for (const span of spans) {
       const serialized = JSON.stringify(span.attributes);
       assert.ok(!serialized.includes("secret"), `${span.name} leaks content`);
@@ -528,6 +571,7 @@ void describe("LangChain instrumentation", () => {
     t.after(() => _setPackageVersionForTests("@langchain/core", resolved));
 
     await RunnableLambda.from((x: string) => x)
+      .withConfig({ runName: "prepare" })
       .pipe(new FakeListChatModel({ responses: ["Hi"] }))
       .invoke("Hi");
 
@@ -536,7 +580,7 @@ void describe("LangChain instrumentation", () => {
         "lmnr.span.instrumentation_scope.version"
       ];
     // Ended before any model ran
-    assert.strictEqual(versionOf("execute_task RunnableLambda"), undefined);
+    assert.strictEqual(versionOf("execute_task prepare"), undefined);
     // Started after the model's metadata was seen
     assert.strictEqual(versionOf("FakeListChatModel.chat"), resolved);
     // Started before it, but still open
@@ -824,7 +868,6 @@ void describe("LangChain instrumentation", () => {
     const spans = exporter.getFinishedSpans();
     assert.deepStrictEqual(spans.map((s) => s.name).sort(), [
       "RunnableSequence.workflow",
-      "execute_task RunnableLambda",
       "openai.chat",
     ]);
   });

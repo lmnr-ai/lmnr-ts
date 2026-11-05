@@ -35,8 +35,10 @@ export const HANDLER_NAME = "laminar_callback_handler";
 type SpanType = "DEFAULT" | "LLM" | "TOOL";
 
 type Run = {
-  span: LaminarSpan;
-  // Context with this run's span current; child runs parent from it
+  // Undefined for a glue run left out of the trace (`isGlueRun`)
+  span?: LaminarSpan;
+  // Context with this run's span current (a glue run's parent's); child runs
+  // parent from it
   context: Context;
   children: string[];
   requestModel?: string;
@@ -68,6 +70,21 @@ const dontThrow = (fn: () => void): void => {
   } catch (error) {
     logger.debug(`Failed to record LangChain run: ${String(error)}`);
   }
+};
+
+// LangChain's composition glue: a `pipe` sequence and a function in it.
+// Nested, they add a trace level and no information.
+const GLUE_CLASSES = new Set(["RunnableSequence", "RunnableLambda"]);
+
+/**
+ * True for a `RunnableSequence` or `RunnableLambda` that keeps its class name.
+ * One named by the user (`withConfig({ runName })`, a constructor `name`) is
+ * kept, and so is every LangGraph node: LangGraph JS runs nodes as
+ * `RunnableSequence`s named after the node.
+ */
+const isGlueRun = (serialized: any, name: string): boolean => {
+  const cls = className(serialized);
+  return GLUE_CLASSES.has(cls) && name === cls;
 };
 
 const className = (serialized: any): string => {
@@ -176,6 +193,13 @@ export class LaminarCallbackHandler {
       const isRoot =
         !parentRunId ||
         (!this.runs.has(parentRunId) && !this.handedOff.has(parentRunId));
+      // A nested glue run gets no span; its children nest under its parent.
+      // A root one is kept, or each step of a bare `chain.invoke()` would
+      // start a trace of its own.
+      if (!isRoot && isGlueRun(chain, name)) {
+        this.startRun(runId, parentRunId, name, { skip: true });
+        return;
+      }
       const attributes: Record<string, string> = {};
       let spanName: string;
       if (isRoot) {
@@ -273,7 +297,7 @@ export class LaminarCallbackHandler {
       // End the run even if recording the response fails
       try {
         const run = this.runs.get(runId);
-        if (run) {
+        if (run?.span) {
           setResponseAttributes(
             run.span,
             output,
@@ -408,12 +432,15 @@ export class LaminarCallbackHandler {
       tags,
       metadata,
       startTime,
+      skip = false,
     }: {
       spanType?: SpanType;
       attributes?: Record<string, string>;
       tags?: string[];
       metadata?: Record<string, any>;
       startTime?: HrTime;
+      // Track the run without a span; children parent from its parent
+      skip?: boolean;
     },
   ): LaminarSpan | undefined {
     const active = context.active();
@@ -428,18 +455,22 @@ export class LaminarCallbackHandler {
     }
 
     const parentContext = this.parentContext(parentRunId);
-    const span = this.startSpan(name, spanType, parentContext, {
-      attributes,
-      tags,
-      metadata,
-      startTime,
-    });
+    const span = skip
+      ? undefined
+      : this.startSpan(name, spanType, parentContext, {
+          attributes,
+          tags,
+          metadata,
+          startTime,
+        });
     const run: Run = {
       span,
-      context: trace.setSpan(
-        LaminarContextManager.setAssociationProperties(span, parentContext),
-        span,
-      ),
+      context: span
+        ? trace.setSpan(
+            LaminarContextManager.setAssociationProperties(span, parentContext),
+            span,
+          )
+        : parentContext,
       children: [],
     };
     if (parentRunId) {
@@ -449,7 +480,7 @@ export class LaminarCallbackHandler {
     const stale = this.runs.get(runId);
     if (stale) {
       this.runs.delete(runId);
-      stale.span.end();
+      stale.span?.end();
     }
     this.runs.set(runId, run);
     return span;
@@ -622,23 +653,23 @@ export class LaminarCallbackHandler {
     key: "input" | "output",
     payload: any,
   ): void {
-    const run = this.runs.get(runId);
-    if (!run || !this.traceContent) return;
+    const span = this.runs.get(runId)?.span;
+    if (!span || !this.traceContent) return;
     // Chain payloads are graph state or raw runnable input, repeated on every
     // span; keep only known-small keys, and nothing if none match.
     const kept = smallState(payload);
     if (Object.keys(kept).length === 0) return;
     if (key === "input") {
-      run.span.setInput(toJson(kept));
+      span.setInput(toJson(kept));
     } else {
-      run.span.setOutput(toJson(kept));
+      span.setOutput(toJson(kept));
     }
   }
 
   private setOutput(runId: string, output: any): void {
-    const run = this.runs.get(runId);
-    if (run && this.traceContent) {
-      run.span.setOutput(toJson(output));
+    const span = this.runs.get(runId)?.span;
+    if (span && this.traceContent) {
+      span.setOutput(toJson(output));
     }
   }
 
@@ -658,7 +689,9 @@ export class LaminarCallbackHandler {
       return;
     }
     try {
-      recordSpanError(run.span, error);
+      if (run.span) {
+        recordSpanError(run.span, error);
+      }
     } finally {
       this.endRun(runId);
     }
@@ -674,6 +707,7 @@ export class LaminarCallbackHandler {
     for (const childId of run.children) {
       this.endRun(childId);
     }
+    if (!run.span) return;
     // The version may only have become known after this span started, from a
     // model's metadata (`recordCoreVersion`)
     run.span.setAttributes(instrumentationScopeAttributes(CORE_PACKAGE));
