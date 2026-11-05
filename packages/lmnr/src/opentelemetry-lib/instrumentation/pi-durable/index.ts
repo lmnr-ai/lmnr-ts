@@ -1,6 +1,6 @@
 import { errorMessage } from "@lmnr-ai/types";
 import type { TracerProvider } from "@opentelemetry/api";
-import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
+import { TracerProvider as SdkTracerProvider } from "@opentelemetry/sdk-trace";
 
 import { initializeLogger } from "../../../utils";
 import { forceFlush as forceFlushLaminar } from "../../tracing/index";
@@ -224,14 +224,14 @@ export const laminarPiDurable = (
 ): LaminarPiDurable => {
   let tracerProvider = options.tracerProvider;
   let spanProcessor: LaminarSpanProcessor | undefined;
-  let ownProvider: BasicTracerProvider | undefined;
+  let ownProvider: SdkTracerProvider | undefined;
   if (!tracerProvider && options.projectApiKey) {
     spanProcessor = new LaminarSpanProcessor({
       apiKey: options.projectApiKey,
       baseUrl: options.baseUrl,
       port: options.port,
     });
-    ownProvider = new BasicTracerProvider({ spanProcessors: [spanProcessor] });
+    ownProvider = new SdkTracerProvider({ spanProcessors: [spanProcessor] });
     tracerProvider = ownProvider;
   }
 
