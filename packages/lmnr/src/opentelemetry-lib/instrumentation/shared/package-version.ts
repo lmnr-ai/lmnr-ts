@@ -89,3 +89,11 @@ export const getPackageVersion = (name: string): string | undefined => {
   }
   return versions.get(name);
 };
+
+/** Test-only: overwrite the cached version, `undefined` included. */
+export const _setPackageVersionForTests = (
+  name: string,
+  version: string | undefined,
+): void => {
+  versions.set(name, version);
+};
