@@ -10,9 +10,7 @@ export class TagsResource extends BaseResource {
   }
 
   /**
-   * Tag a trace with a list of tags. Note that the trace must be ended before
-   * tagging it. You may want to call `await Laminar.flush()` after the trace
-   * that you want to tag.
+   * Tag a trace with a list of tags.
    *
    * @param {string | StringUUID} trace_id - The trace id to tag.
    * @param {string[] | string} tags - The tag or list of tags to add to the trace.
@@ -23,7 +21,6 @@ export class TagsResource extends BaseResource {
    * Laminar.initialize();
    * const client = new LaminarClient();
    * let traceId: StringUUID | null = null;
-   * // Make sure this is called outside of traced context.
    * await observe(
    *   {
    *     name: "my-trace",
@@ -34,8 +31,6 @@ export class TagsResource extends BaseResource {
    *   },
    * );
    *
-   * // or make sure the trace is ended by this point.
-   * await Laminar.flush();
    * if (traceId) {
    *   await client.tags.tag(traceId, ["tag1", "tag2"]);
    * }
