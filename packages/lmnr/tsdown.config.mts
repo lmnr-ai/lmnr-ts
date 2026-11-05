@@ -10,6 +10,21 @@ export default defineConfig({
   dts: true, // Generate declaration file (.d.ts)
   sourcemap: true,
   clean: true,
+  // An import that resolves to no installed package is otherwise only a
+  // warning, and rolldown leaves it as a bare `require` in dist. It then fails
+  // in every app that doesn't happen to have that package, e.g. an import of
+  // `@opentelemetry/sdk-trace-base` after it stopped being a dependency.
+  inputOptions: (options) => ({
+    ...options,
+    onLog: (level, log, defaultHandler) => {
+      if (log.code === "UNRESOLVED_IMPORT") {
+        defaultHandler("error", log);
+        return;
+      }
+      if (options.onLog) options.onLog(level, log, defaultHandler);
+      else defaultHandler(level, log);
+    },
+  }),
   deps: {
     neverBundle: ["puppeteer", "puppeteer-core", "playwright", "esbuild"],
     alwaysBundle: [
