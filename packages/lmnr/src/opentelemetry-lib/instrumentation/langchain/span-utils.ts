@@ -283,14 +283,15 @@ const setUsage = (span: LaminarSpan, response: any): void => {
   let outputTokens = 0;
   let cacheReadTokens: number | undefined;
   let cacheCreationTokens: number | undefined;
+  let reasoningTokens: number | undefined;
   let found = false;
 
   for (const generation of allGenerations(response)) {
     const usage = asRecord(generation?.message?.usage_metadata);
     if (Object.keys(usage).length === 0) continue;
     found = true;
-    // LangChain's `input_tokens` already includes cached tokens; the details
-    // only break that total down.
+    // LangChain's `input_tokens` / `output_tokens` already include cached /
+    // reasoning tokens; the details only break the totals down.
     inputTokens += isInt(usage.input_tokens) ? usage.input_tokens : 0;
     outputTokens += isInt(usage.output_tokens) ? usage.output_tokens : 0;
     const details = asRecord(usage.input_token_details);
@@ -299,6 +300,10 @@ const setUsage = (span: LaminarSpan, response: any): void => {
     }
     if (isInt(details.cache_creation)) {
       cacheCreationTokens = (cacheCreationTokens ?? 0) + details.cache_creation;
+    }
+    const outputDetails = asRecord(usage.output_token_details);
+    if (isInt(outputDetails.reasoning)) {
+      reasoningTokens = (reasoningTokens ?? 0) + outputDetails.reasoning;
     }
   }
 
@@ -330,6 +335,13 @@ const setUsage = (span: LaminarSpan, response: any): void => {
       "output_tokens",
       "generated_token_count",
     );
+    // OpenAI chat completions / Responses API shapes.
+    const reasoning =
+      asRecord(tokenUsage.completion_tokens_details).reasoning_tokens ??
+      asRecord(tokenUsage.output_tokens_details).reasoning_tokens;
+    if (isInt(reasoning)) {
+      reasoningTokens = reasoning;
+    }
   }
 
   span.setAttribute("gen_ai.usage.input_tokens", inputTokens);
@@ -344,6 +356,11 @@ const setUsage = (span: LaminarSpan, response: any): void => {
     span,
     "gen_ai.usage.cache_creation_input_tokens",
     cacheCreationTokens,
+  );
+  safeSetAttribute(
+    span,
+    "gen_ai.usage.reasoning.output_tokens",
+    reasoningTokens,
   );
 };
 
