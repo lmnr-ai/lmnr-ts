@@ -6,8 +6,8 @@ TypeScript SDK for [Laminar](https://www.laminar.sh).
 
 Check our [open-source repo](https://github.com/lmnr-ai/lmnr) and don't forget to star it ⭐
 
- <a href="https://www.npmjs.com/package/@lmnr-ai/lmnr"> ![NPM Version](https://img.shields.io/npm/v/%40lmnr-ai%2Flmnr?label=lmnr&logo=npm&logoColor=CB3837) </a>
- ![NPM Downloads](https://img.shields.io/npm/dm/%40lmnr-ai%2Flmnr)
+<a href="https://www.npmjs.com/package/@lmnr-ai/lmnr"> ![NPM Version](https://img.shields.io/npm/v/%40lmnr-ai%2Flmnr?label=lmnr&logo=npm&logoColor=CB3837) </a>
+![NPM Downloads](https://img.shields.io/npm/dm/%40lmnr-ai%2Flmnr)
 
 ## Monorepo Structure
 

@@ -6,8 +6,8 @@ JavaScript/TypeScript SDK for [Laminar](https://www.lmnr.ai).
 
 Check our [open-source repo](https://github.com/lmnr-ai/lmnr) and don't forget to star it ⭐
 
- <a href="https://www.npmjs.com/package/@lmnr-ai/lmnr"> ![NPM Version](https://img.shields.io/npm/v/%40lmnr-ai%2Flmnr?label=lmnr&logo=npm&logoColor=CB3837) </a>
- ![NPM Downloads](https://img.shields.io/npm/dm/%40lmnr-ai%2Flmnr)
+<a href="https://www.npmjs.com/package/@lmnr-ai/lmnr"> ![NPM Version](https://img.shields.io/npm/v/%40lmnr-ai%2Flmnr?label=lmnr&logo=npm&logoColor=CB3837) </a>
+![NPM Downloads](https://img.shields.io/npm/dm/%40lmnr-ai%2Flmnr)
 
 ## Quickstart
 
@@ -18,9 +18,9 @@ npm install @lmnr-ai/lmnr
 And then in the code
 
 ```typescript
-import { Laminar } from '@lmnr-ai/lmnr'
+import { Laminar } from "@lmnr-ai/lmnr";
 
-Laminar.initialize({ projectApiKey: '<PROJECT_API_KEY>' })
+Laminar.initialize({ projectApiKey: "<PROJECT_API_KEY>" });
 ```
 
 This will automatically instrument most of the LLM, Vector DB, and related
@@ -36,13 +36,13 @@ Laminar.initialize() must be called
 
 ### Environment variables
 
-| Variable | Meaning |
-| --- | --- |
-| `LMNR_PROJECT_API_KEY` | Project API key, if not passed to `initialize()` |
-| `LMNR_BASE_URL` | Laminar API base URL (default `https://api.lmnr.ai`) |
-| `LMNR_RELEASE` | Release (e.g. git SHA) stamped on spans; detected if unset |
-| `LMNR_TRAJECTORY_PATH` | Write the run as a trajectory file in Harbor's ATIF format (with Laminar's `lmnr-atif` extension) at this path instead of exporting spans; no API key needed. May contain `{trace_id}` (one file per trace) and `{pid}` |
-| `LMNR_TRAJECTORY_FORCE_EXPORT` | With `LMNR_TRAJECTORY_PATH`: also export spans to Laminar (needs an API key) |
+| Variable                       | Meaning                                                                                                                                                                                                                 |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LMNR_PROJECT_API_KEY`         | Project API key, if not passed to `initialize()`                                                                                                                                                                        |
+| `LMNR_BASE_URL`                | Laminar API base URL (default `https://api.lmnr.ai`)                                                                                                                                                                    |
+| `LMNR_RELEASE`                 | Release (e.g. git SHA) stamped on spans; detected if unset                                                                                                                                                              |
+| `LMNR_TRAJECTORY_PATH`         | Write the run as a trajectory file in Harbor's ATIF format (with Laminar's `lmnr-atif` extension) at this path instead of exporting spans; no API key needed. May contain `{trace_id}` (one file per trace) and `{pid}` |
+| `LMNR_TRAJECTORY_FORCE_EXPORT` | With `LMNR_TRAJECTORY_PATH`: also export spans to Laminar (needs an API key)                                                                                                                                            |
 
 `Laminar.initialize({ writeTrajectory: false })` ignores `LMNR_TRAJECTORY_PATH`, for a process whose environment is meant for an agent it runs.
 
@@ -54,12 +54,12 @@ This can be useful if you want to trace a request handler or a function which co
 ### Example
 
 ```javascript
-import { OpenAI } from 'openai';
-import { Laminar as L, observe } from '@lmnr-ai/lmnr';
+import { OpenAI } from "openai";
+import { Laminar as L, observe } from "@lmnr-ai/lmnr";
 
 L.initialize({ projectApiKey: "<LMNR_PROJECT_API_KEY>" });
 
-const client = new OpenAI({ apiKey: '<OPENAI_API_KEY>' });
+const client = new OpenAI({ apiKey: "<OPENAI_API_KEY>" });
 
 const poemWriter = async (topic = "turbulence") => {
   const prompt = `write a poem about ${topic}`;
@@ -67,16 +67,19 @@ const poemWriter = async (topic = "turbulence") => {
     model: "gpt-4o",
     messages: [
       { role: "system", content: "You are a helpful assistant." },
-      { role: "user", content: prompt }
-    ]
+      { role: "user", content: prompt },
+    ],
   });
 
   const poem = response.choices[0].message.content;
   return poem;
-}
+};
 
 // Observe the function like this
-await observe({name: 'poemWriter'}, async () => await poemWriter('laminar flow'))
+await observe(
+  { name: "poemWriter" },
+  async () => await poemWriter("laminar flow"),
+);
 ```
 
 ### Pi Durable
