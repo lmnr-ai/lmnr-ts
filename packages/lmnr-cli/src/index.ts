@@ -56,6 +56,7 @@ import { handleSkillAdd, handleSkillUpdate } from "./commands/skill";
 import { handleSqlQuery } from "./commands/sql";
 import { handleSqlSchema } from "./commands/sql/schema";
 import { handleStatus } from "./commands/status";
+import { handleTraceTagAdd } from "./commands/trace";
 import { pc } from "./utils/colors";
 import { loadLocalEnv } from "./utils/env-file";
 import { withTrackingOptions } from "./utils/track-command";
@@ -278,6 +279,39 @@ Examples:
   $ lmnr-cli sql schema --json
 `,
     );
+
+  // Trace command group
+  const traceCmd = program
+    .command("trace")
+    .description("Manage traces")
+    .option(
+      "--project-api-key <key>",
+      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+    )
+    .option(
+      "--base-url <url>",
+      "Base URL for the Laminar API. Defaults to https://api.lmnr.ai or LMNR_BASE_URL env variable",
+    )
+    .option(
+      "--port <port>",
+      "Port for the Laminar API. Defaults to 443",
+      (val) => parseInt(val, 10),
+    )
+    .option("--json", "Output structured JSON to stdout");
+
+  const traceTagCmd = traceCmd.command("tag").description("Manage trace tags");
+
+  traceTagCmd
+    .command("add")
+    .description("Add tags to a trace")
+    .argument(
+      "<trace-id>",
+      "ID of the trace to tag (UUID or OpenTelemetry format)",
+    )
+    .argument("<tags...>", "Tags to add to the trace")
+    .action(async (traceId: string, tags: string[], _options, cmd) => {
+      await handleTraceTagAdd(traceId, tags, cmd.optsWithGlobals());
+    });
 
   const signalCmd = program
     .command("signal")
@@ -1354,7 +1388,7 @@ Examples:
     `
 Authentication:
   Run \`lmnr-cli setup\` to login, link this directory, write a project API key to
-  ./.env, and install the Laminar skill 
+  ./.env, and install the Laminar skill
   \`lmnr-cli login\` authenticates as a user. Every project command
   (sql / dataset / eval --remote / project / debug) runs on that user session and
   targets a project via --project-id or the linked .lmnr/project.json.
