@@ -24,7 +24,7 @@ permissions:
 jobs:
   publish-cli:
     if: github.repository == 'lmnr-ai/lmnr-ts' && startsWith(github.event.release.tag_name, 'cli-')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
       id-token: write
