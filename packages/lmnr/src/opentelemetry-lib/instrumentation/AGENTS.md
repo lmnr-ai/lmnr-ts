@@ -31,6 +31,7 @@
 ## General
 
 - Instrumentations live under `src/opentelemetry-lib/instrumentation/<name>/` and are registered in `src/opentelemetry-lib/tracing/instrumentations.ts` (both auto-registration path and the `manuallyInitInstrumentations` path — keep the two in sync).
+- Auto-registration (`initInstrumentations`) guards each instrumentation with `enabled("<instrumentModules key>")` so bridges can switch it off. Give a new instrumentation a guard too, and add its key to `LLM_INSTRUMENTATIONS` (`../bridges/types.ts`) if it emits LLM spans.
 - For manual instrumentation, expose an option key on `InitializeOptions.instrumentModules` and wire it through `manuallyInitInstrumentations`.
 - `@openai/agents` re-exports types and classes from `@openai/agents-core` and `@openai/agents-openai`. Import from `@openai/agents` to avoid adding `-core`/`-openai` as direct dependencies.
 - `AsyncLocalStorage.run(value, fn)` restores the previous context as soon as `fn` returns — for async iterables/streams, wrap **each** `next()`/`return()`/`throw()` call in its own `.run()` so the context is visible across yields, not just at iterator creation.

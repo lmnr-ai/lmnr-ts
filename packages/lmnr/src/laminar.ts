@@ -32,6 +32,16 @@ import {
   initializeTracing,
   LaminarSpanProcessor,
 } from "./opentelemetry-lib";
+import {
+  type Bridge,
+  conflictingInstrumentations,
+  flushBridges,
+  installBridges,
+  type LaminarBridge,
+  resolveBridges,
+  uninstallBridges,
+  warnAboutOverlaps,
+} from "./opentelemetry-lib/bridges";
 import { _resetConfiguration } from "./opentelemetry-lib/configuration";
 import {
   forceReleaseProxy as forceReleaseClaudeProxy,
@@ -96,6 +106,7 @@ export interface LaminarInitializeProps {
   spanProcessor?: SpanProcessor;
   release?: string;
   writeTrajectory?: boolean;
+  bridges?: LaminarBridge[];
 }
 
 type LaminarAttributesProp = Record<
@@ -113,6 +124,10 @@ export class Laminar {
   // this an initialize()/shutdown() loop (common in tests) would accumulate
   // stale listeners and trip Node's MaxListenersExceededWarning.
   private static debugExitHook: (() => void) | null = null;
+  // Bridges installed by initialize(), uninstalled by shutdown().
+  private static bridges: Bridge[] = [];
+  // Whether initialize() turned `inheritGlobalContext` on for the bridges.
+  private static bridgesSetInheritGlobalContext = false;
   // Base url / http port captured at initialize(), reused to build the client
   // when the debug runtime is armed late from a propagated context (the
   // from-context path has no access to initialize()'s args).
@@ -185,6 +200,12 @@ export class Laminar {
    * @param {boolean} props.writeTrajectory - Whether `LMNR_TRAJECTORY_PATH` (see below)
    * applies to this process. Set to false in a process whose environment is meant
    * for an agent it runs, so its own spans are still exported. Defaults to true.
+   * @param {LaminarBridge[]} props.bridges - Third-party tracing SDKs whose spans are
+   * also sent to Laminar, e.g. `["langfuse"]`: spans created with `@langfuse/tracing`
+   * (and `@langfuse/openai`, `@langfuse/langchain`) keep going to Langfuse unchanged
+   * and are mirrored into Laminar. With a bridge, `inheritGlobalContext` is turned on,
+   * and unless `instrumentModules` is passed, Laminar's own LLM provider and framework
+   * auto-instrumentations are skipped so calls are not traced twice.
    *
    * Environment variables:
    * - `LMNR_TRAJECTORY_PATH`: write the run as an lmnr-atif trajectory (Harbor's ATIF
@@ -234,6 +255,7 @@ export class Laminar {
     spanProcessor,
     release,
     writeTrajectory = true,
+    bridges,
   }: LaminarInitializeProps = {}) {
     if (this.isInitialized) {
       logger.warn(
@@ -298,6 +320,21 @@ export class Laminar {
     if (inheritGlobalContext) {
       LaminarContextManager.inheritGlobalContext = true;
     }
+    // A bridge's spans live in the global OTel context; Laminar spans created
+    // inside them must nest under them.
+    const activeBridges = resolveBridges(bridges);
+    if (bridges && bridges.length > 0 && !inheritGlobalContext) {
+      LaminarContextManager.inheritGlobalContext = true;
+      this.bridgesSetInheritGlobalContext = true;
+    }
+    let disabledInstrumentations: string[] | undefined;
+    if (activeBridges.length > 0) {
+      if (instrumentModules === undefined) {
+        disabledInstrumentations = conflictingInstrumentations(activeBridges);
+      } else {
+        warnAboutOverlaps(activeBridges, instrumentModules);
+      }
+    }
     if (spanProcessor && !(spanProcessor instanceof LaminarSpanProcessor)) {
       logger.warn(
         "Span processor is not a LaminarSpanProcessor. Some functionality may be impaired.",
@@ -330,7 +367,15 @@ export class Laminar {
       release,
       trajectoryPath,
       exportSpans,
+      disabledInstrumentations,
     });
+
+    const laminarProcessor = getSpanProcessor();
+    if (laminarProcessor && activeBridges.length > 0) {
+      this.bridges = installBridges(activeBridges, {
+        spanProcessor: laminarProcessor,
+      });
+    }
 
     // Build the debug runtime only after tracing is up. It has no dependency on
     // initializeTracing (which never reads the runtime or global metadata), so
@@ -1259,6 +1304,7 @@ export class Laminar {
   public static async flush() {
     if (this.isInitialized) {
       logger.debug("Flushing spans");
+      flushBridges(this.bridges);
       await forceFlush();
     }
   }
@@ -1276,6 +1322,13 @@ export class Laminar {
       // stop its trajectory snapshots and exit hook explicitly. This also
       // writes the final file.
       shutdownTrajectory();
+      // Unhook the third-party SDKs; a later initialize() installs again.
+      uninstallBridges(this.bridges);
+      this.bridges = [];
+      if (this.bridgesSetInheritGlobalContext) {
+        LaminarContextManager.inheritGlobalContext = false;
+        this.bridgesSetInheritGlobalContext = false;
+      }
       // Unlike Python where asynchronous nature of `BatchSpanProcessor.forceFlush()`
       // forces us to actually use `SpanProcessor.shutdown()` and make any
       // further interactions with OTEL API impossible, here we call

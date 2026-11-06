@@ -51,6 +51,7 @@ LMNR_TRAJECTORY_FORCE_EXPORT  # With LMNR_TRAJECTORY_PATH: also export spans to 
 - `src/debug/AGENTS.md` - debug mode / replay (server-cache v2), `.lmnr/debug-session.json`, propagated `debug` context, Python parity
 - `src/trajectory/AGENTS.md` - lmnr-atif (ATIF trajectory) reader / normalizer / builder / writer: port of lmnr-python, shared `spec/lmnr-atif/` (never edit here), `py.ts` Python-semantics helpers, golden suite
 - `src/opentelemetry-lib/tracing/AGENTS.md` - `startActiveSpan` / context stack, byte-size batch flush, span payload size limit, release stamp, trajectory file (`LMNR_TRAJECTORY_PATH` modes, collector, exit hook, precise span times)
+- `src/opentelemetry-lib/bridges/AGENTS.md` - `bridges` option: `Bridge` interface + registry, disabling conflicting auto-instrumentations, Langfuse bridge (tracer-provider wrapper, shadow/copy mirroring, self-healing provider slot, attribute translation, 4.x–6.x CI matrix)
 - `src/opentelemetry-lib/instrumentation/AGENTS.md` - `LaminarInstrumentation` base class, `wrapMethod`, shared helpers (`toJson`, `recordSpanError`, `traceCall`, `instrumentStream`), instrumentation scope / package version stamping, registering instrumentations, ALS across async iterators, `makeSpanOtelV2Compatible`, OpenCode
 - `src/opentelemetry-lib/instrumentation/aisdk/AGENTS.md` - AI SDK v7 telemetry integration, debug replay consumer
 - `src/opentelemetry-lib/instrumentation/anthropic/AGENTS.md` - `APIPromise` preservation, in-place stream wrapping, built-in SDK OTel
