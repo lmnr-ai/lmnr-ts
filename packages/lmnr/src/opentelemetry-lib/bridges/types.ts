@@ -46,9 +46,10 @@ export interface Bridge {
 /**
  * Laminar auto-instrumentations of LLM providers and agent frameworks. Every
  * bridge so far carries LLM spans from the other SDK, so they all conflict
- * with these. Claude Agent SDK and OpenCode are deliberately absent (Laminar
- * instruments them better, and no bridged SDK covers them), as are the
- * non-LLM ones (browsers, kernel, vector DBs, Temporal).
+ * with these. Claude Agent SDK, OpenCode and TypeSafe are deliberately absent
+ * (no bridged SDK covers them, so nothing is recorded twice), as are the
+ * non-LLM ones (browsers, kernel, vector DBs, Temporal). Keep in step with
+ * lmnr-python's `LangfuseBridge.conflicting_instruments`.
  */
 export const LLM_INSTRUMENTATIONS: readonly InstrumentationKey[] = [
   "OpenAI",
@@ -60,7 +61,6 @@ export const LLM_INSTRUMENTATIONS: readonly InstrumentationKey[] = [
   "google_genai",
   "google_aiplatform",
   "openrouter",
-  "typesafe",
   "langchain",
   "openAIAgents",
   "piDurable",
