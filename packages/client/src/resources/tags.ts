@@ -42,7 +42,7 @@ export class TagsResource extends BaseResource {
       ? trace_id
       : otelTraceIdToUUID(trace_id);
 
-    const url = this.baseHttpUrl + "/v1/tag";
+    const url = `${this.baseHttpUrl}${this.apiPrefix}/tag`;
     const payload = {
       traceId: formattedTraceId,
       names: traceTags,
