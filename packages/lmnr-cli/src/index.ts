@@ -285,8 +285,9 @@ Examples:
     .command("trace")
     .description("Manage traces")
     .option(
-      "--project-api-key <key>",
-      "Project API key. If not provided, reads from LMNR_PROJECT_API_KEY env variable",
+      "--project-id <id>",
+      "Target project id. Defaults to the linked .lmnr/project.json. " +
+        "Run `lmnr-cli login` first.",
     )
     .option(
       "--base-url <url>",

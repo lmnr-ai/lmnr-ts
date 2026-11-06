@@ -1,25 +1,25 @@
+import type { LaminarClient } from "@lmnr-ai/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { handleTraceTagAdd } from "./index";
 
 const mockTag = vi.fn();
 
-vi.mock("@lmnr-ai/client", () => ({
-  LaminarClient: class {
-    tags = {
-      tag: mockTag,
-    };
-  },
-}));
+// handleTraceTagAdd is a pure handler: the wrapper resolves the client and
+// owns the error envelope. We pass a stub client with the tags surface directly.
+const stubClient = { tags: { tag: mockTag } } as unknown as LaminarClient;
 
-import { handleTraceTagAdd } from "./index";
+const baseOpts = {
+  projectId: "fake-project",
+  baseUrl: "http://localhost",
+  port: 8080,
+};
 
 let logSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   logSpy = vi.spyOn(console, "log").mockImplementation(() => {
     /* empty */
-  });
-  vi.spyOn(process, "exit").mockImplementation((code?) => {
-    throw new Error(`process.exit(${code})`);
   });
   vi.clearAllMocks();
 });
@@ -28,17 +28,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const baseOpts = {
-  projectApiKey: "fake-key",
-  baseUrl: "http://localhost",
-  port: 8080,
-};
-
 describe("handleTraceTagAdd", () => {
   it("outputs JSON on success in json mode", async () => {
     mockTag.mockResolvedValue({ ok: true });
 
-    await handleTraceTagAdd("abc-123", ["tag1", "tag2"], {
+    await handleTraceTagAdd(stubClient, "abc-123", ["tag1", "tag2"], {
       ...baseOpts,
       json: true,
     });
@@ -51,27 +45,20 @@ describe("handleTraceTagAdd", () => {
   it("calls client.tags.tag with correct args", async () => {
     mockTag.mockResolvedValue({ ok: true });
 
-    await handleTraceTagAdd("abc-123", ["tag1"], baseOpts);
+    await handleTraceTagAdd(stubClient, "abc-123", ["tag1"], baseOpts);
 
     expect(mockTag).toHaveBeenCalledWith("abc-123", ["tag1"]);
   });
 
-  it("outputs JSON error on API failure in json mode", async () => {
+  it("propagates API errors for the wrapper to handle", async () => {
     mockTag.mockRejectedValue(new Error("unauthorized"));
 
     await expect(
-      handleTraceTagAdd("abc-123", ["tag1"], { ...baseOpts, json: true }),
-    ).rejects.toThrow("process.exit(1)");
-
-    const output = JSON.parse(logSpy.mock.calls[0][0] as string);
-    expect(output.error).toBe("unauthorized");
-  });
-
-  it("exits on API failure in human mode", async () => {
-    mockTag.mockRejectedValue(new Error("not found"));
-
-    await expect(
-      handleTraceTagAdd("abc-123", ["tag1"], baseOpts),
-    ).rejects.toThrow("process.exit(1)");
+      handleTraceTagAdd(stubClient, "abc-123", ["tag1"], {
+        ...baseOpts,
+        json: true,
+      }),
+    ).rejects.toThrow("unauthorized");
+    expect(logSpy).not.toHaveBeenCalled();
   });
 });
