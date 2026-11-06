@@ -176,8 +176,11 @@ importers:
         specifier: ^1.18.18
         version: 1.19.5
       '@openrouter/sdk':
-        specifier: ^1.2.128
+        specifier: ^1.5.57
         version: 1.5.57
+      '@openrouter/sdk-legacy':
+        specifier: npm:@openrouter/sdk@1.5.56
+        version: '@openrouter/sdk@1.5.56'
       '@opentelemetry/core':
         specifier: ^3.0.0
         version: 3.1.0(@opentelemetry/api@1.10.0)
@@ -956,6 +959,9 @@ packages:
 
   '@opencode-ai/sdk@1.19.5':
     resolution: {integrity: sha512-+bqu8gHiwmq96T9q5G34uLNHWCInIMsrE3hytCNHj1cVaxjY0AGJyNCT1rkeeZwgPU7A5TMTNwN+0XxCO2vqDg==}
+
+  '@openrouter/sdk@1.5.56':
+    resolution: {integrity: sha512-Ys3rpbS/WVepv3LTFg+gDhJlcnc/crNbzpfT85pd0VfAvhItsCgmlwNXsrinpAW/y6oUo6sc/22s3q5rus7xPQ==}
 
   '@openrouter/sdk@1.5.57':
     resolution: {integrity: sha512-f9ApcCeSv0BUOYK/U4jtAJcW3KGNQew04Uafk8P/hUb8776s3AyxCq9L3GwVnOr3wqiqt8h3AEONy8rSbjm0AQ==}
@@ -3554,6 +3560,10 @@ snapshots:
   '@opencode-ai/sdk@1.19.5':
     dependencies:
       cross-spawn: 7.0.6
+
+  '@openrouter/sdk@1.5.56':
+    dependencies:
+      zod: 4.6.7
 
   '@openrouter/sdk@1.5.57':
     dependencies:

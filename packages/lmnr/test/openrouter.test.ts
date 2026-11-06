@@ -4,12 +4,11 @@ import path from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { OpenRouter, ToolType } from "@openrouter/sdk";
+import { OpenRouter } from "@openrouter/sdk";
 import { context, SpanStatusCode } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 import nock from "nock";
-import { z } from "zod";
 
 import {
   _resetConfiguration,
@@ -379,76 +378,6 @@ void describe("openrouter instrumentation", () => {
     assert.ok(output[0].content[0].text.includes("Paris"));
   });
 
-  void it("traces callModel with tool execution", async () => {
-    const weatherTool = {
-      type: ToolType.Function,
-      function: {
-        name: "get_weather",
-        description: "Get the weather in a city",
-        inputSchema: z.object({ city: z.string() }),
-        execute: async ({ city }: { city: string }) => ({
-          city,
-          forecast: "sunny",
-        }),
-      },
-    };
-    const result = createClient().callModel({
-      model: MODEL,
-      input: "What is the weather in Paris? Answer in one sentence.",
-      tools: [weatherTool],
-    });
-    const text = await result.getText();
-    assert.ok(text.toLowerCase().includes("sunny"));
-
-    const spans = exporter.getFinishedSpans();
-    const parent = spans.find((s) => s.name === "openrouter.call_model");
-    const llmSpans = spans.filter((s) => s.name === "openrouter.responses");
-    const toolSpan = spans.find((s) => s.name === "get_weather");
-    assert.ok(parent);
-    assert.strictEqual(spans.length, 4);
-    assert.strictEqual(llmSpans.length, 2);
-    assert.ok(toolSpan);
-
-    const parentSpanId = parent.spanContext().spanId;
-    for (const span of [...llmSpans, toolSpan]) {
-      assert.strictEqual(span.parentSpanContext?.spanId, parentSpanId);
-      assert.strictEqual(
-        span.spanContext().traceId,
-        parent.spanContext().traceId,
-      );
-    }
-
-    assert.strictEqual(toolSpan.attributes["lmnr.span.type"], "TOOL");
-    assert.deepStrictEqual(
-      JSON.parse(toolSpan.attributes["lmnr.span.input"] as string),
-      { city: "Paris" },
-    );
-    assert.deepStrictEqual(
-      JSON.parse(toolSpan.attributes["lmnr.span.output"] as string),
-      { city: "Paris", forecast: "sunny" },
-    );
-
-    for (const span of llmSpans) {
-      assert.strictEqual(span.attributes["lmnr.span.type"], "LLM");
-      assert.strictEqual(span.attributes["gen_ai.request.model"], MODEL);
-      assert.ok(span.attributes["gen_ai.tool.definitions"]);
-      assert.ok(span.attributes["gen_ai.input.messages"]);
-      assert.ok(span.attributes["gen_ai.output.messages"]);
-      assertUsage(span);
-    }
-    const firstOutput = JSON.parse(
-      llmSpans[0].attributes["gen_ai.output.messages"] as string,
-    );
-    assert.strictEqual(firstOutput[0].type, "function_call");
-    assert.strictEqual(firstOutput[0].name, "get_weather");
-
-    assert.ok(parent.attributes["lmnr.span.input"]);
-    const parentOutput = JSON.parse(
-      parent.attributes["lmnr.span.output"] as string,
-    );
-    assert.strictEqual(parentOutput[0].type, "message");
-  });
-
   void it("respects traceContent off", async () => {
     reinitializeTracing(false);
     await createClient().chat.send({
@@ -458,7 +387,7 @@ void describe("openrouter instrumentation", () => {
         maxTokens: 20,
         tools: [
           {
-            type: ToolType.Function,
+            type: "function",
             function: {
               name: "get_weather",
               description: "Get the weather in a city",
@@ -513,23 +442,6 @@ void describe("openrouter instrumentation", () => {
     assert.strictEqual(span.name, "openrouter.chat");
     assert.strictEqual(span.status.code, SpanStatusCode.ERROR);
     assert.ok(span.attributes["error.type"]);
-    assert.strictEqual(span.events[0]?.name, "exception");
-  });
-
-  void it("ends the call_model span when callModel throws", () => {
-    // An invalid header name makes the SDK throw synchronously, before any request.
-    assert.throws(() =>
-      createClient().callModel(
-        { model: MODEL, input: "Hello" },
-        { headers: { "bad header": "value" } },
-      ),
-    );
-
-    const spans = exporter.getFinishedSpans();
-    assert.strictEqual(spans.length, 1);
-    const span = spans[0];
-    assert.strictEqual(span.name, "openrouter.call_model");
-    assert.strictEqual(span.status.code, SpanStatusCode.ERROR);
     assert.strictEqual(span.events[0]?.name, "exception");
   });
 });
