@@ -288,7 +288,7 @@ const setUsage = (span: LaminarSpan, usage: any): void => {
   }
   safeSetAttribute(
     span,
-    "gen_ai.usage.cache_read_input_tokens",
+    "gen_ai.usage.cache_read.input_tokens",
     asInt(usage?.cachedTokens),
   );
 };

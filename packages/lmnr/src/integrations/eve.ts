@@ -7,7 +7,6 @@ import {
   type Tracer,
   trace,
 } from "@opentelemetry/api";
-import { type SpanProcessor } from "@opentelemetry/sdk-trace-base";
 
 import { Laminar } from "../laminar";
 import { getConfiguredApiKey, getTracer } from "../opentelemetry-lib/tracing";
@@ -17,6 +16,7 @@ import {
   SPAN_TYPE,
   TRACE_TYPE,
 } from "../opentelemetry-lib/tracing/attributes";
+import type { SpanProcessorCompat } from "../opentelemetry-lib/tracing/compat";
 import {
   getFrontendUrl,
   initializeLogger,
@@ -212,7 +212,7 @@ export interface LaminarReporterOptions {
    * tests; production defaults to Laminar's. Ignored when something already
    * called `Laminar.initialize()`.
    */
-  spanProcessor?: SpanProcessor;
+  spanProcessor?: SpanProcessorCompat;
   /**
    * @deprecated Eve 0.35+ exposes native trace contexts to reporters. This
    * option is ignored and remains only for source compatibility.

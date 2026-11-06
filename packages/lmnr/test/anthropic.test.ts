@@ -6,7 +6,7 @@ import { after, afterEach, beforeEach, describe, it } from "node:test";
 import Anthropic from "@anthropic-ai/sdk";
 import { context, SpanStatusCode } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
-import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 
 import {
   _resetConfiguration,
@@ -258,11 +258,11 @@ void describe("anthropic instrumentation", () => {
     assert.strictEqual(span.attributes["gen_ai.usage.output_tokens"], 20);
     assert.strictEqual(span.attributes["llm.usage.total_tokens"], 38);
     assert.strictEqual(
-      span.attributes["gen_ai.usage.cache_read_input_tokens"],
+      span.attributes["gen_ai.usage.cache_read.input_tokens"],
       5,
     );
     assert.strictEqual(
-      span.attributes["gen_ai.usage.cache_creation_input_tokens"],
+      span.attributes["gen_ai.usage.cache_write.input_tokens"],
       3,
     );
     assert.strictEqual(span.status.code, SpanStatusCode.OK);
@@ -328,7 +328,7 @@ void describe("anthropic instrumentation", () => {
     assert.strictEqual(span.attributes["gen_ai.usage.input_tokens"], 16);
     assert.strictEqual(span.attributes["gen_ai.usage.output_tokens"], 30);
     assert.strictEqual(
-      span.attributes["gen_ai.usage.cache_read_input_tokens"],
+      span.attributes["gen_ai.usage.cache_read.input_tokens"],
       4,
     );
     assert.strictEqual(span.attributes["llm.usage.total_tokens"], undefined);

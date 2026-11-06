@@ -4,10 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
-import {
-  BasicTracerProvider,
-  InMemorySpanExporter,
-} from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter, TracerProvider } from "@opentelemetry/sdk-trace";
 
 import { SPAN_RELEASE } from "../src/opentelemetry-lib/tracing/attributes";
 import { LaminarSpanProcessor } from "../src/opentelemetry-lib/tracing/processor";
@@ -222,7 +219,7 @@ void describe("span stamping", () => {
       disableBatch: true,
       ...options,
     });
-    const provider = new BasicTracerProvider({ spanProcessors: [processor] });
+    const provider = new TracerProvider({ spanProcessors: [processor] });
     return { exporter, tracer: provider.getTracer("plain-otel") };
   };
 
@@ -266,7 +263,7 @@ void describe("span stamping", () => {
       release: "inner-release",
     });
     const outer = new LaminarSpanProcessor({ spanProcessor: inner });
-    new BasicTracerProvider({ spanProcessors: [outer] })
+    new TracerProvider({ spanProcessors: [outer] })
       .getTracer("plain-otel")
       .startSpan("root")
       .end();

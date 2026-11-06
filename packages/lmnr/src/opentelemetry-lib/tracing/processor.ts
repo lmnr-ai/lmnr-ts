@@ -5,7 +5,7 @@ import {
   type Span,
   SpanExporter,
   SpanProcessor,
-} from "@opentelemetry/sdk-trace-base";
+} from "@opentelemetry/sdk-trace";
 import { Logger } from "pino";
 
 import { version as SDK_VERSION } from "../../../package.json";
@@ -38,6 +38,8 @@ import {
   getParentSpanId,
   makeSpanOtelV2Compatible,
   OTelSpanCompat,
+  type SpanExporterCompat,
+  type SpanProcessorCompat,
 } from "./compat";
 import {
   ASSOCIATION_PROPERTIES_KEY,
@@ -102,13 +104,13 @@ interface LaminarSpanProcessorOptions {
    * The exporter to use. Optional. If specified, some of the other options will be ignored.
    * Defaults to a new LaminarSpanExporter.
    */
-  exporter?: SpanExporter;
+  exporter?: SpanExporterCompat;
 
   /**
    * The span processor to use. If passed, some of the other options will be ignored.
    * If passed, wraps the underlying span processor.
    */
-  spanProcessor?: SpanProcessor;
+  spanProcessor?: SpanProcessorCompat;
 
   /**
    * The HTTP port to use. Optional.
@@ -203,14 +205,14 @@ export class LaminarSpanProcessor implements SpanProcessor {
         exportTimeoutMillis: options.traceExportTimeoutMillis ?? 30000,
       };
       if (options.disableBatch) {
-        this.instance = new SimpleSpanProcessor(exporter);
+        this.instance = new SimpleSpanProcessor({ exporter });
       } else if (options.flushBySize) {
         this.instance = new SizeLimitedBatchSpanProcessor(exporter, {
           ...batchConfig,
           maxExportBatchSizeBytes: options.maxExportBatchSizeBytes,
         });
       } else {
-        this.instance = new BatchSpanProcessor(exporter, batchConfig);
+        this.instance = new BatchSpanProcessor({ ...batchConfig, exporter });
       }
     }
     // Only this processor's `onStart` / `onEnd` run when it wraps another
