@@ -40,6 +40,7 @@ lmnr-cli sql query "<query>" [options]
 ```
 
 **Examples:**
+
 ```bash
 lmnr-cli sql query "SELECT * FROM spans LIMIT 10"
 lmnr-cli sql query "SELECT id, total_cost, status FROM traces LIMIT 20"

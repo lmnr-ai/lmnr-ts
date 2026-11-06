@@ -31,6 +31,7 @@ calls with OpenTelemetry-compatible instrumentation.
 ### Where to place Laminar.initialize()
 
 Laminar.initialize() must be called
+
 - once in your application,
 - as early as possible, but after other instrumentation libraries
 
@@ -176,6 +177,7 @@ Bring rigor to the development of your LLM applications with evaluations.
 You can run evaluations locally by providing executor (part of the logic used in your application) and evaluators (numeric scoring functions) to `evaluate` function.
 
 `evaluate` takes in the following parameters:
+
 - `data` – an array of `Datapoint` objects, where each `Datapoint` has two keys: `target` and `data`, each containing a key-value object.
 - `executor` – the logic you want to evaluate. This function must take `data` as the first argument, and produce any output.
 - `evaluators` – Object which maps evaluator names to evaluators. Each evaluator is a function that takes output of executor as the first argument, `target` as the second argument and produces numeric scores. Each function can produce either a single number or `Record<string, number>` of scores.
