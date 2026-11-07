@@ -552,4 +552,11 @@ export interface InitializeOptions {
    * and sends nothing to Laminar.
    */
   exportSpans?: boolean;
+
+  /**
+   * Keys of `instrumentModules` whose auto-instrumentation is skipped.
+   * Internal: `Laminar.initialize` sets it for the enabled bridges. Ignored
+   * when `instrumentModules` is passed.
+   */
+  disabledInstrumentations?: readonly string[];
 }

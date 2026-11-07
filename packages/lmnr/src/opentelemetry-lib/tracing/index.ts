@@ -10,6 +10,7 @@ import {
 
 import { version as SDK_VERSION } from "../../../package.json";
 import { initializeLogger } from "../../utils";
+import { type InstrumentationKey } from "../bridges/types";
 import { _configuration } from "../configuration";
 import { InitializeOptions } from "../interfaces";
 import { createResource } from "./compat";
@@ -49,6 +50,9 @@ export const startTracing = (options: InitializeOptions) => {
     suppressContentTracing: !shouldSendTraces(),
     instrumentModules: options.instrumentModules,
     sessionRecordingOptions: options.sessionRecordingOptions,
+    disabledInstrumentations: options.disabledInstrumentations as
+      | InstrumentationKey[]
+      | undefined,
   });
 
   const port = options.forceHttp ? options.httpPort : options.port;
