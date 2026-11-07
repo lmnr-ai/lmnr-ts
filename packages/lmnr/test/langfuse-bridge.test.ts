@@ -586,6 +586,15 @@ void describe("Langfuse bridge", () => {
     );
   });
 
+  void it("leaves inheritGlobalContext off for an unknown bridge", async () => {
+    initLaminar({ bridges: ["langfsue"] });
+    assert.strictEqual(
+      (LaminarContextManager as any)._inheritGlobalContext,
+      false,
+    );
+    await Laminar.shutdown();
+  });
+
   void it("uninstalls on shutdown and reinstalls on initialize", async () => {
     const before = getLangfuseTracerProvider();
     initLaminar();
@@ -789,6 +798,32 @@ void describe("Langfuse bridge translation", () => {
       attributes["lmnr.association.properties.metadata.d"],
       undefined,
     );
+  });
+
+  void it("keeps raw metadata strings before 6.x", () => {
+    for (const version of ["4.6.1", "5.14.0", undefined]) {
+      const { attributes } = translateLangfuseSpan(
+        {
+          "langfuse.trace.metadata.id": "12345",
+          "langfuse.trace.metadata.flag": "true",
+          "langfuse.trace.metadata.quoted": '"x"',
+        },
+        undefined,
+        version,
+      );
+      assert.strictEqual(
+        attributes["lmnr.association.properties.metadata.id"],
+        "12345",
+      );
+      assert.strictEqual(
+        attributes["lmnr.association.properties.metadata.flag"],
+        "true",
+      );
+      assert.strictEqual(
+        attributes["lmnr.association.properties.metadata.quoted"],
+        '"x"',
+      );
+    }
   });
 
   void it("folds input tool calls into content parts and drops Anthropic mirrors", () => {

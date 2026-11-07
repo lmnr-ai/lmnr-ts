@@ -320,13 +320,7 @@ export class Laminar {
     if (inheritGlobalContext) {
       LaminarContextManager.inheritGlobalContext = true;
     }
-    // A bridge's spans live in the global OTel context; Laminar spans created
-    // inside them must nest under them.
     const activeBridges = resolveBridges(bridges);
-    if (bridges && bridges.length > 0 && !inheritGlobalContext) {
-      LaminarContextManager.inheritGlobalContext = true;
-      this.bridgesSetInheritGlobalContext = true;
-    }
     let disabledInstrumentations: string[] | undefined;
     if (activeBridges.length > 0) {
       if (instrumentModules === undefined) {
@@ -375,6 +369,13 @@ export class Laminar {
       this.bridges = installBridges(activeBridges, {
         spanProcessor: laminarProcessor,
       });
+    }
+    // A bridge's spans live in the global OTel context; Laminar spans created
+    // inside them must nest under them. Only for bridges that are installed:
+    // an unknown or unavailable name changes nothing.
+    if (this.bridges.length > 0 && !inheritGlobalContext) {
+      LaminarContextManager.inheritGlobalContext = true;
+      this.bridgesSetInheritGlobalContext = true;
     }
 
     // Build the debug runtime only after tracing is up. It has no dependency on

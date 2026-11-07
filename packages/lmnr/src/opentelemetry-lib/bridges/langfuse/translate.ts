@@ -327,9 +327,18 @@ export const normalizeToolCalls = (
     return { role: msg.role, content: [...parts, ...toolCalls] };
   });
 
-/** A metadata value, JSON-decoded when it is a JSON-encoded primitive (6.x). */
-const decodeMetadataValue = (value: unknown): AttributeValue | undefined => {
-  if (typeof value !== "string") return value as AttributeValue | undefined;
+/**
+ * A metadata value. @langfuse/* 6.x JSON-encodes every value, so there a
+ * JSON-encoded primitive is decoded; 4.x and 5.x write strings raw, and a raw
+ * "12345" or "true" must stay a string.
+ */
+const decodeMetadataValue = (
+  value: unknown,
+  jsonEncoded: boolean,
+): AttributeValue | undefined => {
+  if (!jsonEncoded || typeof value !== "string") {
+    return value as AttributeValue | undefined;
+  }
   const parsed = parseJson(value);
   if (
     typeof parsed === "string" ||
@@ -348,6 +357,7 @@ const decodeMetadataValue = (value: unknown): AttributeValue | undefined => {
  */
 export const traceAttributes = (
   attrs: Attributes,
+  jsonEncodedMetadata: boolean,
 ): Record<string, AttributeValue> => {
   const out: Record<string, AttributeValue> = {};
   const sessionId = attrs[TRACE_SESSION_ID];
@@ -379,7 +389,7 @@ export const traceAttributes = (
         }
       }
     } else if (key.startsWith(`${TRACE_METADATA}.`)) {
-      const v = decodeMetadataValue(value);
+      const v = decodeMetadataValue(value, jsonEncodedMetadata);
       if (v !== undefined) {
         out[
           `${ASSOCIATION_PROPERTIES}.metadata.${key.slice(TRACE_METADATA.length + 1)}`
@@ -442,6 +452,9 @@ export interface TranslatedSpan {
   errorMessage?: string;
 }
 
+const majorVersion = (version: string | undefined): number =>
+  version === undefined ? NaN : parseInt(version.split(".")[0], 10);
+
 /**
  * Translate a finished Langfuse span. `attrs` are the span's own attributes,
  * which are never modified; the result is added on top of them on Laminar's
@@ -477,7 +490,7 @@ export const translateLangfuseSpan = (
     usageAttributes(attrs[OBSERVATION_USAGE_DETAILS]),
     costAttributes(attrs[OBSERVATION_COST_DETAILS]),
     ioAttributes(attrs, isLlm),
-    traceAttributes(attrs),
+    traceAttributes(attrs, majorVersion(bridgeVersion) >= 6),
   );
 
   // Langfuse never records exception events: a throw inside
