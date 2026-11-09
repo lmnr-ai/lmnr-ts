@@ -280,6 +280,7 @@ class BridgeTracerProvider implements TracerProvider {
 export class LangfuseBridge implements Bridge {
   readonly name = "langfuse" as const;
   readonly conflictingInstrumentations = LLM_INSTRUMENTATIONS;
+  readonly inheritsGlobalContext = true;
 
   private loaded: LoadedLangfuse | undefined;
   private processor: LaminarSpanProcessor | undefined;

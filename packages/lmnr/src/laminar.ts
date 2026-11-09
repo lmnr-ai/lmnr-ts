@@ -370,10 +370,14 @@ export class Laminar {
         spanProcessor: laminarProcessor,
       });
     }
-    // A bridge's spans live in the global OTel context; Laminar spans created
-    // inside them must nest under them. Only for bridges that are installed:
-    // an unknown or unavailable name changes nothing.
-    if (this.bridges.length > 0 && !inheritGlobalContext) {
+    // An OpenTelemetry-based bridge's spans live in the global OTel context;
+    // Laminar spans created inside them must nest under them. Only for
+    // bridges that are installed: an unknown or unavailable name changes
+    // nothing.
+    if (
+      this.bridges.some((b) => b.inheritsGlobalContext) &&
+      !inheritGlobalContext
+    ) {
       LaminarContextManager.inheritGlobalContext = true;
       this.bridgesSetInheritGlobalContext = true;
     }

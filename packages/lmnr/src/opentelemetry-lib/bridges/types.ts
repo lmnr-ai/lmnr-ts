@@ -13,14 +13,22 @@ export type InstrumentationKey = keyof NonNullable<
 >;
 
 export interface BridgeContext {
-  /** The processor of the Laminar pipeline `initialize()` just built. */
+  /**
+   * The processor of the Laminar pipeline `initialize()` just built. A bridge
+   * that receives finished spans from the other SDK (Langfuse) hands Laminar's
+   * copies to it. A bridge that builds spans itself, from intercepted requests
+   * say, creates them with Laminar's `getTracer()` instead and needs nothing
+   * from here.
+   */
   spanProcessor: LaminarSpanProcessor;
 }
 
 /**
  * One bridge. Bridges differ in how they hook the other SDK (Langfuse: its
- * tracer provider; others may hook at the network level), so the interface
- * only fixes the lifecycle `Laminar.initialize()` / `shutdown()` drive.
+ * OpenTelemetry tracer provider; LangSmith or Braintrust: the network), so
+ * the interface fixes only the lifecycle `Laminar.initialize()` / `shutdown()`
+ * drive. `inheritsGlobalContext` is the one OpenTelemetry-specific setting.
+ * Same contract as lmnr-python's `LaminarBridge`.
  */
 export interface Bridge {
   readonly name: LaminarBridge;
@@ -30,6 +38,12 @@ export interface Bridge {
    * `instrumentModules`; a warning names them when the user did.
    */
   readonly conflictingInstrumentations: readonly InstrumentationKey[];
+  /**
+   * Nest Laminar spans under the other SDK's span that is active in the
+   * global OpenTelemetry context (turns on `inheritGlobalContext`). Only for
+   * SDKs built on OpenTelemetry; a network-level bridge sets false.
+   */
+  readonly inheritsGlobalContext: boolean;
   /**
    * Whether the other SDK is installed in a supported version. Logs the
    * reason when it isn't; the bridge is then skipped.
