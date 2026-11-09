@@ -5,7 +5,7 @@ import { type StringUUID } from "@lmnr-ai/types";
 import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-base";
+} from "@opentelemetry/sdk-trace";
 import nock from "nock";
 
 import {
@@ -109,7 +109,7 @@ void describe("LaminarReporter for eve evals", () => {
     new LaminarReporter({
       name: "eve-run",
       projectApiKey: PROJECT_API_KEY,
-      spanProcessor: new SimpleSpanProcessor(exporter),
+      spanProcessor: new SimpleSpanProcessor({ exporter }),
     });
 
   void beforeEach(() => {
@@ -149,7 +149,7 @@ void describe("LaminarReporter for eve evals", () => {
     const reporter = new LaminarReporter({
       name: "eve-run",
       projectApiKey: PROJECT_API_KEY,
-      spanProcessor: new SimpleSpanProcessor(exporter),
+      spanProcessor: new SimpleSpanProcessor({ exporter }),
       metadata: { source: "custom", evalCount: 999, suite: "smoke" },
     });
     await reporter.onRunStart([{ id: "a" }], { kind: "local" });
@@ -814,7 +814,7 @@ void describe("LaminarReporter for eve evals", () => {
     const hostExporter = new InMemorySpanExporter();
     Laminar.initialize({
       projectApiKey: PROJECT_API_KEY,
-      spanProcessor: new SimpleSpanProcessor(hostExporter),
+      spanProcessor: new SimpleSpanProcessor({ exporter: hostExporter }),
       disableBatch: true,
     });
 

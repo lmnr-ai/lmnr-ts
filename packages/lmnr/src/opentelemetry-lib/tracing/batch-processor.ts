@@ -1,9 +1,12 @@
-import { TraceFlags } from "@opentelemetry/api";
+import { Context, TraceFlags } from "@opentelemetry/api";
 import {
   BatchSpanProcessor,
-  type BufferConfig,
+  type BatchSpanProcessorOptions,
   type ReadableSpan,
-} from "@opentelemetry/sdk-trace-base";
+  type Span,
+  type SpanExporter,
+  type SpanProcessor,
+} from "@opentelemetry/sdk-trace";
 
 import { initializeLogger } from "../../utils";
 
@@ -88,7 +91,10 @@ export const approximateSpanSize = (span: ReadableSpan): number => {
   return total;
 };
 
-export type SizeLimitedBufferConfig = BufferConfig & {
+export type SizeLimitedBufferConfig = Omit<
+  BatchSpanProcessorOptions,
+  "exporter"
+> & {
   /**
    * Approximate maximum size, in bytes, of the spans buffered in one batch.
    * Defaults to {@link DEFAULT_MAX_EXPORT_BATCH_SIZE_BYTES}.
@@ -98,6 +104,9 @@ export type SizeLimitedBufferConfig = BufferConfig & {
 
 /**
  * `BatchSpanProcessor` with a third, size-based flush trigger.
+ *
+ * Wraps an upstream `BatchSpanProcessor` instead of extending it, so only its
+ * public `SpanProcessor` surface is relied on.
  *
  * Opt-in via `Laminar.initialize({ flushBySize: true })`; the default transport
  * is the plain upstream `BatchSpanProcessor`.
@@ -122,7 +131,7 @@ export type SizeLimitedBufferConfig = BufferConfig & {
  * 2. Because the flush is synchronous with respect to the buffer, the batch stays
  *    bounded even when a producer emits in a tight loop, so no inline-fallback
  *    backpressure path is needed. Python's asynchronous handoff can be outrun.
- * 3. `onEnd` calls `super.onEnd(span)` *after* flushing, so the triggering span
+ * 3. `onEnd` calls `this.inner.onEnd(span)` *after* flushing, so the triggering span
  *    is genuinely excluded from the batch it caused. Python cannot do this — its
  *    flush is asynchronous, so the triggering span rides along, which is why it
  *    needs a separate "span is at least half the limit" rule to bound overshoot.
@@ -131,24 +140,35 @@ export type SizeLimitedBufferConfig = BufferConfig & {
  * Single-threaded event loop, so no lock guards the running total, and there is
  * no `fork` story to handle.
  */
-export class SizeLimitedBatchSpanProcessor extends BatchSpanProcessor {
+export class SizeLimitedBatchSpanProcessor implements SpanProcessor {
+  private readonly inner: SpanProcessor;
   private readonly maxExportBatchSizeBytes: number;
   private pendingSizeBytes = 0;
 
-  constructor(
-    exporter: ConstructorParameters<typeof BatchSpanProcessor>[0],
-    config?: SizeLimitedBufferConfig,
-  ) {
-    super(exporter, config);
+  constructor(exporter: SpanExporter, config?: SizeLimitedBufferConfig) {
+    const { maxExportBatchSizeBytes, ...bufferConfig } = config ?? {};
+    this.inner = new BatchSpanProcessor({ ...bufferConfig, exporter });
     this.maxExportBatchSizeBytes =
-      config?.maxExportBatchSizeBytes ?? DEFAULT_MAX_EXPORT_BATCH_SIZE_BYTES;
+      maxExportBatchSizeBytes ?? DEFAULT_MAX_EXPORT_BATCH_SIZE_BYTES;
+  }
+
+  public onStart(span: Span, parentContext: Context): void {
+    this.inner.onStart(span, parentContext);
+  }
+
+  public forceFlush(): Promise<void> {
+    return this.inner.forceFlush();
+  }
+
+  public shutdown(): Promise<void> {
+    return this.inner.shutdown();
   }
 
   public onEnd(span: ReadableSpan): void {
     // Upstream drops unsampled spans without buffering them, so they must not
     // count toward the running total either.
     if ((span.spanContext().traceFlags & TraceFlags.SAMPLED) === 0) {
-      super.onEnd(span);
+      this.inner.onEnd(span);
       return;
     }
 
@@ -182,6 +202,6 @@ export class SizeLimitedBatchSpanProcessor extends BatchSpanProcessor {
       });
     }
 
-    super.onEnd(span);
+    this.inner.onEnd(span);
   }
 }

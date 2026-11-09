@@ -204,11 +204,11 @@ const setDataAttributes = (
     safeSetAttribute(span, "llm.usage.total_tokens", usage.total_tokens);
     safeSetAttribute(
       span,
-      "gen_ai.usage.cache_read_input_tokens",
+      "gen_ai.usage.cache_read.input_tokens",
       usage.input_tokens_details?.cached_tokens,
     );
     span.setAttribute(
-      "gen_ai.usage.reasoning_tokens",
+      "gen_ai.usage.reasoning.output_tokens",
       usage.output_tokens_details?.reasoning_tokens ?? 0,
     );
   }
@@ -220,7 +220,7 @@ const setDataAttributes = (
   );
   safeSetAttribute(
     span,
-    "gen_ai.request.reasoning_effort",
+    "gen_ai.request.reasoning.level",
     data.requestReasoningEffort,
   );
   safeSetAttribute(

@@ -9,10 +9,10 @@ import type {
 import { context as otelContext } from "@opentelemetry/api";
 import { isTracingSuppressed } from "@opentelemetry/core";
 import {
-  BasicTracerProvider,
   InMemorySpanExporter,
   type ReadableSpan,
-} from "@opentelemetry/sdk-trace-base";
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 
 import { Laminar } from "../src/laminar";
 import {
@@ -145,7 +145,7 @@ const exceptionMessage = (span: ReadableSpan) =>
 
 void describe("pi-durable", () => {
   let exporter: InMemorySpanExporter;
-  let provider: BasicTracerProvider;
+  let provider: TracerProvider;
   let faux: any;
   let models: any;
   let harnesses: any[];
@@ -178,7 +178,7 @@ void describe("pi-durable", () => {
 
   beforeEach(() => {
     exporter = new InMemorySpanExporter();
-    provider = new BasicTracerProvider({
+    provider = new TracerProvider({
       spanProcessors: [
         new LaminarSpanProcessor({ exporter, disableBatch: true }),
       ],
@@ -718,7 +718,7 @@ void describe("pi-durable message mapping", () => {
     assert.deepEqual(usageAttributes(usage), {
       "gen_ai.usage.input_tokens": 10,
       "gen_ai.usage.output_tokens": 5,
-      "gen_ai.usage.cache_read_input_tokens": 100,
+      "gen_ai.usage.cache_read.input_tokens": 100,
       "llm.usage.total_tokens": 115,
     });
     const cost = costAttributes(usage);

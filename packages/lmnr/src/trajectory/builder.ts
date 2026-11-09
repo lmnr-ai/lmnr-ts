@@ -72,8 +72,18 @@ const NOT_REQUEST_PARAMS = new Set([
   "base_url",
   "api_type",
   "api_version",
+  "reasoning.level",
   "reasoning_effort",
 ]);
+// Pre-semconv names of attributes the builder reads, still emitted by older SDKs.
+const LEGACY_ATTRIBUTES: Record<string, string> = {
+  "gen_ai.request.reasoning.level": "gen_ai.request.reasoning_effort",
+  "gen_ai.usage.cache_read.input_tokens":
+    "gen_ai.usage.cache_read_input_tokens",
+  "gen_ai.usage.cache_write.input_tokens":
+    "gen_ai.usage.cache_creation_input_tokens",
+  "gen_ai.usage.reasoning.output_tokens": "gen_ai.usage.reasoning_tokens",
+};
 const SYSTEM_ROLES = ["system", "developer"];
 
 export interface SpanError {
@@ -194,6 +204,14 @@ const jsonAttribute = (value: unknown): any => {
   if (typeof value === "string") {
     const parsed = jsonLoads(value);
     return parsed === undefined ? value : parsed.value;
+  }
+  return value;
+};
+
+const getAttribute = (attrs: JsonObject, key: string): any => {
+  const value = get(attrs, key);
+  if (isNone(value) && has(LEGACY_ATTRIBUTES, key)) {
+    return get(attrs, LEGACY_ATTRIBUTES[key]);
   }
   return value;
 };
@@ -932,7 +950,7 @@ class Builder {
     if (typeof model === "string" && model) {
       step.model_name = model;
     }
-    const effort = get(attrs, "gen_ai.request.reasoning_effort");
+    const effort = getAttribute(attrs, "gen_ai.request.reasoning.level");
     if (typeof effort === "string" || typeof effort === "number") {
       step.reasoning_effort = effort;
     }
@@ -997,9 +1015,9 @@ class Builder {
     for (const [key, attribute] of [
       ["prompt_tokens", "gen_ai.usage.input_tokens"],
       ["completion_tokens", "gen_ai.usage.output_tokens"],
-      ["cached_tokens", "gen_ai.usage.cache_read_input_tokens"],
+      ["cached_tokens", "gen_ai.usage.cache_read.input_tokens"],
     ]) {
-      const value = number(get(attrs, attribute));
+      const value = number(getAttribute(attrs, attribute));
       if (value !== null) {
         metrics[key] = Math.trunc(value);
       }
@@ -1016,10 +1034,10 @@ class Builder {
     }
     const metricsExtra: JsonObject = {};
     for (const [key, attribute] of [
-      ["reasoning_tokens", "gen_ai.usage.reasoning_tokens"],
-      ["cache_creation_tokens", "gen_ai.usage.cache_creation_input_tokens"],
+      ["reasoning_tokens", "gen_ai.usage.reasoning.output_tokens"],
+      ["cache_creation_tokens", "gen_ai.usage.cache_write.input_tokens"],
     ]) {
-      const value = number(get(attrs, attribute));
+      const value = number(getAttribute(attrs, attribute));
       if (value !== null && value > 0) {
         metricsExtra[key] = Math.trunc(value);
       }

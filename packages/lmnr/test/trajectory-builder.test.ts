@@ -291,6 +291,50 @@ void describe("lmnr-atif builder", () => {
     });
   });
 
+  for (const [label, attrs] of [
+    [
+      "semconv",
+      {
+        "gen_ai.request.reasoning.level": "high",
+        "gen_ai.usage.cache_read.input_tokens": 5,
+        "gen_ai.usage.cache_write.input_tokens": 3,
+        "gen_ai.usage.reasoning.output_tokens": 7,
+      },
+    ],
+    // Pre-semconv names, still emitted by older SDKs.
+    [
+      "legacy",
+      {
+        "gen_ai.request.reasoning_effort": "high",
+        "gen_ai.usage.cache_read_input_tokens": 5,
+        "gen_ai.usage.cache_creation_input_tokens": 3,
+        "gen_ai.usage.reasoning_tokens": 7,
+      },
+    ],
+  ] as const) {
+    void it(`reasoning and cache attributes (${label} names)`, () => {
+      const trajectory = buildTrajectory([
+        record(1, null, "root", "DEFAULT", 0, 2),
+        llm(
+          2,
+          0,
+          1,
+          [{ role: "user", content: "hi" }],
+          [{ role: "assistant", content: "yo" }],
+          attrs,
+        ),
+      ]);
+      const step = trajectory!.steps.at(-1);
+      assert.equal(step.reasoning_effort, "high");
+      assert.equal(step.extra?.lmnr?.request, undefined);
+      assert.equal(step.metrics.cached_tokens, 5);
+      assert.deepEqual(step.metrics.extra.lmnr, {
+        reasoning_tokens: 7,
+        cache_creation_tokens: 3,
+      });
+    });
+  }
+
   void it("a failed agent that no tool spawned counts as an error", () => {
     const hi = [{ role: "user", content: "hi" }];
     const yo = [{ role: "assistant", content: "yo" }];

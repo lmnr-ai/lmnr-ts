@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 
 import { context, trace } from "@opentelemetry/api";
-import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 
 import { getRuntime, resetDebugRuntime } from "../src/debug/index";
 import { Laminar, observe } from "../src/index";
