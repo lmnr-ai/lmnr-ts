@@ -6,7 +6,7 @@ import { Metadata } from "@grpc/grpc-js";
 import { ExportResult } from "@opentelemetry/core";
 import { OTLPTraceExporter as ExporterGrpc } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { OTLPTraceExporter as ExporterHttp } from "@opentelemetry/exporter-trace-otlp-proto";
-import { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base";
+import { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace";
 
 import { getOtelEnvVar, initializeLogger, parseOtelHeaders } from "../../utils";
 import { makeSpanOtelV2Compatible } from "./compat";

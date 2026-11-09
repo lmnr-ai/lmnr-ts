@@ -227,13 +227,13 @@ export const usageAttributes = (
   const pairs: [string, number | undefined][] = [
     [LaminarAttributes.INPUT_TOKEN_COUNT, usage.input],
     [LaminarAttributes.OUTPUT_TOKEN_COUNT, usage.output],
-    ["gen_ai.usage.cache_read_input_tokens", usage.cacheRead],
-    ["gen_ai.usage.cache_creation_input_tokens", usage.cacheWrite],
+    ["gen_ai.usage.cache_read.input_tokens", usage.cacheRead],
+    ["gen_ai.usage.cache_write.input_tokens", usage.cacheWrite],
     [
       "gen_ai.usage.cache_creation.input_tokens.ephemeral_1h",
       usage.cacheWrite1h,
     ],
-    ["gen_ai.usage.reasoning_tokens", usage.reasoning],
+    ["gen_ai.usage.reasoning.output_tokens", usage.reasoning],
     [LaminarAttributes.TOTAL_TOKEN_COUNT, usage.totalTokens],
   ];
   for (const [key, value] of pairs) {

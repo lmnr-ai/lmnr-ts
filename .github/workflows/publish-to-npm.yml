@@ -24,7 +24,7 @@ permissions:
 jobs:
   publish-cli:
     if: github.repository == 'lmnr-ai/lmnr-ts' && startsWith(github.event.release.tag_name, 'cli-')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
       id-token: write
@@ -89,8 +89,8 @@ jobs:
             name="$(jq -r .name "$GITHUB_WORKSPACE/$dir/package.json")"
             version="$(jq -r .version "$GITHUB_WORKSPACE/$dir/package.json")"
             spec="$(jq -rn --arg s "$name@$version" '$s | @uri')"
-            for attempt in $(seq 1 10); do
-              if tgz="$(npm pack "$name@$version" --silent)" \
+            for attempt in $(seq 1 40); do
+              if tgz="$(npm pack "$name@$version" --loglevel=error)" \
                 && curl -fsS "https://registry.npmjs.org/-/npm/v1/attestations/$spec" \
                   | jq -e 'first(.attestations[] | select(.predicateType == "https://slsa.dev/provenance/v1") | .bundle)' \
                   > bundle.json \
@@ -152,7 +152,7 @@ jobs:
 
           echo "Publishing $GITHUB_REPOSITORY@$GITHUB_SHA ($RELEASE_TAG, version $version)"
       - name: Install pnpm
-        uses: pnpm/setup@v3.1.1 # immutable tag
+        uses: pnpm/setup@v3.1.2 # immutable tag
         with:
           version: 12.14.0
           runtime: node@24

@@ -185,12 +185,12 @@ export function setResponseAttributes(
     safeSetAttribute(span, LLM_USAGE_TOTAL_TOKENS, usage.totalTokenCount);
     safeSetAttribute(
       span,
-      "gen_ai.usage.reasoning_tokens",
+      "gen_ai.usage.reasoning.output_tokens",
       usage.thoughtsTokenCount,
     );
     safeSetAttribute(
       span,
-      "gen_ai.usage.cache_read_input_tokens",
+      "gen_ai.usage.cache_read.input_tokens",
       usage.cachedContentTokenCount,
     );
   }

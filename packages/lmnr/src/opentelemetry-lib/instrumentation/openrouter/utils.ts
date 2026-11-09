@@ -90,7 +90,7 @@ export const setRequestAttributes = (
   // `chat` takes a flat `reasoningEffort`, `responses` nests it under `reasoning`.
   safeSetAttribute(
     span,
-    "gen_ai.request.reasoning_effort",
+    "gen_ai.request.reasoning.level",
     request?.reasoningEffort ?? request?.reasoning?.effort,
   );
   safeSetAttribute(
@@ -137,17 +137,17 @@ const setUsageAttributes = (
   const inputDetails = usage[`${inputKey}Details`];
   safeSetAttribute(
     span,
-    "gen_ai.usage.cache_read_input_tokens",
+    "gen_ai.usage.cache_read.input_tokens",
     inputDetails?.cachedTokens,
   );
   safeSetAttribute(
     span,
-    "gen_ai.usage.cache_creation_input_tokens",
+    "gen_ai.usage.cache_write.input_tokens",
     inputDetails?.cacheWriteTokens,
   );
   safeSetAttribute(
     span,
-    "gen_ai.usage.reasoning_tokens",
+    "gen_ai.usage.reasoning.output_tokens",
     usage[`${outputKey}Details`]?.reasoningTokens,
   );
 

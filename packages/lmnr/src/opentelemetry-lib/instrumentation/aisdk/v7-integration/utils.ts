@@ -45,20 +45,20 @@ export const applyUsage = (
       (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
   }
   if (typeof usage.reasoningTokens === "number") {
-    attributes["gen_ai.usage.reasoning_tokens"] = usage.reasoningTokens;
+    attributes["gen_ai.usage.reasoning.output_tokens"] = usage.reasoningTokens;
   } else if (typeof usage.outputTokenDetails?.reasoningTokens === "number") {
-    attributes["gen_ai.usage.reasoning_tokens"] =
+    attributes["gen_ai.usage.reasoning.output_tokens"] =
       usage.outputTokenDetails.reasoningTokens;
   }
   if (typeof usage.cachedInputTokens === "number") {
-    attributes["gen_ai.usage.cache_read_input_tokens"] =
+    attributes["gen_ai.usage.cache_read.input_tokens"] =
       usage.cachedInputTokens;
   } else if (typeof usage.inputTokenDetails?.cacheReadTokens === "number") {
-    attributes["gen_ai.usage.cache_read_input_tokens"] =
+    attributes["gen_ai.usage.cache_read.input_tokens"] =
       usage.inputTokenDetails.cacheReadTokens;
   }
   if (typeof usage.inputTokenDetails?.cacheWriteTokens === "number") {
-    attributes["gen_ai.usage.cache_creation_input_tokens"] =
+    attributes["gen_ai.usage.cache_write.input_tokens"] =
       usage.inputTokenDetails.cacheWriteTokens;
   }
 };

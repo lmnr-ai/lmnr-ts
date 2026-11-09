@@ -1,11 +1,11 @@
-import type * as bedrock from "@aws-sdk/client-bedrock-runtime";
 import type { SessionRecordingOptions } from "@lmnr-ai/types";
-import { SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace-base";
-import type * as pinecone from "@pinecone-database/pinecone";
-import type * as qdrant from "@qdrant/js-client-rest";
-import type * as chromadb from "chromadb";
 import type * as playwright from "playwright";
 import type * as puppeteer from "puppeteer";
+
+import type {
+  SpanExporterCompat,
+  SpanProcessorCompat,
+} from "../tracing/compat";
 
 /**
  * Options for initializing the Traceloop SDK.
@@ -74,10 +74,6 @@ export interface InitializeOptions {
 
   instrumentModules?: {
     /**
-     * @deprecated Use `OpenAI` instead for consistent casing.
-     */
-    openAI?: any;
-    /**
      * The `openai` module namespace (`import * as openai from "openai"`) or
      * the `OpenAI` class. For openai v3, pass the module or its `OpenAIApi`
      * class.
@@ -106,20 +102,6 @@ export interface InitializeOptions {
      */
     anthropic?: any;
     /**
-     * @deprecated Azure OpenAI instrumentation is no longer supported.
-     * This is a no-op and will be removed.
-     * @example
-     * ```javascript
-     * import azureOpenAI from "@azure/openai";
-     * import Laminar from "@lmnr-ai/lmnr";
-     *
-     * Laminar.initialize({
-     *   instrumentModules: { azureOpenAI },
-     * });
-     * ```
-     */
-    azureOpenAI?: any;
-    /**
      * @example
      * ```javascript
      * import * as cohere from "cohere-ai";
@@ -131,30 +113,6 @@ export interface InitializeOptions {
      * ```
      */
     cohere?: any;
-    /**
-     * @example
-     * ```javascript
-     * import bedrock from "@aws-sdk/client-bedrock-runtime";
-     * import Laminar from "@lmnr-ai/lmnr";
-     *
-     * Laminar.initialize({
-     *   instrumentModules: { bedrock },
-     * });
-     * ```
-     */
-    bedrock?: typeof bedrock;
-    /**
-     * @example
-     * ```javascript
-     * import pinecone from "@pinecone-database/pinecone";
-     * import Laminar from "@lmnr-ai/lmnr";
-     *
-     * Laminar.initialize({
-     *   instrumentModules: { pinecone },
-     * });
-     * ```
-     */
-    pinecone?: typeof pinecone;
     /**
      * @example
      * ```javascript
@@ -192,43 +150,6 @@ export interface InitializeOptions {
       langgraphModule?: any;
     };
     /**
-     * @deprecated llamaIndex JS package is deprecated. This is a no-op and will be removed
-     * @example
-     * ```javascript
-     * import llamaindex from "llamaindex";
-     * import Laminar from "@lmnr-ai/lmnr";
-     *
-     * Laminar.initialize({
-     *   instrumentModules: { llamaindex },
-     * });
-     * ```
-     */
-    llamaIndex?: any;
-    /**
-     * @example
-     * ```javascript
-     * import chromadb from "chromadb";
-     * import Laminar from "@lmnr-ai/lmnr";
-     *
-     * Laminar.initialize({
-     *   instrumentModules: { chromadb },
-     * });
-     * ```
-     */
-    chromadb?: typeof chromadb;
-    /**
-     * @example
-     * ```javascript
-     * import qdrant from "@qdrant/js-client-rest";
-     * import Laminar from "@lmnr-ai/lmnr";
-     *
-     * Laminar.initialize({
-     *   instrumentModules: { qdrant },
-     * });
-     * ```
-     */
-    qdrant?: typeof qdrant;
-    /**
      * @example
      * ```javascript
      * import { chromium } from "playwright";
@@ -260,18 +181,6 @@ export interface InitializeOptions {
      * ```
      */
     puppeteer?: typeof puppeteer;
-    /**
-     * @example
-     * ```javascript
-     * import together from "together-ai";
-     * import Laminar from "@lmnr-ai/lmnr";
-     *
-     * Laminar.initialize({
-     *   instrumentModules: { together },
-     * });
-     * ```
-     */
-    together?: any;
     /**
      * @example
      * ```javascript
@@ -525,7 +434,7 @@ export interface InitializeOptions {
    * The exporter to use. Warning: many other options will be ignored if this is provided. Optional.
    * Defaults to a new LaminarSpanExporter.
    */
-  exporter?: SpanExporter;
+  exporter?: SpanExporterCompat;
 
   /**
    * Options for browser session recording. Currently supports 'maskInputOptions'
@@ -538,7 +447,7 @@ export interface InitializeOptions {
    * The span processor to use. Warning: many other options will be ignored if this is provided.
    * Optional. Defaults to a new LaminarSpanProcessor.
    */
-  spanProcessor?: SpanProcessor;
+  spanProcessor?: SpanProcessorCompat;
 
   /**
    * Write the run as an lmnr-atif trajectory file here. Optional.

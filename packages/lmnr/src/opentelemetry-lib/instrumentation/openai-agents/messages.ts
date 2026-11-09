@@ -233,7 +233,7 @@ const applyUsage = (lmnrSpan: Span, usage: any): void => {
   }
   if (cachedInputTokens !== undefined) {
     lmnrSpan.setAttribute(
-      "gen_ai.usage.cache_read_input_tokens",
+      "gen_ai.usage.cache_read.input_tokens",
       cachedInputTokens,
     );
   }
@@ -245,7 +245,7 @@ const applyUsage = (lmnrSpan: Span, usage: any): void => {
   }
   if (reasoningOutputTokens !== undefined) {
     lmnrSpan.setAttribute(
-      "gen_ai.usage.reasoning_output_tokens",
+      "gen_ai.usage.reasoning.output_tokens",
       reasoningOutputTokens,
     );
   }

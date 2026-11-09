@@ -29,6 +29,7 @@ Command-specific notes live in nested `AGENTS.md` files next to the code (each w
 Here are guidelines from the above article.
 
 If you are going to build out a new feature, make sure you read that article to understand important guidelines.
+
 - --json flag for structured output
 - JSON to stdout, messages to stderr
 - Meaningful exit codes (not just 0/1)

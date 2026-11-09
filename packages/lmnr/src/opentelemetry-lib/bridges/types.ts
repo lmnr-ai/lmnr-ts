@@ -62,16 +62,13 @@ export interface Bridge {
  * bridge so far carries LLM spans from the other SDK, so they all conflict
  * with these. Claude Agent SDK, OpenCode and TypeSafe are deliberately absent
  * (no bridged SDK covers them, so nothing is recorded twice), as are the
- * non-LLM ones (browsers, kernel, vector DBs, Temporal). Keep in step with
+ * non-LLM ones (browsers, kernel, Temporal). Keep in step with
  * lmnr-python's `LangfuseBridge.conflicting_instruments`.
  */
 export const LLM_INSTRUMENTATIONS: readonly InstrumentationKey[] = [
   "OpenAI",
-  "openAI",
   "anthropic",
   "cohere",
-  "bedrock",
-  "together",
   "google_genai",
   "google_aiplatform",
   "openrouter",

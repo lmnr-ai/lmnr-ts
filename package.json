@@ -1,7 +1,7 @@
 {
   "name": "@lmnr-ai/lmnr-ts",
   "private": true,
-  "version": "0.8.61",
+  "version": "0.9.0",
   "description": "Laminar AI TypeScript SDK",
   "scripts": {
     "typecheck": "tsc",
@@ -24,7 +24,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
     "@types/node": "^24.12.0",
-    "playwright": "^1.63.0",
+    "playwright": "^1.64.0",
     "tsdown": "^0.23.3",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3"

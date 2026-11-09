@@ -23,12 +23,13 @@ import {
   startObservation,
 } from "@langfuse/tracing";
 import { context, trace } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import {
   InMemorySpanExporter,
   type ReadableSpan,
   SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-base";
-import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 import OpenAI from "openai";
 
 import { Laminar, LaminarSpanProcessor, observe } from "../src/index";
@@ -129,7 +130,7 @@ const langfuseProcessor = new LangfuseSpanProcessor({
   exportMode: "immediate",
 } as any);
 
-const provider = new NodeTracerProvider({
+const provider = new TracerProvider({
   spanProcessors: [langfuseProcessor as any],
 });
 
@@ -249,7 +250,11 @@ const langfuseWorkload = async () => {
 
 void describe("Langfuse bridge", () => {
   before(() => {
-    provider.register();
+    // What NodeTracerProvider.register() did before the SDK moved to OTel 3.
+    context.setGlobalContextManager(
+      new AsyncLocalStorageContextManager().enable(),
+    );
+    trace.setGlobalTracerProvider(provider);
   });
 
   beforeEach(async () => {
@@ -617,7 +622,7 @@ void describe("Langfuse bridge", () => {
   });
 
   void it("restores the app's own Langfuse provider on shutdown", async () => {
-    const isolated = new NodeTracerProvider({
+    const isolated = new TracerProvider({
       spanProcessors: [langfuseProcessor as any],
     });
     setLangfuseTracerProvider(isolated);
@@ -639,8 +644,8 @@ void describe("Langfuse bridge", () => {
   void it("keeps bridging when the app sets a Langfuse provider later", async () => {
     initLaminar();
     const isolatedExporter = new InMemorySpanExporter();
-    const isolated = new NodeTracerProvider({
-      spanProcessors: [new SimpleSpanProcessor(isolatedExporter)],
+    const isolated = new TracerProvider({
+      spanProcessors: [new SimpleSpanProcessor({ exporter: isolatedExporter })],
     });
     setLangfuseTracerProvider(isolated);
     await startActiveObservation("late-provider", noop);
