@@ -8,6 +8,16 @@ import * as openai from "@langfuse/openai-v4";
 import * as otel from "@langfuse/otel-v4";
 import * as tracing from "@langfuse/tracing-v4";
 
-import { langfuseBridgeSuite } from "./langfuse-bridge/suite";
+import { type LangfuseSdk, langfuseBridgeSuite } from "./langfuse-bridge/suite";
 
-langfuseBridgeSuite({ major: 4, core, tracing, otel, openai, langchain });
+// The suite is typed against 6.x. Older majors' classes are distinct types
+// (protected members, narrower metadata), but the suite only calls APIs all
+// three majors have.
+langfuseBridgeSuite({
+  major: 4,
+  core,
+  tracing,
+  otel,
+  openai,
+  langchain,
+} as unknown as LangfuseSdk);
