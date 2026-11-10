@@ -366,12 +366,8 @@ export class LangfuseBridge implements Bridge {
     const wrapper = this.wrapper;
     if (!loaded || !wrapper) return;
     if (this.state) {
-      Object.defineProperty(this.state, PROVIDER_KEY, {
-        value: this.inner,
-        writable: true,
-        enumerable: true,
-        configurable: true,
-      });
+      // Back to a plain data property, as Langfuse created it.
+      defineOwn(this.state, PROVIDER_KEY, this.inner);
       this.state = undefined;
     } else if (loaded.module.getLangfuseTracerProvider() === wrapper) {
       loaded.module.setLangfuseTracerProvider(this.inner);
