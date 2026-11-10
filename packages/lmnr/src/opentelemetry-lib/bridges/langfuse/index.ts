@@ -15,22 +15,19 @@
  *   span's attributes, the shadow's, and the translated ones (`translate.ts`)
  *   goes to Laminar's processor `onEnd`.
  */
-import { createRequire } from "node:module";
-import { join } from "node:path";
-
 import { errorMessage } from "@lmnr-ai/types";
-import * as otelApi from "@opentelemetry/api";
 import {
   type Attributes,
   type AttributeValue,
   type Context,
+  context as otelContext,
   type Span,
   type Tracer,
   type TracerProvider,
+  trace,
 } from "@opentelemetry/api";
 
 import { initializeLogger } from "../../../utils";
-import { getPackageVersion } from "../../instrumentation/shared/package-version";
 import { type LaminarSpanProcessor } from "../../tracing/processor";
 import {
   type Bridge,
@@ -41,70 +38,45 @@ import { translateLangfuseSpan } from "./translate";
 
 const logger = initializeLogger();
 
-const PACKAGE = "@langfuse/tracing";
-const MIN_MAJOR_VERSION = 4;
-// `globalThis[Symbol.for("langfuse")]` holds `{ isolatedTracerProvider }` in
-// @langfuse/tracing 4.x - 6.x; `setLangfuseTracerProvider` writes it.
+// @langfuse/tracing 4.x - 6.x keep `{ isolatedTracerProvider }` in a locked
+// `globalThis[Symbol.for("langfuse")]` slot, create it only when it is
+// missing, and read the provider from it on every span.
 const LANGFUSE_GLOBAL_SYMBOL = Symbol.for("langfuse");
 const PROVIDER_KEY = "isolatedTracerProvider";
 
-interface LangfuseTracingModule {
-  setLangfuseTracerProvider: (provider: TracerProvider | null) => void;
-  getLangfuseTracerProvider: () => TracerProvider;
-}
-
-type OtelApi = typeof otelApi;
-
-interface LoadedLangfuse {
-  module: LangfuseTracingModule;
-  /** The `@opentelemetry/api` copy `@langfuse/tracing` itself uses. */
-  api: OtelApi;
-}
-
 /**
- * Load `@langfuse/tracing` from this SDK's location, then from the app's
- * working directory (strict package-manager layouts). Its global state is
- * keyed by `Symbol.for`, so every copy (CJS / ESM / duplicates) shares it.
+ * Langfuse's global state, created the way Langfuse creates it if Langfuse
+ * hasn't run yet. The bridge never loads `@langfuse/tracing`: every copy of
+ * it (CJS, ESM, duplicates, bundled) shares this slot, and resolving the
+ * package fails in bundled apps.
  */
-const loadLangfuseTracing = (): LoadedLangfuse | undefined => {
-  // biome-ignore lint/style/noCommonJs: resolve an optional peer at runtime
-  const resolvers: NodeJS.Require[] = [require];
-  try {
-    resolvers.push(createRequire(join(process.cwd(), "package.json")));
-  } catch {
-    // No usable working directory.
+const langfuseState = (): Record<string, unknown> | undefined => {
+  const g = globalThis as Record<PropertyKey, unknown>;
+  if (!g[LANGFUSE_GLOBAL_SYMBOL]) {
+    Object.defineProperty(g, LANGFUSE_GLOBAL_SYMBOL, {
+      value: { [PROVIDER_KEY]: null },
+      writable: false,
+      configurable: false,
+      enumerable: false,
+    });
   }
-  for (const resolver of resolvers) {
-    let path: string;
-    try {
-      path = resolver.resolve(PACKAGE);
-    } catch {
-      continue;
-    }
-    try {
-      const module = resolver(path) as LangfuseTracingModule;
-      if (
-        typeof module?.setLangfuseTracerProvider !== "function" ||
-        typeof module?.getLangfuseTracerProvider !== "function"
-      ) {
-        continue;
-      }
-      let api: OtelApi = otelApi;
-      try {
-        api = createRequire(path)("@opentelemetry/api") as OtelApi;
-      } catch {
-        // Fall back to ours; both read the same OTel globals.
-      }
-      return { module, api };
-    } catch (e) {
-      logger.debug(`Failed to load ${PACKAGE}: ${errorMessage(e)}`);
-    }
-  }
-  return undefined;
+  const state = g[LANGFUSE_GLOBAL_SYMBOL];
+  return state && typeof state === "object"
+    ? (state as Record<string, unknown>)
+    : undefined;
 };
 
-const majorVersion = (version: string): number =>
-  parseInt(version.split(".")[0], 10);
+/** The provider slot, if it is still the plain data property we can hook. */
+const providerDescriptor = (
+  state: Record<string, unknown> | undefined,
+): PropertyDescriptor | undefined => {
+  const descriptor = state
+    ? Object.getOwnPropertyDescriptor(state, PROVIDER_KEY)
+    : undefined;
+  return descriptor?.configurable && "value" in descriptor
+    ? descriptor
+    : undefined;
+};
 
 type SdkSpan = Span & {
   name?: string;
@@ -282,116 +254,63 @@ export class LangfuseBridge implements Bridge {
   readonly conflictingInstrumentations = LLM_INSTRUMENTATIONS;
   readonly inheritsGlobalContext = true;
 
-  private loaded: LoadedLangfuse | undefined;
   private processor: LaminarSpanProcessor | undefined;
   private wrapper: BridgeTracerProvider | undefined;
   /** Provider Langfuse used before us (or the one set after us); null = global. */
   private inner: TracerProvider | null = null;
-  /** Langfuse's global state object when the accessor is installed on it. */
+  /** Langfuse's global state object while the accessor is installed on it. */
   private state: Record<string, unknown> | undefined;
-  private warnedOverridden = false;
 
   isAvailable(): boolean {
-    const loaded = loadLangfuseTracing();
-    if (!loaded) {
-      logger.warn(
-        `Laminar langfuse bridge: ${PACKAGE} is not installed, skipping. ` +
-          `Install ${PACKAGE} >= ${MIN_MAJOR_VERSION} to send Langfuse spans to Laminar.`,
-      );
-      return false;
+    try {
+      if (providerDescriptor(langfuseState())) return true;
+    } catch (e) {
+      logger.debug(`Laminar langfuse bridge: ${errorMessage(e)}`);
     }
-    const version = getPackageVersion(PACKAGE);
-    if (
-      version !== undefined &&
-      !(majorVersion(version) >= MIN_MAJOR_VERSION)
-    ) {
-      logger.warn(
-        `Laminar langfuse bridge: ${PACKAGE}@${version} is not supported ` +
-          `(needs >= ${MIN_MAJOR_VERSION}), skipping.`,
-      );
-      return false;
-    }
-    this.loaded = loaded;
-    return true;
+    logger.warn(
+      "Laminar langfuse bridge: Langfuse's tracer provider slot " +
+        `(globalThis[Symbol.for("langfuse")].${PROVIDER_KEY}) is not the ` +
+        "one @langfuse/tracing 4.x - 6.x use, skipping.",
+    );
+    return false;
   }
 
   install({ spanProcessor }: BridgeContext): void {
-    const loaded = this.loaded ?? loadLangfuseTracing();
-    if (!loaded) return;
-    this.loaded = loaded;
+    const state = langfuseState();
+    const descriptor = providerDescriptor(state);
+    if (!state || !descriptor) return;
+    const wrapper = new BridgeTracerProvider(this);
     this.processor = spanProcessor;
-    this.wrapper = new BridgeTracerProvider(this);
-    this.warnedOverridden = false;
-
-    // Creates Langfuse's global state if it doesn't exist yet.
-    loaded.module.getLangfuseTracerProvider();
-    const state = (globalThis as any)[LANGFUSE_GLOBAL_SYMBOL];
-    const descriptor =
-      state && typeof state === "object"
-        ? Object.getOwnPropertyDescriptor(state, PROVIDER_KEY)
-        : undefined;
-
-    if (descriptor?.configurable && "value" in descriptor) {
-      // Self-healing: a later `setLangfuseTracerProvider(p)` by the app
-      // becomes the provider we delegate to, instead of unhooking us.
-      this.inner = (descriptor.value as TracerProvider | null) ?? null;
-      const wrapper = this.wrapper;
-      Object.defineProperty(state, PROVIDER_KEY, {
-        get: () => wrapper,
-        set: (provider: TracerProvider | null) => {
-          if (provider === wrapper) return;
-          this.inner = provider ?? null;
-          logger.debug(
-            "Laminar langfuse bridge: Langfuse tracer provider replaced; " +
-              "now delegating to the new one.",
-          );
-        },
-        enumerable: descriptor.enumerable,
-        configurable: true,
-      });
-      this.state = state;
-    } else {
-      // Unknown Langfuse internals: use the public API, and check on flush
-      // that nobody replaced us.
-      const current = loaded.module.getLangfuseTracerProvider();
-      this.inner =
-        current === loaded.api.trace.getTracerProvider() ? null : current;
-      loaded.module.setLangfuseTracerProvider(this.wrapper);
-    }
+    this.wrapper = wrapper;
+    // Self-healing: a later `setLangfuseTracerProvider(p)` by the app
+    // becomes the provider we delegate to, instead of unhooking us.
+    this.inner = (descriptor.value as TracerProvider | null) ?? null;
+    Object.defineProperty(state, PROVIDER_KEY, {
+      get: () => wrapper,
+      set: (provider: TracerProvider | null) => {
+        if (provider === wrapper) return;
+        this.inner = provider ?? null;
+        logger.debug(
+          "Laminar langfuse bridge: Langfuse tracer provider replaced; " +
+            "now delegating to the new one.",
+        );
+      },
+      enumerable: descriptor.enumerable,
+      configurable: true,
+    });
+    this.state = state;
     logger.debug("Laminar langfuse bridge installed");
   }
 
   uninstall(): void {
-    const loaded = this.loaded;
-    const wrapper = this.wrapper;
-    if (!loaded || !wrapper) return;
     if (this.state) {
       // Back to a plain data property, as Langfuse created it.
       defineOwn(this.state, PROVIDER_KEY, this.inner);
-      this.state = undefined;
-    } else if (loaded.module.getLangfuseTracerProvider() === wrapper) {
-      loaded.module.setLangfuseTracerProvider(this.inner);
     }
+    this.state = undefined;
     this.wrapper = undefined;
     this.processor = undefined;
     this.inner = null;
-  }
-
-  onFlush(): void {
-    if (
-      !this.state &&
-      this.wrapper &&
-      !this.warnedOverridden &&
-      this.loaded?.module.getLangfuseTracerProvider() !== this.wrapper
-    ) {
-      this.warnedOverridden = true;
-      logger.warn(
-        "Laminar langfuse bridge: setLangfuseTracerProvider() was called " +
-          "after Laminar.initialize(), so Langfuse spans no longer reach " +
-          "Laminar. Call Laminar.initialize() after setting the Langfuse " +
-          "tracer provider.",
-      );
-    }
   }
 
   /** @internal */
@@ -401,11 +320,9 @@ export class LangfuseBridge implements Bridge {
 
   /** @internal The provider Langfuse would use without the bridge. */
   innerProvider(): TracerProvider {
-    return (
-      this.inner ??
-      this.loaded?.api.trace.getTracerProvider() ??
-      otelApi.trace.getTracerProvider()
-    );
+    // Laminar shares the app's `@opentelemetry/api`, so this is the global
+    // provider Langfuse itself would fall back to.
+    return this.inner ?? trace.getTracerProvider();
   }
 
   /** @internal */
@@ -413,13 +330,7 @@ export class LangfuseBridge implements Bridge {
     const processor = this.processor;
     if (!processor) return;
     try {
-      mirrorSpan(
-        span as SdkSpan,
-        context ??
-          this.loaded?.api.context.active() ??
-          otelApi.context.active(),
-        processor,
-      );
+      mirrorSpan(span as SdkSpan, context ?? otelContext.active(), processor);
     } catch (e) {
       logger.debug(`Laminar langfuse bridge failed: ${errorMessage(e)}`);
     }
