@@ -425,6 +425,8 @@ export const langfuseBridgeSuite = (sdk: LangfuseSdk): void => {
         model: "gpt-4o",
         messages: [{ role: "user", content: "weather in Paris?" }],
         tools: [weatherTool],
+        temperature: 0.2,
+        seed: 7,
       });
       await startActiveObservation("parent", async () => {
         await observeOpenAI(openaiClient(), {
@@ -459,6 +461,10 @@ export const langfuseBridgeSuite = (sdk: LangfuseSdk): void => {
       assert.strictEqual(withTools["gen_ai.usage.cache_read.input_tokens"], 2);
       assert.strictEqual(withTools["gen_ai.usage.reasoning.output_tokens"], 3);
       assert.ok(String(withTools["gen_ai.request.model"]).startsWith("gpt-4o"));
+      assert.strictEqual(withTools["gen_ai.request.temperature"], 0.2);
+      assert.strictEqual(withTools["gen_ai.request.seed"], 7);
+      // The client may point at any OpenAI-compatible API.
+      assert.strictEqual(withTools["gen_ai.system"], undefined);
 
       const plain = byName(lmSpans(), "oai-plain");
       assert.deepStrictEqual(
@@ -482,6 +488,7 @@ export const langfuseBridgeSuite = (sdk: LangfuseSdk): void => {
         model: "gpt-4o",
         apiKey: "sk-test",
         maxRetries: 0,
+        temperature: 0.3,
         configuration: { fetch: mockFetch as any },
       }).bindTools([weatherTool]);
       await model.invoke("weather in Paris?", { callbacks: [handler] });
@@ -506,6 +513,9 @@ export const langfuseBridgeSuite = (sdk: LangfuseSdk): void => {
       assert.strictEqual(a["gen_ai.usage.output_tokens"], 7);
       assert.strictEqual(a["gen_ai.usage.cache_read.input_tokens"], 2);
       assert.strictEqual(a["gen_ai.usage.reasoning.output_tokens"], 3);
+      // LangChain's `ls_provider` observation metadata.
+      assert.strictEqual(a["gen_ai.system"], "openai");
+      assert.strictEqual(a["gen_ai.request.temperature"], 0.3);
     });
 
     void it("synthesizes an exception event for failed observations", async () => {

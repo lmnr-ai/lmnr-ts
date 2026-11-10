@@ -18,6 +18,8 @@ import OpenAI from "openai";
 import { LLM_INSTRUMENTATIONS } from "../src/opentelemetry-lib/bridges";
 import {
   costAttributes,
+  modelParameterAttributes,
+  providerAttributes,
   translateLangfuseSpan,
   usageAttributes,
 } from "../src/opentelemetry-lib/bridges/langfuse/translate";
@@ -125,6 +127,66 @@ void describe("Langfuse bridge translation", () => {
       "gen_ai.usage.output_cost": 2,
       "gen_ai.usage.cost": 3,
     });
+  });
+
+  void it("maps model parameters to gen_ai.request.* attributes", () => {
+    assert.deepStrictEqual(
+      modelParameterAttributes({
+        "langfuse.observation.model.parameters": JSON.stringify({
+          temperature: 1,
+          top_p: 0.9,
+          max_completion_tokens: 100,
+          max_output_tokens: 50,
+          frequency_penalty: 0,
+          seed: 3,
+          n: 2,
+          stop: "END",
+          reasoning_effort: "high",
+          reasoning_summary: "auto",
+          service_tier: "flex",
+          verbosity: "low",
+        }),
+      }),
+      {
+        "gen_ai.request.temperature": 1,
+        "gen_ai.request.top_p": 0.9,
+        "gen_ai.request.max_tokens": 100,
+        "gen_ai.request.frequency_penalty": 0,
+        "gen_ai.request.seed": 3,
+        "gen_ai.request.choice.count": 2,
+        "gen_ai.request.stop_sequences": ["END"],
+        "gen_ai.request.reasoning.level": "high",
+        "gen_ai.request.reasoning_summary": "auto",
+        "gen_ai.request.service_tier": "flex",
+      },
+    );
+    // Non-numbers (Python LangChain's "Infinity") are skipped; the Responses
+    // API's applied effort comes from the observation metadata.
+    assert.deepStrictEqual(
+      modelParameterAttributes({
+        "langfuse.observation.model.parameters": '{"max_tokens":"Infinity"}',
+        "langfuse.observation.metadata.reasoning":
+          '{"effort":"low","summary":null}',
+      }),
+      { "gen_ai.response.reasoning_effort": "low" },
+    );
+  });
+
+  void it("takes the provider from LangChain's ls_provider", () => {
+    // JSON-encoded in 6.x, raw before.
+    assert.deepStrictEqual(
+      providerAttributes({
+        "langfuse.observation.metadata.ls_provider": '"openai"',
+      }),
+      { "gen_ai.system": "openai" },
+    );
+    assert.deepStrictEqual(
+      providerAttributes({
+        "langfuse.observation.metadata.ls_provider": "amazon_bedrock",
+      }),
+      { "gen_ai.system": "bedrock" },
+    );
+    assert.deepStrictEqual(providerAttributes({}), {});
   });
 
   void it("decodes JSON metadata values and ignores observation metadata", () => {

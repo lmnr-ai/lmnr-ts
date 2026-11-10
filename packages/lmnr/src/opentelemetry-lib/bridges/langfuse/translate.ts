@@ -37,6 +37,8 @@ const OBSERVATION_TYPE = "langfuse.observation.type";
 const OBSERVATION_INPUT = "langfuse.observation.input";
 const OBSERVATION_OUTPUT = "langfuse.observation.output";
 const OBSERVATION_MODEL = "langfuse.observation.model.name";
+const OBSERVATION_MODEL_PARAMETERS = "langfuse.observation.model.parameters";
+const OBSERVATION_METADATA = "langfuse.observation.metadata";
 const OBSERVATION_USAGE_DETAILS = "langfuse.observation.usage_details";
 const OBSERVATION_COST_DETAILS = "langfuse.observation.cost_details";
 const OBSERVATION_LEVEL = "langfuse.observation.level";
@@ -57,6 +59,35 @@ const LLM_OBSERVATION_TYPES = new Set([
   "embedding",
 ]);
 const TOOL_OBSERVATION_TYPES = new Set(["tool"]);
+
+// `modelParameters` keys → the request attributes Laminar's own
+// instrumentations write. The first key present wins (the max-token aliases);
+// the rest stay in the raw `langfuse.observation.model.parameters`.
+const NUMBER_MODEL_PARAMETERS: [string, string][] = [
+  ["temperature", "gen_ai.request.temperature"],
+  ["top_p", "gen_ai.request.top_p"],
+  ["top_k", "gen_ai.request.top_k"],
+  ["max_tokens", "gen_ai.request.max_tokens"],
+  ["max_completion_tokens", "gen_ai.request.max_tokens"],
+  ["max_output_tokens", "gen_ai.request.max_tokens"],
+  ["frequency_penalty", "gen_ai.request.frequency_penalty"],
+  ["presence_penalty", "gen_ai.request.presence_penalty"],
+  ["seed", "gen_ai.request.seed"],
+  ["n", "gen_ai.request.choice.count"],
+];
+const STRING_MODEL_PARAMETERS: [string, string][] = [
+  ["reasoning_effort", "gen_ai.request.reasoning.level"],
+  ["reasoning_summary", "gen_ai.request.reasoning_summary"],
+  ["service_tier", "gen_ai.request.service_tier"],
+];
+
+// LangChain's `ls_provider` values that differ from the provider names in
+// Laminar's model prices.
+const LS_PROVIDER_ALIASES: Record<string, string> = {
+  amazon_bedrock: "bedrock",
+  google_vertexai: "vertex_ai",
+  google_genai: "gemini",
+};
 
 // OTel `SpanStatusCode.ERROR`.
 const STATUS_CODE_ERROR = 2;
@@ -207,6 +238,64 @@ export const costAttributes = (
   if (output !== undefined) out[LaminarAttributes.OUTPUT_COST] = output;
   if (total !== undefined) out[LaminarAttributes.TOTAL_COST] = total;
   return out;
+};
+
+/** A string metadata value; @langfuse/* 6.x JSON-encodes it, 4.x / 5.x don't. */
+const metadataString = (value: unknown): string | undefined => {
+  const parsed = parseJson(value);
+  const s = typeof parsed === "string" ? parsed : value;
+  return typeof s === "string" && s ? s : undefined;
+};
+
+/**
+ * Request parameters from `langfuse.observation.model.parameters`.
+ * `@langfuse/openai` records the Responses API's `reasoning` from the response
+ * into the observation metadata instead, i.e. the effort that was applied
+ * (a default when the request set none), so it goes to the response key.
+ */
+export const modelParameterAttributes = (
+  attrs: Attributes,
+): Record<string, AttributeValue> => {
+  const out: Record<string, AttributeValue> = {};
+  const params = parseJson(attrs[OBSERVATION_MODEL_PARAMETERS]);
+  if (isObject(params)) {
+    for (const [key, attr] of NUMBER_MODEL_PARAMETERS) {
+      const value = asNumber(params[key]);
+      if (value !== undefined && !(attr in out)) out[attr] = value;
+    }
+    for (const [key, attr] of STRING_MODEL_PARAMETERS) {
+      const value = params[key];
+      if (typeof value === "string" && value) out[attr] = value;
+    }
+    const stop = typeof params.stop === "string" ? [params.stop] : params.stop;
+    if (
+      Array.isArray(stop) &&
+      stop.length > 0 &&
+      stop.every((s) => typeof s === "string")
+    ) {
+      out["gen_ai.request.stop_sequences"] = stop;
+    }
+  }
+  const reasoning = parseJson(attrs[`${OBSERVATION_METADATA}.reasoning`]);
+  if (isObject(reasoning) && typeof reasoning.effort === "string") {
+    out["gen_ai.response.reasoning_effort"] = reasoning.effort;
+  }
+  return out;
+};
+
+/**
+ * The provider, which Langfuse records only through LangChain's
+ * `ls_provider` observation metadata. `@langfuse/openai` records none: the
+ * client's base URL may point at any OpenAI-compatible API.
+ */
+export const providerAttributes = (
+  attrs: Attributes,
+): Record<string, AttributeValue> => {
+  const provider = metadataString(attrs[`${OBSERVATION_METADATA}.ls_provider`]);
+  if (!provider) return {};
+  return {
+    [LaminarAttributes.PROVIDER]: LS_PROVIDER_ALIASES[provider] ?? provider,
+  };
 };
 
 /**
@@ -487,6 +576,8 @@ export const translateLangfuseSpan = (
 
   Object.assign(
     out,
+    providerAttributes(attrs),
+    modelParameterAttributes(attrs),
     usageAttributes(attrs[OBSERVATION_USAGE_DETAILS]),
     costAttributes(attrs[OBSERVATION_COST_DETAILS]),
     ioAttributes(attrs, isLlm),
