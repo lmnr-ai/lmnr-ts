@@ -84,6 +84,9 @@ type SdkSpan = Span & {
   events?: unknown[];
   status?: { code?: number; message?: string };
   endTime?: unknown;
+  // OTel JS v2+ / v1.
+  parentSpanContext?: unknown;
+  parentSpanId?: string;
   instrumentationScope?: { name?: string; version?: string };
   instrumentationLibrary?: { name?: string; version?: string };
 };
@@ -182,6 +185,7 @@ const endMirror = (
     attributes,
     span.status,
     scope?.version,
+    Boolean(span.parentSpanContext ?? span.parentSpanId),
   );
   const copyAttributes: Record<string, AttributeValue | undefined> = {
     ...attributes,

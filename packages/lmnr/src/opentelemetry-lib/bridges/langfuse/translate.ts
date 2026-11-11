@@ -33,6 +33,11 @@ const TRACE_TAGS = "langfuse.trace.tags";
 const TRACE_METADATA = "langfuse.trace.metadata";
 const TRACE_USER_ID = "user.id";
 const TRACE_SESSION_ID = "session.id";
+// Older names Langfuse's server still reads (before `user.id` / `session.id`).
+const TRACE_COMPAT_USER_ID = "langfuse.user.id";
+const TRACE_COMPAT_SESSION_ID = "langfuse.session.id";
+// Set on a span Langfuse must treat as the trace root despite its parent.
+const AS_ROOT = "langfuse.internal.as_root";
 const OBSERVATION_TYPE = "langfuse.observation.type";
 const OBSERVATION_INPUT = "langfuse.observation.input";
 const OBSERVATION_OUTPUT = "langfuse.observation.output";
@@ -45,6 +50,16 @@ const OBSERVATION_USAGE_DETAILS = "langfuse.observation.usage_details";
 const OBSERVATION_COST_DETAILS = "langfuse.observation.cost_details";
 const OBSERVATION_LEVEL = "langfuse.observation.level";
 const OBSERVATION_STATUS_MESSAGE = "langfuse.observation.status_message";
+// Metadata keys Langfuse's server reads as the trace's session / user / tags,
+// from observation or trace metadata.
+const METADATA_SESSION_ID = "langfuse_session_id";
+const METADATA_USER_ID = "langfuse_user_id";
+const METADATA_TAGS = "langfuse_tags";
+const METADATA_TRACE_KEYS = new Set([
+  METADATA_SESSION_ID,
+  METADATA_USER_ID,
+  METADATA_TAGS,
+]);
 
 // GenAI semconv usage keys; app-server normalizes these. Cache and reasoning
 // counts are subsets of the input / output token counts.
@@ -700,50 +715,132 @@ const decodeMetadataValue = (
 };
 
 /**
- * Trace-level Langfuse attributes → Laminar association properties. Only
- * `langfuse.trace.metadata.*` becomes Laminar metadata; observation-level
- * metadata stays as its raw `langfuse.*` attribute.
+ * The first non-empty id, like Langfuse's server. A number counts, as its
+ * text: 6.x JSON-encodes a metadata `12345` as `"12345"`, which decodes to a
+ * number, and Langfuse's server keeps such a value as text.
+ */
+const firstString = (...values: unknown[]): string | undefined => {
+  for (const value of values) {
+    const id = typeof value === "number" ? String(value) : value;
+    if (typeof id === "string" && id) return id;
+  }
+  return undefined;
+};
+
+/**
+ * Tags the way Langfuse's server reads them: an array, a JSON array (the
+ * `langfuse_tags` metadata key), a comma-separated string, or one tag.
+ */
+const parseTags = (value: unknown): string[] | undefined => {
+  let parsed = parseJson(value);
+  // A JSON array in a JSON-encoded (6.x) metadata value.
+  if (typeof parsed === "string" && parsed.trim().startsWith("[")) {
+    parsed = parseJson(parsed);
+  }
+  let tags: string[];
+  if (Array.isArray(parsed)) {
+    tags = parsed.filter((t) => t !== null && t !== undefined).map(String);
+  } else if (typeof value === "string") {
+    const text = typeof parsed === "string" ? parsed : value;
+    tags = text
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+  } else {
+    return undefined;
+  }
+  return tags.length > 0 ? Array.from(new Set(tags)) : undefined;
+};
+
+/** `prefix` as one JSON object and `prefix.*` keys, the latter winning. */
+const metadataAttributes = (
+  attrs: Attributes,
+  prefix: string,
+  jsonEncoded: boolean,
+): Record<string, AttributeValue> => {
+  const out: Record<string, AttributeValue> = {};
+  const parsed = parseJson(attrs[prefix]);
+  if (isObject(parsed)) {
+    for (const [key, value] of Object.entries(parsed)) {
+      const v =
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean"
+          ? value
+          : toJson(value);
+      if (v !== undefined) out[key] = v;
+    }
+  }
+  for (const [key, value] of Object.entries(attrs)) {
+    if (key.startsWith(`${prefix}.`)) {
+      const v = decodeMetadataValue(value, jsonEncoded);
+      if (v !== undefined) out[key.slice(prefix.length + 1)] = v;
+    }
+  }
+  return out;
+};
+
+/**
+ * Langfuse's trace session / user / tags / metadata → Laminar association
+ * properties, from the attributes Langfuse's server reads them from:
+ * `propagateAttributes` / `updateTrace` keys, the older `langfuse.session.id`
+ * / `langfuse.user.id`, and the `langfuse_session_id` / `langfuse_user_id` /
+ * `langfuse_tags` metadata keys (documented for Python's `langfuse.openai`).
+ *
+ * Observation metadata becomes trace metadata on the root span only, as in
+ * Langfuse; elsewhere it stays as its raw `langfuse.*` attribute.
  */
 export const traceAttributes = (
   attrs: Attributes,
   jsonEncodedMetadata: boolean,
+  isRoot: boolean,
 ): Record<string, AttributeValue> => {
   const out: Record<string, AttributeValue> = {};
-  const sessionId = attrs[TRACE_SESSION_ID];
-  if (typeof sessionId === "string" && sessionId) out[SESSION_ID] = sessionId;
-  const userId = attrs[TRACE_USER_ID];
-  if (typeof userId === "string" && userId) out[USER_ID] = userId;
+  // Both metadata forms (one JSON object and `.*` keys), decoded. The
+  // `langfuse_*` keys are read from them, so a key that is left out of
+  // Laminar's metadata below always became the session, user or tags.
+  const traceMetadata = metadataAttributes(
+    attrs,
+    TRACE_METADATA,
+    jsonEncodedMetadata,
+  );
+  const observationMetadata = metadataAttributes(
+    attrs,
+    OBSERVATION_METADATA,
+    jsonEncodedMetadata,
+  );
 
-  const tags = attrs[TRACE_TAGS];
-  if (Array.isArray(tags) && tags.length > 0) {
-    out[`${ASSOCIATION_PROPERTIES}.tags`] = Array.from(
-      new Set(tags.filter((t) => t !== null && t !== undefined).map(String)),
-    );
-  }
+  // In Langfuse's server's order of precedence.
+  const sessionId = firstString(
+    attrs[TRACE_COMPAT_SESSION_ID],
+    attrs[TRACE_SESSION_ID],
+    observationMetadata[METADATA_SESSION_ID],
+    traceMetadata[METADATA_SESSION_ID],
+  );
+  if (sessionId) out[SESSION_ID] = sessionId;
+  const userId = firstString(
+    attrs[TRACE_COMPAT_USER_ID],
+    attrs[TRACE_USER_ID],
+    observationMetadata[METADATA_USER_ID],
+    traceMetadata[METADATA_USER_ID],
+  );
+  if (userId) out[USER_ID] = userId;
+  const tags = [
+    attrs[TRACE_TAGS],
+    observationMetadata[METADATA_TAGS],
+    traceMetadata[METADATA_TAGS],
+  ]
+    .map(parseTags)
+    .find((t) => t !== undefined);
+  if (tags) out[`${ASSOCIATION_PROPERTIES}.tags`] = tags;
 
-  for (const [key, value] of Object.entries(attrs)) {
-    if (key === TRACE_METADATA) {
-      const parsed = parseJson(value);
-      if (isObject(parsed)) {
-        for (const [mk, mv] of Object.entries(parsed)) {
-          const v =
-            typeof mv === "string" ||
-            typeof mv === "number" ||
-            typeof mv === "boolean"
-              ? mv
-              : toJson(mv);
-          if (v !== undefined) {
-            out[`${ASSOCIATION_PROPERTIES}.metadata.${mk}`] = v;
-          }
-        }
-      }
-    } else if (key.startsWith(`${TRACE_METADATA}.`)) {
-      const v = decodeMetadataValue(value, jsonEncodedMetadata);
-      if (v !== undefined) {
-        out[
-          `${ASSOCIATION_PROPERTIES}.metadata.${key.slice(TRACE_METADATA.length + 1)}`
-        ] = v;
-      }
+  const metadata = {
+    ...traceMetadata,
+    ...(isRoot ? observationMetadata : {}),
+  };
+  for (const [key, value] of Object.entries(metadata)) {
+    if (!METADATA_TRACE_KEYS.has(key)) {
+      out[`${ASSOCIATION_PROPERTIES}.metadata.${key}`] = value;
     }
   }
   return out;
@@ -824,12 +921,15 @@ const majorVersion = (version: string | undefined): number =>
 /**
  * Translate a finished Langfuse span. `attrs` are the span's own attributes,
  * which are never modified; the result is added on top of them on Laminar's
- * copy, so every raw `langfuse.*` attribute is kept.
+ * copy, so every raw `langfuse.*` attribute is kept. `hasParent` is whether
+ * the span has a parent span; Langfuse's server treats one without a parent
+ * (or forced with `langfuse.internal.as_root`) as the trace root.
  */
 export const translateLangfuseSpan = (
   attrs: Attributes,
   status: { code?: number; message?: string } | undefined,
   bridgeVersion: string | undefined,
+  hasParent = true,
 ): TranslatedSpan => {
   const out: Translated = {
     [SPAN_BRIDGE_NAME]: "langfuse",
@@ -863,7 +963,11 @@ export const translateLangfuseSpan = (
     usage,
     cost,
     ioAttributes(attrs, isLlm),
-    traceAttributes(attrs, majorVersion(bridgeVersion) >= 6),
+    traceAttributes(
+      attrs,
+      majorVersion(bridgeVersion) >= 6,
+      !hasParent || String(attrs[AS_ROOT]) === "true",
+    ),
   );
 
   // Langfuse never records exception events: a throw inside
