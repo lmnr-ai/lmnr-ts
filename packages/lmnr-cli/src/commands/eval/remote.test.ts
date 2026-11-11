@@ -68,8 +68,13 @@ void describe("startRemoteRun", () => {
       pull: async (ref: string) => `sha256:${ref}`,
     });
     const startRun = vi.fn(async () => ({ sandboxId: "sb-1" }));
+    const uploadIndex = vi.fn(async () => undefined);
     const client = {
-      hostedEvals: { upload: async () => ({ uploadId: "up-1" }), startRun },
+      hostedEvals: {
+        upload: async () => ({ uploadId: "up-1" }),
+        uploadIndex,
+        startRun,
+      },
     } as unknown as LaminarClient;
 
     const started = await startRemoteRun(
@@ -81,6 +86,11 @@ void describe("startRemoteRun", () => {
     );
 
     expect(started).toEqual({ uploadId: "up-1", sandboxId: "sb-1" });
+    expect(uploadIndex).toHaveBeenCalledWith("up-1", {
+      files: expect.arrayContaining([
+        expect.objectContaining({ path: "a/tasks/own/task.toml" }),
+      ]),
+    });
     expect(startRun).toHaveBeenCalledWith({
       uploadId: "up-1",
       cliVersion: expect.any(String),

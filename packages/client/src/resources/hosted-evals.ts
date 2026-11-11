@@ -18,8 +18,8 @@ export interface StartHostedEvalRunOptions {
  *
  * - Images: `missingLayers` / `uploadLayer` / `createImage` push an image built
  *   locally (layers named by their `diff_id`); trials start from it.
- * - Remote runs: `upload` the `.tar.gz` of the evals folder, then `startRun`
- *   to orchestrate it in a Laminar sandbox. Results land in the project as
+ * - Remote runs: `upload` the `.tar.gz` of the evals folder and `uploadIndex`
+ *   its file index, then `startRun` to orchestrate it in a Laminar sandbox. Results land in the project as
  *   regular evaluations; v0 returns no run status.
  */
 export class HostedEvalsResource extends BaseResource {
@@ -91,6 +91,22 @@ export class HostedEvalsResource extends BaseResource {
       await this.handleErrorMessage(response);
     }
     return (await response.json()) as { uploadId: string };
+  }
+
+  /**
+   * Upload the index of an uploaded archive: where each file sits, so the
+   * Laminar UI can show single files of the run's evals folder. Sent as JSON;
+   * lmnr-cli writes it along with the archive.
+   */
+  public async uploadIndex(uploadId: string, index: object): Promise<void> {
+    const response = await fetch(this.url(`/uploads/${uploadId}/index`), {
+      method: "PUT",
+      headers: this.headers(),
+      body: JSON.stringify(index),
+    });
+    if (!response.ok) {
+      await this.handleErrorMessage(response);
+    }
   }
 
   /** Start a remote run. Returns once its orchestrator sandbox has started. */
