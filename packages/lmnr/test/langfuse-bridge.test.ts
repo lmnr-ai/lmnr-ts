@@ -301,7 +301,7 @@ void describe("Langfuse bridge translation", () => {
     }
   });
 
-  void it("folds input tool calls into content parts and drops Anthropic mirrors", () => {
+  void it("folds tool calls into content parts and merges Anthropic mirrors", () => {
     const { attributes } = translateLangfuseSpan(
       {
         "langfuse.observation.type": "generation",
@@ -333,12 +333,12 @@ void describe("Langfuse bridge translation", () => {
         {
           role: "assistant",
           content: [
-            { id: "c1", type: "tool_call", name: "f", arguments: "{}" },
+            { type: "tool_call", id: "c1", name: "f", arguments: "{}" },
           ],
         },
         {
           role: "assistant",
-          content: [{ type: "tool_use", id: "t1", name: "f", input: {} }],
+          content: [{ type: "tool_call", id: "t1", name: "f", arguments: {} }],
         },
       ],
     );

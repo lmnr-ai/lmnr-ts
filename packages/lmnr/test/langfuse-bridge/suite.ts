@@ -448,12 +448,22 @@ export const langfuseBridgeSuite = (sdk: LangfuseSdk): void => {
         JSON.parse(withTools["gen_ai.tool.definitions"] as string),
         [weatherTool],
       );
-      const out = JSON.parse(withTools["gen_ai.output.messages"] as string);
-      assert.strictEqual(out.length, 1);
-      assert.deepStrictEqual(out[0].message.tool_calls[0].function, {
-        name: "get_weather",
-        arguments: '{"city":"Paris"}',
-      });
+      assert.deepStrictEqual(
+        JSON.parse(withTools["gen_ai.output.messages"] as string),
+        [
+          {
+            role: "assistant",
+            content: [
+              {
+                type: "tool_call",
+                id: "call_1",
+                name: "get_weather",
+                arguments: '{"city":"Paris"}',
+              },
+            ],
+          },
+        ],
+      );
       // Langfuse reports input = 11 - 2 cached; Laminar wants the total.
       assert.strictEqual(withTools["gen_ai.usage.input_tokens"], 11);
       assert.strictEqual(withTools["gen_ai.usage.output_tokens"], 7);

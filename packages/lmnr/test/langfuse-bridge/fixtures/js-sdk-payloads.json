@@ -1,0 +1,80 @@
+{
+  "openai_chat": [
+    {
+      "langfuse.observation.input": "{\"messages\": [{\"role\": \"user\", \"content\": \"What's the weather in Paris? Use the tool.\"}], \"tools\": [{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the weather for a city\", \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"]}}}], \"tool_choice\": \"required\"}",
+      "langfuse.observation.output": "{\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"call_5ERZgKFJHjDaxl1dKGl5MzXi\", \"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"arguments\": \"{\\\"city\\\": \\\"Paris\\\"}\"}}], \"refusal\": null, \"annotations\": []}"
+    },
+    {
+      "langfuse.observation.input": "{\"messages\": [{\"role\": \"user\", \"content\": \"What's the weather in Paris? Use the tool.\"}, {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"call_5ERZgKFJHjDaxl1dKGl5MzXi\", \"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"arguments\": \"{\\\"city\\\": \\\"Paris\\\"}\"}}], \"refusal\": null, \"annotations\": []}, {\"role\": \"tool\", \"tool_call_id\": \"call_5ERZgKFJHjDaxl1dKGl5MzXi\", \"content\": \"{\\\"city\\\": \\\"Paris\\\", \\\"forecast\\\": \\\"sunny\\\", \\\"temp_c\\\": 22}\"}], \"tools\": [{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the weather for a city\", \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"]}}}]}",
+      "langfuse.observation.output": "{\"role\": \"assistant\", \"content\": \"The weather in Paris is currently sunny with a temperature of 22\\u00b0C.\", \"refusal\": null, \"annotations\": []}"
+    }
+  ],
+  "openai_chat_stream": [
+    {
+      "langfuse.observation.input": "{\"messages\": [{\"role\": \"user\", \"content\": \"What's the weather in Paris? Use the tool.\"}], \"tools\": [{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the weather for a city\", \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"]}}}], \"tool_choice\": \"required\"}",
+      "langfuse.observation.output": "{\"tool_calls\": [{\"function\": {\"name\": \"get_weather\", \"arguments\": \"{\\\"city\\\": \\\"Paris\\\"}\"}}]}"
+    },
+    {
+      "langfuse.observation.input": "{\"messages\": [{\"role\": \"user\", \"content\": \"What's the weather in Paris? Use the tool.\"}, {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"call_skHYv7XhAAUtMYPcHqvLvG0E\", \"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"arguments\": \"{\\\"city\\\": \\\"Paris\\\"}\"}}]}, {\"role\": \"tool\", \"tool_call_id\": \"call_skHYv7XhAAUtMYPcHqvLvG0E\", \"content\": \"{\\\"city\\\": \\\"Paris\\\", \\\"forecast\\\": \\\"sunny\\\", \\\"temp_c\\\": 22}\"}], \"tools\": [{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the weather for a city\", \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"]}}}]}",
+      "langfuse.observation.output": "The weather in Paris is currently sunny with a temperature of 22°C."
+    }
+  ],
+  "openai_responses": [
+    {
+      "langfuse.observation.input": "[{\"role\": \"user\", \"content\": \"What's the weather in Paris? Use the tool.\"}]",
+      "langfuse.observation.output": "[{\"id\": \"rs_054cacd31b26e2d0006af48ef8d34087d1af3dcbe811f70343\", \"type\": \"reasoning\", \"content\": [], \"encrypted_content\": \"gAAAA-encrypted\", \"summary\": [{\"type\": \"summary_text\", \"text\": \"**Getting weather for Paris**\\n\\nI need to call the weather tool, and I can either use multi_tool_use.parallel or just go with functions.get_weather directly. Since the simpler call with functions.get_weather seems just fine, I'll choose that! I want to specify the city as \\\"Paris\\\" and make sure I'm using the commentary channel for this. Overall, it feels pretty straightforward, but I want to ensure I do it correctly. Let's fetch that weather!\"}]}, {\"id\": \"fc_054cacd31b26e2d0006af48efab02c87d1a89050a67ab32fed\", \"type\": \"function_call\", \"status\": \"completed\", \"arguments\": \"{\\\"city\\\": \\\"Paris\\\"}\", \"call_id\": \"call_POisqmqohzzwr6Th8SxbwDHS\", \"name\": \"get_weather\"}]",
+      "langfuse.observation.metadata.tools": "[{\"type\": \"function\", \"description\": \"Get the weather for a city\", \"name\": \"get_weather\", \"output_schema\": null, \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"]}, \"strict\": false}]",
+      "langfuse.observation.metadata.instructions": "\"Be brief.\""
+    },
+    {
+      "langfuse.observation.input": "[{\"role\": \"user\", \"content\": \"What's the weather in Paris? Use the tool.\"}, {\"id\": \"rs_054cacd31b26e2d0006af48ef8d34087d1af3dcbe811f70343\", \"type\": \"reasoning\", \"content\": [], \"encrypted_content\": \"gAAAA-encrypted\", \"summary\": [{\"type\": \"summary_text\", \"text\": \"**Getting weather for Paris**\\n\\nI need to call the weather tool, and I can either use multi_tool_use.parallel or just go with functions.get_weather directly. Since the simpler call with functions.get_weather seems just fine, I'll choose that! I want to specify the city as \\\"Paris\\\" and make sure I'm using the commentary channel for this. Overall, it feels pretty straightforward, but I want to ensure I do it correctly. Let's fetch that weather!\"}]}, {\"id\": \"fc_054cacd31b26e2d0006af48efab02c87d1a89050a67ab32fed\", \"type\": \"function_call\", \"status\": \"completed\", \"arguments\": \"{\\\"city\\\": \\\"Paris\\\"}\", \"call_id\": \"call_POisqmqohzzwr6Th8SxbwDHS\", \"name\": \"get_weather\"}, {\"type\": \"function_call_output\", \"call_id\": \"call_POisqmqohzzwr6Th8SxbwDHS\", \"output\": \"{\\\"city\\\": \\\"Paris\\\", \\\"forecast\\\": \\\"sunny\\\", \\\"temp_c\\\": 22}\"}]",
+      "langfuse.observation.output": "Paris: sunny, 22°C.",
+      "langfuse.observation.metadata.tools": "[{\"type\": \"function\", \"description\": \"Get the weather for a city\", \"name\": \"get_weather\", \"output_schema\": null, \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"]}, \"strict\": false}]",
+      "langfuse.observation.metadata.instructions": "\"Be brief.\""
+    }
+  ],
+  "openai_responses_stream": [
+    {
+      "langfuse.observation.input": "[{\"role\": \"user\", \"content\": \"What's the weather in Paris? Use the tool.\"}]",
+      "langfuse.observation.output": "[{\"id\": \"rs_01786d34918ef84d006af48efcb54887d1ba8e7ef0611fc033\", \"type\": \"reasoning\", \"content\": [], \"encrypted_content\": \"gAAAA-encrypted\", \"summary\": []}, {\"id\": \"fc_01786d34918ef84d006af48efeb58887d19a1e7220f7733370\", \"type\": \"function_call\", \"status\": \"completed\", \"arguments\": \"{\\\"city\\\": \\\"Paris\\\"}\", \"call_id\": \"call_o2Q6ho7ajhLfsPKlYFHzLOgP\", \"name\": \"get_weather\"}]",
+      "langfuse.observation.metadata.tools": "[{\"type\": \"function\", \"description\": \"Get the weather for a city\", \"name\": \"get_weather\", \"output_schema\": null, \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"]}, \"strict\": false}]",
+      "langfuse.observation.metadata.instructions": "\"Be brief.\""
+    },
+    {
+      "langfuse.observation.input": "[{\"role\": \"user\", \"content\": \"What's the weather in Paris? Use the tool.\"}, {\"id\": \"rs_01786d34918ef84d006af48efcb54887d1ba8e7ef0611fc033\", \"type\": \"reasoning\", \"content\": [], \"encrypted_content\": \"gAAAA-encrypted\", \"summary\": []}, {\"id\": \"fc_01786d34918ef84d006af48efeb58887d19a1e7220f7733370\", \"type\": \"function_call\", \"status\": \"completed\", \"arguments\": \"{\\\"city\\\": \\\"Paris\\\"}\", \"call_id\": \"call_o2Q6ho7ajhLfsPKlYFHzLOgP\", \"name\": \"get_weather\"}, {\"type\": \"function_call_output\", \"call_id\": \"call_o2Q6ho7ajhLfsPKlYFHzLOgP\", \"output\": \"{\\\"city\\\": \\\"Paris\\\", \\\"forecast\\\": \\\"sunny\\\", \\\"temp_c\\\": 22}\"}]",
+      "langfuse.observation.output": "{\"id\": \"msg_01786d34918ef84d006af48effa9b087d199577d0b900450e4\", \"type\": \"message\", \"status\": \"completed\", \"content\": [{\"type\": \"output_text\", \"annotations\": [], \"logprobs\": [], \"text\": \"Paris: sunny, 22\\u00b0C.\"}], \"role\": \"assistant\"}",
+      "langfuse.observation.metadata.tools": "[{\"type\": \"function\", \"description\": \"Get the weather for a city\", \"name\": \"get_weather\", \"output_schema\": null, \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"]}, \"strict\": false}]",
+      "langfuse.observation.metadata.instructions": "\"Be brief.\""
+    }
+  ],
+  "langchain_openai": [
+    {
+      "langfuse.observation.input": "{\"messages\": [{\"content\": \"What's the weather in Paris? Use the tool.\", \"role\": \"user\"}], \"tools\": [{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the weather for a city\", \"parameters\": {\"$schema\": \"https://json-schema.org/draft/2020-12/schema\", \"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"], \"additionalProperties\": false}}}]}",
+      "langfuse.observation.output": "{\"content\": \"\", \"role\": \"assistant\", \"tool_calls\": [{\"id\": \"call_f2sVLiGg32xiMXXWqMc70Iks\", \"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"arguments\": \"{\\\"city\\\": \\\"Paris\\\"}\"}}]}"
+    },
+    {
+      "langfuse.observation.input": "{\"messages\": [{\"content\": \"What's the weather in Paris? Use the tool.\", \"role\": \"user\"}, {\"content\": \"\", \"role\": \"assistant\", \"tool_calls\": [{\"id\": \"call_f2sVLiGg32xiMXXWqMc70Iks\", \"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"arguments\": \"{\\\"city\\\": \\\"Paris\\\"}\"}}]}, {\"content\": \"{\\\"city\\\": \\\"Paris\\\", \\\"forecast\\\": \\\"sunny\\\", \\\"temp_c\\\": 22}\", \"additional_kwargs\": {}, \"role\": \"tool\", \"tool_call_id\": \"call_f2sVLiGg32xiMXXWqMc70Iks\"}], \"tools\": [{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the weather for a city\", \"parameters\": {\"$schema\": \"https://json-schema.org/draft/2020-12/schema\", \"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"], \"additionalProperties\": false}}}]}",
+      "langfuse.observation.output": "{\"content\": \"The weather in Paris is currently sunny with a temperature of 22\\u00b0C.\", \"role\": \"assistant\"}"
+    }
+  ],
+  "langchain_openai_responses": [
+    {
+      "langfuse.observation.input": "{\"messages\": [{\"content\": \"What's the weather in Paris? Use the tool.\", \"role\": \"user\"}], \"tools\": [{\"type\": \"function\", \"name\": \"get_weather\", \"parameters\": {\"$schema\": \"https://json-schema.org/draft/2020-12/schema\", \"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"], \"additionalProperties\": false}, \"description\": \"Get the weather for a city\", \"strict\": null}]}",
+      "langfuse.observation.output": "{\"content\": [], \"role\": \"assistant\", \"tool_calls\": [{\"name\": \"get_weather\", \"args\": {\"city\": \"Paris\"}, \"type\": \"tool_call\", \"id\": \"call_kIZw668080Ni58GrLbGmpYfE\"}]}"
+    },
+    {
+      "langfuse.observation.input": "{\"messages\": [{\"content\": \"What's the weather in Paris? Use the tool.\", \"role\": \"user\"}, {\"content\": [], \"role\": \"assistant\", \"tool_calls\": [{\"name\": \"get_weather\", \"args\": {\"city\": \"Paris\"}, \"type\": \"tool_call\", \"id\": \"call_kIZw668080Ni58GrLbGmpYfE\"}]}, {\"content\": \"{\\\"city\\\": \\\"Paris\\\", \\\"forecast\\\": \\\"sunny\\\", \\\"temp_c\\\": 22}\", \"additional_kwargs\": {}, \"role\": \"tool\", \"tool_call_id\": \"call_kIZw668080Ni58GrLbGmpYfE\"}], \"tools\": [{\"type\": \"function\", \"name\": \"get_weather\", \"parameters\": {\"$schema\": \"https://json-schema.org/draft/2020-12/schema\", \"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"], \"additionalProperties\": false}, \"description\": \"Get the weather for a city\", \"strict\": null}]}",
+      "langfuse.observation.output": "{\"content\": [{\"type\": \"text\", \"text\": \"The weather in Paris is sunny with a temperature of 22\\u00b0C.\", \"annotations\": []}], \"role\": \"assistant\"}"
+    }
+  ],
+  "langchain_anthropic": [
+    {
+      "langfuse.observation.input": "{\"messages\": [{\"content\": \"What's the weather in Paris? Use the tool.\", \"role\": \"user\"}], \"tools\": [{\"name\": \"get_weather\", \"description\": \"Get the weather for a city\", \"input_schema\": {\"$schema\": \"https://json-schema.org/draft/2020-12/schema\", \"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"], \"additionalProperties\": false}}]}",
+      "langfuse.observation.output": "{\"content\": [{\"type\": \"tool_use\", \"id\": \"toolu_01ABC\", \"name\": \"get_weather\", \"input\": {\"city\": \"Paris\"}}], \"role\": \"assistant\", \"tool_calls\": [{\"name\": \"get_weather\", \"args\": {\"city\": \"Paris\"}, \"id\": \"toolu_01ABC\", \"type\": \"tool_call\"}]}"
+    },
+    {
+      "langfuse.observation.input": "{\"messages\": [{\"content\": \"What's the weather in Paris? Use the tool.\", \"role\": \"user\"}, {\"content\": [{\"type\": \"tool_use\", \"id\": \"toolu_01ABC\", \"name\": \"get_weather\", \"input\": {\"city\": \"Paris\"}}], \"role\": \"assistant\", \"tool_calls\": [{\"name\": \"get_weather\", \"args\": {\"city\": \"Paris\"}, \"id\": \"toolu_01ABC\", \"type\": \"tool_call\"}]}, {\"content\": \"{\\\"city\\\": \\\"Paris\\\", \\\"forecast\\\": \\\"sunny\\\", \\\"temp_c\\\": 22}\", \"additional_kwargs\": {}, \"role\": \"tool\", \"tool_call_id\": \"toolu_01ABC\"}], \"tools\": [{\"name\": \"get_weather\", \"description\": \"Get the weather for a city\", \"input_schema\": {\"$schema\": \"https://json-schema.org/draft/2020-12/schema\", \"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"], \"additionalProperties\": false}}]}",
+      "langfuse.observation.output": "{\"content\": \"It's sunny and 22C in Paris.\", \"role\": \"assistant\"}"
+    }
+  ]
+}
