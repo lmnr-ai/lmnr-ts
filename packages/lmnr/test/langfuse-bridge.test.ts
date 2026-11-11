@@ -327,6 +327,17 @@ void describe("Langfuse bridge translation", () => {
       undefined,
     );
 
+    // A numeric id decodes to a number in 6.x; Langfuse keeps it as text.
+    const numeric = translate({
+      "langfuse.observation.metadata.langfuse_session_id": "12345",
+      "user.id": 7,
+    });
+    assert.strictEqual(
+      numeric["lmnr.association.properties.session_id"],
+      "12345",
+    );
+    assert.strictEqual(numeric["lmnr.association.properties.user_id"], "7");
+
     // Langfuse's precedence: the `langfuse.*` compat keys, then `session.id`
     // / `user.id`, then metadata.
     const precedence = translate({

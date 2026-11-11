@@ -714,9 +714,18 @@ const decodeMetadataValue = (
   return value;
 };
 
-/** The first non-empty string, like Langfuse's server. */
-const firstString = (...values: unknown[]): string | undefined =>
-  values.find((v): v is string => typeof v === "string" && v !== "");
+/**
+ * The first non-empty id, like Langfuse's server. A number counts, as its
+ * text: 6.x JSON-encodes a metadata `12345` as `"12345"`, which decodes to a
+ * number, and Langfuse's server keeps such a value as text.
+ */
+const firstString = (...values: unknown[]): string | undefined => {
+  for (const value of values) {
+    const id = typeof value === "number" ? String(value) : value;
+    if (typeof id === "string" && id) return id;
+  }
+  return undefined;
+};
 
 /**
  * Tags the way Langfuse's server reads them: an array, a JSON array (the
