@@ -8,7 +8,9 @@
   - default: trials on local Docker; `lmnr.yaml` images are `docker build`-ed first.
   - `--remote`: runs in Laminar sandboxes and the CLI exits once the run
     starts. Packs the folder (`pack.ts`) and checks the 1 GiB
-    cap BEFORE pushing images, then uploads it and `POST
+    cap BEFORE pushing images, then uploads it, `PUT
+    /v1[/cli]/hosted-evals/uploads/{id}/index {files}` (a failure only
+    warns: the index is just for Laminar's file view), and `POST
     /v1[/cli]/hosted-evals/runs {uploadId, cliVersion, spec}`. The server's
     orchestrator sandbox runs `npx lmnr-cli@<cliVersion> eval orchestrate`
     (hidden command), so `RunSpec` only has to stay readable by the SAME version.
@@ -126,6 +128,18 @@
 - Auth: local runs need `LMNR_PROJECT_API_KEY` (the plugin reports with it;
   in the orchestrator it is the run key). `--remote` calls the API as the logged-in user and falls back to
   the project key when there is no login (CI).
+- **The archive is a run of gzip members** (`packFiles`), so the UI can read
+  one file without the whole archive: consecutive files of one directory share
+  a member until it holds 1 MiB (a big file stays whole in one member), and
+  the tar end blocks are a member of their own. `tar -xzf`, Python `tarfile`
+  and `gunzipSync` read it as one `.tar.gz`. Each entry is packed alone
+  (`packTar([file])` minus its 1024-byte end blocks), so its header size is
+  `entry.length - padded(size)`; the index entry `{path, size, offset, length,
+  dataOffset}` gives the member's range and the content's start in the
+  decompressed member (`size` comes from `stat` in the walk). Grouping by
+  directory measured within ~6% of one gzip stream; one member per file was
+  up to +34% on folders of tiny files. The lmnr frontend reads it
+  (`lib/actions/evaluation/files.ts`; lmnr `docs/internal/hosted-evals.md`).
 - Uploads never contain `.env*`, `SKIPPED_DIRS` (`.git`, `node_modules`,
   virtualenvs, caches, Harbor `jobs/` output; also skipped when finding
   suites), and skip symlinks (sandboxes extract with Python

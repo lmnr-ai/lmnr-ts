@@ -52,7 +52,8 @@ export const startRemoteRun = async (
   }
 
   // Pack first: a too-large folder fails before minutes of image pushes.
-  const { archive, fileCount, skippedSymlinks } = await packEvalsDir(evalsDir);
+  const { archive, index, fileCount, skippedSymlinks } =
+    await packEvalsDir(evalsDir);
   if (skippedSymlinks.length > 0) {
     logger.warn(
       `Skipped ${skippedSymlinks.length} symlink(s): ` +
@@ -79,6 +80,15 @@ export const startRemoteRun = async (
       `suites: ${suites.join(", ")}`,
   );
   const { uploadId } = await client.hostedEvals.upload(archive);
+  try {
+    await client.hostedEvals.uploadIndex(uploadId, { files: index });
+  } catch (error) {
+    // Only the file view in Laminar needs it (servers before it answer 404).
+    logger.warn(
+      `Could not upload the file index, so Laminar won't show this run's ` +
+        `files: ${errorMessage(error)}`,
+    );
+  }
   const spec: RunSpec = { suites, overrides, env: runEnv, ...images };
   const { sandboxId } = await client.hostedEvals.startRun({
     uploadId,

@@ -112,6 +112,44 @@ void describe("discoverSuites / packEvalsDir", () => {
     expect(script!.header.mode! & 0o111).toBe(0o111);
   });
 
+  void it("indexes every file so it can be read from its gzip member alone", async () => {
+    const big = Buffer.alloc(1536 * 1024, "b");
+    const longName = `hello/${"deep/".repeat(30)}file.txt`;
+    await write("hello/harbor.yaml", "agents: []");
+    await write("hello/tasks/a/task.toml", "[task]");
+    await write("hello/tasks/a/data.bin", big.toString());
+    await write("hello/tasks/a/after-big.txt", "after");
+    await write("hello/tasks/a/empty.txt", "");
+    await write(longName, "long");
+
+    const { archive, index } = await packEvalsDir(root);
+
+    expect(index.map((f) => f.path)).toEqual(
+      (await filesOf(archive)).map((e) => e.header.name),
+    );
+    for (const file of index) {
+      const member = gunzipSync(
+        archive.subarray(file.offset, file.offset + file.length),
+      );
+      const content = member.subarray(
+        file.dataOffset,
+        file.dataOffset + file.size,
+      );
+      expect(content).toEqual(await readFile(path.join(root, file.path)));
+    }
+    // Files of one directory share a member until it reaches 1 MiB.
+    const offsets = Object.fromEntries(index.map((f) => [f.path, f.offset]));
+    expect(offsets["hello/tasks/a/data.bin"]).toBe(
+      offsets["hello/tasks/a/after-big.txt"],
+    );
+    expect(offsets["hello/tasks/a/empty.txt"]).not.toBe(
+      offsets["hello/tasks/a/data.bin"],
+    );
+    expect(offsets["hello/harbor.yaml"]).not.toBe(
+      offsets["hello/tasks/a/data.bin"],
+    );
+  });
+
   void it("marks shell scripts executable when packed on Windows", async () => {
     await write("hello/harbor.yaml");
     await write("hello/tasks/t/tests/test.sh", "#!/bin/sh");
