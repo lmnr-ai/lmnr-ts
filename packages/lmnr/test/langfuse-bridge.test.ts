@@ -13,6 +13,7 @@ import * as langchain from "@langfuse/langchain";
 import * as openai from "@langfuse/openai";
 import * as otel from "@langfuse/otel";
 import * as tracing from "@langfuse/tracing";
+import { type Attributes, type AttributeValue } from "@opentelemetry/api";
 import OpenAI from "openai";
 
 import { LLM_INSTRUMENTATIONS } from "../src/opentelemetry-lib/bridges";
@@ -273,6 +274,102 @@ void describe("Langfuse bridge translation", () => {
       attributes["lmnr.association.properties.metadata.d"],
       undefined,
     );
+  });
+
+  void it("reads trace attributes from the keys Langfuse's server reads", () => {
+    const translate = (attrs: Attributes) =>
+      translateLangfuseSpan(attrs, undefined, "6.1.1").attributes;
+
+    // `langfuse.openai`'s documented metadata keys, JSON-encoded in 6.x.
+    const fromMetadata = translate({
+      "langfuse.observation.metadata.langfuse_session_id": '"s1"',
+      "langfuse.observation.metadata.langfuse_user_id": '"u1"',
+      "langfuse.observation.metadata.langfuse_tags": '["t1","t2"]',
+      "langfuse.observation.metadata.k": '"v"',
+    });
+    assert.strictEqual(
+      fromMetadata["lmnr.association.properties.session_id"],
+      "s1",
+    );
+    assert.strictEqual(
+      fromMetadata["lmnr.association.properties.user_id"],
+      "u1",
+    );
+    assert.deepStrictEqual(fromMetadata["lmnr.association.properties.tags"], [
+      "t1",
+      "t2",
+    ]);
+
+    // Langfuse's precedence: the `langfuse.*` compat keys, then `session.id`
+    // / `user.id`, then metadata.
+    const precedence = translate({
+      "langfuse.session.id": "compat-s",
+      "session.id": "s",
+      "langfuse.user.id": "compat-u",
+      "user.id": "u",
+      "langfuse.observation.metadata.langfuse_session_id": '"meta-s"',
+    });
+    assert.strictEqual(
+      precedence["lmnr.association.properties.session_id"],
+      "compat-s",
+    );
+    assert.strictEqual(
+      precedence["lmnr.association.properties.user_id"],
+      "compat-u",
+    );
+
+    const tags = (value: AttributeValue) =>
+      translate({ "langfuse.trace.tags": value })[
+        "lmnr.association.properties.tags"
+      ];
+    assert.deepStrictEqual(tags(["a", "b", "a"]), ["a", "b"]);
+    assert.deepStrictEqual(tags('["a","b"]'), ["a", "b"]);
+    assert.deepStrictEqual(tags("a, b"), ["a", "b"]);
+    assert.deepStrictEqual(tags("a"), ["a"]);
+    // A JSON array passed as a string, then JSON-encoded by 6.x.
+    assert.deepStrictEqual(tags(JSON.stringify('["a","b"]')), ["a", "b"]);
+    assert.strictEqual(tags([]), undefined);
+  });
+
+  void it("promotes observation metadata on the root span only", () => {
+    const attrs = {
+      "langfuse.trace.metadata.team": '"a"',
+      "langfuse.trace.metadata.env": '"prod"',
+      "langfuse.observation.metadata.team": '"b"',
+      "langfuse.observation.metadata.customer": '"acme"',
+      "langfuse.observation.metadata.langfuse_session_id": '"s1"',
+    };
+    const metadata = (a: Record<string, unknown>) =>
+      Object.fromEntries(
+        Object.entries(a)
+          .filter(([k]) =>
+            k.startsWith("lmnr.association.properties.metadata."),
+          )
+          .map(([k, v]) => [k.split(".").pop(), v]),
+      );
+
+    const root = translateLangfuseSpan(attrs, undefined, "6.1.1", false);
+    // The observation's value wins, as in Langfuse; the session key is
+    // consumed as the session id.
+    assert.deepStrictEqual(metadata(root.attributes), {
+      team: "b",
+      env: "prod",
+      customer: "acme",
+    });
+    const forced = translateLangfuseSpan(
+      { ...attrs, "langfuse.internal.as_root": true },
+      undefined,
+      "6.1.1",
+    );
+    assert.strictEqual(
+      forced.attributes["lmnr.association.properties.metadata.customer"],
+      "acme",
+    );
+    const child = translateLangfuseSpan(attrs, undefined, "6.1.1");
+    assert.deepStrictEqual(metadata(child.attributes), {
+      team: "a",
+      env: "prod",
+    });
   });
 
   void it("keeps raw metadata strings before 6.x", () => {

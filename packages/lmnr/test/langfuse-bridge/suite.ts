@@ -391,7 +391,7 @@ export const langfuseBridgeSuite = (sdk: LangfuseSdk): void => {
       assert.strictEqual(root["lmnr.span.output"], "done");
     });
 
-    void it("promotes trace-level user, session, tags and metadata only", async () => {
+    void it("promotes trace-level user, session, tags and metadata", async () => {
       initLaminar();
       await langfuseWorkload();
       await flush();
@@ -409,9 +409,46 @@ export const langfuseBridgeSuite = (sdk: LangfuseSdk): void => {
           "acme",
         );
       }
+      // The root observation's metadata is trace metadata in Langfuse; a
+      // child's stays raw.
       const root = byName(lmSpans(), "agent-root").attributes;
       assert.strictEqual(
         root["lmnr.association.properties.metadata.obs"],
+        "level",
+      );
+      const child = byName(lmSpans(), "get_weather").attributes;
+      assert.strictEqual(
+        child["lmnr.association.properties.metadata.obs"],
+        undefined,
+      );
+    });
+
+    void it("reads session, user and tags from langfuse_* metadata keys", async () => {
+      initLaminar();
+      await startActiveObservation("metadata-root", async (root) => {
+        root.update({
+          metadata: {
+            langfuse_session_id: "s2",
+            langfuse_user_id: "u2",
+            langfuse_tags: ["t1", "t2"],
+            customer: "acme",
+          },
+        });
+      });
+      await flush();
+      const a = byName(lmSpans(), "metadata-root").attributes;
+      assert.strictEqual(a["lmnr.association.properties.session_id"], "s2");
+      assert.strictEqual(a["lmnr.association.properties.user_id"], "u2");
+      assert.deepStrictEqual(a["lmnr.association.properties.tags"], [
+        "t1",
+        "t2",
+      ]);
+      assert.strictEqual(
+        a["lmnr.association.properties.metadata.customer"],
+        "acme",
+      );
+      assert.strictEqual(
+        a["lmnr.association.properties.metadata.langfuse_session_id"],
         undefined,
       );
     });
