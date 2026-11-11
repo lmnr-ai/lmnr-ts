@@ -300,6 +300,33 @@ void describe("Langfuse bridge translation", () => {
       "t2",
     ]);
 
+    // The same keys in the one-JSON-object metadata form are read too, so a
+    // key left out of Laminar's metadata is never lost.
+    const fromObject = translate({
+      "langfuse.trace.metadata": JSON.stringify({
+        langfuse_session_id: "s2",
+        langfuse_user_id: "u2",
+        langfuse_tags: ["t3"],
+        k: "v",
+      }),
+    });
+    assert.strictEqual(
+      fromObject["lmnr.association.properties.session_id"],
+      "s2",
+    );
+    assert.strictEqual(fromObject["lmnr.association.properties.user_id"], "u2");
+    assert.deepStrictEqual(fromObject["lmnr.association.properties.tags"], [
+      "t3",
+    ]);
+    assert.strictEqual(
+      fromObject["lmnr.association.properties.metadata.k"],
+      "v",
+    );
+    assert.strictEqual(
+      fromObject["lmnr.association.properties.metadata.langfuse_session_id"],
+      undefined,
+    );
+
     // Langfuse's precedence: the `langfuse.*` compat keys, then `session.id`
     // / `user.id`, then metadata.
     const precedence = translate({

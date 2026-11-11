@@ -714,48 +714,9 @@ const decodeMetadataValue = (
   return value;
 };
 
-const metadataPrefixes = [`${TRACE_METADATA}.`, `${OBSERVATION_METADATA}.`];
-
-// In Langfuse's server's order of precedence.
-const SESSION_ID_KEYS = [
-  TRACE_COMPAT_SESSION_ID,
-  TRACE_SESSION_ID,
-  `${OBSERVATION_METADATA}.${METADATA_SESSION_ID}`,
-  `${TRACE_METADATA}.${METADATA_SESSION_ID}`,
-];
-const USER_ID_KEYS = [
-  TRACE_COMPAT_USER_ID,
-  TRACE_USER_ID,
-  `${OBSERVATION_METADATA}.${METADATA_USER_ID}`,
-  `${TRACE_METADATA}.${METADATA_USER_ID}`,
-];
-const TAGS_KEYS = [
-  TRACE_TAGS,
-  `${OBSERVATION_METADATA}.${METADATA_TAGS}`,
-  `${TRACE_METADATA}.${METADATA_TAGS}`,
-];
-
-/**
- * The first non-empty string among `keys`, like Langfuse's server. Values
- * under a metadata prefix are decoded when the SDK JSON-encodes them.
- */
-const firstString = (
-  attrs: Attributes,
-  keys: string[],
-  jsonEncodedMetadata: boolean,
-): string | undefined => {
-  for (const key of keys) {
-    let value: unknown = attrs[key];
-    if (
-      jsonEncodedMetadata &&
-      metadataPrefixes.some((prefix) => key.startsWith(prefix))
-    ) {
-      value = parseJson(value);
-    }
-    if (typeof value === "string" && value) return value;
-  }
-  return undefined;
-};
+/** The first non-empty string, like Langfuse's server. */
+const firstString = (...values: unknown[]): string | undefined =>
+  values.find((v): v is string => typeof v === "string" && v !== "");
 
 /**
  * Tags the way Langfuse's server reads them: an array, a JSON array (the
@@ -826,24 +787,47 @@ export const traceAttributes = (
   isRoot: boolean,
 ): Record<string, AttributeValue> => {
   const out: Record<string, AttributeValue> = {};
-  const sessionId = firstString(attrs, SESSION_ID_KEYS, jsonEncodedMetadata);
-  if (sessionId) out[SESSION_ID] = sessionId;
-  const userId = firstString(attrs, USER_ID_KEYS, jsonEncodedMetadata);
-  if (userId) out[USER_ID] = userId;
+  // Both metadata forms (one JSON object and `.*` keys), decoded. The
+  // `langfuse_*` keys are read from them, so a key that is left out of
+  // Laminar's metadata below always became the session, user or tags.
+  const traceMetadata = metadataAttributes(
+    attrs,
+    TRACE_METADATA,
+    jsonEncodedMetadata,
+  );
+  const observationMetadata = metadataAttributes(
+    attrs,
+    OBSERVATION_METADATA,
+    jsonEncodedMetadata,
+  );
 
-  for (const key of TAGS_KEYS) {
-    const tags = parseTags(attrs[key]);
-    if (tags) {
-      out[`${ASSOCIATION_PROPERTIES}.tags`] = tags;
-      break;
-    }
-  }
+  // In Langfuse's server's order of precedence.
+  const sessionId = firstString(
+    attrs[TRACE_COMPAT_SESSION_ID],
+    attrs[TRACE_SESSION_ID],
+    observationMetadata[METADATA_SESSION_ID],
+    traceMetadata[METADATA_SESSION_ID],
+  );
+  if (sessionId) out[SESSION_ID] = sessionId;
+  const userId = firstString(
+    attrs[TRACE_COMPAT_USER_ID],
+    attrs[TRACE_USER_ID],
+    observationMetadata[METADATA_USER_ID],
+    traceMetadata[METADATA_USER_ID],
+  );
+  if (userId) out[USER_ID] = userId;
+  const tags = [
+    attrs[TRACE_TAGS],
+    observationMetadata[METADATA_TAGS],
+    traceMetadata[METADATA_TAGS],
+  ]
+    .map(parseTags)
+    .find((t) => t !== undefined);
+  if (tags) out[`${ASSOCIATION_PROPERTIES}.tags`] = tags;
 
   const metadata = {
-    ...metadataAttributes(attrs, TRACE_METADATA, jsonEncodedMetadata),
-    ...(isRoot
-      ? metadataAttributes(attrs, OBSERVATION_METADATA, jsonEncodedMetadata)
-      : {}),
+    ...traceMetadata,
+    ...(isRoot ? observationMetadata : {}),
   };
   for (const [key, value] of Object.entries(metadata)) {
     if (!METADATA_TRACE_KEYS.has(key)) {
