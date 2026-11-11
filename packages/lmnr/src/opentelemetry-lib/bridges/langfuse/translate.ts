@@ -296,7 +296,7 @@ export const modelParameterAttributes = (attrs: Attributes): Translated => {
   }
   const reasoning = parseJson(attrs[`${OBSERVATION_METADATA}.reasoning`]);
   if (isObject(reasoning) && typeof reasoning.effort === "string") {
-    out["gen_ai.response.reasoning_effort"] = reasoning.effort;
+    out["gen_ai.response.reasoning.level"] = reasoning.effort;
   }
   return out;
 };

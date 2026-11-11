@@ -172,7 +172,7 @@ void describe("Langfuse bridge translation", () => {
         "langfuse.observation.metadata.reasoning":
           '{"effort":"low","summary":null}',
       }),
-      { "gen_ai.response.reasoning_effort": "low" },
+      { "gen_ai.response.reasoning.level": "low" },
     );
     // Fully mapped parameters are dropped.
     assert.deepStrictEqual(
