@@ -39,6 +39,8 @@ const OBSERVATION_OUTPUT = "langfuse.observation.output";
 const OBSERVATION_MODEL = "langfuse.observation.model.name";
 const OBSERVATION_MODEL_PARAMETERS = "langfuse.observation.model.parameters";
 const OBSERVATION_METADATA = "langfuse.observation.metadata";
+const METADATA_INSTRUCTIONS = `${OBSERVATION_METADATA}.instructions`;
+const METADATA_TOOLS = `${OBSERVATION_METADATA}.tools`;
 const OBSERVATION_USAGE_DETAILS = "langfuse.observation.usage_details";
 const OBSERVATION_COST_DETAILS = "langfuse.observation.cost_details";
 const OBSERVATION_LEVEL = "langfuse.observation.level";
@@ -316,22 +318,63 @@ export const providerAttributes = (
   };
 };
 
+// Responses API request keys `langfuse` SDKs record next to `input`.
+const RESPONSES_PROMPT_KEYS = new Set([
+  "input",
+  "instructions",
+  "tools",
+  "tool_choice",
+  "parallel_tool_calls",
+]);
+const TEXT_PART_TYPES = new Set(["text", "input_text", "output_text"]);
+// Responses API items that hold an assistant tool call, and their results.
+const RESPONSES_CALL_TYPES = new Set(["function_call", "custom_tool_call"]);
+const RESPONSES_CALL_OUTPUT_TYPES = new Set([
+  "function_call_output",
+  "custom_tool_call_output",
+]);
+
 /**
  * Split a Langfuse LLM input into (messages, tool definitions).
- * `@langfuse/openai` and `@langfuse/langchain` send `{messages, tools}`
- * (tools may be absent); a bare message array is also common in manual
- * `startObservation(..., { asType: "generation" })` calls.
+ * - chat (`@langfuse/openai`, `@langfuse/langchain`): a bare message list, or
+ *   `{messages, tools|functions, tool_choice}`;
+ * - Responses API: `@langfuse/openai` records only the `input` (a string or
+ *   an item list; tools and instructions go to the observation metadata),
+ *   Python's `langfuse.openai` `{input, tools, tool_choice, ...}`.
+ * A bare string (manual generations) is a user message.
  */
 export const splitLlmInput = (
   inputRaw: unknown,
 ): { messages: unknown[]; tools?: unknown } | undefined => {
   const parsed = parseJson(inputRaw);
+  if (typeof parsed === "string") {
+    return parsed
+      ? { messages: [{ role: "user", content: parsed }] }
+      : undefined;
+  }
   if (Array.isArray(parsed)) return { messages: parsed };
-  if (isObject(parsed) && Array.isArray(parsed.messages)) {
-    return {
-      messages: parsed.messages,
-      tools: parsed.tools ?? parsed.functions,
-    };
+  if (!isObject(parsed)) return undefined;
+  const tools = parsed.tools ?? parsed.functions;
+  if (Array.isArray(parsed.messages)) {
+    return { messages: parsed.messages, tools };
+  }
+  if (
+    "input" in parsed &&
+    Object.keys(parsed).every((k) => RESPONSES_PROMPT_KEYS.has(k))
+  ) {
+    const input = parsed.input;
+    let messages: unknown[];
+    if (typeof input === "string") {
+      messages = [{ role: "user", content: input }];
+    } else if (Array.isArray(input)) {
+      messages = [...input];
+    } else {
+      return undefined;
+    }
+    if (typeof parsed.instructions === "string" && parsed.instructions) {
+      messages.unshift({ role: "system", content: parsed.instructions });
+    }
+    return { messages, tools };
   }
   return undefined;
 };
@@ -364,75 +407,274 @@ export const splitLangchainToolDefinitions = (
   return { messages: kept, tools };
 };
 
-/** A single assistant message becomes a one-element list. */
+/**
+ * A Langfuse LLM output as a list, before `normalizeMessages`: one message
+ * (chat), a string (`@langfuse/openai`'s streamed chat text and Responses
+ * `output_text`), or Responses API output items (a list, or the only item).
+ */
 export const llmOutputMessages = (
   outputRaw: unknown,
 ): unknown[] | undefined => {
   const parsed = parseJson(outputRaw);
   if (Array.isArray(parsed)) return parsed;
   if (isObject(parsed)) return [parsed];
+  if (typeof parsed === "string" && parsed) {
+    return [{ role: "assistant", content: parsed }];
+  }
   return undefined;
 };
 
-const isRawOpenAIToolCall = (tc: unknown): boolean =>
-  isObject(tc) && tc.type === "function" && isObject(tc.function);
+const toolCallPart = (id: unknown, name: unknown, args: unknown): Json => ({
+  type: "tool_call",
+  id: id ?? null,
+  name: name ?? null,
+  arguments: args ?? null,
+});
+
+/** Summary (else raw reasoning) text of a Responses API reasoning item. */
+const reasoningText = (item: Json): string => {
+  for (const key of ["summary", "content"]) {
+    const blocks = item[key];
+    if (!Array.isArray(blocks)) continue;
+    const texts = blocks
+      .filter((b) => isObject(b) && typeof b.text === "string")
+      .map((b) => b.text as string);
+    if (texts.length > 0) return texts.join("\n\n");
+  }
+  return "";
+};
 
 /**
- * Normalize assistant messages that carry a separate `tool_calls` list:
- * - output with OpenAI tool calls → wrapped as an OpenAI choice
- *   (`{message}`), which is what the app-server parses for OpenAI;
- * - content that already embeds `tool_use` / `tool_call` blocks
- *   (Anthropic via LangChain) → the redundant `tool_calls` mirror is dropped;
- * - otherwise the tool calls are folded into the content parts.
+ * One content part in Laminar's shape (`text`, `reasoning`, `tool_call`); an
+ * empty list drops it. Unknown parts are kept as they are.
  */
-export const normalizeToolCalls = (
-  messages: unknown[],
-  isOutput: boolean,
-): unknown[] =>
-  messages.map((msg) => {
-    if (!isObject(msg) || msg.role !== "assistant") return msg;
-    const content = msg.content;
-    let toolCalls = msg.tool_calls;
-    if (!Array.isArray(toolCalls)) return msg;
-    // `every` is true for an empty list; a text completion with
-    // `tool_calls: []` must stay a plain message.
-    if (
-      isOutput &&
-      toolCalls.length > 0 &&
-      toolCalls.every(isRawOpenAIToolCall)
-    ) {
-      return { message: msg };
+const normalizePart = (part: unknown): unknown[] => {
+  if (typeof part === "string") return [{ type: "text", text: part }];
+  if (!isObject(part)) return [part];
+  const kind = part.type;
+  if (TEXT_PART_TYPES.has(kind) && typeof part.text === "string") {
+    return [{ type: "text", text: part.text }];
+  }
+  if (kind === "tool_call") {
+    // LangChain names the arguments `args`.
+    const args = "arguments" in part ? part.arguments : part.args;
+    return [toolCallPart(part.id, part.name, args)];
+  }
+  if (kind === "tool_use") {
+    return [toolCallPart(part.id, part.name, part.input)];
+  }
+  if (RESPONSES_CALL_TYPES.has(kind)) {
+    const args = "arguments" in part ? part.arguments : part.input;
+    return [toolCallPart(part.call_id || part.id, part.name, args)];
+  }
+  if (kind === "reasoning" || kind === "thinking") {
+    let text = kind === "reasoning" ? part.text : part.thinking;
+    if (typeof text !== "string") text = reasoningText(part);
+    return text ? [{ type: "reasoning", text }] : [];
+  }
+  if (kind === "redacted_thinking") return [];
+  return [part];
+};
+
+/**
+ * Drop repeated tool calls (same id) within one message: LangChain keeps a
+ * call both in the content blocks (Anthropic `tool_use`, Responses
+ * `function_call`) and in `tool_calls`.
+ */
+const dedupeToolCalls = (parts: unknown[]): unknown[] => {
+  const seen = new Set<string>();
+  return parts.filter((part) => {
+    if (!isObject(part) || part.type !== "tool_call") return true;
+    if (typeof part.id !== "string" || !part.id) return true;
+    if (seen.has(part.id)) return false;
+    seen.add(part.id);
+    return true;
+  });
+};
+
+/**
+ * Content parts as message content. A single text part becomes a string, so
+ * `"hi"` and `[{type: "text", text: "hi"}]` hash the same.
+ */
+const collapse = (parts: unknown[]): unknown => {
+  const only = parts[0];
+  if (
+    parts.length === 1 &&
+    isObject(only) &&
+    only.type === "text" &&
+    Object.keys(only).length === 2 &&
+    "text" in only
+  ) {
+    return only.text;
+  }
+  return parts;
+};
+
+const normalizeContent = (content: unknown): unknown =>
+  Array.isArray(content)
+    ? collapse(dedupeToolCalls(content.flatMap(normalizePart)))
+    : content;
+
+/**
+ * A chat message as `{role, content, tool_call_id?, name?}`; provider extras
+ * (`refusal`, `annotations`, LangChain's `additional_kwargs`, ...) are
+ * dropped so a turn's output equals its copy in the next call's history.
+ * Anthropic `tool_result` parts become `tool` messages.
+ */
+const normalizeMessage = (msg: Json, isOutput: boolean): Json[] => {
+  let role = msg.role;
+  if (role === "model" || (role == null && isOutput)) role = "assistant";
+  const content = msg.content;
+  let parts: unknown[] | undefined = Array.isArray(content)
+    ? content.flatMap(normalizePart)
+    : undefined;
+
+  const calls: unknown[] = [];
+  if (Array.isArray(msg.tool_calls)) {
+    for (const tc of msg.tool_calls) {
+      if (isObject(tc) && isObject(tc.function)) {
+        calls.push(
+          toolCallPart(tc.id, tc.function.name, tc.function.arguments),
+        );
+      } else if (isObject(tc) && tc.type === undefined && "name" in tc) {
+        // LangChain `{id, name, args}`.
+        calls.push(...normalizePart({ ...tc, type: "tool_call" }));
+      } else {
+        calls.push(...normalizePart(tc));
+      }
     }
-    if (
-      Array.isArray(content) &&
-      content.some(
-        (part) =>
-          isObject(part) &&
-          (part.type === "tool_use" || part.type === "tool_call"),
-      )
-    ) {
-      const { tool_calls: _dropped, ...rest } = msg;
-      return rest;
-    }
-    if (!isOutput) {
-      toolCalls = toolCalls.map((tc: unknown) =>
-        isRawOpenAIToolCall(tc)
-          ? {
-              id: (tc as Json).id,
-              type: "tool_call",
-              name: (tc as Json).function.name,
-              arguments: (tc as Json).function.arguments,
-            }
-          : tc,
-      );
-    }
-    const parts = Array.isArray(content)
-      ? content
-      : typeof content === "string" && content !== ""
+  }
+  if (isObject(msg.function_call)) {
+    calls.push(
+      toolCallPart(null, msg.function_call.name, msg.function_call.arguments),
+    );
+  }
+  if (calls.length > 0) {
+    parts ??=
+      typeof content === "string" && content
         ? [{ type: "text", text: content }]
         : [];
-    return { role: msg.role, content: [...parts, ...toolCalls] };
-  });
+    parts.push(...calls);
+  }
+
+  const results: Json[] = [];
+  if (parts !== undefined && role === "user") {
+    const rest: unknown[] = [];
+    for (const part of parts) {
+      if (isObject(part) && part.type === "tool_result") {
+        results.push({
+          role: "tool",
+          content: normalizeContent(part.content),
+          tool_call_id: part.tool_use_id ?? null,
+        });
+      } else {
+        rest.push(part);
+      }
+    }
+    parts = rest;
+    if (results.length > 0 && parts.length === 0) return results;
+  }
+
+  const out: Json = {
+    role: role ?? null,
+    content:
+      parts !== undefined
+        ? collapse(dedupeToolCalls(parts))
+        : (content ?? null),
+  };
+  for (const key of ["tool_call_id", "name"]) {
+    if (msg[key] != null) out[key] = msg[key];
+  }
+  return [...results, out];
+};
+
+/**
+ * Bring LLM input / output messages to Laminar's shape: `{role, content}`,
+ * where content is a string or a list of `text`, `reasoning` and `tool_call`
+ * (`{id, name, arguments}`) parts, and a tool result is
+ * `{role: "tool", content, tool_call_id}`.
+ *
+ * Covers OpenAI chat (`tool_calls`), Responses API items (`function_call`,
+ * `function_call_output`, `reasoning`, `message`), LangChain (`args`) and
+ * Anthropic (`tool_use`, `tool_result`, `thinking`). Inputs and outputs go
+ * through the same rules, so an assistant turn is identical in the call that
+ * produced it and in the next call's history (app-server dedups messages by
+ * hash). Consecutive Responses API items of one assistant turn (reasoning,
+ * calls, the assistant message) are merged into one assistant message.
+ * Same rules as lmnr-python's `translate.py::normalize_messages`.
+ */
+export const normalizeMessages = (
+  messages: unknown[],
+  isOutput: boolean,
+): unknown[] => {
+  const out: unknown[] = [];
+  const turns: Json[] = [];
+  // Parts of the open Responses assistant turn.
+  let turn: unknown[] | undefined;
+  const openTurn = (): unknown[] => {
+    if (turn === undefined) {
+      turn = [];
+      const message = { role: "assistant", content: turn };
+      out.push(message);
+      turns.push(message);
+    }
+    return turn;
+  };
+
+  for (const item of messages) {
+    if (!isObject(item)) {
+      out.push(item);
+      turn = undefined;
+      continue;
+    }
+    const kind = item.type;
+    if (
+      !("role" in item) &&
+      (RESPONSES_CALL_TYPES.has(kind) ||
+        kind === "reasoning" ||
+        (typeof kind === "string" && kind.endsWith("_call")))
+    ) {
+      openTurn().push(...normalizePart(item));
+      continue;
+    }
+    if (RESPONSES_CALL_OUTPUT_TYPES.has(kind)) {
+      out.push({
+        role: "tool",
+        content: normalizeContent(item.output),
+        tool_call_id: item.call_id ?? null,
+      });
+      turn = undefined;
+      continue;
+    }
+    if (
+      "role" in item ||
+      (isOutput && ("content" in item || "tool_calls" in item))
+    ) {
+      const normalized = normalizeMessage(item, isOutput);
+      const last = normalized[normalized.length - 1];
+      if (
+        normalized.length === 1 &&
+        last.role === "assistant" &&
+        (turn !== undefined || kind === "message")
+      ) {
+        const content = last.content;
+        if (Array.isArray(content)) openTurn().push(...content);
+        else if (content != null) openTurn().push(...normalizePart(content));
+        continue;
+      }
+      out.push(...normalized);
+      turn = undefined;
+      continue;
+    }
+    out.push(item);
+    turn = undefined;
+  }
+
+  for (const message of turns) {
+    message.content = collapse(dedupeToolCalls(message.content));
+  }
+  return out;
+};
 
 /**
  * A metadata value. @langfuse/* 6.x JSON-encodes every value, so there a
@@ -523,13 +765,23 @@ const ioAttributes = (attrs: Attributes, isLlm: boolean): Translated => {
     const split = splitLlmInput(inputRaw);
     if (split) {
       const lc = splitLangchainToolDefinitions(split.messages);
-      setJson(GEN_AI_INPUT_MESSAGES, normalizeToolCalls(lc.messages, false));
-      const tools =
-        Array.isArray(split.tools) && split.tools.length > 0
-          ? split.tools
-          : lc.tools.length > 0
-            ? lc.tools
-            : undefined;
+      const messages = normalizeMessages(lc.messages, false);
+      // `@langfuse/openai` records only a Responses call's `input`; its
+      // instructions and tools land in the observation metadata, taken from
+      // the response.
+      const instructions = metadataString(attrs[METADATA_INSTRUCTIONS]);
+      if (instructions) {
+        messages.unshift({ role: "system", content: instructions });
+        out[METADATA_INSTRUCTIONS] = undefined;
+      }
+      setJson(GEN_AI_INPUT_MESSAGES, messages);
+      const nonEmpty = (v: unknown) =>
+        Array.isArray(v) && v.length > 0 ? v : undefined;
+      let tools = nonEmpty(split.tools) ?? nonEmpty(lc.tools);
+      if (!tools) {
+        tools = nonEmpty(parseJson(attrs[METADATA_TOOLS]));
+        if (tools) out[METADATA_TOOLS] = undefined;
+      }
       if (tools) setJson(GEN_AI_TOOL_DEFINITIONS, tools);
       inputHandled = true;
     }
@@ -547,7 +799,7 @@ const ioAttributes = (attrs: Attributes, isLlm: boolean): Translated => {
   if (isLlm && outputRaw !== undefined) {
     const messages = llmOutputMessages(outputRaw);
     if (messages) {
-      setJson(GEN_AI_OUTPUT_MESSAGES, normalizeToolCalls(messages, true));
+      setJson(GEN_AI_OUTPUT_MESSAGES, normalizeMessages(messages, true));
       outputHandled = true;
     }
   }
