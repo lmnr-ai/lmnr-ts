@@ -158,6 +158,10 @@ void describe("Langfuse bridge translation", () => {
         "gen_ai.request.reasoning.level": "high",
         "gen_ai.request.reasoning_summary": "auto",
         "gen_ai.request.service_tier": "flex",
+        // Only the unmapped parameters stay on Laminar's copy (the second
+        // max-token name has nowhere to go).
+        "langfuse.observation.model.parameters":
+          '{"max_output_tokens":50,"verbosity":"low"}',
       },
     );
     // Non-numbers (Python LangChain's "Infinity") are skipped; the Responses
@@ -170,6 +174,59 @@ void describe("Langfuse bridge translation", () => {
       }),
       { "gen_ai.response.reasoning_effort": "low" },
     );
+    // Fully mapped parameters are dropped.
+    assert.deepStrictEqual(
+      modelParameterAttributes({
+        "langfuse.observation.model.parameters": '{"temperature":1}',
+      }),
+      {
+        "gen_ai.request.temperature": 1,
+        "langfuse.observation.model.parameters": undefined,
+      },
+    );
+  });
+
+  void it("drops converted langfuse.* attributes from Laminar's copy", () => {
+    const { attributes } = translateLangfuseSpan(
+      {
+        "langfuse.observation.type": "generation",
+        "langfuse.observation.model.name": "gpt-4o",
+        "langfuse.observation.usage_details": '{"input":3,"output":1}',
+        "langfuse.observation.cost_details": '{"total":0.1}',
+        "langfuse.observation.input": '[{"role":"user","content":"hi"}]',
+        "langfuse.observation.output": '{"role":"assistant","content":"yo"}',
+        "langfuse.observation.metadata.team": "a",
+      },
+      undefined,
+      "6.1.1",
+    );
+    for (const key of [
+      "langfuse.observation.model.name",
+      "langfuse.observation.usage_details",
+      "langfuse.observation.cost_details",
+      "langfuse.observation.input",
+      "langfuse.observation.output",
+    ]) {
+      assert.ok(key in attributes, key);
+      assert.strictEqual(attributes[key], undefined, key);
+    }
+    assert.ok(!("langfuse.observation.metadata.team" in attributes));
+
+    // A raw input copied to `lmnr.span.input` is dropped; a value that wasn't
+    // converted (a non-string on a non-LLM span) is left alone.
+    const raw = translateLangfuseSpan(
+      { "langfuse.observation.input": '{"q":"hi"}' },
+      undefined,
+      "6.1.1",
+    ).attributes;
+    assert.strictEqual(raw["lmnr.span.input"], '{"q":"hi"}');
+    assert.ok("langfuse.observation.input" in raw);
+    const kept = translateLangfuseSpan(
+      { "langfuse.observation.input": ["a", "b"] },
+      undefined,
+      "6.1.1",
+    ).attributes;
+    assert.ok(!("langfuse.observation.input" in kept));
   });
 
   void it("takes the provider from LangChain's ls_provider", () => {

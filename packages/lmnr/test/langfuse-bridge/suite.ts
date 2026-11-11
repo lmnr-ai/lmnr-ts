@@ -465,6 +465,20 @@ export const langfuseBridgeSuite = (sdk: LangfuseSdk): void => {
       assert.strictEqual(withTools["gen_ai.request.seed"], 7);
       // The client may point at any OpenAI-compatible API.
       assert.strictEqual(withTools["gen_ai.system"], undefined);
+      // Converted attributes are on Langfuse's export only.
+      const exported = byName(lfSpans(), "oai-tools").attributes;
+      for (const key of [
+        "langfuse.observation.input",
+        "langfuse.observation.output",
+        "langfuse.observation.usage_details",
+        "langfuse.observation.model.name",
+      ]) {
+        assert.ok(key in exported, key);
+        assert.ok(!(key in withTools), key);
+      }
+      // Only parameters with no request attribute stay.
+      const params = withTools["langfuse.observation.model.parameters"];
+      assert.ok(!String(params ?? "").includes("temperature"), String(params));
 
       const plain = byName(lmSpans(), "oai-plain");
       assert.deepStrictEqual(

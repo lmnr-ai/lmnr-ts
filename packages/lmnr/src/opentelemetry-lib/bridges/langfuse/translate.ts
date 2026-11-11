@@ -94,6 +94,13 @@ const STATUS_CODE_ERROR = 2;
 
 type Json = Record<string, any>;
 
+/**
+ * Attributes for Laminar's copy of a span. `undefined` removes one: a
+ * `langfuse.*` value already carried by the Laminar attributes it was
+ * converted to, which Laminar would otherwise store (and bill) twice.
+ */
+export type Translated = Record<string, AttributeValue | undefined>;
+
 const isObject = (value: unknown): value is Json =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -253,27 +260,38 @@ const metadataString = (value: unknown): string | undefined => {
  * into the observation metadata instead, i.e. the effort that was applied
  * (a default when the request set none), so it goes to the response key.
  */
-export const modelParameterAttributes = (
-  attrs: Attributes,
-): Record<string, AttributeValue> => {
-  const out: Record<string, AttributeValue> = {};
+export const modelParameterAttributes = (attrs: Attributes): Translated => {
+  const out: Translated = {};
   const params = parseJson(attrs[OBSERVATION_MODEL_PARAMETERS]);
   if (isObject(params)) {
+    const rest: Json = { ...params };
     for (const [key, attr] of NUMBER_MODEL_PARAMETERS) {
-      const value = asNumber(params[key]);
-      if (value !== undefined && !(attr in out)) out[attr] = value;
+      const value = asNumber(rest[key]);
+      if (value !== undefined && !(attr in out)) {
+        out[attr] = value;
+        delete rest[key];
+      }
     }
     for (const [key, attr] of STRING_MODEL_PARAMETERS) {
-      const value = params[key];
-      if (typeof value === "string" && value) out[attr] = value;
+      const value = rest[key];
+      if (typeof value === "string" && value) {
+        out[attr] = value;
+        delete rest[key];
+      }
     }
-    const stop = typeof params.stop === "string" ? [params.stop] : params.stop;
+    const stop = typeof rest.stop === "string" ? [rest.stop] : rest.stop;
     if (
       Array.isArray(stop) &&
       stop.length > 0 &&
       stop.every((s) => typeof s === "string")
     ) {
       out["gen_ai.request.stop_sequences"] = stop;
+      delete rest.stop;
+    }
+    // Only the parameters that have no request attribute stay.
+    if (Object.keys(out).length > 0) {
+      out[OBSERVATION_MODEL_PARAMETERS] =
+        Object.keys(rest).length > 0 ? toJson(rest) : undefined;
     }
   }
   const reasoning = parseJson(attrs[`${OBSERVATION_METADATA}.reasoning`]);
@@ -489,17 +507,17 @@ export const traceAttributes = (
   return out;
 };
 
-const ioAttributes = (
-  attrs: Attributes,
-  isLlm: boolean,
-): Record<string, AttributeValue> => {
-  const out: Record<string, AttributeValue> = {};
+const ioAttributes = (attrs: Attributes, isLlm: boolean): Translated => {
+  const out: Translated = {};
   const setJson = (key: string, value: unknown) => {
     const json = toJson(value);
     if (json !== undefined) out[key] = json;
   };
 
-  const inputRaw = attrs[OBSERVATION_INPUT] ?? attrs[TRACE_INPUT];
+  // Either way the `langfuse.*` key the value came from is dropped.
+  const inputKey =
+    attrs[OBSERVATION_INPUT] !== undefined ? OBSERVATION_INPUT : TRACE_INPUT;
+  const inputRaw = attrs[inputKey];
   let inputHandled = false;
   if (isLlm && inputRaw !== undefined) {
     const split = splitLlmInput(inputRaw);
@@ -518,9 +536,13 @@ const ioAttributes = (
   }
   if (!inputHandled && typeof inputRaw === "string" && inputRaw) {
     out[SPAN_INPUT] = inputRaw;
+    inputHandled = true;
   }
+  if (inputHandled) out[inputKey] = undefined;
 
-  const outputRaw = attrs[OBSERVATION_OUTPUT] ?? attrs[TRACE_OUTPUT];
+  const outputKey =
+    attrs[OBSERVATION_OUTPUT] !== undefined ? OBSERVATION_OUTPUT : TRACE_OUTPUT;
+  const outputRaw = attrs[outputKey];
   let outputHandled = false;
   if (isLlm && outputRaw !== undefined) {
     const messages = llmOutputMessages(outputRaw);
@@ -531,12 +553,15 @@ const ioAttributes = (
   }
   if (!outputHandled && typeof outputRaw === "string" && outputRaw) {
     out[SPAN_OUTPUT] = outputRaw;
+    outputHandled = true;
   }
+  if (outputHandled) out[outputKey] = undefined;
   return out;
 };
 
 export interface TranslatedSpan {
-  attributes: Record<string, AttributeValue>;
+  /** Set on Laminar's copy; `undefined` removes the attribute from it. */
+  attributes: Translated;
   /** Set when Laminar's copy must carry a synthesized `exception` event. */
   errorMessage?: string;
 }
@@ -554,7 +579,7 @@ export const translateLangfuseSpan = (
   status: { code?: number; message?: string } | undefined,
   bridgeVersion: string | undefined,
 ): TranslatedSpan => {
-  const out: Record<string, AttributeValue> = {
+  const out: Translated = {
     [SPAN_BRIDGE_NAME]: "langfuse",
   };
   if (bridgeVersion) out[SPAN_BRIDGE_VERSION] = bridgeVersion;
@@ -572,14 +597,19 @@ export const translateLangfuseSpan = (
   if (typeof model === "string" && model) {
     out[LaminarAttributes.REQUEST_MODEL] = model;
     out[LaminarAttributes.RESPONSE_MODEL] = model;
+    out[OBSERVATION_MODEL] = undefined;
   }
+  const usage = usageAttributes(attrs[OBSERVATION_USAGE_DETAILS]);
+  if (Object.keys(usage).length > 0) out[OBSERVATION_USAGE_DETAILS] = undefined;
+  const cost = costAttributes(attrs[OBSERVATION_COST_DETAILS]);
+  if (Object.keys(cost).length > 0) out[OBSERVATION_COST_DETAILS] = undefined;
 
   Object.assign(
     out,
     providerAttributes(attrs),
     modelParameterAttributes(attrs),
-    usageAttributes(attrs[OBSERVATION_USAGE_DETAILS]),
-    costAttributes(attrs[OBSERVATION_COST_DETAILS]),
+    usage,
+    cost,
     ioAttributes(attrs, isLlm),
     traceAttributes(attrs, majorVersion(bridgeVersion) >= 6),
   );

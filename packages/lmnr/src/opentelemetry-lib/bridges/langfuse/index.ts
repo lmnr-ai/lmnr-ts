@@ -183,12 +183,16 @@ const endMirror = (
     span.status,
     scope?.version,
   );
-  const copy = Object.create(span) as SdkSpan;
-  defineOwn(copy, "attributes", {
+  const copyAttributes: Record<string, AttributeValue | undefined> = {
     ...attributes,
     ...laminarAttributes,
     ...translated.attributes,
-  });
+  };
+  for (const [key, value] of Object.entries(copyAttributes)) {
+    if (value === undefined) delete copyAttributes[key];
+  }
+  const copy = Object.create(span) as SdkSpan;
+  defineOwn(copy, "attributes", copyAttributes);
   const events = span.events ?? [];
   if (
     translated.errorMessage !== undefined &&
