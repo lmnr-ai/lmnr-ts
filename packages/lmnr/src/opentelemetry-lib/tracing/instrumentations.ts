@@ -6,6 +6,7 @@ import { PlaywrightInstrumentation } from "../../browser";
 import { PuppeteerInstrumentation } from "../../browser/puppeteer";
 import { StagehandV2Instrumentation } from "../../browser/stagehand/v2";
 import { StagehandInstrumentation as StagehandV3Instrumentation } from "../../browser/stagehand/v3";
+import { type InstrumentationKey } from "../bridges/types";
 import { AnthropicInstrumentation } from "../instrumentation/anthropic";
 import { ClaudeAgentSDKInstrumentation } from "../instrumentation/claude-agent-sdk";
 import { CohereInstrumentation } from "../instrumentation/cohere";
@@ -60,6 +61,9 @@ export const initializeLaminarInstrumentations = (
     suppressContentTracing?: boolean;
     instrumentModules?: InitializeOptions["instrumentModules"];
     sessionRecordingOptions?: SessionRecordingOptions;
+    // Auto-instrumentations to skip (bridges). Ignored when
+    // `instrumentModules` is passed.
+    disabledInstrumentations?: readonly InstrumentationKey[];
   } = {},
 ) => {
   const apiKey =
@@ -96,6 +100,7 @@ export const initializeLaminarInstrumentations = (
         client,
         options.suppressContentTracing,
         options.sessionRecordingOptions,
+        new Set(options.disabledInstrumentations ?? []),
       );
 };
 
@@ -139,32 +144,38 @@ const initInstrumentations = (
   client: LaminarClient | undefined,
   suppressContentTracing?: boolean,
   sessionRecordingOptions?: SessionRecordingOptions,
+  disabled: ReadonlySet<InstrumentationKey> = new Set(),
 ): Instrumentation[] => {
   const instrumentations: Instrumentation[] = [];
+  const enabled = (key: InstrumentationKey) => !disabled.has(key);
 
-  instrumentations.push(
-    new OpenAIInstrumentation({
-      traceContent: !suppressContentTracing,
-    }),
-  );
+  if (enabled("OpenAI"))
+    instrumentations.push(
+      new OpenAIInstrumentation({
+        traceContent: !suppressContentTracing,
+      }),
+    );
 
-  instrumentations.push(
-    new AnthropicInstrumentation({
-      traceContent: !suppressContentTracing,
-    }),
-  );
+  if (enabled("anthropic"))
+    instrumentations.push(
+      new AnthropicInstrumentation({
+        traceContent: !suppressContentTracing,
+      }),
+    );
 
-  instrumentations.push(
-    new CohereInstrumentation({
-      traceContent: !suppressContentTracing,
-    }),
-  );
+  if (enabled("cohere"))
+    instrumentations.push(
+      new CohereInstrumentation({
+        traceContent: !suppressContentTracing,
+      }),
+    );
 
-  instrumentations.push(
-    new LangChainInstrumentation({
-      traceContent: !suppressContentTracing,
-    }),
-  );
+  if (enabled("langchain"))
+    instrumentations.push(
+      new LangChainInstrumentation({
+        traceContent: !suppressContentTracing,
+      }),
+    );
 
   // Browser instrumentations require a client (API key)
   if (client) {
@@ -187,39 +198,46 @@ const initInstrumentations = (
     );
   }
 
-  instrumentations.push(
-    new GoogleGenAiInstrumentation({
-      traceContent: !suppressContentTracing,
-    }),
-  );
+  if (enabled("google_genai"))
+    instrumentations.push(
+      new GoogleGenAiInstrumentation({
+        traceContent: !suppressContentTracing,
+      }),
+    );
 
-  instrumentations.push(
-    new GoogleAIPlatformInstrumentation({
-      traceContent: !suppressContentTracing,
-    }),
-  );
+  if (enabled("google_aiplatform"))
+    instrumentations.push(
+      new GoogleAIPlatformInstrumentation({
+        traceContent: !suppressContentTracing,
+      }),
+    );
 
-  instrumentations.push(new KernelInstrumentation());
+  if (enabled("kernel")) instrumentations.push(new KernelInstrumentation());
 
-  instrumentations.push(new ClaudeAgentSDKInstrumentation());
+  if (enabled("claudeAgentSDK"))
+    instrumentations.push(new ClaudeAgentSDKInstrumentation());
 
-  instrumentations.push(new OpencodeInstrumentation());
+  if (enabled("opencode")) instrumentations.push(new OpencodeInstrumentation());
 
-  instrumentations.push(new OpenAIAgentsInstrumentation());
+  if (enabled("openAIAgents"))
+    instrumentations.push(new OpenAIAgentsInstrumentation());
 
-  instrumentations.push(new PiDurableInstrumentation());
+  if (enabled("piDurable"))
+    instrumentations.push(new PiDurableInstrumentation());
 
-  instrumentations.push(
-    new OpenRouterInstrumentation({
-      traceContent: !suppressContentTracing,
-    }),
-  );
+  if (enabled("openrouter"))
+    instrumentations.push(
+      new OpenRouterInstrumentation({
+        traceContent: !suppressContentTracing,
+      }),
+    );
 
-  instrumentations.push(
-    new TypeSafeInstrumentation({
-      traceContent: !suppressContentTracing,
-    }),
-  );
+  if (enabled("typesafe"))
+    instrumentations.push(
+      new TypeSafeInstrumentation({
+        traceContent: !suppressContentTracing,
+      }),
+    );
 
   return instrumentations;
 };

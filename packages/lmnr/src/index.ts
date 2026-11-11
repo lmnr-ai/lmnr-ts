@@ -43,6 +43,7 @@ export {
 } from "./integrations/eve";
 export { Laminar, type LaminarInitializeProps } from "./laminar";
 export { LaminarSpanProcessor } from "./opentelemetry-lib/";
+export { type LaminarBridge } from "./opentelemetry-lib/bridges";
 export {
   wrapAISDK,
   wrapLanguageModel,

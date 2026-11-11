@@ -13,6 +13,10 @@ export const SPAN_INSTRUMENTATION_SCOPE_NAME =
   "lmnr.span.instrumentation_scope.name";
 export const SPAN_INSTRUMENTATION_SCOPE_VERSION =
   "lmnr.span.instrumentation_scope.version";
+// Third-party SDK a bridged span came from (`Laminar.initialize({ bridges })`)
+// and that SDK's version.
+export const SPAN_BRIDGE_NAME = "lmnr.span.bridge.name";
+export const SPAN_BRIDGE_VERSION = "lmnr.span.bridge.version";
 export const OVERRIDE_PARENT_SPAN = "lmnr.internal.override_parent_span";
 export const TRACE_HAS_BROWSER_SESSION = "lmnr.internal.has_browser_session";
 export const EXTRACTED_FROM_NEXT_JS = "lmnr.span.extracted_from.next_js";

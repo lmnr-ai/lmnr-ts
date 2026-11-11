@@ -1,0 +1,78 @@
+import { type InitializeOptions } from "../interfaces";
+import { type LaminarSpanProcessor } from "../tracing/processor";
+
+/**
+ * Third-party tracing SDKs (source SDKs) whose spans Laminar can receive
+ * alongside the source SDK's own backend: `Laminar.initialize({ bridges: ["langfuse"] })`.
+ */
+export type LaminarBridge = "langfuse";
+
+/** A key of `instrumentModules`, i.e. one Laminar auto-instrumentation. */
+export type InstrumentationKey = keyof NonNullable<
+  InitializeOptions["instrumentModules"]
+>;
+
+export interface BridgeContext {
+  /**
+   * The processor of the Laminar pipeline `initialize()` just built. A bridge
+   * that receives finished spans from the source SDK (Langfuse) hands Laminar's
+   * copies to it. A bridge that builds spans itself, from intercepted requests
+   * say, creates them with Laminar's `getTracer()` instead and needs nothing
+   * from here.
+   */
+  spanProcessor: LaminarSpanProcessor;
+}
+
+/**
+ * One bridge. Bridges differ in how they hook the source SDK (Langfuse: its
+ * OpenTelemetry tracer provider; LangSmith or Braintrust: the network), so
+ * the interface fixes only the lifecycle `Laminar.initialize()` / `shutdown()`
+ * drive. `inheritsGlobalContext` is the one OpenTelemetry-specific setting.
+ * Same contract as lmnr-python's `LaminarBridge`.
+ */
+export interface Bridge {
+  readonly name: LaminarBridge;
+  /**
+   * Laminar auto-instrumentations whose spans would duplicate this bridge's.
+   * Disabled when the bridge is installed and the user did not pass
+   * `instrumentModules`; a warning names them when the user did.
+   */
+  readonly conflictingInstrumentations: readonly InstrumentationKey[];
+  /**
+   * Nest Laminar spans under the source SDK's span that is active in the
+   * global OpenTelemetry context (turns on `inheritGlobalContext`). Only for
+   * SDKs built on OpenTelemetry; a network-level bridge sets false.
+   */
+  readonly inheritsGlobalContext: boolean;
+  /**
+   * Whether the bridge can hook the source SDK. Logs the reason when it
+   * can't; the bridge is then skipped.
+   */
+  isAvailable(): boolean;
+  /** Called once, after Laminar's tracing is set up. Must not throw. */
+  install(ctx: BridgeContext): void;
+  /** Called from `Laminar.shutdown()`. Must not throw. */
+  uninstall(): void;
+  /** Called from `Laminar.flush()`. Optional health check. */
+  onFlush?(): void;
+}
+
+/**
+ * Laminar auto-instrumentations of LLM providers and agent frameworks. Every
+ * bridge so far carries LLM spans from the source SDK, so they all conflict
+ * with these. Claude Agent SDK, OpenCode and TypeSafe are deliberately absent
+ * (no bridged SDK covers them, so nothing is recorded twice), as are the
+ * non-LLM ones (browsers, kernel, Temporal). Keep in step with
+ * lmnr-python's `LangfuseBridge.conflicting_instruments`.
+ */
+export const LLM_INSTRUMENTATIONS: readonly InstrumentationKey[] = [
+  "OpenAI",
+  "anthropic",
+  "cohere",
+  "google_genai",
+  "google_aiplatform",
+  "openrouter",
+  "langchain",
+  "openAIAgents",
+  "piDurable",
+];
