@@ -5,7 +5,7 @@ import {
 } from "@lmnr-ai/types";
 import { Page as PlaywrightPage } from "playwright";
 import { Page as PuppeteerPage } from "puppeteer";
-import { z } from "zod";
+import { toJSONSchema } from "zod/v4/core";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
 import { LaminarClient } from "..";
@@ -158,7 +158,7 @@ const zodKind = (schema: any): string | undefined => {
 // v3 on zod 3.x) go through zod-to-json-schema, which duck-types them.
 export const zodToJsonSchemaCompat = (schema: any): unknown =>
   schema?._zod
-    ? z.toJSONSchema(schema, { unrepresentable: "any" })
+    ? toJSONSchema(schema, { unrepresentable: "any" })
     : zodToJsonSchema(schema);
 
 export const prettyPrintZodSchema = (schema: any, indent = 2): string => {
