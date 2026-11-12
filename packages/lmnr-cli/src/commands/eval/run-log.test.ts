@@ -83,6 +83,34 @@ void describe("createRunLogShipper", () => {
     expect(sent).toEqual([[0, 1]]);
   });
 
+  void it("keeps unsent lines when a full queue sheds lines mid-send", async () => {
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const sent: number[] = [];
+    let write: (chunk: string) => void = () => undefined;
+    let first = true;
+    const shipper = createRunLogShipper(async (lines) => {
+      if (first) {
+        first = false;
+        // Fill the queue past its 20k cap while this batch is in flight.
+        write("y\n".repeat(20_000));
+      }
+      sent.push(...lines.map((l) => l.seq));
+      return true;
+    });
+    write = shipper.writer();
+    write("x\n".repeat(600));
+    await shipper.close();
+
+    // Batch 0-499 went out while the queue shed 0-599, and the "dropped"
+    // marker shed 600: what follows has no holes and ends with the marker.
+    expect(sent.slice(0, 500)).toEqual(
+      Array.from({ length: 500 }, (_, i) => i),
+    );
+    expect(sent.slice(500)).toEqual(
+      Array.from({ length: 20_000 }, (_, i) => i + 601),
+    );
+  });
+
   void it("stops for good when the server keeps no run logs", async () => {
     const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     const send = vi.fn(async () => false);

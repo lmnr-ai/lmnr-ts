@@ -111,7 +111,11 @@ export const createRunLogShipper = (
         dropped += batch.length;
       }
       failures = 0;
-      pending.splice(0, batch.length);
+      // By seq, not count: a full queue sheds its oldest lines while a batch
+      // is in flight, so the batch may no longer be the queue's prefix.
+      const last = batch[batch.length - 1].seq;
+      const sent = pending.findIndex((line) => line.seq > last);
+      pending.splice(0, sent === -1 ? pending.length : sent);
       if (!started && dropped === 0) {
         started = true;
         onStarted?.();
@@ -222,6 +226,7 @@ export const followRunLog = async (
     }
     if (page === null) return { kind: "unsupported" };
     from = page.next;
+    // Only the page holding the run's last row has it, so no lines are left.
     if (page.exitCode !== null) {
       return { kind: "exited", exitCode: page.exitCode };
     }
