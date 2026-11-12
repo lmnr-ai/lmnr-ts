@@ -36,6 +36,10 @@ import {
   _setPackageVersionForTests,
   getPackageVersion,
 } from "../src/opentelemetry-lib/instrumentation/shared/package-version";
+import {
+  resetInstrumentOptions,
+  setInstrumentOptions,
+} from "../src/opentelemetry-lib/tracing/instrument-options";
 
 // @langchain/anthropic depends on its own copy of the Anthropic SDK, and
 // that copy is the one that has to be instrumented
@@ -212,6 +216,7 @@ void describe("LangChain instrumentation", () => {
 
   void afterEach(() => {
     exporter.reset();
+    resetInstrumentOptions();
   });
 
   void after(async () => {
@@ -697,6 +702,57 @@ void describe("LangChain instrumentation", () => {
     const second = findSpan(spans, "execute_task second");
     assert.strictEqual(parentOf(second, spans), root);
     assert.strictEqual(parentOf(findSpan(spans, "in_node"), spans), second);
+  });
+
+  void it("records no LangGraph topology when recordGraph is off", async (t) => {
+    setInstrumentOptions({ langgraph: { recordGraph: false } });
+    const State = Annotation.Root({ value: Annotation<string> });
+    const graph = new StateGraph(State)
+      .addNode("first", (state) => ({ value: `${state.value}1` }))
+      .addEdge(START, "first")
+      .addEdge("first", END)
+      .compile();
+    const getGraph = t.mock.method(graph, "getGraph");
+
+    await graph.invoke(
+      { value: "" },
+      { configurable: { thread_id: "thread-1" } },
+    );
+
+    const spans = exporter.getFinishedSpans();
+    const root = findSpan(spans, "LangGraph.workflow");
+    assert.strictEqual(root.attributes["gen_ai.conversation.id"], "thread-1");
+    assert.ok(
+      spans.every(
+        (s) =>
+          s.attributes["lmnr.association.properties.langgraph.nodes"] ===
+            undefined &&
+          s.attributes["lmnr.association.properties.langgraph.edges"] ===
+            undefined,
+      ),
+    );
+    // The graph is not even read
+    assert.strictEqual(getGraph.mock.callCount(), 0);
+  });
+
+  void it("records langchain.metadata only when recordMetadata is on", async () => {
+    const chain = RunnableLambda.from((x: string) => `${x}!`).withConfig({
+      runName: "meta_chain",
+      metadata: { customer: "acme" },
+    });
+
+    await chain.invoke("hi");
+    let span = findSpan(exporter.getFinishedSpans(), "meta_chain.workflow");
+    assert.strictEqual(span.attributes["langchain.metadata"], undefined);
+
+    exporter.reset();
+    setInstrumentOptions({ langchain: { recordMetadata: true } });
+    await chain.invoke("hi");
+    span = findSpan(exporter.getFinishedSpans(), "meta_chain.workflow");
+    assert.deepStrictEqual(
+      JSON.parse(span.attributes["langchain.metadata"] as string),
+      { customer: "acme" },
+    );
   });
 
   void it("does not record graph state on chain spans", async () => {

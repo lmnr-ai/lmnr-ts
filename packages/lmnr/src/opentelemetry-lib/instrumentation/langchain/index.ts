@@ -5,6 +5,7 @@ import { isTracingSuppressed, suppressTracing } from "@opentelemetry/core";
 
 import { initializeLogger, toJson } from "../../../utils";
 import { LaminarContextManager } from "../../tracing/context";
+import { getInstrumentOption } from "../../tracing/instrument-options";
 import {
   InstrumentedFile,
   InstrumentedModule,
@@ -236,11 +237,14 @@ const graphTopology = (
 
 /**
  * Publish the graph topology for the graph's own run, which the handler
- * starts in the iterator's first step. Each iterator gets its own holder, so
+ * starts in the iterator's first step, unless `langgraph.recordGraph` is off. Each iterator gets its own holder, so
  * concurrent graph runs never read each other's topology.
  */
 const wrapPregelStreamIterator = (original: (...args: any[]) => any) =>
   function (this: any, input: any, options: any, ...rest: any[]) {
+    if (!getInstrumentOption("langgraph", "recordGraph")) {
+      return original.call(this, input, options, ...rest);
+    }
     let topology: Record<string, string> | undefined;
     try {
       topology = graphTopology(this, options);
