@@ -1,3 +1,5 @@
+import { hasOwn } from "@lmnr-ai/types";
+
 import { initializeLogger } from "../../utils";
 
 const logger = initializeLogger();
@@ -89,9 +91,6 @@ export const instrumentOptionEnvVar = (
 ): string =>
   `LMNR_${instrument}_${option.replace(/([A-Z])/g, "_$1")}`.toUpperCase();
 
-const has = (obj: object, key: string): boolean =>
-  Object.getOwnPropertyDescriptor(obj, key) !== undefined;
-
 /**
  * Merge the environment and the options passed to `Laminar.initialize` into
  * the values that were set explicitly. Defaults are not filled in, so the
@@ -127,7 +126,7 @@ export const resolveInstrumentOptions = (
   }
 
   for (const [instrument, given] of Object.entries(options ?? {})) {
-    if (!has(DEFAULTS, instrument)) {
+    if (!hasOwn(DEFAULTS, instrument)) {
       warn(`[Laminar] Ignoring instrumentOptions.${instrument}: unknown.`);
       continue;
     }
@@ -140,7 +139,7 @@ export const resolveInstrumentOptions = (
     }
     const known = DEFAULTS[instrument as Instrument];
     for (const [option, value] of Object.entries(given)) {
-      if (!has(known, option)) {
+      if (!hasOwn(known, option)) {
         warn(
           `[Laminar] Ignoring instrumentOptions.${instrument}.${option}: unknown.`,
         );
