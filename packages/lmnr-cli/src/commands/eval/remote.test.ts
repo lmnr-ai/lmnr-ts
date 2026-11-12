@@ -147,9 +147,10 @@ void describe("runSuites", () => {
     expect(await runSuites(root, ["a", "b"], {}, {}, IMAGES, jobs)).toEqual([
       "a",
     ]);
+    // The job keeps Harbor's name: the plugin names the evaluation after it.
     expect(configs.map((c) => [c.jobs_dir, c.job_name])).toEqual([
-      [jobs.dir, "a"],
-      [jobs.dir, "b"],
+      [path.join(jobs.dir, "a"), undefined],
+      [path.join(jobs.dir, "b"), undefined],
     ]);
     expect(ended).toEqual([
       ["a", path.join(jobs.dir, "a")],

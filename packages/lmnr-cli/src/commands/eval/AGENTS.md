@@ -17,8 +17,10 @@
     Streaming results back to the CLI is the follow-up.
   - **`eval orchestrate` uploads each suite's Harbor job** for Laminar's trial
     Log tab (`jobUploads` in `remote.ts`, `jobs.ts`): `runSuites` gets a
-    `JobOutput` that forces `jobs_dir` / `job_name` (`<tmp>/<suite>`), and
-    after each `harbor run` exits (passed or not) the trial dirs are packed with
+    `JobOutput` that forces `jobs_dir` to `<tmp>/<suite>` (never `job_name`:
+    the plugin names the evaluation after it, a timestamp by default), and
+    after each `harbor run` exits (passed or not) the one job dir in there
+    (`findJobDir`) has its trial dirs packed with
     `packFiles` and sent with `uploadJob` + `uploadJobIndex` (`LMNR_EVAL_UPLOAD_ID`,
     run key). Job-level files, `<trial>/artifacts` and `steps/*/artifacts` are
     left out; files over 50 MiB and anything past 256 MiB are skipped. A

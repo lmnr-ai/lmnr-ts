@@ -121,10 +121,13 @@ const runHarborSuite = async (run: HarborRun): Promise<number> => {
 
 /** Where each suite's Harbor job is written, and what happens to it after. */
 export interface JobOutput {
-  /** Suite `s` writes its job to `<dir>/<s>`, whatever its harbor.yaml says. */
+  /**
+   * Suite `s` writes its job under `<dir>/<s>`, whatever its harbor.yaml says.
+   * The job keeps its own name: the Laminar plugin names the evaluation after it.
+   */
   dir: string;
   /** Called once the suite's `harbor run` exits, whether it passed or not. */
-  onSuiteEnd: (suite: string, jobDir: string) => Promise<void>;
+  onSuiteEnd: (suite: string, jobsDir: string) => Promise<void>;
 }
 
 /**
@@ -148,10 +151,7 @@ export const runSuites = async (
       overrides,
       images !== undefined,
     );
-    if (jobs) {
-      config.jobs_dir = jobs.dir;
-      config.job_name = suite;
-    }
+    if (jobs) config.jobs_dir = path.join(jobs.dir, suite);
     logger.info(
       `Running suite ${suite} ${images ? "in Laminar sandboxes" : "on local Docker"}`,
     );

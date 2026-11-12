@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -13,7 +12,7 @@ import { imagePusher } from "./docker";
 import { API_KEY_VAR, harborEnv } from "./env";
 import { assertSuitesPassed, type JobOutput, runSuites } from "./harbor";
 import { ensureRemoteImages, type RemoteImages } from "./images";
-import { packJobDir } from "./jobs";
+import { findJobDir, packJobDir } from "./jobs";
 import { packEvalsDir } from "./pack";
 import type { RunOverrides } from "./suites";
 
@@ -140,9 +139,9 @@ const jobUploads = async (
   });
   return {
     dir: await mkdtemp(path.join(tmpdir(), "lmnr-jobs-")),
-    onSuiteEnd: async (suite, jobDir) => {
-      // Harbor exits before writing a job when the config itself is invalid.
-      if (!existsSync(jobDir)) return;
+    onSuiteEnd: async (suite, jobsDir) => {
+      const jobDir = await findJobDir(jobsDir);
+      if (!jobDir) return;
       try {
         const { archive, index, skipped } = await packJobDir(jobDir);
         if (skipped.length > 0) {

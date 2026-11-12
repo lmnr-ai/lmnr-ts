@@ -19,6 +19,25 @@ export const MAX_JOB_BYTES = 256 * 1024 * 1024;
  */
 const ARTIFACTS_DIR = /^[^/]+\/(steps\/[^/]+\/)?artifacts$/;
 
+/**
+ * The job Harbor wrote into a fresh `jobs_dir`, named as Harbor names it (a
+ * timestamp unless harbor.yaml sets `job_name`). `undefined` when Harbor exited
+ * before writing one, e.g. on an invalid config.
+ */
+export const findJobDir = async (
+  jobsDir: string,
+): Promise<string | undefined> => {
+  const entries = await readdir(jobsDir, { withFileTypes: true }).catch(
+    () => [],
+  );
+  const jobs = entries
+    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+    .map((e) => e.name)
+    .sort();
+  const latest = jobs[jobs.length - 1];
+  return latest === undefined ? undefined : path.join(jobsDir, latest);
+};
+
 interface JobArchive {
   archive: Buffer;
   index: IndexedFile[];
