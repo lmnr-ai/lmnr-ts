@@ -16,7 +16,7 @@ const isExcludedFile = (name: string) =>
   name === ".env" || name.startsWith(".env.") || name === ".DS_Store";
 
 /** An archive entry plus the size the index records. */
-interface PackedFile extends FileSource {
+export interface PackedFile extends FileSource {
   size: number;
 }
 
@@ -33,7 +33,7 @@ interface WalkResult {
 const windowsMode = (name: string) => (name.endsWith(".sh") ? 0o755 : 0o644);
 
 /** Fixed ownership and mtime: the upload carries no local user names or times. */
-const fileEntry = (
+export const fileEntry = (
   source: string,
   target: string,
   size: number,
@@ -105,7 +105,7 @@ const padded = (size: number) => Math.ceil(size / 512) * 512;
  * directory compresses within a few percent of a single gzip stream, whose
  * 32 KiB window gains little from distant files anyway.
  */
-const packFiles = async (
+export const packFiles = async (
   files: PackedFile[],
 ): Promise<{ archive: Buffer; index: IndexedFile[] }> => {
   const members: Buffer[] = [];

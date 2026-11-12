@@ -15,8 +15,24 @@
     orchestrator sandbox runs `npx lmnr-cli@<cliVersion> eval orchestrate`
     (hidden command), so `RunSpec` only has to stay readable by the SAME version.
     Streaming results back to the CLI is the follow-up.
+  - **`eval orchestrate` uploads each suite's Harbor job** for Laminar's trial
+    Log tab (`jobUploads` in `remote.ts`, `jobs.ts`): `runSuites` gets a
+    `JobOutput` that forces `jobs_dir` to `<tmp>/<suite>` (never `job_name`:
+    the plugin names the evaluation after it, a timestamp by default), and
+    after each `harbor run` exits (passed or not) the one job dir in there
+    (`findJobDir`) has its trial dirs packed with
+    `packFiles` and sent with `uploadJob` + `uploadJobIndex` (`LMNR_EVAL_UPLOAD_ID`,
+    run key). Job-level files, `<trial>/artifacts` and `steps/*/artifacts` are
+    left out; files over 50 MiB and anything past 256 MiB are skipped. A
+    failure only warns. The sandbox (and the job) is deleted after the run, so
+    this is the only copy.
+  - **No extra secret pass:** Harbor scrubs each trial dir before `harbor run`
+    exits, but only values from the agent's / verifier's env (not the task's
+    `[environment] env`, resolved inside each environment backend). Uploads
+    carry that gap as is; fixing it upstream is LAM-2534.
 - Modules: `index.ts` (`eval run` flow, reporting), `remote.ts` (`RunSpec`,
-  `startRemoteRun`, `eval orchestrate`), `env.ts` (`--env`, `${VAR}`
+  `startRemoteRun`, `eval orchestrate`), `jobs.ts` (packing a finished Harbor
+  job), `env.ts` (`--env`, `${VAR}`
   resolution, the Harbor process env), `suites.ts` (suite discovery,
   `SKIPPED_DIRS`, the run's tasks (`findTaskTomls`), `buildJobConfig`), `harbor.ts` (uvx/Harbor
   only), `images.ts` (`lmnr.yaml`, what tasks start from, `ensureRemoteImages`),

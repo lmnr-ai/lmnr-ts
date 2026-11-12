@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -126,6 +126,36 @@ void describe("runSuites", () => {
     seen.length = 0;
     expect(await runSuites(root, ["b"], {}, {})).toEqual([]);
     expect(seen).toEqual([{ cwd: path.join(root, "b"), images: undefined }]);
+  });
+
+  void it("writes each suite's job where onSuiteEnd reads it, failed or not", async () => {
+    await writeEvals();
+    const configs: Record<string, unknown>[] = [];
+    vi.mocked(runCommand).mockImplementation(async (_command, args) => {
+      const config = args[args.indexOf("-c") + 1];
+      configs.push(JSON.parse(await readFile(config, "utf8")));
+      return configs.length === 1 ? 1 : 0;
+    });
+    const ended: string[][] = [];
+    const jobs = {
+      dir: path.join(root, "jobs-out"),
+      onSuiteEnd: async (suite: string, jobDir: string) => {
+        ended.push([suite, jobDir]);
+      },
+    };
+
+    expect(await runSuites(root, ["a", "b"], {}, {}, IMAGES, jobs)).toEqual([
+      "a",
+    ]);
+    // The job keeps Harbor's name: the plugin names the evaluation after it.
+    expect(configs.map((c) => [c.jobs_dir, c.job_name])).toEqual([
+      [path.join(jobs.dir, "a"), undefined],
+      [path.join(jobs.dir, "b"), undefined],
+    ]);
+    expect(ended).toEqual([
+      ["a", path.join(jobs.dir, "a")],
+      ["b", path.join(jobs.dir, "b")],
+    ]);
   });
 });
 

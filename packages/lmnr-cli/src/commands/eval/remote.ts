@@ -1,13 +1,18 @@
-import type { LaminarClient } from "@lmnr-ai/client";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+import { LaminarClient } from "@lmnr-ai/client";
 import { errorMessage } from "@lmnr-ai/types";
 
 import { version } from "../../../package.json";
 import { archiveTooLarge, missingEnv } from "../../errors";
 import { initializeLogger } from "../../utils/logger";
 import { imagePusher } from "./docker";
-import { harborEnv } from "./env";
-import { assertSuitesPassed, runSuites } from "./harbor";
+import { API_KEY_VAR, harborEnv } from "./env";
+import { assertSuitesPassed, type JobOutput, runSuites } from "./harbor";
 import { ensureRemoteImages, type RemoteImages } from "./images";
+import { findJobDir, packJobDir } from "./jobs";
 import { packEvalsDir } from "./pack";
 import type { RunOverrides } from "./suites";
 
@@ -114,18 +119,67 @@ const readRunSpec = (): RunSpec => {
 };
 
 /**
+ * Each suite's Harbor job goes to Laminar once the suite ends, for the trial
+ * log view: the sandbox, and the job dir with it, is deleted after the run.
+ * A failed upload only warns.
+ */
+const jobUploads = async (
+  env: Record<string, string>,
+): Promise<JobOutput | undefined> => {
+  const uploadId = process.env.LMNR_EVAL_UPLOAD_ID;
+  if (!uploadId) {
+    logger.warn(
+      "LMNR_EVAL_UPLOAD_ID is not set; trial logs won't be uploaded.",
+    );
+    return undefined;
+  }
+  const client = new LaminarClient({
+    baseUrl: env.LMNR_BASE_URL,
+    auth: { type: "apiKey", key: env[API_KEY_VAR] },
+  });
+  return {
+    dir: await mkdtemp(path.join(tmpdir(), "lmnr-jobs-")),
+    onSuiteEnd: async (suite, jobsDir) => {
+      const jobDir = await findJobDir(jobsDir);
+      if (!jobDir) return;
+      try {
+        const { archive, index, skipped } = await packJobDir(jobDir);
+        if (skipped.length > 0) {
+          logger.warn(
+            `Not uploading ${skipped.length} large trial file(s) of suite ` +
+              `${suite}: ${skipped.slice(0, 5).join(", ")}` +
+              (skipped.length > 5 ? ", ..." : ""),
+          );
+        }
+        await client.hostedEvals.uploadJob(uploadId, suite, archive);
+        await client.hostedEvals.uploadJobIndex(uploadId, suite, {
+          files: index,
+        });
+      } catch (error) {
+        logger.warn(
+          `Could not upload the trial logs of suite ${suite}: ` +
+            errorMessage(error),
+        );
+      }
+    },
+  };
+};
+
+/**
  * `lmnr-cli eval orchestrate` (hidden): the remote run's entry point inside
  * its orchestrator sandbox. The evals folder is the cwd; the spec, project key
  * and API URL come from the env the app-server set.
  */
 export const handleEvalOrchestrate = async (): Promise<void> => {
   const spec = readRunSpec();
+  const env = await harborEnv(spec.env, {});
   const failed = await runSuites(
     process.cwd(),
     spec.suites,
     spec.overrides,
-    await harborEnv(spec.env, {}),
+    env,
     spec,
+    await jobUploads(env),
   );
   assertSuitesPassed(failed);
 };
