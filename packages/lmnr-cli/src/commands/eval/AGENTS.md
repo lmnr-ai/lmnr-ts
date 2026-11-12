@@ -24,16 +24,13 @@
     left out; files over 50 MiB and anything past 256 MiB are skipped. A
     failure only warns. The sandbox (and the job) is deleted after the run, so
     this is the only copy.
-  - **Scrub before packing:** Harbor redacts secrets only from the agent's and
-    verifier's env, and only AFTER the plugin's trial-end hook. The CLI packs
-    after `harbor run` exits, and first replaces (in place, byte-wise, text
-    files only) the values of every run env var with a sensitive name
-    (`secretValues`, Harbor's `is_sensitive_env_key` rule minus flag values),
-    which also covers the run key and secrets used in environment/task
-    sections.
+  - **No extra secret pass:** Harbor scrubs each trial dir before `harbor run`
+    exits, but only values from the agent's / verifier's env (not the task's
+    `[environment] env`, resolved inside each environment backend). Uploads
+    carry that gap as is; fixing it upstream is LAM-2534.
 - Modules: `index.ts` (`eval run` flow, reporting), `remote.ts` (`RunSpec`,
-  `startRemoteRun`, `eval orchestrate`), `jobs.ts` (packing and scrubbing a
-  finished Harbor job), `env.ts` (`--env`, `${VAR}`
+  `startRemoteRun`, `eval orchestrate`), `jobs.ts` (packing a finished Harbor
+  job), `env.ts` (`--env`, `${VAR}`
   resolution, the Harbor process env), `suites.ts` (suite discovery,
   `SKIPPED_DIRS`, the run's tasks (`findTaskTomls`), `buildJobConfig`), `harbor.ts` (uvx/Harbor
   only), `images.ts` (`lmnr.yaml`, what tasks start from, `ensureRemoteImages`),

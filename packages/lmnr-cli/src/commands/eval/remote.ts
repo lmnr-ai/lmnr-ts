@@ -13,7 +13,7 @@ import { imagePusher } from "./docker";
 import { API_KEY_VAR, harborEnv } from "./env";
 import { assertSuitesPassed, type JobOutput, runSuites } from "./harbor";
 import { ensureRemoteImages, type RemoteImages } from "./images";
-import { packJobDir, secretValues } from "./jobs";
+import { packJobDir } from "./jobs";
 import { packEvalsDir } from "./pack";
 import type { RunOverrides } from "./suites";
 
@@ -138,14 +138,13 @@ const jobUploads = async (
     baseUrl: env.LMNR_BASE_URL,
     auth: { type: "apiKey", key: env[API_KEY_VAR] },
   });
-  const secrets = secretValues(env);
   return {
     dir: await mkdtemp(path.join(tmpdir(), "lmnr-jobs-")),
     onSuiteEnd: async (suite, jobDir) => {
       // Harbor exits before writing a job when the config itself is invalid.
       if (!existsSync(jobDir)) return;
       try {
-        const { archive, index, skipped } = await packJobDir(jobDir, secrets);
+        const { archive, index, skipped } = await packJobDir(jobDir);
         if (skipped.length > 0) {
           logger.warn(
             `Not uploading ${skipped.length} large trial file(s) of suite ` +
