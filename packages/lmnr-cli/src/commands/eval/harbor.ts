@@ -119,6 +119,14 @@ const runHarborSuite = async (run: HarborRun): Promise<number> => {
   }
 };
 
+/** Where each suite's Harbor job is written, and what happens to it after. */
+export interface JobOutput {
+  /** Suite `s` writes its job to `<dir>/<s>`, whatever its harbor.yaml says. */
+  dir: string;
+  /** Called once the suite's `harbor run` exits, whether it passed or not. */
+  onSuiteEnd: (suite: string, jobDir: string) => Promise<void>;
+}
+
 /**
  * Run each suite with Harbor in turn. With `images`, trials run in Laminar
  * sandboxes; without, on local Docker. Returns the suites that failed.
@@ -129,6 +137,7 @@ export const runSuites = async (
   overrides: RunOverrides,
   env: Record<string, string>,
   images?: RemoteImages,
+  jobs?: JobOutput,
 ): Promise<string[]> => {
   const grpcPort = (await findEnvKey(process.cwd(), "LMNR_GRPC_PORT"))?.value;
   const failed: string[] = [];
@@ -139,6 +148,10 @@ export const runSuites = async (
       overrides,
       images !== undefined,
     );
+    if (jobs) {
+      config.jobs_dir = jobs.dir;
+      config.job_name = suite;
+    }
     logger.info(
       `Running suite ${suite} ${images ? "in Laminar sandboxes" : "on local Docker"}`,
     );
@@ -154,6 +167,7 @@ export const runSuites = async (
       logger.error(`harbor run failed for suite ${suite} (exit ${code})`);
       failed.push(suite);
     }
+    await jobs?.onSuiteEnd(suite, path.join(jobs.dir, suite));
   }
   return failed;
 };

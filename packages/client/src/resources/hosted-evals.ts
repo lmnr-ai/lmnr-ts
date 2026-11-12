@@ -20,7 +20,8 @@ export interface StartHostedEvalRunOptions {
  *   locally (layers named by their `diff_id`); trials start from it.
  * - Remote runs: `upload` the `.tar.gz` of the evals folder and `uploadIndex`
  *   its file index, then `startRun` to orchestrate it in a Laminar sandbox. Results land in the project as
- *   regular evaluations; v0 returns no run status.
+ *   regular evaluations; v0 returns no run status. The orchestrator sends each
+ *   suite's Harbor job output with `uploadJob` / `uploadJobIndex`.
  */
 export class HostedEvalsResource extends BaseResource {
   constructor(baseHttpUrl: string, auth: LaminarAuth) {
@@ -109,6 +110,42 @@ export class HostedEvalsResource extends BaseResource {
     }
   }
 
+  /**
+   * Upload a remote run's Harbor job output for one suite (its trial dirs as
+   * a `.tar.gz`, packed like {@link upload}'s archive), for Laminar's trial log
+   * view. Called from the run's orchestrator; the server caps it at 256 MiB.
+   */
+  public async uploadJob(
+    uploadId: string,
+    suite: string,
+    archive: Uint8Array,
+  ): Promise<void> {
+    const response = await fetch(this.jobUrl(uploadId, suite, ""), {
+      method: "PUT",
+      headers: { ...this.headers(), "Content-Type": "application/gzip" },
+      body: archive as Uint8Array<ArrayBuffer>,
+    });
+    if (!response.ok) {
+      await this.handleErrorMessage(response);
+    }
+  }
+
+  /** The index of an archive sent with {@link uploadJob}; upload it after the archive. */
+  public async uploadJobIndex(
+    uploadId: string,
+    suite: string,
+    index: object,
+  ): Promise<void> {
+    const response = await fetch(this.jobUrl(uploadId, suite, "/index"), {
+      method: "PUT",
+      headers: this.headers(),
+      body: JSON.stringify(index),
+    });
+    if (!response.ok) {
+      await this.handleErrorMessage(response);
+    }
+  }
+
   /** Start a remote run. Returns once its orchestrator sandbox has started. */
   public async startRun(
     options: StartHostedEvalRunOptions,
@@ -126,5 +163,10 @@ export class HostedEvalsResource extends BaseResource {
 
   private url(path: string): string {
     return `${this.baseHttpUrl}${this.apiPrefix}/hosted-evals${path}`;
+  }
+
+  private jobUrl(uploadId: string, suite: string, suffix: string): string {
+    const query = new URLSearchParams({ suite });
+    return this.url(`/uploads/${uploadId}/jobs${suffix}?${query}`);
   }
 }

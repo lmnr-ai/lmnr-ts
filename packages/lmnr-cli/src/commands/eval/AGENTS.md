@@ -15,8 +15,25 @@
     orchestrator sandbox runs `npx lmnr-cli@<cliVersion> eval orchestrate`
     (hidden command), so `RunSpec` only has to stay readable by the SAME version.
     Streaming results back to the CLI is the follow-up.
+  - **`eval orchestrate` uploads each suite's Harbor job** for Laminar's trial
+    Log tab (`jobUploads` in `remote.ts`, `jobs.ts`): `runSuites` gets a
+    `JobOutput` that forces `jobs_dir` / `job_name` (`<tmp>/<suite>`), and
+    after each `harbor run` exits (passed or not) the trial dirs are packed with
+    `packFiles` and sent with `uploadJob` + `uploadJobIndex` (`LMNR_EVAL_UPLOAD_ID`,
+    run key). Job-level files, `<trial>/artifacts` and `steps/*/artifacts` are
+    left out; files over 50 MiB and anything past 256 MiB are skipped. A
+    failure only warns. The sandbox (and the job) is deleted after the run, so
+    this is the only copy.
+  - **Scrub before packing:** Harbor redacts secrets only from the agent's and
+    verifier's env, and only AFTER the plugin's trial-end hook. The CLI packs
+    after `harbor run` exits, and first replaces (in place, byte-wise, text
+    files only) the values of every run env var with a sensitive name
+    (`secretValues`, Harbor's `is_sensitive_env_key` rule minus flag values),
+    which also covers the run key and secrets used in environment/task
+    sections.
 - Modules: `index.ts` (`eval run` flow, reporting), `remote.ts` (`RunSpec`,
-  `startRemoteRun`, `eval orchestrate`), `env.ts` (`--env`, `${VAR}`
+  `startRemoteRun`, `eval orchestrate`), `jobs.ts` (packing and scrubbing a
+  finished Harbor job), `env.ts` (`--env`, `${VAR}`
   resolution, the Harbor process env), `suites.ts` (suite discovery,
   `SKIPPED_DIRS`, the run's tasks (`findTaskTomls`), `buildJobConfig`), `harbor.ts` (uvx/Harbor
   only), `images.ts` (`lmnr.yaml`, what tasks start from, `ensureRemoteImages`),
