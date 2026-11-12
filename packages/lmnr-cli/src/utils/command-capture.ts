@@ -39,8 +39,29 @@ export const recordStdout = (chunk: string): void => {
   stdoutBuf = append(stdoutBuf, chunk);
 };
 
-export const recordStderr = (chunk: string): void => {
+const stderrListeners = new Set<(chunk: string) => void>();
+
+/**
+ * Also hand every stderr diagnostic (logger records, `emitErr`) to `listener`,
+ * uncapped and with warnings and errors labeled, until the returned function
+ * is called.
+ */
+export const onStderr = (listener: (chunk: string) => void): (() => void) => {
+  stderrListeners.add(listener);
+  return () => stderrListeners.delete(listener);
+};
+
+export const recordStderr = (chunk: string, label = ""): void => {
   stderrBuf = append(stderrBuf, chunk);
+  if (stderrListeners.size === 0) return;
+  const text = label + stripAnsi(chunk);
+  for (const listener of stderrListeners) listener(text);
+};
+
+const levelLabel = (level: unknown): string => {
+  if (typeof level !== "number") return "";
+  if (level >= 50) return "ERROR: ";
+  return level >= 40 ? "WARN: " : "";
 };
 
 // Null when empty (so the field is omitted); otherwise the text, truncated to
@@ -71,8 +92,11 @@ export const createStderrCaptureStream = (): Writable =>
     write(chunk: Buffer | string, _enc, cb) {
       const line = chunk.toString();
       try {
-        const record = JSON.parse(line) as { msg?: unknown };
-        recordStderr(typeof record.msg === "string" ? `${record.msg}\n` : line);
+        const record = JSON.parse(line) as { msg?: unknown; level?: unknown };
+        recordStderr(
+          typeof record.msg === "string" ? `${record.msg}\n` : line,
+          levelLabel(record.level),
+        );
       } catch {
         recordStderr(line);
       }

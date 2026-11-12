@@ -76,6 +76,8 @@ class LaminarEnvironment(BaseEnvironment):
         self._headers = {"Authorization": f"Bearer {api_key}"}
         self._client: httpx.AsyncClient | None = None
         self._sandbox_id: str | None = None
+        # The trial's name: `<trial>__env`, or `<trial>__verifier__<key>`.
+        self._trial = self.session_id.split("__")[0]
 
     @staticmethod
     def type() -> str:
@@ -124,6 +126,8 @@ class LaminarEnvironment(BaseEnvironment):
                 if status != 429 and (status < 500 or once):
                     return response
                 last_error = LaminarEnvironmentError(_error_message(response))
+                if status == 429:
+                    self.logger.info("%s: %s; retrying", self._trial, last_error)
             await asyncio.sleep(min(2**attempt, 10))
         raise LaminarEnvironmentError(f"{method} {path} failed: {last_error}")
 
@@ -174,6 +178,7 @@ class LaminarEnvironment(BaseEnvironment):
         self._sandbox_id = created["sandboxId"]
         self.logger.debug("Created Laminar sandbox %s", self._sandbox_id)
         await self._wait_until_started()
+        self.logger.info("%s: sandbox %s started", self._trial, self._sandbox_id)
 
         workdir = self.task_env_config.workdir
         if workdir:
@@ -189,10 +194,13 @@ class LaminarEnvironment(BaseEnvironment):
         created on first use; concurrent trials wait on the same one."""
         timeout = self._build_timeout()
         deadline = time.monotonic() + timeout
+        waiting = False
         while True:
             status = await self._json("POST", "/images/snapshots", json=body)
             state = status.get("state")
             if state == "ready":
+                if waiting:
+                    self.logger.info("%s: image ready", self._trial)
                 return
             if state == "failed":
                 raise SandboxBuildFailedError(
@@ -202,6 +210,11 @@ class LaminarEnvironment(BaseEnvironment):
             if time.monotonic() > deadline:
                 raise LaminarEnvironmentError(
                     f"The image for '{self.environment_name}' wasn't ready within {timeout:.0f}s"
+                )
+            if not waiting:
+                waiting = True
+                self.logger.info(
+                    "%s: preparing its image (once per image and size)", self._trial
                 )
             await asyncio.sleep(2)
 

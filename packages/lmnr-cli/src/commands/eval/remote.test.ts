@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -12,6 +13,20 @@ import { runCommand } from "./run-command";
 
 vi.mock("./docker", () => ({ imagePusher: vi.fn() }));
 vi.mock("./run-command", () => ({ runCommand: vi.fn() }));
+
+const appended = vi.hoisted(() => [] as string[]);
+vi.mock("@lmnr-ai/client", () => ({
+  LaminarClient: class {
+    hostedEvals = {
+      appendRunLogs: async (_id: string, lines: { text: string }[]) => {
+        appended.push(...lines.map((l) => l.text));
+        return true;
+      },
+      uploadJob: async () => undefined,
+      uploadJobIndex: async () => undefined,
+    };
+  },
+}));
 
 let root: string;
 
@@ -56,7 +71,15 @@ beforeEach(async () => {
 afterEach(async () => {
   vi.mocked(runCommand).mockReset();
   vi.mocked(imagePusher).mockReset();
-  delete process.env.LMNR_EVAL_RUN;
+  appended.length = 0;
+  for (const key of [
+    "LMNR_EVAL_RUN",
+    "LMNR_EVAL_UPLOAD_ID",
+    "LMNR_RUN_LOG_MARKER",
+    "LMNR_PROJECT_API_KEY",
+  ]) {
+    delete process.env[key];
+  }
   await rm(root, { recursive: true, force: true });
 });
 
@@ -144,9 +167,9 @@ void describe("runSuites", () => {
       },
     };
 
-    expect(await runSuites(root, ["a", "b"], {}, {}, IMAGES, jobs)).toEqual([
-      "a",
-    ]);
+    expect(await runSuites(root, ["a", "b"], {}, {}, IMAGES, { jobs })).toEqual(
+      ["a"],
+    );
     // The job keeps Harbor's name: the plugin names the evaluation after it.
     expect(configs.map((c) => [c.jobs_dir, c.job_name])).toEqual([
       [path.join(jobs.dir, "a"), undefined],
@@ -175,5 +198,36 @@ void describe("handleEvalOrchestrate", () => {
       message: expect.stringMatching(/not a run spec/),
     });
     expect(runCommand).not.toHaveBeenCalled();
+  });
+
+  void it("sends Harbor's output and the failure to the run's log", async () => {
+    await writeEvals();
+    const marker = path.join(root, "log-started");
+    process.env.LMNR_EVAL_RUN = JSON.stringify({
+      suites: ["b"],
+      overrides: {},
+      env: {},
+      images: {},
+      dockerfiles: { b: {} },
+    });
+    process.env.LMNR_EVAL_UPLOAD_ID = "up-1";
+    process.env.LMNR_RUN_LOG_MARKER = marker;
+    process.env.LMNR_PROJECT_API_KEY = "run-key";
+    vi.mocked(runCommand).mockImplementation(async (_command, _args, opts) => {
+      opts?.onOutput?.("trial 1/1 done\npartial", "stdout");
+      return 1;
+    });
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const cwd = vi.spyOn(process, "cwd").mockReturnValue(root);
+
+    await expect(handleEvalOrchestrate()).rejects.toMatchObject({
+      code: "harbor_failed",
+    });
+    cwd.mockRestore();
+
+    expect(appended).toContain("trial 1/1 done");
+    expect(appended).toContain("partial");
+    expect(appended.some((t) => t.startsWith("ERROR: "))).toBe(true);
+    expect(existsSync(marker)).toBe(true);
   });
 });

@@ -26,7 +26,7 @@ import {
   loadImageDefs,
   localImageDefs,
 } from "./images";
-import { parsePositiveInt } from "./index";
+import { assertRemotePassed, parsePositiveInt } from "./index";
 import { packEvalsDir } from "./pack";
 import {
   buildJobConfig,
@@ -704,5 +704,28 @@ void describe("parsePositiveInt", () => {
     for (const bad of ["0", "-1", "1.5", "abc", ""]) {
       expect(() => parsePositiveInt(bad)).toThrow(/positive integer/);
     }
+  });
+});
+
+void describe("assertRemotePassed", () => {
+  void it("maps how a remote run ended to the CLI's exit codes", () => {
+    expect(() =>
+      assertRemotePassed({ kind: "exited", exitCode: 0 }),
+    ).not.toThrow();
+    expect(() => assertRemotePassed({ kind: "unsupported" })).not.toThrow();
+    expect(() => assertRemotePassed({ kind: "exited", exitCode: 18 })).toThrow(
+      expect.objectContaining({ code: "harbor_failed", exitCode: 18 }),
+    );
+    expect(() => assertRemotePassed({ kind: "exited", exitCode: 1 })).toThrow(
+      expect.objectContaining({ code: "remote_run_failed", exitCode: 21 }),
+    );
+    expect(() =>
+      assertRemotePassed({ kind: "lost", state: "error", reason: "OOM" }),
+    ).toThrow(
+      expect.objectContaining({
+        code: "remote_run_failed",
+        message: expect.stringMatching(/sandbox is error \(OOM\)/),
+      }),
+    );
   });
 });

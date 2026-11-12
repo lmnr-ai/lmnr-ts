@@ -6,15 +6,33 @@
   suite dir so relative paths and custom agent imports resolve the same way
   everywhere. Harbor's stdout goes to OUR stderr; stdout is data only.
   - default: trials on local Docker; `lmnr.yaml` images are `docker build`-ed first.
-  - `--remote`: runs in Laminar sandboxes and the CLI exits once the run
-    starts. Packs the folder (`pack.ts`) and checks the 1 GiB
+  - `--remote`: runs in Laminar sandboxes and prints the run's log until it
+    ends. Packs the folder (`pack.ts`) and checks the 1 GiB
     cap BEFORE pushing images, then uploads it, `PUT
     /v1[/cli]/hosted-evals/uploads/{id}/index {files}` (a failure only
     warns: the index is just for Laminar's file view), and `POST
     /v1[/cli]/hosted-evals/runs {uploadId, cliVersion, spec}`. The server's
     orchestrator sandbox runs `npx lmnr-cli@<cliVersion> eval orchestrate`
     (hidden command), so `RunSpec` only has to stay readable by the SAME version.
-    Streaming results back to the CLI is the follow-up.
+  - **The run's log** (`run-log.ts`; lmnr `docs/internal/hosted-evals.md`,
+    "Run log"): `eval orchestrate` ships every line it prints
+    (`createRunLogShipper`): logger records via `onStderr`
+    (`utils/command-capture.ts`; warnings / errors get a `WARN: ` / `ERROR: `
+    label there) and Harbor's output via `runSuites`' `onOutput`, which makes
+    `runCommand` pipe instead of inherit (Rich doesn't animate when piped
+    anyway). Each source (logger, Harbor stdout, Harbor stderr) has its own
+    `writer()`, so one's unfinished line can't swallow another's. Lines are
+    numbered from 0, ANSI-stripped, cut at 16 Ki chars, and
+    sent with `appendRunLogs` about once a second, one batch in flight, so the
+    server stores them in order. A failing batch is retried (dropped after 5
+    tries, with a marker line); a 404 turns shipping off. The first stored
+    batch creates `$LMNR_RUN_LOG_MARKER`, which tells the sandbox's shell
+    not to send its own output tail. A thrown error is written to the log
+    before the rethrow: `runWithEnvelope` `process.exit`s right after logging
+    it, so a flush there would never run. `followRunLog` (`eval run --remote`)
+    polls `getRunLogs` every 2 s, checks `getSandbox` every 30 s, and returns
+    `exited` / `lost` / `unsupported`; `assertRemotePassed` maps those to exit
+    codes. Ctrl-C stops following (exit 130); the run goes on.
   - **`eval orchestrate` uploads each suite's Harbor job** for Laminar's trial
     Log tab (`jobUploads` in `remote.ts`, `jobs.ts`): `runSuites` gets a
     `JobOutput` that forces `jobs_dir` to `<tmp>/<suite>` (never `job_name`:
@@ -31,7 +49,8 @@
     `[environment] env`, resolved inside each environment backend). Uploads
     carry that gap as is; fixing it upstream is LAM-2534.
 - Modules: `index.ts` (`eval run` flow, reporting), `remote.ts` (`RunSpec`,
-  `startRemoteRun`, `eval orchestrate`), `jobs.ts` (packing a finished Harbor
+  `startRemoteRun`, `eval orchestrate`), `run-log.ts` (the run's log: shipper
+  and follower), `jobs.ts` (packing a finished Harbor
   job), `env.ts` (`--env`, `${VAR}`
   resolution, the Harbor process env), `suites.ts` (suite discovery,
   `SKIPPED_DIRS`, the run's tasks (`findTaskTomls`), `buildJobConfig`), `harbor.ts` (uvx/Harbor
@@ -49,7 +68,10 @@
   proxies to Daytona (lmnr `docs/internal/hosted-evals.md`). Sandbox `state` is
   `pending | started | error | destroyed`; snapshot state is `ready | pending
   | failed` (+`errorReason`), and only a failed snapshot raises Harbor's
-  `SandboxBuildFailedError`. Requests retry transport errors, 429s and 5xx,
+  `SandboxBuildFailedError`. It logs a few INFO lines per trial, prefixed
+  with the trial name (`session_id` up to `__`): image preparing / ready,
+  sandbox started, 429 retries. Harbor's console handler shows INFO, so they
+  reach the run's log. Requests retry transport errors, 429s and 5xx,
   except the two with side effects (`POST /sandboxes`, `POST .../commands`,
   `once=True`): those retry only when the request was never sent or got a 429,
   so a timeout can't create a second sandbox or run a command twice. The
@@ -126,7 +148,9 @@
   17 `missing_tool`, 18 `harbor_failed` (Harbor runs only), 19 `missing_env`
   (also a missing or malformed `LMNR_EVAL_RUN` in `eval orchestrate`), 20
   `docker_failed` (build / pull / save, unreadable `docker save` output, a
-  non-amd64 image, zstd layers). Bad `--env` flags are commander
+  non-amd64 image, zstd layers), 21 `remote_run_failed` (a `--remote` run's
+  orchestrator exited with anything but 0 or 18, or its sandbox was lost; 18
+  from it stays `harbor_failed`). Bad `--env` flags are commander
   `InvalidArgumentError`s.
 - **Secrets are Harbor `${VAR}` placeholders**, not flags: `findTemplateVars`
   scans harbor.yaml + the run's task.toml files (`findTaskTomls`, so a task
