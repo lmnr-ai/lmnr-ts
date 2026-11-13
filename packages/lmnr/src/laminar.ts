@@ -69,6 +69,11 @@ import {
 } from "./opentelemetry-lib/tracing/attributes";
 import type { SpanProcessorCompat } from "./opentelemetry-lib/tracing/compat";
 import { LaminarContextManager } from "./opentelemetry-lib/tracing/context";
+import {
+  type InstrumentOptions,
+  resetInstrumentOptions,
+  setInstrumentOptions,
+} from "./opentelemetry-lib/tracing/instrument-options";
 import { LaminarSpan } from "./opentelemetry-lib/tracing/span";
 import {
   deserializeLaminarSpanContext,
@@ -93,6 +98,7 @@ export interface LaminarInitializeProps {
   httpPort?: number;
   grpcPort?: number;
   instrumentModules?: InitializeOptions["instrumentModules"];
+  instrumentOptions?: InstrumentOptions;
   disableBatch?: boolean;
   traceExportTimeoutMillis?: number;
   logLevel?: "debug" | "info" | "warn" | "error";
@@ -164,6 +170,11 @@ export class Laminar {
    * LLM calls (OpenAI, Anthropic, etc), Langchain, VectorDB calls (Pinecone, Qdrant, etc).
    * Pass an empty object {} to disable any kind of automatic instrumentation.
    * If you only want to auto-instrument specific modules, then pass them in the object.
+   * @param {InstrumentOptions} props.instrumentOptions - Options for individual
+   * instrumentations, keyed by instrumentation name, e.g.
+   * `{ langchain: { recordMetadata: true }, langgraph: { recordGraph: false } }`.
+   * Each option can also be set with an `LMNR_{INSTRUMENT}_{OPTION}` environment
+   * variable, e.g. `LMNR_LANGGRAPH_RECORD_GRAPH=false`; a value passed here wins.
    * @param {boolean} props.disableBatch - Whether to disable batching of spans. Useful for debug
    * environments. If true, spans will be sent immediately using {@link SimpleSpanProcessor}
    * instead of {@link BatchSpanProcessor}.
@@ -242,6 +253,7 @@ export class Laminar {
     httpPort,
     grpcPort,
     instrumentModules,
+    instrumentOptions,
     disableBatch,
     traceExportTimeoutMillis,
     logLevel,
@@ -335,6 +347,7 @@ export class Laminar {
       );
     }
     this.isInitialized = true;
+    setInstrumentOptions(instrumentOptions);
 
     const urlWithoutSlash = url?.replace(/\/$/, "").replace(/:\d{1,5}$/g, "");
     const httpUrlWithoutSlash = httpUrl
@@ -1342,6 +1355,7 @@ export class Laminar {
       // reset the keys, contexts, and configuration here.
       this.isInitialized = false;
       _resetConfiguration();
+      resetInstrumentOptions();
       LaminarContextManager.clearContexts();
       LaminarContextManager.clearActiveSpans();
       // Clear the one-shot debug-runtime state so a subsequent initialize()

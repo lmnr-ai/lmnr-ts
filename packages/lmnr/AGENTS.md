@@ -21,6 +21,8 @@ Module-specific notes live in nested `AGENTS.md` files next to the code (each wi
 
 - `tsc --noEmit` runs with `module: preserve` + `moduleResolution: bundler` from the repo root `tsconfig.json`, because tsc NEVER emits here — tsdown/rolldown owns the dual CJS+ESM build. Under the previous `NodeNext`, a package without `"type": "module"` made every `.ts` file CommonJS in tsc's eyes, so `import.meta.url` was a hard TS1470 error even though rolldown rewrites it correctly per-format. Both `import.meta.url` and `__dirname` are now legal (tsx handles both at test time). Tradeoff: tsc no longer enforces Node's ESM/CJS interop rules — extensionless relative imports and `await import("../src/...")` of local TS files (formerly TS2834) both pass now, since the emitted code is bundled and never hits Node's resolver.
 
+- **`pnpm typecheck` (`tsc --noEmit`) does NOT catch declaration-emit errors; run `pnpm build` (tsdown + rolldown-plugin-dts, what `build.yml` and `prepare` run) before pushing.** Example: an unexported class returned from an exported function/object (temporal's `ActivityInboundInterceptor`, via `ActivityInterceptorFactory`) is emitted as an anonymous class type, and a `private`/`protected` member on it fails the build with TS4094 while typecheck, lint and tests all pass. Use a module-level function instead of a private method there.
+
 ## OpenTelemetry dependency ranges (`packages/lmnr/package.json`) — LAM-2446
 
 Apps run OTel JS v1 (api 1.9, 0.5x), v2 (api 1.9, 0.2xx) or v3 (api 1.10, 0.3xx). Laminar must work in all of them **and must use the app's `@opentelemetry/api` copy**.
@@ -68,6 +70,7 @@ LMNR_BASE_URL         # API base URL
 LMNR_RELEASE          # Release (git SHA) stamped on spans; auto-detected if unset
 LMNR_TRAJECTORY_PATH  # Write the run as an lmnr-atif (ATIF) file; local-only, no key needed. May contain {trace_id}, {pid}
 LMNR_TRAJECTORY_FORCE_EXPORT  # With LMNR_TRAJECTORY_PATH: also export spans to Laminar
+LMNR_{INSTRUMENT}_{OPTION}    # Per-instrumentation options, e.g. LMNR_LANGGRAPH_RECORD_GRAPH=false (see tracing/AGENTS.md)
 ```
 
 ## Nested AGENTS.md files
@@ -75,7 +78,7 @@ LMNR_TRAJECTORY_FORCE_EXPORT  # With LMNR_TRAJECTORY_PATH: also export spans to 
 - `test/AGENTS.md` - test runner, nock cassettes and `content-encoding` replay, standard span-export setup, `.lmnr/` leak guard
 - `src/debug/AGENTS.md` - debug mode / replay (server-cache v2), `.lmnr/debug-session.json`, propagated `debug` context, Python parity
 - `src/trajectory/AGENTS.md` - lmnr-atif (ATIF trajectory) reader / normalizer / builder / writer: port of lmnr-python, shared `spec/lmnr-atif/` (never edit here), `py.ts` Python-semantics helpers, golden suite
-- `src/opentelemetry-lib/tracing/AGENTS.md` - `startActiveSpan` / context stack, byte-size batch flush, span payload size limit, release stamp, trajectory file (`LMNR_TRAJECTORY_PATH` modes, collector, exit hook, precise span times)
+- `src/opentelemetry-lib/tracing/AGENTS.md` - `startActiveSpan` / context stack, byte-size batch flush, span payload size limit, release stamp, trajectory file (`LMNR_TRAJECTORY_PATH` modes, collector, exit hook, precise span times), per-instrumentation `instrumentOptions`
 - `src/opentelemetry-lib/bridges/AGENTS.md` - `bridges` option: `Bridge` interface + registry, disabling conflicting auto-instrumentations, Langfuse bridge (tracer-provider wrapper, shadow/copy mirroring, self-healing provider slot, attribute translation, 4.x–6.x test suites on aliased packages)
 - `src/opentelemetry-lib/instrumentation/AGENTS.md` - `LaminarInstrumentation` base class, `wrapMethod`, shared helpers (`toJson`, `recordSpanError`, `traceCall`, `instrumentStream`), instrumentation scope / package version stamping, registering instrumentations, ALS across async iterators, `makeSpanOtelV2Compatible`, OpenCode
 - `src/opentelemetry-lib/instrumentation/aisdk/AGENTS.md` - AI SDK v7 telemetry integration, debug replay consumer

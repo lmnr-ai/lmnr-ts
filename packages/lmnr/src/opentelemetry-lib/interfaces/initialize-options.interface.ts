@@ -364,6 +364,8 @@ export interface InitializeOptions {
       worker?: any;
       /** The `@temporalio/client` module (import * as temporalClient from '@temporalio/client') */
       client?: any;
+      // The three options below are also accepted, with precedence, as
+      // `Laminar.initialize({ instrumentOptions: { temporal } })`.
       /**
        * If true (default), wrap each activity execution in a Laminar span.
        * Set to false to only restore the parent context.

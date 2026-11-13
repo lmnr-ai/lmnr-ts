@@ -6,6 +6,7 @@ import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import { getRuntime, resetDebugRuntime } from "../src/debug";
 import { Laminar } from "../src/index";
 import { LaminarContextManager } from "../src/opentelemetry-lib/tracing/context";
+import { getInstrumentOption } from "../src/opentelemetry-lib/tracing/instrument-options";
 
 void describe("initialize", () => {
   const originalEnv = process.env;
@@ -45,6 +46,27 @@ void describe("initialize", () => {
     });
 
     assert.strictEqual(Laminar.initialized(), true);
+  });
+
+  void it("applies instrumentOptions until shutdown", async () => {
+    process.env.LMNR_LANGCHAIN_RECORD_METADATA = "true";
+    Laminar.initialize({
+      projectApiKey: "test",
+      instrumentOptions: { langgraph: { recordGraph: false } },
+    });
+    assert.strictEqual(getInstrumentOption("langgraph", "recordGraph"), false);
+    assert.strictEqual(
+      getInstrumentOption("langchain", "recordMetadata"),
+      true,
+    );
+
+    await Laminar.shutdown();
+    delete process.env.LMNR_LANGCHAIN_RECORD_METADATA;
+    assert.strictEqual(getInstrumentOption("langgraph", "recordGraph"), true);
+    assert.strictEqual(
+      getInstrumentOption("langchain", "recordMetadata"),
+      false,
+    );
   });
 
   void it("throws an error if projectApiKey is not provided", () => {

@@ -4,12 +4,16 @@ import { context as contextApi, ROOT_CONTEXT } from "@opentelemetry/api";
 import { Laminar } from "../../../laminar";
 import { initializeLogger } from "../../../utils";
 import { LaminarContextManager } from "../../tracing/context";
+import { getExplicitInstrumentOption } from "../../tracing/instrument-options";
 import { LaminarSpan } from "../../tracing/span";
 import { instrumentationScopeAttributes } from "../shared/base";
 import { buildHeaders, restoreContextFromHeaders } from "./helpers";
 
 /**
  * Options for Laminar Temporal interceptors.
+ *
+ * The same options in `Laminar.initialize({ instrumentOptions: { temporal } })`
+ * (or their `LMNR_TEMPORAL_*` environment variables) take precedence.
  */
 export interface LaminarTemporalInterceptorOptions {
   /**
@@ -224,10 +228,20 @@ export class ActivityClientInterceptor {
  * });
  * ```
  */
+// `instrumentOptions.temporal` (or its env var) wins over the options the
+// interceptor was built with. Read per activity: `Worker.create` is patched
+// once per module, so options captured then would outlive a re-initialize.
+// A function, not a private method: `ActivityInterceptorFactory` returns this
+// unexported class, so its declaration is emitted as an anonymous class type,
+// which may not have private members (TS4094, fails `pnpm build`).
+const resolveActivityOption = (
+  options: LaminarTemporalInterceptorOptions,
+  name: keyof LaminarTemporalInterceptorOptions,
+): boolean =>
+  getExplicitInstrumentOption("temporal", name) ?? options[name] ?? true;
+
 class ActivityInboundInterceptor {
-  readonly createActivitySpan: boolean;
-  readonly recordActivityArgs: boolean;
-  readonly recordActivityOutput: boolean;
+  readonly options: LaminarTemporalInterceptorOptions;
   readonly activityType: string | undefined;
   readonly logger;
 
@@ -235,11 +249,21 @@ class ActivityInboundInterceptor {
     options: LaminarTemporalInterceptorOptions = {},
     activityContext?: any,
   ) {
-    this.createActivitySpan = options.createActivitySpan ?? true;
-    this.recordActivityArgs = options.recordActivityArgs ?? true;
-    this.recordActivityOutput = options.recordActivityOutput ?? true;
+    this.options = options;
     this.activityType = activityContext?.info?.activityType;
     this.logger = initializeLogger();
+  }
+
+  get createActivitySpan(): boolean {
+    return resolveActivityOption(this.options, "createActivitySpan");
+  }
+
+  get recordActivityArgs(): boolean {
+    return resolveActivityOption(this.options, "recordActivityArgs");
+  }
+
+  get recordActivityOutput(): boolean {
+    return resolveActivityOption(this.options, "recordActivityOutput");
   }
 
   execute = async <

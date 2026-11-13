@@ -9,6 +9,7 @@ import {
 import { Laminar } from "../../../laminar";
 import { initializeLogger, parseJson, toJson } from "../../../utils";
 import { LaminarContextManager } from "../../tracing/context";
+import { getInstrumentOption } from "../../tracing/instrument-options";
 import { LaminarSpan } from "../../tracing/span";
 import { instrumentationScopeAttributes } from "../shared/base";
 import {
@@ -515,9 +516,11 @@ export class LaminarCallbackHandler {
     if (tags && tags.length > 0) {
       span.setAttribute("langchain.tags", tags);
     }
-    const sanitized = sanitizeMetadata(metadata);
-    if (Object.keys(sanitized).length > 0) {
-      safeSetAttribute(span, "langchain.metadata", toJson(sanitized));
+    if (getInstrumentOption("langchain", "recordMetadata")) {
+      const sanitized = sanitizeMetadata(metadata);
+      if (Object.keys(sanitized).length > 0) {
+        safeSetAttribute(span, "langchain.metadata", toJson(sanitized));
+      }
     }
     return span;
   }

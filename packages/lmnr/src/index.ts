@@ -85,4 +85,10 @@ export {
   getTracer,
   getTracerProvider,
 } from "./opentelemetry-lib/tracing/index";
+export {
+  type InstrumentOptions,
+  type LangchainInstrumentOptions,
+  type LanggraphInstrumentOptions,
+  type TemporalInstrumentOptions,
+} from "./opentelemetry-lib/tracing/instrument-options";
 export { initializeLaminarInstrumentations } from "./opentelemetry-lib/tracing/instrumentations";
