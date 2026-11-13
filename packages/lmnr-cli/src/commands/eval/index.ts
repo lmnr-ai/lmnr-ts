@@ -8,6 +8,7 @@ import { envHttpPort, resolveBaseUrl } from "../../auth/resolve";
 import type { GlobalOpts } from "../../auth/with-client";
 import { DEFAULT_FRONTEND_URL } from "../../constants";
 import { harborFailed, invalidEvalsDir, remoteRunFailed } from "../../errors";
+import { pc } from "../../utils/colors";
 import { findEnvKey } from "../../utils/env-file";
 import { readLocalProjectFile } from "../../utils/local-project-file";
 import { initializeLogger } from "../../utils/logger";
@@ -18,6 +19,7 @@ import { assertSuitesPassed, runSuites } from "./harbor";
 import { localImageDefs } from "./images";
 import { startRemoteRun } from "./remote";
 import { type FollowResult, followRunLog } from "./run-log";
+import { type EvaluationLink, parseEvaluationLine } from "./run-log-lines";
 import { discoverSuites, type RunOverrides } from "./suites";
 
 const logger = initializeLogger();
@@ -128,6 +130,14 @@ export const assertRemotePassed = (result: FollowResult) => {
 };
 
 /** Print a started remote run's log until it ends, then report it. */
+const formatLink = ({ suite, url }: EvaluationLink) =>
+  `${pc.bold(`Laminar evaluation for suite ${suite}:`)} ${pc.cyan(url)}`;
+
+/** The evaluation links a run printed, once more where they can't scroll away. */
+const formatLinks = (links: EvaluationLink[]) =>
+  `\n${pc.bold("Results in Laminar:")}\n` +
+  links.map(({ suite, url }) => `  ${suite}: ${pc.cyan(url)}\n`).join("");
+
 const followRemote = async (
   client: LaminarClient,
   run: { uploadId: string; sandboxId: string },
@@ -135,15 +145,21 @@ const followRemote = async (
   opts: GlobalOpts,
 ) => {
   const url = await evaluationsUrl(opts.projectId);
-  const resultsHint = url ? ` Results: ${url}` : "";
   logger.info(
     `Started remote run in sandbox ${run.sandboxId}; following its log ` +
       "(Ctrl-C stops following, the run goes on).",
   );
+  // Each suite's evaluation shows up in the log once the run creates it.
+  const links: EvaluationLink[] = [];
+  const write = (text: string) => {
+    const link = parseEvaluationLine(text.trimEnd());
+    if (link) links.push(link);
+    process.stderr.write(link ? `${formatLink(link)}\n` : text);
+  };
   const onInterrupt = () => {
-    process.stderr.write(
-      `\nStopped following; the run goes on in Laminar.${resultsHint}\n`,
-    );
+    process.stderr.write("\nStopped following; the run goes on in Laminar.\n");
+    if (links.length > 0) process.stderr.write(formatLinks(links));
+    else if (url) process.stderr.write(`Results: ${url}\n`);
     process.exit(130);
   };
   process.once("SIGINT", onInterrupt);
@@ -153,6 +169,7 @@ const followRemote = async (
       client.hostedEvals,
       run.uploadId,
       run.sandboxId,
+      { write },
     );
   } finally {
     process.off("SIGINT", onInterrupt);
@@ -170,8 +187,11 @@ const followRemote = async (
       ...run,
       suites,
       url,
+      evaluations: links,
       exitCode: result.kind === "exited" ? result.exitCode : null,
     });
+  } else if (links.length > 0) {
+    process.stderr.write(formatLinks(links));
   } else if (url) {
     logger.info(`Results are in evaluations grouped by suite: ${url}`);
   }

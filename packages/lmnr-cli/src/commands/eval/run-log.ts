@@ -32,7 +32,8 @@ const MAX_ERROR_MS = 5 * 60_000;
 /**
  * One source of output (a stream, the logger). `write` splits what it gets
  * into lines and holds back an unfinished last one, so sources don't cut into
- * each other's lines; `end` sends that one as it is.
+ * each other's lines; `end` sends that one as it is. Each line goes through
+ * the writer's `rewrite`, if any, which can also drop it (null).
  */
 export interface RunLogWriter {
   write: (chunk: string) => void;
@@ -40,9 +41,15 @@ export interface RunLogWriter {
 }
 
 export interface RunLogShipper {
-  writer: () => RunLogWriter;
+  writer: (rewrite?: (line: string) => string | null) => RunLogWriter;
   /** Send everything left, unfinished last lines included. */
   close: () => Promise<void>;
+}
+
+/** A writer's state: its unfinished last line, and its rewrite. */
+interface Source {
+  text: string;
+  rewrite?: (line: string) => string | null;
 }
 
 const sleep = (ms: number) =>
@@ -62,7 +69,7 @@ export const createRunLogShipper = (
   onStarted?: () => void,
 ): RunLogShipper => {
   const pending: HostedEvalRunLogLine[] = [];
-  const partials: { text: string }[] = [];
+  const sources: Source[] = [];
   let seq = 0;
   let dropped = 0;
   let failures = 0;
@@ -70,10 +77,8 @@ export const createRunLogShipper = (
   let started = false;
   let sending: Promise<void> | undefined;
 
-  const push = (line: string) => {
+  const push = (text: string) => {
     if (!enabled) return;
-    // Harbor's loggers color their output even when it isn't a terminal.
-    const text = stripVTControlCharacters(line);
     if (pending.length >= MAX_PENDING_LINES) {
       pending.shift();
       dropped += 1;
@@ -139,30 +144,37 @@ export const createRunLogShipper = (
     return sending;
   };
 
-  const endPartial = (partial: { text: string }) => {
-    if (partial.text) push(partial.text);
-    partial.text = "";
+  const pushLine = ({ rewrite }: Source, line: string) => {
+    // Harbor's loggers color their output even when it isn't a terminal.
+    const text = stripVTControlCharacters(line.replace(/\r$/, ""));
+    const out = rewrite ? rewrite(text) : text;
+    if (out !== null) push(out);
+  };
+
+  const endSource = (source: Source) => {
+    if (source.text) pushLine(source, source.text);
+    source.text = "";
   };
 
   const timer = setInterval(flush, FLUSH_MS);
   timer.unref();
 
   return {
-    writer: () => {
-      const partial = { text: "" };
-      partials.push(partial);
+    writer: (rewrite) => {
+      const source: Source = { text: "", rewrite };
+      sources.push(source);
       return {
         write: (chunk) => {
-          const lines = (partial.text + chunk).split("\n");
-          partial.text = lines.pop() ?? "";
-          for (const line of lines) push(line.replace(/\r$/, ""));
+          const lines = (source.text + chunk).split("\n");
+          source.text = lines.pop() ?? "";
+          for (const line of lines) pushLine(source, line);
         },
-        end: () => endPartial(partial),
+        end: () => endSource(source),
       };
     },
     close: async () => {
       clearInterval(timer);
-      for (const partial of partials) endPartial(partial);
+      for (const source of sources) endSource(source);
       const deadline = Date.now() + CLOSE_TIMEOUT_MS;
       while (enabled && pending.length > 0 && Date.now() < deadline) {
         await flush();

@@ -213,8 +213,14 @@ void describe("handleEvalOrchestrate", () => {
     process.env.LMNR_EVAL_UPLOAD_ID = "up-1";
     process.env.LMNR_RUN_LOG_MARKER = marker;
     process.env.LMNR_PROJECT_API_KEY = "run-key";
+    let columns: string | undefined;
     vi.mocked(runCommand).mockImplementation(async (_command, _args, opts) => {
-      opts?.output?.stdout.write("trial 1/1 done\npartial");
+      columns = opts?.env?.COLUMNS;
+      opts?.output?.stdout.write(
+        "trial 1/1 done\nResults written to /tmp/job/result.json\n" +
+          "2026-11-13 18:39:22,645::lmnr.integrations.harbor.plugin::INFO: " +
+          "Laminar evaluation: https://lmnr.test/e/1 (plugin.py:200)\npartial",
+      );
       opts?.output?.stdout.end();
       return 1;
     });
@@ -229,10 +235,12 @@ void describe("handleEvalOrchestrate", () => {
     // Harbor's unfinished last line goes out when its stream ends, before the
     // error, not with whatever is written after it.
     const harbor = appended.indexOf("trial 1/1 done");
-    expect(appended.slice(harbor, harbor + 2)).toEqual([
+    expect(appended.slice(harbor, harbor + 3)).toEqual([
       "trial 1/1 done",
+      "Laminar evaluation for suite b: https://lmnr.test/e/1",
       "partial",
     ]);
+    expect(columns).toBe("500");
     expect(appended.findIndex((t) => t.startsWith("ERROR: "))).toBeGreaterThan(
       harbor + 1,
     );

@@ -23,7 +23,14 @@
     anyway). Each source (logger, Harbor stdout, Harbor stderr) has its own
     `writer()`, so one's unfinished line can't swallow another's; `runCommand`
     calls a sink's `end` when its stream ends, so a suite's last line without
-    a newline goes out before the next suite or the error. Lines are
+    a newline goes out before the next suite or the error. Harbor runs with
+    `COLUMNS=500` (Rich wraps at 80 off a terminal) and its lines go through
+    `harborLogLine` (`run-log-lines.ts`): the job summary's sandbox paths are
+    dropped, and the Laminar plugin's `Laminar evaluation: <url>` log line
+    becomes `Laminar evaluation for suite <suite>: <url>` the first time (the
+    plugin repeats it at job end). `eval run --remote` highlights those lines
+    and prints them all again when the run ends (`evaluations` in `--json`).
+    Lines are
     numbered from 0, ANSI-stripped, cut at 16 Ki chars, and
     sent with `appendRunLogs` about once a second, one batch in flight, so the
     server stores them in order. A failing batch is retried (dropped after 5
@@ -52,7 +59,8 @@
     carry that gap as is; fixing it upstream is LAM-2534.
 - Modules: `index.ts` (`eval run` flow, reporting), `remote.ts` (`RunSpec`,
   `startRemoteRun`, `eval orchestrate`), `run-log.ts` (the run's log: shipper
-  and follower), `jobs.ts` (packing a finished Harbor
+  and follower), `run-log-lines.ts` (what the log shows of Harbor's output),
+  `jobs.ts` (packing a finished Harbor
   job), `env.ts` (`--env`, `${VAR}`
   resolution, the Harbor process env), `suites.ts` (suite discovery,
   `SKIPPED_DIRS`, the run's tasks (`findTaskTomls`), `buildJobConfig`), `harbor.ts` (uvx/Harbor

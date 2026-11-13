@@ -17,6 +17,7 @@ import { ensureRemoteImages, type RemoteImages } from "./images";
 import { findJobDir, packJobDir } from "./jobs";
 import { packEvalsDir } from "./pack";
 import { createRunLogShipper } from "./run-log";
+import { harborLogLine } from "./run-log-lines";
 import type { RunOverrides } from "./suites";
 
 const logger = initializeLogger();
@@ -192,16 +193,24 @@ export const handleEvalOrchestrate = async (): Promise<void> => {
     marker ? () => writeFileSync(marker, "") : undefined,
   );
   const unsubscribe = onStderr(shipper.writer().write);
+  const links = new Set<string>();
   try {
     const failed = await runSuites(
       process.cwd(),
       spec.suites,
       spec.overrides,
-      env,
+      // Rich wraps at 80 columns off a terminal, splitting paths and links.
+      { ...env, COLUMNS: "500" },
       spec,
       {
         jobs: await jobUploads(client, uploadId),
-        output: { stdout: shipper.writer(), stderr: shipper.writer() },
+        output: (suite) => {
+          const rewrite = harborLogLine(suite, links);
+          return {
+            stdout: shipper.writer(rewrite),
+            stderr: shipper.writer(rewrite),
+          };
+        },
       },
     );
     assertSuitesPassed(failed);

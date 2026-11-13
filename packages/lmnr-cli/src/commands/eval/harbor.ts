@@ -137,10 +137,10 @@ export interface JobOutput {
 export interface SuiteHooks {
   jobs?: JobOutput;
   /**
-   * Gets each suite's Harbor output, which still goes to our stderr too. Both
-   * sinks end after every suite.
+   * Where each suite's Harbor output also goes (it still goes to our stderr
+   * too). Both sinks end when the suite's `harbor run` exits.
    */
-  output?: CommandOutput;
+  output?: (suite: string) => CommandOutput;
 }
 
 /**
@@ -175,7 +175,7 @@ export const runSuites = async (
       env,
       images: images && suiteImages(images, suite),
       grpcPort,
-      output,
+      output: output?.(suite),
     });
     if (code !== 0) {
       logger.error(`harbor run failed for suite ${suite} (exit ${code})`);

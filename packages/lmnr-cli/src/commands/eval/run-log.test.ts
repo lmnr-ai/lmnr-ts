@@ -74,6 +74,23 @@ void describe("createRunLogShipper", () => {
     ]);
   });
 
+  void it("rewrites or drops each line of a writer, its last one too", async () => {
+    const sent: string[] = [];
+    const shipper = createRunLogShipper(async (lines) => {
+      sent.push(...lines.map((l) => l.text));
+      return true;
+    });
+    const harbor = shipper.writer((line) =>
+      line.startsWith("drop") ? null : line.toUpperCase(),
+    );
+    harbor.write("\x1b[32mkeep\x1b[0m\ndrop me\nlast");
+    harbor.end();
+    shipper.writer().write("as is\n");
+    await shipper.close();
+
+    expect(sent).toEqual(["KEEP", "LAST", "as is"]);
+  });
+
   void it("splits a large backlog into ordered batches of at most 500", async () => {
     const batches: HostedEvalRunLogLine[][] = [];
     const shipper = createRunLogShipper(async (lines) => {
