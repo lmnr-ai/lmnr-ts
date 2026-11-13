@@ -21,6 +21,8 @@ Module-specific notes live in nested `AGENTS.md` files next to the code (each wi
 
 - `tsc --noEmit` runs with `module: preserve` + `moduleResolution: bundler` from the repo root `tsconfig.json`, because tsc NEVER emits here — tsdown/rolldown owns the dual CJS+ESM build. Under the previous `NodeNext`, a package without `"type": "module"` made every `.ts` file CommonJS in tsc's eyes, so `import.meta.url` was a hard TS1470 error even though rolldown rewrites it correctly per-format. Both `import.meta.url` and `__dirname` are now legal (tsx handles both at test time). Tradeoff: tsc no longer enforces Node's ESM/CJS interop rules — extensionless relative imports and `await import("../src/...")` of local TS files (formerly TS2834) both pass now, since the emitted code is bundled and never hits Node's resolver.
 
+- **`pnpm typecheck` (`tsc --noEmit`) does NOT catch declaration-emit errors; run `pnpm build` (tsdown + rolldown-plugin-dts, what `build.yml` and `prepare` run) before pushing.** Example: an unexported class returned from an exported function/object (temporal's `ActivityInboundInterceptor`, via `ActivityInterceptorFactory`) is emitted as an anonymous class type, and a `private`/`protected` member on it fails the build with TS4094 while typecheck, lint and tests all pass. Use a module-level function instead of a private method there.
+
 ## OpenTelemetry dependency ranges (`packages/lmnr/package.json`) — LAM-2446
 
 Apps run OTel JS v1 (api 1.9, 0.5x), v2 (api 1.9, 0.2xx) or v3 (api 1.10, 0.3xx). Laminar must work in all of them **and must use the app's `@opentelemetry/api` copy**.

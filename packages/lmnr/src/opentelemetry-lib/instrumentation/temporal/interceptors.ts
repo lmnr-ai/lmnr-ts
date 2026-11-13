@@ -228,6 +228,18 @@ export class ActivityClientInterceptor {
  * });
  * ```
  */
+// `instrumentOptions.temporal` (or its env var) wins over the options the
+// interceptor was built with. Read per activity: `Worker.create` is patched
+// once per module, so options captured then would outlive a re-initialize.
+// A function, not a private method: `ActivityInterceptorFactory` returns this
+// unexported class, so its declaration is emitted as an anonymous class type,
+// which may not have private members (TS4094, fails `pnpm build`).
+const resolveActivityOption = (
+  options: LaminarTemporalInterceptorOptions,
+  name: keyof LaminarTemporalInterceptorOptions,
+): boolean =>
+  getExplicitInstrumentOption("temporal", name) ?? options[name] ?? true;
+
 class ActivityInboundInterceptor {
   readonly options: LaminarTemporalInterceptorOptions;
   readonly activityType: string | undefined;
@@ -242,27 +254,16 @@ class ActivityInboundInterceptor {
     this.logger = initializeLogger();
   }
 
-  // `instrumentOptions.temporal` (or its env var) wins over the options this
-  // interceptor was built with. Read per activity: `Worker.create` is patched
-  // once per module, so options captured then would outlive a re-initialize.
-  private option(name: keyof LaminarTemporalInterceptorOptions): boolean {
-    return (
-      getExplicitInstrumentOption("temporal", name) ??
-      this.options[name] ??
-      true
-    );
-  }
-
   get createActivitySpan(): boolean {
-    return this.option("createActivitySpan");
+    return resolveActivityOption(this.options, "createActivitySpan");
   }
 
   get recordActivityArgs(): boolean {
-    return this.option("recordActivityArgs");
+    return resolveActivityOption(this.options, "recordActivityArgs");
   }
 
   get recordActivityOutput(): boolean {
-    return this.option("recordActivityOutput");
+    return resolveActivityOption(this.options, "recordActivityOutput");
   }
 
   execute = async <
