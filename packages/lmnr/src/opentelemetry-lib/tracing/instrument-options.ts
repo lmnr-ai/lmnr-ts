@@ -131,7 +131,7 @@ export const resolveInstrumentOptions = (
       continue;
     }
     if (given === undefined || given === null) continue;
-    if (typeof given !== "object") {
+    if (typeof given !== "object" || Array.isArray(given)) {
       warn(
         `[Laminar] Ignoring instrumentOptions.${instrument}: expected an object.`,
       );

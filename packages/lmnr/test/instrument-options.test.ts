@@ -99,6 +99,16 @@ void describe("instrumentOptions", () => {
     assert.ok(warnings.some((w) => w.includes("instrumentOptions.langgraph")));
   });
 
+  void it("rejects an array as an instrument's options", () => {
+    const { resolved, warnings } = resolve({ langgraph: [false] } as any);
+    assert.deepEqual(resolved, {});
+    assert.equal(warnings.length, 1);
+    assert.match(
+      warnings[0],
+      /instrumentOptions\.langgraph: expected an object/,
+    );
+  });
+
   void it("applies defaults to unset options", () => {
     setInstrumentOptions({ temporal: { recordActivityArgs: false } });
     assert.equal(getInstrumentOption("langchain", "recordMetadata"), false);
