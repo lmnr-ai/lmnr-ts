@@ -17,6 +17,10 @@ import {
   SPAN_INPUT,
   SPAN_OUTPUT,
 } from "../src/opentelemetry-lib/tracing/attributes";
+import {
+  resetInstrumentOptions,
+  setInstrumentOptions,
+} from "../src/opentelemetry-lib/tracing/instrument-options";
 
 // Produce a Temporal-style headers map carrying the active Laminar span context,
 // the way the client-side WorkflowClientInterceptor would on workflow start.
@@ -303,6 +307,46 @@ void describe("temporal workflow span", () => {
       assert.equal(findSpan(exporter, "myActivity"), undefined);
     },
   );
+
+  void it("prefers instrumentOptions.temporal over the interceptor options", async (t) => {
+    t.after(resetInstrumentOptions);
+    setInstrumentOptions({
+      temporal: { recordActivityArgs: true, recordActivityOutput: false },
+    });
+    // The interceptor says the opposite for both; instrumentOptions wins
+    const { span } = await runActivity(exporter, {
+      recordActivityArgs: false,
+      recordActivityOutput: true,
+    });
+    assert.ok(span);
+    assert.equal(span!.attributes[SPAN_INPUT], JSON.stringify([42, "y"]));
+    assert.equal(span!.attributes[SPAN_OUTPUT], undefined);
+  });
+
+  void it("falls back to the interceptor options for unset instrumentOptions", async (t) => {
+    t.after(resetInstrumentOptions);
+    setInstrumentOptions({ temporal: { recordActivityOutput: true } });
+    const { span } = await runActivity(exporter, { recordActivityArgs: false });
+    assert.ok(span);
+    assert.equal(span!.attributes[SPAN_INPUT], undefined);
+    assert.equal(span!.attributes[SPAN_OUTPUT], JSON.stringify({ done: true }));
+  });
+
+  void it("reads LMNR_TEMPORAL_CREATE_ACTIVITY_SPAN over the interceptor options", async (t) => {
+    const previous = process.env.LMNR_TEMPORAL_CREATE_ACTIVITY_SPAN;
+    t.after(() => {
+      if (previous === undefined) {
+        delete process.env.LMNR_TEMPORAL_CREATE_ACTIVITY_SPAN;
+      } else {
+        process.env.LMNR_TEMPORAL_CREATE_ACTIVITY_SPAN = previous;
+      }
+      resetInstrumentOptions();
+    });
+    process.env.LMNR_TEMPORAL_CREATE_ACTIVITY_SPAN = "false";
+    setInstrumentOptions();
+    const { span } = await runActivity(exporter, { createActivitySpan: true });
+    assert.equal(span, undefined);
+  });
 
   void it("is idempotent — double patch does not double-wrap", async () => {
     const mod = makeFakeClientModule();
