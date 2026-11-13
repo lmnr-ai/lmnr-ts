@@ -7,7 +7,8 @@ import { buildLaminarClient } from "../../auth/client";
 import { envHttpPort, resolveBaseUrl } from "../../auth/resolve";
 import type { GlobalOpts } from "../../auth/with-client";
 import { DEFAULT_FRONTEND_URL } from "../../constants";
-import { invalidEvalsDir } from "../../errors";
+import { harborFailed, invalidEvalsDir, remoteRunFailed } from "../../errors";
+import { pc } from "../../utils/colors";
 import { findEnvKey } from "../../utils/env-file";
 import { readLocalProjectFile } from "../../utils/local-project-file";
 import { initializeLogger } from "../../utils/logger";
@@ -17,6 +18,8 @@ import { API_KEY_VAR, harborEnv, parseEnvFlags, resolveRunEnv } from "./env";
 import { assertSuitesPassed, runSuites } from "./harbor";
 import { localImageDefs } from "./images";
 import { startRemoteRun } from "./remote";
+import { type FollowResult, followRunLog } from "./run-log";
+import { type EvaluationLink, parseEvaluationLine } from "./run-log-lines";
 import { discoverSuites, type RunOverrides } from "./suites";
 
 const logger = initializeLogger();
@@ -105,9 +108,99 @@ const reportLocal = async (
   assertSuitesPassed(failed);
 };
 
+/** Exit codes `eval orchestrate` ends with that mean "a suite failed". */
+const HARBOR_FAILED_EXIT = 18;
+
+/** Turn how a followed remote run ended into this command's outcome. */
+export const assertRemotePassed = (result: FollowResult) => {
+  if (result.kind === "lost") {
+    throw remoteRunFailed(
+      `The run's orchestrator sandbox is ${result.state}` +
+        (result.reason ? ` (${result.reason})` : "") +
+        " and never reported how the run ended.",
+    );
+  }
+  if (result.kind !== "exited" || result.exitCode === 0) return;
+  if (result.exitCode === HARBOR_FAILED_EXIT) {
+    throw harborFailed("A suite of the remote run failed; see its log above.");
+  }
+  throw remoteRunFailed(
+    `The remote run exited with code ${result.exitCode}; see its log above.`,
+  );
+};
+
+/** Print a started remote run's log until it ends, then report it. */
+const formatLink = ({ suite, url }: EvaluationLink) =>
+  `${pc.bold(`Laminar evaluation for suite ${suite}:`)} ${pc.cyan(url)}`;
+
+/** The evaluation links a run printed, once more where they can't scroll away. */
+const formatLinks = (links: EvaluationLink[]) =>
+  `\n${pc.bold("Results in Laminar:")}\n` +
+  links.map(({ suite, url }) => `  ${suite}: ${pc.cyan(url)}\n`).join("");
+
+const followRemote = async (
+  client: LaminarClient,
+  run: { uploadId: string; sandboxId: string },
+  suites: string[],
+  opts: GlobalOpts,
+) => {
+  const url = await evaluationsUrl(opts.projectId);
+  logger.info(
+    `Started remote run in sandbox ${run.sandboxId}; following its log ` +
+      "(Ctrl-C stops following, the run goes on).",
+  );
+  // Each suite's evaluation shows up in the log once the run creates it.
+  const links: EvaluationLink[] = [];
+  const write = (text: string) => {
+    const link = parseEvaluationLine(text.trimEnd());
+    if (link) links.push(link);
+    process.stderr.write(link ? `${formatLink(link)}\n` : text);
+  };
+  const onInterrupt = () => {
+    process.stderr.write("\nStopped following; the run goes on in Laminar.\n");
+    if (links.length > 0) process.stderr.write(formatLinks(links));
+    else if (url) process.stderr.write(`Results: ${url}\n`);
+    process.exit(130);
+  };
+  process.once("SIGINT", onInterrupt);
+  let result: FollowResult;
+  try {
+    result = await followRunLog(
+      client.hostedEvals,
+      run.uploadId,
+      run.sandboxId,
+      { write },
+    );
+  } finally {
+    process.off("SIGINT", onInterrupt);
+  }
+
+  if (result.kind === "unsupported") {
+    logger.warn(
+      "This Laminar server doesn't keep run logs, so the run can't be " +
+        "followed here; it goes on in Laminar.",
+    );
+  }
+  if (opts.json) {
+    outputJson({
+      mode: "remote",
+      ...run,
+      suites,
+      url,
+      evaluations: links,
+      exitCode: result.kind === "exited" ? result.exitCode : null,
+    });
+  } else if (links.length > 0) {
+    process.stderr.write(formatLinks(links));
+  } else if (url) {
+    logger.info(`Results are in evaluations grouped by suite: ${url}`);
+  }
+  assertRemotePassed(result);
+};
+
 /**
  * `lmnr-cli eval run [dir]`: run Harbor suites locally on Docker (default), or
- * with `--remote` in Laminar sandboxes (the run continues there; the CLI exits).
+ * with `--remote` in Laminar sandboxes, following the run's log until it ends.
  */
 export const handleEvalRun = async (
   dir: string,
@@ -135,20 +228,6 @@ export const handleEvalRun = async (
   }
 
   const client = await buildRemoteClient(opts);
-  const { uploadId, sandboxId } = await startRemoteRun(
-    client,
-    evalsDir,
-    suites,
-    overrides,
-    env,
-  );
-  const url = await evaluationsUrl(opts.projectId);
-  if (opts.json) {
-    outputJson({ mode: "remote", uploadId, sandboxId, suites, url });
-    return;
-  }
-  logger.info(`Started remote run in sandbox ${sandboxId}`);
-  if (url) {
-    logger.info(`Results appear in evaluations grouped by suite: ${url}`);
-  }
+  const run = await startRemoteRun(client, evalsDir, suites, overrides, env);
+  await followRemote(client, run, suites, opts);
 };

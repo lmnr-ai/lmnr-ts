@@ -162,6 +162,9 @@ lmnr-cli eval run --suite support --task "refund-*"
 lmnr-cli eval run --remote                         # in Laminar sandboxes
 ```
 
+`--remote` prints the run's log until it ends; Ctrl-C stops following and
+leaves the run going.
+
 Both modes need Docker; local runs also need [uv](https://docs.astral.sh/uv/)
 and `LMNR_PROJECT_API_KEY`. `--remote` pushes
 the images tasks use from your local Docker. See `lmnr-cli eval run --help` for
@@ -172,6 +175,7 @@ images (`lmnr.yaml`), secrets and flags. Exit codes:
 - `18` a suite's `harbor run` failed
 - `19` an unset `${VAR}` placeholder or `LMNR_PROJECT_API_KEY`
 - `20` a Docker build, pull or save failed, or an image isn't linux/amd64
+- `21` a `--remote` run failed before its suites ran, or its sandbox was lost
 
 ### `setup` - One-shot onboarding
 

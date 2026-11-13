@@ -7,7 +7,7 @@ import { harborFailed } from "../../errors";
 import { findEnvKey } from "../../utils/env-file";
 import { initializeLogger } from "../../utils/logger";
 import { type RemoteImages, type SuiteImages, suiteImages } from "./images";
-import { runCommand } from "./run-command";
+import { type CommandOutput, runCommand } from "./run-command";
 import {
   buildJobConfig,
   type JobConfig,
@@ -76,6 +76,8 @@ interface HarborRun {
   images?: SuiteImages;
   /** Self-hosted Laminar's gRPC port, for the plugin's trace export. */
   grpcPort?: string;
+  /** Gets Harbor's output as well as our stderr. */
+  output?: CommandOutput;
 }
 
 /**
@@ -112,6 +114,7 @@ const runHarborSuite = async (run: HarborRun): Promise<number> => {
             ? { LMNR_EVAL_IMAGES: JSON.stringify(run.images) }
             : {}),
         },
+        output: run.output,
       },
     );
   } finally {
@@ -130,6 +133,16 @@ export interface JobOutput {
   onSuiteEnd: (suite: string, jobsDir: string) => Promise<void>;
 }
 
+/** What a remote run's orchestrator hooks into its suites' Harbor runs. */
+export interface SuiteHooks {
+  jobs?: JobOutput;
+  /**
+   * Where each suite's Harbor output also goes (it still goes to our stderr
+   * too). Both sinks end when the suite's `harbor run` exits.
+   */
+  output?: (suite: string) => CommandOutput;
+}
+
 /**
  * Run each suite with Harbor in turn. With `images`, trials run in Laminar
  * sandboxes; without, on local Docker. Returns the suites that failed.
@@ -140,7 +153,7 @@ export const runSuites = async (
   overrides: RunOverrides,
   env: Record<string, string>,
   images?: RemoteImages,
-  jobs?: JobOutput,
+  { jobs, output }: SuiteHooks = {},
 ): Promise<string[]> => {
   const grpcPort = (await findEnvKey(process.cwd(), "LMNR_GRPC_PORT"))?.value;
   const failed: string[] = [];
@@ -162,6 +175,7 @@ export const runSuites = async (
       env,
       images: images && suiteImages(images, suite),
       grpcPort,
+      output: output?.(suite),
     });
     if (code !== 0) {
       logger.error(`harbor run failed for suite ${suite} (exit ${code})`);
