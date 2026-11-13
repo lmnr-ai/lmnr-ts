@@ -18,10 +18,12 @@
     "Run log"): `eval orchestrate` ships every line it prints
     (`createRunLogShipper`): logger records via `onStderr`
     (`utils/command-capture.ts`; warnings / errors get a `WARN: ` / `ERROR: `
-    label there) and Harbor's output via `runSuites`' `onOutput`, which makes
-    `runCommand` pipe instead of inherit (Rich doesn't animate when piped
+    label there) and Harbor's output via `runSuites`' `output` sinks, which
+    make `runCommand` pipe instead of inherit (Rich doesn't animate when piped
     anyway). Each source (logger, Harbor stdout, Harbor stderr) has its own
-    `writer()`, so one's unfinished line can't swallow another's. Lines are
+    `writer()`, so one's unfinished line can't swallow another's; `runCommand`
+    calls a sink's `end` when its stream ends, so a suite's last line without
+    a newline goes out before the next suite or the error. Lines are
     numbered from 0, ANSI-stripped, cut at 16 Ki chars, and
     sent with `appendRunLogs` about once a second, one batch in flight, so the
     server stores them in order. A failing batch is retried (dropped after 5

@@ -191,8 +191,7 @@ export const handleEvalOrchestrate = async (): Promise<void> => {
     // Sync: a run that fails fast exits right after its first batch.
     marker ? () => writeFileSync(marker, "") : undefined,
   );
-  const unsubscribe = onStderr(shipper.writer());
-  const harbor = { stdout: shipper.writer(), stderr: shipper.writer() };
+  const unsubscribe = onStderr(shipper.writer().write);
   try {
     const failed = await runSuites(
       process.cwd(),
@@ -202,13 +201,13 @@ export const handleEvalOrchestrate = async (): Promise<void> => {
       spec,
       {
         jobs: await jobUploads(client, uploadId),
-        onOutput: (chunk, stream) => harbor[stream](chunk),
+        output: { stdout: shipper.writer(), stderr: shipper.writer() },
       },
     );
     assertSuitesPassed(failed);
   } catch (error) {
     // The caller logs it and exits right away, before a flush could run.
-    shipper.writer()(`ERROR: ${errorMessage(error)}\n`);
+    shipper.writer().write(`ERROR: ${errorMessage(error)}\n`);
     throw error;
   } finally {
     unsubscribe();

@@ -20,7 +20,7 @@ void describe("createRunLogShipper", () => {
       return true;
     }, onStarted);
 
-    const write = shipper.writer();
+    const write = shipper.writer().write;
     write("\x1b[32;20mone\x1b[0m\r\ntw");
     write("o\nthree");
     await shipper.close();
@@ -39,8 +39,8 @@ void describe("createRunLogShipper", () => {
       sent.push(...lines.map((l) => l.text));
       return true;
     });
-    const out = shipper.writer();
-    const err = shipper.writer();
+    const out = shipper.writer().write;
+    const err = shipper.writer().write;
     out("Traceback (most rec");
     err("WARN: retrying\n");
     out("ent call last):\n");
@@ -52,13 +52,35 @@ void describe("createRunLogShipper", () => {
     ]);
   });
 
+  void it("sends a source's unfinished line when it ends", async () => {
+    const sent: string[] = [];
+    const shipper = createRunLogShipper(async (lines) => {
+      sent.push(...lines.map((l) => l.text));
+      return true;
+    });
+    const harbor = shipper.writer();
+    const other = shipper.writer();
+    harbor.write("Results written to /tmp/job");
+    harbor.end();
+    harbor.write("next suite\n");
+    other.write("ERROR: failed\n");
+    harbor.end();
+    await shipper.close();
+
+    expect(sent).toEqual([
+      "Results written to /tmp/job",
+      "next suite",
+      "ERROR: failed",
+    ]);
+  });
+
   void it("splits a large backlog into ordered batches of at most 500", async () => {
     const batches: HostedEvalRunLogLine[][] = [];
     const shipper = createRunLogShipper(async (lines) => {
       batches.push(lines);
       return true;
     });
-    shipper.writer()("x\n".repeat(1200));
+    shipper.writer().write("x\n".repeat(1200));
     await shipper.close();
 
     expect(batches.map((b) => b.length)).toEqual([500, 500, 200]);
@@ -77,7 +99,7 @@ void describe("createRunLogShipper", () => {
       sent.push(lines.map((l) => l.seq));
       return true;
     });
-    shipper.writer()("a\nb\n");
+    shipper.writer().write("a\nb\n");
     await shipper.close();
 
     expect(sent).toEqual([[0, 1]]);
@@ -97,7 +119,7 @@ void describe("createRunLogShipper", () => {
       sent.push(...lines.map((l) => l.seq));
       return true;
     });
-    write = shipper.writer();
+    write = shipper.writer().write;
     write("x\n".repeat(600));
     await shipper.close();
 
@@ -116,7 +138,7 @@ void describe("createRunLogShipper", () => {
     const send = vi.fn(async () => false);
     const onStarted = vi.fn();
     const shipper = createRunLogShipper(send, onStarted);
-    const write = shipper.writer();
+    const write = shipper.writer().write;
     write("a\n");
     await shipper.close();
     write("b\n");

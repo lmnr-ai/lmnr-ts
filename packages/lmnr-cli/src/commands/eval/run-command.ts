@@ -3,42 +3,51 @@ import spawn from "cross-spawn";
 
 import { missingTool } from "../../errors";
 
+/** Takes a stream's text as it comes, then `end` once the stream is done. */
+export interface OutputSink {
+  write: (chunk: string) => void;
+  end: () => void;
+}
+
+/** Where a command's stdout and stderr also go. */
+export interface CommandOutput {
+  stdout: OutputSink;
+  stderr: OutputSink;
+}
+
 /**
  * Exit code of `command`, with its output on our stderr (stdout stays
- * data-only). With `onOutput`, the output also goes to it, as text, along
- * with the stream it came from.
+ * data-only). With `output`, each stream also goes to its sink, as text, and
+ * both sinks have ended by the time this resolves.
  */
-export type OutputListener = (
-  chunk: string,
-  stream: "stdout" | "stderr",
-) => void;
-
 export const runCommand = (
   command: string,
   args: string[],
   options: {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
-    onOutput?: OutputListener;
+    output?: CommandOutput;
   } = {},
 ): Promise<number> =>
   new Promise((resolve, reject) => {
-    const { onOutput } = options;
+    const { output } = options;
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env,
-      stdio: onOutput ? ["inherit", "pipe", "pipe"] : ["inherit", 2, 2],
+      stdio: output ? ["inherit", "pipe", "pipe"] : ["inherit", 2, 2],
     });
-    if (onOutput) {
-      for (const [name, stream] of [
-        ["stdout", child.stdout],
-        ["stderr", child.stderr],
+    if (output) {
+      for (const [sink, stream] of [
+        [output.stdout, child.stdout],
+        [output.stderr, child.stderr],
       ] as const) {
         stream?.setEncoding("utf8");
         stream?.on("data", (chunk: string) => {
           process.stderr.write(chunk);
-          onOutput(chunk, name);
+          sink.write(chunk);
         });
+        // Before "close", which fires once both streams have ended.
+        stream?.on("end", sink.end);
       }
     }
     child.on("error", (error: NodeJS.ErrnoException) => {

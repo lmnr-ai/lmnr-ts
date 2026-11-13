@@ -214,7 +214,8 @@ void describe("handleEvalOrchestrate", () => {
     process.env.LMNR_RUN_LOG_MARKER = marker;
     process.env.LMNR_PROJECT_API_KEY = "run-key";
     vi.mocked(runCommand).mockImplementation(async (_command, _args, opts) => {
-      opts?.onOutput?.("trial 1/1 done\npartial", "stdout");
+      opts?.output?.stdout.write("trial 1/1 done\npartial");
+      opts?.output?.stdout.end();
       return 1;
     });
     vi.spyOn(process.stderr, "write").mockReturnValue(true);
@@ -225,9 +226,16 @@ void describe("handleEvalOrchestrate", () => {
     });
     cwd.mockRestore();
 
-    expect(appended).toContain("trial 1/1 done");
-    expect(appended).toContain("partial");
-    expect(appended.some((t) => t.startsWith("ERROR: "))).toBe(true);
+    // Harbor's unfinished last line goes out when its stream ends, before the
+    // error, not with whatever is written after it.
+    const harbor = appended.indexOf("trial 1/1 done");
+    expect(appended.slice(harbor, harbor + 2)).toEqual([
+      "trial 1/1 done",
+      "partial",
+    ]);
+    expect(appended.findIndex((t) => t.startsWith("ERROR: "))).toBeGreaterThan(
+      harbor + 1,
+    );
     expect(existsSync(marker)).toBe(true);
   });
 });

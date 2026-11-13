@@ -29,13 +29,18 @@ const CHECK_MS = 30_000;
 /** Read errors are retried for this long (a laptop asleep, a network blip). */
 const MAX_ERROR_MS = 5 * 60_000;
 
+/**
+ * One source of output (a stream, the logger). `write` splits what it gets
+ * into lines and holds back an unfinished last one, so sources don't cut into
+ * each other's lines; `end` sends that one as it is.
+ */
+export interface RunLogWriter {
+  write: (chunk: string) => void;
+  end: () => void;
+}
+
 export interface RunLogShipper {
-  /**
-   * A writer for one source of output (a stream, the logger). It splits what
-   * it gets into lines and holds back an unfinished last one, so sources
-   * don't cut into each other's lines.
-   */
-  writer: () => (chunk: string) => void;
+  writer: () => RunLogWriter;
   /** Send everything left, unfinished last lines included. */
   close: () => Promise<void>;
 }
@@ -134,6 +139,11 @@ export const createRunLogShipper = (
     return sending;
   };
 
+  const endPartial = (partial: { text: string }) => {
+    if (partial.text) push(partial.text);
+    partial.text = "";
+  };
+
   const timer = setInterval(flush, FLUSH_MS);
   timer.unref();
 
@@ -141,18 +151,18 @@ export const createRunLogShipper = (
     writer: () => {
       const partial = { text: "" };
       partials.push(partial);
-      return (chunk) => {
-        const lines = (partial.text + chunk).split("\n");
-        partial.text = lines.pop() ?? "";
-        for (const line of lines) push(line.replace(/\r$/, ""));
+      return {
+        write: (chunk) => {
+          const lines = (partial.text + chunk).split("\n");
+          partial.text = lines.pop() ?? "";
+          for (const line of lines) push(line.replace(/\r$/, ""));
+        },
+        end: () => endPartial(partial),
       };
     },
     close: async () => {
       clearInterval(timer);
-      for (const partial of partials) {
-        if (partial.text) push(partial.text);
-        partial.text = "";
-      }
+      for (const partial of partials) endPartial(partial);
       const deadline = Date.now() + CLOSE_TIMEOUT_MS;
       while (enabled && pending.length > 0 && Date.now() < deadline) {
         await flush();
