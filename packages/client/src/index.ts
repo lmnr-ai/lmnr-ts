@@ -199,7 +199,12 @@ export class LaminarClient {
 }
 
 export type { CliProject, ProjectKeyProbe } from "./resources/cli";
-export type { StartHostedEvalRunOptions } from "./resources/hosted-evals";
+export type {
+  HostedEvalRunLogLine,
+  HostedEvalRunLogPage,
+  HostedEvalSandboxStatus,
+  StartHostedEvalRunOptions,
+} from "./resources/hosted-evals";
 export type { LaminarAuth } from "./resources/index";
 export type {
   CreateLlmProfileOptions,

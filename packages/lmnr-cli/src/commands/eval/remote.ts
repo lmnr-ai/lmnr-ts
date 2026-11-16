@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -7,6 +8,7 @@ import { errorMessage } from "@lmnr-ai/types";
 
 import { version } from "../../../package.json";
 import { archiveTooLarge, missingEnv } from "../../errors";
+import { onStderr } from "../../utils/command-capture";
 import { initializeLogger } from "../../utils/logger";
 import { imagePusher } from "./docker";
 import { API_KEY_VAR, harborEnv } from "./env";
@@ -14,6 +16,8 @@ import { assertSuitesPassed, type JobOutput, runSuites } from "./harbor";
 import { ensureRemoteImages, type RemoteImages } from "./images";
 import { findJobDir, packJobDir } from "./jobs";
 import { packEvalsDir } from "./pack";
+import { createRunLogShipper } from "./run-log";
+import { harborLogLine } from "./run-log-lines";
 import type { RunOverrides } from "./suites";
 
 const logger = initializeLogger();
@@ -124,62 +128,98 @@ const readRunSpec = (): RunSpec => {
  * A failed upload only warns.
  */
 const jobUploads = async (
-  env: Record<string, string>,
-): Promise<JobOutput | undefined> => {
-  const uploadId = process.env.LMNR_EVAL_UPLOAD_ID;
-  if (!uploadId) {
-    logger.warn(
-      "LMNR_EVAL_UPLOAD_ID is not set; trial logs won't be uploaded.",
-    );
-    return undefined;
-  }
-  const client = new LaminarClient({
-    baseUrl: env.LMNR_BASE_URL,
-    auth: { type: "apiKey", key: env[API_KEY_VAR] },
-  });
-  return {
-    dir: await mkdtemp(path.join(tmpdir(), "lmnr-jobs-")),
-    onSuiteEnd: async (suite, jobsDir) => {
-      const jobDir = await findJobDir(jobsDir);
-      if (!jobDir) return;
-      try {
-        const { archive, index, skipped } = await packJobDir(jobDir);
-        if (skipped.length > 0) {
-          logger.warn(
-            `Not uploading ${skipped.length} large trial file(s) of suite ` +
-              `${suite}: ${skipped.slice(0, 5).join(", ")}` +
-              (skipped.length > 5 ? ", ..." : ""),
-          );
-        }
-        await client.hostedEvals.uploadJob(uploadId, suite, archive);
-        await client.hostedEvals.uploadJobIndex(uploadId, suite, {
-          files: index,
-        });
-      } catch (error) {
+  client: LaminarClient,
+  uploadId: string,
+): Promise<JobOutput> => ({
+  dir: await mkdtemp(path.join(tmpdir(), "lmnr-jobs-")),
+  onSuiteEnd: async (suite, jobsDir) => {
+    const jobDir = await findJobDir(jobsDir);
+    if (!jobDir) return;
+    try {
+      const { archive, index, skipped } = await packJobDir(jobDir);
+      if (skipped.length > 0) {
         logger.warn(
-          `Could not upload the trial logs of suite ${suite}: ` +
-            errorMessage(error),
+          `Not uploading ${skipped.length} large trial file(s) of suite ` +
+            `${suite}: ${skipped.slice(0, 5).join(", ")}` +
+            (skipped.length > 5 ? ", ..." : ""),
         );
       }
-    },
-  };
-};
+      await client.hostedEvals.uploadJob(uploadId, suite, archive);
+      await client.hostedEvals.uploadJobIndex(uploadId, suite, {
+        files: index,
+      });
+    } catch (error) {
+      logger.warn(
+        `Could not upload the trial logs of suite ${suite}: ` +
+          errorMessage(error),
+      );
+    }
+  },
+});
 
 /**
  * `lmnr-cli eval orchestrate` (hidden): the remote run's entry point inside
  * its orchestrator sandbox. The evals folder is the cwd; the spec, project key
  * and API URL come from the env the app-server set.
+ *
+ * Everything the run prints (this CLI's log, Harbor's output) also goes to the
+ * run's log in Laminar, which `eval run --remote` follows. Once a line is
+ * stored, `$LMNR_RUN_LOG_MARKER` is created: the sandbox's command then sends
+ * only the exit code, not its own tail of the output.
  */
 export const handleEvalOrchestrate = async (): Promise<void> => {
   const spec = readRunSpec();
   const env = await harborEnv(spec.env, {});
-  const failed = await runSuites(
-    process.cwd(),
-    spec.suites,
-    spec.overrides,
-    env,
-    spec,
-    await jobUploads(env),
+  const uploadId = process.env.LMNR_EVAL_UPLOAD_ID;
+  if (!uploadId) {
+    logger.warn(
+      "LMNR_EVAL_UPLOAD_ID is not set; the run's log and trial logs won't " +
+        "be uploaded.",
+    );
+    assertSuitesPassed(
+      await runSuites(process.cwd(), spec.suites, spec.overrides, env, spec),
+    );
+    return;
+  }
+
+  const client = new LaminarClient({
+    baseUrl: env.LMNR_BASE_URL,
+    auth: { type: "apiKey", key: env[API_KEY_VAR] },
+  });
+  const marker = process.env.LMNR_RUN_LOG_MARKER;
+  const shipper = createRunLogShipper(
+    (lines) => client.hostedEvals.appendRunLogs(uploadId, lines),
+    // Sync: a run that fails fast exits right after its first batch.
+    marker ? () => writeFileSync(marker, "") : undefined,
   );
-  assertSuitesPassed(failed);
+  const unsubscribe = onStderr(shipper.writer().write);
+  const links = new Set<string>();
+  try {
+    const failed = await runSuites(
+      process.cwd(),
+      spec.suites,
+      spec.overrides,
+      // Rich wraps at 80 columns off a terminal, splitting paths and links.
+      { ...env, COLUMNS: "500" },
+      spec,
+      {
+        jobs: await jobUploads(client, uploadId),
+        output: (suite) => {
+          const rewrite = harborLogLine(suite, links);
+          return {
+            stdout: shipper.writer(rewrite),
+            stderr: shipper.writer(rewrite),
+          };
+        },
+      },
+    );
+    assertSuitesPassed(failed);
+  } catch (error) {
+    // The caller logs it and exits right away, before a flush could run.
+    shipper.writer().write(`ERROR: ${errorMessage(error)}\n`);
+    throw error;
+  } finally {
+    unsubscribe();
+    await shipper.close();
+  }
 };

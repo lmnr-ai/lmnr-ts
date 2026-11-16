@@ -618,7 +618,7 @@ Examples:
     )
     .option(
       "--remote",
-      "Run in Laminar sandboxes instead of local Docker; the CLI exits once the run starts",
+      "Run in Laminar sandboxes instead of local Docker, printing the run's log until it ends",
     )
     .option(
       "--suite <name>",
@@ -658,8 +658,9 @@ Modes:
   (default)          Trials run on local Docker. Needs uv, Docker and
                      LMNR_PROJECT_API_KEY (written to .env by \`lmnr-cli setup\`).
   --remote           Pushes the images, uploads the folder and starts the run
-                     in a Laminar sandbox, then returns. Needs Docker and
-                     \`lmnr-cli login\` (or LMNR_PROJECT_API_KEY).
+                     in a Laminar sandbox, then prints the run's log until it
+                     ends. Ctrl-C stops following; the run goes on. Needs
+                     Docker and \`lmnr-cli login\` (or LMNR_PROJECT_API_KEY).
 
 Images: tasks name their image with docker_image in task.toml. Images listed in
 [dir]/lmnr.yaml are built from their Dockerfile with Docker on every run:
@@ -686,6 +687,8 @@ Exit codes:
   18  harbor_failed (a suite's harbor run failed)
   19  missing_env (an unset \`\${VAR}\` or LMNR_PROJECT_API_KEY)
   20  docker_failed (a docker build, pull or save failed, or a wrong platform)
+  21  remote_run_failed (a --remote run failed before its suites ran, or
+      its sandbox was lost)
 
 Examples:
   $ lmnr-cli eval run

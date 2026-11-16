@@ -13,6 +13,29 @@ export interface StartHostedEvalRunOptions {
   spec: object;
 }
 
+/** One line of a remote run's log, numbered from 0 by the run's orchestrator. */
+export interface HostedEvalRunLogLine {
+  seq: number;
+  /** Milliseconds since the epoch. */
+  time: number;
+  text: string;
+}
+
+/** A page of a remote run's log. See {@link HostedEvalsResource.getRunLogs}. */
+export interface HostedEvalRunLogPage {
+  lines: HostedEvalRunLogLine[];
+  /** Pass as `from` for the lines after these. */
+  next: number;
+  /** The orchestrator's exit code, once it has exited; null while it runs. */
+  exitCode: number | null;
+}
+
+/** A Laminar sandbox's state. */
+export interface HostedEvalSandboxStatus {
+  state: "pending" | "started" | "error" | "destroyed";
+  errorReason?: string;
+}
+
 /**
  * Hosted evals: Harbor evals with trials in Laminar-managed sandboxes.
  *
@@ -20,8 +43,9 @@ export interface StartHostedEvalRunOptions {
  *   locally (layers named by their `diff_id`); trials start from it.
  * - Remote runs: `upload` the `.tar.gz` of the evals folder and `uploadIndex`
  *   its file index, then `startRun` to orchestrate it in a Laminar sandbox. Results land in the project as
- *   regular evaluations; v0 returns no run status. The orchestrator sends each
- *   suite's Harbor job output with `uploadJob` / `uploadJobIndex`.
+ *   regular evaluations. The orchestrator sends its output with
+ *   `appendRunLogs` and each suite's Harbor job output with `uploadJob` /
+ *   `uploadJobIndex`; `getRunLogs` follows the run until it exits.
  */
 export class HostedEvalsResource extends BaseResource {
   constructor(baseHttpUrl: string, auth: LaminarAuth) {
@@ -144,6 +168,64 @@ export class HostedEvalsResource extends BaseResource {
     if (!response.ok) {
       await this.handleErrorMessage(response);
     }
+  }
+
+  /**
+   * Append lines to a remote run's log (run key, from its orchestrator). Send
+   * one batch at a time: a batch is readable once this returns. Returns false
+   * when the server doesn't keep run logs.
+   */
+  public async appendRunLogs(
+    uploadId: string,
+    lines: HostedEvalRunLogLine[],
+  ): Promise<boolean> {
+    const response = await fetch(this.url(`/runs/${uploadId}/logs`), {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ lines }),
+    });
+    if (response.status === 404) return false;
+    if (!response.ok) {
+      await this.handleErrorMessage(response);
+    }
+    return true;
+  }
+
+  /**
+   * A remote run's log from line `from` on (at most 1000 lines per page).
+   * Null when the server doesn't keep run logs.
+   */
+  public async getRunLogs(
+    uploadId: string,
+    from = 0,
+  ): Promise<HostedEvalRunLogPage | null> {
+    const response = await fetch(
+      this.url(`/runs/${uploadId}/logs?from=${from}`),
+      { headers: this.headers() },
+    );
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      await this.handleErrorMessage(response);
+    }
+    return (await response.json()) as HostedEvalRunLogPage;
+  }
+
+  /**
+   * The state of a sandbox, e.g. a remote run's orchestrator. Null when the
+   * project has no such sandbox (anymore).
+   */
+  public async getSandbox(
+    sandboxId: string,
+  ): Promise<HostedEvalSandboxStatus | null> {
+    const response = await fetch(
+      this.url(`/sandboxes/${encodeURIComponent(sandboxId)}`),
+      { headers: this.headers() },
+    );
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      await this.handleErrorMessage(response);
+    }
+    return (await response.json()) as HostedEvalSandboxStatus;
   }
 
   /** Start a remote run. Returns once its orchestrator sandbox has started. */

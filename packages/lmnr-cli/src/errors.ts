@@ -54,6 +54,8 @@ export const missingTool = (m: string) => new CliError("missing_tool", 17, m);
 export const harborFailed = (m: string) => new CliError("harbor_failed", 18, m);
 export const missingEnv = (m: string) => new CliError("missing_env", 19, m);
 export const dockerFailed = (m: string) => new CliError("docker_failed", 20, m);
+export const remoteRunFailed = (m: string) =>
+  new CliError("remote_run_failed", 21, m);
 
 /**
  * Bare exit codes for the two sites that DON'T go through `failWith`: each emits
