@@ -187,7 +187,7 @@ export const createRunLogShipper = (
 /** What `followRunLog` reads with: the hosted-evals client's two calls. */
 export interface RunLogSource {
   getRunLogs: (
-    uploadId: string,
+    runId: string,
     from: number,
   ) => Promise<HostedEvalRunLogPage | null>;
   getSandbox: (sandboxId: string) => Promise<HostedEvalSandboxStatus | null>;
@@ -214,7 +214,7 @@ export interface FollowOptions {
  */
 export const followRunLog = async (
   source: RunLogSource,
-  uploadId: string,
+  runId: string,
   sandboxId: string,
   {
     write = (text) => process.stderr.write(text),
@@ -227,7 +227,7 @@ export const followRunLog = async (
   let failingSince: number | undefined;
 
   const read = async (): Promise<HostedEvalRunLogPage | null> => {
-    const page = await source.getRunLogs(uploadId, from);
+    const page = await source.getRunLogs(runId, from);
     if (page) {
       for (const line of page.lines) write(`${line.text}\n`);
     }

@@ -1,19 +1,61 @@
-# Harbor evals (`eval`)
+# Harbor evals and task sets (`eval`)
 
-- `lmnr-cli eval run [dir=evals]` runs each suite (`<dir>/<suite>/harbor.yaml`,
-  a Harbor JobConfig) with **pinned** Harbor + the Laminar plugin through
-  `uvx` (`harbor.ts`: `HARBOR_VERSION`, `LMNR_PYTHON_VERSION`), from inside the
-  suite dir so relative paths and custom agent imports resolve the same way
-  everywhere. Harbor's stdout goes to OUR stderr; stdout is data only.
-  - default: trials on local Docker; `lmnr.yaml` images are `docker build`-ed first.
-  - `--remote`: runs in Laminar sandboxes and prints the run's log until it
-    ends. Packs the folder (`pack.ts`) and checks the 1 GiB
-    cap BEFORE pushing images, then uploads it, `PUT
-    /v1[/cli]/hosted-evals/uploads/{id}/index {files}` (a failure only
-    warns: the index is just for Laminar's file view), and `POST
-    /v1[/cli]/hosted-evals/runs {uploadId, cliVersion, spec}`. The server's
-    orchestrator sandbox runs `npx lmnr-cli@<cliVersion> eval orchestrate`
-    (hidden command), so `RunSpec` only has to stay readable by the SAME version.
+- **Layout** (`layout.ts`): the evals folder (`--dir`, default `evals`) holds
+  one dir per agent. `evals/<agent>/agent.yaml` = `{images: {name: {dockerfile,
+  context}}, job: <Harbor JobConfig minus datasets/tasks>}` (paths relative to
+  the agent dir); everything in the agent dir except `task_sets/` and
+  `.lmnr.json` is the agent's **scripts**; `task_sets/<set>/<task>/` (a task =
+  a direct child dir with `task.toml`) are its **task sets**. Names (agent,
+  task set) match `^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$` (`assertName`): they go
+  into API paths. There are no suites, `harbor.yaml` or `lmnr.yaml` anymore
+  (LAM-2543, clean break).
+- **Laminar is the source of truth for task sets; the repo for scripts.**
+  Both are stored as versions: one content-addressed blob each
+  (`ensureBlob`: `treeDigest` of the files `pack.ts` packs → `getBlobIndex`
+  → `putBlob` + `putBlobIndex` only if missing; the index goes last, its
+  presence marks the blob complete), then `createAgentVersion` /
+  `createTaskSetVersion`. `push: true` moves the head; `push: false` is a
+  **run snapshot** (`number: null`). Contract with the server: lmnr
+  `docs/internal/hosted-evals.md`.
+- **Hashes** (`digest.ts`): sha256 over `${posix path}\0${sha256(content)}\n`
+  per file, sorted by path in JS string order (NOT the per-directory walk
+  order: `a-b/x` sorts before `a/x`). Modes don't count. Task digest = its dir;
+  task set hash = the set dir minus `.lmnr.json`; scripts hash = the agent dir
+  minus `task_sets/` and `.lmnr.json` (`AGENT_SCRIPTS` / `TASK_SET_FILES` in
+  `store.ts`). The server stores them unverified.
+- **`eval run [agents...]`** (`index.ts`, `prepare.ts`): agents default to the
+  local agent dirs; task sets default to local `task_sets/*` ∪ the agent's
+  task sets in Laminar (`--task-set name[@number]` narrows). Per agent:
+  - scripts: the local dir if it has agent.yaml (snapshotted, with `git
+    rev-parse HEAD` as `gitSha`), else Laminar's head downloaded to a scratch
+    dir (the fallback for repo-less users; image contexts outside the agent dir
+    won't exist there).
+  - each task set: `@number` and sets without a local copy are downloaded
+    from Laminar; a local copy is used as is and snapshotted with `base` =
+    its `.lmnr.json`. A run never moves a head; it warns when the copy's base
+    is behind head and says how to publish a never-pushed set.
+  - Both modes need the API (snapshots), so local runs use `buildEvalClient`
+    (login, else `LMNR_PROJECT_API_KEY`) too.
+- **Harbor runs once per task set** (`harbor.ts` `runTaskSets`), cwd = the
+  agent dir (custom agent imports resolve from there), job config =
+  `buildJobConfig(agent.yaml job, setDir, overrides, remote)`: the set dir
+  (absolute) as the only dataset, `--task` as its `task_names`. One Harbor run
+  = one evaluation, grouped `<agent>/<set>` (`--pk group_name=` and
+  `HARBOR_LAMINAR_GROUP`). `linkEnv` sets `LMNR_EVAL_AGENT_VERSION_ID`,
+  `LMNR_EVAL_TASK_SET_VERSION_ID`, `LMNR_EVAL_TASK_SET_ROOT` (+
+  `LMNR_EVAL_RUN_ID` remotely): the Laminar Harbor plugin (lmnr-python) links
+  the evaluation to those versions and records each datapoint's `task_path`
+  relative to the set root. Harbor's stdout goes to OUR stderr; stdout is data
+  only.
+  - default: trials on local Docker; the agent.yaml images the tasks use are
+    `docker build`-ed first.
+  - `--remote` (`remote.ts`): per agent, push its images, `startRun({cliVersion,
+    spec})` → `{runId, sandboxId}`, then follow each run's log in turn. `RunSpec
+    = {agent: {name, versionId, hash}, taskSets: [...], overrides, env,
+    images}`, read only by the same CLI version. The orchestrator sandbox runs
+    `npx lmnr-cli@<cliVersion> eval orchestrate`, which downloads the blobs
+    into `$LMNR_EVALS_ROOT/<agent>/(task_sets/<set>/)` (`materialize`) and
+    runs them like a local run, with the run key.
   - **The run's log** (`run-log.ts`; lmnr `docs/internal/hosted-evals.md`,
     "Run log"): `eval orchestrate` ships every line it prints
     (`createRunLogShipper`): logger records via `onStderr`
@@ -22,12 +64,12 @@
     make `runCommand` pipe instead of inherit (Rich doesn't animate when piped
     anyway). Each source (logger, Harbor stdout, Harbor stderr) has its own
     `writer()`, so one's unfinished line can't swallow another's; `runCommand`
-    calls a sink's `end` when its stream ends, so a suite's last line without
-    a newline goes out before the next suite or the error. Harbor runs with
+    calls a sink's `end` when its stream ends, so a task set's last line without
+    a newline goes out before the next task set or the error. Harbor runs with
     `COLUMNS=500` (Rich wraps at 80 off a terminal) and its lines go through
     `harborLogLine` (`run-log-lines.ts`): the job summary's sandbox paths are
     dropped, and the Laminar plugin's `Laminar evaluation: <url>` log line
-    becomes `Laminar evaluation for suite <suite>: <url>` the first time (the
+    becomes `Laminar evaluation for task set <agent>/<set>: <url>` the first time (the
     plugin repeats it at job end). `eval run --remote` highlights those lines
     and prints them all again when the run ends (`evaluations` in `--json`).
     Lines are
@@ -42,40 +84,57 @@
     polls `getRunLogs` every 2 s, checks `getSandbox` every 30 s, and returns
     `exited` / `lost` / `unsupported`; `assertRemotePassed` maps those to exit
     codes. Ctrl-C stops following (exit 130); the run goes on.
-  - **`eval orchestrate` uploads each suite's Harbor job** for Laminar's trial
-    Log tab (`jobUploads` in `remote.ts`, `jobs.ts`): `runSuites` gets a
-    `JobOutput` that forces `jobs_dir` to `<tmp>/<suite>` (never `job_name`:
+  - **`eval orchestrate` uploads each task set's Harbor job** for Laminar's
+    trial Log tab (`jobUploads` in `remote.ts`, `jobs.ts`): `runTaskSets` gets
+    a `JobOutput` that forces `jobs_dir` to `<tmp>/<set>` (never `job_name`:
     the plugin names the evaluation after it, a timestamp by default), and
     after each `harbor run` exits (passed or not) the one job dir in there
-    (`findJobDir`) has its trial dirs packed with
-    `packFiles` and sent with `uploadJob` + `uploadJobIndex` (`LMNR_EVAL_UPLOAD_ID`,
-    run key). Job-level files, `<trial>/artifacts` and `steps/*/artifacts` are
-    left out; files over 50 MiB and anything past 256 MiB are skipped. A
-    failure only warns. The sandbox (and the job) is deleted after the run, so
-    this is the only copy.
+    (`findJobDir`) has its trial dirs packed with `packFiles` and sent with
+    `uploadJob(runId, set)` + `uploadJobIndex` (run key). Job-level files,
+    `<trial>/artifacts` and `steps/*/artifacts` are left out; files over 50 MiB
+    and anything past 256 MiB are skipped. A failure only warns. The sandbox
+    (and the job) is deleted after the run, so this is the only copy.
   - **No extra secret pass:** Harbor scrubs each trial dir before `harbor run`
     exits, but only values from the agent's / verifier's env (not the task's
     `[environment] env`, resolved inside each environment backend). Uploads
     carry that gap as is; fixing it upstream is LAM-2534.
-- Modules: `index.ts` (`eval run` flow, reporting), `remote.ts` (`RunSpec`,
-  `startRemoteRun`, `eval orchestrate`), `run-log.ts` (the run's log: shipper
-  and follower), `run-log-lines.ts` (what the log shows of Harbor's output),
-  `jobs.ts` (packing a finished Harbor
-  job), `env.ts` (`--env`, `${VAR}`
-  resolution, the Harbor process env), `suites.ts` (suite discovery,
-  `SKIPPED_DIRS`, the run's tasks (`findTaskTomls`), `buildJobConfig`), `harbor.ts` (uvx/Harbor
-  only), `images.ts` (`lmnr.yaml`, what tasks start from, `ensureRemoteImages`),
-  `docker.ts` (builds, the ignore guard, `imagePusher`), `push.ts` (`docker
-  save` output → layer upload), `run-command.ts` (spawn; a missing binary is
-  `missing_tool`). Import graph is acyclic: `docker.ts` imports only types from
-  `images.ts`. `ensureRemoteImages` takes an `ImagePusher` so its selection
-  logic is tested without Docker; tests mock `run-command.ts` for the rest.
+- **`eval pull <agent>[/<set>][@n]` / `eval push <agent>[/<set>]`**
+  (`sync.ts`, `merge.ts`): `.lmnr.json` in a set dir = `{versionId, number,
+  hash, tasks: {name: digest}}`, the version the copy is based on.
+  - pull downloads the version to a temp dir and merges task by task
+    (`planMerge(base, local, remote)`): changed only remotely → taken, only
+    locally → kept, both (differently) → `merge_conflict` (22) before anything
+    is written. Files outside task dirs are taken from remote. `.lmnr.json`
+    then = the pulled version (local changes stay as diffs against it).
+    `pull <agent>` also extracts the head scripts over the agent dir (extra
+    local files stay).
+  - push rejects tasks with `environment/Dockerfile` or
+    `docker-compose.yaml` (`assertNoTaskBuilds`: tasks name an agent.yaml or
+    registry image; per-task data goes in `environment/`, which Harbor copies
+    into a prebuilt-image sandbox), sends `base`, and on `{headMoved}` (409)
+    pulls the head in and retries once. `push <agent>` also pushes the scripts
+    when agent.yaml exists (last writer wins, no base).
+  - `eval list [agent]` prints heads (`snapshot` = never pushed).
+- Modules: `index.ts` (`eval run`, reporting), `prepare.ts` (what a run uses),
+  `layout.ts` (folder layout, agent.yaml, task dirs, job config, `${VAR}`s,
+  `.lmnr.json`), `store.ts` (blobs, versions, downloads), `digest.ts`,
+  `merge.ts`, `sync.ts` (`pull` / `push` / `list`), `remote.ts` (`RunSpec`,
+  `startRemoteRun`, `eval orchestrate`), `client.ts` (API client, project
+  URLs), `run-log.ts`, `run-log-lines.ts`, `jobs.ts`, `env.ts` (`--env`,
+  `${VAR}` resolution, the Harbor process env), `harbor.ts` (uvx/Harbor only),
+  `images.ts` (which images the tasks use, `ensureRemoteImages`), `docker.ts`
+  (builds, the ignore guard, `imagePusher`), `push.ts` (`docker save` output →
+  layer upload), `run-command.ts` (spawn; a missing binary is `missing_tool`).
+  `ensureRemoteImages` takes an `ImagePusher` so its selection logic is tested
+  without Docker; tests mock `run-command.ts` and the client for the rest
+  (`sync.test.ts` runs push/pull against an in-memory server).
 - **Remote trials use `assets/lmnr_hosted_env.py`**, a Harbor `BaseEnvironment`
   subclass copied next to the staged job config and loaded via
-  `environment.import_path` (`buildJobConfig(config, overrides, remote)` swaps
-  the suite's environment type/kwargs for it). It calls
+  `environment.import_path` (`buildJobConfig(job, setDir, overrides, remote)` swaps
+  the job's environment type/kwargs for it). It calls
   `/v1/hosted-evals/sandboxes/*` with `LMNR_PROJECT_API_KEY`; the app-server
-  proxies to Daytona (lmnr `docs/internal/hosted-evals.md`). Sandbox `state` is
+  proxies to Daytona (lmnr `docs/internal/hosted-evals.md`). Every task names an image (`docker_image`); the class looks its digest up in
+  `LMNR_EVAL_IMAGES = {images: {docker_image: digest}}`. Sandbox `state` is
   `pending | started | error | destroyed`; snapshot state is `ready | pending
   | failed` (+`errorReason`), and only a failed snapshot raises Harbor's
   `SandboxBuildFailedError`. It logs a few INFO lines per trial, prefixed
@@ -91,32 +150,13 @@
   remote run against the new version.
   `assets/` ships in the npm package (`files`); `environmentModulePath` finds it
   next to `dist/` or in the source tree.
-- **Images:** tasks name an image with `docker_image`; `<dir>/lmnr.yaml`
-  `images: {name: {dockerfile, context}}` declares how to build it (paths
-  relative to `<dir>`). Local runs `docker build` the ones the run's tasks
-  reference (`localImageDefs`) and let Harbor handle the rest.
-- **Which tasks a run includes** (`findTaskTomls`, used for images and
-  `${VAR}`s) mirrors Harbor's `JobPlan.resolve_task_configs` on the job config
-  after overrides: `tasks` entries with a local `path`, plus each local
-  dataset's child dirs with a `task.toml`, matched by DIRECTORY name (Harbor's
-  `LocalTaskId.get_name`, not `[task] name`) against `task_names` /
-  `exclude_task_names` with fnmatch; a symlinked task dir is followed and
-  named after its target, as Harbor resolves it (remote runs don't pack
-  symlinks, so such a task only runs locally). `--task` replaces every dataset's
-  `task_names` and filters `tasks` by name, so it narrows images too.
-  `n_tasks` is ignored (Harbor counts only fully valid dirs, so applying it
-  could skip a task that runs: over-pushing is the safe side). Task dirs no
-  dataset or `tasks` entry points at are never built. Checked against Harbor
-  0.25.0 on a fixture with excludes, a `../` task and `--task` globs.
-- What a task starts from mirrors Harbor's
-  `should_use_prebuilt_docker_image` (`findTaskImages`): its `docker_image`,
-  unless the suite's harbor.yaml sets `environment.force_build: true` and the
-  task has `environment/Dockerfile`, which is otherwise used only without a
-  `docker_image`.
+- **Images:** tasks name an image with `docker_image` in task.toml;
+  agent.yaml `images` declares how to build it. Local runs `docker build` the
+  ones the run's tasks reference (`localImageDefs`) and let Harbor pull the
+  rest. `--task` narrows which images are built or pushed.
 - **Remote runs push every image the run's tasks use, from here**
-  (`ensureRemoteImages`): per-task `environment/Dockerfile`s and the
-  `lmnr.yaml` images tasks reference are built (`pusher.build`; unreferenced
-  `lmnr.yaml` images are skipped), other `docker_image`s are pulled
+  (`ensureRemoteImages`): the agent.yaml images tasks reference are built
+  (`pusher.build`; unreferenced ones are skipped), other `docker_image`s are pulled
   (`pusher.pull`, a `FROM <ref>` build in one temp dir, so the amd64 variant
   saves like a built image even from a multi-platform index). Each goes
   `docker build --platform linux/amd64` → `docker save -o` + unpack →
@@ -128,25 +168,11 @@
   server pushes into its registry (ECR) and Harbor's class waits on `POST
   /images/snapshots` before `POST /sandboxes {image: <digest>}` (lmnr
   `docs/internal/hosted-evals.md`). Each image has ONE display name for logs,
-  errors and its local tag (`ImageDef.name`: the `lmnr.yaml` name, the pulled
-  ref, or `<suite>/<env dir key>`). Docker is assumed for every mode: there is
+  errors and its local tag (`ImageDef.name`: the agent.yaml name or the pulled ref). Docker is assumed for every mode: there is
   no fallback. Measured: an app change uploads one small layer; unchanged →
   nothing.
-- **Image map shape** (digest strings only): `RemoteImages = {images:
-  {docker_image: digest}, dockerfiles: {suite: {envDirKey: digest}}}`, spread
-  into `RunSpec`. Each suite's Harbor gets `LMNR_EVAL_IMAGES = {images,
-  dockerfiles: <that suite's>}` (`suiteImages`). Dockerfile keys are the env
-  dir relative to the suite dir (Harbor's cwd), always with `/`
-  (`dockerfileKey`: a remote run looks a Windows-built map up on Linux).
-- **Remote limitations:** a per-task Dockerfile `FROM <lmnr.yaml image>` does
-  not work remotely and is not supported: remote pushes tag `lmnr.yaml` images
-  `lmnr-evals-remote:<hash>`, not by name, so the `FROM` resolves to a
-  registry image or a stale local build. Tasks from git/registry datasets are
-  fetched by Harbor, so their per-task Dockerfiles and `docker_image`s aren't
-  pushed; local task paths outside the evals folder aren't packed either.
 - **Every build lmnr-cli runs excludes `.git` and `.env*` without copying the
-  context** (`guardedDockerfile` in `docker.ts`, local `lmnr.yaml` builds too;
-  local per-task Dockerfiles are built by Harbor, unguarded): the Dockerfile is
+  context** (`guardedDockerfile` in `docker.ts`, local agent.yaml builds too): the Dockerfile is
   copied to a temp dir next to a generated `Dockerfile.dockerignore` = the
   image's own ignore file (`<Dockerfile>.dockerignore`, else the context's
   `.dockerignore`) + the guard rules LAST, so no `!` rule undoes them. BuildKit
@@ -156,18 +182,19 @@
   23.0.
 - **Exit codes** (`errors.ts`): 16 `invalid_evals_dir` / `archive_too_large`,
   17 `missing_tool`, 18 `harbor_failed` (Harbor runs only), 19 `missing_env`
-  (also a missing or malformed `LMNR_EVAL_RUN` in `eval orchestrate`), 20
-  `docker_failed` (build / pull / save, unreadable `docker save` output, a
-  non-amd64 image, zstd layers), 21 `remote_run_failed` (a `--remote` run's
-  orchestrator exited with anything but 0 or 18, or its sandbox was lost; 18
-  from it stays `harbor_failed`). Bad `--env` flags are commander
-  `InvalidArgumentError`s.
+  (also a missing or malformed `LMNR_EVAL_RUN` / `LMNR_EVAL_RUN_ID` in `eval
+  orchestrate`), 20 `docker_failed` (build / pull / save, unreadable `docker
+  save` output, a non-amd64 image, zstd layers), 21 `remote_run_failed` (a
+  `--remote` run's orchestrator exited with anything but 0 or 18, or its
+  sandbox was lost; 18 from it stays `harbor_failed`), 22 `merge_conflict`
+  (pull / push), 23 `not_found` (an agent, task set or version Laminar doesn't
+  have). Bad `--env` flags are commander `InvalidArgumentError`s.
 - **Secrets are Harbor `${VAR}` placeholders**, not flags: `findTemplateVars`
-  scans harbor.yaml + the run's task.toml files (`findTaskTomls`, so a task
-  `--task` leaves out needs none of its vars), `resolveTemplateEnv` reads ONLY those
-  names from process env then `.env.local` / `.env` (`findEnvKey`), and a
-  missing required one fails before anything runs (`resolveRunEnv`). The
-  values become the Harbor process env (`harborEnv` adds the project key and
+  scans agent.yaml + the run's task.toml files (so a task `--task` leaves out
+  needs none of its vars), `resolveTemplateEnv` reads ONLY those names from
+  process env then `.env.local` / `.env` (`findEnvKey`), and a missing
+  required one fails before anything runs (`resolveRunEnv`). The values become
+  the Harbor process env (`harborEnv` adds the project key and
   `LMNR_BASE_URL`), so Harbor fills agent, verifier and environment sections
   itself. `--env KEY[=V]` adds vars and references them from every agent as
   `${KEY}`, so literal values never hit the job config. Remote runs send the
@@ -188,11 +215,11 @@
   dataOffset}` gives the member's range and the content's start in the
   decompressed member (`size` comes from `stat` in the walk). Grouping by
   directory measured within ~6% of one gzip stream; one member per file was
-  up to +34% on folders of tiny files. The lmnr frontend reads it
-  (`lib/actions/evaluation/files.ts`; lmnr `docs/internal/hosted-evals.md`).
+  up to +34% on folders of tiny files. The lmnr frontend reads blobs
+  this way (lmnr `docs/internal/hosted-evals.md`).
 - Uploads never contain `.env*`, `SKIPPED_DIRS` (`.git`, `node_modules`,
   virtualenvs, caches, Harbor `jobs/` output; also skipped when finding
-  suites), and skip symlinks (sandboxes extract with Python
+  agents, task sets and tasks), and skip symlinks (sandboxes extract with Python
   `filter="data"`). Exec bits are kept (`tests/test.sh`); on Windows, which has
   none, `.sh` files are packed 0755 and the rest 0644 (Harbor's own rule,
   `needs_chmod`). Ownership and mtimes are fixed so local user names and times

@@ -7,48 +7,80 @@ import { LaminarClient } from "@lmnr-ai/client";
 import { errorMessage } from "@lmnr-ai/types";
 
 import { version } from "../../../package.json";
-import { archiveTooLarge, missingEnv } from "../../errors";
+import { missingEnv } from "../../errors";
 import { onStderr } from "../../utils/command-capture";
 import { initializeLogger } from "../../utils/logger";
 import { imagePusher } from "./docker";
 import { API_KEY_VAR, harborEnv } from "./env";
-import { assertSuitesPassed, type JobOutput, runSuites } from "./harbor";
+import {
+  assertTaskSetsPassed,
+  type JobOutput,
+  runTaskSets,
+  type TaskSetRun,
+} from "./harbor";
 import { ensureRemoteImages, type RemoteImages } from "./images";
 import { findJobDir, packJobDir } from "./jobs";
-import { packEvalsDir } from "./pack";
+import { loadAgentConfig, type RunOverrides, taskSetDir } from "./layout";
 import { createRunLogShipper } from "./run-log";
 import { harborLogLine } from "./run-log-lines";
-import type { RunOverrides } from "./suites";
+import { downloadBlob } from "./store";
 
 const logger = initializeLogger();
 
-/** The server's cap on the uploaded archive (`MAX_ARCHIVE_BYTES`). */
-const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024;
+/** A version a run uses: its id and its blob's hash. */
+export interface VersionRef {
+  name: string;
+  versionId: string;
+  hash: string;
+}
 
 /**
  * A remote run, written here and read back by `eval orchestrate` in the
  * orchestrator sandbox, which runs this same CLI version.
  */
-interface RunSpec extends RemoteImages {
-  suites: string[];
+export interface RunSpec extends RemoteImages {
+  agent: VersionRef;
+  taskSets: VersionRef[];
   overrides: RunOverrides;
-  /** Values for the suites' `${VAR}` placeholders and `--env` flags. */
+  /** Values for the `${VAR}` placeholders and `--env` flags. */
   env: Record<string, string>;
 }
 
-const formatMiB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+/** An agent ready to run: its scripts and task sets, local or downloaded. */
+export interface PreparedAgent {
+  agent: VersionRef;
+  /** Where its scripts are. */
+  dir: string;
+  taskSets: (VersionRef & { dir: string })[];
+}
+
+/** The Harbor runs of a prepared agent, one per task set. */
+export const taskSetRuns = async (
+  prepared: PreparedAgent,
+): Promise<TaskSetRun[]> => {
+  const { job } = await loadAgentConfig(prepared.dir);
+  return prepared.taskSets.map((set) => ({
+    agent: prepared.agent.name,
+    agentDir: prepared.dir,
+    agentVersionId: prepared.agent.versionId,
+    job,
+    taskSet: set.name,
+    setDir: set.dir,
+    taskSetVersionId: set.versionId,
+  }));
+};
 
 /**
- * Pack and upload the evals folder, push its images, and start the run in an
- * orchestrator sandbox. Returns once that sandbox has started.
+ * Push the agent's images and start its run in an orchestrator sandbox. Its
+ * versions are already in Laminar (the run snapshotted them). Returns once that
+ * sandbox has started.
  */
 export const startRemoteRun = async (
   client: LaminarClient,
-  evalsDir: string,
-  suites: string[],
+  prepared: PreparedAgent,
   overrides: RunOverrides,
   env: Record<string, string>,
-): Promise<{ uploadId: string; sandboxId: string }> => {
+): Promise<{ runId: string; sandboxId: string }> => {
   // The orchestrator gets its own short-lived key and URL from the server.
   const dropped = Object.keys(env).filter((k) => k.startsWith("LMNR_"));
   const runEnv = Object.fromEntries(
@@ -59,52 +91,25 @@ export const startRemoteRun = async (
       `Not sending ${dropped.join(", ")}: remote runs report with their own key.`,
     );
   }
-
-  // Pack first: a too-large folder fails before minutes of image pushes.
-  const { archive, index, fileCount, skippedSymlinks } =
-    await packEvalsDir(evalsDir);
-  if (skippedSymlinks.length > 0) {
-    logger.warn(
-      `Skipped ${skippedSymlinks.length} symlink(s): ` +
-        skippedSymlinks.slice(0, 5).join(", ") +
-        (skippedSymlinks.length > 5 ? ", ..." : ""),
-    );
-  }
-  if (archive.length > MAX_ARCHIVE_BYTES) {
-    throw archiveTooLarge(
-      `Packed evals folder is ${formatMiB(archive.length)}, over the ` +
-        `${formatMiB(MAX_ARCHIVE_BYTES)} limit. Remove large files (datasets, ` +
-        "build output) from the folder.",
-    );
-  }
-
+  const { images: defs } = await loadAgentConfig(prepared.dir);
   const images = await ensureRemoteImages(
-    evalsDir,
-    suites,
+    defs,
+    prepared.taskSets.map((s) => s.dir),
     overrides,
     imagePusher(client),
   );
-  logger.info(
-    `Uploading ${fileCount} files (${formatMiB(archive.length)}), ` +
-      `suites: ${suites.join(", ")}`,
-  );
-  const { uploadId } = await client.hostedEvals.upload(archive);
-  try {
-    await client.hostedEvals.uploadIndex(uploadId, { files: index });
-  } catch (error) {
-    // Only the file view in Laminar needs it (servers before it answer 404).
-    logger.warn(
-      `Could not upload the file index, so Laminar won't show this run's ` +
-        `files: ${errorMessage(error)}`,
-    );
-  }
-  const spec: RunSpec = { suites, overrides, env: runEnv, ...images };
-  const { sandboxId } = await client.hostedEvals.startRun({
-    uploadId,
-    cliVersion: version,
-    spec,
-  });
-  return { uploadId, sandboxId };
+  const spec: RunSpec = {
+    agent: prepared.agent,
+    taskSets: prepared.taskSets.map(({ name, versionId, hash }) => ({
+      name,
+      versionId,
+      hash,
+    })),
+    overrides,
+    env: runEnv,
+    ...images,
+  };
+  return client.hostedEvals.startRun({ cliVersion: version, spec });
 };
 
 const readRunSpec = (): RunSpec => {
@@ -116,51 +121,69 @@ const readRunSpec = (): RunSpec => {
   } catch (error) {
     throw missingEnv(`LMNR_EVAL_RUN is not valid JSON: ${errorMessage(error)}`);
   }
-  if (!Array.isArray(spec?.suites)) {
-    throw missingEnv("LMNR_EVAL_RUN is not a run spec: it has no suites.");
+  if (!spec?.agent || !Array.isArray(spec.taskSets)) {
+    throw missingEnv("LMNR_EVAL_RUN is not a run spec: no agent or task sets.");
   }
   return spec as RunSpec;
 };
 
 /**
- * Each suite's Harbor job goes to Laminar once the suite ends, for the trial
- * log view: the sandbox, and the job dir with it, is deleted after the run.
- * A failed upload only warns.
+ * Each task set's Harbor job goes to Laminar once it ends, for the trial log
+ * view: the sandbox, and the job dir with it, is deleted after the run. A
+ * failed upload only warns.
  */
 const jobUploads = async (
   client: LaminarClient,
-  uploadId: string,
+  runId: string,
 ): Promise<JobOutput> => ({
   dir: await mkdtemp(path.join(tmpdir(), "lmnr-jobs-")),
-  onSuiteEnd: async (suite, jobsDir) => {
+  onTaskSetEnd: async (taskSet, jobsDir) => {
     const jobDir = await findJobDir(jobsDir);
     if (!jobDir) return;
     try {
       const { archive, index, skipped } = await packJobDir(jobDir);
       if (skipped.length > 0) {
         logger.warn(
-          `Not uploading ${skipped.length} large trial file(s) of suite ` +
-            `${suite}: ${skipped.slice(0, 5).join(", ")}` +
+          `Not uploading ${skipped.length} large trial file(s) of task set ` +
+            `${taskSet}: ${skipped.slice(0, 5).join(", ")}` +
             (skipped.length > 5 ? ", ..." : ""),
         );
       }
-      await client.hostedEvals.uploadJob(uploadId, suite, archive);
-      await client.hostedEvals.uploadJobIndex(uploadId, suite, {
+      await client.hostedEvals.uploadJob(runId, taskSet, archive);
+      await client.hostedEvals.uploadJobIndex(runId, taskSet, {
         files: index,
       });
     } catch (error) {
       logger.warn(
-        `Could not upload the trial logs of suite ${suite}: ` +
+        `Could not upload the trial logs of task set ${taskSet}: ` +
           errorMessage(error),
       );
     }
   },
 });
 
+/** Download the run's agent scripts and task sets under `root/<agent>/`. */
+const materialize = async (
+  client: LaminarClient,
+  spec: RunSpec,
+  root: string,
+): Promise<PreparedAgent> => {
+  const dir = path.join(root, spec.agent.name);
+  await downloadBlob(client, spec.agent.hash, dir);
+  const taskSets = [];
+  for (const set of spec.taskSets) {
+    const setDir = taskSetDir(dir, set.name);
+    await downloadBlob(client, set.hash, setDir);
+    taskSets.push({ ...set, dir: setDir });
+  }
+  return { agent: spec.agent, dir, taskSets };
+};
+
 /**
  * `lmnr-cli eval orchestrate` (hidden): the remote run's entry point inside
- * its orchestrator sandbox. The evals folder is the cwd; the spec, project key
- * and API URL come from the env the app-server set.
+ * its orchestrator sandbox. Downloads the run's agent scripts and task sets
+ * into `$LMNR_EVALS_ROOT`, then runs each task set; the spec, run id, project
+ * key and API URL come from the env the app-server set.
  *
  * Everything the run prints (this CLI's log, Harbor's output) also goes to the
  * run's log in Laminar, which `eval run --remote` follows. Once a line is
@@ -169,43 +192,35 @@ const jobUploads = async (
  */
 export const handleEvalOrchestrate = async (): Promise<void> => {
   const spec = readRunSpec();
+  const runId = process.env.LMNR_EVAL_RUN_ID;
+  if (!runId) throw missingEnv("LMNR_EVAL_RUN_ID is not set.");
   const env = await harborEnv(spec.env, {});
-  const uploadId = process.env.LMNR_EVAL_UPLOAD_ID;
-  if (!uploadId) {
-    logger.warn(
-      "LMNR_EVAL_UPLOAD_ID is not set; the run's log and trial logs won't " +
-        "be uploaded.",
-    );
-    assertSuitesPassed(
-      await runSuites(process.cwd(), spec.suites, spec.overrides, env, spec),
-    );
-    return;
-  }
-
   const client = new LaminarClient({
     baseUrl: env.LMNR_BASE_URL,
     auth: { type: "apiKey", key: env[API_KEY_VAR] },
   });
   const marker = process.env.LMNR_RUN_LOG_MARKER;
   const shipper = createRunLogShipper(
-    (lines) => client.hostedEvals.appendRunLogs(uploadId, lines),
+    (lines) => client.hostedEvals.appendRunLogs(runId, lines),
     // Sync: a run that fails fast exits right after its first batch.
     marker ? () => writeFileSync(marker, "") : undefined,
   );
   const unsubscribe = onStderr(shipper.writer().write);
   const links = new Set<string>();
   try {
-    const failed = await runSuites(
-      process.cwd(),
-      spec.suites,
+    const root = process.env.LMNR_EVALS_ROOT || process.cwd();
+    const prepared = await materialize(client, spec, root);
+    const failed = await runTaskSets(
+      await taskSetRuns(prepared),
       spec.overrides,
       // Rich wraps at 80 columns off a terminal, splitting paths and links.
       { ...env, COLUMNS: "500" },
-      spec,
+      { images: spec.images },
       {
-        jobs: await jobUploads(client, uploadId),
-        output: (suite) => {
-          const rewrite = harborLogLine(suite, links);
+        runId,
+        jobs: await jobUploads(client, runId),
+        output: (label) => {
+          const rewrite = harborLogLine(label, links);
           return {
             stdout: shipper.writer(rewrite),
             stderr: shipper.writer(rewrite),
@@ -213,7 +228,7 @@ export const handleEvalOrchestrate = async (): Promise<void> => {
         },
       },
     );
-    assertSuitesPassed(failed);
+    assertTaskSetsPassed(failed);
   } catch (error) {
     // The caller logs it and exits right away, before a flush could run.
     shipper.writer().write(`ERROR: ${errorMessage(error)}\n`);

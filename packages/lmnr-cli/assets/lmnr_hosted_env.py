@@ -8,11 +8,10 @@ this process only ever holds a Laminar project API key.
 Configuration (set by lmnr-cli):
   LMNR_PROJECT_API_KEY  project API key the sandbox routes authenticate with
   LMNR_BASE_URL         Laminar API URL, optionally with a port
-  LMNR_EVAL_IMAGES      JSON: {"images": {docker_image: digest},
-                        "dockerfiles": {task environment/ dir: digest}}, the
-                        manifest digests of images lmnr-cli built or pulled and
-                        pushed. Dockerfile keys are relative to the suite dir,
-                        which is Harbor's cwd, and always use "/".
+  LMNR_EVAL_IMAGES      JSON: {"images": {docker_image: digest}}, the manifest
+                        digests of images lmnr-cli built or pulled and pushed.
+                        Every task names its image with docker_image (task
+                        sets can't build their own environment).
 """
 
 from __future__ import annotations
@@ -31,7 +30,6 @@ import httpx
 
 from harbor.environments.base import BaseEnvironment, ExecResult, SandboxBuildFailedError
 from harbor.environments.capabilities import EnvironmentResourceCapabilities
-from harbor.environments.definition import should_use_prebuilt_docker_image
 from harbor.environments.tar_transfer import (
     extract_dir_from_file,
     pack_dir_to_file,
@@ -144,21 +142,15 @@ class LaminarEnvironment(BaseEnvironment):
 
     # ---- Lifecycle ----
 
-    def _image_spec(self, force_build: bool) -> dict:
-        images = _image_map()
+    def _image_spec(self) -> dict:
         docker_image = self.task_env_config.docker_image
-        if docker_image and should_use_prebuilt_docker_image(
-            self.environment_dir, docker_image=docker_image, force_build=force_build
-        ):
-            digest = images.get("images", {}).get(docker_image)
-            if digest is None:
-                raise LaminarEnvironmentError(f"lmnr-cli didn't push image {docker_image}.")
-            return {"image": digest}
-        # lmnr-cli writes the keys with "/" on every OS (`dockerfileKey`).
-        key = Path(os.path.relpath(self.environment_dir, Path.cwd())).as_posix()
-        digest = images.get("dockerfiles", {}).get(key)
+        if not docker_image:
+            raise LaminarEnvironmentError(
+                "The task has no docker_image: name an image from agent.yaml in task.toml."
+            )
+        digest = _image_map().get("images", {}).get(docker_image)
         if digest is None:
-            raise LaminarEnvironmentError(f"lmnr-cli didn't build {key}/Dockerfile.")
+            raise LaminarEnvironmentError(f"lmnr-cli didn't push image {docker_image}.")
         return {"image": digest}
 
     def _resources(self) -> dict:
@@ -172,7 +164,7 @@ class LaminarEnvironment(BaseEnvironment):
         return resources
 
     async def start(self, force_build: bool) -> None:
-        body = {**self._image_spec(force_build), **self._resources()}
+        body = {**self._image_spec(), **self._resources()}
         await self._wait_for_snapshot(body)
         created = await self._json("POST", "/sandboxes", json=body, once=True)
         self._sandbox_id = created["sandboxId"]

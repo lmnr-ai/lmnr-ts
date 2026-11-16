@@ -1,0 +1,128 @@
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+import type {
+  CreateTaskSetVersionOptions,
+  LaminarClient,
+  TaskSetVersion,
+} from "@lmnr-ai/client";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { readState } from "./layout";
+import { pullTaskSet, pushTaskSet } from "./sync";
+
+let root: string;
+
+const write = async (rel: string, content: string) => {
+  const file = path.join(root, rel);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, content);
+};
+
+const read = (rel: string) => readFile(path.join(root, rel), "utf8");
+
+/** A task.toml whose content tells versions apart. */
+const toml = (value: string) => `[metadata]\nvalue = "${value}"\n`;
+
+/** Laminar's task set routes for one task set, in memory. */
+const fakeServer = () => {
+  const blobs = new Map<string, Buffer>();
+  const versions: TaskSetVersion[] = [];
+  let head: TaskSetVersion | null = null;
+  const hostedEvals = {
+    getBlobIndex: async (hash: string) => (blobs.has(hash) ? {} : null),
+    putBlob: async (hash: string, archive: Uint8Array) => {
+      blobs.set(hash, Buffer.from(archive));
+    },
+    putBlobIndex: async () => undefined,
+    getBlob: async (hash: string) =>
+      new Blob([new Uint8Array(blobs.get(hash) as Buffer)]).stream(),
+    createTaskSetVersion: async (
+      _agent: string,
+      _set: string,
+      { hash, push, base }: CreateTaskSetVersionOptions,
+    ) => {
+      let version = versions.find((v) => v.hash === hash);
+      if (push && head && version?.id === head.id) return { version };
+      if (push && (head?.id ?? null) !== base) return { headMoved: head };
+      if (!version) {
+        version = {
+          id: `v-${versions.length + 1}`,
+          number: null,
+          hash,
+          createdAt: "",
+          parentId: base,
+        };
+        versions.push(version);
+      }
+      if (push) {
+        version.number ??=
+          Math.max(0, ...versions.map((v) => v.number ?? 0)) + 1;
+        head = version;
+      }
+      return { version };
+    },
+  };
+  return {
+    client: { hostedEvals } as unknown as LaminarClient,
+    head: () => head,
+  };
+};
+
+beforeEach(async () => {
+  root = await mkdtemp(path.join(tmpdir(), "lmnr-sync-"));
+});
+
+afterEach(async () => {
+  await rm(root, { recursive: true, force: true });
+});
+
+void describe("pushTaskSet / pullTaskSet", () => {
+  void it("pushes, then merges a concurrent push task by task before pushing again", async () => {
+    const server = fakeServer();
+    const mine = path.join(root, "mine/task_sets/s");
+    const theirs = path.join(root, "theirs/task_sets/s");
+    await write("mine/task_sets/s/a/task.toml", toml("a1"));
+    await write("mine/task_sets/s/b/task.toml", toml("b1"));
+
+    const v1 = await pushTaskSet(server.client, "agent", "s", mine);
+    expect(v1.number).toBe(1);
+    expect((await readState(mine))?.versionId).toBe(v1.id);
+
+    // Someone else pulls v1, changes `b` and adds `c`, and pushes first.
+    await pullTaskSet(server.client, "agent", "s", theirs, v1);
+    await write("theirs/task_sets/s/b/task.toml", toml("b2"));
+    await write("theirs/task_sets/s/c/task.toml", toml("c1"));
+    const v2 = await pushTaskSet(server.client, "agent", "s", theirs);
+    expect(v2.number).toBe(2);
+
+    // My push of a change to `a` merges theirs in and lands on top.
+    await write("mine/task_sets/s/a/task.toml", toml("a2"));
+    const v3 = await pushTaskSet(server.client, "agent", "s", mine);
+    expect(v3.number).toBe(3);
+    expect(v3.parentId).toBe(v2.id);
+    expect(await read("mine/task_sets/s/a/task.toml")).toBe(toml("a2"));
+    expect(await read("mine/task_sets/s/b/task.toml")).toBe(toml("b2"));
+    expect(await read("mine/task_sets/s/c/task.toml")).toBe(toml("c1"));
+    expect(server.head()?.id).toBe(v3.id);
+  });
+
+  void it("refuses to merge a task both sides changed, leaving the copy as is", async () => {
+    const server = fakeServer();
+    const mine = path.join(root, "mine/s");
+    await write("mine/s/a/task.toml", toml("a1"));
+    const v1 = await pushTaskSet(server.client, "agent", "s", mine);
+
+    await cp(mine, path.join(root, "theirs/s"), { recursive: true });
+    await write("theirs/s/a/task.toml", toml("theirs"));
+    await pushTaskSet(server.client, "agent", "s", path.join(root, "theirs/s"));
+
+    await write("mine/s/a/task.toml", toml("mine"));
+    await expect(
+      pushTaskSet(server.client, "agent", "s", mine),
+    ).rejects.toMatchObject({ code: "merge_conflict", exitCode: 22 });
+    expect(await read("mine/s/a/task.toml")).toBe(toml("mine"));
+    expect((await readState(mine))?.versionId).toBe(v1.id);
+  });
+});

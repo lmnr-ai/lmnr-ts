@@ -29,6 +29,11 @@ import {
 import { handleEvalRun, parsePositiveInt } from "./commands/eval";
 import { handleEvalOrchestrate } from "./commands/eval/remote";
 import {
+  handleEvalList,
+  handleEvalPull,
+  handleEvalPush,
+} from "./commands/eval/sync";
+import {
   handleLlmProfileCreate,
   handleLlmProfileDelete,
   handleLlmProfileGet,
@@ -610,19 +615,19 @@ Examples:
 
   evalCmd
     .command("run")
-    .description("Run the evals folder's Harbor suites")
+    .description("Run agents' task sets with Harbor")
     .argument(
-      "[dir]",
-      "Evals folder (one <suite>/harbor.yaml per suite)",
-      "evals",
+      "[agents...]",
+      "Agents to run (dirs in the evals folder). Omitted → every agent dir",
     )
+    .option("--dir <dir>", "Evals folder", "evals")
     .option(
       "--remote",
       "Run in Laminar sandboxes instead of local Docker, printing the run's log until it ends",
     )
     .option(
-      "--suite <name>",
-      "Suite to run (repeatable). Omitted → every suite",
+      "--task-set <name[@version]>",
+      "Task set to run (repeatable); @version runs that version from Laminar. Omitted → every task set",
       collectFlag,
     )
     .option(
@@ -632,15 +637,15 @@ Examples:
     )
     .option(
       "--n-attempts <n>",
-      "Attempts per task. Omitted → harbor.yaml",
+      "Attempts per task. Omitted → agent.yaml",
       parsePositiveInt,
     )
     .option(
       "--n-concurrent <n>",
-      "Concurrent trials. Omitted → harbor.yaml",
+      "Concurrent trials. Omitted → agent.yaml",
       parsePositiveInt,
     )
-    .option("--model <name>", "Agent model override. Omitted → harbor.yaml")
+    .option("--model <name>", "Agent model override. Omitted → agent.yaml")
     .option(
       "--env <KEY[=VALUE]>",
       "Extra agent env var (repeatable). A bare KEY is read from your environment",
@@ -650,33 +655,42 @@ Examples:
     .addHelpText(
       "after",
       `
-Runs \`harbor run\` (pinned Harbor + Laminar plugin, via uvx) for each suite:
-a directory directly inside [dir] holding a harbor.yaml (a Harbor JobConfig).
-Every trial is reported to Laminar as an evaluation datapoint, grouped by suite.
+Layout: one dir per agent in the evals folder.
+
+  evals/<agent>/agent.yaml                  images + Harbor job config
+  evals/<agent>/...                         agent scripts (adapter, environment/)
+  evals/<agent>/task_sets/<set>/<task>/     tasks (task.toml, instruction.md, ...)
+
+agent.yaml:
+
+  images:                       # what tasks name with docker_image in task.toml
+    app:
+      dockerfile: environment/Dockerfile   # relative to the agent dir
+      context: ../..                       # build context, default: the Dockerfile's dir
+  job:                          # Harbor JobConfig minus datasets/tasks
+    agents: [{ import_path: "adapter:MyAgent" }]
+
+Runs \`harbor run\` (pinned Harbor + Laminar plugin, via uvx) once per task set,
+from the agent dir. Each task set becomes one evaluation, grouped as
+<agent>/<task set>. Task sets are stored and versioned in Laminar: a task set
+without a local copy runs Laminar's latest version, and an agent without a
+local dir runs Laminar's copy of its scripts. Every run records the exact
+versions it used (as snapshots; only \`lmnr-cli eval push\` publishes).
 
 Modes:
   (default)          Trials run on local Docker. Needs uv, Docker and
                      LMNR_PROJECT_API_KEY (written to .env by \`lmnr-cli setup\`).
-  --remote           Pushes the images, uploads the folder and starts the run
-                     in a Laminar sandbox, then prints the run's log until it
-                     ends. Ctrl-C stops following; the run goes on. Needs
-                     Docker and \`lmnr-cli login\` (or LMNR_PROJECT_API_KEY).
+  --remote           Pushes the images and starts the run in a Laminar
+                     sandbox, then prints the run's log until it ends. Ctrl-C
+                     stops following; the run goes on. Needs Docker and
+                     \`lmnr-cli login\` (or LMNR_PROJECT_API_KEY).
 
-Images: tasks name their image with docker_image in task.toml. Images listed in
-[dir]/lmnr.yaml are built from their Dockerfile with Docker on every run:
+Tasks can't build their own environment (environment/Dockerfile): they name an
+agent.yaml image or a registry image with docker_image, and keep per-task data
+in environment/. Every build lmnr-cli runs honors .dockerignore and never gets
+.git or .env* files.
 
-  images:
-    myapp-evals:
-      dockerfile: image/Dockerfile   # relative to [dir]
-      context: ..                    # build context, default: the Dockerfile's dir
-
-Every build lmnr-cli runs honors .dockerignore and never gets .git or .env*
-files. In local mode Harbor builds a task's own environment/Dockerfile itself,
-without that guard. For --remote, every image the tasks use (an lmnr.yaml
-image, a task's own environment/Dockerfile, or a registry image) is built or
-pulled for linux/amd64, and only layers Laminar doesn't have yet are uploaded.
-
-Secrets: \`\${VAR}\` placeholders in harbor.yaml and task.toml are filled from
+Secrets: \`\${VAR}\` placeholders in agent.yaml and task.toml are filled from
 your environment or .env / .env.local; a missing one fails the run before it
 starts. For --remote they are sent with the run, never uploaded as files
 (.env*, .git, node_modules, virtualenvs, caches and jobs/ are never packed).
@@ -684,23 +698,76 @@ starts. For --remote they are sent with the run, never uploaded as files
 Exit codes:
   16  invalid_evals_dir / archive_too_large
   17  missing_tool (uv or Docker not installed)
-  18  harbor_failed (a suite's harbor run failed)
+  18  harbor_failed (a task set's harbor run failed)
   19  missing_env (an unset \`\${VAR}\` or LMNR_PROJECT_API_KEY)
   20  docker_failed (a docker build, pull or save failed, or a wrong platform)
-  21  remote_run_failed (a --remote run failed before its suites ran, or
+  21  remote_run_failed (a --remote run failed before its task sets ran, or
       its sandbox was lost)
+  23  not_found (an agent, task set or version Laminar doesn't have)
 
 Examples:
   $ lmnr-cli eval run
-  $ lmnr-cli eval run ./evals --suite support --task "refund-*" --n-attempts 3
-  $ lmnr-cli eval run --remote --n-concurrent 20
+  $ lmnr-cli eval run support-bot --task-set checkout --task "refund-*" --n-attempts 3
+  $ lmnr-cli eval run support-bot --task-set checkout@4 --remote
   $ lmnr-cli eval run --remote --model anthropic/claude-sonnet-5-5
 `,
     );
 
   evalCmd
+    .command("pull")
+    .description("Fetch an agent's scripts and task sets from Laminar")
+    .argument(
+      "<target>",
+      "<agent>, <agent>/<task set> or <agent>/<task set>@<version>",
+    )
+    .option("--dir <dir>", "Evals folder", "evals")
+    .action(withLocalOpts(handleEvalPull))
+    .addHelpText(
+      "after",
+      `
+<agent> pulls the agent's scripts and every task set; <agent>/<task set> pulls
+one task set. A task set is merged task by task with your local copy: tasks
+changed only in Laminar are updated, tasks changed only locally are kept, and a
+task changed on both sides fails the pull (exit 22, merge_conflict) without
+changing anything. The version pulled is recorded in
+evals/<agent>/task_sets/<set>/.lmnr.json.
+
+Examples:
+  $ lmnr-cli eval pull support-bot
+  $ lmnr-cli eval pull support-bot/checkout@3
+`,
+    );
+
+  evalCmd
+    .command("push")
+    .description("Publish local agent scripts and task sets to Laminar")
+    .argument("<target>", "<agent> or <agent>/<task set>")
+    .option("--dir <dir>", "Evals folder", "evals")
+    .action(withLocalOpts(handleEvalPush))
+    .addHelpText(
+      "after",
+      `
+<agent> publishes the agent's scripts (when its agent.yaml exists) and every
+local task set; <agent>/<task set> publishes one task set. Each becomes the
+new latest version in Laminar. If someone pushed the task set since your copy's
+version, theirs is merged in first, task by task (a task both of you changed
+fails with exit 22, merge_conflict).
+
+Examples:
+  $ lmnr-cli eval push support-bot
+  $ lmnr-cli eval push support-bot/checkout
+`,
+    );
+
+  evalCmd
+    .command("list")
+    .description("List agents and task sets in Laminar")
+    .argument("[agent]", "Only this agent")
+    .action(withLocalOpts(handleEvalList));
+
+  evalCmd
     .command("orchestrate", { hidden: true })
-    .description("Run a remote run's suites (inside its Laminar sandbox)")
+    .description("Run a remote run's task sets (inside its Laminar sandbox)")
     .action(withLocalOpts(handleEvalOrchestrate));
 
   const llmProfileCmd = program

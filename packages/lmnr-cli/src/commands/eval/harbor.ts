@@ -6,19 +6,14 @@ import path from "node:path";
 import { harborFailed } from "../../errors";
 import { findEnvKey } from "../../utils/env-file";
 import { initializeLogger } from "../../utils/logger";
-import { type RemoteImages, type SuiteImages, suiteImages } from "./images";
+import type { RemoteImages } from "./images";
+import { buildJobConfig, type JobConfig, type RunOverrides } from "./layout";
 import { type CommandOutput, runCommand } from "./run-command";
-import {
-  buildJobConfig,
-  type JobConfig,
-  loadSuiteConfig,
-  type RunOverrides,
-} from "./suites";
 
 const logger = initializeLogger();
 
 /**
- * Harbor and the Laminar plugin are pinned so a suite behaves the same on a
+ * Harbor and the Laminar plugin are pinned so a task set behaves the same on a
  * laptop, in CI and in a remote run's orchestrator, and because
  * `lmnr_hosted_env.py` subclasses Harbor's `BaseEnvironment`, whose API moves
  * between releases.
@@ -41,7 +36,7 @@ const environmentModulePath = (): string => {
 
 export const harborArgs = (
   configPath: string,
-  suite: string,
+  group: string,
   grpcPort?: string,
 ): string[] => [
   "--python",
@@ -58,22 +53,52 @@ export const harborArgs = (
   "--plugin",
   "laminar",
   "--pk",
-  `group_name=${suite}`,
+  `group_name=${group}`,
   // The plugin exports spans over gRPC (8443 unless told otherwise).
   ...(grpcPort ? ["--pk", `grpc_port=${grpcPort}`] : []),
 ];
 
+/** One task set of one agent, ready to run: what a Harbor run and its evaluation are. */
+export interface TaskSetRun {
+  agent: string;
+  /** The agent's scripts; Harbor runs from here. */
+  agentDir: string;
+  agentVersionId: string;
+  /** agent.yaml's `job`. */
+  job: JobConfig;
+  taskSet: string;
+  /** The task set's files, wherever they are (local copy or downloaded). */
+  setDir: string;
+  taskSetVersionId: string;
+}
+
+/** `<agent>/<task set>`: the evaluation group and the label in logs. */
+export const runLabel = (run: Pick<TaskSetRun, "agent" | "taskSet">) =>
+  `${run.agent}/${run.taskSet}`;
+
+/**
+ * Env that links the evaluation the Laminar Harbor plugin creates to the agent
+ * and task set versions it ran (and, remotely, to the run).
+ */
+export const linkEnv = (
+  run: TaskSetRun,
+  runId?: string,
+): Record<string, string> => ({
+  LMNR_EVAL_AGENT_VERSION_ID: run.agentVersionId,
+  LMNR_EVAL_TASK_SET_VERSION_ID: run.taskSetVersionId,
+  LMNR_EVAL_TASK_SET_ROOT: run.setDir,
+  HARBOR_LAMINAR_GROUP: runLabel(run),
+  ...(runId ? { LMNR_EVAL_RUN_ID: runId } : {}),
+});
+
 interface HarborRun {
-  suite: string;
-  suiteDir: string;
+  label: string;
+  cwd: string;
   config: JobConfig;
   /** Env for the Harbor process; `${VAR}` placeholders resolve against it. */
   env: Record<string, string>;
-  /**
-   * Set for remote trials: the pushed images `lmnr_hosted_env.py` starts
-   * sandboxes from.
-   */
-  images?: SuiteImages;
+  /** Set for remote trials: the pushed images `lmnr_hosted_env.py` starts sandboxes from. */
+  images?: RemoteImages;
   /** Self-hosted Laminar's gRPC port, for the plugin's trace export. */
   grpcPort?: string;
   /** Gets Harbor's output as well as our stderr. */
@@ -81,11 +106,11 @@ interface HarborRun {
 }
 
 /**
- * Run one suite with `harbor run` from inside the suite dir, so relative paths
- * in harbor.yaml (datasets, jobs_dir) and custom agent imports resolve the
- * same way everywhere. Returns Harbor's exit code.
+ * Run one task set with `harbor run` from inside the agent dir, so relative
+ * paths in agent.yaml (jobs_dir) and custom agent imports resolve the same way
+ * everywhere. Returns Harbor's exit code.
  */
-const runHarborSuite = async (run: HarborRun): Promise<number> => {
+const runHarbor = async (run: HarborRun): Promise<number> => {
   const staging = await mkdtemp(path.join(tmpdir(), "lmnr-eval-"));
   try {
     const configPath = path.join(staging, "job.json");
@@ -98,14 +123,14 @@ const runHarborSuite = async (run: HarborRun): Promise<number> => {
         path.join(staging, ENVIRONMENT_MODULE),
       );
     }
-    const pythonPath = [staging, run.suiteDir, process.env.PYTHONPATH]
+    const pythonPath = [staging, run.cwd, process.env.PYTHONPATH]
       .filter(Boolean)
       .join(path.delimiter);
     return await runCommand(
       "uvx",
-      harborArgs(configPath, run.suite, run.grpcPort),
+      harborArgs(configPath, run.label, run.grpcPort),
       {
-        cwd: run.suiteDir,
+        cwd: run.cwd,
         env: {
           ...process.env,
           ...run.env,
@@ -122,72 +147,74 @@ const runHarborSuite = async (run: HarborRun): Promise<number> => {
   }
 };
 
-/** Where each suite's Harbor job is written, and what happens to it after. */
+/** Where each task set's Harbor job is written, and what happens to it after. */
 export interface JobOutput {
   /**
-   * Suite `s` writes its job under `<dir>/<s>`, whatever its harbor.yaml says.
+   * Task set `s` writes its job under `<dir>/<s>`, whatever agent.yaml says.
    * The job keeps its own name: the Laminar plugin names the evaluation after it.
    */
   dir: string;
-  /** Called once the suite's `harbor run` exits, whether it passed or not. */
-  onSuiteEnd: (suite: string, jobsDir: string) => Promise<void>;
+  /** Called once the task set's `harbor run` exits, whether it passed or not. */
+  onTaskSetEnd: (taskSet: string, jobsDir: string) => Promise<void>;
 }
 
-/** What a remote run's orchestrator hooks into its suites' Harbor runs. */
-export interface SuiteHooks {
+/** What a remote run's orchestrator hooks into its Harbor runs. */
+export interface RunHooks {
+  /** Set in a remote run's orchestrator; links its evaluations to the run. */
+  runId?: string;
   jobs?: JobOutput;
   /**
-   * Where each suite's Harbor output also goes (it still goes to our stderr
-   * too). Both sinks end when the suite's `harbor run` exits.
+   * Where each task set's Harbor output also goes (it still goes to our stderr
+   * too). Both sinks end when its `harbor run` exits.
    */
-  output?: (suite: string) => CommandOutput;
+  output?: (label: string) => CommandOutput;
 }
 
 /**
- * Run each suite with Harbor in turn. With `images`, trials run in Laminar
- * sandboxes; without, on local Docker. Returns the suites that failed.
+ * Run each task set with Harbor in turn. With `images`, trials run in Laminar
+ * sandboxes; without, on local Docker. Returns the labels of the failed ones.
  */
-export const runSuites = async (
-  evalsDir: string,
-  suites: string[],
+export const runTaskSets = async (
+  runs: TaskSetRun[],
   overrides: RunOverrides,
   env: Record<string, string>,
   images?: RemoteImages,
-  { jobs, output }: SuiteHooks = {},
+  { runId, jobs, output }: RunHooks = {},
 ): Promise<string[]> => {
   const grpcPort = (await findEnvKey(process.cwd(), "LMNR_GRPC_PORT"))?.value;
   const failed: string[] = [];
-  for (const suite of suites) {
-    const suiteDir = path.join(evalsDir, suite);
+  for (const run of runs) {
+    const label = runLabel(run);
     const config = buildJobConfig(
-      await loadSuiteConfig(suiteDir),
+      run.job,
+      run.setDir,
       overrides,
       images !== undefined,
     );
-    if (jobs) config.jobs_dir = path.join(jobs.dir, suite);
+    if (jobs) config.jobs_dir = path.join(jobs.dir, run.taskSet);
     logger.info(
-      `Running suite ${suite} ${images ? "in Laminar sandboxes" : "on local Docker"}`,
+      `Running task set ${label} ${images ? "in Laminar sandboxes" : "on local Docker"}`,
     );
-    const code = await runHarborSuite({
-      suite,
-      suiteDir,
+    const code = await runHarbor({
+      label,
+      cwd: run.agentDir,
       config,
-      env,
-      images: images && suiteImages(images, suite),
+      env: { ...env, ...linkEnv(run, runId) },
+      images,
       grpcPort,
-      output: output?.(suite),
+      output: output?.(label),
     });
     if (code !== 0) {
-      logger.error(`harbor run failed for suite ${suite} (exit ${code})`);
-      failed.push(suite);
+      logger.error(`harbor run failed for task set ${label} (exit ${code})`);
+      failed.push(label);
     }
-    await jobs?.onSuiteEnd(suite, path.join(jobs.dir, suite));
+    await jobs?.onTaskSetEnd(run.taskSet, path.join(jobs.dir, run.taskSet));
   }
   return failed;
 };
 
-/** Fail the command when any suite's `harbor run` failed. */
-export const assertSuitesPassed = (failed: string[]): void => {
+/** Fail the command when any task set's `harbor run` failed. */
+export const assertTaskSetsPassed = (failed: string[]): void => {
   if (failed.length > 0) {
     throw harborFailed(`harbor run failed for: ${failed.join(", ")}`);
   }

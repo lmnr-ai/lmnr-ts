@@ -150,32 +150,42 @@ tied to a trace or evaluation), so it works the same for agent runs and evals
 with the session's traces and evaluations. See the Laminar debugger docs:
 https://laminar.sh/docs/platform/debugger
 
-### `eval run` - Harbor evals
+### `eval` - Harbor evals and task sets
 
-Run the [Harbor](https://harborframework.com) suites in an evals folder
-(`<dir>/<suite>/harbor.yaml`, default `evals`) and report every trial to Laminar
-as an evaluation, grouped by suite.
+An evals folder (default `evals`) holds one dir per agent: `agent.yaml` (the
+images tasks use and the [Harbor](https://harborframework.com) job config), the
+agent's scripts, and its task sets under `task_sets/<set>/<task>/`. Task sets
+are stored and versioned in Laminar, so the same tasks can be run again against
+new versions of the agent.
 
 ```bash
-lmnr-cli eval run                                  # trials on local Docker
-lmnr-cli eval run --suite support --task "refund-*"
-lmnr-cli eval run --remote                         # in Laminar sandboxes
+lmnr-cli eval run                                     # every agent, on local Docker
+lmnr-cli eval run support --task-set checkout --task "refund-*"
+lmnr-cli eval run support --task-set checkout@3 --remote  # in Laminar sandboxes
+lmnr-cli eval push support                            # publish scripts and task sets
+lmnr-cli eval pull support/checkout                   # merge Laminar's latest in
+lmnr-cli eval list
 ```
 
-`--remote` prints the run's log until it ends; Ctrl-C stops following and
-leaves the run going.
+Each task set of a run becomes one evaluation, grouped as `<agent>/<task set>`.
+A task set without a local copy runs Laminar's latest version, and every run
+records the versions it used. `push` publishes a new version; `pull` merges
+Laminar's version into your copy task by task. `--remote` prints the run's log
+until it ends; Ctrl-C stops following and leaves the run going.
 
 Both modes need Docker; local runs also need [uv](https://docs.astral.sh/uv/)
-and `LMNR_PROJECT_API_KEY`. `--remote` pushes
-the images tasks use from your local Docker. See `lmnr-cli eval run --help` for
-images (`lmnr.yaml`), secrets and flags. Exit codes:
+and `LMNR_PROJECT_API_KEY`. `--remote` pushes the images tasks use from your
+local Docker. See `lmnr-cli eval run --help` for `agent.yaml`, secrets and
+flags. Exit codes:
 
-- `16` invalid evals folder, or the packed folder is over the upload limit
+- `16` invalid evals folder, or a packed dir is over the upload limit
 - `17` `uv` or `docker` is not installed
-- `18` a suite's `harbor run` failed
+- `18` a task set's `harbor run` failed
 - `19` an unset `${VAR}` placeholder or `LMNR_PROJECT_API_KEY`
 - `20` a Docker build, pull or save failed, or an image isn't linux/amd64
-- `21` a `--remote` run failed before its suites ran, or its sandbox was lost
+- `21` a `--remote` run failed before its task sets ran, or its sandbox was lost
+- `22` a task changed both locally and in Laminar (`pull` / `push`)
+- `23` an agent, task set or version Laminar doesn't have
 
 ### `setup` - One-shot onboarding
 

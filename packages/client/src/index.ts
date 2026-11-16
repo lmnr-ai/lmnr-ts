@@ -200,10 +200,17 @@ export class LaminarClient {
 
 export type { CliProject, ProjectKeyProbe } from "./resources/cli";
 export type {
+  CreateTaskSetVersionOptions,
+  CreateTaskSetVersionResult,
+  EvalAgent,
+  EvalAgentVersion,
   HostedEvalRunLogLine,
   HostedEvalRunLogPage,
   HostedEvalSandboxStatus,
+  HostedEvalVersion,
   StartHostedEvalRunOptions,
+  TaskSetTask,
+  TaskSetVersion,
 } from "./resources/hosted-evals";
 export type { LaminarAuth } from "./resources/index";
 export type {

@@ -10,69 +10,120 @@ const userToken = {
 };
 
 void describe("HostedEvalsResource", () => {
-  void it("uploads the archive as a raw gzip body", async () => {
-    const mockFetch = mock.fn(() => ({
-      ok: true,
-      json: () => ({ uploadId: "up-1" }),
-    }));
+  void it("uploads a blob as a raw gzip body under its hash", async () => {
+    const mockFetch = mock.fn(() => ({ ok: true }));
     global.fetch = mockFetch as any;
 
     const archive = new Uint8Array([0x1f, 0x8b, 1, 2, 3]);
-    const result = await new HostedEvalsResource(
+    await new HostedEvalsResource(
       "https://api.test.com:443",
       userToken,
-    ).upload(archive);
+    ).putBlob("ab".repeat(32), archive);
 
-    assert.deepStrictEqual(result, { uploadId: "up-1" });
     const [url, init] = mockFetch.mock.calls[0].arguments as any;
     assert.strictEqual(
       url,
-      "https://api.test.com:443/v1/cli/hosted-evals/uploads",
+      `https://api.test.com:443/v1/cli/hosted-evals/uploads/blobs/${"ab".repeat(32)}`,
     );
-    assert.strictEqual(init.method, "POST");
+    assert.strictEqual(init.method, "PUT");
     assert.strictEqual(init.body, archive);
     assert.strictEqual(init.headers["Content-Type"], "application/gzip");
     assert.strictEqual(init.headers["x-lmnr-project-id"], "proj-1");
   });
 
+  void it("reads a missing blob index as null", async () => {
+    global.fetch = mock.fn(() => ({ ok: false, status: 404 })) as any;
+    const resource = new HostedEvalsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "k",
+    });
+    assert.strictEqual(await resource.getBlobIndex("cd".repeat(32)), null);
+  });
+
   void it("starts a run with the options as JSON", async () => {
     const mockFetch = mock.fn(() => ({
       ok: true,
-      json: () => ({ sandboxId: "sb-1" }),
+      json: () => ({ runId: "run-1", sandboxId: "sb-1" }),
     }));
     global.fetch = mockFetch as any;
 
     const options = {
-      uploadId: "up-1",
       cliVersion: "0.5.3",
-      spec: { suites: ["hello"], env: { OPENAI_API_KEY: "sk" } },
+      spec: { taskSets: [], env: { OPENAI_API_KEY: "sk" } },
     };
     const result = await new HostedEvalsResource("https://api.test.com:443", {
       type: "apiKey",
       key: "k",
     }).startRun(options);
 
-    assert.deepStrictEqual(result, { sandboxId: "sb-1" });
+    assert.deepStrictEqual(result, { runId: "run-1", sandboxId: "sb-1" });
     const [url, init] = mockFetch.mock.calls[0].arguments as any;
     assert.strictEqual(url, "https://api.test.com:443/v1/hosted-evals/runs");
     assert.strictEqual(init.headers["Content-Type"], "application/json");
     assert.deepStrictEqual(JSON.parse(init.body), options);
   });
 
+  void it("returns the moved head when a task set push conflicts", async () => {
+    const head = {
+      id: "v2",
+      number: 2,
+      hash: "ef".repeat(32),
+      createdAt: "2026-11-16T00:00:00Z",
+      parentId: "v1",
+    };
+    const mockFetch = mock.fn(() => ({
+      ok: false,
+      status: 409,
+      json: () => ({ error: "Head moved", head }),
+    }));
+    global.fetch = mockFetch as any;
+
+    const result = await new HostedEvalsResource(
+      "https://api.test.com:443",
+      userToken,
+    ).createTaskSetVersion("support bot", "checkout", {
+      hash: "ab".repeat(32),
+      push: true,
+      base: "v1",
+      tasks: [{ name: "case-1", digest: "cd".repeat(32) }],
+    });
+
+    assert.deepStrictEqual(result, { headMoved: head });
+    const [url, init] = mockFetch.mock.calls[0].arguments as any;
+    assert.strictEqual(
+      url,
+      "https://api.test.com:443/v1/cli/hosted-evals/agents/support%20bot/task-sets/checkout/versions",
+    );
+    assert.strictEqual(JSON.parse(init.body).base, "v1");
+  });
+
+  void it("uploads a task set's job archive by run id", async () => {
+    const mockFetch = mock.fn(() => ({ ok: true }));
+    global.fetch = mockFetch as any;
+    await new HostedEvalsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "k",
+    }).uploadJobIndex("run-1", "checkout", { files: [] });
+    const [url] = mockFetch.mock.calls[0].arguments as any;
+    assert.strictEqual(
+      url,
+      "https://api.test.com:443/v1/hosted-evals/uploads/jobs/run-1/index?taskSet=checkout",
+    );
+  });
+
   void it("surfaces the server's {error} message", async () => {
     global.fetch = mock.fn(() => ({
       ok: false,
       status: 400,
-      text: () => '{"error":"No archive uploaded for this uploadId"}',
+      text: () => '{"error":"Invalid cliVersion"}',
     })) as any;
 
     await assert.rejects(
       new HostedEvalsResource("https://api.test.com:443", userToken).startRun({
-        uploadId: "nope",
-        cliVersion: "0.5.3",
+        cliVersion: "nope",
         spec: {},
       }),
-      { message: "400 No archive uploaded for this uploadId" },
+      { message: "400 Invalid cliVersion" },
     );
 
     global.fetch = mock.fn(() => ({
@@ -81,7 +132,8 @@ void describe("HostedEvalsResource", () => {
       text: () => "Payload Too Large",
     })) as any;
     await assert.rejects(
-      new HostedEvalsResource("https://api.test.com:443", userToken).upload(
+      new HostedEvalsResource("https://api.test.com:443", userToken).putBlob(
+        "ab".repeat(32),
         new Uint8Array([1]),
       ),
       { message: "413 Payload Too Large" },

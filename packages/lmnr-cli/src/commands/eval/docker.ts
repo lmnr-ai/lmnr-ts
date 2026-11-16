@@ -122,7 +122,7 @@ const dockerBuild = async (
     `docker build of ${def.name} failed`,
   );
 
-/** Build `lmnr.yaml` images locally, tagged with the name tasks reference. */
+/** Build agent.yaml images locally, tagged with the name tasks reference. */
 export const buildLocalImages = async (defs: ImageDef[]): Promise<void> => {
   for (const def of defs) {
     await dockerBuild(def, def.name);

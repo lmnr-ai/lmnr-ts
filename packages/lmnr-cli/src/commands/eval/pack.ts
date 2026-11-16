@@ -5,7 +5,7 @@ import { gzipSync } from "node:zlib";
 
 import { type FileSource, packTar } from "modern-tar/fs";
 
-import { SKIPPED_DIRS } from "./suites";
+import { SKIPPED_DIRS } from "./layout";
 
 /**
  * Never uploaded, besides `SKIPPED_DIRS`: local env files matter most — uploads
@@ -51,10 +51,20 @@ export const fileEntry = (
   ...(platform === "win32" ? { mode: windowsMode(target) } : {}),
 });
 
-/** Walk `root` for packing, minus the upload exclusions. */
-const walkFiles = async (
+/** Leaves out a path (POSIX, relative to the walked root) and what's under it. */
+export type Exclude = (target: string) => boolean;
+
+/** Leaves out the named entries at the root of the walk. */
+export const excludeTop =
+  (...names: string[]): Exclude =>
+  (target) =>
+    names.includes(target);
+
+/** Walk `root` for packing, minus the upload exclusions and `exclude`. */
+export const walkFiles = async (
   root: string,
-  platform: NodeJS.Platform,
+  platform: NodeJS.Platform = process.platform,
+  exclude: Exclude = () => false,
 ): Promise<WalkResult> => {
   const files: PackedFile[] = [];
   const skippedSymlinks: string[] = [];
@@ -64,6 +74,7 @@ const walkFiles = async (
     for (const entry of entries) {
       const source = path.join(dir, entry.name);
       const target = rel ? `${rel}/${entry.name}` : entry.name;
+      if (exclude(target)) continue;
       if (entry.isSymbolicLink()) {
         // Sandboxes extract with Python's `filter="data"`, which rejects links
         // that escape the archive; skipping keeps uploads predictable.
@@ -147,28 +158,4 @@ export const packFiles = async (
   endMember();
   members.push(gzipSync(Buffer.alloc(TAR_END_BYTES)));
   return { archive: Buffer.concat(members), index };
-};
-
-interface EvalsArchive {
-  archive: Buffer;
-  index: IndexedFile[];
-  fileCount: number;
-  skippedSymlinks: string[];
-}
-
-/**
- * Pack the evals folder's CONTENTS (suites at the archive root, no `evals/`
- * prefix — that is where the orchestrator runs from) into a `.tar.gz`, with
- * the index the UI reads single files by.
- */
-export const packEvalsDir = async (
-  dir: string,
-  platform: NodeJS.Platform = process.platform,
-): Promise<EvalsArchive> => {
-  const { files, skippedSymlinks } = await walkFiles(
-    path.resolve(dir),
-    platform,
-  );
-  const { archive, index } = await packFiles(files);
-  return { archive, index, fileCount: files.length, skippedSymlinks };
 };

@@ -1,5 +1,3 @@
-import path from "node:path";
-
 import { InvalidArgumentError } from "commander";
 
 import { envHttpPort, resolveBaseUrl } from "../../auth/resolve";
@@ -10,7 +8,7 @@ import {
   findTemplateVars,
   type RunOverrides,
   type TemplateVars,
-} from "./suites";
+} from "./layout";
 
 export const API_KEY_VAR = "LMNR_PROJECT_API_KEY";
 
@@ -66,27 +64,32 @@ export const resolveTemplateEnv = async (
   return { env, missing };
 };
 
+/** An agent's scripts dir and the task set dirs a run uses from it. */
+export interface RunSources {
+  agentDir: string;
+  setDirs: string[];
+}
+
 /**
- * The run's env: values for every `${VAR}` the suites reference, plus the
- * `--env` values (which win). Fails when a required one is unset.
+ * The run's env: values for every `${VAR}` its agent.yaml files and tasks
+ * reference, plus the `--env` values (which win). Fails when a required one is
+ * unset.
  */
 export const resolveRunEnv = async (
-  evalsDir: string,
-  suites: string[],
+  sources: RunSources[],
   overrides: RunOverrides,
   explicitEnv: Record<string, string>,
 ): Promise<Record<string, string>> => {
   const vars: TemplateVars = { required: new Set(), optional: new Set() };
-  for (const suite of suites) {
-    const found = await findTemplateVars(path.join(evalsDir, suite), overrides);
-    for (const name of found.required) vars.required.add(name);
-    for (const name of found.optional) vars.optional.add(name);
+  for (const { agentDir, setDirs } of sources) {
+    await findTemplateVars(agentDir, setDirs, overrides, vars);
   }
+  for (const name of vars.required) vars.optional.delete(name);
   const { env, missing } = await resolveTemplateEnv(vars, process.cwd());
   const stillMissing = missing.filter((name) => !(name in explicitEnv));
   if (stillMissing.length > 0) {
     throw missingEnv(
-      `The suites reference unset variables: ${stillMissing.join(", ")}. ` +
+      `The evals reference unset variables: ${stillMissing.join(", ")}. ` +
         "Export them, add them to .env, or pass --env KEY=VALUE.",
     );
   }

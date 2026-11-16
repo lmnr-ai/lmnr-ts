@@ -1,32 +1,32 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { LaminarClient } from "@lmnr-ai/client";
+import type { LaminarClient } from "@lmnr-ai/client";
 import { InvalidArgumentError } from "commander";
 
-import { buildLaminarClient } from "../../auth/client";
-import { envHttpPort, resolveBaseUrl } from "../../auth/resolve";
 import type { GlobalOpts } from "../../auth/with-client";
-import { DEFAULT_FRONTEND_URL } from "../../constants";
 import { harborFailed, invalidEvalsDir, remoteRunFailed } from "../../errors";
 import { pc } from "../../utils/colors";
-import { findEnvKey } from "../../utils/env-file";
-import { readLocalProjectFile } from "../../utils/local-project-file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
+import { buildEvalClient, projectUrl } from "./client";
 import { buildLocalImages } from "./docker";
-import { API_KEY_VAR, harborEnv, parseEnvFlags, resolveRunEnv } from "./env";
-import { assertSuitesPassed, runSuites } from "./harbor";
+import { harborEnv, parseEnvFlags, resolveRunEnv } from "./env";
+import { assertTaskSetsPassed, runTaskSets } from "./harbor";
 import { localImageDefs } from "./images";
-import { startRemoteRun } from "./remote";
+import { discoverAgents, loadAgentConfig, type RunOverrides } from "./layout";
+import { parseTaskSetSelector, prepareAgents } from "./prepare";
+import { type PreparedAgent, startRemoteRun, taskSetRuns } from "./remote";
 import { type FollowResult, followRunLog } from "./run-log";
 import { type EvaluationLink, parseEvaluationLine } from "./run-log-lines";
-import { discoverSuites, type RunOverrides } from "./suites";
 
 const logger = initializeLogger();
 
 interface EvalRunOpts extends GlobalOpts {
+  dir: string;
   remote?: boolean;
-  suite?: string[];
+  taskSet?: string[];
   task?: string[];
   nAttempts?: number;
   nConcurrent?: number;
@@ -43,72 +43,7 @@ export const parsePositiveInt = (raw: string): number => {
   return n;
 };
 
-const selectSuites = async (
-  evalsDir: string,
-  requested: string[] | undefined,
-): Promise<string[]> => {
-  const suites = await discoverSuites(evalsDir);
-  if (!requested?.length) return suites;
-  const unknown = requested.filter((s) => !suites.includes(s));
-  if (unknown.length > 0) {
-    throw invalidEvalsDir(
-      `Unknown --suite ${unknown.join(", ")}. ` +
-        `Suites in ${evalsDir}: ${suites.join(", ")}`,
-    );
-  }
-  return requested;
-};
-
-/**
- * Remote runs call the API as the logged-in user, or with the project API key
- * when there is no login (CI).
- */
-const buildRemoteClient = async (opts: GlobalOpts): Promise<LaminarClient> => {
-  try {
-    return await buildLaminarClient({
-      projectId: opts.projectId,
-      baseUrl: opts.baseUrl,
-      port: opts.port,
-    });
-  } catch (error) {
-    const key = await findEnvKey(process.cwd(), API_KEY_VAR);
-    if (!key) throw error;
-    logger.debug("No CLI login; using LMNR_PROJECT_API_KEY");
-    return new LaminarClient({
-      baseUrl: resolveBaseUrl(opts.baseUrl),
-      port: opts.port ?? envHttpPort(),
-      auth: { type: "apiKey", key: key.value },
-    });
-  }
-};
-
-const evaluationsUrl = async (
-  projectId: string | undefined,
-): Promise<string | undefined> => {
-  const id = projectId || (await readLocalProjectFile())?.projectId;
-  if (!id) return undefined;
-  const frontend =
-    process.env.LMNR_FRONTEND_URL?.trim().replace(/\/+$/, "") ||
-    DEFAULT_FRONTEND_URL;
-  return `${frontend}/project/${id}/evaluations`;
-};
-
-/** Report a local run once its suites have finished. */
-const reportLocal = async (
-  suites: string[],
-  failed: string[],
-  opts: GlobalOpts,
-) => {
-  const url = await evaluationsUrl(opts.projectId);
-  if (opts.json) {
-    outputJson({ mode: "local", suites, failed, url });
-  } else if (url) {
-    logger.info(`Results are in evaluations grouped by suite: ${url}`);
-  }
-  assertSuitesPassed(failed);
-};
-
-/** Exit codes `eval orchestrate` ends with that mean "a suite failed". */
+/** Exit codes `eval orchestrate` ends with that mean "a task set failed". */
 const HARBOR_FAILED_EXIT = 18;
 
 /** Turn how a followed remote run ended into this command's outcome. */
@@ -122,34 +57,44 @@ export const assertRemotePassed = (result: FollowResult) => {
   }
   if (result.kind !== "exited" || result.exitCode === 0) return;
   if (result.exitCode === HARBOR_FAILED_EXIT) {
-    throw harborFailed("A suite of the remote run failed; see its log above.");
+    throw harborFailed(
+      "A task set of the remote run failed; see its log above.",
+    );
   }
   throw remoteRunFailed(
     `The remote run exited with code ${result.exitCode}; see its log above.`,
   );
 };
 
-/** Print a started remote run's log until it ends, then report it. */
-const formatLink = ({ suite, url }: EvaluationLink) =>
-  `${pc.bold(`Laminar evaluation for suite ${suite}:`)} ${pc.cyan(url)}`;
+const formatLink = ({ taskSet, url }: EvaluationLink) =>
+  `${pc.bold(`Laminar evaluation for task set ${taskSet}:`)} ${pc.cyan(url)}`;
 
 /** The evaluation links a run printed, once more where they can't scroll away. */
 const formatLinks = (links: EvaluationLink[]) =>
   `\n${pc.bold("Results in Laminar:")}\n` +
-  links.map(({ suite, url }) => `  ${suite}: ${pc.cyan(url)}\n`).join("");
+  links.map(({ taskSet, url }) => `  ${taskSet}: ${pc.cyan(url)}\n`).join("");
 
+interface FollowedRun {
+  agent: string;
+  runId: string;
+  sandboxId: string;
+  evaluations: EvaluationLink[];
+  exitCode: number | null;
+  result: FollowResult;
+}
+
+/** Print a started remote run's log until it ends. */
 const followRemote = async (
   client: LaminarClient,
-  run: { uploadId: string; sandboxId: string },
-  suites: string[],
-  opts: GlobalOpts,
-) => {
-  const url = await evaluationsUrl(opts.projectId);
+  agent: string,
+  run: { runId: string; sandboxId: string },
+  url: string | undefined,
+): Promise<FollowedRun> => {
   logger.info(
-    `Started remote run in sandbox ${run.sandboxId}; following its log ` +
-      "(Ctrl-C stops following, the run goes on).",
+    `Started the remote run of ${agent} in sandbox ${run.sandboxId}; ` +
+      "following its log (Ctrl-C stops following, the run goes on).",
   );
-  // Each suite's evaluation shows up in the log once the run creates it.
+  // Each task set's evaluation shows up in the log once the run creates it.
   const links: EvaluationLink[] = [];
   const write = (text: string) => {
     const link = parseEvaluationLine(text.trimEnd());
@@ -165,51 +110,110 @@ const followRemote = async (
   process.once("SIGINT", onInterrupt);
   let result: FollowResult;
   try {
-    result = await followRunLog(
-      client.hostedEvals,
-      run.uploadId,
-      run.sandboxId,
-      { write },
-    );
+    result = await followRunLog(client.hostedEvals, run.runId, run.sandboxId, {
+      write,
+    });
   } finally {
     process.off("SIGINT", onInterrupt);
   }
-
   if (result.kind === "unsupported") {
     logger.warn(
       "This Laminar server doesn't keep run logs, so the run can't be " +
         "followed here; it goes on in Laminar.",
     );
   }
+  return {
+    agent,
+    ...run,
+    evaluations: links,
+    exitCode: result.kind === "exited" ? result.exitCode : null,
+    result,
+  };
+};
+
+const runLocal = async (
+  agents: PreparedAgent[],
+  overrides: RunOverrides,
+  env: Record<string, string>,
+  opts: EvalRunOpts,
+) => {
+  const runEnv = await harborEnv(env, opts);
+  const failed: string[] = [];
+  const taskSets: string[] = [];
+  for (const prepared of agents) {
+    const { images } = await loadAgentConfig(prepared.dir);
+    await buildLocalImages(
+      await localImageDefs(
+        images,
+        prepared.taskSets.map((s) => s.dir),
+        overrides,
+      ),
+    );
+    const runs = await taskSetRuns(prepared);
+    taskSets.push(...runs.map((r) => `${r.agent}/${r.taskSet}`));
+    failed.push(...(await runTaskSets(runs, overrides, runEnv)));
+  }
+  const url = await projectUrl(opts.projectId, "evaluations");
+  if (opts.json) {
+    outputJson({ mode: "local", taskSets, failed, url });
+  } else if (url) {
+    logger.info(`Results are in evaluations grouped by task set: ${url}`);
+  }
+  assertTaskSetsPassed(failed);
+};
+
+const runRemote = async (
+  client: LaminarClient,
+  agents: PreparedAgent[],
+  overrides: RunOverrides,
+  env: Record<string, string>,
+  opts: EvalRunOpts,
+) => {
+  const started: { agent: string; runId: string; sandboxId: string }[] = [];
+  for (const prepared of agents) {
+    const run = await startRemoteRun(client, prepared, overrides, env);
+    started.push({ agent: prepared.agent.name, ...run });
+  }
+  const url = await projectUrl(opts.projectId, "evaluations");
+  const followed: FollowedRun[] = [];
+  for (const { agent, ...run } of started) {
+    followed.push(await followRemote(client, agent, run, url));
+  }
+  const links = followed.flatMap((f) => f.evaluations);
   if (opts.json) {
     outputJson({
       mode: "remote",
-      ...run,
-      suites,
+      runs: followed.map(({ result: _result, ...run }) => run),
       url,
-      evaluations: links,
-      exitCode: result.kind === "exited" ? result.exitCode : null,
     });
   } else if (links.length > 0) {
     process.stderr.write(formatLinks(links));
   } else if (url) {
-    logger.info(`Results are in evaluations grouped by suite: ${url}`);
+    logger.info(`Results are in evaluations grouped by task set: ${url}`);
   }
-  assertRemotePassed(result);
+  for (const run of followed) assertRemotePassed(run.result);
 };
 
 /**
- * `lmnr-cli eval run [dir]`: run Harbor suites locally on Docker (default), or
- * with `--remote` in Laminar sandboxes, following the run's log until it ends.
+ * `lmnr-cli eval run [agents...]`: run agents' task sets with Harbor, locally
+ * on Docker (default) or with `--remote` in Laminar sandboxes, following each
+ * run's log until it ends. Every run records the versions it used in Laminar.
  */
 export const handleEvalRun = async (
-  dir: string,
+  names: string[],
   opts: EvalRunOpts,
 ): Promise<void> => {
   // Parse --env before anything slow so a missing variable fails fast.
   const explicitEnv = opts.env ? parseEnvFlags(opts.env) : {};
-  const evalsDir = path.resolve(dir);
-  const suites = await selectSuites(evalsDir, opts.suite);
+  const selectors = (opts.taskSet ?? []).map(parseTaskSetSelector);
+  const evalsDir = path.resolve(opts.dir);
+  const agentNames = names.length > 0 ? names : await discoverAgents(evalsDir);
+  if (agentNames.length === 0) {
+    throw invalidEvalsDir(
+      `No agents in ${evalsDir}: expected <agent>/agent.yaml. Name an agent ` +
+        "to run Laminar's copy of it.",
+    );
+  }
   const overrides: RunOverrides = {
     tasks: opts.task,
     nAttempts: opts.nAttempts,
@@ -217,17 +221,31 @@ export const handleEvalRun = async (
     model: opts.model,
     extraAgentEnv: Object.keys(explicitEnv),
   };
-  const env = await resolveRunEnv(evalsDir, suites, overrides, explicitEnv);
 
-  if (!opts.remote) {
-    const runEnv = await harborEnv(env, opts);
-    await buildLocalImages(await localImageDefs(evalsDir, suites, overrides));
-    const failed = await runSuites(evalsDir, suites, overrides, runEnv);
-    await reportLocal(suites, failed, opts);
-    return;
+  const client = await buildEvalClient(opts);
+  const scratch = await mkdtemp(path.join(tmpdir(), "lmnr-evals-"));
+  try {
+    const agents = await prepareAgents(
+      client,
+      evalsDir,
+      agentNames,
+      selectors,
+      scratch,
+    );
+    const env = await resolveRunEnv(
+      agents.map((a) => ({
+        agentDir: a.dir,
+        setDirs: a.taskSets.map((s) => s.dir),
+      })),
+      overrides,
+      explicitEnv,
+    );
+    if (opts.remote) {
+      await runRemote(client, agents, overrides, env, opts);
+    } else {
+      await runLocal(agents, overrides, env, opts);
+    }
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
   }
-
-  const client = await buildRemoteClient(opts);
-  const run = await startRemoteRun(client, evalsDir, suites, overrides, env);
-  await followRemote(client, run, suites, opts);
 };
