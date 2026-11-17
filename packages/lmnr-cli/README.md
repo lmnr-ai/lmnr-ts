@@ -155,7 +155,8 @@ https://laminar.sh/docs/platform/debugger
 An evals folder (default `evals`) holds one dir per agent, kept in your repo:
 `agent.yaml` (the images tasks use, the [Harbor](https://harborframework.com)
 job config, and `task_sets:` pins) and the agent's scripts. Task sets are
-stored and versioned in Laminar; `task_sets/<set>/<task>/` holds local working
+stored and versioned in Laminar, by name (unique per project);
+`task_sets/<set>/<task>/` holds local working
 copies, which `pull` keeps out of git. Pin the versions your runs and CI use in
 `agent.yaml`:
 
@@ -170,7 +171,7 @@ lmnr-cli eval run support --task-set checkout --task "refund-*"
 lmnr-cli eval run support --task-set checkout@latest --remote  # in Laminar sandboxes
 lmnr-cli eval pull support/checkout                   # merge Laminar's latest in
 lmnr-cli eval push support/checkout                   # publish a new version
-lmnr-cli eval pull support --all                      # every task set of an agent
+lmnr-cli eval pull support --all                      # every task set agent.yaml pins
 lmnr-cli eval pull support                            # the scripts its last run used
 lmnr-cli eval list
 ```
@@ -178,8 +179,10 @@ lmnr-cli eval list
 Each task set of a run becomes one evaluation, grouped as `<agent>/<task set>`.
 A run uses `@<version>` / `@latest` when given, else your local copy, else the
 `agent.yaml` pin; a set with none of these runs at Laminar's latest only when
-named with `--task-set`. Every run records the versions and scripts it used.
-`push` publishes a new version (update the pin by hand to use it); `pull`
+named with `--task-set`. A run uploads the files it uses but never creates a
+version: its evaluation shows them, and links to a task set version only when
+they match a pushed one. `push` publishes a new version (update the pin by
+hand to use it); `pull`
 merges Laminar's version into your copy task by task. Runs use the agent's
 scripts from your repo; `pull <agent>` fetches the ones its last run used (for
 example scripts the Laminar agent wrote) to commit. `--remote` prints the run's

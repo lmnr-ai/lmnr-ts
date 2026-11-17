@@ -12,38 +12,34 @@ export interface StartHostedEvalRunOptions {
 }
 
 /**
- * A copy of an agent's scripts that a run used. Scripts live in the user's
- * repo; Laminar keeps one copy per distinct content, not versions.
+ * The agent scripts the latest evaluation of an agent (its `evals/<agent>/`
+ * folder) used. Scripts live in the user's repo; Laminar only keeps the copy
+ * each run used.
  */
-export interface EvalAgentVersion {
-  id: string;
+export interface LatestScripts {
   /** Content hash of the scripts; also the id of their blob. */
   hash: string;
   gitSha: string | null;
-  createdAt: string;
-  /** When a run last used this copy. */
-  lastUsedAt: string;
+  /** When that evaluation was created. */
+  usedAt: string;
+  evaluationId: string;
 }
 
-/**
- * One version of a task set. `number` is null for a run snapshot (a version a
- * run used that was never pushed).
- */
+/** One pushed version of a task set. */
 export interface TaskSetVersion {
   id: string;
-  number: number | null;
+  number: number;
   /** Content hash of the version's files; also the id of its blob. */
   hash: string;
   parentId: string | null;
   createdAt: string;
 }
 
-/** An agent in Laminar: its task sets, and the scripts its last run used. */
-export interface EvalAgent {
+/** A task set in Laminar (names are unique per project) and its head. */
+export interface TaskSet {
   id: string;
   name: string;
-  latestScripts: EvalAgentVersion | null;
-  taskSets: { id: string; name: string; head: TaskSetVersion | null }[];
+  head: TaskSetVersion | null;
 }
 
 /** A task of a task-set version: its directory name and content digest. */
@@ -56,16 +52,14 @@ export interface TaskSetTask {
 
 export interface CreateTaskSetVersionOptions {
   hash: string;
-  /** Make it the task set's head (otherwise a run snapshot). */
-  push: boolean;
   /** The version the local copy started from (null for a new task set). */
   base: string | null;
   tasks: TaskSetTask[];
 }
 
 /**
- * {@link HostedEvalsResource.createTaskSetVersion}'s result: the version, or,
- * for a push, the task set's head when it moved on from `base`.
+ * {@link HostedEvalsResource.createTaskSetVersion}'s result: the version, or
+ * the task set's head when it moved on from `base`.
  */
 export type CreateTaskSetVersionResult =
   | { version: TaskSetVersion }
@@ -101,13 +95,12 @@ const segment = (value: string) => encodeURIComponent(value);
  *
  * - Images: `missingLayers` / `uploadLayer` / `createImage` push an image built
  *   locally (layers named by their `diff_id`); trials start from it.
- * - Blobs: the scripts a run used and each task set version are stored as one
- *   content-addressed `.tar.gz` plus its file index (`putBlob` /
- *   `putBlobIndex`, `getBlob` / `getBlobIndex`).
- * - Versions: `createTaskSetVersion` records a blob as a task set version (a
- *   push moves the head; otherwise it is a run snapshot); `createAgentVersion`
- *   records the scripts a run uses; `listAgents` / `listTaskSetVersions` read
- *   them back.
+ * - Blobs: task set versions and the files a run used (agent scripts, local
+ *   task set copies) are stored as one content-addressed `.tar.gz` plus its
+ *   file index (`putBlob` / `putBlobIndex`, `getBlob` / `getBlobIndex`).
+ * - Task sets: `createTaskSetVersion` pushes a blob as a task set's new head;
+ *   `listTaskSets` / `listTaskSetVersions` read them back.
+ *   `getLatestScripts` finds the scripts an agent's latest evaluation used.
  * - Remote runs: `startRun` orchestrates a run in a Laminar sandbox. The
  *   orchestrator sends its output with `appendRunLogs` and each task set's
  *   Harbor job output with `uploadJob` / `uploadJobIndex`; `getRunLogs`
@@ -226,26 +219,23 @@ export class HostedEvalsResource extends BaseResource {
     return response.body;
   }
 
-  /** The project's agents with their task sets, sorted by name. */
-  public async listAgents(): Promise<EvalAgent[]> {
-    const response = await fetch(this.url("/agents"), {
+  /** The project's task sets with their heads, sorted by name. */
+  public async listTaskSets(): Promise<TaskSet[]> {
+    const response = await fetch(this.url("/task-sets"), {
       headers: this.headers(),
     });
     if (!response.ok) {
       await this.handleErrorMessage(response);
     }
-    return ((await response.json()) as { agents: EvalAgent[] }).agents;
+    return ((await response.json()) as { taskSets: TaskSet[] }).taskSets;
   }
 
   /** A task set's versions, newest first. Null when there is no such task set. */
   public async listTaskSetVersions(
-    agent: string,
     taskSet: string,
   ): Promise<TaskSetVersion[] | null> {
     const response = await fetch(
-      this.url(
-        `/agents/${segment(agent)}/task-sets/${segment(taskSet)}/versions`,
-      ),
+      this.url(`/task-sets/${segment(taskSet)}/versions`),
       { headers: this.headers() },
     );
     if (response.status === 404) return null;
@@ -256,41 +246,16 @@ export class HostedEvalsResource extends BaseResource {
   }
 
   /**
-   * Record an uploaded blob as the scripts a run uses (creating the agent if
-   * needed); the same content returns the same record.
-   */
-  public async createAgentVersion(
-    agent: string,
-    options: { hash: string; gitSha?: string },
-  ): Promise<EvalAgentVersion> {
-    const response = await fetch(
-      this.url(`/agents/${segment(agent)}/versions`),
-      {
-        method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify(options),
-      },
-    );
-    if (!response.ok) {
-      await this.handleErrorMessage(response);
-    }
-    return (await response.json()) as EvalAgentVersion;
-  }
-
-  /**
-   * Record an uploaded blob as a version of a task set (creating the agent and
-   * task set if needed). A push whose `base` isn't the current head returns
-   * `{headMoved}` instead of failing.
+   * Push an uploaded blob as a task set's new head (creating the task set if
+   * needed). When `base` isn't the current head, returns `{headMoved}` instead
+   * of failing; content equal to the head's returns the head.
    */
   public async createTaskSetVersion(
-    agent: string,
     taskSet: string,
     options: CreateTaskSetVersionOptions,
   ): Promise<CreateTaskSetVersionResult> {
     const response = await fetch(
-      this.url(
-        `/agents/${segment(agent)}/task-sets/${segment(taskSet)}/versions`,
-      ),
+      this.url(`/task-sets/${segment(taskSet)}/versions`),
       {
         method: "POST",
         headers: this.headers(),
@@ -305,6 +270,22 @@ export class HostedEvalsResource extends BaseResource {
       await this.handleErrorMessage(response);
     }
     return { version: (await response.json()) as TaskSetVersion };
+  }
+
+  /**
+   * The scripts the project's latest evaluation of `agent` (an `evals/<agent>/`
+   * folder name) used, or null when no evaluation recorded them.
+   */
+  public async getLatestScripts(agent: string): Promise<LatestScripts | null> {
+    const response = await fetch(
+      this.url(`/scripts/latest?agent=${segment(agent)}`),
+      { headers: this.headers() },
+    );
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      await this.handleErrorMessage(response);
+    }
+    return (await response.json()) as LatestScripts;
   }
 
   /**

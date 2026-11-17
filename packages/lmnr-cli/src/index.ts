@@ -682,10 +682,12 @@ of each task set that runs, first match wins:
   1. --task-set <set>@<version> or <set>@latest
   2. a local copy in task_sets/<set>/, as is
   3. the agent.yaml pin
-  4. Laminar's latest, only for a set named with --task-set (a bare run skips
-     unpinned sets it has no copy of)
-Every run records the exact versions it used (as snapshots; only
-\`lmnr-cli eval push\` publishes).
+  4. Laminar's latest, only for a set named with --task-set (a bare run takes
+     the pinned sets and local copies only)
+Task set names are unique per project in Laminar. A run uploads the files it
+uses but never creates a version (only \`lmnr-cli eval push\` does): its
+evaluation links to a task set version only when the content matches a pushed
+one, and shows the task files either way.
 
 Modes:
   (default)          Trials run on local Docker. Needs uv, Docker and
@@ -713,8 +715,8 @@ Exit codes:
   20  docker_failed (a docker build, pull or save failed, or a wrong platform)
   21  remote_run_failed (a --remote run failed before its task sets ran, or
       its sandbox was lost)
-  23  not_found (no agent.yaml, or an agent, task set or version Laminar
-      doesn't have)
+  23  not_found (no agent.yaml, or a task set or version Laminar doesn't
+      have)
 
 Examples:
   $ lmnr-cli eval run
@@ -734,7 +736,7 @@ Examples:
     .option("--dir <dir>", "Evals folder", "evals")
     .option(
       "--all",
-      "Pull every task set of <agent> (and its scripts, if you have none)",
+      "Pull every task set agent.yaml pins (and the scripts, if you have none)",
     )
     .option("--force", "Let the scripts overwrite local changes")
     .action(withLocalOpts(handleEvalPull))
@@ -745,8 +747,9 @@ Examples:
 (runs only use the repo's scripts); it fails (exit 22, merge_conflict) if they
 would overwrite a local file with different content or a symlink, unless
 --force. <agent>/<task set> pulls one task set (Laminar's latest by default);
-<agent> --all pulls every task set, plus the scripts only if the agent's
-folder has no agent.yaml. Pulling a task set adds task_sets/ to
+<agent> --all pulls every task set the agent.yaml pins, at Laminar's latest,
+fetching the scripts first if the agent's folder has no agent.yaml. Pulling a
+task set adds task_sets/ to
 evals/<agent>/.gitignore: commit that, not the copies. Pulling never changes
 the agent.yaml pins.
 
@@ -786,8 +789,7 @@ Examples:
 
   evalCmd
     .command("list")
-    .description("List agents and task sets in Laminar")
-    .argument("[agent]", "Only this agent")
+    .description("List the project's task sets in Laminar")
     .action(withLocalOpts(handleEvalList));
 
   evalCmd

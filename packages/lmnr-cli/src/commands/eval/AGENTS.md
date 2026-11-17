@@ -10,15 +10,17 @@
   task set) match `^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$` (`assertName`): they go
   into API paths. There are no suites, `harbor.yaml` or `lmnr.yaml` anymore
   (LAM-2543, clean break).
-- **Laminar manages task sets; the repo holds the scripts** (LAM-2543 v2).
-  Each is one content-addressed blob (`ensureBlob`: `treeDigest` of the files
-  `pack.ts` packs → `getBlobIndex` → `putBlob` + `putBlobIndex` only if
-  missing; the index goes last, its presence marks the blob complete). Task
-  sets are versioned (`createTaskSetVersion`: `push: true` moves the head;
-  `push: false` is a **run snapshot**, `number: null`). Scripts are NOT
-  versioned: every run records the copy it used (`createAgentVersion({hash,
-  gitSha})`, deduped by hash, `lastUsedAt` bumped), and `EvalAgent.latestScripts`
-  is the one the last run used. Contract with the server: lmnr
+- **Laminar stores only task sets; an agent is just a local folder** (LAM-2543
+  v3). Task sets are keyed by name, unique per project (`listTaskSets`,
+  `listTaskSetVersions(set)`, `createTaskSetVersion(set, {hash, base,
+  tasks})`); every version is a push with a number, so the server has no
+  agents and no run snapshots. Files travel as content-addressed blobs
+  (`ensureBlob`: `treeDigest` of the files `pack.ts` packs → `getBlobIndex` →
+  `putBlob` + `putBlobIndex` only if missing; the index goes last, its
+  presence marks the blob complete). A run uploads its scripts and local task
+  set copies as blobs and names them in the evaluation's metadata (below);
+  `getLatestScripts(agent)` reads back the scripts the project's latest
+  evaluation of that folder name used. Contract with the server: lmnr
   `docs/internal/hosted-evals.md`.
 - **Hashes** (`digest.ts`): sha256 over `${posix path}\0${sha256(content)}\n`
   per file, sorted by path in JS string order (NOT the per-directory walk
@@ -29,29 +31,32 @@
 - **`eval run [agents...]`** (`index.ts`, `prepare.ts`): agents default to the
   local agent dirs. Per agent:
   - scripts: the local dir's, REQUIRED (no agent.yaml → `not_found` naming
-    `eval pull <agent>`; no fallback to Laminar's copy), recorded with `git
-    rev-parse HEAD` as `gitSha`.
-  - task sets: bare run = pinned sets ∪ local `task_sets/*`; `--task-set
-    name[@number|@latest]` (repeatable) picks instead. Version, first match
+    `eval pull <agent>`; no fallback to Laminar's copy), uploaded as a blob,
+    with `git rev-parse HEAD` as `gitSha`.
+  - task sets: bare run = pinned sets ∪ local `task_sets/*` (other Laminar
+    sets are never considered: CI, with no copies since `task_sets/` is
+    gitignored, runs exactly the pins); `--task-set name[@number|@latest]`
+    (repeatable) picks instead, and a set only in Laminar is taken only when
+    the run covers one agent (names are project-wide). Version, first match
     wins (`prepareTaskSet`): explicit `@N` / `@latest` → local copy (as is,
-    snapshotted with `base` = its `.lmnr.json`; warns when its number differs
-    from the pin, or, unpinned, when it is behind head) → the pin → Laminar's
-    head only when named with `--task-set`. A bare run logs `Skipping
-    <agent>/<set>: not pinned in agent.yaml (...)` for Laminar sets it has no
-    copy or pin of: CI (no copies, `task_sets/` is gitignored) runs exactly the
-    pins. A run never moves a head.
-  - Both modes need the API (snapshots), so local runs use `buildEvalClient`
-    (login, else `LMNR_PROJECT_API_KEY`) too.
+    uploaded as a blob, never a version; warns when its number differs from
+    the pin, or, unpinned, when it is behind head; logs `<agent>/<set>:
+    running your local copy; it is not a pushed version, so the evaluation
+    won't link to one (...)` when its hash matches no pushed version) → the
+    pin → Laminar's head (named sets only). A run never creates a version.
+  - Both modes need the API (blob uploads), so local runs use
+    `buildEvalClient` (login, else `LMNR_PROJECT_API_KEY`) too.
 - **Harbor runs once per task set** (`harbor.ts` `runTaskSets`), cwd = the
   agent dir (custom agent imports resolve from there), job config =
   `buildJobConfig(agent.yaml job, setDir, overrides, remote)`: the set dir
   (absolute) as the only dataset, `--task` as its `task_names`. One Harbor run
   = one evaluation, grouped `<agent>/<set>` (`--pk group_name=` and
-  `HARBOR_LAMINAR_GROUP`). `linkEnv` sets `LMNR_EVAL_AGENT_VERSION_ID`,
-  `LMNR_EVAL_TASK_SET_VERSION_ID`, `LMNR_EVAL_TASK_SET_ROOT` (+
-  `LMNR_EVAL_RUN_ID` remotely): the Laminar Harbor plugin (lmnr-python) links
-  the evaluation to those versions and records each datapoint's `task_path`
-  relative to the set root. Harbor's stdout goes to OUR stderr; stdout is data
+  `HARBOR_LAMINAR_GROUP`). `linkEnv` sets `LMNR_EVAL_HOSTED_METADATA` =
+  `{agent, taskSet, taskSetHash, scriptsHash, gitSha?, runId?}` (JSON; the
+  Laminar Harbor plugin, lmnr-python, sends it as the evaluation's
+  `hostedMetadata` as is, and the server links the pushed version whose hash
+  matches) and `LMNR_EVAL_TASK_SET_ROOT` (the plugin records each datapoint's
+  `task_path` relative to it). Harbor's stdout goes to OUR stderr; stdout is data
   only.
   - default: trials on local Docker; the agent.yaml images the tasks use are
     `docker build`-ed first.
@@ -59,7 +64,7 @@
     spec})` → `{runId, sandboxId}` (each run id is logged as it starts; if a
     later agent fails to start, the runs already started are named before the
     error, since they go on unfollowed), then follow each run's log in turn. `RunSpec
-    = {agent: {name, versionId, hash}, taskSets: [...], overrides, env,
+    = {agent: {name, hash}, gitSha?, taskSets: [{name, hash}], overrides, env,
     images}`, read only by the same CLI version. The orchestrator sandbox runs
     `npx lmnr-cli@<cliVersion> eval orchestrate`, which downloads the blobs
     into `$LMNR_EVALS_ROOT/<agent>/(task_sets/<set>/)` (`materialize`) and
@@ -120,14 +125,15 @@
     then = the pulled version (local changes stay as diffs against it).
     Every task-set pull and push makes sure `<agent>/.gitignore` lists `task_sets/`
     (`ignoreTaskSets`, appended once; a committed copy would beat the pins in
-    CI). `pull <agent>` pulls only `latestScripts`, the scripts the last run
-    used, and says to commit them (`pullScripts`: extracted over
+    CI). `pull <agent>` pulls only `getLatestScripts(agent)`, the scripts the
+    latest evaluation of that folder used, and says to commit them (`pullScripts`: extracted over
     the agent dir, extra local files stay; a local file with different
     content, or a symlink on a script's path (which `walkFiles` never hashes
     and `cp` would write through), fails it with `merge_conflict` unless
     `--force`, which replaces the link itself). `pull <agent>
-    --all` pulls every set, plus the scripts only when the agent dir has no
-    agent.yaml: the repo's scripts win, as in a run.
+    --all` pulls every set agent.yaml pins, at head (the server has no
+    agent → sets mapping), fetching the scripts first only when the agent dir
+    has no agent.yaml: the repo's scripts win, as in a run.
   - push (and run, for local sets) rejects tasks with `environment/Dockerfile`
     or `docker-compose.yaml` and tasks without `[environment] docker_image`
     (`assertTaskImages`: tasks name an agent.yaml or registry image, which is
@@ -138,7 +144,7 @@
     <set> to vX; set it to vY ...` / `Pin it in agent.yaml (...)`). It reads
     agent.yaml only for those hints: an invalid one warns and skips them
     rather than blocking the push.
-  - `eval list [agent]` prints task set heads (`snapshot` = never pushed).
+  - `eval list` prints the project's task sets and their heads.
 - Modules: `index.ts` (`eval run`, reporting), `prepare.ts` (what a run uses),
   `layout.ts` (folder layout, agent.yaml, task dirs, job config, `${VAR}`s,
   `.lmnr.json`), `store.ts` (blobs, versions, downloads), `digest.ts`,
@@ -211,8 +217,8 @@
   save` output, a non-amd64 image, zstd layers), 21 `remote_run_failed` (a
   `--remote` run's orchestrator exited with anything but 0 or 18, or its
   sandbox was lost; 18 from it stays `harbor_failed`), 22 `merge_conflict`
-  (pull / push), 23 `not_found` (no agent.yaml for a run, or an agent, task
-  set or version Laminar doesn't have). Bad `--env` flags are commander `InvalidArgumentError`s.
+  (pull / push), 23 `not_found` (no agent.yaml for a run, no recorded scripts
+  for `pull <agent>`, or a task set or version Laminar doesn't have). Bad `--env` flags are commander `InvalidArgumentError`s.
 - **Secrets are Harbor `${VAR}` placeholders**, not flags: `findTemplateVars`
   scans agent.yaml + the run's task.toml files (so a task `--task` leaves out
   needs none of its vars), `resolveTemplateEnv` reads ONLY those names from

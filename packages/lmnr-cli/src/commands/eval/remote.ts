@@ -27,10 +27,9 @@ import { downloadBlob } from "./store";
 
 const logger = initializeLogger();
 
-/** A version a run uses: its id and its blob's hash. */
-export interface VersionRef {
+/** Files a run uses (agent scripts or a task set): a name and its blob's hash. */
+export interface BlobRef {
   name: string;
-  versionId: string;
   hash: string;
 }
 
@@ -39,8 +38,10 @@ export interface VersionRef {
  * orchestrator sandbox, which runs this same CLI version.
  */
 export interface RunSpec extends RemoteImages {
-  agent: VersionRef;
-  taskSets: VersionRef[];
+  agent: BlobRef;
+  /** The commit the scripts came from. */
+  gitSha?: string;
+  taskSets: BlobRef[];
   overrides: RunOverrides;
   /** Values for the `${VAR}` placeholders and `--env` flags. */
   env: Record<string, string>;
@@ -48,10 +49,11 @@ export interface RunSpec extends RemoteImages {
 
 /** An agent ready to run: its scripts and task sets, local or downloaded. */
 export interface PreparedAgent {
-  agent: VersionRef;
+  agent: BlobRef;
+  gitSha?: string;
   /** Where its scripts are. */
   dir: string;
-  taskSets: (VersionRef & { dir: string })[];
+  taskSets: (BlobRef & { dir: string })[];
 }
 
 /** The Harbor runs of a prepared agent, one per task set. */
@@ -62,17 +64,18 @@ export const taskSetRuns = async (
   return prepared.taskSets.map((set) => ({
     agent: prepared.agent.name,
     agentDir: prepared.dir,
-    agentVersionId: prepared.agent.versionId,
+    scriptsHash: prepared.agent.hash,
+    ...(prepared.gitSha ? { gitSha: prepared.gitSha } : {}),
     job,
     taskSet: set.name,
     setDir: set.dir,
-    taskSetVersionId: set.versionId,
+    taskSetHash: set.hash,
   }));
 };
 
 /**
  * Push the agent's images and start its run in an orchestrator sandbox. Its
- * versions are already in Laminar (the run snapshotted them). Returns once that
+ * scripts and task sets are already uploaded as blobs. Returns once that
  * sandbox has started.
  */
 export const startRemoteRun = async (
@@ -100,11 +103,8 @@ export const startRemoteRun = async (
   );
   const spec: RunSpec = {
     agent: prepared.agent,
-    taskSets: prepared.taskSets.map(({ name, versionId, hash }) => ({
-      name,
-      versionId,
-      hash,
-    })),
+    ...(prepared.gitSha ? { gitSha: prepared.gitSha } : {}),
+    taskSets: prepared.taskSets.map(({ name, hash }) => ({ name, hash })),
     overrides,
     env: runEnv,
     ...images,
@@ -176,7 +176,12 @@ const materialize = async (
     await downloadBlob(client, set.hash, setDir);
     taskSets.push({ ...set, dir: setDir });
   }
-  return { agent: spec.agent, dir, taskSets };
+  return {
+    agent: spec.agent,
+    ...(spec.gitSha ? { gitSha: spec.gitSha } : {}),
+    dir,
+    taskSets,
+  };
 };
 
 /**

@@ -2,12 +2,7 @@ import { cp, lstat, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type {
-  EvalAgent,
-  EvalAgentVersion,
-  LaminarClient,
-  TaskSetVersion,
-} from "@lmnr-ai/client";
+import type { LaminarClient, TaskSetVersion } from "@lmnr-ai/client";
 
 import { errorMessage } from "@lmnr-ai/types";
 
@@ -36,7 +31,7 @@ import {
   AGENT_SCRIPTS,
   downloadBlob,
   otherEntryDigests,
-  saveTaskSetVersion,
+  pushTaskSetVersion,
   setDigests,
   taskDigests,
 } from "./store";
@@ -81,24 +76,16 @@ export const parseTarget = (raw: string): Target => {
   };
 };
 
-export const findAgent = (
-  agents: EvalAgent[],
-  name: string,
-): EvalAgent | undefined => agents.find((a) => a.name === name);
-
-/** The task set version numbered `number` (pushed versions only). */
+/** The task set version numbered `number`. */
 export const findTaskSetVersion = async (
   client: LaminarClient,
-  agent: string,
   taskSet: string,
   number: number,
 ): Promise<TaskSetVersion> => {
-  const versions = await client.hostedEvals.listTaskSetVersions(agent, taskSet);
+  const versions = await client.hostedEvals.listTaskSetVersions(taskSet);
   const version = versions?.find((v) => v.number === number);
   if (!version) {
-    throw evalNotFound(
-      `Task set ${agent}/${taskSet} has no version ${number}.`,
-    );
+    throw evalNotFound(`Task set ${taskSet} has no version ${number}.`);
   }
   return version;
 };
@@ -149,7 +136,7 @@ export const pullTaskSet = async (
     if (plan.conflicts.length > 0) {
       throw mergeConflict(
         `Tasks or files changed both locally and in Laminar (${agent}/${taskSet} ` +
-          `v${version.number ?? "?"}): ${plan.conflicts.join(", ")}. Move ` +
+          `v${version.number}): ${plan.conflicts.join(", ")}. Move ` +
           "your local copy of each aside, pull, and re-apply your changes.",
       );
     }
@@ -183,12 +170,11 @@ export const pushTaskSet = async (
   await assertTaskImages(setDir);
   let base = (await readState(setDir))?.versionId ?? null;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const { result, tasks } = await saveTaskSetVersion(
+    const { result, tasks } = await pushTaskSetVersion(
       client,
-      agent,
       taskSet,
       setDir,
-      { push: true, base },
+      base,
     );
     if ("version" in result) {
       const digests = taskDigests(tasks);
@@ -215,8 +201,8 @@ export const pushTaskSet = async (
   );
 };
 
-const versionLabel = (v: { number: number | null } | null) =>
-  v ? (v.number === null ? "snapshot" : `v${v.number}`) : "-";
+const versionLabel = (v: { number: number } | null) =>
+  v ? `v${v.number}` : "-";
 
 /** The first symlink on `target`'s path under `root`, relative to `root`. */
 const symlinkOnPath = async (
@@ -242,11 +228,11 @@ const symlinkOnPath = async (
 export const pullScripts = async (
   client: LaminarClient,
   agentDir: string,
-  version: EvalAgentVersion,
+  hash: string,
   force: boolean,
 ): Promise<void> =>
   withTempDir("lmnr-pull-", async (remoteDir) => {
-    await downloadBlob(client, version.hash, remoteDir);
+    await downloadBlob(client, hash, remoteDir);
     const local = new Map(
       (await dirExists(agentDir))
         ? (
@@ -289,76 +275,85 @@ export const handleEvalPull = async (
 ): Promise<void> => {
   const target = parseTarget(rawTarget);
   if (opts.all && target.taskSet) {
-    throw invalidEvalsDir("--all pulls every task set; drop the /<task set>.");
+    throw invalidEvalsDir(
+      "--all pulls every pinned task set; drop the /<task set>.",
+    );
   }
   const client = await buildEvalClient(opts);
-  const agent = findAgent(await client.hostedEvals.listAgents(), target.agent);
-  if (!agent) throw evalNotFound(`No agent ${target.agent} in Laminar.`);
-  const agentDir = path.resolve(opts.dir, agent.name);
+  const agent = target.agent;
+  const agentDir = path.resolve(opts.dir, agent);
 
   // <agent> asks for the scripts the last run used; --all only fills them in
   // when the local copy has none, since runs use the repo's scripts.
-  let scripts: EvalAgentVersion | null = null;
-  if (!target.taskSet && !opts.all) {
-    if (!agent.latestScripts) {
-      throw evalNotFound(
-        `No run of ${agent.name} has recorded its scripts; pull its task ` +
-          `sets with ${agent.name} --all or ${agent.name}/<task set>.`,
-      );
-    }
-    scripts = agent.latestScripts;
-  } else if (
-    opts.all &&
-    agent.latestScripts &&
-    !(await hasAgentConfig(agentDir))
-  ) {
-    scripts = agent.latestScripts;
+  const wantScripts =
+    !target.taskSet && (!opts.all || !(await hasAgentConfig(agentDir)));
+  const scripts = wantScripts
+    ? await client.hostedEvals.getLatestScripts(agent)
+    : null;
+  if (wantScripts && !scripts) {
+    throw evalNotFound(
+      opts.all
+        ? `No ${path.join(agentDir, "agent.yaml")}, and no evaluation of ` +
+            `${agent} has recorded its scripts.`
+        : `No evaluation of ${agent} has recorded its scripts; pull a task ` +
+            `set with ${agent}/<task set>.`,
+    );
   }
   if (scripts) {
-    await pullScripts(client, agentDir, scripts, !!opts.force);
+    await pullScripts(client, agentDir, scripts.hash, !!opts.force);
     logger.info(
-      `Pulled the scripts ${agent.name}'s last run used ` +
-        `(${scripts.lastUsedAt}). Commit ${path.relative(process.cwd(), agentDir) || "."} ` +
+      `Pulled the scripts ${agent}'s last run used ` +
+        `(${scripts.usedAt}). Commit ${path.relative(process.cwd(), agentDir) || "."} ` +
         "to your repo: eval run uses the repo's scripts.",
     );
   }
 
-  const results: PullResult[] = [];
-  const sets = target.taskSet
-    ? agent.taskSets.filter((s) => s.name === target.taskSet)
+  const names = target.taskSet
+    ? [target.taskSet]
     : opts.all
-      ? agent.taskSets
+      ? Object.keys((await loadAgentConfig(agentDir)).pins).sort()
       : [];
-  if (target.taskSet && sets.length === 0) {
-    throw evalNotFound(
-      `No task set ${agent.name}/${target.taskSet} in Laminar.`,
-    );
+  if (opts.all && names.length === 0) {
+    logger.info(`agent.yaml pins no task sets: no task set to pull.`);
   }
-  for (const set of sets) {
+  const heads = new Map(
+    names.length > 0
+      ? (await client.hostedEvals.listTaskSets()).map((s) => [s.name, s.head])
+      : [],
+  );
+  const results: PullResult[] = [];
+  for (const name of names) {
+    if (!heads.has(name)) {
+      if (target.taskSet) {
+        throw evalNotFound(`No task set ${name} in Laminar.`);
+      }
+      logger.warn(`agent.yaml pins ${name}, but Laminar has no such task set`);
+      continue;
+    }
     const version =
       target.number !== undefined
-        ? await findTaskSetVersion(client, agent.name, set.name, target.number)
-        : set.head;
+        ? await findTaskSetVersion(client, name, target.number)
+        : (heads.get(name) ?? null);
     if (!version) {
-      logger.warn(`${agent.name}/${set.name} has no pushed version yet`);
+      logger.warn(`${name} has no pushed version yet`);
       continue;
     }
     const result = await pullTaskSet(
       client,
-      agent.name,
-      set.name,
-      taskSetDir(agentDir, set.name),
+      agent,
+      name,
+      taskSetDir(agentDir, name),
       version,
     );
     results.push(result);
     await ignoreTaskSets(agentDir);
     logger.info(
-      `Pulled ${agent.name}/${set.name} ${versionLabel(version)}: ` +
+      `Pulled ${agent}/${name} ${versionLabel(version)}: ` +
         `${result.updated.length} updated, ${result.removed.length} removed`,
     );
   }
   if (opts.json) {
-    outputJson({ agent: agent.name, scripts, taskSets: results });
+    outputJson({ agent, scripts, taskSets: results });
   }
 };
 
@@ -431,27 +426,18 @@ export const handleEvalPush = async (
   if (opts.json) outputJson({ agent: target.agent, taskSets });
 };
 
-/** `lmnr-cli eval list [agent]`. */
-export const handleEvalList = async (
-  agentName: string | undefined,
-  opts: GlobalOpts,
-): Promise<void> => {
+/** `lmnr-cli eval list`. */
+export const handleEvalList = async (opts: GlobalOpts): Promise<void> => {
   const client = await buildEvalClient(opts);
-  let agents = await client.hostedEvals.listAgents();
-  if (agentName) {
-    agents = agents.filter((a) => a.name === agentName);
-    if (agents.length === 0)
-      throw evalNotFound(`No agent ${agentName} in Laminar.`);
-  }
+  const taskSets = await client.hostedEvals.listTaskSets();
   if (opts.json) {
-    outputJson({ agents });
+    outputJson({ taskSets });
     return;
   }
-  const rows: string[][] = [];
-  for (const agent of agents) {
-    for (const set of agent.taskSets) {
-      rows.push([agent.name, set.name, versionLabel(set.head)]);
-    }
-  }
-  emitData(renderTable(["Agent", "Task set", "Head"], rows));
+  emitData(
+    renderTable(
+      ["Task set", "Head"],
+      taskSets.map((set) => [set.name, versionLabel(set.head)]),
+    ),
+  );
 };

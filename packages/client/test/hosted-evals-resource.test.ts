@@ -81,9 +81,8 @@ void describe("HostedEvalsResource", () => {
     const result = await new HostedEvalsResource(
       "https://api.test.com:443",
       userToken,
-    ).createTaskSetVersion("support bot", "checkout", {
+    ).createTaskSetVersion("check out", {
       hash: "ab".repeat(32),
-      push: true,
       base: "v1",
       tasks: [{ name: "case-1", digest: "cd".repeat(32) }],
     });
@@ -92,9 +91,38 @@ void describe("HostedEvalsResource", () => {
     const [url, init] = mockFetch.mock.calls[0].arguments as any;
     assert.strictEqual(
       url,
-      "https://api.test.com:443/v1/cli/hosted-evals/agents/support%20bot/task-sets/checkout/versions",
+      "https://api.test.com:443/v1/cli/hosted-evals/task-sets/check%20out/versions",
     );
     assert.strictEqual(JSON.parse(init.body).base, "v1");
+  });
+
+  void it("reads the latest scripts of an agent, null when there are none", async () => {
+    const latest = {
+      hash: "ab".repeat(32),
+      gitSha: null,
+      usedAt: "2026-11-17T00:00:00Z",
+      evaluationId: "e1",
+    };
+    const mockFetch = mock.fn((url: string) =>
+      url.endsWith("agent=support%20bot")
+        ? { ok: true, status: 200, json: () => latest }
+        : { ok: false, status: 404, json: () => ({ error: "none" }) },
+    );
+    global.fetch = mockFetch as any;
+    const resource = new HostedEvalsResource(
+      "https://api.test.com:443",
+      userToken,
+    );
+
+    assert.deepStrictEqual(
+      await resource.getLatestScripts("support bot"),
+      latest,
+    );
+    assert.strictEqual(await resource.getLatestScripts("other"), null);
+    assert.strictEqual(
+      (mockFetch.mock.calls[0].arguments as any)[0],
+      "https://api.test.com:443/v1/cli/hosted-evals/scripts/latest?agent=support%20bot",
+    );
   });
 
   void it("uploads a task set's job archive by run id", async () => {

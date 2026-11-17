@@ -202,12 +202,12 @@ export type { CliProject, ProjectKeyProbe } from "./resources/cli";
 export type {
   CreateTaskSetVersionOptions,
   CreateTaskSetVersionResult,
-  EvalAgent,
-  EvalAgentVersion,
   HostedEvalRunLogLine,
   HostedEvalRunLogPage,
   HostedEvalSandboxStatus,
+  LatestScripts,
   StartHostedEvalRunOptions,
+  TaskSet,
   TaskSetTask,
   TaskSetVersion,
 } from "./resources/hosted-evals";

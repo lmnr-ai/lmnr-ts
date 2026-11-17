@@ -13,9 +13,8 @@ import path from "node:path";
 
 import type {
   CreateTaskSetVersionOptions,
-  EvalAgent,
-  EvalAgentVersion,
   LaminarClient,
+  LatestScripts,
   TaskSetVersion,
 } from "@lmnr-ai/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -56,7 +55,7 @@ const read = (rel: string) => readFile(path.join(root, rel), "utf8");
 const toml = (value: string) =>
   `[environment]\ndocker_image = "app"\n\n[metadata]\nvalue = "${value}"\n`;
 
-/** Laminar's agent and task set routes for one agent, in memory. */
+/** Laminar's task set and scripts routes, in memory. */
 const fakeServer = () => {
   const blobs = new Map<string, Buffer>();
   const sets = new Map<
@@ -71,7 +70,7 @@ const fakeServer = () => {
     }
     return set;
   };
-  const scripts: EvalAgentVersion[] = [];
+  const scripts = new Map<string, LatestScripts>();
   let nextId = 1;
   const hostedEvals = {
     getBlobIndex: async (hash: string) => (blobs.has(hash) ? {} : null),
@@ -81,66 +80,44 @@ const fakeServer = () => {
     putBlobIndex: async () => undefined,
     getBlob: async (hash: string) =>
       new Blob([new Uint8Array(blobs.get(hash) as Buffer)]).stream(),
-    createTaskSetVersion: async (
-      _agent: string,
-      name: string,
-      { hash, push, base }: CreateTaskSetVersionOptions,
-    ) => {
-      const set = setOf(name);
-      let version = set.versions.find((v) => v.hash === hash);
-      if (push && set.head && version?.id === set.head.id) return { version };
-      if (push && (set.head?.id ?? null) !== base) {
-        return { headMoved: set.head };
-      }
-      if (!version) {
-        version = {
+    createTaskSetVersion: vi.fn(
+      async (name: string, { hash, base }: CreateTaskSetVersionOptions) => {
+        const set = setOf(name);
+        if (set.head?.hash === hash) return { version: set.head };
+        if ((set.head?.id ?? null) !== base) return { headMoved: set.head };
+        const version: TaskSetVersion = {
           id: `v-${nextId++}`,
-          number: null,
+          number: set.versions.length + 1,
           hash,
           createdAt: "",
           parentId: base,
         };
         set.versions.push(version);
-      }
-      if (push) {
-        version.number ??=
-          Math.max(0, ...set.versions.map((v) => v.number ?? 0)) + 1;
         set.head = version;
-      }
-      return { version };
-    },
-    listTaskSetVersions: async (_agent: string, name: string) =>
-      sets.has(name) ? [...setOf(name).versions].reverse() : null,
-    createAgentVersion: async (_agent: string, { hash }: { hash: string }) => {
-      let version = scripts.find((v) => v.hash === hash);
-      if (!version) {
-        version = {
-          id: `a-${nextId++}`,
-          hash,
-          gitSha: null,
-          createdAt: "",
-          lastUsedAt: "2026-11-17T00:00:00Z",
-        };
-        scripts.push(version);
-      }
-      return version;
-    },
-    listAgents: async (): Promise<EvalAgent[]> => [
-      {
-        id: "agent",
-        name: "agent",
-        latestScripts: scripts.at(-1) ?? null,
-        taskSets: [...sets].map(([name, set]) => ({
-          id: name,
-          name,
-          head: set.head,
-        })),
+        return { version };
       },
-    ],
+    ),
+    listTaskSetVersions: async (name: string) =>
+      sets.has(name) ? [...setOf(name).versions].reverse() : null,
+    listTaskSets: async () =>
+      [...sets].map(([name, set]) => ({ id: name, name, head: set.head })),
+    getLatestScripts: async (agent: string) => scripts.get(agent) ?? null,
   };
   return {
     client: { hostedEvals } as unknown as LaminarClient,
     head: (set = "s") => setOf(set).head,
+    createTaskSetVersion: hostedEvals.createTaskSetVersion,
+    /** What creating an evaluation of `agent` with these scripts records. */
+    recordScripts: (agent: string, hash: string) => {
+      const latest = {
+        hash,
+        gitSha: null,
+        usedAt: "2026-11-17T00:00:00Z",
+        evaluationId: `e-${nextId++}`,
+      };
+      scripts.set(agent, latest);
+      return latest;
+    },
   };
 };
 
@@ -226,14 +203,14 @@ const agentInLaminar = async (yaml: string) => {
   const server = fakeServer();
   await write("laminar/agent/agent.yaml", yaml);
   await write("laminar/agent/task_sets/s/a/task.toml", toml("a1"));
-  const hash = await ensureBlob(
-    server.client,
-    path.join(root, "laminar/agent"),
-    AGENT_SCRIPTS,
+  const scripts = server.recordScripts(
+    "agent",
+    await ensureBlob(
+      server.client,
+      path.join(root, "laminar/agent"),
+      AGENT_SCRIPTS,
+    ),
   );
-  const scripts = await server.client.hostedEvals.createAgentVersion("agent", {
-    hash,
-  });
   await pushTaskSet(
     server.client,
     "agent",
@@ -252,11 +229,11 @@ void describe("pullScripts / handleEvalPull", () => {
     await write("repo/agent/notes.md", "notes");
 
     await expect(
-      pullScripts(server.client, agentDir, scripts, false),
+      pullScripts(server.client, agentDir, scripts.hash, false),
     ).rejects.toMatchObject({ code: "merge_conflict", exitCode: 22 });
     expect(await read("repo/agent/agent.yaml")).toBe("mine");
 
-    await pullScripts(server.client, agentDir, scripts, true);
+    await pullScripts(server.client, agentDir, scripts.hash, true);
     expect(await read("repo/agent/agent.yaml")).toBe("laminar");
     expect(await read("repo/agent/notes.md")).toBe("notes");
   });
@@ -272,10 +249,10 @@ void describe("pullScripts / handleEvalPull", () => {
     );
 
     await expect(
-      pullScripts(server.client, agentDir, scripts, false),
+      pullScripts(server.client, agentDir, scripts.hash, false),
     ).rejects.toMatchObject({ code: "merge_conflict" });
 
-    await pullScripts(server.client, agentDir, scripts, true);
+    await pullScripts(server.client, agentDir, scripts.hash, true);
     expect((await lstat(path.join(agentDir, "agent.yaml"))).isFile()).toBe(
       true,
     );
@@ -286,12 +263,13 @@ void describe("pullScripts / handleEvalPull", () => {
   void it("pulls only the scripts the last run used for <agent>", async () => {
     const { server } = await agentInLaminar("job: {}\n");
     await write("laminar/agent/agent.yaml", "job:\n  n_attempts: 2\n");
-    await prepareAgents(
-      server.client,
-      path.join(root, "laminar"),
-      ["agent"],
-      [],
-      path.join(root, "scratch"),
+    server.recordScripts(
+      "agent",
+      await ensureBlob(
+        server.client,
+        path.join(root, "laminar/agent"),
+        AGENT_SCRIPTS,
+      ),
     );
     await handleEvalPull("agent", { dir: path.join(root, "repo") });
     expect(await read("repo/agent/agent.yaml")).toBe("job:\n  n_attempts: 2\n");
@@ -299,21 +277,37 @@ void describe("pullScripts / handleEvalPull", () => {
     await expect(read("repo/agent/.gitignore")).rejects.toThrow();
   });
 
-  void it("pulls every task set for --all, keeping local scripts and ignoring task_sets/ once", async () => {
-    await agentInLaminar("laminar");
-    await write("repo/agent/agent.yaml", "mine");
+  void it("fails for <agent> when no evaluation recorded its scripts", async () => {
+    await agentInLaminar("job: {}\n");
+    await expect(
+      handleEvalPull("other", { dir: path.join(root, "repo") }),
+    ).rejects.toMatchObject({ code: "not_found", exitCode: 23 });
+  });
+
+  void it("pulls the pinned task sets for --all, keeping local scripts and ignoring task_sets/ once", async () => {
+    const { server } = await agentInLaminar("laminar");
+    await write("laminar/t/a/task.toml", toml("t1"));
+    await pushTaskSet(
+      server.client,
+      "agent",
+      "t",
+      path.join(root, "laminar/t"),
+    );
+    const mine = "task_sets:\n  s: 1\n";
+    await write("repo/agent/agent.yaml", mine);
     await write("repo/agent/.gitignore", "jobs/");
     await handleEvalPull("agent", { dir: path.join(root, "repo"), all: true });
-    expect(await read("repo/agent/agent.yaml")).toBe("mine");
+    expect(await read("repo/agent/agent.yaml")).toBe(mine);
     expect(await read("repo/agent/task_sets/s/a/task.toml")).toBe(toml("a1"));
+    await expect(read("repo/agent/task_sets/t/a/task.toml")).rejects.toThrow();
     await handleEvalPull("agent/s", { dir: path.join(root, "repo") });
     expect(await read("repo/agent/.gitignore")).toBe("jobs/\ntask_sets/\n");
   });
 
   void it("fills in the scripts for --all when there are none locally", async () => {
-    await agentInLaminar("laminar");
+    await agentInLaminar("task_sets:\n  s: 1\n");
     await handleEvalPull("agent", { dir: path.join(root, "repo"), all: true });
-    expect(await read("repo/agent/agent.yaml")).toBe("laminar");
+    expect(await read("repo/agent/agent.yaml")).toBe("task_sets:\n  s: 1\n");
     expect(await read("repo/agent/task_sets/s/a/task.toml")).toBe(toml("a1"));
   });
 });
@@ -345,7 +339,7 @@ const pinnedRepo = async () => {
     );
   const ran = async (selectors?: string[]) =>
     Object.fromEntries(
-      (await run(selectors))[0].taskSets.map((s) => [s.name, s.versionId]),
+      (await run(selectors))[0].taskSets.map((s) => [s.name, s.hash]),
     );
   return { server, v1, v2, other, run, ran };
 };
@@ -356,20 +350,35 @@ void describe("prepareAgents", () => {
     vi.mocked(log.warn).mockClear();
   });
 
-  void it("runs pinned sets at their pin and skips unpinned Laminar sets", async () => {
+  void it("runs pinned sets at their pin, leaving unpinned Laminar sets out", async () => {
     const { v1, ran } = await pinnedRepo();
-    expect(await ran()).toEqual({ pinned: v1.id });
-    expect(log.info).toHaveBeenCalledWith(
-      "Skipping agent/other: not pinned in agent.yaml (pin it, or pass --task-set other).",
-    );
+    expect(await ran()).toEqual({ pinned: v1.hash });
   });
 
   void it("runs a named unpinned set at head, and @latest / @N over the pin", async () => {
     const { v1, v2, other, ran } = await pinnedRepo();
-    expect(await ran(["other"])).toEqual({ other: other.id });
-    expect(await ran(["pinned"])).toEqual({ pinned: v1.id });
-    expect(await ran(["pinned@latest"])).toEqual({ pinned: v2.id });
-    expect(await ran(["pinned@2"])).toEqual({ pinned: v2.id });
+    expect(await ran(["other"])).toEqual({ other: other.hash });
+    expect(await ran(["pinned"])).toEqual({ pinned: v1.hash });
+    expect(await ran(["pinned@latest"])).toEqual({ pinned: v2.hash });
+    expect(await ran(["pinned@2"])).toEqual({ pinned: v2.hash });
+  });
+
+  void it("takes a Laminar-only named set only for a run of one agent", async () => {
+    const { server } = await pinnedRepo();
+    await write("repo/second/agent.yaml", "job: {}\n");
+    const runBoth = (selectors: string[]) =>
+      prepareAgents(
+        server.client,
+        path.join(root, "repo"),
+        ["agent", "second"],
+        selectors.map(parseTaskSetSelector),
+        path.join(root, "scratch"),
+      );
+    await expect(runBoth(["other"])).rejects.toMatchObject({
+      code: "not_found",
+    });
+    const prepared = await runBoth(["pinned"]);
+    expect(prepared.map((a) => a.agent.name)).toEqual(["agent"]);
   });
 
   void it("runs a local copy over the pin, warning about the difference", async () => {
@@ -377,12 +386,35 @@ void describe("prepareAgents", () => {
     const dir = path.join(root, "repo/agent/task_sets/pinned");
     await pullTaskSet(server.client, "agent", "pinned", dir, v2);
     const [agent] = await run();
-    expect(agent.taskSets).toEqual([
-      { name: "pinned", versionId: v2.id, hash: v2.hash, dir },
-    ]);
+    expect(agent.taskSets).toEqual([{ name: "pinned", hash: v2.hash, dir }]);
     expect(log.warn).toHaveBeenCalledWith(
       "Running your copy of agent/pinned (based on v2), but agent.yaml pins v1.",
     );
+    expect(log.info).not.toHaveBeenCalledWith(
+      expect.stringContaining("not a pushed version"),
+    );
+  });
+
+  void it("runs a never-pushed or edited copy as a blob, creating no version", async () => {
+    const { server, v2, run } = await pinnedRepo();
+    await write("repo/agent/task_sets/fresh/a/task.toml", toml("f1"));
+    const pinnedDir = path.join(root, "repo/agent/task_sets/pinned");
+    await pullTaskSet(server.client, "agent", "pinned", pinnedDir, v2);
+    await write("repo/agent/task_sets/pinned/a/task.toml", toml("edited"));
+    server.createTaskSetVersion.mockClear();
+
+    const [agent] = await run();
+
+    expect(server.createTaskSetVersion).not.toHaveBeenCalled();
+    expect(agent.taskSets.map((s) => s.name)).toEqual(["fresh", "pinned"]);
+    expect(agent.taskSets[1].hash).not.toBe(v2.hash);
+    for (const set of ["fresh", "pinned"]) {
+      expect(log.info).toHaveBeenCalledWith(
+        `agent/${set}: running your local copy; it is not a pushed version, ` +
+          "so the evaluation won't link to one " +
+          `(\`lmnr-cli eval push agent/${set}\` publishes it).`,
+      );
+    }
   });
 
   void it("needs the repo's scripts", async () => {

@@ -63,13 +63,17 @@ export interface TaskSetRun {
   agent: string;
   /** The agent's scripts; Harbor runs from here. */
   agentDir: string;
-  agentVersionId: string;
+  /** Their blob. */
+  scriptsHash: string;
+  /** The commit they came from. */
+  gitSha?: string;
   /** agent.yaml's `job`. */
   job: JobConfig;
   taskSet: string;
   /** The task set's files, wherever they are (local copy or downloaded). */
   setDir: string;
-  taskSetVersionId: string;
+  /** Their blob: Laminar links the evaluation to the pushed version with it. */
+  taskSetHash: string;
 }
 
 /** `<agent>/<task set>`: the evaluation group and the label in logs. */
@@ -77,18 +81,25 @@ export const runLabel = (run: Pick<TaskSetRun, "agent" | "taskSet">) =>
   `${run.agent}/${run.taskSet}`;
 
 /**
- * Env that links the evaluation the Laminar Harbor plugin creates to the agent
- * and task set versions it ran (and, remotely, to the run).
+ * Env for the Laminar Harbor plugin: `LMNR_EVAL_HOSTED_METADATA` goes on the
+ * evaluation as is (Laminar shows the task set and scripts blobs from it, and
+ * links the task set version whose hash matches), task paths are recorded
+ * relative to the set root.
  */
 export const linkEnv = (
   run: TaskSetRun,
   runId?: string,
 ): Record<string, string> => ({
-  LMNR_EVAL_AGENT_VERSION_ID: run.agentVersionId,
-  LMNR_EVAL_TASK_SET_VERSION_ID: run.taskSetVersionId,
+  LMNR_EVAL_HOSTED_METADATA: JSON.stringify({
+    agent: run.agent,
+    taskSet: run.taskSet,
+    taskSetHash: run.taskSetHash,
+    scriptsHash: run.scriptsHash,
+    ...(run.gitSha ? { gitSha: run.gitSha } : {}),
+    ...(runId ? { runId } : {}),
+  }),
   LMNR_EVAL_TASK_SET_ROOT: run.setDir,
   HARBOR_LAMINAR_GROUP: runLabel(run),
-  ...(runId ? { LMNR_EVAL_RUN_ID: runId } : {}),
 });
 
 interface HarborRun {

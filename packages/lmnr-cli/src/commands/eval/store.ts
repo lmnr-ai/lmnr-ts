@@ -9,7 +9,6 @@ import { createGunzip } from "node:zlib";
 
 import type {
   CreateTaskSetVersionResult,
-  EvalAgentVersion,
   LaminarClient,
   TaskSetTask,
 } from "@lmnr-ai/client";
@@ -146,7 +145,8 @@ export const setDigests = async (
   return { tasks, files: await otherEntryDigests(setDir, tasks) };
 };
 
-const gitSha = async (dir: string): Promise<string | undefined> => {
+/** The commit `dir` is checked out at, if it is in a git repo. */
+export const gitSha = async (dir: string): Promise<string | undefined> => {
   try {
     const { stdout } = await promisify(execFile)("git", ["rev-parse", "HEAD"], {
       cwd: dir,
@@ -157,33 +157,17 @@ const gitSha = async (dir: string): Promise<string | undefined> => {
   }
 };
 
-/** Record the agent's scripts in `dir` as the ones a run uses. */
-export const saveAgentVersion = async (
+/** Push the task set in `dir` as the new head of `taskSet`, based on `base`. */
+export const pushTaskSetVersion = async (
   client: LaminarClient,
-  agent: string,
-  dir: string,
-): Promise<EvalAgentVersion> => {
-  const hash = await ensureBlob(client, dir, AGENT_SCRIPTS);
-  const sha = await gitSha(dir);
-  return client.hostedEvals.createAgentVersion(agent, {
-    hash,
-    ...(sha ? { gitSha: sha } : {}),
-  });
-};
-
-/** Record the task set in `dir` as a version based on `base`. */
-export const saveTaskSetVersion = async (
-  client: LaminarClient,
-  agent: string,
   taskSet: string,
   dir: string,
-  { push, base }: { push: boolean; base: string | null },
+  base: string | null,
 ): Promise<{ result: CreateTaskSetVersionResult; tasks: TaskSetTask[] }> => {
   const hash = await ensureBlob(client, dir, TASK_SET_FILES);
   const tasks = await taskManifest(dir);
-  const result = await client.hostedEvals.createTaskSetVersion(agent, taskSet, {
+  const result = await client.hostedEvals.createTaskSetVersion(taskSet, {
     hash,
-    push,
     base,
     tasks,
   });

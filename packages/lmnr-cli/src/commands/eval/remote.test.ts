@@ -70,11 +70,11 @@ const writeAgent = async () => {
 const agentDir = () => path.join(root, "evals/support");
 
 const prepared = (): PreparedAgent => ({
-  agent: { name: "support", versionId: "av-1", hash: "agent-hash" },
+  agent: { name: "support", hash: "agent-hash" },
+  gitSha: "abc123",
   dir: agentDir(),
   taskSets: ["a", "b"].map((name) => ({
     name,
-    versionId: `tv-${name}`,
     hash: `${name}-hash`,
     dir: path.join(agentDir(), "task_sets", name),
   })),
@@ -84,11 +84,12 @@ const runs = (): TaskSetRun[] =>
   prepared().taskSets.map((set) => ({
     agent: "support",
     agentDir: agentDir(),
-    agentVersionId: "av-1",
+    scriptsHash: "agent-hash",
+    gitSha: "abc123",
     job: {},
     taskSet: set.name,
     setDir: set.dir,
-    taskSetVersionId: set.versionId,
+    taskSetHash: set.hash,
   }));
 
 const IMAGES = {
@@ -121,7 +122,7 @@ afterEach(async () => {
 });
 
 void describe("startRemoteRun", () => {
-  void it("pushes the agent's images and sends the versions in the spec", async () => {
+  void it("pushes the agent's images and sends the blobs in the spec", async () => {
     await writeAgent();
     vi.mocked(imagePusher).mockReturnValue({
       build: async (def: ImageDef) => `sha256:${def.name}`,
@@ -141,10 +142,11 @@ void describe("startRemoteRun", () => {
     expect(startRun).toHaveBeenCalledWith({
       cliVersion: expect.any(String),
       spec: {
-        agent: { name: "support", versionId: "av-1", hash: "agent-hash" },
+        agent: { name: "support", hash: "agent-hash" },
+        gitSha: "abc123",
         taskSets: [
-          { name: "a", versionId: "tv-a", hash: "a-hash" },
-          { name: "b", versionId: "tv-b", hash: "b-hash" },
+          { name: "a", hash: "a-hash" },
+          { name: "b", hash: "b-hash" },
         ],
         overrides: { nAttempts: 2 },
         env: { OPENAI_API_KEY: "sk" },
@@ -155,7 +157,7 @@ void describe("startRemoteRun", () => {
 });
 
 void describe("runTaskSets", () => {
-  void it("runs each task set from the agent dir, linked to its versions", async () => {
+  void it("runs each task set from the agent dir with the evaluation's metadata", async () => {
     await writeAgent();
     const seen: { cwd?: string; env?: NodeJS.ProcessEnv; args: string[] }[] =
       [];
@@ -170,11 +172,16 @@ void describe("runTaskSets", () => {
     expect(seen.map((s) => s.cwd)).toEqual([agentDir(), agentDir()]);
     const env = seen[1].env ?? {};
     expect(env).toMatchObject({
-      LMNR_EVAL_AGENT_VERSION_ID: "av-1",
-      LMNR_EVAL_TASK_SET_VERSION_ID: "tv-b",
       LMNR_EVAL_TASK_SET_ROOT: path.join(agentDir(), "task_sets/b"),
-      LMNR_EVAL_RUN_ID: "run-1",
       HARBOR_LAMINAR_GROUP: "support/b",
+    });
+    expect(JSON.parse(env.LMNR_EVAL_HOSTED_METADATA ?? "null")).toEqual({
+      agent: "support",
+      taskSet: "b",
+      taskSetHash: "b-hash",
+      scriptsHash: "agent-hash",
+      gitSha: "abc123",
+      runId: "run-1",
     });
     expect(JSON.parse(env.LMNR_EVAL_IMAGES ?? "null")).toEqual(IMAGES);
     expect(seen[1].args).toContain("group_name=support/b");
@@ -182,7 +189,9 @@ void describe("runTaskSets", () => {
     seen.length = 0;
     expect(await runTaskSets(runs().slice(0, 1), {}, {})).toEqual([]);
     expect(seen[0].env?.LMNR_EVAL_IMAGES).toBeUndefined();
-    expect(seen[0].env?.LMNR_EVAL_RUN_ID).toBeUndefined();
+    expect(
+      JSON.parse(seen[0].env?.LMNR_EVAL_HOSTED_METADATA ?? "{}").runId,
+    ).toBeUndefined();
   });
 
   void it("writes each task set's job where onTaskSetEnd reads it, failed or not", async () => {
@@ -241,7 +250,7 @@ void describe("handleEvalOrchestrate", () => {
     expect(runCommand).not.toHaveBeenCalled();
   });
 
-  void it("downloads the run's versions, runs them and logs Harbor's output", async () => {
+  void it("downloads the run's blobs, runs them and logs Harbor's output", async () => {
     await writeAgent();
     const blobOf = async (dir: string, exclude?: Exclude) =>
       (await packFiles((await walkFiles(dir, process.platform, exclude)).files))
@@ -251,8 +260,8 @@ void describe("handleEvalOrchestrate", () => {
     const evalsRoot = path.join(root, "sandbox-evals");
     const marker = path.join(root, "log-started");
     process.env.LMNR_EVAL_RUN = JSON.stringify({
-      agent: { name: "support", versionId: "av-1", hash: "agent-hash" },
-      taskSets: [{ name: "b", versionId: "tv-b", hash: "b-hash" }],
+      agent: { name: "support", hash: "agent-hash" },
+      taskSets: [{ name: "b", hash: "b-hash" }],
       overrides: {},
       env: {},
       images: IMAGES.images,
@@ -288,9 +297,14 @@ void describe("handleEvalOrchestrate", () => {
     expect(existsSync(path.join(agentRoot, "task_sets/a"))).toBe(false);
     expect(env).toMatchObject({
       COLUMNS: "500",
-      LMNR_EVAL_RUN_ID: "run-1",
-      LMNR_EVAL_TASK_SET_VERSION_ID: "tv-b",
       LMNR_EVAL_TASK_SET_ROOT: path.join(agentRoot, "task_sets/b"),
+    });
+    expect(JSON.parse(env?.LMNR_EVAL_HOSTED_METADATA ?? "null")).toEqual({
+      agent: "support",
+      taskSet: "b",
+      taskSetHash: "b-hash",
+      scriptsHash: "agent-hash",
+      runId: "run-1",
     });
     // Harbor's unfinished last line goes out when its stream ends, before the
     // error, not with whatever is written after it.
