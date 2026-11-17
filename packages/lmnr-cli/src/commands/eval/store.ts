@@ -157,18 +157,16 @@ const gitSha = async (dir: string): Promise<string | undefined> => {
   }
 };
 
-/** Record the agent's scripts in `dir` as a version (`push` makes it the head). */
+/** Record the agent's scripts in `dir` as the ones a run uses. */
 export const saveAgentVersion = async (
   client: LaminarClient,
   agent: string,
   dir: string,
-  push: boolean,
 ): Promise<EvalAgentVersion> => {
   const hash = await ensureBlob(client, dir, AGENT_SCRIPTS);
   const sha = await gitSha(dir);
   return client.hostedEvals.createAgentVersion(agent, {
     hash,
-    push,
     ...(sha ? { gitSha: sha } : {}),
   });
 };

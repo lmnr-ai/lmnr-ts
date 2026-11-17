@@ -12,30 +12,37 @@ export interface StartHostedEvalRunOptions {
 }
 
 /**
- * One version of an agent's scripts or of a task set. `number` is null for a
- * run snapshot (a version a run used that was never pushed).
+ * A copy of an agent's scripts that a run used. Scripts live in the user's
+ * repo; Laminar keeps one copy per distinct content, not versions.
  */
-export interface HostedEvalVersion {
+export interface EvalAgentVersion {
+  id: string;
+  /** Content hash of the scripts; also the id of their blob. */
+  hash: string;
+  gitSha: string | null;
+  createdAt: string;
+  /** When a run last used this copy. */
+  lastUsedAt: string;
+}
+
+/**
+ * One version of a task set. `number` is null for a run snapshot (a version a
+ * run used that was never pushed).
+ */
+export interface TaskSetVersion {
   id: string;
   number: number | null;
   /** Content hash of the version's files; also the id of its blob. */
   hash: string;
+  parentId: string | null;
   createdAt: string;
 }
 
-export interface EvalAgentVersion extends HostedEvalVersion {
-  gitSha: string | null;
-}
-
-export interface TaskSetVersion extends HostedEvalVersion {
-  parentId: string | null;
-}
-
-/** An agent in Laminar, with the head version of its scripts and its task sets. */
+/** An agent in Laminar: its task sets, and the scripts its last run used. */
 export interface EvalAgent {
   id: string;
   name: string;
-  head: EvalAgentVersion | null;
+  latestScripts: EvalAgentVersion | null;
   taskSets: { id: string; name: string; head: TaskSetVersion | null }[];
 }
 
@@ -94,12 +101,13 @@ const segment = (value: string) => encodeURIComponent(value);
  *
  * - Images: `missingLayers` / `uploadLayer` / `createImage` push an image built
  *   locally (layers named by their `diff_id`); trials start from it.
- * - Blobs: an agent's scripts and each task set version are stored as one
+ * - Blobs: the scripts a run used and each task set version are stored as one
  *   content-addressed `.tar.gz` plus its file index (`putBlob` /
  *   `putBlobIndex`, `getBlob` / `getBlobIndex`).
- * - Versions: `createAgentVersion` / `createTaskSetVersion` record a blob as a
- *   version (a push moves the head; otherwise it is a run snapshot);
- *   `listAgents` / `listTaskSetVersions` read them back.
+ * - Versions: `createTaskSetVersion` records a blob as a task set version (a
+ *   push moves the head; otherwise it is a run snapshot); `createAgentVersion`
+ *   records the scripts a run uses; `listAgents` / `listTaskSetVersions` read
+ *   them back.
  * - Remote runs: `startRun` orchestrates a run in a Laminar sandbox. The
  *   orchestrator sends its output with `appendRunLogs` and each task set's
  *   Harbor job output with `uploadJob` / `uploadJobIndex`; `getRunLogs`
@@ -218,7 +226,7 @@ export class HostedEvalsResource extends BaseResource {
     return response.body;
   }
 
-  /** The project's agents with their heads and task sets, sorted by name. */
+  /** The project's agents with their task sets, sorted by name. */
   public async listAgents(): Promise<EvalAgent[]> {
     const response = await fetch(this.url("/agents"), {
       headers: this.headers(),
@@ -248,12 +256,12 @@ export class HostedEvalsResource extends BaseResource {
   }
 
   /**
-   * Record an uploaded blob as a version of the agent's scripts (creating the
-   * agent if needed). `push` makes it the head.
+   * Record an uploaded blob as the scripts a run uses (creating the agent if
+   * needed); the same content returns the same record.
    */
   public async createAgentVersion(
     agent: string,
-    options: { hash: string; push: boolean; gitSha?: string },
+    options: { hash: string; gitSha?: string },
   ): Promise<EvalAgentVersion> {
     const response = await fetch(
       this.url(`/agents/${segment(agent)}/versions`),

@@ -207,7 +207,6 @@ export type {
   HostedEvalRunLogLine,
   HostedEvalRunLogPage,
   HostedEvalSandboxStatus,
-  HostedEvalVersion,
   StartHostedEvalRunOptions,
   TaskSetTask,
   TaskSetVersion,

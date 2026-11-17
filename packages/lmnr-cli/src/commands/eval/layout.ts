@@ -72,6 +72,8 @@ export interface AgentConfig {
   images: ImageDef[];
   /** Harbor JobConfig without datasets/tasks: each task set becomes the dataset. */
   job: JobConfig;
+  /** `task_sets:` pins: task set name → the version number runs use. */
+  pins: Record<string, number>;
 }
 
 const isDir = (p: string) =>
@@ -127,7 +129,11 @@ export const loadAgentConfig = async (
   if (typeof parsed !== "object" || Array.isArray(parsed)) {
     throw invalidEvalsDir(`${file} must be a mapping.`);
   }
-  const raw = parsed as { images?: unknown; job?: unknown };
+  const raw = parsed as {
+    images?: unknown;
+    job?: unknown;
+    task_sets?: unknown;
+  };
   const images: ImageDef[] = [];
   for (const [name, def] of Object.entries(
     (raw.images ?? {}) as Record<
@@ -151,7 +157,23 @@ export const loadAgentConfig = async (
       `${file}: job must be a mapping (a Harbor JobConfig).`,
     );
   }
-  return { images, job: job as JobConfig };
+  const pinMap = raw.task_sets ?? {};
+  if (typeof pinMap !== "object" || Array.isArray(pinMap)) {
+    throw invalidEvalsDir(
+      `${file}: task_sets must map task set names to version numbers.`,
+    );
+  }
+  const pins: Record<string, number> = {};
+  for (const [name, number] of Object.entries(pinMap)) {
+    assertName("task set", name);
+    if (!Number.isInteger(number) || (number as number) < 1) {
+      throw invalidEvalsDir(
+        `${file}: task_sets.${name} must be a version number (1, 2, ...).`,
+      );
+    }
+    pins[name] = number as number;
+  }
+  return { images, job: job as JobConfig, pins };
 };
 
 /** fnmatch-style glob (`*`, `?`, `[...]`), the way Harbor filters task names. */
@@ -361,6 +383,25 @@ export const findTemplateVars = async (
   }
   for (const name of into.required) into.optional.delete(name);
   return into;
+};
+
+/**
+ * Make sure `<agent>/.gitignore` lists `task_sets/`: task sets live in
+ * Laminar, and a committed working copy would win over the agent.yaml pins.
+ */
+export const ignoreTaskSets = async (agentDir: string): Promise<void> => {
+  const file = path.join(agentDir, ".gitignore");
+  const text = await readFile(file, "utf8").catch(() => "");
+  const lines = text.split(/\r?\n/).map((l) => l.trim());
+  if (
+    lines.some((l) =>
+      ["task_sets", "task_sets/", "/task_sets", "/task_sets/"].includes(l),
+    )
+  ) {
+    return;
+  }
+  const sep = text === "" || text.endsWith("\n") ? "" : "\n";
+  await writeFile(file, `${text}${sep}${TASK_SETS_DIR}/\n`);
 };
 
 /** What a local task set copy is based on: written by pull and push. */

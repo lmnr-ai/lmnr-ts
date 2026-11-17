@@ -101,7 +101,7 @@ void describe("layout", () => {
       "evals/support/agent.yaml",
       "images:\n  app:\n    dockerfile: environment/Dockerfile\n    context: ../..\n" +
         "  plain:\n    dockerfile: plain/Dockerfile\n" +
-        "job:\n  n_attempts: 2\n",
+        "job:\n  n_attempts: 2\ntask_sets:\n  billing: 4\n",
     );
     const agentDir = path.join(root, "evals/support");
     expect(await loadAgentConfig(agentDir)).toEqual({
@@ -118,11 +118,23 @@ void describe("layout", () => {
         },
       ],
       job: { n_attempts: 2 },
+      pins: { billing: 4 },
     });
     await write("bad/agent.yaml", "images:\n  x: {}\n");
     await expect(loadAgentConfig(path.join(root, "bad"))).rejects.toMatchObject(
       { code: "invalid_evals_dir", exitCode: 16 },
     );
+    for (const pins of [
+      "billing: latest",
+      "billing: 0",
+      "bad name: 1",
+      "[a]",
+    ]) {
+      await write("pins/agent.yaml", `task_sets:\n  ${pins}\n`);
+      await expect(
+        loadAgentConfig(path.join(root, "pins")),
+      ).rejects.toMatchObject({ exitCode: 16 });
+    }
   });
 
   void it("finds task dirs, narrowed by --task globs", async () => {
@@ -632,12 +644,17 @@ void describe("targets", () => {
     expect(() => parseTarget("../x")).toThrow();
   });
 
-  void it("parses --task-set name[@version]", () => {
+  void it("parses --task-set name[@version|@latest]", () => {
     expect(parseTaskSetSelector("checkout")).toEqual({ name: "checkout" });
     expect(parseTaskSetSelector("checkout@12")).toEqual({
       name: "checkout",
       number: 12,
     });
+    expect(parseTaskSetSelector("checkout@latest")).toEqual({
+      name: "checkout",
+      number: "latest",
+    });
+    expect(() => parseTaskSetSelector("checkout@next")).toThrow(/Invalid/);
     expect(() => parseTaskSetSelector("bad name")).toThrow(/Invalid task set/);
   });
 });

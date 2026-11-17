@@ -21,6 +21,8 @@ import {
   assertTaskImages,
   dirExists,
   hasAgentConfig,
+  ignoreTaskSets,
+  loadAgentConfig,
   localTaskSets,
   readState,
   taskSetDir,
@@ -32,7 +34,6 @@ import {
   AGENT_SCRIPTS,
   downloadBlob,
   otherEntryDigests,
-  saveAgentVersion,
   saveTaskSetVersion,
   setDigests,
   taskDigests,
@@ -293,23 +294,31 @@ export const handleEvalPull = async (
   if (!agent) throw evalNotFound(`No agent ${target.agent} in Laminar.`);
   const agentDir = path.resolve(opts.dir, agent.name);
 
-  // <agent> asks for the scripts; --all only fills them in when the local
-  // copy has none, since the repo's scripts win over Laminar's.
+  // <agent> asks for the scripts the last run used; --all only fills them in
+  // when the local copy has none, since runs use the repo's scripts.
   let scripts: EvalAgentVersion | null = null;
   if (!target.taskSet && !opts.all) {
-    if (!agent.head) {
+    if (!agent.latestScripts) {
       throw evalNotFound(
-        `${agent.name} has no scripts in Laminar; pull its task sets with ` +
-          `${agent.name} --all or ${agent.name}/<task set>.`,
+        `No run of ${agent.name} has recorded its scripts; pull its task ` +
+          `sets with ${agent.name} --all or ${agent.name}/<task set>.`,
       );
     }
-    scripts = agent.head;
-  } else if (opts.all && agent.head && !(await hasAgentConfig(agentDir))) {
-    scripts = agent.head;
+    scripts = agent.latestScripts;
+  } else if (
+    opts.all &&
+    agent.latestScripts &&
+    !(await hasAgentConfig(agentDir))
+  ) {
+    scripts = agent.latestScripts;
   }
   if (scripts) {
     await pullScripts(client, agentDir, scripts, !!opts.force);
-    logger.info(`Pulled ${agent.name}'s scripts (${versionLabel(scripts)})`);
+    logger.info(
+      `Pulled the scripts ${agent.name}'s last run used ` +
+        `(${scripts.lastUsedAt}). Commit ${path.relative(process.cwd(), agentDir) || "."} ` +
+        "to your repo: eval run uses the repo's scripts.",
+    );
   }
 
   const results: PullResult[] = [];
@@ -340,6 +349,7 @@ export const handleEvalPull = async (
       version,
     );
     results.push(result);
+    await ignoreTaskSets(agentDir);
     logger.info(
       `Pulled ${agent.name}/${set.name} ${versionLabel(version)}: ` +
         `${result.updated.length} updated, ${result.removed.length} removed`,
@@ -363,11 +373,8 @@ export const handleEvalPush = async (
   const sets = target.taskSet
     ? [target.taskSet]
     : await localTaskSets(agentDir);
-  const pushScripts = !target.taskSet && (await hasAgentConfig(agentDir));
-  if (!pushScripts && sets.length === 0) {
-    throw invalidEvalsDir(
-      `Nothing to push in ${agentDir}: no agent.yaml and no task_sets/.`,
-    );
+  if (sets.length === 0) {
+    throw invalidEvalsDir(`Nothing to push: ${agentDir} has no task_sets/.`);
   }
   for (const set of sets) {
     assertName("task set", set);
@@ -376,12 +383,10 @@ export const handleEvalPush = async (
     }
   }
 
+  const { pins } = (await hasAgentConfig(agentDir))
+    ? await loadAgentConfig(agentDir)
+    : { pins: {} as Record<string, number> };
   const client = await buildEvalClient(opts);
-  let scripts: EvalAgentVersion | null = null;
-  if (pushScripts) {
-    scripts = await saveAgentVersion(client, target.agent, agentDir, true);
-    logger.info(`Pushed ${target.agent}'s scripts as ${versionLabel(scripts)}`);
-  }
   const taskSets: { taskSet: string; version: TaskSetVersion }[] = [];
   for (const set of sets) {
     const version = await pushTaskSet(
@@ -392,8 +397,20 @@ export const handleEvalPush = async (
     );
     taskSets.push({ taskSet: set, version });
     logger.info(`Pushed ${target.agent}/${set} as ${versionLabel(version)}`);
+    const pin = pins[set];
+    if (pin === undefined) {
+      logger.info(
+        `Pin it in agent.yaml (task_sets: {${set}: ${version.number}}) so ` +
+          "runs and CI use this version.",
+      );
+    } else if (pin !== version.number) {
+      logger.info(
+        `agent.yaml pins ${set} to v${pin}; set it to v${version.number} ` +
+          "to run this version in CI.",
+      );
+    }
   }
-  if (opts.json) outputJson({ agent: target.agent, scripts, taskSets });
+  if (opts.json) outputJson({ agent: target.agent, taskSets });
 };
 
 /** `lmnr-cli eval list [agent]`. */
@@ -414,7 +431,6 @@ export const handleEvalList = async (
   }
   const rows: string[][] = [];
   for (const agent of agents) {
-    rows.push([agent.name, "(scripts)", versionLabel(agent.head)]);
     for (const set of agent.taskSets) {
       rows.push([agent.name, set.name, versionLabel(set.head)]);
     }

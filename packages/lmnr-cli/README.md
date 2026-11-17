@@ -152,29 +152,38 @@ https://laminar.sh/docs/platform/debugger
 
 ### `eval` - Harbor evals and task sets
 
-An evals folder (default `evals`) holds one dir per agent: `agent.yaml` (the
-images tasks use and the [Harbor](https://harborframework.com) job config), the
-agent's scripts, and its task sets under `task_sets/<set>/<task>/`. Task sets
-are stored and versioned in Laminar, so the same tasks can be run again against
-new versions of the agent.
+An evals folder (default `evals`) holds one dir per agent, kept in your repo:
+`agent.yaml` (the images tasks use, the [Harbor](https://harborframework.com)
+job config, and `task_sets:` pins) and the agent's scripts. Task sets are
+stored and versioned in Laminar; `task_sets/<set>/<task>/` holds local working
+copies, which `pull` keeps out of git. Pin the versions your runs and CI use in
+`agent.yaml`:
+
+```yaml
+task_sets:
+  checkout: 4
+```
 
 ```bash
 lmnr-cli eval run                                     # every agent, on local Docker
 lmnr-cli eval run support --task-set checkout --task "refund-*"
-lmnr-cli eval run support --task-set checkout@3 --remote  # in Laminar sandboxes
-lmnr-cli eval push support                            # publish scripts and task sets
+lmnr-cli eval run support --task-set checkout@latest --remote  # in Laminar sandboxes
 lmnr-cli eval pull support/checkout                   # merge Laminar's latest in
+lmnr-cli eval push support/checkout                   # publish a new version
 lmnr-cli eval pull support --all                      # every task set of an agent
-lmnr-cli eval pull support                            # the agent's scripts, to commit
+lmnr-cli eval pull support                            # the scripts its last run used
 lmnr-cli eval list
 ```
 
 Each task set of a run becomes one evaluation, grouped as `<agent>/<task set>`.
-A task set without a local copy runs Laminar's latest version, and every run
-records the versions it used. `push` publishes a new version; `pull` merges
-Laminar's version into your copy task by task; `pull <agent>` alone fetches the
-agent's scripts, for example ones the Laminar agent stored, to commit to your repo. `--remote` prints the run's log
-until it ends; Ctrl-C stops following and leaves the run going.
+A run uses `@<version>` / `@latest` when given, else your local copy, else the
+`agent.yaml` pin; a set with none of these runs at Laminar's latest only when
+named with `--task-set`. Every run records the versions and scripts it used.
+`push` publishes a new version (update the pin by hand to use it); `pull`
+merges Laminar's version into your copy task by task. Runs use the agent's
+scripts from your repo; `pull <agent>` fetches the ones its last run used (for
+example scripts the Laminar agent wrote) to commit. `--remote` prints the run's
+log until it ends; Ctrl-C stops following and leaves the run going.
 
 Both modes need Docker; local runs also need [uv](https://docs.astral.sh/uv/)
 and `LMNR_PROJECT_API_KEY`. `--remote` pushes the images tasks use from your
@@ -188,7 +197,8 @@ flags. Exit codes:
 - `20` a Docker build, pull or save failed, or an image isn't linux/amd64
 - `21` a `--remote` run failed before its task sets ran, or its sandbox was lost
 - `22` a task changed both locally and in Laminar (`pull` / `push`)
-- `23` an agent, task set or version Laminar doesn't have
+- `23` no `agent.yaml` for the agent, or an agent, task set or version Laminar
+  doesn't have
 
 ### `setup` - One-shot onboarding
 
