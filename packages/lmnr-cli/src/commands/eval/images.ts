@@ -1,7 +1,7 @@
 import { findTaskDirs, type RunOverrides, readTaskToml } from "./layout";
 
 export interface ImageDef {
-  /** Shown in logs and errors; for agent.yaml images, the `docker_image`. */
+  /** Shown in logs and errors; for eval.yaml images, the `docker_image`. */
   name: string;
   dockerfile: string;
   context: string;
@@ -41,7 +41,7 @@ export const findTaskImages = async (
   return [...images];
 };
 
-/** The agent.yaml images a local run's tasks start from; Harbor pulls the rest. */
+/** The eval.yaml images a local run's tasks start from; Harbor pulls the rest. */
 export const localImageDefs = async (
   defs: ImageDef[],
   setDirs: string[],
@@ -53,7 +53,7 @@ export const localImageDefs = async (
 
 /**
  * Push every image the run's tasks use, so Laminar sandboxes can start from
- * them: agent.yaml images are built here, other `docker_image`s are pulled.
+ * them: eval.yaml images are built here, other `docker_image`s are pulled.
  */
 export const ensureRemoteImages = async (
   defs: ImageDef[],

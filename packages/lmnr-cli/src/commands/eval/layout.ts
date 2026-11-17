@@ -8,15 +8,17 @@ import { invalidEvalsDir } from "../../errors";
 import type { ImageDef } from "./images";
 
 /**
- * The evals folder: one dir per agent, each holding its scripts and task sets.
+ * The evals folder: one dir per task set, holding its scripts (in git) and a
+ * working copy of its tasks (from Laminar). Other dirs hold shared files.
  *
- *   evals/<agent>/agent.yaml                       images + Harbor JobConfig
- *   evals/<agent>/...                              agent scripts (adapter, environment/)
- *   evals/<agent>/task_sets/<set>/.lmnr.json       the version this copy is based on
- *   evals/<agent>/task_sets/<set>/<task>/task.toml one dir per task
+ *   evals/<set>/eval.yaml                 images, Harbor JobConfig, `version` pin
+ *   evals/<set>/...                       scripts (adapter, Dockerfiles, seed loaders)
+ *   evals/<set>/tasks/.lmnr.json          the version this copy is based on
+ *   evals/<set>/tasks/<task>/task.toml    one dir per task
+ *   evals/<shared>/...                    no eval.yaml: files sets share
  */
-export const AGENT_CONFIG = "agent.yaml";
-export const TASK_SETS_DIR = "task_sets";
+export const EVAL_CONFIG = "eval.yaml";
+export const TASKS_DIR = "tasks";
 export const STATE_FILE = ".lmnr.json";
 
 /**
@@ -42,7 +44,7 @@ export const LAMINAR_ENVIRONMENT_IMPORT_PATH =
 /** Harbor's `${VAR}` / `${VAR:-default}` placeholders (`harbor.utils.env`). */
 const TEMPLATE_PATTERN = /\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}/g;
 
-/** Agent and task set names: they go into API paths and directory names. */
+/** Task set names: they go into API paths and directory names. */
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 
 export const isValidName = (name: string): boolean => NAME.test(name);
@@ -61,19 +63,19 @@ export interface RunOverrides {
   nAttempts?: number;
   nConcurrent?: number;
   model?: string;
-  /** `--env` names: referenced as `${KEY}` from every agent's env. */
+  /** `--env` names: referenced as `${KEY}` from every Harbor agent's env. */
   extraAgentEnv?: string[];
 }
 
 export type JobConfig = Record<string, unknown>;
 
-export interface AgentConfig {
-  /** Images tasks can name in `docker_image`, built from the agent's Dockerfiles. */
+export interface EvalConfig {
+  /** Images tasks can name in `docker_image`, built from the set's Dockerfiles. */
   images: ImageDef[];
-  /** Harbor JobConfig without datasets/tasks: each task set becomes the dataset. */
+  /** Harbor JobConfig without datasets/tasks: the set's tasks are the dataset. */
   job: JobConfig;
-  /** `task_sets:` pins: task set name → the version number runs use. */
-  pins: Record<string, number>;
+  /** `version:` pin: the version number runs use when there's no local copy. */
+  version?: number;
 }
 
 const isDir = (p: string) =>
@@ -96,29 +98,23 @@ const childDirs = async (dir: string): Promise<string[]> => {
     .sort();
 };
 
-export const hasAgentConfig = (agentDir: string) =>
-  isFile(path.join(agentDir, AGENT_CONFIG));
+export const hasEvalConfig = (setDir: string) =>
+  isFile(path.join(setDir, EVAL_CONFIG));
 
-/** Agent dirs (holding agent.yaml) directly inside the evals folder, sorted. */
-export const discoverAgents = async (evalsDir: string): Promise<string[]> => {
-  const agents: string[] = [];
+/** Task set dirs (holding eval.yaml) directly inside the evals folder, sorted. */
+export const discoverTaskSets = async (evalsDir: string): Promise<string[]> => {
+  const sets: string[] = [];
   for (const name of await childDirs(evalsDir)) {
-    if (await hasAgentConfig(path.join(evalsDir, name))) agents.push(name);
+    if (await hasEvalConfig(path.join(evalsDir, name))) sets.push(name);
   }
-  return agents;
+  return sets;
 };
 
-/** Task set dirs in an agent's `task_sets/`, sorted. */
-export const localTaskSets = async (agentDir: string): Promise<string[]> =>
-  childDirs(path.join(agentDir, TASK_SETS_DIR));
+/** A task set's working copy of its tasks. */
+export const tasksDir = (setDir: string) => path.join(setDir, TASKS_DIR);
 
-export const taskSetDir = (agentDir: string, taskSet: string) =>
-  path.join(agentDir, TASK_SETS_DIR, taskSet);
-
-export const loadAgentConfig = async (
-  agentDir: string,
-): Promise<AgentConfig> => {
-  const file = path.join(agentDir, AGENT_CONFIG);
+export const loadEvalConfig = async (setDir: string): Promise<EvalConfig> => {
+  const file = path.join(setDir, EVAL_CONFIG);
   let parsed: unknown;
   try {
     parsed = parseYaml(await readFile(file, "utf8"));
@@ -129,11 +125,7 @@ export const loadAgentConfig = async (
   if (typeof parsed !== "object" || Array.isArray(parsed)) {
     throw invalidEvalsDir(`${file} must be a mapping.`);
   }
-  const raw = parsed as {
-    images?: unknown;
-    job?: unknown;
-    task_sets?: unknown;
-  };
+  const raw = parsed as { images?: unknown; job?: unknown; version?: unknown };
   const images: ImageDef[] = [];
   for (const [name, def] of Object.entries(
     (raw.images ?? {}) as Record<
@@ -144,10 +136,10 @@ export const loadAgentConfig = async (
     if (typeof def?.dockerfile !== "string") {
       throw invalidEvalsDir(`${file}: images.${name}.dockerfile is required.`);
     }
-    const dockerfile = path.resolve(agentDir, def.dockerfile);
+    const dockerfile = path.resolve(setDir, def.dockerfile);
     const context =
       typeof def.context === "string"
-        ? path.resolve(agentDir, def.context)
+        ? path.resolve(setDir, def.context)
         : path.dirname(dockerfile);
     images.push({ name, dockerfile, context });
   }
@@ -157,23 +149,21 @@ export const loadAgentConfig = async (
       `${file}: job must be a mapping (a Harbor JobConfig).`,
     );
   }
-  const pinMap = raw.task_sets ?? {};
-  if (typeof pinMap !== "object" || Array.isArray(pinMap)) {
+  const { version } = raw;
+  if (
+    version !== undefined &&
+    version !== null &&
+    (!Number.isInteger(version) || (version as number) < 1)
+  ) {
     throw invalidEvalsDir(
-      `${file}: task_sets must map task set names to version numbers.`,
+      `${file}: version must be a version number (1, 2, ...).`,
     );
   }
-  const pins: Record<string, number> = {};
-  for (const [name, number] of Object.entries(pinMap)) {
-    assertName("task set", name);
-    if (!Number.isInteger(number) || (number as number) < 1) {
-      throw invalidEvalsDir(
-        `${file}: task_sets.${name} must be a version number (1, 2, ...).`,
-      );
-    }
-    pins[name] = number as number;
-  }
-  return { images, job: job as JobConfig, pins };
+  return {
+    images,
+    job: job as JobConfig,
+    ...(typeof version === "number" ? { version } : {}),
+  };
 };
 
 /** fnmatch-style glob (`*`, `?`, `[...]`), the way Harbor filters task names. */
@@ -218,9 +208,9 @@ export const findTaskDirs = async (
 };
 
 /**
- * Every task names its image (`docker_image`, normally one from agent.yaml):
+ * Every task names its image (`docker_image`, normally one from eval.yaml):
  * remote trials only start from pushed images, and a task that builds its own
- * environment would carry code that belongs to the agent's scripts.
+ * environment would carry code that belongs to the set's scripts.
  */
 export const assertTaskImages = async (setDir: string): Promise<void> => {
   const ownBuilds: string[] = [];
@@ -238,14 +228,14 @@ export const assertTaskImages = async (setDir: string): Promise<void> => {
   if (ownBuilds.length > 0) {
     throw invalidEvalsDir(
       `Tasks in ${setDir} build their own environment: ` +
-        `${ownBuilds.join(", ")}. Name an image from agent.yaml with ` +
+        `${ownBuilds.join(", ")}. Name an image from eval.yaml with ` +
         "docker_image in task.toml instead, and keep per-task data in environment/.",
     );
   }
   if (noImage.length > 0) {
     throw invalidEvalsDir(
       `Tasks in ${setDir} name no image: ${noImage.join(", ")}. Set ` +
-        "[environment] docker_image in their task.toml to an image from agent.yaml.",
+        "[environment] docker_image in their task.toml to an image from eval.yaml.",
     );
   }
 };
@@ -283,14 +273,14 @@ const asRecords = (value: unknown): Record<string, unknown>[] =>
     : [];
 
 /**
- * One task set's Harbor JobConfig: agent.yaml's `job` with the task set as its
- * only dataset, CLI overrides applied, and with `remote` trials routed to
+ * One task set's Harbor JobConfig: eval.yaml's `job` with the set's tasks as
+ * its only dataset, CLI overrides applied, and with `remote` trials routed to
  * Laminar sandboxes. `harbor run` flags can't override a `-c` config's
  * datasets and `-m` only applies with `-a`, so overrides go into the config.
  */
 export const buildJobConfig = (
   job: JobConfig,
-  setDir: string,
+  tasks: string,
   overrides: RunOverrides,
   remote: boolean,
 ): JobConfig => {
@@ -306,7 +296,7 @@ export const buildJobConfig = (
     ...rest,
     datasets: [
       {
-        path: setDir,
+        path: tasks,
         ...(overrides.tasks?.length ? { task_names: overrides.tasks } : {}),
       },
     ],
@@ -362,52 +352,42 @@ export const collectTemplates = (text: string, into: TemplateVars) => {
   }
 };
 
-/** `${VAR}` names referenced by agent.yaml and the run's tasks' task.toml files. */
+/** `${VAR}` names referenced by a set's eval.yaml and its run tasks' task.toml files. */
 export const findTemplateVars = async (
-  agentDir: string,
-  setDirs: string[],
+  setDir: string,
+  tasks: string,
   overrides: RunOverrides,
   into: TemplateVars = { required: new Set(), optional: new Set() },
 ): Promise<TemplateVars> => {
   collectTemplates(
-    await readFile(path.join(agentDir, AGENT_CONFIG), "utf8").catch(() => ""),
+    await readFile(path.join(setDir, EVAL_CONFIG), "utf8").catch(() => ""),
     into,
   );
-  for (const setDir of setDirs) {
-    for (const dir of await findTaskDirs(setDir, overrides.tasks)) {
-      collectTemplates(
-        await readFile(path.join(dir, "task.toml"), "utf8"),
-        into,
-      );
-    }
+  for (const dir of await findTaskDirs(tasks, overrides.tasks)) {
+    collectTemplates(await readFile(path.join(dir, "task.toml"), "utf8"), into);
   }
   for (const name of into.required) into.optional.delete(name);
   return into;
 };
 
 /**
- * Make sure `<agent>/.gitignore` lists `task_sets/`: task sets live in
- * Laminar, and a committed working copy would win over the agent.yaml pins.
+ * Make sure `<set>/.gitignore` lists `tasks/`: tasks live in Laminar, and a
+ * committed working copy would win over the eval.yaml pin.
  */
-export const ignoreTaskSets = async (agentDir: string): Promise<void> => {
-  const file = path.join(agentDir, ".gitignore");
+export const ignoreTasks = async (setDir: string): Promise<void> => {
+  const file = path.join(setDir, ".gitignore");
   const text = await readFile(file, "utf8").catch(() => "");
   const lines = text.split(/\r?\n/).map((l) => l.trim());
-  if (
-    lines.some((l) =>
-      ["task_sets", "task_sets/", "/task_sets", "/task_sets/"].includes(l),
-    )
-  ) {
-    return;
-  }
+  const forms = [TASKS_DIR, `${TASKS_DIR}/`, `/${TASKS_DIR}`, `/${TASKS_DIR}/`];
+  if (lines.some((l) => forms.includes(l))) return;
   const sep = text === "" || text.endsWith("\n") ? "" : "\n";
-  await writeFile(file, `${text}${sep}${TASK_SETS_DIR}/\n`);
+  await writeFile(file, `${text}${sep}${TASKS_DIR}/\n`);
 };
 
 /** What a local task set copy is based on: written by pull and push. */
 export interface TaskSetState {
   versionId: string;
-  number: number | null;
+  number: number;
   hash: string;
   /** Task name → digest at that version. */
   tasks: Record<string, string>;

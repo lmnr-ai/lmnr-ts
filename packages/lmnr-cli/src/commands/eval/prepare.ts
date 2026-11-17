@@ -4,29 +4,31 @@ import type { LaminarClient, TaskSetVersion } from "@lmnr-ai/client";
 
 import { evalNotFound, invalidEvalsDir } from "../../errors";
 import { initializeLogger } from "../../utils/logger";
+import type { ImageDef } from "./images";
 import {
   assertName,
   assertTaskImages,
   dirExists,
-  hasAgentConfig,
-  loadAgentConfig,
-  localTaskSets,
+  EVAL_CONFIG,
+  type EvalConfig,
+  hasEvalConfig,
+  loadEvalConfig,
   readState,
-  taskSetDir,
+  tasksDir,
 } from "./layout";
-import type { BlobRef, PreparedAgent } from "./remote";
+import type { PreparedRun, PreparedTaskSet } from "./remote";
 import {
-  AGENT_SCRIPTS,
   downloadBlob,
   ensureBlob,
   gitSha,
+  scriptsOf,
   TASK_SET_FILES,
 } from "./store";
 import { findTaskSetVersion } from "./sync";
 
 const logger = initializeLogger();
 
-/** A `--task-set name[@number|@latest]` flag. */
+/** A `<set>[@<number>|@latest]` argument. */
 export interface TaskSetSelector {
   name: string;
   number?: number | "latest";
@@ -36,7 +38,7 @@ export const parseTaskSetSelector = (raw: string): TaskSetSelector => {
   const match = /^([^@]+)(?:@(\d+|latest))?$/.exec(raw);
   if (!match) {
     throw invalidEvalsDir(
-      `Invalid --task-set "${raw}": expected <name>, <name>@<version> or <name>@latest.`,
+      `Invalid task set "${raw}": expected <set>, <set>@<version> or <set>@latest.`,
     );
   }
   assertName("task set", match[1]);
@@ -45,42 +47,62 @@ export const parseTaskSetSelector = (raw: string): TaskSetSelector => {
   return { name, number: number === "latest" ? "latest" : Number(number) };
 };
 
-/** The agent's scripts: the repo's copy, uploaded for the run. */
-const prepareScripts = async (
-  client: LaminarClient,
+/** The set's eval.yaml, which every run of it needs: its scripts live in the repo. */
+const loadSetConfig = async (
   name: string,
-  localDir: string,
-): Promise<{ agent: BlobRef; gitSha?: string }> => {
-  if (!(await hasAgentConfig(localDir))) {
+  setDir: string,
+): Promise<EvalConfig> => {
+  if (!(await hasEvalConfig(setDir))) {
     throw evalNotFound(
-      `No ${path.join(localDir, "agent.yaml")}. \`lmnr-cli eval pull ${name}\` ` +
-        "fetches the scripts the last run used; commit them to your repo.",
+      `No ${path.join(setDir, EVAL_CONFIG)}. \`lmnr-cli eval pull ${name}\` ` +
+        "fetches the scripts its last run used; commit them to your repo.",
     );
   }
-  const hash = await ensureBlob(client, localDir, AGENT_SCRIPTS);
-  const sha = await gitSha(localDir);
-  return { agent: { name, hash }, ...(sha ? { gitSha: sha } : {}) };
+  return loadEvalConfig(setDir);
+};
+
+/** Image names are shared by the run's sets: one name, one definition. */
+const assertImagesAgree = (
+  sets: { name: string; config: EvalConfig }[],
+): void => {
+  const seen = new Map<string, { set: string; def: ImageDef }>();
+  for (const { name, config } of sets) {
+    for (const def of config.images) {
+      const other = seen.get(def.name);
+      if (!other) {
+        seen.set(def.name, { set: name, def });
+      } else if (
+        other.def.dockerfile !== def.dockerfile ||
+        other.def.context !== def.context
+      ) {
+        throw invalidEvalsDir(
+          `Image ${def.name} is defined differently by ${other.set}/${EVAL_CONFIG} ` +
+            `and ${name}/${EVAL_CONFIG}; image names are shared by the task ` +
+            "sets of a run, so rename one.",
+        );
+      }
+    }
+  }
 };
 
 /**
- * Run a local task set copy as is: uploaded as a blob, never as a version.
- * The evaluation links to a pushed version only when the content matches one.
+ * Run a local tasks copy as is: uploaded as a blob, never as a version. The
+ * evaluation links to a pushed version only when the content matches one.
  */
 const prepareLocalCopy = async (
   client: LaminarClient,
-  agent: string,
   name: string,
   dir: string,
   head: TaskSetVersion | null,
   pin: number | undefined,
-): Promise<BlobRef & { dir: string }> => {
+): Promise<string> => {
   await assertTaskImages(dir);
   const state = await readState(dir);
   if (pin !== undefined && state?.number !== pin) {
     logger.warn(
-      `Running your copy of ${agent}/${name} (based on ` +
-        `${state?.number ? `v${state.number}` : "no pushed version"}), ` +
-        `but agent.yaml pins v${pin}.`,
+      `Running your copy of ${name} (based on ` +
+        `${state ? `v${state.number}` : "no pushed version"}), ` +
+        `but its ${EVAL_CONFIG} pins v${pin}.`,
     );
   } else if (
     pin === undefined &&
@@ -89,8 +111,8 @@ const prepareLocalCopy = async (
     head.id !== state.versionId
   ) {
     logger.warn(
-      `Your copy of ${agent}/${name} is based on v${state.number}, but ` +
-        `Laminar has v${head.number}: \`lmnr-cli eval pull ${agent}/${name}\` merges it in.`,
+      `Your copy of ${name} is based on v${state.number}, but Laminar has ` +
+        `v${head.number}: \`lmnr-cli eval pull ${name}\` merges it in.`,
     );
   }
   const hash = await ensureBlob(client, dir, TASK_SET_FILES);
@@ -102,127 +124,109 @@ const prepareLocalCopy = async (
       ));
   if (!pushed) {
     logger.info(
-      `${agent}/${name}: running your local copy; it is not a pushed version, ` +
-        "so the evaluation won't link to one " +
-        `(\`lmnr-cli eval push ${agent}/${name}\` publishes it).`,
+      `${name}: running your local copy; it is not a pushed version, so the ` +
+        "evaluation won't link to one " +
+        `(\`lmnr-cli eval push ${name}\` publishes it).`,
     );
   }
-  return { name, hash, dir };
+  return hash;
 };
 
 /**
- * Resolve one task set of the run, first match wins: an explicit `@number` /
- * `@latest`, a local copy (as is), the agent.yaml pin, then Laminar's head
- * (only reached for a set named with `--task-set`). Versions from Laminar are
- * downloaded under `scratch`. Null = skip it.
+ * Which tasks a set runs, first match wins: an explicit `@number` /
+ * `@latest`, the local `tasks/` copy (as is), the eval.yaml pin, then
+ * Laminar's head. Versions from Laminar are downloaded under `scratch`.
  */
-const prepareTaskSet = async (
+const prepareTasks = async (
   client: LaminarClient,
-  agent: string,
-  localAgentDir: string,
   selector: TaskSetSelector,
+  setDir: string,
   pin: number | undefined,
   head: TaskSetVersion | null,
   scratch: string,
-): Promise<(BlobRef & { dir: string }) | null> => {
+): Promise<{ hash: string; tasksDir: string }> => {
   const { name, number } = selector;
-  const localDir = taskSetDir(localAgentDir, name);
+  const local = tasksDir(setDir);
 
   let version: TaskSetVersion | null;
   if (typeof number === "number") {
     version = await findTaskSetVersion(client, name, number);
   } else if (number === "latest") {
+    if (!head) throw evalNotFound(`Task set ${name} has no pushed version.`);
     version = head;
-  } else if (await dirExists(localDir)) {
-    return prepareLocalCopy(client, agent, name, localDir, head, pin);
+  } else if (await dirExists(local)) {
+    const hash = await prepareLocalCopy(client, name, local, head, pin);
+    return { hash, tasksDir: local };
   } else if (pin !== undefined) {
     version = await findTaskSetVersion(client, name, pin);
   } else {
     version = head;
+    if (head) {
+      logger.warn(
+        `${name} isn't pinned: running the latest version, v${head.number}. ` +
+          `Set \`version: ${head.number}\` in its ${EVAL_CONFIG} so CI runs a ` +
+          "fixed version.",
+      );
+    }
   }
   if (!version) {
-    logger.warn(`Skipping ${agent}/${name}: it has no pushed version.`);
-    return null;
+    throw evalNotFound(
+      `Task set ${name} has no tasks: no ${local} and no pushed version in ` +
+        "Laminar.",
+    );
   }
-  const dir = taskSetDir(path.join(scratch, "task-sets", agent), name);
+  const dir = path.join(scratch, name);
   await downloadBlob(client, version.hash, dir);
-  return { name, hash: version.hash, dir };
+  return { hash: version.hash, tasksDir: dir };
 };
 
 /**
- * Every agent the run covers with its scripts and task sets, uploaded as
- * blobs. Default task sets: the pinned ones plus local copies; other task
- * sets in Laminar run only when named, for a run of one agent.
+ * Everything a run uses, uploaded as blobs: the evals folder's scripts (once)
+ * and each task set's tasks. Every set needs its eval.yaml here.
  */
-export const prepareAgents = async (
+export const prepareRun = async (
   client: LaminarClient,
   evalsDir: string,
-  names: string[],
   selectors: TaskSetSelector[],
   scratch: string,
-): Promise<PreparedAgent[]> => {
+): Promise<PreparedRun> => {
+  const sets = [];
+  for (const selector of selectors) {
+    const setDir = path.join(evalsDir, selector.name);
+    sets.push({
+      selector,
+      name: selector.name,
+      setDir,
+      config: await loadSetConfig(selector.name, setDir),
+    });
+  }
+  assertImagesAgree(sets);
+
+  const scriptsHash = await ensureBlob(
+    client,
+    evalsDir,
+    await scriptsOf(evalsDir),
+  );
+  const sha = await gitSha(evalsDir);
   const heads = new Map(
     (await client.hostedEvals.listTaskSets()).map((s) => [s.name, s.head]),
   );
-  const prepared: PreparedAgent[] = [];
-  const found = new Set<string>();
-  for (const name of names) {
-    assertName("agent", name);
-    const localDir = path.join(evalsDir, name);
-    const scripts = await prepareScripts(client, name, localDir);
-    const { pins } = await loadAgentConfig(localDir);
-    const defaults = new Set([
-      ...Object.keys(pins),
-      ...(await localTaskSets(localDir)),
-    ]);
-    // Task set names are project-wide: one only in Laminar is this agent's
-    // only when the run covers no other agent.
-    const wanted =
-      selectors.length > 0
-        ? selectors.filter(
-            (s) =>
-              defaults.has(s.name) || (names.length === 1 && heads.has(s.name)),
-          )
-        : [...defaults].sort().map((n) => ({ name: n }));
-    const taskSets = [];
-    for (const selector of wanted) {
-      found.add(selector.name);
-      const set = await prepareTaskSet(
-        client,
-        name,
-        localDir,
-        selector,
-        pins[selector.name],
-        heads.get(selector.name) ?? null,
-        scratch,
-      );
-      if (set) taskSets.push(set);
-    }
-    if (taskSets.length === 0) {
-      logger.warn(`Agent ${name} has no task sets to run.`);
-      continue;
-    }
-    prepared.push({ ...scripts, dir: localDir, taskSets });
-  }
-  const unknown = selectors.filter((s) => !found.has(s.name));
-  const ambiguous = unknown.filter((s) => heads.has(s.name));
-  if (ambiguous.length > 0) {
-    const sets = ambiguous.map((s) => s.name).join(", ");
-    throw invalidEvalsDir(
-      `Task set ${sets} is in Laminar, but none of ${names.join(", ")} pins ` +
-        "it or has a local copy, and task set names are project-wide: run " +
-        `one agent (\`lmnr-cli eval run <agent> --task-set ${ambiguous[0].name}\`) ` +
-        "or pin it in that agent's agent.yaml.",
+  const taskSets: PreparedTaskSet[] = [];
+  for (const { selector, name, setDir, config } of sets) {
+    const tasks = await prepareTasks(
+      client,
+      selector,
+      setDir,
+      config.version,
+      heads.get(name) ?? null,
+      scratch,
     );
+    taskSets.push({ name, setDir, config, ...tasks });
   }
-  if (unknown.length > 0) {
-    throw evalNotFound(
-      `No task set ${unknown.map((s) => s.name).join(", ")} for ` +
-        `${names.join(", ")}, locally or in Laminar.`,
-    );
-  }
-  if (prepared.length === 0) {
-    throw invalidEvalsDir("Nothing to run: no agent has a task set.");
-  }
-  return prepared;
+  return {
+    evalsDir,
+    scriptsHash,
+    ...(sha ? { gitSha: sha } : {}),
+    taskSets,
+  };
 };

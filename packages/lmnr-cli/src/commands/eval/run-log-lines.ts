@@ -13,7 +13,7 @@ const PLUGIN_LINK_LINE =
 const EVALUATION_LINE = /^Laminar evaluation for task set (.+): (\S+)$/;
 
 export interface EvaluationLink {
-  /** `<agent>/<task set>`. */
+  /** The task set's name. */
   taskSet: string;
   url: string;
 }

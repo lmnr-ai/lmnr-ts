@@ -18,10 +18,11 @@ import { archiveTooLarge } from "../../errors";
 import { initializeLogger } from "../../utils/logger";
 import { dirDigest, treeDigest } from "./digest";
 import {
+  discoverTaskSets,
   findTaskDirs,
   readTaskToml,
   STATE_FILE,
-  TASK_SETS_DIR,
+  TASKS_DIR,
 } from "./layout";
 import {
   type Exclude,
@@ -36,9 +37,23 @@ const logger = initializeLogger();
 /** The server's cap on one blob (`MAX_ARCHIVE_BYTES`). */
 const MAX_BLOB_BYTES = 1024 * 1024 * 1024;
 
-/** An agent's scripts: its dir minus the task sets and local state. */
-export const AGENT_SCRIPTS: Exclude = excludeTop(TASK_SETS_DIR, STATE_FILE);
-/** A task set's files: its dir minus the local state. */
+/**
+ * The scripts: the whole evals folder minus each task set's `tasks/` (and any
+ * local state), so sets can share files in sibling folders by relative path.
+ */
+export const scriptsExclude = (sets: Iterable<string>): Exclude => {
+  const names = new Set(sets);
+  return (target) => {
+    const [top, second, ...rest] = target.split("/");
+    return rest.length === 0 && second === TASKS_DIR && names.has(top);
+  };
+};
+
+/** The scripts of the evals folder at `evalsDir`, for `ensureBlob` / `walkFiles`. */
+export const scriptsOf = async (evalsDir: string): Promise<Exclude> =>
+  scriptsExclude(await discoverTaskSets(evalsDir));
+
+/** A task set's tasks: its `tasks/` dir minus the local state. */
 export const TASK_SET_FILES: Exclude = excludeTop(STATE_FILE);
 
 const formatMiB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;

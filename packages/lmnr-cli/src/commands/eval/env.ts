@@ -64,14 +64,14 @@ export const resolveTemplateEnv = async (
   return { env, missing };
 };
 
-/** An agent's scripts dir and the task set dirs a run uses from it. */
+/** A task set's folder (its eval.yaml) and the tasks a run uses for it. */
 export interface RunSources {
-  agentDir: string;
-  setDirs: string[];
+  setDir: string;
+  tasksDir: string;
 }
 
 /**
- * The run's env: values for every `${VAR}` its agent.yaml files and tasks
+ * The run's env: values for every `${VAR}` its eval.yaml files and tasks
  * reference, plus the `--env` values (which win). Fails when a required one is
  * unset.
  */
@@ -81,8 +81,8 @@ export const resolveRunEnv = async (
   explicitEnv: Record<string, string>,
 ): Promise<Record<string, string>> => {
   const vars: TemplateVars = { required: new Set(), optional: new Set() };
-  for (const { agentDir, setDirs } of sources) {
-    await findTemplateVars(agentDir, setDirs, overrides, vars);
+  for (const { setDir, tasksDir } of sources) {
+    await findTemplateVars(setDir, tasksDir, overrides, vars);
   }
   for (const name of vars.required) vars.optional.delete(name);
   const { env, missing } = await resolveTemplateEnv(vars, process.cwd());

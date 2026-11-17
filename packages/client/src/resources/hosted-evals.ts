@@ -12,9 +12,9 @@ export interface StartHostedEvalRunOptions {
 }
 
 /**
- * The agent scripts the latest evaluation of an agent (its `evals/<agent>/`
- * folder) used. Scripts live in the user's repo; Laminar only keeps the copy
- * each run used.
+ * The scripts (the evals folder minus task working copies) the latest
+ * evaluation of a task set used. Scripts live in the user's repo; Laminar only
+ * keeps the copy each run used.
  */
 export interface LatestScripts {
   /** Content hash of the scripts; also the id of their blob. */
@@ -95,12 +95,12 @@ const segment = (value: string) => encodeURIComponent(value);
  *
  * - Images: `missingLayers` / `uploadLayer` / `createImage` push an image built
  *   locally (layers named by their `diff_id`); trials start from it.
- * - Blobs: task set versions and the files a run used (agent scripts, local
+ * - Blobs: task set versions and the files a run used (scripts, local
  *   task set copies) are stored as one content-addressed `.tar.gz` plus its
  *   file index (`putBlob` / `putBlobIndex`, `getBlob` / `getBlobIndex`).
  * - Task sets: `createTaskSetVersion` pushes a blob as a task set's new head;
  *   `listTaskSets` / `listTaskSetVersions` read them back.
- *   `getLatestScripts` finds the scripts an agent's latest evaluation used.
+ *   `getLatestScripts` finds the scripts a task set's latest evaluation used.
  * - Remote runs: `startRun` orchestrates a run in a Laminar sandbox. The
  *   orchestrator sends its output with `appendRunLogs` and each task set's
  *   Harbor job output with `uploadJob` / `uploadJobIndex`; `getRunLogs`
@@ -273,12 +273,14 @@ export class HostedEvalsResource extends BaseResource {
   }
 
   /**
-   * The scripts the project's latest evaluation of `agent` (an `evals/<agent>/`
-   * folder name) used, or null when no evaluation recorded them.
+   * The scripts the project's latest evaluation of `taskSet` used, or null
+   * when no evaluation recorded them.
    */
-  public async getLatestScripts(agent: string): Promise<LatestScripts | null> {
+  public async getLatestScripts(
+    taskSet: string,
+  ): Promise<LatestScripts | null> {
     const response = await fetch(
-      this.url(`/scripts/latest?agent=${segment(agent)}`),
+      this.url(`/scripts/latest?taskSet=${segment(taskSet)}`),
       { headers: this.headers() },
     );
     if (response.status === 404) return null;

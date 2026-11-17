@@ -21,7 +21,7 @@ const ARTIFACTS_DIR = /^[^/]+\/(steps\/[^/]+\/)?artifacts$/;
 
 /**
  * The job Harbor wrote into a fresh `jobs_dir`, named as Harbor names it (a
- * timestamp unless agent.yaml sets `job_name`). `undefined` when Harbor exited
+ * timestamp unless eval.yaml sets `job_name`). `undefined` when Harbor exited
  * before writing one, e.g. on an invalid config.
  */
 export const findJobDir = async (

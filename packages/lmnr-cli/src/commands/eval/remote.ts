@@ -18,16 +18,22 @@ import {
   runTaskSets,
   type TaskSetRun,
 } from "./harbor";
+import type { ImageDef } from "./images";
 import { ensureRemoteImages, type RemoteImages } from "./images";
 import { findJobDir, packJobDir } from "./jobs";
-import { loadAgentConfig, type RunOverrides, taskSetDir } from "./layout";
+import {
+  type EvalConfig,
+  loadEvalConfig,
+  type RunOverrides,
+  tasksDir,
+} from "./layout";
 import { createRunLogShipper } from "./run-log";
 import { harborLogLine } from "./run-log-lines";
 import { downloadBlob } from "./store";
 
 const logger = initializeLogger();
 
-/** Files a run uses (agent scripts or a task set): a name and its blob's hash. */
+/** A task set's tasks a run uses: its name and their blob's hash. */
 export interface BlobRef {
   name: string;
   hash: string;
@@ -38,7 +44,8 @@ export interface BlobRef {
  * orchestrator sandbox, which runs this same CLI version.
  */
 export interface RunSpec extends RemoteImages {
-  agent: BlobRef;
+  /** The scripts' blob: the evals folder minus task copies. */
+  scripts: { hash: string };
   /** The commit the scripts came from. */
   gitSha?: string;
   taskSets: BlobRef[];
@@ -47,40 +54,53 @@ export interface RunSpec extends RemoteImages {
   env: Record<string, string>;
 }
 
-/** An agent ready to run: its scripts and task sets, local or downloaded. */
-export interface PreparedAgent {
-  agent: BlobRef;
-  gitSha?: string;
-  /** Where its scripts are. */
-  dir: string;
-  taskSets: (BlobRef & { dir: string })[];
+/** A task set ready to run: its folder, eval.yaml and tasks (local or downloaded). */
+export interface PreparedTaskSet extends BlobRef {
+  setDir: string;
+  config: EvalConfig;
+  tasksDir: string;
 }
 
-/** The Harbor runs of a prepared agent, one per task set. */
-export const taskSetRuns = async (
-  prepared: PreparedAgent,
-): Promise<TaskSetRun[]> => {
-  const { job } = await loadAgentConfig(prepared.dir);
-  return prepared.taskSets.map((set) => ({
-    agent: prepared.agent.name,
-    agentDir: prepared.dir,
-    scriptsHash: prepared.agent.hash,
-    ...(prepared.gitSha ? { gitSha: prepared.gitSha } : {}),
-    job,
+/** What a run uses: the evals folder's scripts and the task sets. */
+export interface PreparedRun {
+  evalsDir: string;
+  scriptsHash: string;
+  gitSha?: string;
+  taskSets: PreparedTaskSet[];
+}
+
+/** The Harbor runs of a prepared run, one per task set. */
+export const taskSetRuns = (prepared: PreparedRun): TaskSetRun[] =>
+  prepared.taskSets.map((set) => ({
     taskSet: set.name,
-    setDir: set.dir,
+    setDir: set.setDir,
+    evalsDir: prepared.evalsDir,
+    scriptsHash: prepared.scriptsHash,
+    ...(prepared.gitSha ? { gitSha: prepared.gitSha } : {}),
+    job: set.config.job,
+    tasksDir: set.tasksDir,
     taskSetHash: set.hash,
   }));
+
+/** The images the run's task sets define, each once (clashes fail in `prepareRun`). */
+export const runImageDefs = (prepared: PreparedRun): ImageDef[] => {
+  const defs = new Map<string, ImageDef>();
+  for (const set of prepared.taskSets) {
+    for (const def of set.config.images) {
+      if (!defs.has(def.name)) defs.set(def.name, def);
+    }
+  }
+  return [...defs.values()];
 };
 
 /**
- * Push the agent's images and start its run in an orchestrator sandbox. Its
- * scripts and task sets are already uploaded as blobs. Returns once that
- * sandbox has started.
+ * Push the run's images and start it in an orchestrator sandbox. Its scripts
+ * and tasks are already uploaded as blobs. Returns once that sandbox has
+ * started.
  */
 export const startRemoteRun = async (
   client: LaminarClient,
-  prepared: PreparedAgent,
+  prepared: PreparedRun,
   overrides: RunOverrides,
   env: Record<string, string>,
 ): Promise<{ runId: string; sandboxId: string }> => {
@@ -94,15 +114,14 @@ export const startRemoteRun = async (
       `Not sending ${dropped.join(", ")}: remote runs report with their own key.`,
     );
   }
-  const { images: defs } = await loadAgentConfig(prepared.dir);
   const images = await ensureRemoteImages(
-    defs,
-    prepared.taskSets.map((s) => s.dir),
+    runImageDefs(prepared),
+    prepared.taskSets.map((s) => s.tasksDir),
     overrides,
     imagePusher(client),
   );
   const spec: RunSpec = {
-    agent: prepared.agent,
+    scripts: { hash: prepared.scriptsHash },
     ...(prepared.gitSha ? { gitSha: prepared.gitSha } : {}),
     taskSets: prepared.taskSets.map(({ name, hash }) => ({ name, hash })),
     overrides,
@@ -121,8 +140,10 @@ const readRunSpec = (): RunSpec => {
   } catch (error) {
     throw missingEnv(`LMNR_EVAL_RUN is not valid JSON: ${errorMessage(error)}`);
   }
-  if (!spec?.agent || !Array.isArray(spec.taskSets)) {
-    throw missingEnv("LMNR_EVAL_RUN is not a run spec: no agent or task sets.");
+  if (!spec?.scripts?.hash || !Array.isArray(spec.taskSets)) {
+    throw missingEnv(
+      "LMNR_EVAL_RUN is not a run spec: no scripts or task sets.",
+    );
   }
   return spec as RunSpec;
 };
@@ -162,32 +183,37 @@ const jobUploads = async (
   },
 });
 
-/** Download the run's agent scripts and task sets under `root/<agent>/`. */
-const materialize = async (
+/** Download the run's scripts into `root` and each set's tasks into `root/<set>/tasks/`. */
+export const materialize = async (
   client: LaminarClient,
   spec: RunSpec,
   root: string,
-): Promise<PreparedAgent> => {
-  const dir = path.join(root, spec.agent.name);
-  await downloadBlob(client, spec.agent.hash, dir);
-  const taskSets = [];
+): Promise<PreparedRun> => {
+  await downloadBlob(client, spec.scripts.hash, root);
+  const taskSets: PreparedTaskSet[] = [];
   for (const set of spec.taskSets) {
-    const setDir = taskSetDir(dir, set.name);
-    await downloadBlob(client, set.hash, setDir);
-    taskSets.push({ ...set, dir: setDir });
+    const setDir = path.join(root, set.name);
+    const tasks = tasksDir(setDir);
+    await downloadBlob(client, set.hash, tasks);
+    taskSets.push({
+      ...set,
+      setDir,
+      config: await loadEvalConfig(setDir),
+      tasksDir: tasks,
+    });
   }
   return {
-    agent: spec.agent,
+    evalsDir: root,
+    scriptsHash: spec.scripts.hash,
     ...(spec.gitSha ? { gitSha: spec.gitSha } : {}),
-    dir,
     taskSets,
   };
 };
 
 /**
  * `lmnr-cli eval orchestrate` (hidden): the remote run's entry point inside
- * its orchestrator sandbox. Downloads the run's agent scripts and task sets
- * into `$LMNR_EVALS_ROOT`, then runs each task set; the spec, run id, project
+ * its orchestrator sandbox. Downloads the run's scripts and task sets into
+ * `$LMNR_EVALS_ROOT`, then runs each task set; the spec, run id, project
  * key and API URL come from the env the app-server set.
  *
  * Everything the run prints (this CLI's log, Harbor's output) also goes to the
@@ -216,7 +242,7 @@ export const handleEvalOrchestrate = async (): Promise<void> => {
     const root = process.env.LMNR_EVALS_ROOT || process.cwd();
     const prepared = await materialize(client, spec, root);
     const failed = await runTaskSets(
-      await taskSetRuns(prepared),
+      taskSetRuns(prepared),
       spec.overrides,
       // Rich wraps at 80 columns off a terminal, splitting paths and links.
       { ...env, COLUMNS: "500" },

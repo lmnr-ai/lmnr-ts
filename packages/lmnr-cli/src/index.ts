@@ -615,20 +615,15 @@ Examples:
 
   evalCmd
     .command("run")
-    .description("Run agents' task sets with Harbor")
+    .description("Run task sets with Harbor")
     .argument(
-      "[agents...]",
-      "Agents to run (dirs in the evals folder). Omitted → every agent dir",
+      "[sets...]",
+      "Task sets to run: <set>, <set>@<version> or <set>@latest. Omitted → every set folder",
     )
     .option("--dir <dir>", "Evals folder", "evals")
     .option(
       "--remote",
       "Run in Laminar sandboxes instead of local Docker, printing the run's log until it ends",
-    )
-    .option(
-      "--task-set <name[@version|@latest]>",
-      "Task set to run (repeatable); @version / @latest picks the version. Omitted → pinned task sets and local copies",
-      collectFlag,
     )
     .option(
       "--task <glob>",
@@ -637,15 +632,15 @@ Examples:
     )
     .option(
       "--n-attempts <n>",
-      "Attempts per task. Omitted → agent.yaml",
+      "Attempts per task. Omitted → eval.yaml",
       parsePositiveInt,
     )
     .option(
       "--n-concurrent <n>",
-      "Concurrent trials. Omitted → agent.yaml",
+      "Concurrent trials. Omitted → eval.yaml",
       parsePositiveInt,
     )
-    .option("--model <name>", "Agent model override. Omitted → agent.yaml")
+    .option("--model <name>", "Agent model override. Omitted → eval.yaml")
     .option(
       "--env <KEY[=VALUE]>",
       "Extra agent env var (repeatable). A bare KEY is read from your environment",
@@ -655,54 +650,53 @@ Examples:
     .addHelpText(
       "after",
       `
-Layout: one dir per agent in the evals folder.
+Layout: one folder per task set in the evals folder.
 
-  evals/<agent>/agent.yaml                  images, Harbor job config, pins
-  evals/<agent>/...                         agent scripts (adapter, environment/)
-  evals/<agent>/task_sets/<set>/<task>/     working copies of task sets
-                                            (gitignored; stored in Laminar)
+  evals/<set>/eval.yaml            images, Harbor job config, the version pin
+  evals/<set>/...                  scripts (adapter, Dockerfiles, seed loaders)
+  evals/<set>/tasks/<task>/        working copy of the tasks (gitignored;
+                                   stored and versioned in Laminar)
+  evals/<shared>/...               a folder without eval.yaml: files sets share
 
-agent.yaml:
+eval.yaml:
 
   images:                       # what tasks name with docker_image in task.toml
     app:
-      dockerfile: environment/Dockerfile   # relative to the agent dir
-      context: ../..                       # build context, default: the Dockerfile's dir
+      dockerfile: image/Dockerfile   # relative to the set's folder
+      context: ../..                 # build context, default: the Dockerfile's dir
   job:                          # Harbor JobConfig minus datasets/tasks
-    agents: [{ import_path: "adapter:MyAgent" }]
-  task_sets:                    # pins: the task set versions runs (and CI) use
-    checkout: 4
+    agents: [{ import_path: "adapter:MyAgent" }]   # or "common.adapter:MyAgent"
+  version: 4                    # the pin: the version runs (and CI) use
 
 Runs \`harbor run\` (pinned Harbor + Laminar plugin, via uvx) once per task set,
-from the agent dir. Each task set becomes one evaluation, grouped as
-<agent>/<task set>. The agent's scripts come from your repo: an agent without
-agent.yaml fails (exit 23; \`lmnr-cli eval pull <agent>\` fetches the scripts
-its last run used). Task sets are stored and versioned in Laminar. The version
-of each task set that runs, first match wins:
-  1. --task-set <set>@<version> or <set>@latest
-  2. a local copy in task_sets/<set>/, as is
-  3. the agent.yaml pin
-  4. Laminar's latest, only for a set named with --task-set (a bare run takes
-     the pinned sets and local copies only)
-Task set names are unique per project in Laminar. A run uploads the files it
-uses but never creates a version (only \`lmnr-cli eval push\` does): its
-evaluation links to a task set version only when the content matches a pushed
-one, and shows the task files either way.
+from the set's folder, with the evals folder importable too (shared modules).
+Each task set becomes one evaluation, grouped by its name. Scripts come from
+your repo: a set without eval.yaml fails (exit 23; \`lmnr-cli eval pull <set>\`
+fetches the scripts its last run used). The tasks that run, first match wins:
+  1. <set>@<version> or <set>@latest
+  2. the local copy in <set>/tasks/, as is
+  3. the eval.yaml \`version\` pin
+  4. Laminar's latest (with a warning: pin it so CI runs a fixed version)
+A run uploads the files it uses (the evals folder minus tasks/, and each
+set's tasks) but never creates a version (only \`lmnr-cli eval push\` does): its
+evaluation links to a task set version only when the tasks match a pushed one,
+and shows the task files and scripts either way. Image names are shared by the
+sets of one run.
 
 Modes:
   (default)          Trials run on local Docker. Needs uv, Docker and
                      LMNR_PROJECT_API_KEY (written to .env by \`lmnr-cli setup\`).
-  --remote           Pushes the images and starts the run in a Laminar
-                     sandbox, then prints the run's log until it ends. Ctrl-C
-                     stops following; the run goes on. Needs Docker and
-                     \`lmnr-cli login\` (or LMNR_PROJECT_API_KEY).
+  --remote           Pushes the images and starts one run for all the task
+                     sets in a Laminar sandbox, then prints its log until it
+                     ends. Ctrl-C stops following; the run goes on. Needs
+                     Docker and \`lmnr-cli login\` (or LMNR_PROJECT_API_KEY).
 
 Tasks can't build their own environment (environment/Dockerfile): they name an
-agent.yaml image or a registry image with docker_image, and keep per-task data
+eval.yaml image or a registry image with docker_image, and keep per-task data
 in environment/. Every build lmnr-cli runs honors .dockerignore and never gets
 .git or .env* files.
 
-Secrets: \`\${VAR}\` placeholders in agent.yaml and task.toml are filled from
+Secrets: \`\${VAR}\` placeholders in eval.yaml and task.toml are filled from
 your environment or .env / .env.local; a missing one fails the run before it
 starts. For --remote they are sent with the run, never uploaded as files
 (.env*, .git, node_modules, virtualenvs, caches and jobs/ are never packed).
@@ -715,75 +709,64 @@ Exit codes:
   20  docker_failed (a docker build, pull or save failed, or a wrong platform)
   21  remote_run_failed (a --remote run failed before its task sets ran, or
       its sandbox was lost)
-  23  not_found (no agent.yaml, or a task set or version Laminar doesn't
-      have)
+  23  not_found (no eval.yaml, or a task set or version Laminar doesn't have)
 
 Examples:
   $ lmnr-cli eval run
-  $ lmnr-cli eval run support-bot --task-set checkout --task "refund-*" --n-attempts 3
-  $ lmnr-cli eval run support-bot --task-set checkout@latest --remote
+  $ lmnr-cli eval run checkout --task "refund-*" --n-attempts 3
+  $ lmnr-cli eval run checkout@latest --remote
   $ lmnr-cli eval run --remote --model anthropic/claude-sonnet-5-5
 `,
     );
 
   evalCmd
     .command("pull")
-    .description("Fetch task sets, or the scripts an agent's last run used")
-    .argument(
-      "<target>",
-      "<agent>, <agent>/<task set> or <agent>/<task set>@<version>",
-    )
+    .description("Fetch task sets from Laminar (and their scripts, if missing)")
+    .argument("<sets...>", "<set> or <set>@<version>")
     .option("--dir <dir>", "Evals folder", "evals")
-    .option(
-      "--all",
-      "Pull every task set agent.yaml pins (and the scripts, if you have none)",
-    )
     .option("--force", "Let the scripts overwrite local changes")
     .action(withLocalOpts(handleEvalPull))
     .addHelpText(
       "after",
       `
-<agent> pulls the scripts the agent's last run used, to commit to your repo
-(runs only use the repo's scripts); it fails (exit 22, merge_conflict) if they
-would overwrite a local file with different content or a symlink, unless
---force. <agent>/<task set> pulls one task set (Laminar's latest by default);
-<agent> --all pulls every task set the agent.yaml pins, at Laminar's latest,
-fetching the scripts first if the agent's folder has no agent.yaml. Pulling a
-task set adds task_sets/ to
-evals/<agent>/.gitignore: commit that, not the copies. Pulling never changes
-the agent.yaml pins.
+Pulls each task set's tasks (Laminar's latest by default) into
+evals/<set>/tasks/, and adds tasks/ to evals/<set>/.gitignore: commit that,
+not the copy. When evals/<set>/eval.yaml is missing, it first fetches the
+scripts the set's last run used (its folder and the shared folders) to commit
+to your repo, since runs only use the repo's scripts; that fails (exit 22,
+merge_conflict) if they would overwrite a local file with different content or
+a symlink, unless --force. Pulling never changes the eval.yaml pin.
 
-A task set is merged task by task with your local copy: tasks changed only in
+Tasks are merged one by one with your local copy: tasks changed only in
 Laminar are updated, tasks changed only locally are kept, and a task changed on
 both sides fails the pull (exit 22, merge_conflict) without changing anything.
-The version pulled is recorded in evals/<agent>/task_sets/<set>/.lmnr.json.
+The version pulled is recorded in evals/<set>/tasks/.lmnr.json.
 
 Examples:
-  $ lmnr-cli eval pull support-bot
-  $ lmnr-cli eval pull support-bot --all
-  $ lmnr-cli eval pull support-bot/checkout@3
+  $ lmnr-cli eval pull checkout
+  $ lmnr-cli eval pull checkout@3 billing
 `,
     );
 
   evalCmd
     .command("push")
     .description("Publish local task sets to Laminar")
-    .argument("<target>", "<agent> or <agent>/<task set>")
+    .argument("[sets...]", "Task sets. Omitted → every set with a tasks/ copy")
     .option("--dir <dir>", "Evals folder", "evals")
     .action(withLocalOpts(handleEvalPush))
     .addHelpText(
       "after",
       `
-<agent> publishes every local task set; <agent>/<task set> publishes one.
-Each becomes the new latest version in Laminar. If someone pushed the task set
-since your copy's version, theirs is merged in first, task by task (a task
-both of you changed fails with exit 22, merge_conflict). Push never changes
-the agent.yaml pins: set the new version there by hand to run it in CI.
-Agent scripts are not pushed; commit them to your repo.
+Publishes each set's evals/<set>/tasks/ as its new latest version in Laminar.
+If someone pushed the set since your copy's version, theirs is merged in
+first, task by task (a task both of you changed fails with exit 22,
+merge_conflict). Push never changes the eval.yaml pin: set \`version\` there by
+hand to run the new version in CI. Scripts are not pushed; commit them to your
+repo.
 
 Examples:
-  $ lmnr-cli eval push support-bot
-  $ lmnr-cli eval push support-bot/checkout
+  $ lmnr-cli eval push
+  $ lmnr-cli eval push checkout
 `,
     );
 

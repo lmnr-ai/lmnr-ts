@@ -96,7 +96,7 @@ void describe("HostedEvalsResource", () => {
     assert.strictEqual(JSON.parse(init.body).base, "v1");
   });
 
-  void it("reads the latest scripts of an agent, null when there are none", async () => {
+  void it("reads the latest scripts of a task set, null when there are none", async () => {
     const latest = {
       hash: "ab".repeat(32),
       gitSha: null,
@@ -104,7 +104,7 @@ void describe("HostedEvalsResource", () => {
       evaluationId: "e1",
     };
     const mockFetch = mock.fn((url: string) =>
-      url.endsWith("agent=support%20bot")
+      url.endsWith("taskSet=support%20bot")
         ? { ok: true, status: 200, json: () => latest }
         : { ok: false, status: 404, json: () => ({ error: "none" }) },
     );
@@ -121,7 +121,7 @@ void describe("HostedEvalsResource", () => {
     assert.strictEqual(await resource.getLatestScripts("other"), null);
     assert.strictEqual(
       (mockFetch.mock.calls[0].arguments as any)[0],
-      "https://api.test.com:443/v1/cli/hosted-evals/scripts/latest?agent=support%20bot",
+      "https://api.test.com:443/v1/cli/hosted-evals/scripts/latest?taskSet=support%20bot",
     );
   });
 

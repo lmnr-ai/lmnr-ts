@@ -9,14 +9,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { imagePusher } from "./docker";
 import { runTaskSets, type TaskSetRun } from "./harbor";
 import type { ImageDef } from "./images";
+import { loadEvalConfig } from "./layout";
 import { type Exclude, packFiles, walkFiles } from "./pack";
 import {
   handleEvalOrchestrate,
-  type PreparedAgent,
+  type PreparedRun,
   startRemoteRun,
+  taskSetRuns,
 } from "./remote";
 import { runCommand } from "./run-command";
-import { AGENT_SCRIPTS } from "./store";
+import { scriptsOf } from "./store";
 
 vi.mock("./docker", () => ({ imagePusher: vi.fn() }));
 vi.mock("./run-command", () => ({ runCommand: vi.fn() }));
@@ -47,50 +49,44 @@ const write = async (rel: string, content = "x") => {
   await writeFile(file, content);
 };
 
-/** An agent with one image and two task sets. */
-const writeAgent = async () => {
-  await write(
-    "evals/support/agent.yaml",
-    "images:\n  app:\n    dockerfile: environment/Dockerfile\n" +
-      "job:\n  environment:\n    type: docker\n",
-  );
-  await write("evals/support/environment/Dockerfile", "FROM alpine");
+/** Two task sets sharing one image, built from a shared folder. */
+const writeEvals = async () => {
   for (const set of ["a", "b"]) {
     await write(
-      `evals/support/task_sets/${set}/shared/task.toml`,
+      `evals/${set}/eval.yaml`,
+      "images:\n  app:\n    dockerfile: ../common/Dockerfile\n" +
+        "job:\n  environment:\n    type: docker\n",
+    );
+    await write(
+      `evals/${set}/tasks/shared/task.toml`,
       '[environment]\ndocker_image = "app"\n',
     );
   }
+  await write("evals/common/Dockerfile", "FROM alpine");
   await write(
-    "evals/support/task_sets/a/public/task.toml",
+    "evals/a/tasks/public/task.toml",
     '[environment]\ndocker_image = "python:3.12-slim"\n',
   );
 };
 
-const agentDir = () => path.join(root, "evals/support");
+const evalsDir = () => path.join(root, "evals");
 
-const prepared = (): PreparedAgent => ({
-  agent: { name: "support", hash: "agent-hash" },
+const prepared = async (): Promise<PreparedRun> => ({
+  evalsDir: evalsDir(),
+  scriptsHash: "scripts-hash",
   gitSha: "abc123",
-  dir: agentDir(),
-  taskSets: ["a", "b"].map((name) => ({
-    name,
-    hash: `${name}-hash`,
-    dir: path.join(agentDir(), "task_sets", name),
-  })),
+  taskSets: await Promise.all(
+    ["a", "b"].map(async (name) => ({
+      name,
+      hash: `${name}-hash`,
+      setDir: path.join(evalsDir(), name),
+      config: await loadEvalConfig(path.join(evalsDir(), name)),
+      tasksDir: path.join(evalsDir(), name, "tasks"),
+    })),
+  ),
 });
 
-const runs = (): TaskSetRun[] =>
-  prepared().taskSets.map((set) => ({
-    agent: "support",
-    agentDir: agentDir(),
-    scriptsHash: "agent-hash",
-    gitSha: "abc123",
-    job: {},
-    taskSet: set.name,
-    setDir: set.dir,
-    taskSetHash: set.hash,
-  }));
+const runs = async (): Promise<TaskSetRun[]> => taskSetRuns(await prepared());
 
 const IMAGES = {
   images: {
@@ -122,8 +118,8 @@ afterEach(async () => {
 });
 
 void describe("startRemoteRun", () => {
-  void it("pushes the agent's images and sends the blobs in the spec", async () => {
-    await writeAgent();
+  void it("pushes the run's images and starts one run with every task set's blob", async () => {
+    await writeEvals();
     vi.mocked(imagePusher).mockReturnValue({
       build: async (def: ImageDef) => `sha256:${def.name}`,
       pull: async (ref: string) => `sha256:${ref}`,
@@ -133,7 +129,7 @@ void describe("startRemoteRun", () => {
 
     const started = await startRemoteRun(
       client,
-      prepared(),
+      await prepared(),
       { nAttempts: 2 },
       { OPENAI_API_KEY: "sk", LMNR_PROJECT_API_KEY: "dropped" },
     );
@@ -142,7 +138,7 @@ void describe("startRemoteRun", () => {
     expect(startRun).toHaveBeenCalledWith({
       cliVersion: expect.any(String),
       spec: {
-        agent: { name: "support", hash: "agent-hash" },
+        scripts: { hash: "scripts-hash" },
         gitSha: "abc123",
         taskSets: [
           { name: "a", hash: "a-hash" },
@@ -157,8 +153,8 @@ void describe("startRemoteRun", () => {
 });
 
 void describe("runTaskSets", () => {
-  void it("runs each task set from the agent dir with the evaluation's metadata", async () => {
-    await writeAgent();
+  void it("runs each task set from its folder with the evaluation's metadata", async () => {
+    await writeEvals();
     const seen: { cwd?: string; env?: NodeJS.ProcessEnv; args: string[] }[] =
       [];
     vi.mocked(runCommand).mockImplementation(async (_command, args, opts) => {
@@ -167,27 +163,34 @@ void describe("runTaskSets", () => {
     });
 
     expect(
-      await runTaskSets(runs(), {}, {}, IMAGES, { runId: "run-1" }),
+      await runTaskSets(await runs(), {}, {}, IMAGES, { runId: "run-1" }),
     ).toEqual([]);
-    expect(seen.map((s) => s.cwd)).toEqual([agentDir(), agentDir()]);
+    expect(seen.map((s) => s.cwd)).toEqual([
+      path.join(evalsDir(), "a"),
+      path.join(evalsDir(), "b"),
+    ]);
     const env = seen[1].env ?? {};
     expect(env).toMatchObject({
-      LMNR_EVAL_TASK_SET_ROOT: path.join(agentDir(), "task_sets/b"),
-      HARBOR_LAMINAR_GROUP: "support/b",
+      LMNR_EVAL_TASK_SET_ROOT: path.join(evalsDir(), "b/tasks"),
+      HARBOR_LAMINAR_GROUP: "b",
     });
+    // Shared modules (`common.adapter:X`) import from the evals folder.
+    expect((env.PYTHONPATH ?? "").split(path.delimiter).slice(1, 3)).toEqual([
+      path.join(evalsDir(), "b"),
+      evalsDir(),
+    ]);
     expect(JSON.parse(env.LMNR_EVAL_HOSTED_METADATA ?? "null")).toEqual({
-      agent: "support",
       taskSet: "b",
       taskSetHash: "b-hash",
-      scriptsHash: "agent-hash",
+      scriptsHash: "scripts-hash",
       gitSha: "abc123",
       runId: "run-1",
     });
     expect(JSON.parse(env.LMNR_EVAL_IMAGES ?? "null")).toEqual(IMAGES);
-    expect(seen[1].args).toContain("group_name=support/b");
+    expect(seen[1].args).toContain("group_name=b");
 
     seen.length = 0;
-    expect(await runTaskSets(runs().slice(0, 1), {}, {})).toEqual([]);
+    expect(await runTaskSets((await runs()).slice(0, 1), {}, {})).toEqual([]);
     expect(seen[0].env?.LMNR_EVAL_IMAGES).toBeUndefined();
     expect(
       JSON.parse(seen[0].env?.LMNR_EVAL_HOSTED_METADATA ?? "{}").runId,
@@ -195,7 +198,7 @@ void describe("runTaskSets", () => {
   });
 
   void it("writes each task set's job where onTaskSetEnd reads it, failed or not", async () => {
-    await writeAgent();
+    await writeEvals();
     const configs: Record<string, unknown>[] = [];
     vi.mocked(runCommand).mockImplementation(async (_command, args) => {
       const config = args[args.indexOf("-c") + 1];
@@ -210,8 +213,8 @@ void describe("runTaskSets", () => {
       },
     };
 
-    expect(await runTaskSets(runs(), {}, {}, IMAGES, { jobs })).toEqual([
-      "support/a",
+    expect(await runTaskSets(await runs(), {}, {}, IMAGES, { jobs })).toEqual([
+      "a",
     ]);
     // The job keeps Harbor's name: the plugin names the evaluation after it.
     expect(configs.map((c) => [c.jobs_dir, c.job_name])).toEqual([
@@ -219,7 +222,7 @@ void describe("runTaskSets", () => {
       [path.join(jobs.dir, "b"), undefined],
     ]);
     expect(configs[1].datasets).toEqual([
-      { path: path.join(agentDir(), "task_sets/b") },
+      { path: path.join(evalsDir(), "b/tasks") },
     ]);
     expect(ended).toEqual([
       ["a", path.join(jobs.dir, "a")],
@@ -243,7 +246,10 @@ void describe("handleEvalOrchestrate", () => {
     await expect(handleEvalOrchestrate()).rejects.toMatchObject({
       message: expect.stringMatching(/not a run spec/),
     });
-    process.env.LMNR_EVAL_RUN = JSON.stringify({ agent: {}, taskSets: [] });
+    process.env.LMNR_EVAL_RUN = JSON.stringify({
+      scripts: { hash: "h" },
+      taskSets: [],
+    });
     await expect(handleEvalOrchestrate()).rejects.toMatchObject({
       message: "LMNR_EVAL_RUN_ID is not set.",
     });
@@ -251,16 +257,19 @@ void describe("handleEvalOrchestrate", () => {
   });
 
   void it("downloads the run's blobs, runs them and logs Harbor's output", async () => {
-    await writeAgent();
+    await writeEvals();
     const blobOf = async (dir: string, exclude?: Exclude) =>
       (await packFiles((await walkFiles(dir, process.platform, exclude)).files))
         .archive;
-    blobs.set("agent-hash", await blobOf(agentDir(), AGENT_SCRIPTS));
-    blobs.set("b-hash", await blobOf(path.join(agentDir(), "task_sets/b")));
+    blobs.set(
+      "scripts-hash",
+      await blobOf(evalsDir(), await scriptsOf(evalsDir())),
+    );
+    blobs.set("b-hash", await blobOf(path.join(evalsDir(), "b/tasks")));
     const evalsRoot = path.join(root, "sandbox-evals");
     const marker = path.join(root, "log-started");
     process.env.LMNR_EVAL_RUN = JSON.stringify({
-      agent: { name: "support", hash: "agent-hash" },
+      scripts: { hash: "scripts-hash" },
       taskSets: [{ name: "b", hash: "b-hash" }],
       overrides: {},
       env: {},
@@ -289,21 +298,22 @@ void describe("handleEvalOrchestrate", () => {
       code: "harbor_failed",
     });
 
-    const agentRoot = path.join(evalsRoot, "support");
-    expect(cwd).toBe(agentRoot);
-    expect(
-      existsSync(path.join(agentRoot, "task_sets/b/shared/task.toml")),
-    ).toBe(true);
-    expect(existsSync(path.join(agentRoot, "task_sets/a"))).toBe(false);
+    expect(cwd).toBe(path.join(evalsRoot, "b"));
+    expect(existsSync(path.join(evalsRoot, "common/Dockerfile"))).toBe(true);
+    expect(existsSync(path.join(evalsRoot, "b/tasks/shared/task.toml"))).toBe(
+      true,
+    );
+    // The scripts blob has every set's folder, but only the run's tasks.
+    expect(existsSync(path.join(evalsRoot, "a/eval.yaml"))).toBe(true);
+    expect(existsSync(path.join(evalsRoot, "a/tasks"))).toBe(false);
     expect(env).toMatchObject({
       COLUMNS: "500",
-      LMNR_EVAL_TASK_SET_ROOT: path.join(agentRoot, "task_sets/b"),
+      LMNR_EVAL_TASK_SET_ROOT: path.join(evalsRoot, "b/tasks"),
     });
     expect(JSON.parse(env?.LMNR_EVAL_HOSTED_METADATA ?? "null")).toEqual({
-      agent: "support",
       taskSet: "b",
       taskSetHash: "b-hash",
-      scriptsHash: "agent-hash",
+      scriptsHash: "scripts-hash",
       runId: "run-1",
     });
     // Harbor's unfinished last line goes out when its stream ends, before the
@@ -311,7 +321,7 @@ void describe("handleEvalOrchestrate", () => {
     const harbor = appended.indexOf("trial 1/1 done");
     expect(appended.slice(harbor, harbor + 3)).toEqual([
       "trial 1/1 done",
-      "Laminar evaluation for task set support/b: https://lmnr.test/e/1",
+      "Laminar evaluation for task set b: https://lmnr.test/e/1",
       "partial",
     ]);
     expect(appended.findIndex((t) => t.startsWith("ERROR: "))).toBeGreaterThan(

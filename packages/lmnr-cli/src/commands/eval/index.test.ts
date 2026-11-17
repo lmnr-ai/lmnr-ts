@@ -29,13 +29,13 @@ import { assertRemotePassed, parsePositiveInt } from "./index";
 import {
   assertTaskImages,
   buildJobConfig,
-  discoverAgents,
+  discoverTaskSets,
   findTaskDirs,
   findTemplateVars,
   globToRegExp,
+  ignoreTasks,
   LAMINAR_ENVIRONMENT_IMPORT_PATH,
-  loadAgentConfig,
-  localTaskSets,
+  loadEvalConfig,
   readState,
   readTaskToml,
   writeState,
@@ -43,7 +43,7 @@ import {
 import { applyMerge, planMerge } from "./merge";
 import { excludeTop, packFiles, walkFiles } from "./pack";
 import { parseTaskSetSelector } from "./prepare";
-import { AGENT_SCRIPTS } from "./store";
+import { scriptsExclude } from "./store";
 import { parseTarget } from "./sync";
 
 let root: string;
@@ -80,61 +80,65 @@ afterEach(async () => {
 });
 
 void describe("layout", () => {
-  void it("finds agent dirs and their task sets", async () => {
-    await write("support/agent.yaml", "job: {}");
-    await write("support/task_sets/checkout/a/task.toml");
-    await write("support/task_sets/billing/b/task.toml");
-    await write("support/task_sets/notes.md");
-    await write("not-an-agent/README.md");
-    await write("node_modules/x/agent.yaml");
+  void it("finds task set folders (with eval.yaml), not shared ones", async () => {
+    await write("checkout/eval.yaml", "job: {}");
+    await write("checkout/tasks/a/task.toml");
+    await write("billing/eval.yaml", "job: {}");
+    await write("common/adapter.py");
+    await write("node_modules/x/eval.yaml");
 
-    expect(await discoverAgents(root)).toEqual(["support"]);
-    expect(await localTaskSets(path.join(root, "support"))).toEqual([
-      "billing",
-      "checkout",
-    ]);
-    expect(await discoverAgents(path.join(root, "missing"))).toEqual([]);
+    expect(await discoverTaskSets(root)).toEqual(["billing", "checkout"]);
+    expect(await discoverTaskSets(path.join(root, "missing"))).toEqual([]);
   });
 
-  void it("reads agent.yaml images relative to the agent dir", async () => {
+  void it("reads eval.yaml images relative to the set's folder, and its pin", async () => {
     await write(
-      "evals/support/agent.yaml",
-      "images:\n  app:\n    dockerfile: environment/Dockerfile\n    context: ../..\n" +
+      "evals/billing/eval.yaml",
+      "images:\n  app:\n    dockerfile: image/Dockerfile\n    context: ../..\n" +
         "  plain:\n    dockerfile: plain/Dockerfile\n" +
-        "job:\n  n_attempts: 2\ntask_sets:\n  billing: 4\n",
+        "job:\n  n_attempts: 2\nversion: 4\n",
     );
-    const agentDir = path.join(root, "evals/support");
-    expect(await loadAgentConfig(agentDir)).toEqual({
+    const setDir = path.join(root, "evals/billing");
+    expect(await loadEvalConfig(setDir)).toEqual({
       images: [
         {
           name: "app",
-          dockerfile: path.join(agentDir, "environment/Dockerfile"),
+          dockerfile: path.join(setDir, "image/Dockerfile"),
           context: root,
         },
         {
           name: "plain",
-          dockerfile: path.join(agentDir, "plain/Dockerfile"),
-          context: path.join(agentDir, "plain"),
+          dockerfile: path.join(setDir, "plain/Dockerfile"),
+          context: path.join(setDir, "plain"),
         },
       ],
       job: { n_attempts: 2 },
-      pins: { billing: 4 },
+      version: 4,
     });
-    await write("bad/agent.yaml", "images:\n  x: {}\n");
-    await expect(loadAgentConfig(path.join(root, "bad"))).rejects.toMatchObject(
-      { code: "invalid_evals_dir", exitCode: 16 },
-    );
-    for (const pins of [
-      "billing: latest",
-      "billing: 0",
-      "bad name: 1",
-      "[a]",
-    ]) {
-      await write("pins/agent.yaml", `task_sets:\n  ${pins}\n`);
+    await write("bad/eval.yaml", "images:\n  x: {}\n");
+    await expect(loadEvalConfig(path.join(root, "bad"))).rejects.toMatchObject({
+      code: "invalid_evals_dir",
+      exitCode: 16,
+    });
+    for (const version of ["latest", "0", "1.5", "[1]"]) {
+      await write("pin/eval.yaml", `version: ${version}\n`);
       await expect(
-        loadAgentConfig(path.join(root, "pins")),
+        loadEvalConfig(path.join(root, "pin")),
       ).rejects.toMatchObject({ exitCode: 16 });
     }
+  });
+
+  void it("adds tasks/ to the set's .gitignore once", async () => {
+    await ignoreTasks(root);
+    await ignoreTasks(root);
+    expect(await readFile(path.join(root, ".gitignore"), "utf8")).toBe(
+      "tasks/\n",
+    );
+    await writeFile(path.join(root, ".gitignore"), "jobs/");
+    await ignoreTasks(root);
+    expect(await readFile(path.join(root, ".gitignore"), "utf8")).toBe(
+      "jobs/\ntasks/\n",
+    );
   });
 
   void it("finds task dirs, narrowed by --task globs", async () => {
@@ -197,10 +201,11 @@ void describe("layout", () => {
 
 void describe("walkFiles / packFiles", () => {
   void it("packs a dir's contents at the archive root, minus exclusions", async () => {
-    await write("agent.yaml", "job: {}");
-    await write("adapter.py");
-    await write("task_sets/s/t/task.toml");
-    await write(".lmnr.json", "{}");
+    await write("s/eval.yaml", "job: {}");
+    await write("s/adapter.py");
+    await write("s/tasks/t/task.toml");
+    await write("s/tasks/.lmnr.json", "{}");
+    await write("common/tasks/keep.py");
     await write(".env", "SECRET=1");
     await write("environment/.env.local", "SECRET=1");
     await write(".git/config");
@@ -209,17 +214,25 @@ void describe("walkFiles / packFiles", () => {
     await write("t/__pycache__/x.pyc");
     await write("jobs/2026-10-28__12-00-00/result.json");
 
-    const { files } = await walkFiles(root, process.platform, AGENT_SCRIPTS);
+    const { files } = await walkFiles(
+      root,
+      process.platform,
+      scriptsExclude(["s"]),
+    );
     const { archive } = await packFiles(files);
     const names = (await filesOf(archive)).map((e) => e.header.name).sort();
-    expect(names).toEqual(["adapter.py", "agent.yaml"]);
+    expect(names).toEqual([
+      "common/tasks/keep.py",
+      "s/adapter.py",
+      "s/eval.yaml",
+    ]);
 
-    const all = await walkFiles(
-      root,
+    const tasks = await walkFiles(
+      path.join(root, "s/tasks"),
       process.platform,
       excludeTop(".lmnr.json"),
     );
-    expect(all.files.map((f) => f.target)).toContain("task_sets/s/t/task.toml");
+    expect(tasks.files.map((f) => f.target)).toEqual(["t/task.toml"]);
   });
 
   void it("keeps the executable bit and skips symlinks", async () => {
@@ -239,7 +252,7 @@ void describe("walkFiles / packFiles", () => {
   void it("indexes every file so it can be read from its gzip member alone", async () => {
     const big = Buffer.alloc(1536 * 1024, "b");
     const longName = `${"deep/".repeat(30)}file.txt`;
-    await write("agent.yaml", "job: {}");
+    await write("eval.yaml", "job: {}");
     await write("a/task.toml", "[task]");
     await write("a/data.bin", big.toString());
     await write("a/after-big.txt", "after");
@@ -265,11 +278,11 @@ void describe("walkFiles / packFiles", () => {
     const offsets = Object.fromEntries(index.map((f) => [f.path, f.offset]));
     expect(offsets["a/data.bin"]).toBe(offsets["a/after-big.txt"]);
     expect(offsets["a/empty.txt"]).not.toBe(offsets["a/data.bin"]);
-    expect(offsets["agent.yaml"]).not.toBe(offsets["a/data.bin"]);
+    expect(offsets["eval.yaml"]).not.toBe(offsets["a/data.bin"]);
   });
 
   void it("marks shell scripts executable when packed on Windows", async () => {
-    await write("agent.yaml");
+    await write("eval.yaml");
     await write("t/tests/test.sh", "#!/bin/sh");
     await chmod(path.join(root, "t/tests/test.sh"), 0o644);
 
@@ -282,7 +295,7 @@ void describe("walkFiles / packFiles", () => {
       ]),
     );
     expect(modes["t/tests/test.sh"]).toBe(0o755);
-    expect(modes["agent.yaml"]).toBe(0o644);
+    expect(modes["eval.yaml"]).toBe(0o644);
   });
 });
 
@@ -303,11 +316,11 @@ void describe("treeDigest", () => {
   });
 
   void it("leaves excluded entries out", async () => {
-    await write("agent.yaml");
-    const scripts = await dirDigest(root, AGENT_SCRIPTS);
-    await write("task_sets/s/t/task.toml");
-    await write(".lmnr.json", "{}");
-    expect(await dirDigest(root, AGENT_SCRIPTS)).toBe(scripts);
+    await write("s/eval.yaml");
+    const scripts = await dirDigest(root, scriptsExclude(["s"]));
+    await write("s/tasks/t/task.toml");
+    await write("s/tasks/.lmnr.json", "{}");
+    expect(await dirDigest(root, scriptsExclude(["s"]))).toBe(scripts);
   });
 });
 
@@ -320,8 +333,8 @@ void describe("buildJobConfig", () => {
   };
 
   void it("makes the task set its only dataset", () => {
-    const job = buildJobConfig(base, "/evals/a/task_sets/s", {}, false);
-    expect(job.datasets).toEqual([{ path: "/evals/a/task_sets/s" }]);
+    const job = buildJobConfig(base, "/evals/s/tasks", {}, false);
+    expect(job.datasets).toEqual([{ path: "/evals/s/tasks" }]);
     expect(job.tasks).toBeUndefined();
     expect(job.environment).toEqual(base.environment);
   });
@@ -375,20 +388,20 @@ void describe("buildJobConfig", () => {
 });
 
 void describe("template env", () => {
-  void it("finds ${VAR} placeholders in agent.yaml and the run's task.toml files", async () => {
+  void it("finds ${VAR} placeholders in eval.yaml and the run's task.toml files", async () => {
     await write(
-      "a/agent.yaml",
+      "s/eval.yaml",
       "job:\n  agents:\n    - env:\n        OPENAI_API_KEY: ${OPENAI_API_KEY}\n        M: ${MODEL:-gpt}\n",
     );
     await write(
-      "a/task_sets/s/t/task.toml",
+      "s/tasks/t/task.toml",
       '[verifier.env]\nJUDGE_KEY = "${JUDGE_KEY}"\n',
     );
-    await write("a/task_sets/s/other/task.toml", '[x]\nY = "${OTHER_KEY}"\n');
-    const agentDir = path.join(root, "a");
-    const setDir = path.join(agentDir, "task_sets/s");
+    await write("s/tasks/other/task.toml", '[x]\nY = "${OTHER_KEY}"\n');
+    const setDir = path.join(root, "s");
+    const tasks = path.join(setDir, "tasks");
 
-    const vars = await findTemplateVars(agentDir, [setDir], {});
+    const vars = await findTemplateVars(setDir, tasks, {});
     expect([...vars.required].sort()).toEqual([
       "JUDGE_KEY",
       "OPENAI_API_KEY",
@@ -397,7 +410,7 @@ void describe("template env", () => {
     expect([...vars.optional]).toEqual(["MODEL"]);
 
     // A task --task leaves out doesn't need its variables.
-    const only = await findTemplateVars(agentDir, [setDir], { tasks: ["t"] });
+    const only = await findTemplateVars(setDir, tasks, { tasks: ["t"] });
     expect([...only.required].sort()).toEqual(["JUDGE_KEY", "OPENAI_API_KEY"]);
   });
 
@@ -508,7 +521,7 @@ void describe("images", () => {
     }
   });
 
-  void it("builds referenced agent.yaml images, pulls the rest, each once", async () => {
+  void it("builds referenced eval.yaml images, pulls the rest, each once", async () => {
     for (const set of ["s1", "s2"]) {
       await write(
         `${set}/shared/task.toml`,
@@ -542,7 +555,7 @@ void describe("images", () => {
       "python:3.12-slim",
     ]);
     const pushed = await ensureRemoteImages(defs, sets, {}, pusher);
-    // `unused` is in agent.yaml but no task references it: never built.
+    // `unused` is in eval.yaml but no task references it: never built.
     expect(calls.sort()).toEqual(["build app", "pull python:3.12-slim"]);
     expect(pushed).toEqual({
       images: {
@@ -632,19 +645,18 @@ void describe("planMerge / applyMerge", () => {
 });
 
 void describe("targets", () => {
-  void it("parses <agent>[/<task set>][@<version>]", () => {
-    expect(parseTarget("support")).toEqual({ agent: "support" });
-    expect(parseTarget("support/checkout@3")).toEqual({
-      agent: "support",
+  void it("parses <set>[@<version>] for pull and push", () => {
+    expect(parseTarget("checkout")).toEqual({ taskSet: "checkout" });
+    expect(parseTarget("checkout@3")).toEqual({
       taskSet: "checkout",
       number: 3,
     });
-    expect(() => parseTarget("support@3")).toThrow(/Only a task set/);
-    expect(() => parseTarget("a/b/c")).toThrow(/Invalid target/);
+    expect(() => parseTarget("checkout@latest")).toThrow(/Invalid task set/);
+    expect(() => parseTarget("a/b")).toThrow(/Invalid task set name/);
     expect(() => parseTarget("../x")).toThrow();
   });
 
-  void it("parses --task-set name[@version|@latest]", () => {
+  void it("parses <set>[@<version>|@latest] for run", () => {
     expect(parseTaskSetSelector("checkout")).toEqual({ name: "checkout" });
     expect(parseTaskSetSelector("checkout@12")).toEqual({
       name: "checkout",
@@ -661,7 +673,7 @@ void describe("targets", () => {
 
 void describe("harborArgs", () => {
   void it("runs the pinned Harbor with the Laminar plugin, grouped by task set", () => {
-    expect(harborArgs("/tmp/job.json", "support/checkout")).toEqual([
+    expect(harborArgs("/tmp/job.json", "checkout")).toEqual([
       "--python",
       "3.13",
       "--from",
@@ -676,7 +688,7 @@ void describe("harborArgs", () => {
       "--plugin",
       "laminar",
       "--pk",
-      "group_name=support/checkout",
+      "group_name=checkout",
     ]);
     expect(harborArgs("/tmp/job.json", "s", "8001").slice(-2)).toEqual([
       "--pk",

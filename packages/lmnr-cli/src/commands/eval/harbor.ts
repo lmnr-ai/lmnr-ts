@@ -58,27 +58,24 @@ export const harborArgs = (
   ...(grpcPort ? ["--pk", `grpc_port=${grpcPort}`] : []),
 ];
 
-/** One task set of one agent, ready to run: what a Harbor run and its evaluation are. */
+/** One task set, ready to run: what a Harbor run and its evaluation are. */
 export interface TaskSetRun {
-  agent: string;
-  /** The agent's scripts; Harbor runs from here. */
-  agentDir: string;
-  /** Their blob. */
+  taskSet: string;
+  /** The set's folder (eval.yaml, scripts); Harbor runs from here. */
+  setDir: string;
+  /** The evals folder: shared modules import from here. */
+  evalsDir: string;
+  /** The scripts' blob (the evals folder minus task copies). */
   scriptsHash: string;
   /** The commit they came from. */
   gitSha?: string;
-  /** agent.yaml's `job`. */
+  /** eval.yaml's `job`. */
   job: JobConfig;
-  taskSet: string;
-  /** The task set's files, wherever they are (local copy or downloaded). */
-  setDir: string;
+  /** The set's tasks, wherever they are (local copy or downloaded). */
+  tasksDir: string;
   /** Their blob: Laminar links the evaluation to the pushed version with it. */
   taskSetHash: string;
 }
-
-/** `<agent>/<task set>`: the evaluation group and the label in logs. */
-export const runLabel = (run: Pick<TaskSetRun, "agent" | "taskSet">) =>
-  `${run.agent}/${run.taskSet}`;
 
 /**
  * Env for the Laminar Harbor plugin: `LMNR_EVAL_HOSTED_METADATA` goes on the
@@ -91,20 +88,21 @@ export const linkEnv = (
   runId?: string,
 ): Record<string, string> => ({
   LMNR_EVAL_HOSTED_METADATA: JSON.stringify({
-    agent: run.agent,
     taskSet: run.taskSet,
     taskSetHash: run.taskSetHash,
     scriptsHash: run.scriptsHash,
     ...(run.gitSha ? { gitSha: run.gitSha } : {}),
     ...(runId ? { runId } : {}),
   }),
-  LMNR_EVAL_TASK_SET_ROOT: run.setDir,
-  HARBOR_LAMINAR_GROUP: runLabel(run),
+  LMNR_EVAL_TASK_SET_ROOT: run.tasksDir,
+  HARBOR_LAMINAR_GROUP: run.taskSet,
 });
 
 interface HarborRun {
   label: string;
   cwd: string;
+  /** Importable after `cwd`: the evals folder, for shared modules. */
+  importRoot: string;
   config: JobConfig;
   /** Env for the Harbor process; `${VAR}` placeholders resolve against it. */
   env: Record<string, string>;
@@ -117,9 +115,10 @@ interface HarborRun {
 }
 
 /**
- * Run one task set with `harbor run` from inside the agent dir, so relative
- * paths in agent.yaml (jobs_dir) and custom agent imports resolve the same way
- * everywhere. Returns Harbor's exit code.
+ * Run one task set with `harbor run` from inside its folder, so relative paths
+ * in eval.yaml (jobs_dir) and custom agent imports (`adapter:X` from the set,
+ * `common.adapter:X` from the evals folder) resolve the same way everywhere.
+ * Returns Harbor's exit code.
  */
 const runHarbor = async (run: HarborRun): Promise<number> => {
   const staging = await mkdtemp(path.join(tmpdir(), "lmnr-eval-"));
@@ -134,7 +133,12 @@ const runHarbor = async (run: HarborRun): Promise<number> => {
         path.join(staging, ENVIRONMENT_MODULE),
       );
     }
-    const pythonPath = [staging, run.cwd, process.env.PYTHONPATH]
+    const pythonPath = [
+      staging,
+      run.cwd,
+      run.importRoot,
+      process.env.PYTHONPATH,
+    ]
       .filter(Boolean)
       .join(path.delimiter);
     return await runCommand(
@@ -161,7 +165,7 @@ const runHarbor = async (run: HarborRun): Promise<number> => {
 /** Where each task set's Harbor job is written, and what happens to it after. */
 export interface JobOutput {
   /**
-   * Task set `s` writes its job under `<dir>/<s>`, whatever agent.yaml says.
+   * Task set `s` writes its job under `<dir>/<s>`, whatever eval.yaml says.
    * The job keeps its own name: the Laminar plugin names the evaluation after it.
    */
   dir: string;
@@ -195,10 +199,10 @@ export const runTaskSets = async (
   const grpcPort = (await findEnvKey(process.cwd(), "LMNR_GRPC_PORT"))?.value;
   const failed: string[] = [];
   for (const run of runs) {
-    const label = runLabel(run);
+    const label = run.taskSet;
     const config = buildJobConfig(
       run.job,
-      run.setDir,
+      run.tasksDir,
       overrides,
       images !== undefined,
     );
@@ -208,7 +212,8 @@ export const runTaskSets = async (
     );
     const code = await runHarbor({
       label,
-      cwd: run.agentDir,
+      cwd: run.setDir,
+      importRoot: run.evalsDir,
       config,
       env: { ...env, ...linkEnv(run, runId) },
       images,
