@@ -130,7 +130,9 @@
     aren't other set folders, copied over the evals folder; extra local files
     stay; a local file with different content, or a symlink on a script's
     path, fails it with `merge_conflict` unless `--force`, which replaces the
-    link itself); none recorded → the tasks still come, with a warning. Then
+    link itself; a local entry of the wrong kind on the path, a folder where a
+    script file goes or a file where a folder is needed, is `merge_conflict`
+    even with `--force`, which never deletes a local folder); none recorded → the tasks still come, with a warning. Then
     it downloads the version (head by default) to a temp dir and merges task
     by task (`planMerge(base, local, remote)`): changed only remotely →
     taken, only locally → kept, both (differently) → `merge_conflict` (22)

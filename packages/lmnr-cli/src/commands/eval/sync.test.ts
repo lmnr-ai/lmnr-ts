@@ -319,6 +319,27 @@ void describe("eval pull", () => {
     expect(await read("repo/evals/s/adapter.py")).toBe("adapter");
     expect(await read("elsewhere/adapter.py")).toBe("mine");
   });
+
+  void it("fails, even forced, when a local folder or file has the wrong kind for a script's path", async () => {
+    const { server, scripts } = await setInLaminar();
+    const evals = path.join(root, "repo/evals");
+    await write("repo/evals/s/adapter.py/inner.py", "mine");
+    await write("repo/evals/common", "a file, not a folder");
+
+    for (const force of [false, true]) {
+      await expect(
+        pullScripts(server.client, evals, "s", scripts.hash, force),
+      ).rejects.toMatchObject({
+        code: "merge_conflict",
+        message: expect.stringMatching(
+          /folder where you have a file: common, s\/adapter\.py\./,
+        ),
+      });
+    }
+    expect(await read("repo/evals/s/adapter.py/inner.py")).toBe("mine");
+    expect(await read("repo/evals/common")).toBe("a file, not a folder");
+    await expect(read("repo/evals/s/eval.yaml")).rejects.toThrow();
+  });
 });
 
 /**

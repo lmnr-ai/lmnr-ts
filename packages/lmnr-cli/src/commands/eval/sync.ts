@@ -193,17 +193,25 @@ export const pushTaskSet = async (
 const versionLabel = (v: { number: number } | null) =>
   v ? `v${v.number}` : "-";
 
-/** The first symlink on `target`'s path under `root`, relative to `root`. */
-const symlinkOnPath = async (
+/**
+ * What on `target`'s path under `root` stops a copy into it: a symlink (the
+ * copy would write through it), or an entry of the wrong kind (a file where a
+ * folder is needed, or a folder where the file goes). Paths relative to `root`.
+ */
+const blockerOnPath = async (
   root: string,
   target: string,
-): Promise<string | null> => {
+): Promise<{ rel: string; kind: "link" | "type" } | null> => {
   const parts = target.split("/");
   for (let i = 1; i <= parts.length; i++) {
     const rel = parts.slice(0, i).join("/");
     const stats = await lstat(path.join(root, rel)).catch(() => null);
     if (!stats) return null;
-    if (stats.isSymbolicLink()) return rel;
+    if (stats.isSymbolicLink()) return { rel, kind: "link" };
+    const last = i === parts.length;
+    if (last ? !stats.isFile() : !stats.isDirectory()) {
+      return { rel, kind: "type" };
+    }
   }
   return null;
 };
@@ -233,11 +241,16 @@ export const pullScripts = async (
     const changed = new Set<string>();
     // A symlink on the way would make the copy write through it.
     const links = new Set<string>();
+    const blocked = new Set<string>();
     for (const file of files) {
-      const link = await symlinkOnPath(evalsDir, file.target);
-      if (link) {
-        links.add(link);
-        changed.add(link);
+      const blocker = await blockerOnPath(evalsDir, file.target);
+      if (blocker?.kind === "link") {
+        links.add(blocker.rel);
+        changed.add(blocker.rel);
+        continue;
+      }
+      if (blocker) {
+        blocked.add(blocker.rel);
         continue;
       }
       const local = path.join(evalsDir, file.target);
@@ -248,6 +261,14 @@ export const pullScripts = async (
       ) {
         changed.add(file.target);
       }
+    }
+    // --force replaces files and links, never a local folder or what's in it.
+    if (blocked.size > 0) {
+      throw mergeConflict(
+        `Laminar's scripts need a file where you have a folder, or a folder ` +
+          `where you have a file: ${[...blocked].join(", ")}. Move them aside ` +
+          "and pull again.",
+      );
     }
     if (changed.size > 0 && !force) {
       throw mergeConflict(
