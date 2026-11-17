@@ -1,4 +1,4 @@
-import { cp, mkdtemp, rm } from "node:fs/promises";
+import { cp, lstat, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -215,10 +215,26 @@ export const pushTaskSet = async (
 const versionLabel = (v: { number: number | null } | null) =>
   v ? (v.number === null ? "snapshot" : `v${v.number}`) : "-";
 
+/** The first symlink on `target`'s path under `root`, relative to `root`. */
+const symlinkOnPath = async (
+  root: string,
+  target: string,
+): Promise<string | null> => {
+  const parts = target.split("/");
+  for (let i = 1; i <= parts.length; i++) {
+    const rel = parts.slice(0, i).join("/");
+    const stats = await lstat(path.join(root, rel)).catch(() => null);
+    if (!stats) return null;
+    if (stats.isSymbolicLink()) return rel;
+  }
+  return null;
+};
+
 /**
  * Extract `version`'s scripts over `agentDir`. Without `force`, fails (writing
- * nothing) when it would overwrite a local file with different content. Local
- * files Laminar's copy doesn't have stay.
+ * nothing) when it would overwrite a local file with different content or a
+ * symlink; `force` replaces the link, never what it points to. Local files
+ * Laminar's copy doesn't have stay.
  */
 export const pullScripts = async (
   client: LaminarClient,
@@ -235,22 +251,31 @@ export const pullScripts = async (
           ).files.map((f) => [f.target, f.source])
         : [],
     );
-    const changed: string[] = [];
+    const changed = new Set<string>();
+    // `walkFiles` skips symlinks, and `cp` would write through them.
+    const links = new Set<string>();
     for (const file of (await walkFiles(remoteDir)).files) {
+      const link = await symlinkOnPath(agentDir, file.target);
+      if (link) {
+        links.add(link);
+        changed.add(link);
+        continue;
+      }
       const source = local.get(file.target);
       if (
         source &&
         (await fileSha256(source)) !== (await fileSha256(file.source))
       ) {
-        changed.push(file.target);
+        changed.add(file.target);
       }
     }
-    if (changed.length > 0 && !force) {
+    if (changed.size > 0 && !force) {
       throw mergeConflict(
-        `Laminar's scripts would overwrite local changes: ${changed.join(", ")}. ` +
+        `Laminar's scripts would overwrite local changes: ${[...changed].join(", ")}. ` +
           "Commit or move them aside, or pass --force.",
       );
     }
+    for (const link of links) await rm(path.join(agentDir, link));
     await cp(remoteDir, agentDir, { recursive: true });
   });
 

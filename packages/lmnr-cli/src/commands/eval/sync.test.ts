@@ -1,4 +1,13 @@
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -197,6 +206,28 @@ void describe("pullScripts / handleEvalPull", () => {
     await pullScripts(server.client, agentDir, scripts, true);
     expect(await read("repo/agent/agent.yaml")).toBe("laminar");
     expect(await read("repo/agent/notes.md")).toBe("notes");
+  });
+
+  void it("treats a local symlink on a script's path as a change and replaces only the link", async () => {
+    const { server, scripts } = await agentInLaminar("laminar");
+    const agentDir = path.join(root, "repo/agent");
+    await write("shared/agent.yaml", "mine");
+    await mkdir(agentDir, { recursive: true });
+    await symlink(
+      path.join(root, "shared/agent.yaml"),
+      path.join(agentDir, "agent.yaml"),
+    );
+
+    await expect(
+      pullScripts(server.client, agentDir, scripts, false),
+    ).rejects.toMatchObject({ code: "merge_conflict" });
+
+    await pullScripts(server.client, agentDir, scripts, true);
+    expect((await lstat(path.join(agentDir, "agent.yaml"))).isFile()).toBe(
+      true,
+    );
+    expect(await read("repo/agent/agent.yaml")).toBe("laminar");
+    expect(await read("shared/agent.yaml")).toBe("mine");
   });
 
   void it("pulls only the scripts for <agent>", async () => {

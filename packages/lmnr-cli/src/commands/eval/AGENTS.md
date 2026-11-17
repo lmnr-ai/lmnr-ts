@@ -114,7 +114,9 @@
     then = the pulled version (local changes stay as diffs against it).
     `pull <agent>` pulls only the head scripts (`pullScripts`: extracted over
     the agent dir, extra local files stay; a local file with different
-    content fails it with `merge_conflict` unless `--force`). `pull <agent>
+    content, or a symlink on a script's path (which `walkFiles` never hashes
+    and `cp` would write through), fails it with `merge_conflict` unless
+    `--force`, which replaces the link itself). `pull <agent>
     --all` pulls every set, plus the scripts only when the agent dir has no
     agent.yaml: the repo's scripts win, as in a run.
   - push (and run, for local sets) rejects tasks with `environment/Dockerfile`
