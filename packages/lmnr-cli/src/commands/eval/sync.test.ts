@@ -23,7 +23,8 @@ const write = async (rel: string, content: string) => {
 const read = (rel: string) => readFile(path.join(root, rel), "utf8");
 
 /** A task.toml whose content tells versions apart. */
-const toml = (value: string) => `[metadata]\nvalue = "${value}"\n`;
+const toml = (value: string) =>
+  `[environment]\ndocker_image = "app"\n\n[metadata]\nvalue = "${value}"\n`;
 
 /** Laminar's task set routes for one task set, in memory. */
 const fakeServer = () => {
@@ -106,6 +107,26 @@ void describe("pushTaskSet / pullTaskSet", () => {
     expect(await read("mine/task_sets/s/b/task.toml")).toBe(toml("b2"));
     expect(await read("mine/task_sets/s/c/task.toml")).toBe(toml("c1"));
     expect(server.head()?.id).toBe(v3.id);
+  });
+
+  void it("merges files beside the tasks like tasks, deletions included", async () => {
+    const server = fakeServer();
+    const mine = path.join(root, "mine/s");
+    const theirs = path.join(root, "theirs/s");
+    await write("mine/s/a/task.toml", toml("a1"));
+    await write("mine/s/README.md", "readme");
+    const v1 = await pushTaskSet(server.client, "agent", "s", mine);
+
+    // They drop the README; I add notes. Both survive the merge as intended.
+    await pullTaskSet(server.client, "agent", "s", theirs, v1);
+    await rm(path.join(theirs, "README.md"));
+    const v2 = await pushTaskSet(server.client, "agent", "s", theirs);
+    await write("mine/s/NOTES.md", "notes");
+    await pullTaskSet(server.client, "agent", "s", mine, v2);
+
+    await expect(read("mine/s/README.md")).rejects.toThrow();
+    expect(await read("mine/s/NOTES.md")).toBe("notes");
+    expect((await readState(mine))?.files).toEqual({});
   });
 
   void it("refuses to merge a task both sides changed, leaving the copy as is", async () => {

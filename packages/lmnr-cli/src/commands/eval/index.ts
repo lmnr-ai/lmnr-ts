@@ -169,12 +169,26 @@ const runRemote = async (
   env: Record<string, string>,
   opts: EvalRunOpts,
 ) => {
-  const started: { agent: string; runId: string; sandboxId: string }[] = [];
-  for (const prepared of agents) {
-    const run = await startRemoteRun(client, prepared, overrides, env);
-    started.push({ agent: prepared.agent.name, ...run });
-  }
   const url = await projectUrl(opts.projectId, "evaluations");
+  const started: { agent: string; runId: string; sandboxId: string }[] = [];
+  try {
+    for (const prepared of agents) {
+      const run = await startRemoteRun(client, prepared, overrides, env);
+      started.push({ agent: prepared.agent.name, ...run });
+      logger.info(`Started run ${run.runId} of ${prepared.agent.name}.`);
+    }
+  } catch (error) {
+    // Runs that already started go on without this command following them.
+    if (started.length > 0) {
+      logger.warn(
+        `Not following ${started
+          .map((r) => `${r.agent} (run ${r.runId})`)
+          .join(", ")}: already started, they keep running in Laminar` +
+          (url ? `. Results: ${url}` : "."),
+      );
+    }
+    throw error;
+  }
   const followed: FollowedRun[] = [];
   for (const { agent, ...run } of started) {
     followed.push(await followRemote(client, agent, run, url));

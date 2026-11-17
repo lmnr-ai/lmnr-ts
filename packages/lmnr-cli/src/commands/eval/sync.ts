@@ -17,7 +17,7 @@ import { renderTable } from "../../utils/table";
 import { buildEvalClient } from "./client";
 import {
   assertName,
-  assertNoTaskBuilds,
+  assertTaskImages,
   dirExists,
   hasAgentConfig,
   localTaskSets,
@@ -28,10 +28,11 @@ import {
 import { applyMerge, planMerge } from "./merge";
 import {
   downloadBlob,
+  otherEntryDigests,
   saveAgentVersion,
   saveTaskSetVersion,
+  setDigests,
   taskDigests,
-  taskManifest,
 } from "./store";
 
 const logger = initializeLogger();
@@ -124,25 +125,30 @@ export const pullTaskSet = async (
 ): Promise<PullResult> =>
   withTempDir("lmnr-pull-", async (remoteDir) => {
     await downloadBlob(client, version.hash, remoteDir);
-    const remote = taskDigests(await taskManifest(remoteDir));
+    const remote = await setDigests(remoteDir);
     const local = (await dirExists(setDir))
-      ? taskDigests(await taskManifest(setDir))
-      : {};
-    const base = (await readState(setDir))?.tasks ?? {};
-    const plan = planMerge(base, local, remote);
+      ? await setDigests(setDir)
+      : { tasks: {}, files: {} };
+    const state = await readState(setDir);
+    const plan = planMerge(
+      { ...state?.tasks, ...state?.files },
+      { ...local.tasks, ...local.files },
+      { ...remote.tasks, ...remote.files },
+    );
     if (plan.conflicts.length > 0) {
       throw mergeConflict(
-        `Tasks changed both locally and in Laminar (${agent}/${taskSet} ` +
+        `Tasks or files changed both locally and in Laminar (${agent}/${taskSet} ` +
           `v${version.number ?? "?"}): ${plan.conflicts.join(", ")}. Move ` +
           "your local copy of each aside, pull, and re-apply your changes.",
       );
     }
-    await applyMerge(setDir, remoteDir, plan, remote);
+    await applyMerge(setDir, remoteDir, plan);
     await writeState(setDir, {
       versionId: version.id,
       number: version.number,
       hash: version.hash,
-      tasks: remote,
+      tasks: remote.tasks,
+      files: remote.files,
     });
     return {
       taskSet,
@@ -163,7 +169,7 @@ export const pushTaskSet = async (
   taskSet: string,
   setDir: string,
 ): Promise<TaskSetVersion> => {
-  await assertNoTaskBuilds(setDir);
+  await assertTaskImages(setDir);
   let base = (await readState(setDir))?.versionId ?? null;
   for (let attempt = 0; attempt < 2; attempt++) {
     const { result, tasks } = await saveTaskSetVersion(
@@ -174,11 +180,13 @@ export const pushTaskSet = async (
       { push: true, base },
     );
     if ("version" in result) {
+      const digests = taskDigests(tasks);
       await writeState(setDir, {
         versionId: result.version.id,
         number: result.version.number,
         hash: result.version.hash,
-        tasks: taskDigests(tasks),
+        tasks: digests,
+        files: await otherEntryDigests(setDir, digests),
       });
       return result.version;
     }

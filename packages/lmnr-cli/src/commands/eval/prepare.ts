@@ -6,7 +6,7 @@ import { evalNotFound, invalidEvalsDir } from "../../errors";
 import { initializeLogger } from "../../utils/logger";
 import {
   assertName,
-  assertNoTaskBuilds,
+  assertTaskImages,
   dirExists,
   hasAgentConfig,
   localTaskSets,
@@ -93,7 +93,7 @@ const prepareTaskSet = async (
   const localDir = taskSetDir(localAgentDir, name);
 
   if (number === undefined && (await dirExists(localDir))) {
-    await assertNoTaskBuilds(localDir);
+    await assertTaskImages(localDir);
     const state = await readState(localDir);
     const head = remoteSet?.head;
     if (!head) {

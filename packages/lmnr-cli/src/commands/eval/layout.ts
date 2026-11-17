@@ -196,23 +196,34 @@ export const findTaskDirs = async (
 };
 
 /**
- * Tasks name an image from agent.yaml (`docker_image`); one that builds its own
+ * Every task names its image (`docker_image`, normally one from agent.yaml):
+ * remote trials only start from pushed images, and a task that builds its own
  * environment would carry code that belongs to the agent's scripts.
  */
-export const assertNoTaskBuilds = async (setDir: string): Promise<void> => {
-  const offending: string[] = [];
+export const assertTaskImages = async (setDir: string): Promise<void> => {
+  const ownBuilds: string[] = [];
+  const noImage: string[] = [];
   for (const dir of await findTaskDirs(setDir)) {
     for (const file of ["Dockerfile", "docker-compose.yaml"]) {
       if (await isFile(path.join(dir, "environment", file))) {
-        offending.push(`${path.basename(dir)}/environment/${file}`);
+        ownBuilds.push(`${path.basename(dir)}/environment/${file}`);
       }
     }
+    if (!(await readTaskToml(dir)).dockerImage) {
+      noImage.push(path.basename(dir));
+    }
   }
-  if (offending.length > 0) {
+  if (ownBuilds.length > 0) {
     throw invalidEvalsDir(
       `Tasks in ${setDir} build their own environment: ` +
-        `${offending.join(", ")}. Name an image from agent.yaml with ` +
+        `${ownBuilds.join(", ")}. Name an image from agent.yaml with ` +
         "docker_image in task.toml instead, and keep per-task data in environment/.",
+    );
+  }
+  if (noImage.length > 0) {
+    throw invalidEvalsDir(
+      `Tasks in ${setDir} name no image: ${noImage.join(", ")}. Set ` +
+        "[environment] docker_image in their task.toml to an image from agent.yaml.",
     );
   }
 };
@@ -359,6 +370,8 @@ export interface TaskSetState {
   hash: string;
   /** Task name → digest at that version. */
   tasks: Record<string, string>;
+  /** Other top-level entry (README, shared data) → digest at that version. */
+  files?: Record<string, string>;
 }
 
 export const readState = async (

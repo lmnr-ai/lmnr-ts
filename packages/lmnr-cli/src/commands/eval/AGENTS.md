@@ -50,7 +50,9 @@
   - default: trials on local Docker; the agent.yaml images the tasks use are
     `docker build`-ed first.
   - `--remote` (`remote.ts`): per agent, push its images, `startRun({cliVersion,
-    spec})` → `{runId, sandboxId}`, then follow each run's log in turn. `RunSpec
+    spec})` → `{runId, sandboxId}` (each run id is logged as it starts; if a
+    later agent fails to start, the runs already started are named before the
+    error, since they go on unfollowed), then follow each run's log in turn. `RunSpec
     = {agent: {name, versionId, hash}, taskSets: [...], overrides, env,
     images}`, read only by the same CLI version. The orchestrator sandbox runs
     `npx lmnr-cli@<cliVersion> eval orchestrate`, which downloads the blobs
@@ -100,18 +102,23 @@
     carry that gap as is; fixing it upstream is LAM-2534.
 - **`eval pull <agent>[/<set>][@n]` / `eval push <agent>[/<set>]`**
   (`sync.ts`, `merge.ts`): `.lmnr.json` in a set dir = `{versionId, number,
-  hash, tasks: {name: digest}}`, the version the copy is based on.
+  hash, tasks: {name: digest}, files: {name: digest}}`, the version the copy
+  is based on; `files` are the top-level entries beside the tasks (READMEs,
+  shared data; `otherEntryDigests`).
   - pull downloads the version to a temp dir and merges task by task
     (`planMerge(base, local, remote)`): changed only remotely → taken, only
     locally → kept, both (differently) → `merge_conflict` (22) before anything
-    is written. Files outside task dirs are taken from remote. `.lmnr.json`
+    is written. Entries beside the tasks merge the same way (`files` in the
+    base), so a README deleted remotely is deleted locally and a file added
+    locally stays. `.lmnr.json`
     then = the pulled version (local changes stay as diffs against it).
     `pull <agent>` also extracts the head scripts over the agent dir (extra
     local files stay).
-  - push rejects tasks with `environment/Dockerfile` or
-    `docker-compose.yaml` (`assertNoTaskBuilds`: tasks name an agent.yaml or
-    registry image; per-task data goes in `environment/`, which Harbor copies
-    into a prebuilt-image sandbox), sends `base`, and on `{headMoved}` (409)
+  - push (and run, for local sets) rejects tasks with `environment/Dockerfile`
+    or `docker-compose.yaml` and tasks without `[environment] docker_image`
+    (`assertTaskImages`: tasks name an agent.yaml or registry image, which is
+    all remote trials can start from; per-task data goes in `environment/`,
+    which Harbor copies into a prebuilt-image sandbox), sends `base`, and on `{headMoved}` (409)
     pulls the head in and retries once. `push <agent>` also pushes the scripts
     when agent.yaml exists (last writer wins, no base).
   - `eval list [agent]` prints heads (`snapshot` = never pushed).

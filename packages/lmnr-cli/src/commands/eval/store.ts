@@ -24,7 +24,13 @@ import {
   STATE_FILE,
   TASK_SETS_DIR,
 } from "./layout";
-import { type Exclude, excludeTop, packFiles, walkFiles } from "./pack";
+import {
+  type Exclude,
+  excludeTop,
+  type PackedFile,
+  packFiles,
+  walkFiles,
+} from "./pack";
 
 const logger = initializeLogger();
 
@@ -105,6 +111,40 @@ export const taskManifest = async (setDir: string): Promise<TaskSetTask[]> => {
 
 export const taskDigests = (tasks: TaskSetTask[]): Record<string, string> =>
   Object.fromEntries(tasks.map((t) => [t.name, t.digest]));
+
+/**
+ * Digests of a task set's top-level entries that aren't tasks (READMEs, shared
+ * data), over the files a blob packs. Recorded with the base version so pull
+ * merges them like tasks.
+ */
+export const otherEntryDigests = async (
+  setDir: string,
+  tasks: Record<string, string>,
+): Promise<Record<string, string>> => {
+  const { files } = await walkFiles(setDir, process.platform, TASK_SET_FILES);
+  const entries = new Map<string, PackedFile[]>();
+  for (const file of files) {
+    const top = file.target.split("/")[0];
+    if (top in tasks) continue;
+    entries.set(top, [...(entries.get(top) ?? []), file]);
+  }
+  const digests: Record<string, string> = {};
+  for (const [name, entryFiles] of entries) {
+    digests[name] = await treeDigest(entryFiles);
+  }
+  return digests;
+};
+
+/** A task set dir's task digests and other top-level entries' digests. */
+export const setDigests = async (
+  setDir: string,
+): Promise<{
+  tasks: Record<string, string>;
+  files: Record<string, string>;
+}> => {
+  const tasks = taskDigests(await taskManifest(setDir));
+  return { tasks, files: await otherEntryDigests(setDir, tasks) };
+};
 
 const gitSha = async (dir: string): Promise<string | undefined> => {
   try {

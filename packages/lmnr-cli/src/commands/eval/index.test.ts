@@ -27,7 +27,7 @@ import {
 } from "./images";
 import { assertRemotePassed, parsePositiveInt } from "./index";
 import {
-  assertNoTaskBuilds,
+  assertTaskImages,
   buildJobConfig,
   discoverAgents,
   findTaskDirs,
@@ -138,18 +138,27 @@ void describe("layout", () => {
     expect(await names(["a-*"])).toEqual(["a-1", "a-2"]);
   });
 
-  void it("rejects tasks that build their own environment", async () => {
+  void it("requires every task to name an image and none to build its own", async () => {
     await write("set/ok/task.toml", '[environment]\ndocker_image = "app"\n');
     await write("set/ok/environment/seed.json", "{}");
-    await assertNoTaskBuilds(path.join(root, "set"));
+    await assertTaskImages(path.join(root, "set"));
 
-    await write("set/own/task.toml");
+    await write("set/own/task.toml", '[environment]\ndocker_image = "app"\n');
     await write("set/own/environment/Dockerfile", "FROM alpine");
     await expect(
-      assertNoTaskBuilds(path.join(root, "set")),
+      assertTaskImages(path.join(root, "set")),
     ).rejects.toMatchObject({
       code: "invalid_evals_dir",
       message: expect.stringMatching(/own\/environment\/Dockerfile/),
+    });
+
+    await rm(path.join(root, "set/own"), { recursive: true });
+    await write("set/bare/task.toml", '[metadata]\nnote = "no image"\n');
+    await expect(
+      assertTaskImages(path.join(root, "set")),
+    ).rejects.toMatchObject({
+      code: "invalid_evals_dir",
+      message: expect.stringMatching(/name no image: bare/),
     });
   });
 
@@ -580,32 +589,33 @@ void describe("planMerge / applyMerge", () => {
     });
   });
 
-  void it("copies remote tasks and top-level files over the local copy", async () => {
+  void it("copies the planned entries over the local copy and deletes removed ones", async () => {
     await write("local/mine/task.toml", "mine");
     await write("local/stale/task.toml", "old");
     await write("local/gone/task.toml", "x");
+    await write("local/OLD.md", "dropped remotely");
+    await write("local/NOTES.md", "added locally");
     await write("remote/stale/task.toml", "new");
     await write("remote/fresh/task.toml", "fresh");
     await write("remote/README.md", "readme");
-    await write("remote/.lmnr.json", "{}");
     const localDir = path.join(root, "local");
 
-    await applyMerge(
-      localDir,
-      path.join(root, "remote"),
-      { take: ["fresh", "stale"], remove: ["gone"], conflicts: [] },
-      { stale: "s", fresh: "f" },
-    );
+    await applyMerge(localDir, path.join(root, "remote"), {
+      take: ["README.md", "fresh", "stale"],
+      remove: ["OLD.md", "gone"],
+      conflicts: [],
+    });
 
     const read = (rel: string) => readFile(path.join(localDir, rel), "utf8");
     expect(await read("mine/task.toml")).toBe("mine");
     expect(await read("stale/task.toml")).toBe("new");
     expect(await read("fresh/task.toml")).toBe("fresh");
     expect(await read("README.md")).toBe("readme");
+    expect(await read("NOTES.md")).toBe("added locally");
+    await expect(read("OLD.md")).rejects.toThrow();
     expect(await findTaskDirs(localDir)).not.toContain(
       path.join(localDir, "gone"),
     );
-    await expect(read(".lmnr.json")).rejects.toThrow();
   });
 });
 
