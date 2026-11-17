@@ -715,25 +715,34 @@ Examples:
 
   evalCmd
     .command("pull")
-    .description("Fetch an agent's scripts and task sets from Laminar")
+    .description("Fetch an agent's scripts or task sets from Laminar")
     .argument(
       "<target>",
       "<agent>, <agent>/<task set> or <agent>/<task set>@<version>",
     )
     .option("--dir <dir>", "Evals folder", "evals")
+    .option(
+      "--all",
+      "Pull every task set of <agent> (and its scripts, if you have none)",
+    )
+    .option("--force", "Let the scripts overwrite local changes")
     .action(withLocalOpts(handleEvalPull))
     .addHelpText(
       "after",
       `
-<agent> pulls the agent's scripts and every task set; <agent>/<task set> pulls
-one task set. A task set is merged task by task with your local copy: tasks
-changed only in Laminar are updated, tasks changed only locally are kept, and a
-task changed on both sides fails the pull (exit 22, merge_conflict) without
-changing anything. The version pulled is recorded in
-evals/<agent>/task_sets/<set>/.lmnr.json.
+<agent> pulls the agent's scripts (to commit to your repo); it fails (exit 22,
+merge_conflict) if they would overwrite a local file with different content,
+unless --force. <agent>/<task set> pulls one task set; <agent> --all pulls
+every task set, plus the scripts only if the agent's folder has no agent.yaml.
+
+A task set is merged task by task with your local copy: tasks changed only in
+Laminar are updated, tasks changed only locally are kept, and a task changed on
+both sides fails the pull (exit 22, merge_conflict) without changing anything.
+The version pulled is recorded in evals/<agent>/task_sets/<set>/.lmnr.json.
 
 Examples:
   $ lmnr-cli eval pull support-bot
+  $ lmnr-cli eval pull support-bot --all
   $ lmnr-cli eval pull support-bot/checkout@3
 `,
     );

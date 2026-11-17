@@ -100,7 +100,7 @@
     exits, but only values from the agent's / verifier's env (not the task's
     `[environment] env`, resolved inside each environment backend). Uploads
     carry that gap as is; fixing it upstream is LAM-2534.
-- **`eval pull <agent>[/<set>][@n]` / `eval push <agent>[/<set>]`**
+- **`eval pull <agent>[/<set>][@n] [--all]` / `eval push <agent>[/<set>]`**
   (`sync.ts`, `merge.ts`): `.lmnr.json` in a set dir = `{versionId, number,
   hash, tasks: {name: digest}, files: {name: digest}}`, the version the copy
   is based on; `files` are the top-level entries beside the tasks (READMEs,
@@ -112,8 +112,11 @@
     base), so a README deleted remotely is deleted locally and a file added
     locally stays. `.lmnr.json`
     then = the pulled version (local changes stay as diffs against it).
-    `pull <agent>` also extracts the head scripts over the agent dir (extra
-    local files stay).
+    `pull <agent>` pulls only the head scripts (`pullScripts`: extracted over
+    the agent dir, extra local files stay; a local file with different
+    content fails it with `merge_conflict` unless `--force`). `pull <agent>
+    --all` pulls every set, plus the scripts only when the agent dir has no
+    agent.yaml: the repo's scripts win, as in a run.
   - push (and run, for local sets) rejects tasks with `environment/Dockerfile`
     or `docker-compose.yaml` and tasks without `[environment] docker_image`
     (`assertTaskImages`: tasks name an agent.yaml or registry image, which is

@@ -4,13 +4,18 @@ import path from "node:path";
 
 import type {
   CreateTaskSetVersionOptions,
+  EvalAgent,
   LaminarClient,
   TaskSetVersion,
 } from "@lmnr-ai/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { buildEvalClient } from "./client";
 import { readState } from "./layout";
-import { pullTaskSet, pushTaskSet } from "./sync";
+import { AGENT_SCRIPTS, ensureBlob } from "./store";
+import { handleEvalPull, pullScripts, pullTaskSet, pushTaskSet } from "./sync";
+
+vi.mock("./client", () => ({ buildEvalClient: vi.fn() }));
 
 let root: string;
 
@@ -145,5 +150,74 @@ void describe("pushTaskSet / pullTaskSet", () => {
     ).rejects.toMatchObject({ code: "merge_conflict", exitCode: 22 });
     expect(await read("mine/s/a/task.toml")).toBe(toml("mine"));
     expect((await readState(mine))?.versionId).toBe(v1.id);
+  });
+});
+
+/** An agent whose scripts (agent.yaml = `yaml`) and task set `s` are in Laminar. */
+const agentInLaminar = async (yaml: string) => {
+  const server = fakeServer();
+  await write("laminar/agent/agent.yaml", yaml);
+  await write("laminar/agent/task_sets/s/a/task.toml", toml("a1"));
+  const hash = await ensureBlob(
+    server.client,
+    path.join(root, "laminar/agent"),
+    AGENT_SCRIPTS,
+  );
+  const scripts = { id: "a-1", number: 1, hash, gitSha: null, createdAt: "" };
+  const set = await pushTaskSet(
+    server.client,
+    "agent",
+    "s",
+    path.join(root, "laminar/agent/task_sets/s"),
+  );
+  const agent: EvalAgent = {
+    id: "agent",
+    name: "agent",
+    head: scripts,
+    taskSets: [{ id: "s", name: "s", head: set }],
+  };
+  (server.client.hostedEvals as unknown as Record<string, unknown>).listAgents =
+    async () => [agent];
+  vi.mocked(buildEvalClient).mockResolvedValue(server.client);
+  return { server, scripts };
+};
+
+void describe("pullScripts / handleEvalPull", () => {
+  void it("refuses to overwrite a changed local script unless forced, keeping extra files", async () => {
+    const { server, scripts } = await agentInLaminar("laminar");
+    const agentDir = path.join(root, "repo/agent");
+    await write("repo/agent/agent.yaml", "mine");
+    await write("repo/agent/notes.md", "notes");
+
+    await expect(
+      pullScripts(server.client, agentDir, scripts, false),
+    ).rejects.toMatchObject({ code: "merge_conflict", exitCode: 22 });
+    expect(await read("repo/agent/agent.yaml")).toBe("mine");
+
+    await pullScripts(server.client, agentDir, scripts, true);
+    expect(await read("repo/agent/agent.yaml")).toBe("laminar");
+    expect(await read("repo/agent/notes.md")).toBe("notes");
+  });
+
+  void it("pulls only the scripts for <agent>", async () => {
+    await agentInLaminar("laminar");
+    await handleEvalPull("agent", { dir: path.join(root, "repo") });
+    expect(await read("repo/agent/agent.yaml")).toBe("laminar");
+    await expect(read("repo/agent/task_sets/s/a/task.toml")).rejects.toThrow();
+  });
+
+  void it("pulls every task set for --all, keeping local scripts", async () => {
+    await agentInLaminar("laminar");
+    await write("repo/agent/agent.yaml", "mine");
+    await handleEvalPull("agent", { dir: path.join(root, "repo"), all: true });
+    expect(await read("repo/agent/agent.yaml")).toBe("mine");
+    expect(await read("repo/agent/task_sets/s/a/task.toml")).toBe(toml("a1"));
+  });
+
+  void it("fills in the scripts for --all when there are none locally", async () => {
+    await agentInLaminar("laminar");
+    await handleEvalPull("agent", { dir: path.join(root, "repo"), all: true });
+    expect(await read("repo/agent/agent.yaml")).toBe("laminar");
+    expect(await read("repo/agent/task_sets/s/a/task.toml")).toBe(toml("a1"));
   });
 });

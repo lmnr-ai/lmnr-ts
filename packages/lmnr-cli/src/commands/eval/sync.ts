@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -15,6 +15,7 @@ import { initializeLogger } from "../../utils/logger";
 import { emitData, outputJson } from "../../utils/output";
 import { renderTable } from "../../utils/table";
 import { buildEvalClient } from "./client";
+import { fileSha256 } from "./digest";
 import {
   assertName,
   assertTaskImages,
@@ -26,7 +27,9 @@ import {
   writeState,
 } from "./layout";
 import { applyMerge, planMerge } from "./merge";
+import { walkFiles } from "./pack";
 import {
+  AGENT_SCRIPTS,
   downloadBlob,
   otherEntryDigests,
   saveAgentVersion,
@@ -39,6 +42,11 @@ const logger = initializeLogger();
 
 export interface SyncOpts extends GlobalOpts {
   dir: string;
+}
+
+export interface PullOpts extends SyncOpts {
+  all?: boolean;
+  force?: boolean;
 }
 
 /** `<agent>[/<task set>][@<number>]`. */
@@ -207,28 +215,84 @@ export const pushTaskSet = async (
 const versionLabel = (v: { number: number | null } | null) =>
   v ? (v.number === null ? "snapshot" : `v${v.number}`) : "-";
 
-/** `lmnr-cli eval pull <agent>[/<task set>][@<version>]`. */
+/**
+ * Extract `version`'s scripts over `agentDir`. Without `force`, fails (writing
+ * nothing) when it would overwrite a local file with different content. Local
+ * files Laminar's copy doesn't have stay.
+ */
+export const pullScripts = async (
+  client: LaminarClient,
+  agentDir: string,
+  version: EvalAgentVersion,
+  force: boolean,
+): Promise<void> =>
+  withTempDir("lmnr-pull-", async (remoteDir) => {
+    await downloadBlob(client, version.hash, remoteDir);
+    const local = new Map(
+      (await dirExists(agentDir))
+        ? (
+            await walkFiles(agentDir, process.platform, AGENT_SCRIPTS)
+          ).files.map((f) => [f.target, f.source])
+        : [],
+    );
+    const changed: string[] = [];
+    for (const file of (await walkFiles(remoteDir)).files) {
+      const source = local.get(file.target);
+      if (
+        source &&
+        (await fileSha256(source)) !== (await fileSha256(file.source))
+      ) {
+        changed.push(file.target);
+      }
+    }
+    if (changed.length > 0 && !force) {
+      throw mergeConflict(
+        `Laminar's scripts would overwrite local changes: ${changed.join(", ")}. ` +
+          "Commit or move them aside, or pass --force.",
+      );
+    }
+    await cp(remoteDir, agentDir, { recursive: true });
+  });
+
+/** `lmnr-cli eval pull <agent>[/<task set>][@<version>] [--all]`. */
 export const handleEvalPull = async (
   rawTarget: string,
-  opts: SyncOpts,
+  opts: PullOpts,
 ): Promise<void> => {
   const target = parseTarget(rawTarget);
+  if (opts.all && target.taskSet) {
+    throw invalidEvalsDir("--all pulls every task set; drop the /<task set>.");
+  }
   const client = await buildEvalClient(opts);
   const agent = findAgent(await client.hostedEvals.listAgents(), target.agent);
   if (!agent) throw evalNotFound(`No agent ${target.agent} in Laminar.`);
   const agentDir = path.resolve(opts.dir, agent.name);
 
+  // <agent> asks for the scripts; --all only fills them in when the local
+  // copy has none, since the repo's scripts win over Laminar's.
   let scripts: EvalAgentVersion | null = null;
-  if (!target.taskSet && agent.head) {
-    await downloadBlob(client, agent.head.hash, agentDir);
+  if (!target.taskSet && !opts.all) {
+    if (!agent.head) {
+      throw evalNotFound(
+        `${agent.name} has no scripts in Laminar; pull its task sets with ` +
+          `${agent.name} --all or ${agent.name}/<task set>.`,
+      );
+    }
     scripts = agent.head;
+  } else if (opts.all && agent.head && !(await hasAgentConfig(agentDir))) {
+    scripts = agent.head;
+  }
+  if (scripts) {
+    await pullScripts(client, agentDir, scripts, !!opts.force);
     logger.info(`Pulled ${agent.name}'s scripts (${versionLabel(scripts)})`);
   }
 
   const results: PullResult[] = [];
   const sets = target.taskSet
     ? agent.taskSets.filter((s) => s.name === target.taskSet)
-    : agent.taskSets;
+    : opts.all
+      ? agent.taskSets
+      : [];
   if (target.taskSet && sets.length === 0) {
     throw evalNotFound(
       `No task set ${agent.name}/${target.taskSet} in Laminar.`,

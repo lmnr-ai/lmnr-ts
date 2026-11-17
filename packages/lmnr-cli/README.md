@@ -164,13 +164,16 @@ lmnr-cli eval run support --task-set checkout --task "refund-*"
 lmnr-cli eval run support --task-set checkout@3 --remote  # in Laminar sandboxes
 lmnr-cli eval push support                            # publish scripts and task sets
 lmnr-cli eval pull support/checkout                   # merge Laminar's latest in
+lmnr-cli eval pull support --all                      # every task set of an agent
+lmnr-cli eval pull support                            # the agent's scripts, to commit
 lmnr-cli eval list
 ```
 
 Each task set of a run becomes one evaluation, grouped as `<agent>/<task set>`.
 A task set without a local copy runs Laminar's latest version, and every run
 records the versions it used. `push` publishes a new version; `pull` merges
-Laminar's version into your copy task by task. `--remote` prints the run's log
+Laminar's version into your copy task by task; `pull <agent>` alone fetches the
+agent's scripts, for example ones the Laminar agent stored, to commit to your repo. `--remote` prints the run's log
 until it ends; Ctrl-C stops following and leaves the run going.
 
 Both modes need Docker; local runs also need [uv](https://docs.astral.sh/uv/)
