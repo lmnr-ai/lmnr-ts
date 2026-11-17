@@ -205,6 +205,16 @@ export const prepareAgents = async (
     prepared.push({ ...scripts, dir: localDir, taskSets });
   }
   const unknown = selectors.filter((s) => !found.has(s.name));
+  const ambiguous = unknown.filter((s) => heads.has(s.name));
+  if (ambiguous.length > 0) {
+    const sets = ambiguous.map((s) => s.name).join(", ");
+    throw invalidEvalsDir(
+      `Task set ${sets} is in Laminar, but none of ${names.join(", ")} pins ` +
+        "it or has a local copy, and task set names are project-wide: run " +
+        `one agent (\`lmnr-cli eval run <agent> --task-set ${ambiguous[0].name}\`) ` +
+        "or pin it in that agent's agent.yaml.",
+    );
+  }
   if (unknown.length > 0) {
     throw evalNotFound(
       `No task set ${unknown.map((s) => s.name).join(", ")} for ` +

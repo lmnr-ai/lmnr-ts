@@ -375,6 +375,12 @@ void describe("prepareAgents", () => {
         path.join(root, "scratch"),
       );
     await expect(runBoth(["other"])).rejects.toMatchObject({
+      code: "invalid_evals_dir",
+      message: expect.stringContaining(
+        "Task set other is in Laminar, but none of agent, second pins it",
+      ),
+    });
+    await expect(runBoth(["missing"])).rejects.toMatchObject({
       code: "not_found",
     });
     const prepared = await runBoth(["pinned"]);

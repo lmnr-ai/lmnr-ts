@@ -37,7 +37,9 @@
     sets are never considered: CI, with no copies since `task_sets/` is
     gitignored, runs exactly the pins); `--task-set name[@number|@latest]`
     (repeatable) picks instead, and a set only in Laminar is taken only when
-    the run covers one agent (names are project-wide). Version, first match
+    the run covers one agent (names are project-wide; with several agents it
+    fails with `invalid_evals_dir` saying the set is in Laminar and to run one
+    agent or pin it, while a name Laminar lacks is `not_found`). Version, first match
     wins (`prepareTaskSet`): explicit `@N` / `@latest` → local copy (as is,
     uploaded as a blob, never a version; warns when its number differs from
     the pin, or, unpinned, when it is behind head; logs `<agent>/<set>:
