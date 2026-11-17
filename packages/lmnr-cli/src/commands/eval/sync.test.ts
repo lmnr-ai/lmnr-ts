@@ -413,5 +413,22 @@ void describe("handleEvalPush", () => {
     expect(log.info).toHaveBeenCalledWith(
       "Pin it in agent.yaml (task_sets: {fresh: 1}) so runs and CI use this version.",
     );
+    expect(await read("repo/agent/.gitignore")).toBe("task_sets/\n");
+  });
+
+  void it("pushes despite an invalid agent.yaml, skipping the pin hints", async () => {
+    const { server } = await pinnedRepo();
+    await write("repo/agent/agent.yaml", "task_sets:\n  fresh: zero\n");
+    await write("repo/agent/task_sets/fresh/a/task.toml", toml("f1"));
+    vi.mocked(log.info).mockClear();
+    vi.mocked(log.warn).mockClear();
+    await handleEvalPush("agent/fresh", { dir: path.join(root, "repo") });
+    expect(server.head("fresh")?.number).toBe(1);
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringMatching(/^Skipping pin hints: /),
+    );
+    expect(log.info).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^Pin it in agent\.yaml/),
+    );
   });
 });

@@ -9,6 +9,8 @@ import type {
   TaskSetVersion,
 } from "@lmnr-ai/client";
 
+import { errorMessage } from "@lmnr-ai/types";
+
 import type { GlobalOpts } from "../../auth/with-client";
 import { evalNotFound, invalidEvalsDir, mergeConflict } from "../../errors";
 import { initializeLogger } from "../../utils/logger";
@@ -360,6 +362,22 @@ export const handleEvalPull = async (
   }
 };
 
+/**
+ * agent.yaml's pins, for push's hints only: push doesn't use the scripts, so a
+ * broken agent.yaml must not block publishing task sets.
+ */
+const pinsForHints = async (
+  agentDir: string,
+): Promise<Record<string, number> | null> => {
+  if (!(await hasAgentConfig(agentDir))) return {};
+  try {
+    return (await loadAgentConfig(agentDir)).pins;
+  } catch (error) {
+    logger.warn(`Skipping pin hints: ${errorMessage(error)}`);
+    return null;
+  }
+};
+
 /** `lmnr-cli eval push <agent>[/<task set>]`. */
 export const handleEvalPush = async (
   rawTarget: string,
@@ -383,9 +401,7 @@ export const handleEvalPush = async (
     }
   }
 
-  const { pins } = (await hasAgentConfig(agentDir))
-    ? await loadAgentConfig(agentDir)
-    : { pins: {} as Record<string, number> };
+  const pins = await pinsForHints(agentDir);
   const client = await buildEvalClient(opts);
   const taskSets: { taskSet: string; version: TaskSetVersion }[] = [];
   for (const set of sets) {
@@ -396,7 +412,9 @@ export const handleEvalPush = async (
       taskSetDir(agentDir, set),
     );
     taskSets.push({ taskSet: set, version });
+    await ignoreTaskSets(agentDir);
     logger.info(`Pushed ${target.agent}/${set} as ${versionLabel(version)}`);
+    if (!pins) continue;
     const pin = pins[set];
     if (pin === undefined) {
       logger.info(

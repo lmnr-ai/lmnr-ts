@@ -118,7 +118,7 @@
     base), so a README deleted remotely is deleted locally and a file added
     locally stays. `.lmnr.json`
     then = the pulled version (local changes stay as diffs against it).
-    Every task-set pull makes sure `<agent>/.gitignore` lists `task_sets/`
+    Every task-set pull and push makes sure `<agent>/.gitignore` lists `task_sets/`
     (`ignoreTaskSets`, appended once; a committed copy would beat the pins in
     CI). `pull <agent>` pulls only `latestScripts`, the scripts the last run
     used, and says to commit them (`pullScripts`: extracted over
@@ -135,7 +135,9 @@
     which Harbor copies into a prebuilt-image sandbox), sends `base`, and on `{headMoved}` (409)
     pulls the head in and retries once. `push <agent>` pushes every local set
     (never scripts). After each push it logs the pin to set (`agent.yaml pins
-    <set> to vX; set it to vY ...` / `Pin it in agent.yaml (...)`).
+    <set> to vX; set it to vY ...` / `Pin it in agent.yaml (...)`). It reads
+    agent.yaml only for those hints: an invalid one warns and skips them
+    rather than blocking the push.
   - `eval list [agent]` prints task set heads (`snapshot` = never pushed).
 - Modules: `index.ts` (`eval run`, reporting), `prepare.ts` (what a run uses),
   `layout.ts` (folder layout, agent.yaml, task dirs, job config, `${VAR}`s,
