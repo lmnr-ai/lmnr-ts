@@ -5,15 +5,21 @@ import { gzipSync } from "node:zlib";
 
 import { type FileSource, packTar } from "modern-tar/fs";
 
-import { SKIPPED_DIRS } from "./suites";
+import { SKIPPED_DIRS } from "./datasets";
+
+/** `eval pull` / `eval push` bookkeeping in `<dataset>/tasks/` (`lockfile.ts`). */
+export const STATE_FILE = ".lmnr-state.json";
 
 /**
- * Never uploaded, besides `SKIPPED_DIRS`: local env files matter most — uploads
- * are readable by eval code in the sandbox, so secrets travel as env vars,
- * never as files.
+ * Never uploaded or hashed, besides `SKIPPED_DIRS`: local env files matter
+ * most — uploads are readable by eval code in the sandbox, so secrets travel as
+ * env vars, never as files. The sync state is local bookkeeping.
  */
-const isExcludedFile = (name: string) =>
-  name === ".env" || name.startsWith(".env.") || name === ".DS_Store";
+export const isExcludedFile = (name: string) =>
+  name === ".env" ||
+  name.startsWith(".env.") ||
+  name === ".DS_Store" ||
+  name === STATE_FILE;
 
 /** An archive entry plus the size the index records. */
 export interface PackedFile extends FileSource {
@@ -32,12 +38,28 @@ interface WalkResult {
  */
 const windowsMode = (name: string) => (name.endsWith(".sh") ? 0o755 : 0o644);
 
-/** Fixed ownership and mtime: the upload carries no local user names or times. */
+/**
+ * A file's mode as 0755 or 0644: executable when any execute bit is set, or
+ * on Windows (no execute bits) by extension, as packing decides it. Task
+ * hashes (`tasks.ts`) and task archives use it, so both agree on every OS.
+ */
+export const normalizedMode = (
+  name: string,
+  statMode: number,
+  platform: NodeJS.Platform,
+): number =>
+  platform === "win32" ? windowsMode(name) : statMode & 0o111 ? 0o755 : 0o644;
+
+/**
+ * Fixed ownership and mtime: the upload carries no local user names or times.
+ * `mode` overrides the file's own (else read from disk; Windows by extension).
+ */
 export const fileEntry = (
   source: string,
   target: string,
   size: number,
   platform: NodeJS.Platform,
+  mode?: number,
 ): PackedFile => ({
   type: "file",
   source,
@@ -48,7 +70,11 @@ export const fileEntry = (
   gid: 0,
   uname: "",
   gname: "",
-  ...(platform === "win32" ? { mode: windowsMode(target) } : {}),
+  ...(mode !== undefined
+    ? { mode }
+    : platform === "win32"
+      ? { mode: windowsMode(target) }
+      : {}),
 });
 
 /** Walk `root` for packing, minus the upload exclusions. */
@@ -157,7 +183,7 @@ interface EvalsArchive {
 }
 
 /**
- * Pack the evals folder's CONTENTS (suites at the archive root, no `evals/`
+ * Pack the evals folder's CONTENTS (datasets at the archive root, no `evals/`
  * prefix — that is where the orchestrator runs from) into a `.tar.gz`, with
  * the index the UI reads single files by.
  */

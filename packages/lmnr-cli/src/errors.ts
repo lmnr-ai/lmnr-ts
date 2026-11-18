@@ -56,6 +56,14 @@ export const missingEnv = (m: string) => new CliError("missing_env", 19, m);
 export const dockerFailed = (m: string) => new CliError("docker_failed", 20, m);
 export const remoteRunFailed = (m: string) =>
   new CliError("remote_run_failed", 21, m);
+/** `eval pull` would overwrite changes made in `tasks/` since the last sync. */
+export const localChanges = (m: string) => new CliError("local_changes", 22, m);
+/** `eval push` from a `tasks/` older than the version `lmnr.lock` pins. */
+export const tasksBehindLock = (m: string) =>
+  new CliError("tasks_behind_lock", 23, m);
+/** The eval dataset or version isn't in Laminar. */
+export const datasetNotFound = (m: string) =>
+  new CliError("dataset_not_found", 24, m);
 
 /**
  * Bare exit codes for the two sites that DON'T go through `failWith`: each emits

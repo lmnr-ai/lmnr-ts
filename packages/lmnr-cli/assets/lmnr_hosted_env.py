@@ -11,8 +11,9 @@ Configuration (set by lmnr-cli):
   LMNR_EVAL_IMAGES      JSON: {"images": {docker_image: digest},
                         "dockerfiles": {task environment/ dir: digest}}, the
                         manifest digests of images lmnr-cli built or pulled and
-                        pushed. Dockerfile keys are relative to the suite dir,
-                        which is Harbor's cwd, and always use "/".
+                        pushed for this dataset. Dockerfile keys are relative to
+                        the dataset dir, which is Harbor's cwd, and always use
+                        "/".
 """
 
 from __future__ import annotations

@@ -27,6 +27,12 @@ import {
   handleDebugSessionSummary,
 } from "./commands/debug";
 import { handleEvalRun, parsePositiveInt } from "./commands/eval";
+import {
+  handleEvalPull,
+  handleEvalPush,
+  handleEvalStatus,
+  parseVersion,
+} from "./commands/eval/dataset-sync";
 import { handleEvalOrchestrate } from "./commands/eval/remote";
 import {
   handleLlmProfileCreate,
@@ -592,10 +598,12 @@ Examples:
   const evalCmd = program
     .command("eval")
     .alias("evals")
-    .description("Run Harbor evals locally or in Laminar sandboxes")
+    .description(
+      "Run Harbor evals locally or in Laminar sandboxes; version eval datasets",
+    )
     .option(
       "--project-id <id>",
-      "Target project id for --remote. Defaults to the linked .lmnr/project.json",
+      "Target project id for --remote, push and pull. Defaults to the linked .lmnr/project.json",
     )
     .option(
       "--base-url <url>",
@@ -608,23 +616,26 @@ Examples:
     )
     .option("--json", "Output structured JSON to stdout");
 
+  const datasetOption = [
+    "--dataset <name>",
+    "Dataset folder (repeatable). Omitted → every dataset",
+    collectFlag,
+  ] as const;
+  const dirArgument = [
+    "[dir]",
+    "Evals folder (one <dataset>/harbor.yaml per dataset)",
+    "evals",
+  ] as const;
+
   evalCmd
     .command("run")
-    .description("Run the evals folder's Harbor suites")
-    .argument(
-      "[dir]",
-      "Evals folder (one <suite>/harbor.yaml per suite)",
-      "evals",
-    )
+    .description("Run the evals folder's datasets with Harbor")
+    .argument(...dirArgument)
     .option(
       "--remote",
       "Run in Laminar sandboxes instead of local Docker, printing the run's log until it ends",
     )
-    .option(
-      "--suite <name>",
-      "Suite to run (repeatable). Omitted → every suite",
-      collectFlag,
-    )
+    .option(...datasetOption)
     .option(
       "--task <glob>",
       "Task name glob to include (repeatable). Omitted → every task",
@@ -650,9 +661,16 @@ Examples:
     .addHelpText(
       "after",
       `
-Runs \`harbor run\` (pinned Harbor + Laminar plugin, via uvx) for each suite:
-a directory directly inside [dir] holding a harbor.yaml (a Harbor JobConfig).
-Every trial is reported to Laminar as an evaluation datapoint, grouped by suite.
+Runs \`harbor run\` (pinned Harbor + Laminar plugin, via uvx) for each dataset:
+a directory directly inside [dir] holding a harbor.yaml (a Harbor JobConfig)
+and its tasks in tasks/. harbor.yaml must not set \`datasets\` or \`tasks\`:
+lmnr-cli runs the dataset's tasks/ folder. Every trial is reported to Laminar
+as an evaluation datapoint, grouped as "<dataset> v<N>" when tasks/ matches
+the version lmnr.lock pins, or "<dataset> unversioned" (never pushed, or
+edited locally; a warning says so).
+
+Before running, a tasks/ folder that is missing, empty, or unchanged since an
+older pull is updated to the lmnr.lock version (as \`eval pull\` would).
 
 Modes:
   (default)          Trials run on local Docker. Needs uv, Docker and
@@ -663,12 +681,12 @@ Modes:
                      Docker and \`lmnr-cli login\` (or LMNR_PROJECT_API_KEY).
 
 Images: tasks name their image with docker_image in task.toml. Images listed in
-[dir]/lmnr.yaml are built from their Dockerfile with Docker on every run:
+<dataset>/lmnr.yaml are built from their Dockerfile with Docker on every run:
 
   images:
     myapp-evals:
-      dockerfile: image/Dockerfile   # relative to [dir]
-      context: ..                    # build context, default: the Dockerfile's dir
+      dockerfile: image/Dockerfile   # relative to the dataset folder
+      context: ../..                 # build context, default: the Dockerfile's dir
 
 Every build lmnr-cli runs honors .dockerignore and never gets .git or .env*
 files. In local mode Harbor builds a task's own environment/Dockerfile itself,
@@ -684,23 +702,126 @@ starts. For --remote they are sent with the run, never uploaded as files
 Exit codes:
   16  invalid_evals_dir / archive_too_large
   17  missing_tool (uv or Docker not installed)
-  18  harbor_failed (a suite's harbor run failed)
+  18  harbor_failed (a dataset's harbor run failed)
   19  missing_env (an unset \`\${VAR}\` or LMNR_PROJECT_API_KEY)
   20  docker_failed (a docker build, pull or save failed, or a wrong platform)
-  21  remote_run_failed (a --remote run failed before its suites ran, or
+  21  remote_run_failed (a --remote run failed before its datasets ran, or
       its sandbox was lost)
+  24  dataset_not_found (the auto-pull's version isn't in Laminar)
 
 Examples:
   $ lmnr-cli eval run
-  $ lmnr-cli eval run ./evals --suite support --task "refund-*" --n-attempts 3
+  $ lmnr-cli eval run ./evals --dataset support --task "refund-*" --n-attempts 3
   $ lmnr-cli eval run --remote --n-concurrent 20
   $ lmnr-cli eval run --remote --model anthropic/claude-sonnet-5-5
 `,
     );
 
   evalCmd
+    .command("push")
+    .description(
+      "Version each dataset's tasks/ in Laminar and pin it in lmnr.lock",
+    )
+    .argument(...dirArgument)
+    .option(...datasetOption)
+    .option("-m, --message <text>", "Message stored with the new version")
+    .option(
+      "--force",
+      "Push even when tasks/ is older than the version lmnr.lock pins",
+    )
+    .action(withLocalOpts(handleEvalPush))
+    .addHelpText(
+      "after",
+      `
+Hashes every task in <dataset>/tasks/. When they match lmnr.lock, nothing is
+sent ("up to date"). Otherwise the tasks Laminar doesn't have yet are uploaded
+and a new immutable version is created on top of the lmnr.lock version (v1 for
+a new dataset, named after its folder). lmnr.lock is rewritten — commit it —
+and the dataset's .gitignore gets /tasks/: the tasks now live in Laminar.
+
+A version never has to build on the latest one (branches); when newer versions
+exist in Laminar, the push warns that they aren't included.
+
+Calls the API as the logged-in user (\`lmnr-cli login\`), or with
+LMNR_PROJECT_API_KEY when there is no login.
+
+Exit codes:
+  16  invalid_evals_dir (no tasks/, a bad task or dataset name, a broken
+      lmnr.lock) / archive_too_large (a task over 512 MiB packed)
+  23  tasks_behind_lock (tasks/ was synced to an older version than lmnr.lock
+      pins: pushing would undo the newer one; \`eval pull\` or --force)
+
+Examples:
+  $ lmnr-cli eval push
+  $ lmnr-cli eval push --dataset support -m "Add refund edge cases"
+  $ lmnr-cli eval push --json
+`,
+    );
+
+  evalCmd
+    .command("pull")
+    .description("Make each dataset's tasks/ match its lmnr.lock version")
+    .argument(...dirArgument)
+    .option(...datasetOption)
+    .option(
+      "--version <n|latest>",
+      "Pull this version instead and pin it in lmnr.lock",
+      parseVersion,
+    )
+    .option("--force", "Overwrite local changes in tasks/")
+    .action(withLocalOpts(handleEvalPull))
+    .addHelpText(
+      "after",
+      `
+Downloads the tasks of the version lmnr.lock pins (or --version; without
+lmnr.lock, the latest version of the dataset named after the folder) into
+<dataset>/tasks/: changed tasks are replaced, tasks not in the version are
+deleted, unchanged ones are kept. With --version (or no lmnr.lock) lmnr.lock
+is rewritten. Downloads are cached by content in $LMNR_CACHE_DIR,
+$XDG_CACHE_HOME/lmnr or ~/.cache/lmnr (eval-tasks/).
+
+Refuses to touch a dataset whose tasks/ changed since its last pull or push
+(nothing is changed then, in any dataset); --force discards those changes.
+
+Exit codes:
+  16  invalid_evals_dir
+  22  local_changes (tasks/ has changes the pull would overwrite; push them
+      or pass --force)
+  24  dataset_not_found (the dataset or version isn't in Laminar)
+
+Examples:
+  $ lmnr-cli eval pull
+  $ lmnr-cli eval pull --dataset support --version 3
+  $ lmnr-cli eval pull --version latest --force
+`,
+    );
+
+  evalCmd
+    .command("status")
+    .description("Compare each dataset's tasks/ with its lmnr.lock")
+    .argument(...dirArgument)
+    .option(...datasetOption)
+    .action(withLocalOpts(handleEvalStatus))
+    .addHelpText(
+      "after",
+      `
+Local only (no login needed). Per dataset: the lmnr.lock version, the tasks
+added / modified / removed in tasks/ compared with it, and its state:
+  up_to_date   tasks/ matches lmnr.lock
+  modified     local changes (\`eval push\` versions them)
+  behind       no local changes, but lmnr.lock moved (or tasks/ is empty):
+               \`eval pull\` or \`eval run\` updates it
+  not_pushed   no lmnr.lock yet (\`eval push\` creates v1)
+
+Examples:
+  $ lmnr-cli eval status
+  $ lmnr-cli eval status --json
+`,
+    );
+
+  evalCmd
     .command("orchestrate", { hidden: true })
-    .description("Run a remote run's suites (inside its Laminar sandbox)")
+    .description("Run a remote run's datasets (inside its Laminar sandbox)")
     .action(withLocalOpts(handleEvalOrchestrate));
 
   const llmProfileCmd = program
@@ -1409,6 +1530,8 @@ Examples:
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json # Query spans
   lmnr-cli sql schema                                      # Show available tables
   lmnr-cli eval run --remote                               # Run Harbor evals in Laminar sandboxes
+  lmnr-cli eval push                                       # Version eval datasets' tasks in Laminar
+  lmnr-cli eval pull                                       # Get the tasks lmnr.lock pins
   lmnr-cli debug session new                               # Mint a fresh debug session
   lmnr-cli debug session open                              # Open the session in the browser
   lmnr-cli debug session set-name "title"                  # Rename the current debug session
@@ -1425,6 +1548,11 @@ For more information about the Laminar platfrom:
 `,
   );
 
+  // Root options (`-v, --version`) only before the subcommand, so `eval pull
+  // --version 3` reaches `pull`. Set after every `.command()`: subcommands
+  // copy it when created, and their own group options (`dataset --json`)
+  // must keep working after the leaf command name.
+  program.enablePositionalOptions();
   await program.parseAsync();
 }
 

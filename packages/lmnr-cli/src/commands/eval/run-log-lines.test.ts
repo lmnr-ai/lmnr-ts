@@ -18,7 +18,7 @@ void describe("harborLogLine", () => {
     const job = "/tmp/lmnr-jobs-LXmCE4/fpl-agent/2026-11-13__18-38-32";
 
     expect(rewrite(pluginLine(URL_A))).toBe(
-      `Laminar evaluation for suite fpl-agent: ${URL_A}`,
+      `Laminar evaluation for dataset fpl-agent: ${URL_A}`,
     );
     expect(rewrite("Job Info")).toBe("Job Info");
     expect(rewrite("Total runtime: 44s")).toBe("Total runtime: 44s");
@@ -39,7 +39,7 @@ void describe("harborLogLine", () => {
   });
 
   void it("round-trips the evaluation line", () => {
-    const link = { suite: "my suite", url: URL_A };
+    const link = { dataset: "my dataset", url: URL_A };
     expect(parseEvaluationLine(formatEvaluationLine(link))).toEqual(link);
     expect(parseEvaluationLine(pluginLine(URL_A))).toBeNull();
   });

@@ -6,7 +6,7 @@ import path from "node:path";
 import type { LaminarClient } from "@lmnr-ai/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { imagePusher } from "./docker";
-import { runSuites } from "./harbor";
+import { runDatasets } from "./harbor";
 import type { ImageDef } from "./images";
 import { handleEvalOrchestrate, startRemoteRun } from "./remote";
 import { runCommand } from "./run-command";
@@ -36,19 +36,16 @@ const write = async (rel: string, content = "x") => {
   await writeFile(file, content);
 };
 
-/** Two suites sharing `app-evals`; suite `a` also has its own Dockerfile. */
+/** Two datasets sharing `app-evals`; dataset `a` also has its own Dockerfile. */
 const writeEvals = async () => {
-  await write(
-    "lmnr.yaml",
-    "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n",
-  );
-  for (const suite of ["a", "b"]) {
+  for (const dataset of ["a", "b"]) {
     await write(
-      `${suite}/harbor.yaml`,
-      "environment:\n  type: docker\ndatasets:\n  - path: tasks\n",
+      `${dataset}/lmnr.yaml`,
+      "images:\n  app-evals:\n    dockerfile: ../image/Dockerfile\n",
     );
+    await write(`${dataset}/harbor.yaml`, "environment:\n  type: docker\n");
     await write(
-      `${suite}/tasks/shared/task.toml`,
+      `${dataset}/tasks/shared/task.toml`,
       '[environment]\ndocker_image = "app-evals"\n',
     );
   }
@@ -57,12 +54,17 @@ const writeEvals = async () => {
 };
 
 const IMAGES = {
-  images: { "app-evals": "sha256:app-evals" },
-  dockerfiles: {
-    a: { "tasks/own/environment": "sha256:a/tasks/own/environment" },
-    b: {},
+  a: {
+    images: { "app-evals": "sha256:app-evals" },
+    dockerfiles: { "tasks/own/environment": "sha256:a/tasks/own/environment" },
   },
+  b: { images: { "app-evals": "sha256:app-evals" }, dockerfiles: {} },
 };
+
+const RUNS = [
+  { path: "a", group: "a v3" },
+  { path: "b", group: "b unversioned" },
+];
 
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), "lmnr-remote-"));
@@ -84,7 +86,7 @@ afterEach(async () => {
 });
 
 void describe("startRemoteRun", () => {
-  void it("sends one image map and per-suite Dockerfile digests", async () => {
+  void it("sends each dataset's group and image digests", async () => {
     await writeEvals();
     vi.mocked(imagePusher).mockReturnValue({
       build: async (def: ImageDef) => `sha256:${def.name}`,
@@ -103,7 +105,7 @@ void describe("startRemoteRun", () => {
     const started = await startRemoteRun(
       client,
       root,
-      ["a", "b"],
+      RUNS,
       { nAttempts: 2 },
       { OPENAI_API_KEY: "sk", LMNR_PROJECT_API_KEY: "dropped" },
     );
@@ -118,40 +120,62 @@ void describe("startRemoteRun", () => {
       uploadId: "up-1",
       cliVersion: expect.any(String),
       spec: {
-        suites: ["a", "b"],
+        datasets: RUNS,
         overrides: { nAttempts: 2 },
         env: { OPENAI_API_KEY: "sk" },
-        ...IMAGES,
+        images: IMAGES,
       },
     });
   });
 });
 
-void describe("runSuites", () => {
-  void it("gives each remote suite LMNR_EVAL_IMAGES with its own Dockerfiles", async () => {
+void describe("runDatasets", () => {
+  void it("runs each dataset in its group, with its own LMNR_EVAL_IMAGES", async () => {
     await writeEvals();
-    const seen: { cwd?: string; images?: string }[] = [];
-    vi.mocked(runCommand).mockImplementation(async (_command, _args, opts) => {
-      seen.push({ cwd: opts?.cwd, images: opts?.env?.LMNR_EVAL_IMAGES });
+    const seen: { cwd?: string; images?: string; group?: string }[] = [];
+    vi.mocked(runCommand).mockImplementation(async (_command, args, opts) => {
+      const config = JSON.parse(
+        await readFile(args[args.indexOf("-c") + 1], "utf8"),
+      );
+      expect(config.datasets).toEqual([{ path: "tasks" }]);
+      seen.push({
+        cwd: opts?.cwd,
+        images: opts?.env?.LMNR_EVAL_IMAGES,
+        group: args[args.indexOf("--pk") + 1],
+      });
       return 0;
     });
 
-    expect(await runSuites(root, ["a", "b"], {}, {}, IMAGES)).toEqual([]);
-    expect(seen.map((s) => s.cwd)).toEqual([
-      path.join(root, "a"),
-      path.join(root, "b"),
+    expect(await runDatasets(root, RUNS, {}, {}, IMAGES)).toEqual([]);
+    expect(seen.map((s) => [s.cwd, s.group])).toEqual([
+      [path.join(root, "a"), "group_name=a v3"],
+      [path.join(root, "b"), "group_name=b unversioned"],
     ]);
     expect(seen.map((s) => JSON.parse(s.images ?? "null"))).toEqual([
-      { images: IMAGES.images, dockerfiles: IMAGES.dockerfiles.a },
-      { images: IMAGES.images, dockerfiles: {} },
+      IMAGES.a,
+      IMAGES.b,
     ]);
 
     seen.length = 0;
-    expect(await runSuites(root, ["b"], {}, {})).toEqual([]);
-    expect(seen).toEqual([{ cwd: path.join(root, "b"), images: undefined }]);
+    const before: string[] = [];
+    expect(
+      await runDatasets(root, [RUNS[1]], {}, {}, undefined, {
+        before: async (dataset) => {
+          before.push(dataset);
+        },
+      }),
+    ).toEqual([]);
+    expect(before).toEqual(["b"]);
+    expect(seen).toEqual([
+      {
+        cwd: path.join(root, "b"),
+        images: undefined,
+        group: "group_name=b unversioned",
+      },
+    ]);
   });
 
-  void it("writes each suite's job where onSuiteEnd reads it, failed or not", async () => {
+  void it("writes each dataset's job where onDatasetEnd reads it, failed or not", async () => {
     await writeEvals();
     const configs: Record<string, unknown>[] = [];
     vi.mocked(runCommand).mockImplementation(async (_command, args) => {
@@ -162,14 +186,14 @@ void describe("runSuites", () => {
     const ended: string[][] = [];
     const jobs = {
       dir: path.join(root, "jobs-out"),
-      onSuiteEnd: async (suite: string, jobDir: string) => {
-        ended.push([suite, jobDir]);
+      onDatasetEnd: async (dataset: string, jobDir: string) => {
+        ended.push([dataset, jobDir]);
       },
     };
 
-    expect(await runSuites(root, ["a", "b"], {}, {}, IMAGES, { jobs })).toEqual(
-      ["a"],
-    );
+    expect(await runDatasets(root, RUNS, {}, {}, IMAGES, { jobs })).toEqual([
+      "a",
+    ]);
     // The job keeps Harbor's name: the plugin names the evaluation after it.
     expect(configs.map((c) => [c.jobs_dir, c.job_name])).toEqual([
       [path.join(jobs.dir, "a"), undefined],
@@ -204,11 +228,10 @@ void describe("handleEvalOrchestrate", () => {
     await writeEvals();
     const marker = path.join(root, "log-started");
     process.env.LMNR_EVAL_RUN = JSON.stringify({
-      suites: ["b"],
+      datasets: [{ path: "b", group: "b v1" }],
       overrides: {},
       env: {},
-      images: {},
-      dockerfiles: { b: {} },
+      images: { b: { images: {}, dockerfiles: {} } },
     });
     process.env.LMNR_EVAL_UPLOAD_ID = "up-1";
     process.env.LMNR_RUN_LOG_MARKER = marker;
@@ -237,7 +260,7 @@ void describe("handleEvalOrchestrate", () => {
     const harbor = appended.indexOf("trial 1/1 done");
     expect(appended.slice(harbor, harbor + 3)).toEqual([
       "trial 1/1 done",
-      "Laminar evaluation for suite b: https://lmnr.test/e/1",
+      "Laminar evaluation for dataset b: https://lmnr.test/e/1",
       "partial",
     ]);
     expect(columns).toBe("500");

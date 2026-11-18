@@ -10,15 +10,15 @@ import { version } from "../../../package.json";
 import { archiveTooLarge, missingEnv } from "../../errors";
 import { onStderr } from "../../utils/command-capture";
 import { initializeLogger } from "../../utils/logger";
+import type { DatasetRun, RunOverrides } from "./datasets";
 import { imagePusher } from "./docker";
 import { API_KEY_VAR, harborEnv } from "./env";
-import { assertSuitesPassed, type JobOutput, runSuites } from "./harbor";
+import { assertDatasetsPassed, type JobOutput, runDatasets } from "./harbor";
 import { ensureRemoteImages, type RemoteImages } from "./images";
 import { findJobDir, packJobDir } from "./jobs";
 import { packEvalsDir } from "./pack";
 import { createRunLogShipper } from "./run-log";
 import { harborLogLine } from "./run-log-lines";
-import type { RunOverrides } from "./suites";
 
 const logger = initializeLogger();
 
@@ -29,11 +29,14 @@ const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024;
  * A remote run, written here and read back by `eval orchestrate` in the
  * orchestrator sandbox, which runs this same CLI version.
  */
-interface RunSpec extends RemoteImages {
-  suites: string[];
+interface RunSpec {
+  /** Each dataset folder with its evaluation group, as `eval run` decided it. */
+  datasets: DatasetRun[];
   overrides: RunOverrides;
-  /** Values for the suites' `${VAR}` placeholders and `--env` flags. */
+  /** Values for the datasets' `${VAR}` placeholders and `--env` flags. */
   env: Record<string, string>;
+  /** Pushed image digests, by dataset. */
+  images: RemoteImages;
 }
 
 const formatMiB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
@@ -45,7 +48,7 @@ const formatMiB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 export const startRemoteRun = async (
   client: LaminarClient,
   evalsDir: string,
-  suites: string[],
+  datasets: DatasetRun[],
   overrides: RunOverrides,
   env: Record<string, string>,
 ): Promise<{ uploadId: string; sandboxId: string }> => {
@@ -80,13 +83,13 @@ export const startRemoteRun = async (
 
   const images = await ensureRemoteImages(
     evalsDir,
-    suites,
+    datasets.map((d) => d.path),
     overrides,
     imagePusher(client),
   );
   logger.info(
     `Uploading ${fileCount} files (${formatMiB(archive.length)}), ` +
-      `suites: ${suites.join(", ")}`,
+      `datasets: ${datasets.map((d) => d.group).join(", ")}`,
   );
   const { uploadId } = await client.hostedEvals.upload(archive);
   try {
@@ -98,7 +101,7 @@ export const startRemoteRun = async (
         `files: ${errorMessage(error)}`,
     );
   }
-  const spec: RunSpec = { suites, overrides, env: runEnv, ...images };
+  const spec: RunSpec = { datasets, overrides, env: runEnv, images };
   const { sandboxId } = await client.hostedEvals.startRun({
     uploadId,
     cliVersion: version,
@@ -116,14 +119,14 @@ const readRunSpec = (): RunSpec => {
   } catch (error) {
     throw missingEnv(`LMNR_EVAL_RUN is not valid JSON: ${errorMessage(error)}`);
   }
-  if (!Array.isArray(spec?.suites)) {
-    throw missingEnv("LMNR_EVAL_RUN is not a run spec: it has no suites.");
+  if (!Array.isArray(spec?.datasets)) {
+    throw missingEnv("LMNR_EVAL_RUN is not a run spec: it has no datasets.");
   }
   return spec as RunSpec;
 };
 
 /**
- * Each suite's Harbor job goes to Laminar once the suite ends, for the trial
+ * Each dataset's Harbor job goes to Laminar once the dataset ends, for the trial
  * log view: the sandbox, and the job dir with it, is deleted after the run.
  * A failed upload only warns.
  */
@@ -132,25 +135,25 @@ const jobUploads = async (
   uploadId: string,
 ): Promise<JobOutput> => ({
   dir: await mkdtemp(path.join(tmpdir(), "lmnr-jobs-")),
-  onSuiteEnd: async (suite, jobsDir) => {
+  onDatasetEnd: async (dataset, jobsDir) => {
     const jobDir = await findJobDir(jobsDir);
     if (!jobDir) return;
     try {
       const { archive, index, skipped } = await packJobDir(jobDir);
       if (skipped.length > 0) {
         logger.warn(
-          `Not uploading ${skipped.length} large trial file(s) of suite ` +
-            `${suite}: ${skipped.slice(0, 5).join(", ")}` +
+          `Not uploading ${skipped.length} large trial file(s) of dataset ` +
+            `${dataset}: ${skipped.slice(0, 5).join(", ")}` +
             (skipped.length > 5 ? ", ..." : ""),
         );
       }
-      await client.hostedEvals.uploadJob(uploadId, suite, archive);
-      await client.hostedEvals.uploadJobIndex(uploadId, suite, {
+      await client.hostedEvals.uploadJob(uploadId, dataset, archive);
+      await client.hostedEvals.uploadJobIndex(uploadId, dataset, {
         files: index,
       });
     } catch (error) {
       logger.warn(
-        `Could not upload the trial logs of suite ${suite}: ` +
+        `Could not upload the trial logs of dataset ${dataset}: ` +
           errorMessage(error),
       );
     }
@@ -176,8 +179,14 @@ export const handleEvalOrchestrate = async (): Promise<void> => {
       "LMNR_EVAL_UPLOAD_ID is not set; the run's log and trial logs won't " +
         "be uploaded.",
     );
-    assertSuitesPassed(
-      await runSuites(process.cwd(), spec.suites, spec.overrides, env, spec),
+    assertDatasetsPassed(
+      await runDatasets(
+        process.cwd(),
+        spec.datasets,
+        spec.overrides,
+        env,
+        spec.images,
+      ),
     );
     return;
   }
@@ -195,17 +204,17 @@ export const handleEvalOrchestrate = async (): Promise<void> => {
   const unsubscribe = onStderr(shipper.writer().write);
   const links = new Set<string>();
   try {
-    const failed = await runSuites(
+    const failed = await runDatasets(
       process.cwd(),
-      spec.suites,
+      spec.datasets,
       spec.overrides,
       // Rich wraps at 80 columns off a terminal, splitting paths and links.
       { ...env, COLUMNS: "500" },
-      spec,
+      spec.images,
       {
         jobs: await jobUploads(client, uploadId),
-        output: (suite) => {
-          const rewrite = harborLogLine(suite, links);
+        output: (dataset) => {
+          const rewrite = harborLogLine(dataset, links);
           return {
             stdout: shipper.writer(rewrite),
             stderr: shipper.writer(rewrite),
@@ -213,7 +222,7 @@ export const handleEvalOrchestrate = async (): Promise<void> => {
         },
       },
     );
-    assertSuitesPassed(failed);
+    assertDatasetsPassed(failed);
   } catch (error) {
     // The caller logs it and exits right away, before a flush could run.
     shipper.writer().write(`ERROR: ${errorMessage(error)}\n`);

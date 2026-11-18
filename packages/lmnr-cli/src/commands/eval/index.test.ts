@@ -14,7 +14,16 @@ import { gunzipSync } from "node:zlib";
 import { InvalidArgumentError } from "commander";
 import { unpackTar } from "modern-tar";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
+import {
+  buildJobConfig,
+  discoverDatasets,
+  findTaskTomls,
+  findTemplateVars,
+  globToRegExp,
+  LAMINAR_ENVIRONMENT_IMPORT_PATH,
+  loadDatasetConfig,
+  selectDatasets,
+} from "./datasets";
 import { guardedDockerfile } from "./docker";
 import { laminarBaseUrl, parseEnvFlags, resolveTemplateEnv } from "./env";
 import { HARBOR_VERSION, harborArgs, LMNR_PYTHON_VERSION } from "./harbor";
@@ -28,14 +37,6 @@ import {
 } from "./images";
 import { assertRemotePassed, parsePositiveInt } from "./index";
 import { packEvalsDir } from "./pack";
-import {
-  buildJobConfig,
-  discoverSuites,
-  findTaskTomls,
-  findTemplateVars,
-  globToRegExp,
-  LAMINAR_ENVIRONMENT_IMPORT_PATH,
-} from "./suites";
 
 let root: string;
 
@@ -58,21 +59,27 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-void describe("discoverSuites / packEvalsDir", () => {
-  void it("finds suites and packs the folder's contents at the archive root", async () => {
+void describe("discoverDatasets / packEvalsDir", () => {
+  void it("finds datasets and packs the folder's contents at the archive root", async () => {
     await write("hello/harbor.yaml", "agents: []");
+    await write("hello/lmnr.yaml");
+    await write("hello/lmnr.lock");
     await write("hello/tasks/hello-world/task.toml");
+    await write("hello/tasks/.lmnr-state.json", "{}");
     await write("other/harbor.yaml");
-    await write("lmnr.yaml");
+    await write("notes/README.md");
 
-    expect(await discoverSuites(root)).toEqual(["hello", "other"]);
+    expect(await discoverDatasets(root)).toEqual(["hello", "other"]);
     const { archive, fileCount } = await packEvalsDir(root);
-    expect(fileCount).toBe(4);
+    expect(fileCount).toBe(6);
     const names = (await filesOf(archive)).map((e) => e.header.name).sort();
+    // The sync state is local bookkeeping, never uploaded.
     expect(names).toEqual([
       "hello/harbor.yaml",
+      "hello/lmnr.lock",
+      "hello/lmnr.yaml",
       "hello/tasks/hello-world/task.toml",
-      "lmnr.yaml",
+      "notes/README.md",
       "other/harbor.yaml",
     ]);
   });
@@ -167,15 +174,77 @@ void describe("discoverSuites / packEvalsDir", () => {
     expect(modes["hello/harbor.yaml"]).toBe(0o644);
   });
 
-  void it("rejects a folder without suites at its root", async () => {
+  void it("rejects a folder without datasets at its root", async () => {
     await write("evals/hello/harbor.yaml");
-    await expect(discoverSuites(root)).rejects.toMatchObject({
+    await expect(discoverDatasets(root)).rejects.toMatchObject({
       code: "invalid_evals_dir",
       exitCode: 16,
     });
     await expect(
-      discoverSuites(path.join(root, "missing")),
+      discoverDatasets(path.join(root, "missing")),
     ).rejects.toMatchObject({ code: "invalid_evals_dir" });
+  });
+
+  void it("rejects a root lmnr.yaml: images are per dataset", async () => {
+    await write("hello/harbor.yaml");
+    await write("lmnr.yaml", "images: {}\n");
+    await expect(discoverDatasets(root)).rejects.toMatchObject({
+      code: "invalid_evals_dir",
+      message: expect.stringMatching(
+        /Move its images into <dataset>\/lmnr.yaml/,
+      ),
+    });
+  });
+
+  void it("selects --dataset folders and rejects unknown ones", async () => {
+    await write("a/harbor.yaml");
+    await write("b/harbor.yaml");
+    expect(await selectDatasets(root, undefined)).toEqual(["a", "b"]);
+    expect(await selectDatasets(root, ["b", "b"])).toEqual(["b"]);
+    await expect(selectDatasets(root, ["c"])).rejects.toMatchObject({
+      code: "invalid_evals_dir",
+      message: expect.stringMatching(
+        /Unknown --dataset c\. Datasets in .*: a, b/,
+      ),
+    });
+  });
+});
+
+void describe("loadDatasetConfig", () => {
+  void it("runs the dataset's tasks/ folder", async () => {
+    await write("s/harbor.yaml", "n_attempts: 2\n");
+    expect(await loadDatasetConfig(path.join(root, "s"))).toEqual({
+      n_attempts: 2,
+      datasets: [{ path: "tasks" }],
+    });
+    await write("e/harbor.yaml", "");
+    expect(await loadDatasetConfig(path.join(root, "e"))).toEqual({
+      datasets: [{ path: "tasks" }],
+    });
+  });
+
+  void it("rejects a harbor.yaml that picks its own tasks", async () => {
+    await write("s/harbor.yaml", "datasets:\n  - path: tasks\n");
+    await expect(loadDatasetConfig(path.join(root, "s"))).rejects.toMatchObject(
+      {
+        code: "invalid_evals_dir",
+        message: expect.stringMatching(/sets `datasets`: remove it/),
+      },
+    );
+    await write("t/harbor.yaml", "tasks: []\ndatasets: []\n");
+    await expect(loadDatasetConfig(path.join(root, "t"))).rejects.toMatchObject(
+      {
+        message: expect.stringMatching(
+          /sets `datasets` and `tasks`: remove them/,
+        ),
+      },
+    );
+    await write("u/harbor.yaml", "- a\n");
+    await expect(loadDatasetConfig(path.join(root, "u"))).rejects.toMatchObject(
+      {
+        message: expect.stringMatching(/must be a mapping/),
+      },
+    );
   });
 });
 
@@ -184,7 +253,6 @@ void describe("buildJobConfig", () => {
     environment: { type: "docker", kwargs: { x: 1 }, env: { A: "1" } },
     agents: [{ import_path: "agent.agent:MyAgent", env: { K: "${K}" } }],
     datasets: [{ path: "tasks" }],
-    tasks: [{ path: "extra/alpha" }, { path: "extra/beta" }],
   };
 
   void it("routes remote trials to the Laminar environment", () => {
@@ -196,7 +264,7 @@ void describe("buildJobConfig", () => {
     expect(base.environment.type).toBe("docker");
   });
 
-  void it("leaves local runs on the suite's environment", () => {
+  void it("leaves local runs on the dataset's environment", () => {
     expect(buildJobConfig(base, {}, false).environment).toEqual(
       base.environment,
     );
@@ -217,7 +285,7 @@ void describe("buildJobConfig", () => {
     expect(job.n_attempts).toBe(3);
     expect(job.n_concurrent_trials).toBe(8);
     expect(job.datasets).toEqual([{ path: "tasks", task_names: ["al*"] }]);
-    expect(job.tasks).toEqual([{ path: "extra/alpha" }]);
+    expect(base.datasets).toEqual([{ path: "tasks" }]);
     expect(job.agents).toEqual([
       {
         import_path: "agent.agent:MyAgent",
@@ -245,8 +313,7 @@ void describe("template env", () => {
   void it("finds ${VAR} placeholders in harbor.yaml and task.toml", async () => {
     await write(
       "s/harbor.yaml",
-      "agents:\n  - env:\n      OPENAI_API_KEY: ${OPENAI_API_KEY}\n      M: ${MODEL:-gpt}\n" +
-        "datasets:\n  - path: tasks\n",
+      "agents:\n  - env:\n      OPENAI_API_KEY: ${OPENAI_API_KEY}\n      M: ${MODEL:-gpt}\n",
     );
     await write(
       "s/tasks/t/task.toml",
@@ -291,22 +358,22 @@ void describe("template env", () => {
 });
 
 void describe("images", () => {
-  void it("reads lmnr.yaml images relative to the evals folder", async () => {
+  void it("reads lmnr.yaml images relative to the dataset folder", async () => {
     await write(
-      "evals/lmnr.yaml",
-      "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n    context: ..\n  plain:\n    dockerfile: plain/Dockerfile\n",
+      "evals/s/lmnr.yaml",
+      "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n    context: ../..\n  plain:\n    dockerfile: plain/Dockerfile\n",
     );
-    const defs = await loadImageDefs(path.join(root, "evals"));
+    const defs = await loadImageDefs(path.join(root, "evals/s"));
     expect(defs).toEqual([
       {
         name: "app-evals",
-        dockerfile: path.join(root, "evals/image/Dockerfile"),
+        dockerfile: path.join(root, "evals/s/image/Dockerfile"),
         context: root,
       },
       {
         name: "plain",
-        dockerfile: path.join(root, "evals/plain/Dockerfile"),
-        context: path.join(root, "evals/plain"),
+        dockerfile: path.join(root, "evals/s/plain/Dockerfile"),
+        context: path.join(root, "evals/s/plain"),
       },
     ]);
     expect(await loadImageDefs(root)).toEqual([]);
@@ -397,7 +464,7 @@ void describe("images", () => {
   });
 
   void it("finds per-task Dockerfiles and the docker_images tasks use", async () => {
-    await write("s/harbor.yaml", "datasets:\n  - path: tasks\n");
+    await write("s/harbor.yaml", "");
     await write("s/tasks/own/task.toml", "[environment]\ncpus = 1\n");
     await write("s/tasks/own/environment/Dockerfile", "FROM alpine");
     await write(
@@ -423,10 +490,7 @@ void describe("images", () => {
   });
 
   void it("uses a task's own Dockerfile over its docker_image with force_build", async () => {
-    await write(
-      "s/harbor.yaml",
-      "environment:\n  force_build: true\ndatasets:\n  - path: tasks\n",
-    );
+    await write("s/harbor.yaml", "environment:\n  force_build: true\n");
     await write(
       "s/tasks/shared/task.toml",
       '[environment]\ndocker_image = "app-evals"\n',
@@ -446,22 +510,30 @@ void describe("images", () => {
   });
 
   void it("builds referenced lmnr.yaml and per-task images, pulls the rest, each once", async () => {
-    await write(
-      "evals/lmnr.yaml",
-      "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n" +
-        "  unused:\n    dockerfile: unused/Dockerfile\n",
-    );
-    for (const suite of ["a", "b"]) {
-      await write(`evals/${suite}/harbor.yaml`, "datasets:\n  - path: tasks\n");
+    // Both datasets build app-evals from one Dockerfile; b's `other` is its own.
+    for (const dataset of ["a", "b"]) {
       await write(
-        `evals/${suite}/tasks/shared/task.toml`,
+        `evals/${dataset}/lmnr.yaml`,
+        "images:\n  app-evals:\n    dockerfile: ../image/Dockerfile\n" +
+          "  unused:\n    dockerfile: unused/Dockerfile\n" +
+          (dataset === "b"
+            ? "  other:\n    dockerfile: other/Dockerfile\n"
+            : ""),
+      );
+      await write(`evals/${dataset}/harbor.yaml`, "");
+      await write(
+        `evals/${dataset}/tasks/shared/task.toml`,
         '[environment]\ndocker_image = "app-evals"\n',
       );
       await write(
-        `evals/${suite}/tasks/public/task.toml`,
+        `evals/${dataset}/tasks/public/task.toml`,
         '[environment]\ndocker_image = "python:3.12-slim"\n',
       );
     }
+    await write(
+      "evals/b/tasks/mine/task.toml",
+      '[environment]\ndocker_image = "other"\n',
+    );
     await write("evals/a/tasks/own/task.toml", "");
     await write("evals/a/tasks/own/environment/Dockerfile", "FROM alpine");
     const calls: string[] = [];
@@ -486,76 +558,65 @@ void describe("images", () => {
     expect(calls.sort()).toEqual([
       `build a/tasks/own/environment ${path.join("evals", "a", "tasks", "own", "environment")}`,
       `build app-evals ${path.join("evals", "image")}`,
+      `build other ${path.join("evals", "b", "other")}`,
       "pull python:3.12-slim",
     ]);
     expect(pushed).toEqual({
-      images: {
-        "app-evals": "sha256:app-evals",
-        "python:3.12-slim": "sha256:python:3.12-slim",
+      a: {
+        images: {
+          "app-evals": "sha256:app-evals",
+          "python:3.12-slim": "sha256:python:3.12-slim",
+        },
+        dockerfiles: {
+          "tasks/own/environment": "sha256:a/tasks/own/environment",
+        },
       },
-      dockerfiles: {
-        a: { "tasks/own/environment": "sha256:a/tasks/own/environment" },
-        b: {},
+      b: {
+        images: {
+          "app-evals": "sha256:app-evals",
+          other: "sha256:other",
+          "python:3.12-slim": "sha256:python:3.12-slim",
+        },
+        dockerfiles: {},
       },
     });
   });
 
   void it("follows linked task dirs and matches them by their target's name", async () => {
-    await write(
-      "s/harbor.yaml",
-      "datasets:\n  - path: tasks\n    exclude_task_names: [skip-*]\n",
-    );
+    await write("s/harbor.yaml", "");
     await write("shared/refund-case/task.toml", "");
-    await write("shared/skip-case/task.toml", "");
     await mkdir(path.join(root, "s/tasks"), { recursive: true });
     await symlink(
       path.join(root, "shared/refund-case"),
       path.join(root, "s/tasks/linked"),
     );
     await symlink(
-      path.join(root, "shared/skip-case"),
-      path.join(root, "s/tasks/also-linked"),
-    );
-    await symlink(
       path.join(root, "missing"),
       path.join(root, "s/tasks/dangling"),
     );
-    const suite = path.join(root, "s");
+    const dataset = path.join(root, "s");
     const dirs = async (tasks?: string[]) =>
-      (await findTaskTomls(suite, { tasks })).map((f) =>
+      (await findTaskTomls(dataset, { tasks })).map((f) =>
         path.basename(path.dirname(f)),
       );
 
-    // Harbor names a linked dir after its target, so `skip-*` excludes
-    // `also-linked` and `--task refund-case` selects `linked`.
+    // Harbor names a linked dir after its target.
     expect(await dirs()).toEqual(["linked"]);
     expect(await dirs(["refund-case"])).toEqual(["linked"]);
     expect(await dirs(["linked"])).toEqual([]);
   });
 
   void it("lists only the tasks the run includes, as Harbor resolves them", async () => {
-    await write(
-      "s/harbor.yaml",
-      [
-        "datasets:",
-        "  - path: tasks",
-        "    exclude_task_names: [skip-*]",
-        "  - name: terminal-bench",
-        "tasks:",
-        "  - path: ../shared/extra",
-        "  - name: org/registry-task",
-        "",
-      ].join("\n"),
-    );
-    for (const task of ["a-1", "a-2", "b-1", "skip-me"]) {
+    await write("s/harbor.yaml", "");
+    for (const task of ["a-1", "a-2", "b-1"]) {
       await write(`s/tasks/${task}/task.toml`, "");
     }
     await write("s/tasks/notes/README.md");
+    await write("s/tasks/.lmnr-state.json", "{}");
     await write("s/unreferenced/task.toml", "");
-    await write("shared/extra/task.toml", "");
-    const suite = path.join(root, "s");
+    const dataset = path.join(root, "s");
     const rel = async (overrides: object) =>
-      (await findTaskTomls(suite, overrides)).map((f) =>
+      (await findTaskTomls(dataset, overrides)).map((f) =>
         path.relative(root, path.dirname(f)).split(path.sep).join("/"),
       );
 
@@ -563,25 +624,22 @@ void describe("images", () => {
       "s/tasks/a-1",
       "s/tasks/a-2",
       "s/tasks/b-1",
-      "shared/extra",
     ]);
-    // --task replaces the datasets' task_names and filters `tasks` by name.
+    // --task becomes the dataset's task_names.
     expect(await rel({ tasks: ["a-*"] })).toEqual([
       "s/tasks/a-1",
       "s/tasks/a-2",
     ]);
-    expect(await rel({ tasks: ["extra", "skip-me"] })).toEqual([
-      "shared/extra",
-    ]);
+    expect(await rel({ tasks: ["b-1", "nope"] })).toEqual(["s/tasks/b-1"]);
   });
 
   void it("builds and pushes only the images of the tasks --task selects", async () => {
     await write(
-      "evals/lmnr.yaml",
+      "evals/s/lmnr.yaml",
       "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n" +
         "  other:\n    dockerfile: other/Dockerfile\n",
     );
-    await write("evals/s/harbor.yaml", "datasets:\n  - path: tasks\n");
+    await write("evals/s/harbor.yaml", "");
     await write(
       "evals/s/tasks/app/task.toml",
       '[environment]\ndocker_image = "app-evals"\n',
@@ -610,13 +668,13 @@ void describe("images", () => {
     );
     expect(built).toEqual(["app-evals"]);
     expect(pushed).toEqual({
-      images: { "app-evals": "sha256:app-evals" },
-      dockerfiles: { s: {} },
+      s: { images: { "app-evals": "sha256:app-evals" }, dockerfiles: {} },
     });
 
-    const local = await localImageDefs(evals, ["s"], { tasks: ["app"] });
+    const dataset = path.join(evals, "s");
+    const local = await localImageDefs(dataset, { tasks: ["app"] });
     expect(local.map((def) => def.name)).toEqual(["app-evals"]);
-    const all = await localImageDefs(evals, ["s"], {});
+    const all = await localImageDefs(dataset, {});
     expect(all.map((def) => def.name).sort()).toEqual(["app-evals", "other"]);
   });
 
@@ -635,8 +693,8 @@ void describe("images", () => {
 });
 
 void describe("harborArgs", () => {
-  void it("runs the pinned Harbor with the Laminar plugin, grouped by suite", () => {
-    expect(harborArgs("/tmp/job.json", "support")).toEqual([
+  void it("runs the pinned Harbor with the Laminar plugin, grouped by dataset version", () => {
+    expect(harborArgs("/tmp/job.json", "support v7")).toEqual([
       "--python",
       "3.13",
       "--from",
@@ -651,7 +709,7 @@ void describe("harborArgs", () => {
       "--plugin",
       "laminar",
       "--pk",
-      "group_name=support",
+      "group_name=support v7",
     ]);
     expect(harborArgs("/tmp/job.json", "s", "8001").slice(-2)).toEqual([
       "--pk",

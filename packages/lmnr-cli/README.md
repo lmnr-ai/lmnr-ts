@@ -56,9 +56,10 @@ and target a project via `--project-id` or the `.lmnr/project.json` link written
 by `lmnr-cli setup`.
 
 The project API key that `setup` writes to `./.env` (`LMNR_PROJECT_API_KEY`) is
-for your **application's SDK** (trace ingestion). The one CLI command that reads
-it is `eval run`: local runs report results with it, and `--remote` uses it
-when there is no login (e.g. in CI).
+for your **application's SDK** (trace ingestion). The CLI commands that read
+it are the `eval` ones: local `eval run`s report results with it, and `eval
+run --remote`, `eval push` and `eval pull` use it when there is no login (e.g.
+in CI).
 
 ### OAuth Device Flow
 
@@ -150,32 +151,62 @@ tied to a trace or evaluation), so it works the same for agent runs and evals
 with the session's traces and evaluations. See the Laminar debugger docs:
 https://laminar.sh/docs/platform/debugger
 
-### `eval run` - Harbor evals
+### `eval` - Harbor evals and eval datasets
 
-Run the [Harbor](https://harborframework.com) suites in an evals folder
-(`<dir>/<suite>/harbor.yaml`, default `evals`) and report every trial to Laminar
-as an evaluation, grouped by suite.
+An evals folder (default `evals`) holds one folder per **eval dataset**:
+
+```
+evals/
+  support/
+    harbor.yaml    # Harbor JobConfig, without `datasets` / `tasks`
+    lmnr.yaml      # optional: images tasks use (paths relative to this folder)
+    lmnr.lock      # the pinned version; written by eval push / pull, commit it
+    agent/ ...     # your agent, Dockerfiles, scripts
+    tasks/         # Harbor tasks; kept in Laminar once pushed (gitignored)
+```
+
+The setup (harbor.yaml, agent, Dockerfiles) stays in your repo; the tasks live
+in Laminar as immutable, numbered versions, and `lmnr.lock` pins one.
 
 ```bash
+lmnr-cli eval push -m "Add refund cases"   # version tasks/ (v1, v2, ...) and update lmnr.lock
+lmnr-cli eval status                       # tasks/ vs lmnr.lock: added / modified / removed
+lmnr-cli eval pull                         # make tasks/ match lmnr.lock (fresh clone, git pull)
+lmnr-cli eval pull --dataset support --version 3   # switch to another version
 lmnr-cli eval run                                  # trials on local Docker
-lmnr-cli eval run --suite support --task "refund-*"
+lmnr-cli eval run --dataset support --task "refund-*"
 lmnr-cli eval run --remote                         # in Laminar sandboxes
 ```
+
+`eval run` reports every trial to Laminar as an evaluation, grouped as
+`<dataset> v<N>` when `tasks/` matches `lmnr.lock`, or `<dataset> unversioned`
+for a dataset never pushed or with local edits (it warns). A `tasks/` that is
+missing or simply out of date is pulled first. `eval pull` refuses to overwrite
+local edits unless `--force`; pulled tasks are cached in `$LMNR_CACHE_DIR`,
+`$XDG_CACHE_HOME/lmnr` or `~/.cache/lmnr`. `push`, `pull` and `status` take
+`--json`.
 
 `--remote` prints the run's log until it ends; Ctrl-C stops following and
 leaves the run going.
 
-Both modes need Docker; local runs also need [uv](https://docs.astral.sh/uv/)
+Both run modes need Docker; local runs also need [uv](https://docs.astral.sh/uv/)
 and `LMNR_PROJECT_API_KEY`. `--remote` pushes
 the images tasks use from your local Docker. See `lmnr-cli eval run --help` for
 images (`lmnr.yaml`), secrets and flags. Exit codes:
 
-- `16` invalid evals folder, or the packed folder is over the upload limit
+- `16` invalid evals folder (including a harbor.yaml that sets `datasets` or
+  `tasks`, or a root `evals/lmnr.yaml`), or an upload over its size limit
 - `17` `uv` or `docker` is not installed
-- `18` a suite's `harbor run` failed
+- `18` a dataset's `harbor run` failed
 - `19` an unset `${VAR}` placeholder or `LMNR_PROJECT_API_KEY`
 - `20` a Docker build, pull or save failed, or an image isn't linux/amd64
-- `21` a `--remote` run failed before its suites ran, or its sandbox was lost
+- `21` a `--remote` run failed before its datasets ran, or its sandbox was lost
+- `22` `eval pull` would overwrite local changes in `tasks/` (push them, or `--force`)
+- `23` `eval push` from a `tasks/` older than the version `lmnr.lock` pins
+  (`eval pull` first, or `--force`)
+- `24` the eval dataset or version isn't in Laminar
+
+With `--json`, errors are `{"error": "<message>", "code": "<code>"}` on stdout.
 
 ### `setup` - One-shot onboarding
 

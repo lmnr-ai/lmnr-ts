@@ -5,12 +5,17 @@ import { parse as parseYaml } from "yaml";
 
 import { invalidEvalsDir } from "../../errors";
 
-/** A suite is a directory directly inside the evals folder holding a Harbor JobConfig. */
-const SUITE_CONFIG = "harbor.yaml";
+/** A dataset is a directory directly inside the evals folder holding a Harbor JobConfig. */
+const DATASET_CONFIG = "harbor.yaml";
+/** The dataset's tasks, synced with Laminar by `eval push` / `eval pull`. */
+export const TASKS_DIR = "tasks";
+/** Optional per-dataset config: the images its tasks reference by `docker_image`. */
+export const IMAGES_CONFIG = "lmnr.yaml";
 
 /**
  * Never walked into: VCS data, dependency/build caches and Harbor job output.
- * Not packed for upload (`pack.ts`) and not searched for suites.
+ * Not packed for upload (`pack.ts`), not hashed (`tasks.ts`) and not searched
+ * for datasets.
  */
 export const SKIPPED_DIRS = new Set([
   ".git",
@@ -42,44 +47,99 @@ export interface RunOverrides {
 
 export type JobConfig = Record<string, unknown>;
 
-/** Suite directory names directly inside `dir`, sorted. */
-export const discoverSuites = async (dir: string): Promise<string[]> => {
+/** One dataset of a run: its folder and the evaluation group it reports to. */
+export interface DatasetRun {
+  /** The dataset folder, relative to the evals folder. */
+  path: string;
+  /** `<dataset> v<N>` or `<dataset> unversioned` (`sync.ts` `groupName`). */
+  group: string;
+}
+
+export const isFile = (file: string) =>
+  stat(file).then(
+    (s) => s.isFile(),
+    () => false,
+  );
+
+/** Dataset directory names directly inside `dir`, sorted. */
+export const discoverDatasets = async (dir: string): Promise<string[]> => {
   const root = path.resolve(dir);
   const rootStat = await stat(root).catch(() => null);
   if (!rootStat?.isDirectory()) {
     throw invalidEvalsDir(`Evals folder not found: ${root}`);
   }
+  if (await isFile(path.join(root, IMAGES_CONFIG))) {
+    throw invalidEvalsDir(
+      `${path.join(root, IMAGES_CONFIG)} is no longer read: image definitions ` +
+        `are per dataset now. Move its images into <dataset>/${IMAGES_CONFIG} ` +
+        "of each dataset that uses them (dockerfile and context paths are " +
+        "relative to the dataset folder), then delete it.",
+    );
+  }
   const entries = await readdir(root, { withFileTypes: true });
-  const suites: string[] = [];
+  const datasets: string[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || SKIPPED_DIRS.has(entry.name)) continue;
-    const config = await stat(path.join(root, entry.name, SUITE_CONFIG)).catch(
-      () => null,
-    );
-    if (config?.isFile()) suites.push(entry.name);
+    if (await isFile(path.join(root, entry.name, DATASET_CONFIG))) {
+      datasets.push(entry.name);
+    }
   }
-  if (suites.length === 0) {
+  if (datasets.length === 0) {
     throw invalidEvalsDir(
-      `No suites in ${root}: expected <suite>/${SUITE_CONFIG} directly ` +
-        "inside it. Pass the evals folder itself, not its parent or a suite.",
+      `No datasets in ${root}: expected <dataset>/${DATASET_CONFIG} directly ` +
+        "inside it. Pass the evals folder itself, not its parent or a dataset.",
     );
   }
-  return suites.sort();
+  return datasets.sort();
 };
 
-export const loadSuiteConfig = async (suiteDir: string): Promise<JobConfig> => {
-  const file = path.join(suiteDir, SUITE_CONFIG);
+/** The datasets `--dataset` names (all of them when omitted), validated. */
+export const selectDatasets = async (
+  evalsDir: string,
+  requested: string[] | undefined,
+): Promise<string[]> => {
+  const datasets = await discoverDatasets(evalsDir);
+  if (!requested?.length) return datasets;
+  const unknown = requested.filter((s) => !datasets.includes(s));
+  if (unknown.length > 0) {
+    throw invalidEvalsDir(
+      `Unknown --dataset ${unknown.join(", ")}. ` +
+        `Datasets in ${evalsDir}: ${datasets.join(", ")}`,
+    );
+  }
+  return [...new Set(requested)];
+};
+
+/**
+ * The dataset's harbor.yaml with the dataset's own `tasks/` folder as its one
+ * Harbor dataset. harbor.yaml must not pick tasks itself: a dataset's tasks
+ * are what `eval push` versions.
+ */
+export const loadDatasetConfig = async (
+  datasetDir: string,
+): Promise<JobConfig> => {
+  const file = path.join(datasetDir, DATASET_CONFIG);
   let parsed: unknown;
   try {
     parsed = parseYaml(await readFile(file, "utf8"));
   } catch (error) {
     throw invalidEvalsDir(`Can't parse ${file}: ${String(error)}`);
   }
-  if (parsed == null) return {};
-  if (typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (parsed != null && (typeof parsed !== "object" || Array.isArray(parsed))) {
     throw invalidEvalsDir(`${file} must be a mapping (a Harbor JobConfig).`);
   }
-  return parsed as JobConfig;
+  const config = (parsed ?? {}) as JobConfig;
+  const picked = ["datasets", "tasks"].filter((key) => key in config);
+  if (picked.length > 0) {
+    throw invalidEvalsDir(
+      `${file} sets ${picked.map((k) => `\`${k}\``).join(" and ")}: remove ` +
+        `${picked.length > 1 ? "them" : "it"}. A dataset runs the tasks in ` +
+        `its own ${TASKS_DIR}/ folder; lmnr-cli adds ` +
+        `\`datasets: [{path: ${TASKS_DIR}}]\` itself. Use --task to run some ` +
+        "of them, and a separate dataset folder for other tasks.",
+    );
+  }
+  return { ...config, datasets: [{ path: TASKS_DIR }] };
 };
 
 /** fnmatch-style glob (`*`, `?`, `[...]`), the way Harbor filters task names. */
@@ -111,15 +171,9 @@ const asRecords = (value: unknown): Record<string, unknown>[] =>
       )
     : [];
 
-/** Mirrors Harbor's task ids: registry tasks by name, local/git tasks by directory. */
-const taskName = (task: Record<string, unknown>): string =>
-  typeof task.name === "string" && task.name
-    ? task.name
-    : path.basename(typeof task.path === "string" ? task.path : "");
-
 /**
- * Apply CLI overrides to a suite's JobConfig, and with `remote` route trials to
- * Laminar sandboxes. `harbor run` flags can't override a `-c` config's datasets
+ * Apply CLI overrides to a dataset's JobConfig (from `loadDatasetConfig`), and
+ * with `remote` route trials to Laminar sandboxes. `harbor run` flags can't override a `-c` config's datasets
  * (`-i` requires `-p`) and `-m` only applies with `-a`, so overrides are
  * written into the config instead.
  */
@@ -145,14 +199,8 @@ export const buildJobConfig = (
   }
   const tasks = overrides.tasks;
   if (tasks?.length) {
-    const patterns = tasks.map(globToRegExp);
     for (const dataset of asRecords(job.datasets)) {
       dataset.task_names = tasks;
-    }
-    if (Array.isArray(job.tasks)) {
-      job.tasks = asRecords(job.tasks).filter((task) =>
-        patterns.some((p) => p.test(taskName(task))),
-      );
     }
   }
   // Harbor's default agent is `oracle`; materialize it so overrides apply.
@@ -188,83 +236,50 @@ const collectTemplates = (text: string, into: TemplateVars) => {
   }
 };
 
-const isFile = (file: string) =>
-  stat(file).then(
-    (s) => s.isFile(),
-    () => false,
-  );
-
 /**
- * The `task.toml` of every local task the suite's run includes, as Harbor
- * resolves them (`JobPlan.resolve_task_configs`): `tasks` entries with a
- * `path`, plus each local dataset's child dirs holding a `task.toml`, matched
- * by name against `task_names` / `exclude_task_names` (`--task` lands in
- * `task_names`). `n_tasks` is ignored: Harbor counts only dirs that pass its
- * full validation, so applying it here could skip a task that runs.
- * Registry and git tasks are fetched by Harbor and not listed.
+ * The `task.toml` of every task the dataset's run includes, as Harbor resolves
+ * its `tasks/` dataset (`JobPlan.resolve_task_configs`): child dirs holding a
+ * `task.toml`, matched by name against `--task` globs (`task_names`). A linked
+ * task dir is followed and named after its target, as Harbor does.
  */
 export const findTaskTomls = async (
-  suiteDir: string,
+  datasetDir: string,
   overrides: RunOverrides,
 ): Promise<string[]> => {
-  const job = buildJobConfig(await loadSuiteConfig(suiteDir), overrides, false);
-  const dirs: string[] = [];
-  for (const task of asRecords(job.tasks)) {
-    if (typeof task.path === "string" && !task.git_url && !task.name) {
-      dirs.push(path.resolve(suiteDir, task.path));
-    }
-  }
-  const patterns = (value: unknown) =>
-    Array.isArray(value) ? value.map((p) => globToRegExp(String(p))) : [];
-  for (const dataset of asRecords(job.datasets)) {
-    if (typeof dataset.path !== "string" || dataset.repo || dataset.name) {
+  const include = (overrides.tasks ?? []).map(globToRegExp);
+  const root = path.join(datasetDir, TASKS_DIR);
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  const tomls: string[] = [];
+  for (const entry of entries) {
+    const dir = path.join(root, entry.name);
+    // Harbor follows linked task dirs and names them after the target
+    // (`LocalTaskId.get_name` resolves the path).
+    let name = entry.name;
+    if (entry.isSymbolicLink()) {
+      const target = await realpath(dir).catch(() => null);
+      if (!target) continue;
+      name = path.basename(target);
+    } else if (!entry.isDirectory()) {
       continue;
     }
-    const root = path.resolve(suiteDir, dataset.path);
-    const include = patterns(dataset.task_names);
-    const exclude = patterns(dataset.exclude_task_names);
-    const entries = await readdir(root, { withFileTypes: true }).catch(
-      () => [],
-    );
-    for (const entry of entries) {
-      const dir = path.join(root, entry.name);
-      // Harbor follows linked task dirs and names them after the target
-      // (`LocalTaskId.get_name` resolves the path).
-      let name = entry.name;
-      if (entry.isSymbolicLink()) {
-        const target = await realpath(dir).catch(() => null);
-        if (!target) continue;
-        name = path.basename(target);
-      } else if (!entry.isDirectory()) {
-        continue;
-      }
-      if (
-        (include.length === 0 || include.some((p) => p.test(name))) &&
-        !exclude.some((p) => p.test(name))
-      ) {
-        dirs.push(dir);
-      }
-    }
-  }
-  const tomls: string[] = [];
-  for (const dir of new Set(dirs)) {
+    if (include.length > 0 && !include.some((p) => p.test(name))) continue;
     const toml = path.join(dir, "task.toml");
     if (await isFile(toml)) tomls.push(toml);
   }
   return tomls.sort();
 };
 
-/** `${VAR}` names referenced by the suite's harbor.yaml and its tasks' task.toml files. */
+/** `${VAR}` names referenced by the dataset's harbor.yaml and its tasks' task.toml files. */
 export const findTemplateVars = async (
-  suiteDir: string,
+  datasetDir: string,
   overrides: RunOverrides,
 ): Promise<TemplateVars> => {
   const vars: TemplateVars = { required: new Set(), optional: new Set() };
   collectTemplates(
-    await readFile(path.join(suiteDir, SUITE_CONFIG), "utf8"),
+    await readFile(path.join(datasetDir, DATASET_CONFIG), "utf8"),
     vars,
   );
-  for (const file of await findTaskTomls(suiteDir, overrides)) {
+  for (const file of await findTaskTomls(datasetDir, overrides)) {
     collectTemplates(await readFile(file, "utf8"), vars);
   }
   for (const name of vars.required) vars.optional.delete(name);
