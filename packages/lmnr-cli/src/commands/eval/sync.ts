@@ -92,6 +92,11 @@ export interface PushPlan {
    * came in through git): pushing them would undo that newer version.
    */
   behind: string[];
+  /**
+   * Edited tasks whose pin moved since they were synced here: the edits
+   * started from an older version, so pushing them would drop the newer one.
+   */
+  diverged: string[];
 }
 
 /**
@@ -106,8 +111,16 @@ export const planPush = (
   scope: TaskScope,
 ): PushPlan => {
   const local = Object.keys(hashes).filter(scope);
+  const pinMoved = (n: string) => toml[n] !== state.tasks[n];
   const behind = local.filter(
-    (n) => !isEdited(n, hashes, state) && toml[n] !== state.tasks[n],
+    (n) => !isEdited(n, hashes, state) && pinMoved(n),
+  );
+  const diverged = local.filter(
+    (n) =>
+      n in state.tasks &&
+      isEdited(n, hashes, state) &&
+      toml[n] !== hashes[n] &&
+      pinMoved(n),
   );
   return {
     added: sorted(local.filter((n) => !(n in toml))),
@@ -119,5 +132,6 @@ export const planPush = (
     ),
     unchanged: sorted(local.filter((n) => toml[n] === hashes[n])),
     behind: sorted(behind),
+    diverged: sorted(diverged),
   };
 };

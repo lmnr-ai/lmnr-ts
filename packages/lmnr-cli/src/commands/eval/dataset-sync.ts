@@ -391,7 +391,9 @@ export const pullDatasets = async (
           .map(({ ds, plan }) => `  ${ds.name}: ${list(plan.conflicts)}\n`)
           .join("") +
         "Push them first (`lmnr-cli eval dataset push`), or discard them " +
-        "with `lmnr-cli eval dataset pull --force`.",
+        "with `lmnr-cli eval dataset pull --force`. If tasks.toml moved " +
+        "past the version an edit started from, push refuses it too: copy " +
+        "the edit aside, pull with --force, and re-apply it.",
     );
   }
 
@@ -600,6 +602,18 @@ export const pushDatasets = async (
           .map(({ ds, plan }) => `  ${ds.name}: ${list(plan.behind)}\n`)
           .join("") +
         "Run `lmnr-cli eval dataset pull` first.",
+    );
+  }
+  const diverged = work.filter((w) => w.plan.diverged.length > 0);
+  if (diverged.length > 0) {
+    throw tasksBehindLock(
+      `${TASKS_TOML} pins newer versions of tasks edited here than the ones ` +
+        "the edits started from, so pushing them would drop those versions:\n" +
+        diverged
+          .map(({ ds, plan }) => `  ${ds.name}: ${list(plan.diverged)}\n`)
+          .join("") +
+        "Copy your edits aside, run `lmnr-cli eval dataset pull --force " +
+        "--task <task>`, re-apply them on top, then push.",
     );
   }
 

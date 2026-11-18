@@ -190,8 +190,9 @@ lmnr-cli eval run --remote                     # in Laminar sandboxes
 `eval dataset pull` refuses to overwrite or delete tasks edited since their
 last pull or push unless `--force`; pulled tasks are cached in
 `$LMNR_CACHE_DIR`, `$XDG_CACHE_HOME/lmnr` or `~/.cache/lmnr`. `eval dataset
-push` refuses to push unedited tasks that are older than `tasks.toml` pins
-(pull first). Both take `--task <glob>`, `--dry-run` and `--json`.
+push` refuses to push tasks that are older than `tasks.toml` pins: unedited
+ones (pull first), and edits that started from a version older than the pin
+(they would drop the newer one). Both take `--task <glob>`, `--dry-run` and `--json`.
 
 `eval run` reports every trial to Laminar as an evaluation grouped by dataset
 name, with the version of its task. Pinned tasks missing from `tasks/`, or
@@ -217,8 +218,9 @@ images (`lmnr.yaml`), secrets and flags. Exit codes:
 - `21` a `--remote` run failed before its datasets ran, or its sandbox was lost
 - `22` `eval dataset pull` would overwrite local edits in `tasks/` (push them,
   or `--force`)
-- `23` `eval dataset push` of unedited tasks older than `tasks.toml` pins
-  (`eval dataset pull` first)
+- `23` `eval dataset push` of tasks older than `tasks.toml` pins: unedited
+  ones (`eval dataset pull` first), or edits that started from an older
+  version than the pin (pull that task with `--force`, re-apply the edit)
 - `24` the eval dataset or a task version isn't in Laminar
 
 With `--json`, errors are `{"error": "<message>", "code": "<code>"}` on stdout.

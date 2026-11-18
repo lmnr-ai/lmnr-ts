@@ -60,6 +60,7 @@ void describe("planPush", () => {
       removed: ["gone"],
       unchanged: ["same"],
       behind: [],
+      diverged: [],
     });
   });
 
@@ -67,9 +68,27 @@ void describe("planPush", () => {
     const disk = { a: h("1"), b: h("1"), c: h("e") };
     const synced = state({ a: h("1"), b: h("1"), c: h("1") });
     const toml = { a: h("2"), c: h("2") };
-    // a: pin moved; b: pin dropped; c: edited, so it's the user's version.
+    // a: pin moved; b: pin dropped; c: edited, so it isn't behind.
     expect(planPush(disk, synced, toml, all).behind).toEqual(["a", "b"]);
     expect(planPush(disk, synced, toml, taskScope(["c"])).behind).toEqual([]);
+  });
+
+  void it("finds edited tasks whose pin moved since the sync", () => {
+    const disk = {
+      moved: h("e"),
+      dropped: h("f"),
+      same: h("g"),
+      fresh: h("x"),
+    };
+    const synced = state({ moved: h("1"), dropped: h("1"), same: h("1") });
+    const toml = { moved: h("2"), same: h("1"), fresh: h("3") };
+    // `same` builds on its pin; `fresh` was never synced here.
+    expect(planPush(disk, synced, toml, all).diverged).toEqual([
+      "dropped",
+      "moved",
+    ]);
+    // Someone pushed the same edit: nothing to refuse.
+    expect(planPush({ moved: h("2") }, synced, toml, all).diverged).toEqual([]);
   });
 });
 

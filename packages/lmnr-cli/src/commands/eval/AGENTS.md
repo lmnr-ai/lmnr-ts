@@ -228,7 +228,11 @@
     disk, AND in state (a pin never pulled here, e.g. after `pull --task`,
     must not be dropped: deviation from the contract's plain "not on disk");
     unedited ∧ toml ≠ state (incl. pin dropped) ⇒ `tasks_behind_lock` (the
-    toml moved via git; pushing would undo it). `--task` scopes every list.
+    toml moved via git; pushing would undo it). Edited ∧ synced ∧ toml ≠
+    state ∧ toml ≠ disk (`diverged`: the edit started from an older version)
+    ⇒ `tasks_behind_lock` too; there is no push override, the message says
+    to pull `--force` that task and re-apply the edit. `--task` scopes every
+    list.
   - Every dataset is planned and checked before any is touched; `--dry-run`
     runs the same checks (so it exits 22/23 too), then prints the plan
     (stdout; `--json` `{datasets: [...]}`) and writes / downloads nothing
