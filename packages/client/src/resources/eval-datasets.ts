@@ -69,7 +69,8 @@ export class EvalDatasetsResource extends BaseResource {
 
   /**
    * The tasks of `tasks` whose version (hash) isn't in Laminar, in input
-   * order. At most 10 000 tasks per call. An unknown dataset has none.
+   * order. At most 10 000 tasks per call. An unknown dataset has every task
+   * missing.
    */
   public async missingTasks(
     dataset: string,
