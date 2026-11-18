@@ -7,6 +7,7 @@ import {
   diffTasks,
   sameTasks,
   type TaskDiff,
+  type TasksState,
 } from "./lockfile";
 import type { TaskHashes } from "./tasks";
 
@@ -26,6 +27,22 @@ export type RunSync =
     };
 
 const isEmpty = (tasks: TaskHashes) => Object.keys(tasks).length === 0;
+
+/**
+ * `tasks/`' hashes as every other machine computes them: a task still hashing
+ * to its `localHashes` entry is unchanged since the sync, so it counts as the
+ * synced hash. Elsewhere disk hashes are already the shared ones.
+ */
+export const canonicalHashes = (
+  disk: TaskHashes,
+  state: TasksState | null,
+): TaskHashes =>
+  Object.fromEntries(
+    Object.entries(disk).map(([name, hash]) => [
+      name,
+      state && state.localHashes[name] === hash ? state.tasks[name] : hash,
+    ]),
+  );
 
 export const decideRunSync = (
   lock: DatasetLock | null,

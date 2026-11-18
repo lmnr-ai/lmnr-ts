@@ -85,7 +85,13 @@ void describe(".lmnr-state.json", () => {
     await mkdir(path.join(root, "tasks"));
     const state = { dataset: "s", version: 2, tasks: { a: h("a") } };
     await writeState(root, state);
-    expect(await readState(root)).toEqual(state);
+    expect(await readState(root)).toEqual({ ...state, localHashes: {} });
+    // Disk hashes that differ from the synced ones are kept; equal ones aren't.
+    await writeState(root, state, { a: h("b"), other: h("c") });
+    expect(await readState(root)).toEqual({
+      ...state,
+      localHashes: { a: h("b") },
+    });
     await writeFile(path.join(root, "tasks/.lmnr-state.json"), "{oops");
     expect(await readState(root)).toBeNull();
   });

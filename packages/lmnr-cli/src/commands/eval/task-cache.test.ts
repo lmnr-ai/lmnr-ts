@@ -68,7 +68,9 @@ void describe("extractTaskArchive", () => {
     const { archive } = await packTask(task);
     const dest = path.join(root, "out");
     await mkdir(dest);
-    await extractTaskArchive(streamOf(archive), dest);
+    expect(await extractTaskArchive(streamOf(archive), dest)).toBe(
+      await hashTaskDir(task),
+    );
 
     expect(await readFile(path.join(dest, "tests/test.sh"), "utf8")).toBe(
       "#!/bin/sh",
@@ -156,6 +158,25 @@ void describe("extractTaskArchive", () => {
     ]) {
       expect(safeEntryPath(bad)).toBeNull();
     }
+  });
+});
+
+void describe("extractTaskArchive's hash", () => {
+  void it("comes from the archive's modes, so no OS's lack of exec bits breaks it", async () => {
+    const task = path.join(root, "task");
+    await mkdir(task);
+    // Exec bits the Windows extension rule gets wrong both ways.
+    await writeFile(path.join(task, "run"), "#!/bin/sh");
+    await chmod(path.join(task, "run"), 0o755);
+    await writeFile(path.join(task, "notes.sh"), "not run");
+    await chmod(path.join(task, "notes.sh"), 0o644);
+    const { archive } = await packTask(task);
+    const dest = path.join(root, "out");
+    await mkdir(dest);
+
+    const hash = await extractTaskArchive(streamOf(archive), dest);
+    expect(hash).toBe(await hashTaskDir(task, "linux"));
+    expect(await hashTaskDir(dest, "win32")).not.toBe(hash);
   });
 });
 

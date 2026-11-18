@@ -81,11 +81,29 @@ const sha256File = (file: string): Promise<string> =>
  * line per file, in UTF-8 byte order of the path. The server stores it as is.
  */
 export const hashTaskFiles = async (files: TaskFile[]): Promise<string> => {
-  const lines: string[] = [];
-  for (const file of [...files].sort((a, b) => byteOrder(a.target, b.target))) {
-    const content = await sha256File(file.source as string);
-    lines.push(`${file.mode.toString(8)} ${content} ${file.target}\n`);
+  const entries: HashedFile[] = [];
+  for (const file of files) {
+    entries.push({
+      path: file.target,
+      mode: file.mode,
+      content: await sha256File(file.source as string),
+    });
   }
+  return taskHash(entries);
+};
+
+/** One file of a task hash: POSIX path, 0o755 / 0o644, content sha256 hex. */
+export interface HashedFile {
+  path: string;
+  mode: number;
+  content: string;
+}
+
+/** The task hash of already-hashed files (from disk, or from an archive). */
+export const taskHash = (files: HashedFile[]): string => {
+  const lines = [...files]
+    .sort((a, b) => byteOrder(a.path, b.path))
+    .map((f) => `${f.mode.toString(8)} ${f.content} ${f.path}\n`);
   return `sha256:${createHash("sha256").update(lines.join(""), "utf8").digest("hex")}`;
 };
 

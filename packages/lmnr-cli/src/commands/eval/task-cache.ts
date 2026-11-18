@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import {
   chmod,
@@ -20,7 +20,7 @@ import { createGunzip } from "node:zlib";
 import { createTarDecoder } from "modern-tar";
 
 import { invalidEvalsDir } from "../../errors";
-import { hashTaskDir } from "./tasks";
+import { type HashedFile, taskHash } from "./tasks";
 
 /**
  * Root of lmnr-cli's cache: `$LMNR_CACHE_DIR`, else `$XDG_CACHE_HOME/lmnr`,
@@ -65,11 +65,16 @@ export const safeEntryPath = (name: string): string | null => {
  * unsafe path rejects the archive. Files get 0755 or 0644 from their header's
  * execute bits. Nothing outside `dest` is ever touched: paths are relative
  * without `..`, and no links are created that a later entry could follow.
+ *
+ * Returns the task hash of the archive's entries, with modes from their
+ * headers: the same on every OS, unlike re-hashing the extracted files
+ * (Windows has no exec bits to read back).
  */
 export const extractTaskArchive = async (
   gzipped: ReadableStream<Uint8Array>,
   dest: string,
-): Promise<void> => {
+): Promise<string> => {
+  const hashed: HashedFile[] = [];
   const tar = Readable.toWeb(
     Readable.fromWeb(gzipped as NodeReadableStream<Uint8Array>).pipe(
       createGunzip(),
@@ -96,14 +101,31 @@ export const extractTaskArchive = async (
       continue;
     }
     await mkdir(path.dirname(target), { recursive: true });
+    const content = createHash("sha256");
     // `wx`: a duplicate entry fails instead of overwriting.
-    await entry.body.pipeTo(
-      Writable.toWeb(
-        createWriteStream(target, { flags: "wx" }),
-      ) as WritableStream<Uint8Array>,
-    );
-    await chmod(target, mode & 0o111 ? 0o755 : 0o644);
+    await entry.body
+      .pipeThrough(
+        new TransformStream<Uint8Array, Uint8Array>({
+          transform: (chunk, controller) => {
+            content.update(chunk);
+            controller.enqueue(chunk);
+          },
+        }),
+      )
+      .pipeTo(
+        Writable.toWeb(
+          createWriteStream(target, { flags: "wx" }),
+        ) as WritableStream<Uint8Array>,
+      );
+    const fileMode = mode & 0o111 ? 0o755 : 0o644;
+    await chmod(target, fileMode);
+    hashed.push({
+      path: rel.split(path.sep).join("/"),
+      mode: fileMode,
+      content: content.digest("hex"),
+    });
   }
+  return taskHash(hashed);
 };
 
 /**
@@ -125,8 +147,7 @@ export const ensureCachedTask = async (
   try {
     const extracted = path.join(staging, "task");
     await mkdir(extracted);
-    await extractTaskArchive(await download(hash), extracted);
-    const actual = await hashTaskDir(extracted);
+    const actual = await extractTaskArchive(await download(hash), extracted);
     if (actual !== hash) {
       throw new Error(
         `Downloaded task ${hash} doesn't match its hash (got ${actual}).`,

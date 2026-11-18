@@ -189,7 +189,13 @@
     depend on whose umask uploaded it. A task = a non-hidden, non-symlink
     dir directly in `tasks/`.
   - **Sync state** `<dataset>/tasks/.lmnr-state.json` = what `tasks/` was
-    last pulled / pushed as. Decisions are pure (`sync.ts`): `decideRunSync`
+    last pulled / pushed as, plus `localHashes`: what synced tasks hash to on
+    THIS disk where that differs (Windows takes modes from extensions, so a
+    task with a non-`.sh` executable or a non-executable `.sh` never re-hashes
+    to its lockfile hash there). `readDataset` maps a task still on its
+    `localHashes` entry to the synced hash (`canonicalHashes`), so `hashes` is
+    what every machine computes and `diskHashes` is this disk's; push packs
+    from disk, so it refuses to re-upload a mapped task. Decisions are pure (`sync.ts`): `decideRunSync`
     (no lock → unversioned; local == lock → `v<N>`; empty, or local == state
     != lock → auto-pull; else unversioned + warning), `hasLocalChanges`
     (pull's refusal), `isBehindLock` (push's refusal: pushing a `tasks/`
@@ -198,7 +204,9 @@
     `~/.cache/lmnr` `eval-tasks/<hex>/`: streamed gunzip → `createTarDecoder`
     (strict) → only `file` / `directory` entries with safe relative paths
     (`safeEntryPath`), files opened `wx` (never through an existing link),
-    chmod 755/644; the extracted tree must hash to its name or it's dropped;
+    chmod 755/644; the archive must hash to its name (`extractTaskArchive`
+    hashes entries with their HEADER modes as it writes them, never by
+    re-reading the tree: Windows can't read exec bits back) or it's dropped;
     staged in `.tmp-*` and renamed in. Installing copies into a hidden
     `tasks/.<name>.lmnr-tmp-*` then renames; unchanged tasks stay. Every
     dataset is planned and checked before any is touched. Without

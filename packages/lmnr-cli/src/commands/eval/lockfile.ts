@@ -126,36 +126,67 @@ const statePath = (datasetDir: string) =>
   path.join(datasetDir, TASKS_DIR, STATE_FILE);
 
 /**
+ * The sync state: the version `tasks/` was last synced to, plus `localHashes`,
+ * what synced tasks hash to on THIS disk where that differs from their hash
+ * (Windows has no exec bits, so it hashes modes by extension). A task whose
+ * disk hash is its `localHashes` entry is unchanged since the sync.
+ */
+export interface TasksState extends DatasetLock {
+  localHashes: TaskHashes;
+}
+
+/**
  * What `tasks/` was last synced to (pulled or pushed). Null when unknown: never
  * synced, or the file is unreadable (then `tasks/` counts as locally changed
  * unless it matches the lockfile).
  */
 export const readState = async (
   datasetDir: string,
-): Promise<DatasetLock | null> => {
+): Promise<TasksState | null> => {
   try {
-    const parsed = parseLock(
-      JSON.parse(await readFile(statePath(datasetDir), "utf8")),
-    );
-    return typeof parsed === "string" ? null : parsed;
+    const value = JSON.parse(await readFile(statePath(datasetDir), "utf8"));
+    const parsed = parseLock(value);
+    if (typeof parsed === "string") return null;
+    const localHashes: TaskHashes = {};
+    for (const [name, hash] of Object.entries(value.localHashes ?? {})) {
+      if (typeof hash === "string" && HASH.test(hash) && name in parsed.tasks) {
+        localHashes[name] = hash;
+      }
+    }
+    return { ...parsed, localHashes };
   } catch {
     return null;
   }
 };
 
-export const writeState = (datasetDir: string, state: DatasetLock) =>
-  writeAtomic(
+/**
+ * Record that `tasks/` holds `state`. `disk` is what those tasks hash to on
+ * this disk (`hashLocalTasks`); entries that differ become `localHashes`.
+ */
+export const writeState = (
+  datasetDir: string,
+  state: DatasetLock,
+  disk: TaskHashes = state.tasks,
+) => {
+  const localHashes = sortedTasks(disk).filter(
+    ([name, hash]) => name in state.tasks && state.tasks[name] !== hash,
+  );
+  return writeAtomic(
     statePath(datasetDir),
     `${JSON.stringify(
       {
         dataset: state.dataset,
         version: state.version,
         tasks: Object.fromEntries(sortedTasks(state.tasks)),
+        ...(localHashes.length > 0
+          ? { localHashes: Object.fromEntries(localHashes) }
+          : {}),
       },
       null,
       2,
     )}\n`,
   );
+};
 
 const IGNORES_TASKS = new Set([
   TASKS_DIR,

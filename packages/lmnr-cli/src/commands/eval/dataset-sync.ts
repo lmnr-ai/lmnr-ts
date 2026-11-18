@@ -26,11 +26,13 @@ import {
   readState,
   sameTasks,
   type TaskDiff,
+  type TasksState,
   writeLock,
   writeState,
 } from "./lockfile";
 import { packFiles } from "./pack";
 import {
+  canonicalHashes,
   type DatasetStatus,
   datasetStatus,
   decideRunSync,
@@ -47,6 +49,7 @@ import {
 import {
   byteOrder,
   hashLocalTasks,
+  hashTaskDir,
   hashTaskFiles,
   isValidName,
   type LocalTasks,
@@ -74,10 +77,12 @@ export interface LocalDataset {
   folder: string;
   dir: string;
   lock: DatasetLock | null;
-  state: DatasetLock | null;
+  state: TasksState | null;
   local: LocalTasks;
-  /** Hashes of the tasks in `tasks/`. */
+  /** Hashes of the tasks in `tasks/`, as any machine computes them (`canonicalHashes`). */
   hashes: TaskHashes;
+  /** What the tasks in `tasks/` hash to on this disk. */
+  diskHashes: TaskHashes;
 }
 
 export const readDataset = async (
@@ -90,13 +95,15 @@ export const readDataset = async (
     readState(dir),
     listTasks(dir),
   ]);
+  const diskHashes = await hashLocalTasks(local);
   return {
     folder,
     dir,
     lock,
     state,
     local,
-    hashes: await hashLocalTasks(local),
+    hashes: canonicalHashes(diskHashes, state),
+    diskHashes,
   };
 };
 
@@ -203,11 +210,14 @@ export const syncTasks = async (
   const cached = await mapLimit(updated, TRANSFER_CONCURRENCY, (name) =>
     ensureCachedTask(target.tasks[name], download, env),
   );
+  const disk: TaskHashes = { ...ds.diskHashes };
   for (const [i, name] of updated.entries()) {
-    await installTask(cached[i], path.join(tasksDir, name));
+    const dest = path.join(tasksDir, name);
+    await installTask(cached[i], dest);
+    disk[name] = await hashTaskDir(dest);
   }
   for (const name of removed) await removeTask(path.join(tasksDir, name));
-  await writeState(ds.dir, target);
+  await writeState(ds.dir, target, disk);
   return {
     updated,
     removed,
@@ -352,10 +362,19 @@ const uploadTask = async (
   hash: string,
 ) => {
   const files = await walkTaskFiles(ds.local.dirs[name]);
-  if ((await hashTaskFiles(files)) !== hash) {
+  if ((await hashTaskFiles(files)) !== ds.diskHashes[name]) {
     throw new Error(
       `${ds.folder}/${TASKS_DIR}/${name} changed during the push; run ` +
         "`lmnr-cli eval push` again.",
+    );
+  }
+  if (ds.diskHashes[name] !== hash) {
+    // Unchanged since the pull, but this disk can't hold its file modes
+    // (Windows), so packing it here wouldn't reproduce the archive behind `hash`.
+    throw new Error(
+      `${ds.folder}/${TASKS_DIR}/${name} (${hash}) isn't in this Laminar ` +
+        "project, and its file modes can't be reproduced on this machine. " +
+        "Push it from macOS or Linux, or edit the task to version it as new.",
     );
   }
   const { archive, index } = await packFiles(files);
@@ -468,7 +487,7 @@ export const pushDatasets = async (
     }
     if (ds.lock && sameTasks(ds.hashes, ds.lock.tasks)) {
       if (!ds.state || !sameTasks(ds.state.tasks, ds.lock.tasks)) {
-        await writeState(ds.dir, ds.lock);
+        await writeState(ds.dir, ds.lock, ds.diskHashes);
       }
       await noteGitignore(ds);
       results.push({
@@ -517,7 +536,7 @@ export const pushDatasets = async (
       tasks: ds.hashes,
     };
     await writeLock(ds.dir, lock);
-    await writeState(ds.dir, lock);
+    await writeState(ds.dir, lock, ds.diskHashes);
     await noteGitignore(ds);
     const latest = created.previousLatest;
     if (latest !== null && latest > (parentVersion ?? 0)) {
@@ -625,7 +644,7 @@ export const prepareRunDatasets = async (
           ds.state.version !== lock.version ||
           !sameTasks(ds.state.tasks, lock.tasks);
         if (ds.local.exists && stale) {
-          await writeState(ds.dir, lock);
+          await writeState(ds.dir, lock, ds.diskHashes);
         }
         runs.push({
           path: folder,

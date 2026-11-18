@@ -1,5 +1,12 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -14,7 +21,13 @@ import {
   pushDatasets,
   statusDatasets,
 } from "./dataset-sync";
-import { type DatasetLock, readLock, readState, writeLock } from "./lockfile";
+import {
+  type DatasetLock,
+  readLock,
+  readState,
+  writeLock,
+  writeState,
+} from "./lockfile";
 import { hashLocalTasks, listTasks } from "./tasks";
 
 let root: string;
@@ -152,7 +165,10 @@ void describe("eval push", () => {
       version: 1,
       tasks: await localHashes("support"),
     });
-    expect(await readState(path.join(evals, "support"))).toEqual(lock);
+    expect(await readState(path.join(evals, "support"))).toEqual({
+      ...lock,
+      localHashes: {},
+    });
     expect(await readFile(path.join(evals, "support/.gitignore"), "utf8")).toBe(
       "/tasks/\n",
     );
@@ -454,6 +470,29 @@ void describe("eval status", () => {
       /support {2}v1 {2}.*modified.*1 added, 1 modified, 0 removed/,
     );
     expect(text).toMatch(/ {4}\+ added\n {4}~ refund\n$/);
+  });
+});
+
+void describe("tasks/ on a disk without exec bits", () => {
+  void it("counts synced tasks by their recorded disk hash, edits as edits", async () => {
+    await writeSupport();
+    const server = fakeLaminar();
+    await pushDatasets(evals, ["support"], {}, server.getClient);
+    const dir = path.join(evals, "support");
+    const lock = (await readLock(dir))!;
+    // What a Windows pull records: modes there come from extensions, so a
+    // synced task can hash differently on disk than in the lockfile.
+    await chmod(path.join(dir, "tasks/refund/instruction.md"), 0o755);
+    await writeState(dir, lock, await localHashes("support"));
+
+    const [synced] = await statusDatasets(evals, ["support"]);
+    expect(synced).toMatchObject({ state: "up_to_date", modified: [] });
+    const [noop] = await pushDatasets(evals, ["support"], {}, server.getClient);
+    expect(noop).toMatchObject({ upToDate: true, version: 1 });
+
+    await write("support/tasks/refund/instruction.md", "edited");
+    const [edited] = await statusDatasets(evals, ["support"]);
+    expect(edited).toMatchObject({ state: "modified", modified: ["refund"] });
   });
 });
 

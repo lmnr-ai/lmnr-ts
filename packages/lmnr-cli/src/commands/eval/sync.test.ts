@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canonicalHashes,
   datasetStatus,
   decideRunSync,
   groupName,
@@ -108,5 +109,18 @@ void describe("datasetStatus", () => {
       state: "not_pushed",
       added: ["a"],
     });
+  });
+});
+
+void describe("canonicalHashes", () => {
+  void it("maps a task still on its synced disk hash to the shared hash", () => {
+    const state = { ...v1, localHashes: { a: h("w") } };
+    expect(canonicalHashes({ a: h("w"), b: h("1") }, state)).toEqual(v1.tasks);
+    // Edited since the sync: its disk hash stands.
+    expect(canonicalHashes({ a: h("e"), b: h("1") }, state)).toEqual({
+      a: h("e"),
+      b: h("1"),
+    });
+    expect(canonicalHashes({ a: h("w") }, null)).toEqual({ a: h("w") });
   });
 });
