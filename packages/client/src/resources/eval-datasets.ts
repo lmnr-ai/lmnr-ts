@@ -2,47 +2,29 @@ import { BaseResource, type LaminarAuth } from "./index";
 
 /** An eval dataset of the project. See {@link EvalDatasetsResource.list}. */
 export interface EvalDataset {
-  id: string;
+  /** The dataset's name: its folder name in the evals folder. */
   name: string;
   createdAt: string;
-  /** Null until the first version is pushed. */
-  latestVersion: number | null;
+  /** When a task version was last pushed (the dataset's `createdAt` before). */
+  updatedAt: string;
+  taskCount: number;
 }
 
-/** One immutable version of an eval dataset. */
-export interface EvalDatasetVersion {
-  datasetId: string;
-  dataset: string;
-  version: number;
-  parentVersion: number | null;
-  message: string | null;
+/** A task version: its content hash (64 lowercase hex chars). */
+export interface EvalDatasetTask {
+  name: string;
+  hash: string;
+  /** When this version became the task's latest. */
   createdAt: string;
-  /** Task name → task hash (`sha256:<64 hex>`). */
-  tasks: Record<string, string>;
 }
 
-/** Body of {@link EvalDatasetsResource.createVersion}. */
-export interface CreateEvalDatasetVersionOptions {
-  /** The version this one was made from (the lockfile's), null for none. */
-  parentVersion?: number | null;
-  message?: string | null;
-  /** Task name → task hash; every hash must be uploaded first. */
-  tasks: Record<string, string>;
-}
-
-/** What {@link EvalDatasetsResource.createVersion} created. */
-export interface CreatedEvalDatasetVersion {
-  datasetId: string;
-  dataset: string;
-  version: number;
-  /** The dataset's latest version before this one, null for a new dataset. */
-  previousLatest: number | null;
-}
+/** Task name → task hash. */
+export type EvalDatasetTaskHashes = Record<string, string>;
 
 /**
  * A failed eval datasets request. `status` is the HTTP status; `missing` is
- * set on a 409 from {@link EvalDatasetsResource.createVersion}: the hashes
- * with no uploaded task.
+ * set on a 409 from {@link EvalDatasetsResource.pushTasks}: the tasks whose
+ * version isn't uploaded.
  */
 export class EvalDatasetsError extends Error {
   constructor(
@@ -56,61 +38,15 @@ export class EvalDatasetsError extends Error {
 }
 
 /**
- * Eval datasets: Harbor tasks stored in Laminar as immutable, numbered
- * versions. Tasks are content-addressed by a hash lmnr-cli computes (the
- * server stores it as is): `missingTasks` → `uploadTask` + `uploadTaskIndex`
- * for each missing one → `createVersion`. `getVersion` + `downloadTask` read a
- * version back.
+ * Eval datasets: Harbor tasks stored in Laminar, each task versioned on its
+ * own by the content hash lmnr-cli computes (the server stores it as is).
+ * Pushing: `missingTasks` → `uploadTask` + `uploadTaskIndex` for each missing
+ * version → `pushTasks`. Pulling: `listTasks` (latest versions) and
+ * `downloadTask`.
  */
 export class EvalDatasetsResource extends BaseResource {
   constructor(baseHttpUrl: string, auth: LaminarAuth) {
     super(baseHttpUrl, auth);
-  }
-
-  /** The task hashes this project has no uploaded task for. */
-  public async missingTasks(hashes: string[]): Promise<string[]> {
-    const response = await fetch(this.url("/eval-dataset-tasks/missing"), {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ hashes }),
-    });
-    if (!response.ok) await this.fail(response);
-    return ((await response.json()) as { missing: string[] }).missing;
-  }
-
-  /**
-   * Upload a task's archive (`.tar.gz`, paths relative to the task dir). The
-   * task counts as uploaded only once {@link uploadTaskIndex} succeeds.
-   */
-  public async uploadTask(hash: string, archive: Uint8Array): Promise<void> {
-    const response = await fetch(this.taskUrl(hash, ""), {
-      method: "PUT",
-      headers: { ...this.headers(), "Content-Type": "application/gzip" },
-      body: archive as Uint8Array<ArrayBuffer>,
-    });
-    if (!response.ok) await this.fail(response);
-  }
-
-  /** Upload the file index of a task uploaded with {@link uploadTask}. */
-  public async uploadTaskIndex(hash: string, index: object): Promise<void> {
-    const response = await fetch(this.taskUrl(hash, "/index"), {
-      method: "PUT",
-      headers: this.headers(),
-      body: JSON.stringify(index),
-    });
-    if (!response.ok) await this.fail(response);
-  }
-
-  /** A task's archive (`.tar.gz`), streamed. */
-  public async downloadTask(hash: string): Promise<ReadableStream<Uint8Array>> {
-    const response = await fetch(this.taskUrl(hash, ""), {
-      headers: { ...this.headers(), Accept: "application/gzip" },
-    });
-    if (!response.ok) await this.fail(response);
-    if (!response.body) {
-      throw new EvalDatasetsError(`Empty response for task ${hash}`, 502);
-    }
-    return response.body;
   }
 
   /** The project's eval datasets, sorted by name. */
@@ -122,47 +58,123 @@ export class EvalDatasetsResource extends BaseResource {
     return (await response.json()) as EvalDataset[];
   }
 
-  /** One version of a dataset, or its latest. 404s when either doesn't exist. */
-  public async getVersion(
-    dataset: string,
-    version: number | "latest",
-  ): Promise<EvalDatasetVersion> {
-    const response = await fetch(
-      this.url(
-        `/eval-datasets/${encodeURIComponent(dataset)}/versions/${version}`,
-      ),
-      { headers: this.headers() },
-    );
+  /** The latest version of every task of the dataset, sorted by name. 404s for an unknown dataset. */
+  public async listTasks(dataset: string): Promise<EvalDatasetTask[]> {
+    const response = await fetch(this.datasetUrl(dataset, "/tasks"), {
+      headers: this.headers(),
+    });
     if (!response.ok) await this.fail(response);
-    return (await response.json()) as EvalDatasetVersion;
+    return ((await response.json()) as { tasks: EvalDatasetTask[] }).tasks;
   }
 
   /**
-   * Create the dataset's next version (and the dataset, on its first push).
-   * A 409 {@link EvalDatasetsError} lists the task hashes not uploaded yet.
+   * The tasks of `tasks` whose version (hash) isn't in Laminar, in input
+   * order. At most 10 000 tasks per call. An unknown dataset has none.
    */
-  public async createVersion(
+  public async missingTasks(
     dataset: string,
-    options: CreateEvalDatasetVersionOptions,
-  ): Promise<CreatedEvalDatasetVersion> {
+    tasks: EvalDatasetTaskHashes,
+  ): Promise<string[]> {
+    const response = await fetch(this.datasetUrl(dataset, "/tasks/missing"), {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ tasks }),
+    });
+    if (!response.ok) await this.fail(response);
+    return ((await response.json()) as { missing: string[] }).missing;
+  }
+
+  /**
+   * Upload a task version's archive (`.tar.gz`, paths relative to the task
+   * dir). The version exists only once {@link uploadTaskIndex} succeeds.
+   */
+  public async uploadTask(
+    dataset: string,
+    task: string,
+    hash: string,
+    archive: Uint8Array,
+  ): Promise<void> {
+    const response = await fetch(this.versionUrl(dataset, task, hash, ""), {
+      method: "PUT",
+      headers: { ...this.headers(), "Content-Type": "application/gzip" },
+      body: archive as Uint8Array<ArrayBuffer>,
+    });
+    if (!response.ok) await this.fail(response);
+  }
+
+  /** Upload the file index of an archive uploaded with {@link uploadTask}; creates the version. */
+  public async uploadTaskIndex(
+    dataset: string,
+    task: string,
+    hash: string,
+    index: object,
+  ): Promise<void> {
     const response = await fetch(
-      this.url(`/eval-datasets/${encodeURIComponent(dataset)}/versions`),
+      this.versionUrl(dataset, task, hash, "/index"),
       {
-        method: "POST",
+        method: "PUT",
         headers: this.headers(),
-        body: JSON.stringify(options),
+        body: JSON.stringify(index),
       },
     );
     if (!response.ok) await this.fail(response);
-    return (await response.json()) as CreatedEvalDatasetVersion;
+  }
+
+  /**
+   * Make these versions their tasks' latest (the push). At most 10 000
+   * tasks. A 409 {@link EvalDatasetsError} lists the tasks whose version
+   * isn't uploaded; nothing is changed then.
+   */
+  public async pushTasks(
+    dataset: string,
+    tasks: EvalDatasetTaskHashes,
+  ): Promise<EvalDatasetTask[]> {
+    const response = await fetch(this.datasetUrl(dataset, "/tasks"), {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ tasks }),
+    });
+    if (!response.ok) await this.fail(response);
+    return ((await response.json()) as { tasks: EvalDatasetTask[] }).tasks;
+  }
+
+  /** A task version's archive (`.tar.gz`), streamed. */
+  public async downloadTask(
+    dataset: string,
+    task: string,
+    hash: string,
+  ): Promise<ReadableStream<Uint8Array>> {
+    const response = await fetch(this.versionUrl(dataset, task, hash, ""), {
+      headers: { ...this.headers(), Accept: "application/gzip" },
+    });
+    if (!response.ok) await this.fail(response);
+    if (!response.body) {
+      throw new EvalDatasetsError(
+        `Empty response for task ${task} (${hash})`,
+        502,
+      );
+    }
+    return response.body;
   }
 
   private url(path: string): string {
     return `${this.baseHttpUrl}${this.apiPrefix}${path}`;
   }
 
-  private taskUrl(hash: string, suffix: string): string {
-    return this.url(`/eval-dataset-tasks/${encodeURIComponent(hash)}${suffix}`);
+  private datasetUrl(dataset: string, suffix: string): string {
+    return this.url(`/eval-datasets/${encodeURIComponent(dataset)}${suffix}`);
+  }
+
+  private versionUrl(
+    dataset: string,
+    task: string,
+    hash: string,
+    suffix: string,
+  ): string {
+    return this.datasetUrl(
+      dataset,
+      `/tasks/${encodeURIComponent(task)}/versions/${encodeURIComponent(hash)}${suffix}`,
+    );
   }
 
   /**
