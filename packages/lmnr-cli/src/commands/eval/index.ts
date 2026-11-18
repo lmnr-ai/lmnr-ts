@@ -29,8 +29,8 @@ import { type EvaluationLink, parseEvaluationLine } from "./run-log-lines";
 const logger = initializeLogger();
 
 interface EvalRunOpts extends GlobalOpts {
+  dir?: string;
   remote?: boolean;
-  dataset?: string[];
   task?: string[];
   nAttempts?: number;
   nConcurrent?: number;
@@ -68,9 +68,7 @@ const reportLocal = async (
   if (opts.json) {
     outputJson({ mode: "local", datasets, failed, url });
   } else if (url) {
-    logger.info(
-      `Results are in evaluations grouped by dataset version: ${url}`,
-    );
+    logger.info(`Results are in evaluations grouped by dataset: ${url}`);
   }
   assertDatasetsPassed(failed);
 };
@@ -162,33 +160,37 @@ const followRemote = async (
   } else if (links.length > 0) {
     process.stderr.write(formatLinks(links));
   } else if (url) {
-    logger.info(
-      `Results are in evaluations grouped by dataset version: ${url}`,
-    );
+    logger.info(`Results are in evaluations grouped by dataset: ${url}`);
   }
   assertRemotePassed(result);
 };
 
 /**
- * `lmnr-cli eval run [dir]`: run each dataset's tasks with Harbor locally on
- * Docker (default), or with `--remote` in Laminar sandboxes, following the
- * run's log until it ends. Each dataset is first synced with its lockfile
- * (`prepareRunDatasets`), which picks its evaluation group.
+ * `lmnr-cli eval run [dataset]`: run the dataset's (every dataset's) tasks
+ * with Harbor locally on Docker (default), or with `--remote` in Laminar
+ * sandboxes, following the run's log until it ends. Each dataset is first
+ * synced with its `tasks.toml` where that loses nothing
+ * (`prepareRunDatasets`); its evaluation group is its name.
  */
 export const handleEvalRun = async (
-  dir: string,
+  dataset: string | undefined,
   opts: EvalRunOpts,
 ): Promise<void> => {
   // Parse --env before anything slow so a missing variable fails fast.
   const explicitEnv = opts.env ? parseEnvFlags(opts.env) : {};
-  const evalsDir = path.resolve(dir);
-  const folders = await selectDatasets(evalsDir, opts.dataset);
+  const evalsDir = path.resolve(opts.dir ?? "evals");
+  const folders = await selectDatasets(evalsDir, dataset);
   // A harbor.yaml that picks its own tasks fails before anything is pulled.
   for (const folder of folders) {
     await loadDatasetConfig(path.join(evalsDir, folder));
   }
   const getClient = lazyClient(() => buildEvalClient(opts));
-  const datasets = await prepareRunDatasets(evalsDir, folders, getClient);
+  const datasets = await prepareRunDatasets(
+    evalsDir,
+    folders,
+    opts.task,
+    getClient,
+  );
   const overrides: RunOverrides = {
     tasks: opts.task,
     nAttempts: opts.nAttempts,

@@ -48,16 +48,14 @@ void describe("task hash", () => {
     await write("t/task.toml", "[task]\n", 0o644);
     await write("t/tests/test.sh", "#!/bin/sh\n", 0o755);
 
-    const expected = `sha256:${sha(
+    const expected = sha(
       `644 ${sha("[task]\n")} task.toml\n` +
         `755 ${sha("#!/bin/sh\n")} tests/test.sh\n`,
-    )}`;
+    );
     expect(await hashTaskDir(path.join(root, "t"), "linux")).toBe(expected);
     // An empty task hashes the empty listing.
     await mkdir(path.join(root, "empty"));
-    expect(await hashTaskDir(path.join(root, "empty"), "linux")).toBe(
-      `sha256:${sha("")}`,
-    );
+    expect(await hashTaskDir(path.join(root, "empty"), "linux")).toBe(sha(""));
   });
 
   void it("sorts paths by UTF-8 bytes, whatever order files were written in", async () => {

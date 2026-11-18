@@ -7,7 +7,7 @@ import { type FileSource, packTar } from "modern-tar/fs";
 
 import { SKIPPED_DIRS } from "./datasets";
 
-/** `eval pull` / `eval push` bookkeeping in `<dataset>/tasks/` (`lockfile.ts`). */
+/** `eval dataset pull` / `push` bookkeeping in `<dataset>/tasks/` (`tasks-toml.ts`). */
 export const STATE_FILE = ".lmnr-state.json";
 
 /**
@@ -77,10 +77,11 @@ export const fileEntry = (
       : {}),
 });
 
-/** Walk `root` for packing, minus the upload exclusions. */
+/** Walk `root` for packing, minus the upload exclusions and `exclude` (POSIX paths relative to `root`). */
 const walkFiles = async (
   root: string,
   platform: NodeJS.Platform,
+  exclude: ReadonlySet<string>,
 ): Promise<WalkResult> => {
   const files: PackedFile[] = [];
   const skippedSymlinks: string[] = [];
@@ -90,6 +91,7 @@ const walkFiles = async (
     for (const entry of entries) {
       const source = path.join(dir, entry.name);
       const target = rel ? `${rel}/${entry.name}` : entry.name;
+      if (exclude.has(target)) continue;
       if (entry.isSymbolicLink()) {
         // Sandboxes extract with Python's `filter="data"`, which rejects links
         // that escape the archive; skipping keeps uploads predictable.
@@ -185,15 +187,18 @@ interface EvalsArchive {
 /**
  * Pack the evals folder's CONTENTS (datasets at the archive root, no `evals/`
  * prefix — that is where the orchestrator runs from) into a `.tar.gz`, with
- * the index the UI reads single files by.
+ * the index the UI reads single files by. `exclude`: paths (POSIX, relative
+ * to the folder) left out, e.g. task dirs the orchestrator gets from Laminar.
  */
 export const packEvalsDir = async (
   dir: string,
   platform: NodeJS.Platform = process.platform,
+  exclude: ReadonlySet<string> = new Set(),
 ): Promise<EvalsArchive> => {
   const { files, skippedSymlinks } = await walkFiles(
     path.resolve(dir),
     platform,
+    exclude,
   );
   const { archive, index } = await packFiles(files);
   return { archive, index, fileCount: files.length, skippedSymlinks };

@@ -23,7 +23,10 @@ export const MAX_TASK_ARCHIVE_BYTES = 512 * 1024 * 1024;
 export const isValidName = (name: string, max: number) =>
   name.length <= max && NAME.test(name);
 
-/** Task name → task hash (`sha256:<64 hex>`). */
+/** A task hash: 64 lowercase hex chars (`taskHash`). */
+export const HASH = /^[0-9a-f]{64}$/;
+
+/** Task name → task hash. */
 export type TaskHashes = Record<string, string>;
 
 /** A task file, as hashed and packed. */
@@ -77,8 +80,8 @@ const sha256File = (file: string): Promise<string> =>
   });
 
 /**
- * The task hash: `sha256:` + sha256 of one `<mode> <content sha256> <path>\n`
- * line per file, in UTF-8 byte order of the path. The server stores it as is.
+ * The task hash: sha256 hex of one `<mode> <content sha256> <path>\n` line
+ * per file, in UTF-8 byte order of the path. The server stores it as is.
  */
 export const hashTaskFiles = async (files: TaskFile[]): Promise<string> => {
   const entries: HashedFile[] = [];
@@ -104,7 +107,7 @@ export const taskHash = (files: HashedFile[]): string => {
   const lines = [...files]
     .sort((a, b) => byteOrder(a.path, b.path))
     .map((f) => `${f.mode.toString(8)} ${f.content} ${f.path}\n`);
-  return `sha256:${createHash("sha256").update(lines.join(""), "utf8").digest("hex")}`;
+  return createHash("sha256").update(lines.join(""), "utf8").digest("hex");
 };
 
 export const hashTaskDir = async (
@@ -147,6 +150,14 @@ export const listTasks = async (datasetDir: string): Promise<LocalTasks> => {
   }
   return { exists: entries !== null, dirs, symlinks: symlinks.sort() };
 };
+
+/** The server's cap on the tasks of one eval dataset request (`missing`, push). */
+export const TASKS_PER_REQUEST = 10_000;
+
+export const chunks = <T>(items: T[], size: number): T[][] =>
+  Array.from({ length: Math.ceil(items.length / size) }, (_, i) =>
+    items.slice(i * size, (i + 1) * size),
+  );
 
 /** Run `fn` over `items` with at most `limit` in flight; results keep order. */
 export const mapLimit = async <T, R>(

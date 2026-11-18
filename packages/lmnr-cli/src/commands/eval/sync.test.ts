@@ -1,126 +1,89 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  canonicalHashes,
-  datasetStatus,
-  decideRunSync,
-  groupName,
-  hasLocalChanges,
-  isBehindLock,
-} from "./sync";
+import { taskScope } from "./datasets";
+import { canonicalHashes, planPull, planPush } from "./sync";
 
-const h = (c: string) => `sha256:${c.repeat(64)}`;
-const v1 = { dataset: "support", version: 1, tasks: { a: h("1"), b: h("1") } };
-const v2 = { dataset: "support", version: 2, tasks: { a: h("2"), b: h("1") } };
-
-void describe("decideRunSync", () => {
-  void it("runs unversioned without a lockfile", () => {
-    expect(decideRunSync(null, null, { a: h("1") })).toEqual({
-      kind: "unversioned",
-      reason: "not_pushed",
-    });
-  });
-
-  void it("runs the lockfile's version when tasks/ matches it", () => {
-    expect(decideRunSync(v2, v1, { ...v2.tasks })).toEqual({
-      kind: "versioned",
-      lock: v2,
-    });
-    expect(decideRunSync(v2, null, { ...v2.tasks }).kind).toBe("versioned");
-  });
-
-  void it("pulls into a missing or empty tasks/", () => {
-    expect(decideRunSync(v2, null, {})).toEqual({ kind: "pull", lock: v2 });
-    expect(decideRunSync(v2, v1, {}).kind).toBe("pull");
-  });
-
-  void it("pulls when tasks/ is unchanged since an older sync", () => {
-    expect(decideRunSync(v2, v1, { ...v1.tasks })).toEqual({
-      kind: "pull",
-      lock: v2,
-    });
-  });
-
-  void it("runs local edits unversioned, with what changed", () => {
-    const edited = { a: h("3"), c: h("1") };
-    expect(decideRunSync(v2, v2, edited)).toEqual({
-      kind: "unversioned",
-      reason: "modified",
-      lock: v2,
-      diff: { added: ["c"], modified: ["a"], removed: ["b"] },
-    });
-    // Never synced here: tasks/ that isn't the lockfile's counts as edited.
-    expect(decideRunSync(v2, null, { ...v1.tasks }).kind).toBe("unversioned");
-    // Edited on top of an older sync: still edits, never overwritten.
-    expect(decideRunSync(v2, v1, edited).kind).toBe("unversioned");
-  });
+const h = (c: string) => c.repeat(64);
+const all = taskScope(undefined);
+const state = (tasks: Record<string, string>, localHashes = {}) => ({
+  tasks,
+  localHashes,
 });
 
-void describe("hasLocalChanges", () => {
-  void it("compares with the last sync, or the lockfile and target", () => {
-    expect(hasLocalChanges({}, null, v1, v2.tasks)).toBe(false);
-    expect(hasLocalChanges({ ...v1.tasks }, v1, v1, v2.tasks)).toBe(false);
-    expect(hasLocalChanges({ a: h("9") }, v1, v1, v2.tasks)).toBe(true);
-    // Never synced: matching the lockfile or the target loses nothing.
-    expect(hasLocalChanges({ ...v1.tasks }, null, v1, v2.tasks)).toBe(false);
-    expect(hasLocalChanges({ ...v2.tasks }, null, null, v2.tasks)).toBe(false);
-    expect(hasLocalChanges({ ...v1.tasks }, null, null, v2.tasks)).toBe(true);
-  });
-
-  void it("knows when tasks/ is older than the lockfile", () => {
-    expect(isBehindLock(v1, v2)).toBe(true);
-    expect(isBehindLock(v2, v2)).toBe(false);
-    expect(isBehindLock(null, v2)).toBe(false);
-    expect(isBehindLock(v1, null)).toBe(false);
-  });
-});
-
-void describe("groupName", () => {
-  void it("names a run's evaluation group by dataset version", () => {
-    expect(groupName("support", 7)).toBe("support v7");
-    expect(groupName("support", null)).toBe("support unversioned");
-  });
-});
-
-void describe("datasetStatus", () => {
-  void it("reports the state and the diff against the lockfile", () => {
-    expect(datasetStatus("support", v2, v2, { ...v2.tasks })).toEqual({
-      dataset: "support",
-      path: "support",
-      version: 2,
-      syncedVersion: 2,
-      state: "up_to_date",
-      tasks: 2,
-      added: [],
-      modified: [],
-      removed: [],
+void describe("planPull", () => {
+  void it("adds, changes, removes synced tasks, and keeps new local ones", () => {
+    const disk = { same: h("1"), old: h("2"), gone: h("3"), mine: h("4") };
+    const synced = state({ same: h("1"), old: h("2"), gone: h("3") });
+    const target = { same: h("1"), old: h("9"), fresh: h("5") };
+    expect(planPull(disk, synced, target, all)).toEqual({
+      added: ["fresh"],
+      changed: ["old"],
+      removed: ["gone"],
+      unchanged: ["same"],
+      conflicts: [],
     });
-    expect(datasetStatus("support", v2, v1, { ...v1.tasks })).toMatchObject({
-      state: "behind",
-      syncedVersion: 1,
-      modified: ["a"],
+  });
+
+  void it("flags edited tasks it would change or remove", () => {
+    const disk = { edited: h("e"), cut: h("f"), unsynced: h("u"), ok: h("1") };
+    const synced = state({ edited: h("1"), cut: h("2"), ok: h("1") });
+    const target = { edited: h("1"), unsynced: h("9"), ok: h("1") };
+    expect(planPull(disk, synced, target, all)).toMatchObject({
+      changed: ["edited", "unsynced"],
+      removed: ["cut"],
+      conflicts: ["cut", "edited", "unsynced"],
     });
+    // An edited task that already matches the target loses nothing.
     expect(
-      datasetStatus("support", v2, v2, { ...v2.tasks, c: h("c") }),
-    ).toMatchObject({ state: "modified", added: ["c"] });
-    expect(datasetStatus("new", null, null, { a: h("a") })).toMatchObject({
-      dataset: "new",
-      version: null,
-      state: "not_pushed",
-      added: ["a"],
+      planPull({ a: h("1") }, state({}), { a: h("1") }, all).conflicts,
+    ).toEqual([]);
+  });
+
+  void it("removes only within --task", () => {
+    const disk = { "refund-a": h("1"), other: h("2") };
+    const synced = state(disk);
+    expect(planPull(disk, synced, {}, taskScope(["refund-*"])).removed).toEqual(
+      ["refund-a"],
+    );
+  });
+});
+
+void describe("planPush", () => {
+  void it("compares tasks/ with tasks.toml", () => {
+    const disk = { same: h("1"), edited: h("e"), fresh: h("3") };
+    const synced = state({ same: h("1"), edited: h("2"), gone: h("4") });
+    const toml = { same: h("1"), edited: h("2"), gone: h("4"), never: h("5") };
+    expect(planPush(disk, synced, toml, all)).toEqual({
+      added: ["fresh"],
+      changed: ["edited"],
+      // `never` was never pulled here: it stays pinned.
+      removed: ["gone"],
+      unchanged: ["same"],
+      behind: [],
     });
+  });
+
+  void it("finds unedited tasks whose pin moved since the sync", () => {
+    const disk = { a: h("1"), b: h("1"), c: h("e") };
+    const synced = state({ a: h("1"), b: h("1"), c: h("1") });
+    const toml = { a: h("2"), c: h("2") };
+    // a: pin moved; b: pin dropped; c: edited, so it's the user's version.
+    expect(planPush(disk, synced, toml, all).behind).toEqual(["a", "b"]);
+    expect(planPush(disk, synced, toml, taskScope(["c"])).behind).toEqual([]);
   });
 });
 
 void describe("canonicalHashes", () => {
   void it("maps a task still on its synced disk hash to the shared hash", () => {
-    const state = { ...v1, localHashes: { a: h("w") } };
-    expect(canonicalHashes({ a: h("w"), b: h("1") }, state)).toEqual(v1.tasks);
+    const synced = state({ a: h("a"), b: h("1") }, { a: h("w") });
+    expect(canonicalHashes({ a: h("w"), b: h("1") }, synced)).toEqual(
+      synced.tasks,
+    );
     // Edited since the sync: its disk hash stands.
-    expect(canonicalHashes({ a: h("e"), b: h("1") }, state)).toEqual({
+    expect(canonicalHashes({ a: h("e"), b: h("1") }, synced)).toEqual({
       a: h("e"),
       b: h("1"),
     });
-    expect(canonicalHashes({ a: h("w") }, null)).toEqual({ a: h("w") });
+    expect(canonicalHashes({ a: h("w") }, state({}))).toEqual({ a: h("w") });
   });
 });

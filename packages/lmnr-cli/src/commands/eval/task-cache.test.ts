@@ -193,14 +193,12 @@ void describe("ensureCachedTask / installTask", () => {
     const env = { LMNR_CACHE_DIR: path.join(root, "cache") };
 
     const cached = await ensureCachedTask(hash, download, env);
-    expect(cached).toBe(
-      path.join(root, "cache", "eval-tasks", hash.slice("sha256:".length)),
-    );
+    expect(cached).toBe(path.join(root, "cache", "eval-tasks", hash));
     expect(await ensureCachedTask(hash, download, env)).toBe(cached);
     expect(download).toHaveBeenCalledTimes(1);
     // Only verified tasks stay: no staging dirs are left behind.
     expect(await readdir(path.join(root, "cache", "eval-tasks"))).toEqual([
-      hash.slice("sha256:".length),
+      hash,
     ]);
 
     const tasks = path.join(root, "evals/s/tasks");
@@ -224,13 +222,23 @@ void describe("ensureCachedTask / installTask", () => {
     await mkdir(task);
     await writeFile(path.join(task, "task.toml"), "[task]");
     const { archive } = await packTask(task);
-    const wrong = `sha256:${"0".repeat(64)}`;
+    const wrong = "0".repeat(64);
     const env = { LMNR_CACHE_DIR: path.join(root, "cache") };
 
     await expect(
       ensureCachedTask(wrong, async () => streamOf(archive), env),
     ).rejects.toThrow(/doesn't match its hash/);
     expect(await readdir(path.join(root, "cache", "eval-tasks"))).toEqual([]);
+  });
+
+  void it("never puts anything but a hash into a cache path", async () => {
+    const download = vi.fn();
+    await expect(
+      ensureCachedTask("../../etc", download, {
+        LMNR_CACHE_DIR: path.join(root, "cache"),
+      }),
+    ).rejects.toThrow(/Invalid task hash/);
+    expect(download).not.toHaveBeenCalled();
   });
 
   void it("refuses a tasks/ that is a link", async () => {

@@ -10,8 +10,9 @@ import { API_KEY_VAR } from "./env";
 const logger = initializeLogger();
 
 /**
- * The API client of `eval push` / `pull`, `eval run`'s auto-pull and remote
- * runs: the logged-in user, or the project API key when there is no login (CI).
+ * The API client of `eval dataset push` / `pull`, `eval run`'s auto-pull and
+ * remote runs: the logged-in user, or the project API key when there is no
+ * login (CI).
  */
 export const buildEvalClient = async (
   opts: GlobalOpts,
@@ -34,7 +35,7 @@ export const buildEvalClient = async (
   }
 };
 
-/** Builds the client on first use, once: commands that stay local need no login. */
+/** Builds the client on first use, once: runs that stay local need no login. */
 export const lazyClient = (
   build: () => Promise<LaminarClient>,
 ): (() => Promise<LaminarClient>) => {

@@ -4,10 +4,11 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 
 import { invalidEvalsDir } from "../../errors";
+import type { TaskHashes } from "./tasks";
 
 /** A dataset is a directory directly inside the evals folder holding a Harbor JobConfig. */
 const DATASET_CONFIG = "harbor.yaml";
-/** The dataset's tasks, synced with Laminar by `eval push` / `eval pull`. */
+/** The dataset's tasks, synced with Laminar by `eval dataset push` / `pull`. */
 export const TASKS_DIR = "tasks";
 /** Optional per-dataset config: the images its tasks reference by `docker_image`. */
 export const IMAGES_CONFIG = "lmnr.yaml";
@@ -47,12 +48,20 @@ export interface RunOverrides {
 
 export type JobConfig = Record<string, unknown>;
 
-/** One dataset of a run: its folder and the evaluation group it reports to. */
+/** One dataset of a run. */
 export interface DatasetRun {
-  /** The dataset folder, relative to the evals folder. */
+  /** The dataset folder, relative to the evals folder: the dataset's name and evaluation group. */
   path: string;
-  /** `<dataset> v<N>` or `<dataset> unversioned` (`sync.ts` `groupName`). */
-  group: string;
+  /**
+   * The hash of each task the run includes (Harbor plugin kwarg
+   * `task_hashes`), as `eval dataset push` would version it.
+   */
+  taskHashes: TaskHashes;
+  /**
+   * Remote runs only: tasks left out of the upload because Laminar has these
+   * versions; `eval orchestrate` downloads them into `tasks/` first.
+   */
+  tasks?: TaskHashes;
 }
 
 export const isFile = (file: string) =>
@@ -93,27 +102,61 @@ export const discoverDatasets = async (dir: string): Promise<string[]> => {
   return datasets.sort();
 };
 
-/** The datasets `--dataset` names (all of them when omitted), validated. */
+/** The dataset `requested` names (every dataset when omitted), validated. */
 export const selectDatasets = async (
   evalsDir: string,
-  requested: string[] | undefined,
+  requested: string | undefined,
 ): Promise<string[]> => {
   const datasets = await discoverDatasets(evalsDir);
-  if (!requested?.length) return datasets;
-  const unknown = requested.filter((s) => !datasets.includes(s));
-  if (unknown.length > 0) {
+  if (requested === undefined) return datasets;
+  if (!datasets.includes(requested)) {
     throw invalidEvalsDir(
-      `Unknown --dataset ${unknown.join(", ")}. ` +
+      `Unknown dataset ${requested}: no ${path.join(evalsDir, requested, DATASET_CONFIG)}. ` +
         `Datasets in ${evalsDir}: ${datasets.join(", ")}`,
     );
   }
-  return [...new Set(requested)];
+  return [requested];
+};
+
+/**
+ * Folders directly in the evals folder that `eval dataset push` / `pull`
+ * treat as datasets: holding a harbor.yaml, a `tasks.toml` or a `tasks/`
+ * dir. Sorted. A missing evals folder is `invalid_evals_dir`.
+ */
+export const listDatasetFolders = async (
+  evalsDir: string,
+): Promise<string[]> => {
+  const entries = await readdir(evalsDir, { withFileTypes: true }).catch(
+    () => null,
+  );
+  if (!entries) throw invalidEvalsDir(`Evals folder not found: ${evalsDir}`);
+  const folders: string[] = [];
+  for (const entry of entries) {
+    if (
+      !entry.isDirectory() ||
+      entry.name.startsWith(".") ||
+      SKIPPED_DIRS.has(entry.name)
+    ) {
+      continue;
+    }
+    const dir = path.join(evalsDir, entry.name);
+    const marks = await Promise.all([
+      isFile(path.join(dir, DATASET_CONFIG)),
+      isFile(path.join(dir, "tasks.toml")),
+      stat(path.join(dir, TASKS_DIR)).then(
+        (s) => s.isDirectory(),
+        () => false,
+      ),
+    ]);
+    if (marks.some(Boolean)) folders.push(entry.name);
+  }
+  return folders.sort();
 };
 
 /**
  * The dataset's harbor.yaml with the dataset's own `tasks/` folder as its one
  * Harbor dataset. harbor.yaml must not pick tasks itself: a dataset's tasks
- * are what `eval push` versions.
+ * are what `eval dataset push` versions.
  */
 export const loadDatasetConfig = async (
   datasetDir: string,
@@ -162,6 +205,13 @@ export const globToRegExp = (glob: string): RegExp => {
     } else re += c.replace(/[.+^${}()|\\]/g, "\\$&");
   }
   return new RegExp(`^${re}$`);
+};
+
+/** Whether a task name matches `--task` globs; every task when there are none. */
+export const taskScope = (globs: string[] | undefined) => {
+  const patterns = (globs ?? []).map(globToRegExp);
+  return (name: string) =>
+    patterns.length === 0 || patterns.some((p) => p.test(name));
 };
 
 const asRecords = (value: unknown): Record<string, unknown>[] =>
@@ -246,7 +296,7 @@ export const findTaskTomls = async (
   datasetDir: string,
   overrides: RunOverrides,
 ): Promise<string[]> => {
-  const include = (overrides.tasks ?? []).map(globToRegExp);
+  const inScope = taskScope(overrides.tasks);
   const root = path.join(datasetDir, TASKS_DIR);
   const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
   const tomls: string[] = [];
@@ -262,7 +312,7 @@ export const findTaskTomls = async (
     } else if (!entry.isDirectory()) {
       continue;
     }
-    if (include.length > 0 && !include.some((p) => p.test(name))) continue;
+    if (!inScope(name)) continue;
     const toml = path.join(dir, "task.toml");
     if (await isFile(toml)) tomls.push(toml);
   }

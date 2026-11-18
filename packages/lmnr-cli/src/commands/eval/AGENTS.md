@@ -1,18 +1,23 @@
 # Harbor evals (`eval`)
 
-- `lmnr-cli eval run [dir=evals]` runs each **eval dataset** (a folder
-  `<dir>/<dataset>/` with `harbor.yaml`, a Harbor JobConfig, and its tasks in
-  `tasks/`; "suites" are gone, no backward compat) with **pinned** Harbor + the
-  Laminar plugin through `uvx` (`harbor.ts`: `HARBOR_VERSION`,
-  `LMNR_PYTHON_VERSION`), from inside the dataset dir so relative paths and
+- `lmnr-cli eval run [dataset]` runs one / every **eval dataset** (a folder
+  `<--dir, default evals>/<dataset>/` with `harbor.yaml`, a Harbor JobConfig,
+  and its tasks in `tasks/`; "suites" are gone, no backward compat) with
+  **pinned** Harbor + the Laminar plugin through `uvx` (`harbor.ts`:
+  `HARBOR_VERSION`, `LMNR_PYTHON_VERSION` = the lmnr release whose plugin reads
+  `dataset` / `task_hashes`), from inside the dataset dir so relative paths and
   custom agent imports resolve the same way everywhere. Harbor's stdout goes
-  to OUR stderr; stdout is data only. `--dataset` (repeatable) picks folders.
+  to OUR stderr; stdout is data only.
   - **harbor.yaml must not set `datasets` or `tasks`** (`loadDatasetConfig`
     throws `invalid_evals_dir`); it injects `datasets: [{path: tasks}]`, and
     `--task` becomes that dataset's `task_names`.
   - Before running, `prepareRunDatasets` (`dataset-sync.ts`) syncs each
-    dataset with its lockfile and picks the evaluation group, passed to the
-    plugin as `--pk group_name=` (see "Eval datasets" below).
+    dataset with its `tasks.toml` and hashes the run's tasks (see "Eval
+    datasets" below). The plugin gets `--pk group_name=<folder>` (the
+    evaluation group is the dataset name) and, when the folder is a valid
+    dataset name (the server 400s `datasetV2Id` otherwise), `--pk
+    dataset=<folder> --pk task_hashes=<staging>/task_hashes.json` (`{task:
+    hash}` of the run's tasks, written next to the staged job config).
   - default: trials on local Docker; each dataset's `lmnr.yaml` images are
     `docker build`-ed right before that dataset runs (`runDatasets`' `before`
     hook): datasets may define the same image name differently, and local
@@ -25,8 +30,13 @@
     /v1[/cli]/hosted-evals/runs {uploadId, cliVersion, spec}`. The server's
     orchestrator sandbox runs `npx lmnr-cli@<cliVersion> eval orchestrate`
     (hidden command), so `RunSpec` only has to stay readable by the SAME version.
-    `RunSpec.datasets` is `[{path, group}]`: the orchestrator reports to the
-    group `eval run` picked (it never syncs; the upload includes `tasks/`).
+    `RunSpec.datasets` is `[{path, taskHashes, tasks?}]`. `withStoredTasks`
+    asks `POST .../tasks/missing` for the run's tasks; the ones Laminar has go
+    into `tasks` and are left out of the upload (`packEvalsDir`'s `exclude`,
+    `<dataset>/tasks/<task>`); unpushed / edited tasks are packed as before. A
+    failing check only warns and packs everything. `eval orchestrate` downloads
+    `tasks` (`fetchTasks`: run key, `/v1`, same cache / verify / install as
+    pull) into `<dataset>/tasks/` before Harbor runs; it never syncs otherwise.
   - **The run's log** (`run-log.ts`; lmnr `docs/internal/hosted-evals.md`,
     "Run log"): `eval orchestrate` ships every line it prints
     (`createRunLogShipper`): logger records via `onStderr`
@@ -80,10 +90,11 @@
   `SKIPPED_DIRS`, `loadDatasetConfig`, the run's tasks (`findTaskTomls`),
   `buildJobConfig`), `harbor.ts` (uvx/Harbor only), `client.ts` (the API
   client for push / pull / `--remote`), `tasks.ts` (task listing, hashing,
-  packing), `lockfile.ts` (`lmnr.lock`, `.lmnr-state.json`, `.gitignore`),
-  `sync.ts` (pure sync decisions, group names, status), `task-cache.ts`
-  (download cache, safe extraction, installing), `dataset-sync.ts` (`eval
-  push` / `pull` / `status`, `prepareRunDatasets`), `images.ts` (`lmnr.yaml`, what tasks start from, `ensureRemoteImages`),
+  packing), `tasks-toml.ts` (`tasks.toml`, `.lmnr-state.json`,
+  `<evals>/.gitignore`), `sync.ts` (pure per-task plans: `planPull`,
+  `planPush`), `task-cache.ts` (download cache, safe extraction, installing),
+  `dataset-sync.ts` (`eval dataset push` / `pull`, `prepareRunDatasets`,
+  `fetchTasks`), `images.ts` (`lmnr.yaml`, what tasks start from, `ensureRemoteImages`),
   `docker.ts` (builds, the ignore guard, `imagePusher`), `push.ts` (`docker
   save` output → layer upload), `run-command.ts` (spawn; a missing binary is
   `missing_tool`). Import graph is acyclic: `docker.ts` imports only types from
@@ -170,17 +181,27 @@
   build runs `-f <tmp>/Dockerfile` from the real context, and it only sends
   what `COPY`/`ADD` reference. Needs BuildKit, Docker's default builder since
   23.0.
-- **Eval datasets** (`eval push` / `pull` / `status`; lmnr
-  `docs/internal/` has the server side): a dataset's tasks live in Laminar as
-  immutable versions; the repo pins one in `<dataset>/lmnr.lock` (YAML,
-  `dataset`, `version`, `tasks: {name: hash}` sorted by UTF-8 bytes; written
-  through a `Map` so YAML-ambiguous names get quoted). Client:
-  `client.evalDatasets` (`/v1[/cli]/eval-dataset-tasks/*`,
-  `/v1[/cli]/eval-datasets/*`), auth via `buildEvalClient` (login, else
-  `LMNR_PROJECT_API_KEY`), built lazily so `status` / unversioned runs need
-  no login.
-  - **Task hash** (`tasks.ts`, server stores it opaque): `sha256:` + sha256
-    of `<mode> <content sha256> <path>\n` per file, paths sorted by UTF-8
+- **Eval datasets** (`eval dataset push` / `pull`; lmnr `docs/internal/` has
+  the server side): a dataset = a folder, named after it, with NO version.
+  Each task is versioned on its own by its content hash; Laminar keeps every
+  pushed version and the latest is the one most recently pushed (a push of an
+  older hash makes it latest again). `<dataset>/tasks.toml` (committed) pins
+  one hash per task: `[tasks]` only, keys sorted by UTF-8 bytes, quoted unless
+  `[A-Za-z0-9_-]+` (a `.` would make a dotted key). Written by hand
+  (`formatTasksToml`), parsed with `smol-toml` so hand edits / merges with
+  comments or either quote style read fine; anything but `[tasks]` with valid
+  names + hashes is `invalid_evals_dir`. `<evals>/.gitignore` gets `*/tasks/`.
+  Client: `client.evalDatasets` (`/v1[/cli]/eval-datasets/{dataset}/tasks...`),
+  auth via `buildEvalClient` (login, else `LMNR_PROJECT_API_KEY`), built
+  lazily so runs of unpushed datasets need no login.
+  - **Names / hash** (validated before any call; the server checks again):
+    dataset and task `^[A-Za-z0-9][A-Za-z0-9._-]*$`, ≤ 100 / 255 bytes; hash
+    = bare 64 lowercase hex (no `sha256:` prefix anywhere: toml, state, cache
+    dir names, archive check). They become path segments (S3 keys, cache
+    dirs, `tasks/<task>`), so `ensureCachedTask` rejects a non-hash and
+    `fetchTasks` asserts names even for server-supplied ones.
+  - **Task hash** (`tasks.ts`, server stores it opaque): sha256 hex of
+    `<mode> <content sha256> <path>\n` per file, paths sorted by UTF-8
     bytes (NOT JS string order: they differ above U+FFFF). Files are what
     packing takes (`walkTaskFiles`: `SKIPPED_DIRS`, `isExcludedFile` = `.env*`,
     `.DS_Store`, `.lmnr-state.json`; symlinks skipped); mode is 755 if any
@@ -188,52 +209,69 @@
     packed with those normalized modes, so the archive behind a hash doesn't
     depend on whose umask uploaded it. A task = a non-hidden, non-symlink
     dir directly in `tasks/`.
-  - **Sync state** `<dataset>/tasks/.lmnr-state.json` = what `tasks/` was
-    last pulled / pushed as, plus `localHashes`: what synced tasks hash to on
-    THIS disk where that differs (Windows takes modes from extensions, so a
-    task with a non-`.sh` executable or a non-executable `.sh` never re-hashes
-    to its lockfile hash there). `readDataset` maps a task still on its
-    `localHashes` entry to the synced hash (`canonicalHashes`), so `hashes` is
-    what every machine computes and `diskHashes` is this disk's; push packs
-    from disk, so it refuses to re-upload a mapped task. Decisions are pure (`sync.ts`): `decideRunSync`
-    (no lock → unversioned; local == lock → `v<N>`; empty, or local == state
-    != lock → auto-pull; else unversioned + warning), `hasLocalChanges`
-    (pull's refusal), `isBehindLock` (push's refusal: pushing a `tasks/`
-    synced to an older version would silently undo the newer one).
-  - **Pull** downloads into `$LMNR_CACHE_DIR` / `$XDG_CACHE_HOME/lmnr` /
-    `~/.cache/lmnr` `eval-tasks/<hex>/`: streamed gunzip → `createTarDecoder`
-    (strict) → only `file` / `directory` entries with safe relative paths
-    (`safeEntryPath`), files opened `wx` (never through an existing link),
-    chmod 755/644; the archive must hash to its name (`extractTaskArchive`
-    hashes entries with their HEADER modes as it writes them, never by
-    re-reading the tree: Windows can't read exec bits back) or it's dropped;
-    staged in `.tmp-*` and renamed in. Installing copies into a hidden
-    `tasks/.<name>.lmnr-tmp-*` then renames; unchanged tasks stay. Every
-    dataset is planned and checked before any is touched. Without
-    `--version` and with a lockfile, no `getVersion` call is made.
-  - **Push**: `missingTasks` (batches of 10 000) → per missing hash re-walk +
-    re-hash (a mid-push edit fails instead of uploading under the wrong
-    hash) → `uploadTask` + `uploadTaskIndex` (4 at a time) → `createVersion`
-    with `parentVersion` = lock version; a 409 `missing` is uploaded and
-    retried once. Warns when `previousLatest > parentVersion`.
-  - `.gitignore` gets `/tasks/` on push / pull (with a `git rm -r --cached`
-    hint the first time).
-  - Root `-v, --version` would swallow `eval pull --version`, so `index.ts`
-    calls `program.enablePositionalOptions()` AFTER all `.command()`s
-    (subcommands copy the setting at creation; group options like `dataset
-    list --json` must stay positional-free).
+  - **Sync state** `<dataset>/tasks/.lmnr-state.json` `{tasks, localHashes?}`
+    = each task's hash as last pulled / pushed on THIS disk, plus
+    `localHashes`: what such a task hashes to here where that differs
+    (Windows takes modes from extensions, so a task with a non-`.sh`
+    executable or a non-executable `.sh` never re-hashes to its pinned hash
+    there). `readDataset` maps a task still on its `localHashes` entry to the
+    synced hash (`canonicalHashes`): `hashes` is what every machine computes,
+    `diskHashes` this disk's; push packs from disk, so it refuses to upload a
+    mapped task. A task has **local edits** when `hashes[t] !== state[t]`
+    (no entry counts). Unreadable state = empty = everything edited.
+  - **Plans are per task and pure** (`sync.ts`). Pull: target = `tasks.toml`
+    ∩ `--task` (with `--latest`, or no `tasks.toml`: server latest ∩ `--task`
+    merged INTO the toml, unknown pins stay); added / changed / removed, where
+    removed = on disk AND in state AND not in target (a never-synced local
+    task stays). Edited ∧ (changed ∨ removed) ⇒ `local_changes` unless
+    `--force`. Push: added (not in toml) / changed / removed = in toml, not on
+    disk, AND in state (a pin never pulled here, e.g. after `pull --task`,
+    must not be dropped: deviation from the contract's plain "not on disk");
+    unedited ∧ toml ≠ state (incl. pin dropped) ⇒ `tasks_behind_lock` (the
+    toml moved via git; pushing would undo it). `--task` scopes every list.
+  - Every dataset is planned and checked before any is touched; `--dry-run`
+    runs the same checks (so it exits 22/23 too), then prints the plan
+    (stdout; `--json` `{datasets: [...]}`) and writes / downloads nothing
+    (`--latest` still calls `GET .../tasks`). No-arg pull skips (warns)
+    folders with no `tasks.toml` that Laminar doesn't have or whose name is
+    invalid; a named one is created (`<evals>/<name>/`) or fails 24.
+  - **Pull** downloads `GET .../tasks/{task}/versions/{hash}` into
+    `$LMNR_CACHE_DIR` / `$XDG_CACHE_HOME/lmnr` / `~/.cache/lmnr`
+    `eval-tasks/<hash>/` (keyed by hash only: content-addressed and
+    verified, so shared across datasets): streamed gunzip →
+    `createTarDecoder` (strict) → only `file` / `directory` entries with safe
+    relative paths (`safeEntryPath`), files opened `wx` (never through an
+    existing link), chmod 755/644; the archive must hash to its name
+    (`extractTaskArchive` hashes entries with their HEADER modes as it writes
+    them, never by re-reading the tree: Windows can't read exec bits back) or
+    it's dropped; staged in `.tmp-*` and renamed in. Installing copies into a
+    hidden `tasks/.<name>.lmnr-tmp-*` then renames; unchanged tasks stay.
+  - **Push**: `missingTasks` `{task: hash}` (≤ 10 000 per call) → per missing
+    task re-walk + re-hash (a mid-push edit fails instead of uploading under
+    the wrong hash) → `uploadTask` + `uploadTaskIndex` (4 at a time; the
+    index PUT creates the version row) → `pushTasks` (added + changed; a 409
+    `missing` is uploaded and retried once) → `tasks.toml` + state. Removed
+    tasks only leave `tasks.toml`; Laminar keeps them.
+  - **Run** (`prepareRunDatasets`): no `tasks.toml` → run `tasks/` as is
+    (must exist). Else the pull plan with conflicts SKIPPED and warned (edited
+    tasks run as they are), everything else applied (`applyPull`), then
+    `taskHashes` = the run's tasks' `hashes` (`--task`-scoped).
+  - Commands: `eval dataset` is a group under `eval`, so `eval`'s options
+    (`--json`, `--project-id`, ...) parse anywhere in the line (commander
+    without `enablePositionalOptions`). Never give a subcommand a `--version`
+    option: the root `-v, --version` would swallow it.
 - **Exit codes** (`errors.ts`): 16 `invalid_evals_dir` / `archive_too_large`,
   17 `missing_tool`, 18 `harbor_failed` (Harbor runs only), 19 `missing_env`
   (also a missing or malformed `LMNR_EVAL_RUN` in `eval orchestrate`), 20
   `docker_failed` (build / pull / save, unreadable `docker save` output, a
   non-amd64 image, zstd layers), 21 `remote_run_failed` (a `--remote` run's
   orchestrator exited with anything but 0 or 18, or its sandbox was lost; 18
-  from it stays `harbor_failed`), 22 `local_changes` (`eval pull` would
-  overwrite edits in `tasks/`), 23 `tasks_behind_lock` (`eval push` from a
-  `tasks/` synced to an older version than `lmnr.lock` pins), 24
+  from it stays `harbor_failed`), 22 `local_changes` (`eval dataset pull`
+  would overwrite / delete edited tasks), 23 `tasks_behind_lock` (`eval
+  dataset push` of unedited tasks older than `tasks.toml` pins), 24
   `dataset_not_found` (a 404 from the dataset routes, except the "needs S3
-  storage" 404, which stays a plain error). Bad `--env` / `--version` flags
-  are commander `InvalidArgumentError`s. `--json` errors carry the code:
+  storage" 404, which stays a plain error). Bad `--env` flags are commander
+  `InvalidArgumentError`s. `--json` errors carry the code:
   `{"error": <message>, "code": <code>}` (`outputJsonError`).
 - **Secrets are Harbor `${VAR}` placeholders**, not flags: `findTemplateVars`
   scans harbor.yaml + the run's task.toml files (`findTaskTomls`, so a task

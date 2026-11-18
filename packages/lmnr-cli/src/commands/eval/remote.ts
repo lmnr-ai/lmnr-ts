@@ -10,7 +10,8 @@ import { version } from "../../../package.json";
 import { archiveTooLarge, missingEnv } from "../../errors";
 import { onStderr } from "../../utils/command-capture";
 import { initializeLogger } from "../../utils/logger";
-import type { DatasetRun, RunOverrides } from "./datasets";
+import { fetchTasks } from "./dataset-sync";
+import { type DatasetRun, type RunOverrides, TASKS_DIR } from "./datasets";
 import { imagePusher } from "./docker";
 import { API_KEY_VAR, harborEnv } from "./env";
 import { assertDatasetsPassed, type JobOutput, runDatasets } from "./harbor";
@@ -19,6 +20,12 @@ import { findJobDir, packJobDir } from "./jobs";
 import { packEvalsDir } from "./pack";
 import { createRunLogShipper } from "./run-log";
 import { harborLogLine } from "./run-log-lines";
+import {
+  chunks,
+  isValidName,
+  MAX_DATASET_NAME,
+  TASKS_PER_REQUEST,
+} from "./tasks";
 
 const logger = initializeLogger();
 
@@ -30,7 +37,10 @@ const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024;
  * orchestrator sandbox, which runs this same CLI version.
  */
 interface RunSpec {
-  /** Each dataset folder with its evaluation group, as `eval run` decided it. */
+  /**
+   * Each dataset folder with the hashes of its run's tasks, and the tasks
+   * left out of the upload (`tasks`: Laminar has those versions).
+   */
   datasets: DatasetRun[];
   overrides: RunOverrides;
   /** Values for the datasets' `${VAR}` placeholders and `--env` flags. */
@@ -42,13 +52,66 @@ interface RunSpec {
 const formatMiB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 
 /**
+ * Each dataset's run tasks whose version Laminar already has, as
+ * `DatasetRun.tasks`: the upload leaves them out and the orchestrator
+ * downloads them. Tasks with unpushed content are uploaded as before. When
+ * the check fails (e.g. no eval dataset storage), everything is uploaded.
+ */
+export const withStoredTasks = async (
+  client: LaminarClient,
+  datasets: DatasetRun[],
+): Promise<DatasetRun[]> => {
+  const runs: DatasetRun[] = [];
+  for (const run of datasets) {
+    const names = Object.keys(run.taskHashes);
+    if (!isValidName(run.path, MAX_DATASET_NAME) || names.length === 0) {
+      runs.push(run);
+      continue;
+    }
+    const missing = new Set<string>();
+    try {
+      for (const batch of chunks(names, TASKS_PER_REQUEST)) {
+        const tasks = Object.fromEntries(
+          batch.map((name) => [name, run.taskHashes[name]]),
+        );
+        for (const name of await client.evalDatasets.missingTasks(
+          run.path,
+          tasks,
+        )) {
+          missing.add(name);
+        }
+      }
+    } catch (error) {
+      logger.warn(
+        `${run.path}: uploading all its tasks; could not check which ` +
+          `Laminar has: ${errorMessage(error)}`,
+      );
+      runs.push(run);
+      continue;
+    }
+    const stored = names.filter((name) => !missing.has(name));
+    runs.push(
+      stored.length > 0
+        ? {
+            ...run,
+            tasks: Object.fromEntries(
+              stored.map((name) => [name, run.taskHashes[name]]),
+            ),
+          }
+        : run,
+    );
+  }
+  return runs;
+};
+
+/**
  * Pack and upload the evals folder, push its images, and start the run in an
  * orchestrator sandbox. Returns once that sandbox has started.
  */
 export const startRemoteRun = async (
   client: LaminarClient,
   evalsDir: string,
-  datasets: DatasetRun[],
+  runs: DatasetRun[],
   overrides: RunOverrides,
   env: Record<string, string>,
 ): Promise<{ uploadId: string; sandboxId: string }> => {
@@ -63,9 +126,26 @@ export const startRemoteRun = async (
     );
   }
 
+  const datasets = await withStoredTasks(client, runs);
+  const exclude = new Set(
+    datasets.flatMap((run) =>
+      Object.keys(run.tasks ?? {}).map(
+        (task) => `${run.path}/${TASKS_DIR}/${task}`,
+      ),
+    ),
+  );
+  if (exclude.size > 0) {
+    logger.info(
+      `${exclude.size} task(s) are in Laminar already; the run gets them ` +
+        "from there",
+    );
+  }
   // Pack first: a too-large folder fails before minutes of image pushes.
-  const { archive, index, fileCount, skippedSymlinks } =
-    await packEvalsDir(evalsDir);
+  const { archive, index, fileCount, skippedSymlinks } = await packEvalsDir(
+    evalsDir,
+    process.platform,
+    exclude,
+  );
   if (skippedSymlinks.length > 0) {
     logger.warn(
       `Skipped ${skippedSymlinks.length} symlink(s): ` +
@@ -89,7 +169,7 @@ export const startRemoteRun = async (
   );
   logger.info(
     `Uploading ${fileCount} files (${formatMiB(archive.length)}), ` +
-      `datasets: ${datasets.map((d) => d.group).join(", ")}`,
+      `datasets: ${datasets.map((d) => d.path).join(", ")}`,
   );
   const { uploadId } = await client.hostedEvals.upload(archive);
   try {
@@ -108,6 +188,29 @@ export const startRemoteRun = async (
     spec,
   });
   return { uploadId, sandboxId };
+};
+
+/**
+ * Put the tasks the upload left out (`DatasetRun.tasks`) into each dataset's
+ * `tasks/`, from Laminar (run key, `/v1` routes), through the same cache,
+ * hash check and install as `eval dataset pull`.
+ */
+const downloadRunTasks = async (
+  client: LaminarClient,
+  datasets: DatasetRun[],
+) => {
+  for (const run of datasets) {
+    const tasks = run.tasks ?? {};
+    const count = Object.keys(tasks).length;
+    if (count === 0) continue;
+    logger.info(`${run.path}: getting ${count} task(s) from Laminar`);
+    await fetchTasks(
+      client,
+      run.path,
+      path.join(process.cwd(), run.path, TASKS_DIR),
+      tasks,
+    );
+  }
 };
 
 const readRunSpec = (): RunSpec => {
@@ -173,12 +276,17 @@ const jobUploads = async (
 export const handleEvalOrchestrate = async (): Promise<void> => {
   const spec = readRunSpec();
   const env = await harborEnv(spec.env, {});
+  const client = new LaminarClient({
+    baseUrl: env.LMNR_BASE_URL,
+    auth: { type: "apiKey", key: env[API_KEY_VAR] },
+  });
   const uploadId = process.env.LMNR_EVAL_UPLOAD_ID;
   if (!uploadId) {
     logger.warn(
       "LMNR_EVAL_UPLOAD_ID is not set; the run's log and trial logs won't " +
         "be uploaded.",
     );
+    await downloadRunTasks(client, spec.datasets);
     assertDatasetsPassed(
       await runDatasets(
         process.cwd(),
@@ -191,10 +299,6 @@ export const handleEvalOrchestrate = async (): Promise<void> => {
     return;
   }
 
-  const client = new LaminarClient({
-    baseUrl: env.LMNR_BASE_URL,
-    auth: { type: "apiKey", key: env[API_KEY_VAR] },
-  });
   const marker = process.env.LMNR_RUN_LOG_MARKER;
   const shipper = createRunLogShipper(
     (lines) => client.hostedEvals.appendRunLogs(uploadId, lines),
@@ -204,6 +308,7 @@ export const handleEvalOrchestrate = async (): Promise<void> => {
   const unsubscribe = onStderr(shipper.writer().write);
   const links = new Set<string>();
   try {
+    await downloadRunTasks(client, spec.datasets);
     const failed = await runDatasets(
       process.cwd(),
       spec.datasets,

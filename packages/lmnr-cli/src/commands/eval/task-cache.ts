@@ -20,7 +20,7 @@ import { createGunzip } from "node:zlib";
 import { createTarDecoder } from "modern-tar";
 
 import { invalidEvalsDir } from "../../errors";
-import { type HashedFile, taskHash } from "./tasks";
+import { HASH, type HashedFile, taskHash } from "./tasks";
 
 /**
  * Root of lmnr-cli's cache: `$LMNR_CACHE_DIR`, else `$XDG_CACHE_HOME/lmnr`,
@@ -36,8 +36,6 @@ export const cacheRoot = (env: NodeJS.ProcessEnv = process.env): string =>
 /** Extracted tasks by hash: `<cache>/eval-tasks/<64 hex>/`. */
 const tasksCache = (env?: NodeJS.ProcessEnv) =>
   path.join(cacheRoot(env), "eval-tasks");
-
-const hexOf = (hash: string) => hash.slice("sha256:".length);
 
 /**
  * An archive entry's path as a safe relative path, or null: no absolute
@@ -139,8 +137,11 @@ export const ensureCachedTask = async (
   download: (hash: string) => Promise<ReadableStream<Uint8Array>>,
   env?: NodeJS.ProcessEnv,
 ): Promise<string> => {
+  // It names a cache dir: never let anything but a hash into the path.
+  if (!HASH.test(hash))
+    throw new Error(`Invalid task hash ${JSON.stringify(hash)}`);
   const root = tasksCache(env);
-  const final = path.join(root, hexOf(hash));
+  const final = path.join(root, hash);
   if ((await stat(final).catch(() => null))?.isDirectory()) return final;
   await mkdir(root, { recursive: true });
   const staging = await mkdtemp(path.join(root, ".tmp-"));

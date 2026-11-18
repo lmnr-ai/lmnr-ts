@@ -15,6 +15,7 @@ import {
 } from "./datasets";
 import type { DatasetImages, RemoteImages } from "./images";
 import { type CommandOutput, runCommand } from "./run-command";
+import { isValidName, MAX_DATASET_NAME } from "./tasks";
 
 const logger = initializeLogger();
 
@@ -25,7 +26,7 @@ const logger = initializeLogger();
  * between releases.
  */
 export const HARBOR_VERSION = "0.25.0";
-export const LMNR_PYTHON_VERSION = "0.8.10";
+export const LMNR_PYTHON_VERSION = "0.9.2";
 const PYTHON_VERSION = "3.13";
 const ENVIRONMENT_MODULE = "lmnr_hosted_env.py";
 
@@ -40,11 +41,23 @@ const environmentModulePath = (): string => {
   throw new Error(`${ENVIRONMENT_MODULE} is missing from the lmnr-cli package`);
 };
 
-/** `group`: the evaluation group the Laminar plugin reports the run to. */
+/** What the Laminar plugin gets about the dataset it reports. */
+export interface PluginArgs {
+  /** The dataset folder: the evaluation group. */
+  group: string;
+  /**
+   * Set when the folder name is a valid dataset name: the evaluation records
+   * the dataset (`dataset`) and each trial its task version (`task_hashes`,
+   * a JSON file `{task: hash}`).
+   */
+  dataset?: { name: string; taskHashesFile: string };
+  /** Self-hosted Laminar's gRPC port, for the plugin's trace export. */
+  grpcPort?: string;
+}
+
 export const harborArgs = (
   configPath: string,
-  group: string,
-  grpcPort?: string,
+  { group, dataset, grpcPort }: PluginArgs,
 ): string[] => [
   "--python",
   PYTHON_VERSION,
@@ -61,12 +74,20 @@ export const harborArgs = (
   "laminar",
   "--pk",
   `group_name=${group}`,
+  ...(dataset
+    ? [
+        "--pk",
+        `dataset=${dataset.name}`,
+        "--pk",
+        `task_hashes=${dataset.taskHashesFile}`,
+      ]
+    : []),
   // The plugin exports spans over gRPC (8443 unless told otherwise).
   ...(grpcPort ? ["--pk", `grpc_port=${grpcPort}`] : []),
 ];
 
 interface HarborRun {
-  group: string;
+  dataset: DatasetRun;
   datasetDir: string;
   config: JobConfig;
   /** Env for the Harbor process; `${VAR}` placeholders resolve against it. */
@@ -94,6 +115,13 @@ const runHarborDataset = async (run: HarborRun): Promise<number> => {
     await writeFile(configPath, JSON.stringify(run.config, null, 2), {
       mode: 0o600,
     });
+    const { path: name, taskHashes } = run.dataset;
+    let dataset: PluginArgs["dataset"];
+    if (isValidName(name, MAX_DATASET_NAME)) {
+      const taskHashesFile = path.join(staging, "task_hashes.json");
+      await writeFile(taskHashesFile, JSON.stringify(taskHashes));
+      dataset = { name, taskHashesFile };
+    }
     if (run.images) {
       await copyFile(
         environmentModulePath(),
@@ -105,7 +133,11 @@ const runHarborDataset = async (run: HarborRun): Promise<number> => {
       .join(path.delimiter);
     return await runCommand(
       "uvx",
-      harborArgs(configPath, run.group, run.grpcPort),
+      harborArgs(configPath, {
+        group: name,
+        dataset,
+        grpcPort: run.grpcPort,
+      }),
       {
         cwd: run.datasetDir,
         env: {
@@ -149,7 +181,8 @@ export interface DatasetHooks {
 }
 
 /**
- * Run each dataset with Harbor in turn, reporting to its evaluation group.
+ * Run each dataset with Harbor in turn, reporting to the evaluation group
+ * named after it.
  * With `images`, trials run in Laminar sandboxes; without, on local Docker.
  * Returns the datasets that failed.
  */
@@ -163,7 +196,8 @@ export const runDatasets = async (
 ): Promise<string[]> => {
   const grpcPort = (await findEnvKey(process.cwd(), "LMNR_GRPC_PORT"))?.value;
   const failed: string[] = [];
-  for (const { path: dataset, group } of runs) {
+  for (const run of runs) {
+    const dataset = run.path;
     const datasetDir = path.join(evalsDir, dataset);
     const config = buildJobConfig(
       await loadDatasetConfig(datasetDir),
@@ -173,10 +207,10 @@ export const runDatasets = async (
     if (jobs) config.jobs_dir = path.join(jobs.dir, dataset);
     await before?.(dataset);
     logger.info(
-      `Running ${group} ${images ? "in Laminar sandboxes" : "on local Docker"}`,
+      `Running ${dataset} ${images ? "in Laminar sandboxes" : "on local Docker"}`,
     );
     const code = await runHarborDataset({
-      group,
+      dataset: run,
       datasetDir,
       config,
       env,

@@ -28,10 +28,8 @@ import {
 } from "./commands/debug";
 import { handleEvalRun, parsePositiveInt } from "./commands/eval";
 import {
-  handleEvalPull,
-  handleEvalPush,
-  handleEvalStatus,
-  parseVersion,
+  handleEvalDatasetPull,
+  handleEvalDatasetPush,
 } from "./commands/eval/dataset-sync";
 import { handleEvalOrchestrate } from "./commands/eval/remote";
 import {
@@ -616,31 +614,27 @@ Examples:
     )
     .option("--json", "Output structured JSON to stdout");
 
-  const datasetOption = [
-    "--dataset <name>",
-    "Dataset folder (repeatable). Omitted → every dataset",
-    collectFlag,
-  ] as const;
-  const dirArgument = [
-    "[dir]",
-    "Evals folder (one <dataset>/harbor.yaml per dataset)",
+  const dirOption = [
+    "--dir <path>",
+    "Evals folder (one <dataset>/ folder per dataset)",
     "evals",
+  ] as const;
+  const taskOption = [
+    "--task <glob>",
+    "Task name glob to include (repeatable). Omitted → every task",
+    collectFlag,
   ] as const;
 
   evalCmd
     .command("run")
     .description("Run the evals folder's datasets with Harbor")
-    .argument(...dirArgument)
+    .argument("[dataset]", "Dataset folder to run. Omitted → every dataset")
+    .option(...dirOption)
     .option(
       "--remote",
       "Run in Laminar sandboxes instead of local Docker, printing the run's log until it ends",
     )
-    .option(...datasetOption)
-    .option(
-      "--task <glob>",
-      "Task name glob to include (repeatable). Omitted → every task",
-      collectFlag,
-    )
+    .option(...taskOption)
     .option(
       "--n-attempts <n>",
       "Attempts per task. Omitted → harbor.yaml",
@@ -662,23 +656,25 @@ Examples:
       "after",
       `
 Runs \`harbor run\` (pinned Harbor + Laminar plugin, via uvx) for each dataset:
-a directory directly inside [dir] holding a harbor.yaml (a Harbor JobConfig)
-and its tasks in tasks/. harbor.yaml must not set \`datasets\` or \`tasks\`:
-lmnr-cli runs the dataset's tasks/ folder. Every trial is reported to Laminar
-as an evaluation datapoint, grouped as "<dataset> v<N>" when tasks/ matches
-the version lmnr.lock pins, or "<dataset> unversioned" (never pushed, or
-edited locally; a warning says so).
+a folder directly inside the evals folder (--dir, default ./evals) holding a
+harbor.yaml (a Harbor JobConfig) and its tasks in tasks/. harbor.yaml must not
+set \`datasets\` or \`tasks\`: lmnr-cli runs the dataset's tasks/ folder. Every
+trial is reported to Laminar as an evaluation datapoint, grouped by dataset
+name, with the version (content hash) of its task.
 
-Before running, a tasks/ folder that is missing, empty, or unchanged since an
-older pull is updated to the lmnr.lock version (as \`eval pull\` would).
+Before running, tasks that tasks.toml pins and tasks/ lacks, or holds at an
+older pin without local edits, are pulled (as \`eval dataset pull\` would).
+Edited tasks run as they are, with a warning.
 
 Modes:
   (default)          Trials run on local Docker. Needs uv, Docker and
                      LMNR_PROJECT_API_KEY (written to .env by \`lmnr-cli setup\`).
   --remote           Pushes the images, uploads the folder and starts the run
                      in a Laminar sandbox, then prints the run's log until it
-                     ends. Ctrl-C stops following; the run goes on. Needs
-                     Docker and \`lmnr-cli login\` (or LMNR_PROJECT_API_KEY).
+                     ends. Tasks whose version is in Laminar already are not
+                     uploaded: the run gets them from there. Ctrl-C stops
+                     following; the run goes on. Needs Docker and
+                     \`lmnr-cli login\` (or LMNR_PROJECT_API_KEY).
 
 Images: tasks name their image with docker_image in task.toml. Images listed in
 <dataset>/lmnr.yaml are built from their Dockerfile with Docker on every run:
@@ -707,115 +703,108 @@ Exit codes:
   20  docker_failed (a docker build, pull or save failed, or a wrong platform)
   21  remote_run_failed (a --remote run failed before its datasets ran, or
       its sandbox was lost)
-  24  dataset_not_found (the auto-pull's version isn't in Laminar)
+  24  dataset_not_found (a task the auto-pull needs isn't in Laminar)
 
 Examples:
   $ lmnr-cli eval run
-  $ lmnr-cli eval run ./evals --dataset support --task "refund-*" --n-attempts 3
+  $ lmnr-cli eval run support --task "refund-*" --n-attempts 3
   $ lmnr-cli eval run --remote --n-concurrent 20
-  $ lmnr-cli eval run --remote --model anthropic/claude-sonnet-5-5
+  $ lmnr-cli eval run --dir ./my-evals --remote --model anthropic/claude-sonnet-5-5
 `,
     );
 
-  evalCmd
-    .command("push")
+  const evalDatasetCmd = evalCmd
+    .command("dataset")
+    .alias("datasets")
     .description(
-      "Version each dataset's tasks/ in Laminar and pin it in lmnr.lock",
-    )
-    .argument(...dirArgument)
-    .option(...datasetOption)
-    .option("-m, --message <text>", "Message stored with the new version")
+      "Version eval datasets' tasks in Laminar (tasks.toml pins them)",
+    );
+
+  evalDatasetCmd
+    .command("pull")
+    .description("Get the task versions each dataset's tasks.toml pins")
+    .argument("[datasets...]", "Dataset names. Omitted → every dataset folder")
+    .option(...dirOption)
+    .option(...taskOption)
     .option(
-      "--force",
-      "Push even when tasks/ is older than the version lmnr.lock pins",
+      "--latest",
+      "Pull and pin the latest version of every task in Laminar",
     )
-    .action(withLocalOpts(handleEvalPush))
+    .option("--force", "Overwrite or delete tasks edited locally")
+    .option("--dry-run", "Print what would change; download or write nothing")
+    .action(withLocalOpts(handleEvalDatasetPull))
     .addHelpText(
       "after",
       `
-Hashes every task in <dataset>/tasks/. When they match lmnr.lock, nothing is
-sent ("up to date"). Otherwise the tasks Laminar doesn't have yet are uploaded
-and a new immutable version is created on top of the lmnr.lock version (v1 for
-a new dataset, named after its folder). lmnr.lock is rewritten — commit it —
-and the dataset's .gitignore gets /tasks/: the tasks now live in Laminar.
+Makes <dataset>/tasks/ match the task versions <dataset>/tasks.toml pins:
+missing tasks are downloaded (added), tasks at another version replaced
+(changed), and tasks pulled or pushed here before that tasks.toml no longer
+pins deleted (removed). Tasks that were never synced and aren't pinned stay.
+--task limits all of that to matching task names.
 
-A version never has to build on the latest one (branches); when newer versions
-exist in Laminar, the push warns that they aren't included.
+With --latest, or when the folder has no tasks.toml, the latest version of
+every task in Laminar is pulled and written into tasks.toml (pins of tasks
+Laminar doesn't have stay). A dataset name without a folder creates
+<dir>/<dataset>/. Downloads are cached by hash in $LMNR_CACHE_DIR,
+$XDG_CACHE_HOME/lmnr or ~/.cache/lmnr (eval-tasks/) and checked against it.
+
+Refuses when a task edited since its last pull or push would be changed or
+removed (nothing is touched then, in any dataset); --force discards those
+edits. Adds */tasks/ to <dir>/.gitignore: tasks live in Laminar.
 
 Calls the API as the logged-in user (\`lmnr-cli login\`), or with
 LMNR_PROJECT_API_KEY when there is no login.
 
 Exit codes:
-  16  invalid_evals_dir (no tasks/, a bad task or dataset name, a broken
-      lmnr.lock) / archive_too_large (a task over 512 MiB packed)
-  23  tasks_behind_lock (tasks/ was synced to an older version than lmnr.lock
-      pins: pushing would undo the newer one; \`eval pull\` or --force)
+  16  invalid_evals_dir (a bad dataset name, a broken tasks.toml)
+  22  local_changes (edited tasks would be overwritten; push them or --force)
+  24  dataset_not_found (the dataset or a task version isn't in Laminar)
 
 Examples:
-  $ lmnr-cli eval push
-  $ lmnr-cli eval push --dataset support -m "Add refund edge cases"
-  $ lmnr-cli eval push --json
+  $ lmnr-cli eval dataset pull
+  $ lmnr-cli eval dataset pull support --task "refund-*"
+  $ lmnr-cli eval dataset pull support --latest --dry-run
+  $ lmnr-cli eval dataset pull --force --json
 `,
     );
 
-  evalCmd
-    .command("pull")
-    .description("Make each dataset's tasks/ match its lmnr.lock version")
-    .argument(...dirArgument)
-    .option(...datasetOption)
-    .option(
-      "--version <n|latest>",
-      "Pull this version instead and pin it in lmnr.lock",
-      parseVersion,
+  evalDatasetCmd
+    .command("push")
+    .description(
+      "Version each dataset's changed tasks in Laminar and pin them in tasks.toml",
     )
-    .option("--force", "Overwrite local changes in tasks/")
-    .action(withLocalOpts(handleEvalPull))
+    .argument(
+      "[datasets...]",
+      "Dataset names. Omitted → every dataset folder with a tasks/ folder",
+    )
+    .option(...dirOption)
+    .option(...taskOption)
+    .option("--dry-run", "Print what would change; upload or write nothing")
+    .action(withLocalOpts(handleEvalDatasetPush))
     .addHelpText(
       "after",
       `
-Downloads the tasks of the version lmnr.lock pins (or --version; without
-lmnr.lock, the latest version of the dataset named after the folder) into
-<dataset>/tasks/: changed tasks are replaced, tasks not in the version are
-deleted, unchanged ones are kept. With --version (or no lmnr.lock) lmnr.lock
-is rewritten. Downloads are cached by content in $LMNR_CACHE_DIR,
-$XDG_CACHE_HOME/lmnr or ~/.cache/lmnr (eval-tasks/).
+Hashes every task in <dataset>/tasks/ and compares it with tasks.toml: tasks
+not pinned yet (added) or at another version (changed) are uploaded when
+Laminar doesn't have that version, become their task's latest version in
+Laminar, and are pinned in tasks.toml. Pinned tasks deleted from tasks/ after
+a pull or push here (removed) are dropped from tasks.toml; Laminar keeps their
+versions. --task limits all of that to matching task names. A new dataset is
+named after its folder. Commit tasks.toml afterwards.
 
-Refuses to touch a dataset whose tasks/ changed since its last pull or push
-(nothing is changed then, in any dataset); --force discards those changes.
+Refuses when tasks.toml pins another version of a task that is unedited here
+(tasks.toml changed since the pull, e.g. through git): pushing it would undo
+that version. Run \`lmnr-cli eval dataset pull\` first.
 
 Exit codes:
-  16  invalid_evals_dir
-  22  local_changes (tasks/ has changes the pull would overwrite; push them
-      or pass --force)
-  24  dataset_not_found (the dataset or version isn't in Laminar)
+  16  invalid_evals_dir (no tasks/, a bad task or dataset name, a broken
+      tasks.toml) / archive_too_large (a task over 512 MiB packed)
+  23  tasks_behind_lock (unedited tasks are older than tasks.toml pins)
 
 Examples:
-  $ lmnr-cli eval pull
-  $ lmnr-cli eval pull --dataset support --version 3
-  $ lmnr-cli eval pull --version latest --force
-`,
-    );
-
-  evalCmd
-    .command("status")
-    .description("Compare each dataset's tasks/ with its lmnr.lock")
-    .argument(...dirArgument)
-    .option(...datasetOption)
-    .action(withLocalOpts(handleEvalStatus))
-    .addHelpText(
-      "after",
-      `
-Local only (no login needed). Per dataset: the lmnr.lock version, the tasks
-added / modified / removed in tasks/ compared with it, and its state:
-  up_to_date   tasks/ matches lmnr.lock
-  modified     local changes (\`eval push\` versions them)
-  behind       no local changes, but lmnr.lock moved (or tasks/ is empty):
-               \`eval pull\` or \`eval run\` updates it
-  not_pushed   no lmnr.lock yet (\`eval push\` creates v1)
-
-Examples:
-  $ lmnr-cli eval status
-  $ lmnr-cli eval status --json
+  $ lmnr-cli eval dataset push
+  $ lmnr-cli eval dataset push support --dry-run
+  $ lmnr-cli eval dataset push support --task refund --json
 `,
     );
 
@@ -1530,8 +1519,8 @@ Examples:
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json # Query spans
   lmnr-cli sql schema                                      # Show available tables
   lmnr-cli eval run --remote                               # Run Harbor evals in Laminar sandboxes
-  lmnr-cli eval push                                       # Version eval datasets' tasks in Laminar
-  lmnr-cli eval pull                                       # Get the tasks lmnr.lock pins
+  lmnr-cli eval dataset push                               # Version eval datasets' tasks in Laminar
+  lmnr-cli eval dataset pull                               # Get the tasks each tasks.toml pins
   lmnr-cli debug session new                               # Mint a fresh debug session
   lmnr-cli debug session open                              # Open the session in the browser
   lmnr-cli debug session set-name "title"                  # Rename the current debug session
@@ -1547,12 +1536,6 @@ For more information about the Laminar platfrom:
   Documentation: https://laminar.sh/docs
 `,
   );
-
-  // Root options (`-v, --version`) only before the subcommand, so `eval pull
-  // --version 3` reaches `pull`. Set after every `.command()`: subcommands
-  // copy it when created, and their own group options (`dataset --json`)
-  // must keep working after the leaf command name.
-  program.enablePositionalOptions();
   await program.parseAsync();
 }
 

@@ -1,32 +1,13 @@
 /**
- * How a dataset's `tasks/` relates to its lockfile and its sync state (what
- * `tasks/` was last pulled or pushed as). Pure: callers hash and read files.
+ * How a dataset's `tasks/` relates to its `tasks.toml` and its sync state
+ * (what each task was last pulled or pushed as). Pure: callers hash and read
+ * files. Every decision is per task.
  */
-import {
-  type DatasetLock,
-  diffTasks,
-  sameTasks,
-  type TaskDiff,
-  type TasksState,
-} from "./lockfile";
-import type { TaskHashes } from "./tasks";
 
-/** What `eval run` does with a dataset before running it. */
-export type RunSync =
-  /** Run `tasks/` as is, as `<dataset> v<N>`. */
-  | { kind: "versioned"; lock: DatasetLock }
-  /** `tasks/` is missing, empty or unchanged since an older sync: pull the lockfile's version, then run it. */
-  | { kind: "pull"; lock: DatasetLock }
-  /** Run `tasks/` as is, as `<dataset> unversioned`: never pushed, or edited. */
-  | { kind: "unversioned"; reason: "not_pushed" }
-  | {
-      kind: "unversioned";
-      reason: "modified";
-      lock: DatasetLock;
-      diff: TaskDiff;
-    };
+import { byteOrder, type TaskHashes } from "./tasks";
+import type { SyncState } from "./tasks-toml";
 
-const isEmpty = (tasks: TaskHashes) => Object.keys(tasks).length === 0;
+const sorted = (names: Iterable<string>) => [...names].sort(byteOrder);
 
 /**
  * `tasks/`' hashes as every other machine computes them: a task still hashing
@@ -35,107 +16,108 @@ const isEmpty = (tasks: TaskHashes) => Object.keys(tasks).length === 0;
  */
 export const canonicalHashes = (
   disk: TaskHashes,
-  state: TasksState | null,
+  state: SyncState,
 ): TaskHashes =>
   Object.fromEntries(
     Object.entries(disk).map(([name, hash]) => [
       name,
-      state && state.localHashes[name] === hash ? state.tasks[name] : hash,
+      state.localHashes[name] === hash ? state.tasks[name] : hash,
     ]),
   );
 
-export const decideRunSync = (
-  lock: DatasetLock | null,
-  state: DatasetLock | null,
-  local: TaskHashes,
-): RunSync => {
-  if (!lock) return { kind: "unversioned", reason: "not_pushed" };
-  if (sameTasks(local, lock.tasks)) return { kind: "versioned", lock };
-  if (isEmpty(local) || (state && sameTasks(local, state.tasks))) {
-    return { kind: "pull", lock };
-  }
-  return {
-    kind: "unversioned",
-    reason: "modified",
-    lock,
-    diff: diffTasks(lock.tasks, local),
-  };
-};
+/** A task in `tasks/` changed since its last sync, or was never synced here. */
+export const isEdited = (name: string, hashes: TaskHashes, state: SyncState) =>
+  name in hashes && state.tasks[name] !== hashes[name];
 
-/**
- * Whether making `tasks/` match `target` would lose local work: `tasks/`
- * changed since the last sync, or, never synced here, matches neither the
- * lockfile nor `target`. An empty `tasks/` has nothing to lose.
- */
-export const hasLocalChanges = (
-  local: TaskHashes,
-  state: DatasetLock | null,
-  lock: DatasetLock | null,
-  target: TaskHashes,
-): boolean => {
-  if (isEmpty(local)) return false;
-  if (state) return !sameTasks(local, state.tasks);
-  return !(lock && sameTasks(local, lock.tasks)) && !sameTasks(local, target);
-};
+/** Whether `--task` globs (none: every task) take this task. */
+export type TaskScope = (name: string) => boolean;
 
-/**
- * `eval push` would build on a version `tasks/` doesn't hold: it was synced to
- * other tasks than the lockfile pins (someone pushed and the lockfile came in
- * through git). Pushing would drop their changes.
- */
-export const isBehindLock = (
-  state: DatasetLock | null,
-  lock: DatasetLock | null,
-): boolean => !!state && !!lock && !sameTasks(state.tasks, lock.tasks);
+export const pickTasks = (tasks: TaskHashes, scope: TaskScope): TaskHashes =>
+  Object.fromEntries(Object.entries(tasks).filter(([name]) => scope(name)));
 
-/** The evaluation group a run reports to. */
-export const groupName = (dataset: string, version: number | null) =>
-  version === null ? `${dataset} unversioned` : `${dataset} v${version}`;
-
-export type SyncState = "up_to_date" | "modified" | "behind" | "not_pushed";
-
-/** `eval status` for one dataset. */
-export interface DatasetStatus extends TaskDiff {
-  /** The dataset's name in Laminar (the lockfile's, else the folder's). */
-  dataset: string;
-  /** The dataset folder, relative to the evals folder. */
-  path: string;
-  /** The lockfile's version; null before the first push or pull. */
-  version: number | null;
-  /** The version `tasks/` was last pulled or pushed as, if known. */
-  syncedVersion: number | null;
-  /**
-   * `up_to_date`: `tasks/` matches the lockfile. `behind`: it doesn't, but
-   * has no local changes (`eval pull` or `eval run` updates it). `modified`:
-   * local changes. `not_pushed`: no lockfile yet.
-   */
-  state: SyncState;
-  /** Task count in `tasks/`. */
-  tasks: number;
+export interface PullPlan {
+  /** In the target, not in `tasks/`: downloaded. */
+  added: string[];
+  /** In `tasks/` with another hash than the target: replaced. */
+  changed: string[];
+  /** In `tasks/` and the sync state, not in the target: deleted. */
+  removed: string[];
+  /** Already the target's version. */
+  unchanged: string[];
+  /** Changed or removed tasks with local edits: the pull would lose them. */
+  conflicts: string[];
 }
 
-/** `added` / `modified` / `removed` are `tasks/` compared with the lockfile. */
-export const datasetStatus = (
-  folder: string,
-  lock: DatasetLock | null,
-  state: DatasetLock | null,
-  local: TaskHashes,
-): DatasetStatus => {
-  const decision = decideRunSync(lock, state, local);
-  const stateName: Record<string, SyncState> = {
-    versioned: "up_to_date",
-    pull: "behind",
-  };
+/**
+ * Make the tasks in `scope` match `target` (the pinned hashes, already
+ * picked by scope). A task in `tasks/` that was never synced and isn't in
+ * the target is a new local task: it stays.
+ */
+export const planPull = (
+  hashes: TaskHashes,
+  state: SyncState,
+  target: TaskHashes,
+  scope: TaskScope,
+): PullPlan => {
+  const names = Object.keys(target);
+  const changed = sorted(
+    names.filter((n) => n in hashes && hashes[n] !== target[n]),
+  );
+  const removed = sorted(
+    Object.keys(hashes).filter(
+      (n) => scope(n) && !(n in target) && n in state.tasks,
+    ),
+  );
   return {
-    dataset: lock?.dataset ?? folder,
-    path: folder,
-    version: lock?.version ?? null,
-    syncedVersion: state?.version ?? null,
-    state:
-      decision.kind === "unversioned"
-        ? decision.reason
-        : stateName[decision.kind],
-    tasks: Object.keys(local).length,
-    ...diffTasks(lock?.tasks ?? {}, local),
+    added: sorted(names.filter((n) => !(n in hashes))),
+    changed,
+    removed,
+    unchanged: sorted(names.filter((n) => hashes[n] === target[n])),
+    conflicts: sorted(
+      [...changed, ...removed].filter((n) => isEdited(n, hashes, state)),
+    ),
+  };
+};
+
+export interface PushPlan {
+  /** In `tasks/`, not in `tasks.toml`. */
+  added: string[];
+  /** In `tasks/` with another hash than `tasks.toml` pins. */
+  changed: string[];
+  /** Pinned, synced here, and deleted from `tasks/`: dropped from `tasks.toml`. */
+  removed: string[];
+  unchanged: string[];
+  /**
+   * Unedited tasks whose pin moved since they were synced here (`tasks.toml`
+   * came in through git): pushing them would undo that newer version.
+   */
+  behind: string[];
+}
+
+/**
+ * Compare the tasks in `scope` with `tasks.toml`. A pinned task that is
+ * neither in `tasks/` nor in the sync state was never pulled here, so it
+ * stays pinned rather than counting as removed.
+ */
+export const planPush = (
+  hashes: TaskHashes,
+  state: SyncState,
+  toml: TaskHashes,
+  scope: TaskScope,
+): PushPlan => {
+  const local = Object.keys(hashes).filter(scope);
+  const behind = local.filter(
+    (n) => !isEdited(n, hashes, state) && toml[n] !== state.tasks[n],
+  );
+  return {
+    added: sorted(local.filter((n) => !(n in toml))),
+    changed: sorted(local.filter((n) => n in toml && toml[n] !== hashes[n])),
+    removed: sorted(
+      Object.keys(toml).filter(
+        (n) => scope(n) && !(n in hashes) && n in state.tasks,
+      ),
+    ),
+    unchanged: sorted(local.filter((n) => toml[n] === hashes[n])),
+    behind: sorted(behind),
   };
 };

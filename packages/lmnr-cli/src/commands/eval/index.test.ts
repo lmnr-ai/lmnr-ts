@@ -21,6 +21,7 @@ import {
   findTemplateVars,
   globToRegExp,
   LAMINAR_ENVIRONMENT_IMPORT_PATH,
+  listDatasetFolders,
   loadDatasetConfig,
   selectDatasets,
 } from "./datasets";
@@ -63,7 +64,7 @@ void describe("discoverDatasets / packEvalsDir", () => {
   void it("finds datasets and packs the folder's contents at the archive root", async () => {
     await write("hello/harbor.yaml", "agents: []");
     await write("hello/lmnr.yaml");
-    await write("hello/lmnr.lock");
+    await write("hello/tasks.toml");
     await write("hello/tasks/hello-world/task.toml");
     await write("hello/tasks/.lmnr-state.json", "{}");
     await write("other/harbor.yaml");
@@ -76,8 +77,8 @@ void describe("discoverDatasets / packEvalsDir", () => {
     // The sync state is local bookkeeping, never uploaded.
     expect(names).toEqual([
       "hello/harbor.yaml",
-      "hello/lmnr.lock",
       "hello/lmnr.yaml",
+      "hello/tasks.toml",
       "hello/tasks/hello-world/task.toml",
       "notes/README.md",
       "other/harbor.yaml",
@@ -196,17 +197,45 @@ void describe("discoverDatasets / packEvalsDir", () => {
     });
   });
 
-  void it("selects --dataset folders and rejects unknown ones", async () => {
+  void it("selects the named dataset and rejects unknown ones", async () => {
     await write("a/harbor.yaml");
     await write("b/harbor.yaml");
     expect(await selectDatasets(root, undefined)).toEqual(["a", "b"]);
-    expect(await selectDatasets(root, ["b", "b"])).toEqual(["b"]);
-    await expect(selectDatasets(root, ["c"])).rejects.toMatchObject({
+    expect(await selectDatasets(root, "b")).toEqual(["b"]);
+    await expect(selectDatasets(root, "c")).rejects.toMatchObject({
       code: "invalid_evals_dir",
       message: expect.stringMatching(
-        /Unknown --dataset c\. Datasets in .*: a, b/,
+        /Unknown dataset c: .*Datasets in .*: a, b/,
       ),
     });
+  });
+
+  void it("lists folders push and pull treat as datasets", async () => {
+    await write("a/harbor.yaml");
+    await write("b/tasks.toml");
+    await write("c/tasks/t/task.toml");
+    await write("notes/README.md");
+    await write(".hidden/tasks.toml");
+    await write("node_modules/tasks.toml");
+    expect(await listDatasetFolders(root)).toEqual(["a", "b", "c"]);
+    await expect(
+      listDatasetFolders(path.join(root, "nope")),
+    ).rejects.toMatchObject({ code: "invalid_evals_dir" });
+  });
+
+  void it("leaves excluded paths out of the upload", async () => {
+    await write("a/harbor.yaml");
+    await write("a/tasks/stored/task.toml");
+    await write("a/tasks/stored-not/task.toml");
+    const { archive } = await packEvalsDir(
+      root,
+      "linux",
+      new Set(["a/tasks/stored"]),
+    );
+    expect((await filesOf(archive)).map((e) => e.header.name).sort()).toEqual([
+      "a/harbor.yaml",
+      "a/tasks/stored-not/task.toml",
+    ]);
   });
 });
 
@@ -693,8 +722,8 @@ void describe("images", () => {
 });
 
 void describe("harborArgs", () => {
-  void it("runs the pinned Harbor with the Laminar plugin, grouped by dataset version", () => {
-    expect(harborArgs("/tmp/job.json", "support v7")).toEqual([
+  void it("runs the pinned Harbor with the Laminar plugin, grouped by dataset", () => {
+    expect(harborArgs("/tmp/job.json", { group: "my set" })).toEqual([
       "--python",
       "3.13",
       "--from",
@@ -709,9 +738,22 @@ void describe("harborArgs", () => {
       "--plugin",
       "laminar",
       "--pk",
-      "group_name=support v7",
+      "group_name=my set",
     ]);
-    expect(harborArgs("/tmp/job.json", "s", "8001").slice(-2)).toEqual([
+    expect(LMNR_PYTHON_VERSION).toBe("0.9.2");
+    expect(
+      harborArgs("/tmp/job.json", {
+        group: "support",
+        dataset: { name: "support", taskHashesFile: "/tmp/task_hashes.json" },
+        grpcPort: "8001",
+      }).slice(-8),
+    ).toEqual([
+      "--pk",
+      "group_name=support",
+      "--pk",
+      "dataset=support",
+      "--pk",
+      "task_hashes=/tmp/task_hashes.json",
       "--pk",
       "grpc_port=8001",
     ]);
