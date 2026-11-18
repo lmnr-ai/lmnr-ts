@@ -95,3 +95,4 @@ LMNR_{INSTRUMENT}_{OPTION}    # Per-instrumentation options, e.g. LMNR_LANGGRAPH
 - `src/opentelemetry-lib/instrumentation/temporal/AGENTS.md` - deterministic sandbox, header propagation, workflow lifecycle span
 - `src/browser/stagehand/v3/AGENTS.md` - `sendCDP` fallback for stagehand 3.0.0 / 3.0.1
 - `src/integrations/AGENTS.md` - eve `LaminarReporter`
+- `src/integrations/mcp/AGENTS.md` - `wrapMcpServer` (MCP server observability): MCP SDK 1.x / 2.x hooks on `_requestHandlers`, version-specific error shapes, `context` field injection / stripping, turn → trace grouping, redaction, cross-SDK span contract

@@ -20,6 +20,7 @@ import { consumeStreamResult, waitForPendingStreams } from "./stream-utils";
 
 export { consumeStreamResult, waitForPendingStreams };
 
+import { LaminarIdGenerator } from "./id-generator";
 import { initializeLaminarInstrumentations } from "./instrumentations";
 import { LaminarSpanProcessor } from "./processor";
 import { LaminarTracer } from "./tracer";
@@ -80,6 +81,9 @@ export const startTracing = (options: InitializeOptions) => {
   const newProvider = new SdkTracerProvider({
     spanProcessors: [spanProcessor],
     sampler: new AlwaysOnSampler(),
+    // Random ids, unless a root span is created inside `withForcedTraceId`
+    // (MCP turn grouping). See `id-generator.ts`.
+    idGenerator: new LaminarIdGenerator(),
     resource: resourceFromAttributes({
       [ATTR_SERVICE_NAME]: "laminar-tracer-resource",
       [ATTR_SERVICE_VERSION]: SDK_VERSION,
