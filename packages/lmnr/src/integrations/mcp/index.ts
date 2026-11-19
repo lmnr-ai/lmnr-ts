@@ -666,10 +666,12 @@ const prepare = (
   }
 
   // Trace id: client turn id > session turn tracker > client traceparent >
-  // random. The span always stays a root; a traceparent is always a link.
-  // The tracker beats the traceparent because clients with their own tracing
-  // send a fresh trace id per call (one trace per call) or one for a whole
-  // session (many turns in one trace); the gap tracker is never that wrong.
+  // random. A session's NEW turn starts with the traceparent's trace id when
+  // there is one (later calls in the gap join it). The span always stays a
+  // root; a traceparent is always a link. The tracker beats the traceparent
+  // because clients with their own tracing send a fresh trace id per call
+  // (one trace per call) or one for a whole session (many turns in one
+  // trace); the gap tracker is never that wrong.
   const remoteParent = parseTraceparent(meta[TRACEPARENT_META_KEY]);
   const links: Link[] = remoteParent
     ? [
@@ -686,11 +688,16 @@ const prepare = (
   const turnId = nonEmptyString(aiInvocation?.turnId);
   let forcedTraceId: string | undefined;
   let trackTurn = false;
+  let newTurn = false;
   if (turnId) {
     forcedTraceId = traceIdForTurn(sessionId, turnId);
   } else if (sessionId) {
     forcedTraceId = turnTracker.begin(sessionId, options.turnGapMs);
     trackTurn = true;
+    if (forcedTraceId === undefined) {
+      newTurn = true;
+      forcedTraceId = remoteParent?.traceId;
+    }
   } else if (remoteParent) {
     forcedTraceId = remoteParent.traceId;
   }
@@ -724,15 +731,11 @@ const prepare = (
         ),
       ),
     );
-    // New turn: remember the id the span got (a no-op span, e.g. Laminar not
-    // initialized, has an invalid one and starts no turn).
+    // New turn: remember the id the span got, which is the traceparent's when
+    // forcing worked (a no-op span, e.g. Laminar not initialized, has an
+    // invalid one and starts no turn).
     const startedTraceId = span.spanContext().traceId;
-    if (
-      trackTurn &&
-      sessionId &&
-      forcedTraceId === undefined &&
-      isValidTraceId(startedTraceId)
-    ) {
+    if (trackTurn && sessionId && newTurn && isValidTraceId(startedTraceId)) {
       turnTracker.start(sessionId, startedTraceId);
     }
     return {
@@ -745,7 +748,8 @@ const prepare = (
       trackTurn,
     };
   } catch (error) {
-    if (trackTurn && sessionId && forcedTraceId !== undefined) {
+    // A reused turn was already marked in flight by `begin`.
+    if (trackTurn && sessionId && !newTurn) {
       turnTracker.end(sessionId);
     }
     throw error;

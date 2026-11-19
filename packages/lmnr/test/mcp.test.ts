@@ -531,7 +531,7 @@ void describe("wrapMcpServer", () => {
     assert.equal(span.links[0].context.spanId, spanId);
   });
 
-  void it("with a session, the turn tracker wins over per-call traceparents", async () => {
+  void it("with a session, a new turn starts with its traceparent and later calls join it", async () => {
     const client = await connect(buildServer(), "sess-tp");
     const parents = [
       ["11111111111111111111111111111111", "1111111111111111"],
@@ -546,13 +546,12 @@ void describe("wrapMcpServer", () => {
     }
     const spans = mcpSpans();
     assert.equal(spans.length, 2);
-    assert.equal(
-      spans[0].spanContext().traceId,
-      spans[1].spanContext().traceId,
-    );
+    // The new turn starts with the first call's traceparent trace id; the
+    // second call (another traceparent, within the gap) joins that turn.
+    assert.equal(spans[0].spanContext().traceId, parents[0][0]);
+    assert.equal(spans[1].spanContext().traceId, parents[0][0]);
     spans.forEach((span, i) => {
       const [traceId, spanId] = parents[i];
-      assert.notEqual(span.spanContext().traceId, traceId);
       assert.equal(getParentSpanId(span as any), undefined);
       assert.equal(span.links.length, 1);
       assert.equal(span.links[0].context.traceId, traceId);
