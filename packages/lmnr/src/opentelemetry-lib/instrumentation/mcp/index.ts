@@ -102,10 +102,12 @@ const hookServer = (protocol: any): ServerState | undefined => {
 /**
  * MCP servers (`@modelcontextprotocol/sdk` 1.x, `@modelcontextprotocol/server`
  * 2.x): a SERVER span per request the server handles. 2.x is patched when
- * required; 1.x and ESM imports through `instrumentModules: { mcp }`. `connect` is the one
- * call every server makes before it handles a request, so it is where a
- * server's handler table gets hooked; `McpServer.connect` also links the
- * `McpServer` (its tool registry) to its low-level server.
+ * required; 1.x and ESM imports through `instrumentModules: { mcp }` (the
+ * `Server` / `McpServer` classes, a module exporting them, or an array; the
+ * base `manuallyInstrument` hands each to the module entry that `accepts` it).
+ * `connect` is the one call every server makes before it handles a request,
+ * so it is where a server's handler table gets hooked; `McpServer.connect`
+ * also links the `McpServer` (its tool registry) to its low-level server.
  *
  * `Laminar.initialize({ mcp })` switches MCP observability mode; the handlers
  * read it per request.
@@ -127,25 +129,9 @@ export class McpInstrumentation extends LaminarInstrumentation {
       // `@modelcontextprotocol/sdk` 1.x can't be hooked on require: its "."
       // export points at a file the package doesn't ship, and
       // require-in-the-middle skips the internal files of a package whose
-      // main doesn't resolve. 1.x servers need `instrumentModules.mcp`.
+      // main doesn't resolve. 1.x servers need `instrumentModules.mcp`, whose
+      // classes the entry above `accepts`.
     ];
-  }
-
-  /**
-   * `instrumentModules: { mcp }` (ESM): the `Server` / `McpServer` classes, a
-   * module exporting them, or an array of those.
-   */
-  public manuallyInstrument(input: any): void {
-    for (const value of Array.isArray(input) ? input : [input]) {
-      if (this.classes(value).length === 0) {
-        logger.warn(
-          "Laminar MCP: instrumentModules.mcp expects the Server or McpServer " +
-            "class (or a module exporting them) of the MCP TypeScript SDK.",
-        );
-        continue;
-      }
-      this.patch(value);
-    }
   }
 
   /** `Server` / `McpServer` classes in a module, or the value itself. */
