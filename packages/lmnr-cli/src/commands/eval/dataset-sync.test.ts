@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import {
   chmod,
   cp,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
@@ -736,5 +737,40 @@ void describe("eval run: syncing", () => {
     await expect(
       prepareRunDatasets(evals, ["empty"], undefined, server.getClient),
     ).rejects.toMatchObject({ code: "invalid_evals_dir" });
+  });
+
+  void it("leaves a linked task alone, and drops staging an interrupted pull left", async () => {
+    await writeSupport();
+    const server = fakeLaminar();
+    await pushDatasets(evals, undefined, {}, server.getClient);
+    // A dev copy linked in place of a pinned task.
+    await rename(
+      path.join(evals, "support/tasks/greet"),
+      path.join(root, "greet"),
+    );
+    await symlink(
+      path.join(root, "greet"),
+      path.join(evals, "support/tasks/greet"),
+    );
+    await write(
+      "support/tasks/.refund.lmnr-tmp-0123abcd/task.toml",
+      "[task]\n",
+    );
+
+    await expect(
+      pullDatasets(evals, undefined, {}, server.getClient),
+    ).rejects.toMatchObject({ code: "local_changes" });
+    await prepareRunDatasets(evals, ["support"], undefined, server.getClient);
+    expect(
+      (await lstat(path.join(evals, "support/tasks/greet"))).isSymbolicLink(),
+    ).toBe(true);
+    expect(
+      existsSync(path.join(evals, "support/tasks/.refund.lmnr-tmp-0123abcd")),
+    ).toBe(false);
+
+    await pullDatasets(evals, undefined, { force: true }, server.getClient);
+    expect(
+      (await lstat(path.join(evals, "support/tasks/greet"))).isDirectory(),
+    ).toBe(true);
   });
 });

@@ -35,6 +35,7 @@ import {
   ensureCachedTask,
   ensureTasksDir,
   installTask,
+  removeStaleStaging,
   removeTask,
 } from "./task-cache";
 import {
@@ -379,7 +380,13 @@ export const pullDatasets = async (
       toml,
       tomlUpdated: ds.toml === null || !sameTasks(ds.toml, toml),
       target,
-      plan: planPull(ds.hashes, ds.state, target, scope),
+      plan: planPull(
+        ds.hashes,
+        ds.state,
+        target,
+        scope,
+        new Set(ds.local.symlinks),
+      ),
     });
   }
 
@@ -769,6 +776,8 @@ export const prepareRunDatasets = async (
   const runs: DatasetRun[] = [];
   let synced = false;
   for (const folder of folders) {
+    // Harbor would run a staged copy an interrupted pull left behind.
+    await removeStaleStaging(path.join(evalsDir, folder, TASKS_DIR));
     const ds = await readDataset(evalsDir, folder);
     if (ds.toml === null) {
       if (!ds.local.exists) {
@@ -782,7 +791,13 @@ export const prepareRunDatasets = async (
       continue;
     }
     const target = pickTasks(ds.toml, scope);
-    const plan = planPull(ds.hashes, ds.state, target, scope);
+    const plan = planPull(
+      ds.hashes,
+      ds.state,
+      target,
+      scope,
+      new Set(ds.local.symlinks),
+    );
     const skip = new Set(plan.conflicts);
     if (skip.size > 0) {
       logger.warn(

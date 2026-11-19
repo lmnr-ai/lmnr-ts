@@ -39,6 +39,25 @@ void describe("planPull", () => {
     ).toEqual([]);
   });
 
+  void it("treats a task dir replaced by a link as a local edit", () => {
+    const synced = state({ linked: h("1"), dropped: h("2") });
+    expect(
+      planPull(
+        {},
+        synced,
+        { linked: h("1") },
+        all,
+        new Set(["linked", "dropped"]),
+      ),
+    ).toEqual({
+      added: [],
+      changed: ["linked"],
+      removed: ["dropped"],
+      unchanged: [],
+      conflicts: ["dropped", "linked"],
+    });
+  });
+
   void it("removes only within --task", () => {
     const disk = { "refund-a": h("1"), other: h("2") };
     const synced = state(disk);

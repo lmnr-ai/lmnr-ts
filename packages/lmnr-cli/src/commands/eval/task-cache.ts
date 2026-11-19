@@ -193,7 +193,7 @@ export const installTask = async (
   const parent = path.dirname(dest);
   const staging = path.join(
     parent,
-    `.${path.basename(dest)}.lmnr-tmp-${randomBytes(4).toString("hex")}`,
+    `.${path.basename(dest)}${STAGING_INFIX}${randomBytes(4).toString("hex")}`,
   );
   try {
     await copyTree(cached, staging);
@@ -202,6 +202,29 @@ export const installTask = async (
   } catch (error) {
     await rm(staging, { recursive: true, force: true });
     throw error;
+  }
+};
+
+const STAGING_INFIX = ".lmnr-tmp-";
+/** `installTask`'s staging dirs: `.<task>.lmnr-tmp-<8 hex>`. */
+const STAGING = /^\..+\.lmnr-tmp-[0-9a-f]{8}$/;
+
+/**
+ * Delete staging dirs an interrupted install left in `tasks/`: Harbor lists
+ * every child dir with a `task.toml`, hidden ones included, so it would run
+ * them as tasks.
+ */
+export const removeStaleStaging = async (tasksDir: string): Promise<void> => {
+  const entries = await readdir(tasksDir, { withFileTypes: true }).catch(
+    () => [],
+  );
+  for (const entry of entries) {
+    if (entry.isDirectory() && STAGING.test(entry.name)) {
+      await rm(path.join(tasksDir, entry.name), {
+        recursive: true,
+        force: true,
+      });
+    }
   }
 };
 
@@ -222,5 +245,7 @@ export const ensureTasksDir = async (dir: string): Promise<void> => {
       `${dir} is ${s.isSymbolicLink() ? "a symlink" : "not a directory"}; ` +
         "eval dataset pull only writes into a real tasks/ directory.",
     );
+  } else {
+    await removeStaleStaging(dir);
   }
 };

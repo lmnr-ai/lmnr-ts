@@ -226,7 +226,9 @@
     merged INTO the toml, unknown pins stay); added / changed / removed, where
     removed = on disk AND in state AND not in target (a never-synced local
     task stays). Edited ∧ (changed ∨ removed) ⇒ `local_changes` unless
-    `--force`. Push: added (not in toml) / changed / removed = in toml, not on
+    `--force`; a task dir replaced by a link (`planPull`'s `linked`) counts
+    as edited, so pull refuses and `eval run` runs it as is, like push
+    keeps its pin. Push: added (not in toml) / changed / removed = in toml, not on
     disk, AND in state (a pin never pulled here, e.g. after `pull --task`,
     must not be dropped: deviation from the contract's plain "not on disk");
     unedited ∧ toml ≠ state (incl. pin dropped) ⇒ `tasks_behind_lock` (the
@@ -260,6 +262,9 @@
     them, never by re-reading the tree: Windows can't read exec bits back) or
     it's dropped; staged in `.tmp-*` and renamed in. Installing copies into a
     hidden `tasks/.<name>.lmnr-tmp-*` then renames; unchanged tasks stay.
+    Harbor lists hidden task dirs too, so `removeStaleStaging` deletes
+    leftovers of an interrupted install before every pull (`ensureTasksDir`)
+    and every `eval run` (`prepareRunDatasets`).
   - **Push**: `missingTasks` `{task: hash}` (≤ 10 000 per call) → per missing
     task re-walk + re-hash (a mid-push edit fails instead of uploading under
     the wrong hash) → `uploadTask` + `uploadTaskIndex` (4 at a time; the

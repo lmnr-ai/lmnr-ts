@@ -51,30 +51,40 @@ export interface PullPlan {
 /**
  * Make the tasks in `scope` match `target` (the pinned hashes, already
  * picked by scope). A task in `tasks/` that was never synced and isn't in
- * the target is a new local task: it stays.
+ * the target is a new local task: it stays. A task dir replaced by a link
+ * (`linked`, never hashed) is a local edit: replacing or deleting it is a
+ * conflict, as push keeps its pin.
  */
 export const planPull = (
   hashes: TaskHashes,
   state: SyncState,
   target: TaskHashes,
   scope: TaskScope,
+  linked: ReadonlySet<string> = new Set(),
 ): PullPlan => {
   const names = Object.keys(target);
+  const present = (n: string) => n in hashes || linked.has(n);
   const changed = sorted(
-    names.filter((n) => n in hashes && hashes[n] !== target[n]),
+    names.filter(
+      (n) => linked.has(n) || (n in hashes && hashes[n] !== target[n]),
+    ),
   );
   const removed = sorted(
-    Object.keys(hashes).filter(
+    [...Object.keys(hashes), ...linked].filter(
       (n) => scope(n) && !(n in target) && n in state.tasks,
     ),
   );
   return {
-    added: sorted(names.filter((n) => !(n in hashes))),
+    added: sorted(names.filter((n) => !present(n))),
     changed,
     removed,
-    unchanged: sorted(names.filter((n) => hashes[n] === target[n])),
+    unchanged: sorted(
+      names.filter((n) => !linked.has(n) && hashes[n] === target[n]),
+    ),
     conflicts: sorted(
-      [...changed, ...removed].filter((n) => isEdited(n, hashes, state)),
+      [...changed, ...removed].filter(
+        (n) => linked.has(n) || isEdited(n, hashes, state),
+      ),
     ),
   };
 };
