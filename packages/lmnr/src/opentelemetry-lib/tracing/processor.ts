@@ -232,7 +232,25 @@ export class LaminarSpanProcessor implements SpanProcessor {
 
   async forceFlush(): Promise<void> {
     this.trajectory?.write();
-    await this.instance?.forceFlush();
+    // Upstream `BatchSpanProcessor.forceFlush()` only exports and awaits what
+    // is still buffered. A batch its timer, its count trigger or our size
+    // trigger already handed to the exporter is untracked there, so the flush
+    // could resolve mid-send (and a Lambda freeze it). The OTLP exporter
+    // tracks every send it started, and its `forceFlush()` awaits them all.
+    // Awaited even when the processor's flush rejects, like upstream
+    // `SimpleSpanProcessor`, so one failed export can't skip the wait.
+    let flushError: unknown;
+    let flushRejected = false;
+    try {
+      await this.instance?.forceFlush();
+    } catch (error) {
+      flushError = error;
+      flushRejected = true;
+    }
+    await this.exporter?.forceFlush?.();
+    if (flushRejected) {
+      throw flushError;
+    }
   }
 
   async shutdown(): Promise<void> {
