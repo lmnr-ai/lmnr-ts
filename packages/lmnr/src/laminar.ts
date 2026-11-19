@@ -1319,6 +1319,11 @@ export class Laminar {
     return this.getLaminarSpanContext()?.traceId ?? null;
   }
 
+  /**
+   * Export every buffered span and wait until all exports are done, including
+   * batches the background batch processor had already started sending. Call
+   * it at the end of a serverless handler (e.g. AWS Lambda) before returning.
+   */
   public static async flush() {
     if (this.isInitialized) {
       logger.debug("Flushing spans");

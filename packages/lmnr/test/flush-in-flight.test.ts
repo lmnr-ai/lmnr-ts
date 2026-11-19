@@ -1,25 +1,29 @@
-// LAM-2568 repro: `Laminar.flush()` resolves while an export that the batch
-// processor already started on its own is still on the wire.
+// LAM-2568: `Laminar.flush()` must not resolve while an export that the batch
+// processor already started on its own is still on the wire. On Lambda that
+// send gets frozen mid-flight once the handler returns.
 //
 // Upstream `BatchSpanProcessorBase.forceFlush()` -> `_flushAll()` only exports
-// what is still in `_finishedSpans` and awaits those exports. A batch that was
-// already moved out of the buffer by the schedule-delay timer, the
-// `maxExportBatchSize` trigger, or (with `flushBySize`) our size trigger is not
-// tracked by the processor, so nothing awaits it. The OTLP exporter does track
-// it: its `forceFlush()` awaits every pending send
-// (`OTLPExportDelegate._promiseQueue.awaitAll()`), which is why calling
-// `exporter.forceFlush()` after `Laminar.flush()` works around it.
+// and awaits what is still in `_finishedSpans`. A batch already handed to the
+// exporter by the schedule-delay timer or the `maxExportBatchSize` trigger
+// (both go through the `flush()` closure in `_maybeStartTimer`), or by our
+// `flushBySize` trigger, is untracked there. `LaminarSpanProcessor.forceFlush()`
+// therefore also awaits the exporter's `forceFlush()`, which awaits every send
+// the OTLP exporter started (`OTLPExportDelegate._promiseQueue.awaitAll()`).
 //
-// These cases pin the CURRENT behavior against the real pipeline:
-// `Laminar.initialize` -> `LaminarSpanProcessor` -> batch processor -> real
-// OTLP/HTTP exporter -> a local server whose response time grows with the
-// payload, like an upload does. A fix should flip every
-// `inFlightAfterFlush === 1` assertion below to `=== 0`.
+// Runs the real pipeline: `Laminar.initialize` -> `LaminarSpanProcessor` ->
+// batch processor -> real OTLP/HTTP exporter -> a local server whose response
+// time grows with the payload, like an upload does.
 
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, afterEach, before, describe, it } from "node:test";
+
+import {
+  type ReadableSpan,
+  type SpanExporter,
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 
 import { Laminar } from "../src/laminar";
 import { LaminarSpanExporter } from "../src/opentelemetry-lib/tracing/exporter";
@@ -27,11 +31,11 @@ import { LaminarSpanProcessor } from "../src/opentelemetry-lib/tracing/processor
 
 // Upload time: a big batch takes much longer to send than a small one.
 const BIG_BODY_BYTES = 50_000;
-const BIG_EXPORT_MS = 3000;
-const SMALL_EXPORT_MS = 300;
-// Upstream's default `scheduledDelayMillis`; Laminar does not override it.
-const UPSTREAM_SCHEDULE_DELAY_MS = 5000;
+const BIG_EXPORT_MS = 1500;
+const SMALL_EXPORT_MS = 100;
 const BYTE_LIMIT = 100_000;
+// Slack for timer jitter when asserting that a flush waited for the big send.
+const TIMING_SLACK_MS = 200;
 
 type TraceServer = {
   server: Server;
@@ -40,6 +44,8 @@ type TraceServer = {
   inFlight: () => number;
   drain: () => Promise<void>;
 };
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const startTraceServer = async (): Promise<TraceServer> => {
   let received = 0;
@@ -70,15 +76,13 @@ const startTraceServer = async (): Promise<TraceServer> => {
     received: () => received,
     inFlight: () => received - responded,
     drain: async () => {
-      const deadline = Date.now() + 15_000;
+      const deadline = Date.now() + 10_000;
       while (received !== responded && Date.now() < deadline) {
         await sleep(50);
       }
     },
   };
 };
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // A GenAI-sized span: one big string attribute.
 const endSpan = (name: string, bytes: number) => {
@@ -87,7 +91,13 @@ const endSpan = (name: string, bytes: number) => {
   span.end();
 };
 
-describe("LAM-2568: Laminar.flush() vs an export already in flight", () => {
+const timed = async (fn: () => Promise<void>) => {
+  const t0 = Date.now();
+  await fn();
+  return Date.now() - t0;
+};
+
+describe("Laminar.flush() awaits exports already in flight (LAM-2568)", () => {
   let ts: TraceServer;
 
   before(async () => {
@@ -96,7 +106,6 @@ describe("LAM-2568: Laminar.flush() vs an export already in flight", () => {
 
   afterEach(async () => {
     await Laminar.shutdown();
-    // shutdown() has the same gap, so let the server finish before the next case.
     await ts.drain();
   });
 
@@ -114,78 +123,57 @@ describe("LAM-2568: Laminar.flush() vs an export already in flight", () => {
       ...extra,
     });
 
-  const flushAndMeasure = async (label: string, flush: () => Promise<void>) => {
-    const t0 = Date.now();
-    await flush();
-    const flushMs = Date.now() - t0;
-    const inFlightAfterFlush = ts.inFlight();
-    console.log(
-      `[${label}] flush took ${flushMs}ms; ` +
-        `exports still in flight when it resolved: ${inFlightAfterFlush}`,
-    );
-    return { flushMs, inFlightAfterFlush };
-  };
-
-  it("default BatchSpanProcessor: a timer-started export is not awaited", async () => {
-    init();
+  it("waits for a batch the default processor started on its own", async () => {
+    // A batch size of 1 starts the export as soon as the span ends, through
+    // the same `flush()` closure the 5s schedule-delay timer uses.
+    init({ maxExportBatchSize: 1 });
     const start = ts.received();
 
-    // The LLM span ends, then the handler keeps working (tool calls, more
-    // reasoning) for longer than the 5s schedule delay. The timer moves the
-    // batch out of the buffer and starts sending it.
     endSpan("llm", 60_000);
-    await sleep(UPSTREAM_SCHEDULE_DELAY_MS + 200);
-    assert.equal(ts.received() - start, 1, "timer started the export");
+    await sleep(50);
+    assert.equal(ts.received() - start, 1, "the processor started the export");
 
-    // End of the Lambda handler. The buffer is empty, so forceFlush() has
-    // nothing to export and resolves at once.
-    const { flushMs, inFlightAfterFlush } = await flushAndMeasure(
-      "default, timer",
-      () => Laminar.flush(),
+    // The buffer is empty, so upstream's forceFlush() alone resolves at once.
+    const flushMs = await timed(() => Laminar.flush());
+    assert.equal(ts.inFlight(), 0);
+    assert.ok(
+      flushMs >= BIG_EXPORT_MS - TIMING_SLACK_MS,
+      `flush took ${flushMs}ms`,
     );
-    assert.ok(flushMs < SMALL_EXPORT_MS, `flush took ${flushMs}ms`);
-    assert.equal(inFlightAfterFlush, 1, "BUG: the timer's export is in flight");
   });
 
-  it("flushBySize: a size-triggered export is not awaited", async () => {
+  it("waits for a batch the flushBySize trigger started", async () => {
     init({ flushBySize: true, maxExportBatchSizeBytes: BYTE_LIMIT });
     const start = ts.received();
 
-    // A big LLM span is buffered; the root span ending pushes the total past
-    // the limit, so the size trigger fires `void forceFlush()`: the big batch
-    // goes out (#1, slow) and the root span opens the next batch.
+    // The root span ending pushes the total past the limit, so the size trigger
+    // sends the big LLM batch (#1, slow) and the root span opens the next one.
     endSpan("llm", 90_000);
     endSpan("root", 20_000);
     await sleep(50);
     assert.equal(ts.received() - start, 1, "size trigger started export #1");
 
-    // End of the Lambda handler. flush() exports [root] (#2, fast) and awaits
-    // only #2. #1, the big one, is still uploading.
-    const { flushMs, inFlightAfterFlush } = await flushAndMeasure(
-      "flushBySize",
-      () => Laminar.flush(),
-    );
+    // flush() sends [root] (#2, fast); before the fix it awaited only #2.
+    const flushMs = await timed(() => Laminar.flush());
     assert.equal(ts.received() - start, 2);
-    assert.ok(flushMs < BIG_EXPORT_MS, `flush took ${flushMs}ms`);
-    assert.equal(
-      inFlightAfterFlush,
-      1,
-      "BUG: the size-triggered export is in flight",
+    assert.equal(ts.inFlight(), 0);
+    assert.ok(
+      flushMs >= BIG_EXPORT_MS - TIMING_SLACK_MS,
+      `flush took ${flushMs}ms`,
     );
   });
 
-  it("customer workaround: exporter.forceFlush() after Laminar.flush() waits", async () => {
-    // "Owning the exporter": a LaminarSpanProcessor built with our own exporter
-    // instance, so we can call its forceFlush() ourselves.
-    const exporter = new LaminarSpanExporter({
-      baseUrl: "http://127.0.0.1",
-      port: ts.port,
-      apiKey: "test-key",
-      forceHttp: true,
-    });
+  it("waits with a user-supplied exporter in a LaminarSpanProcessor", async () => {
+    // The customer's setup: a LaminarSpanProcessor built around an exporter
+    // they own, passed in as `spanProcessor`.
     init({
       spanProcessor: new LaminarSpanProcessor({
-        exporter,
+        exporter: new LaminarSpanExporter({
+          baseUrl: "http://127.0.0.1",
+          port: ts.port,
+          apiKey: "test-key",
+          forceHttp: true,
+        }),
         flushBySize: true,
         maxExportBatchSizeBytes: BYTE_LIMIT,
       }),
@@ -195,29 +183,50 @@ describe("LAM-2568: Laminar.flush() vs an export already in flight", () => {
     endSpan("root", 20_000);
     await sleep(50);
 
-    const { flushMs, inFlightAfterFlush } = await flushAndMeasure(
-      "flushBySize + exporter.forceFlush()",
-      async () => {
-        await Laminar.flush();
-        await exporter.forceFlush();
-      },
-    );
-    assert.ok(flushMs >= BIG_EXPORT_MS - 200, `flush took ${flushMs}ms`);
-    assert.equal(inFlightAfterFlush, 0);
+    await Laminar.flush();
+    assert.equal(ts.inFlight(), 0);
   });
 
-  it("control: disableBatch (SimpleSpanProcessor) awaits every pending export", async () => {
-    init({ disableBatch: true });
+  it("shutdown() waits too", async () => {
+    init({ flushBySize: true, maxExportBatchSizeBytes: BYTE_LIMIT });
 
     endSpan("llm", 90_000);
     endSpan("root", 20_000);
     await sleep(50);
 
-    // SimpleSpanProcessor.forceFlush() awaits its `_pendingExports` and then
-    // calls exporter.forceFlush(), so nothing is left on the wire.
-    const { inFlightAfterFlush } = await flushAndMeasure("disableBatch", () =>
-      Laminar.flush(),
-    );
-    assert.equal(inFlightAfterFlush, 0);
+    await Laminar.shutdown();
+    assert.equal(ts.inFlight(), 0);
+  });
+});
+
+describe("LaminarSpanProcessor.forceFlush()", () => {
+  class FailingExporter implements SpanExporter {
+    public forceFlushCalls = 0;
+
+    public export(
+      _spans: ReadableSpan[],
+      resultCallback: (result: { code: number; error?: Error }) => void,
+    ): void {
+      resultCallback({ code: 1, error: new Error("export failed") });
+    }
+
+    public shutdown(): Promise<void> {
+      return Promise.resolve();
+    }
+
+    public forceFlush(): Promise<void> {
+      this.forceFlushCalls += 1;
+      return Promise.resolve();
+    }
+  }
+
+  it("awaits the exporter even when the batch export fails, then rethrows", async () => {
+    const exporter = new FailingExporter();
+    const processor = new LaminarSpanProcessor({ exporter });
+    const provider = new TracerProvider({ spanProcessors: [processor] });
+    provider.getTracer("test").startSpan("span").end();
+
+    await assert.rejects(() => processor.forceFlush(), /export failed/);
+    assert.equal(exporter.forceFlushCalls, 1);
   });
 });
