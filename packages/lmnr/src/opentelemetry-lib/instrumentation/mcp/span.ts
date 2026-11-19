@@ -1,25 +1,21 @@
 import {
   type Attributes,
+  type Context,
   context as contextApi,
   type Link,
   ROOT_CONTEXT,
   SpanKind,
   trace,
 } from "@opentelemetry/api";
-
-import { getTracer } from "../../opentelemetry-lib/tracing";
-import {
-  SESSION_ID,
-  SPAN_INPUT,
-  SPAN_TYPE,
-} from "../../opentelemetry-lib/tracing/attributes";
-import { LaminarContextManager } from "../../opentelemetry-lib/tracing/context";
+import { initializeLogger } from "../../../utils";
+import { getTracer } from "../../tracing";
+import { SESSION_ID, SPAN_INPUT, SPAN_TYPE } from "../../tracing/attributes";
+import { LaminarContextManager } from "../../tracing/context";
 import {
   enableForcedTraceIds,
   isValidTraceId,
   withForcedTraceId,
-} from "../../opentelemetry-lib/tracing/id-generator";
-import { initializeLogger } from "../../utils";
+} from "../../tracing/id-generator";
 import {
   GEN_AI_OPERATION_NAME,
   GEN_AI_PROMPT_NAME,
@@ -119,22 +115,69 @@ const startAttributes = (
   return attributes;
 };
 
+const openSpan = (
+  options: ResolvedOptions,
+  req: McpRequest,
+  contextValue: unknown,
+  parent: Context,
+  links?: Link[],
+): ActiveSpan => {
+  // The session goes on every span the handler opens too.
+  const baseContext = req.sessionId
+    ? LaminarContextManager.setRawAssociationProperties(
+        { sessionId: req.sessionId },
+        parent,
+      )
+    : parent;
+  const name = req.target ? `${req.method} ${req.target}` : req.method;
+  const span = contextApi.with(baseContext, () =>
+    getTracer().startSpan(
+      name,
+      {
+        kind: SpanKind.SERVER,
+        root: parent === ROOT_CONTEXT,
+        attributes: startAttributes(options, req, contextValue),
+        links,
+      },
+      baseContext,
+    ),
+  );
+  return {
+    span,
+    spanContext: trace.setSpan(baseContext, span),
+    method: req.method,
+  };
+};
+
 const startSpan = (
   options: ResolvedOptions,
   req: McpRequest,
   contextValue: unknown,
 ): ActiveSpan => {
   const { sessionId } = req;
-  // Trace id: client turn id > session turn tracker > client traceparent >
-  // random. A session's NEW turn starts with the traceparent's trace id when
-  // there is one (later calls in the gap join it). The span always stays a
-  // root; a traceparent is always a link. The tracker beats the traceparent
-  // because clients with their own tracing send a fresh trace id per call
-  // (one trace per call) or one for a whole session (many turns in one
-  // trace); the gap tracker is never that wrong.
   const remoteParent = parseTraceparent(req.meta[TRACEPARENT_META_KEY]);
-  const links: Link[] = remoteParent
-    ? [{ context: { ...remoteParent, isRemote: true } }]
+  const remoteSpanContext = remoteParent && {
+    ...remoteParent,
+    isRemote: true,
+  };
+  if (!options.observe) {
+    // Mode off: a child of the client's span when it sent one (the server
+    // handles each request in a task of its own, so `_meta` is the only
+    // carrier), else of the active context.
+    const parent = remoteSpanContext
+      ? trace.setSpanContext(ROOT_CONTEXT, remoteSpanContext)
+      : LaminarContextManager.getContext();
+    return openSpan(options, req, contextValue, parent);
+  }
+  // Mode on. Trace id: client turn id > session turn tracker > client
+  // traceparent > random. A session's NEW turn starts with the traceparent's
+  // trace id when there is one (later calls in the gap join it). The span
+  // always stays a root; a traceparent is always a link. The tracker beats
+  // the traceparent because clients with their own tracing send a fresh
+  // trace id per call (one trace per call) or one for a whole session (many
+  // turns in one trace); the gap tracker is never that wrong.
+  const links: Link[] = remoteSpanContext
+    ? [{ context: remoteSpanContext }]
     : [];
   const turnId = nonEmptyString(req.aiInvocation?.turnId);
   let forcedTraceId: string | undefined;
@@ -151,48 +194,28 @@ const startSpan = (
   }
 
   try {
-    const baseContext = sessionId
-      ? LaminarContextManager.setRawAssociationProperties(
-          { sessionId },
-          ROOT_CONTEXT,
-        )
-      : ROOT_CONTEXT;
-    const tracer = getTracer();
-    if (forcedTraceId && !enableForcedTraceIds(tracer) && !warned.forcing) {
+    if (
+      forcedTraceId &&
+      !enableForcedTraceIds(getTracer()) &&
+      !warned.forcing
+    ) {
       warned.forcing = true;
       logger.debug(
         "Laminar MCP: the tracer does not support forced trace ids, " +
           "so requests of one turn get separate traces",
       );
     }
-    const name = req.target ? `${req.method} ${req.target}` : req.method;
-    const span = contextApi.with(baseContext, () =>
-      withForcedTraceId(forcedTraceId, () =>
-        tracer.startSpan(
-          name,
-          {
-            kind: SpanKind.SERVER,
-            root: true,
-            attributes: startAttributes(options, req, contextValue),
-            links,
-          },
-          baseContext,
-        ),
-      ),
+    const active = withForcedTraceId(forcedTraceId, () =>
+      openSpan(options, req, contextValue, ROOT_CONTEXT, links),
     );
     // New turn: remember the id the span got, which is the traceparent's when
     // forcing worked (a no-op span, e.g. Laminar not initialized, has an
     // invalid one and starts no turn).
-    const startedTraceId = span.spanContext().traceId;
+    const startedTraceId = active.span.spanContext().traceId;
     if (sessionId && newTurn && isValidTraceId(startedTraceId)) {
       turn = turnTracker.start(sessionId, startedTraceId);
     }
-    return {
-      span,
-      spanContext: trace.setSpan(baseContext, span),
-      method: req.method,
-      turn,
-    };
+    return { ...active, turn };
   } catch (error) {
     // `begin` or `start` already marked the call in flight.
     if (turn) {
@@ -204,17 +227,17 @@ const startSpan = (
 
 export const traceRequest = (
   state: ServerState,
+  options: ResolvedOptions,
   method: string,
   handler: Handler,
   request: any,
   extra: any,
 ): unknown => {
-  const { options } = state;
   let active: ActiveSpan | undefined;
   let forwarded = request;
   try {
     const req = readRequest(state, method, request, extra);
-    const split = splitContext(state, req, request);
+    const split = splitContext(state, options, req, request);
     forwarded = split.forwarded;
     active = startSpan(options, req, split.context);
   } catch (e) {

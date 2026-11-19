@@ -41,10 +41,6 @@ export {
   LaminarReporter,
   type LaminarReporterOptions,
 } from "./integrations/eve";
-export {
-  type WrapMcpServerOptions,
-  wrapMcpServer,
-} from "./integrations/mcp";
 export { Laminar, type LaminarInitializeProps } from "./laminar";
 export { LaminarSpanProcessor } from "./opentelemetry-lib/";
 export { type LaminarBridge } from "./opentelemetry-lib/bridges";
@@ -65,6 +61,7 @@ export {
   MastraExporter,
   type MastraExporterOptions,
 } from "./opentelemetry-lib/instrumentation/mastra";
+export { type McpOptions } from "./opentelemetry-lib/instrumentation/mcp/options";
 export {
   type LaminarPiDurable,
   type LaminarPiDurableOptions,

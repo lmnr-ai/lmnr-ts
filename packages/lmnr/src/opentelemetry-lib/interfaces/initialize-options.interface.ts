@@ -250,6 +250,26 @@ export interface InitializeOptions {
      */
     kernel?: any;
     /**
+     * MCP servers. `@modelcontextprotocol/server` (2.x) loaded with `require`
+     * is instrumented automatically. For `@modelcontextprotocol/sdk` (1.x),
+     * and for ESM imports, pass the `Server` and / or `McpServer` classes (or
+     * a module exporting them). `Laminar.initialize({ mcp })` turns on MCP
+     * observability mode.
+     *
+     * @example
+     * ```javascript
+     * import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+     * import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+     * import { Laminar } from "@lmnr-ai/lmnr";
+     *
+     * Laminar.initialize({
+     *   mcp: true,
+     *   instrumentModules: { mcp: [Server, McpServer] },
+     * });
+     * ```
+     */
+    mcp?: any;
+    /**
      * Note: When you import query before Laminar.initialize(),
      * OR if you have "type": "module" in your package.json,
      * use Laminar.instrumentClaudeAgentQuery()

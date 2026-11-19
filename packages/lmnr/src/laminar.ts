@@ -51,6 +51,10 @@ import {
   LlmCall,
 } from "./opentelemetry-lib/instrumentation/langchain/llm-call";
 import {
+  type McpOptions,
+  setMcpOptions,
+} from "./opentelemetry-lib/instrumentation/mcp/options";
+import {
   forceFlush,
   getSpanProcessor,
   getTracer,
@@ -99,6 +103,7 @@ export interface LaminarInitializeProps {
   grpcPort?: number;
   instrumentModules?: InitializeOptions["instrumentModules"];
   instrumentOptions?: InstrumentOptions;
+  mcp?: boolean | McpOptions;
   disableBatch?: boolean;
   traceExportTimeoutMillis?: number;
   logLevel?: "debug" | "info" | "warn" | "error";
@@ -175,6 +180,14 @@ export class Laminar {
    * `{ langchain: { recordMetadata: true }, langgraph: { recordGraph: false } }`.
    * Each option can also be set with an `LMNR_{INSTRUMENT}_{OPTION}` environment
    * variable, e.g. `LMNR_LANGGRAPH_RECORD_GRAPH=false`; a value passed here wins.
+   * @param {boolean | McpOptions} props.mcp - MCP observability mode, for a
+   * process that runs an MCP server. Every `tools/call`, `prompts/get` and
+   * `resources/read` it handles becomes a root span, one trace per user turn
+   * (calls of one session at most `turnGapMs` apart), linked to the client's
+   * span; tools get an optional `context` argument for the user's goal. `true`
+   * uses the defaults; an object sets `context`, `recordPayloads`, `redactKeys`
+   * and `turnGapMs`. Off (the default), MCP server spans are children of the
+   * calling client's span.
    * @param {boolean} props.disableBatch - Whether to disable batching of spans. Useful for debug
    * environments. If true, spans will be sent immediately using {@link SimpleSpanProcessor}
    * instead of {@link BatchSpanProcessor}.
@@ -254,6 +267,7 @@ export class Laminar {
     grpcPort,
     instrumentModules,
     instrumentOptions,
+    mcp,
     disableBatch,
     traceExportTimeoutMillis,
     logLevel,
@@ -348,6 +362,7 @@ export class Laminar {
     }
     this.isInitialized = true;
     setInstrumentOptions(instrumentOptions);
+    setMcpOptions(mcp);
 
     const urlWithoutSlash = url?.replace(/\/$/, "").replace(/:\d{1,5}$/g, "");
     const httpUrlWithoutSlash = httpUrl
@@ -1356,6 +1371,7 @@ export class Laminar {
       this.isInitialized = false;
       _resetConfiguration();
       resetInstrumentOptions();
+      setMcpOptions(undefined);
       LaminarContextManager.clearContexts();
       LaminarContextManager.clearActiveSpans();
       // Clear the one-shot debug-runtime state so a subsequent initialize()

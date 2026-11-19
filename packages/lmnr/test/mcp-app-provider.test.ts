@@ -1,19 +1,25 @@
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { Client } from "@modelcontextprotocol/client";
 import { context, trace } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
+import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { InMemorySpanExporter, TracerProvider } from "@opentelemetry/sdk-trace";
+import { z } from "zod";
 
-import { LaminarSpanProcessor, wrapMcpServer } from "../src/index";
+import { LaminarSpanProcessor } from "../src/index";
+import {
+  McpInstrumentation,
+  setMcpOptions,
+} from "../src/opentelemetry-lib/instrumentation/mcp";
 import { getParentSpanId } from "../src/opentelemetry-lib/tracing/compat";
 
 // Laminar is NOT initialized here: it only runs as a LaminarSpanProcessor
-// inside the app's own provider, whose IdGenerator is the app's.
-void describe("wrapMcpServer inside an app-owned provider", () => {
+// inside the app's own provider, whose IdGenerator is the app's. Its own
+// process, so `@modelcontextprotocol/server` is first required after the
+// hook is in.
+void describe("MCP observability mode inside an app-owned provider", () => {
   const exporter = new InMemorySpanExporter();
   const provider = new TracerProvider({
     spanProcessors: [
@@ -31,9 +37,14 @@ void describe("wrapMcpServer inside an app-owned provider", () => {
     context.disable();
   });
 
-  void it("still groups a session's turn into one root-span trace", async () => {
-    const server = wrapMcpServer(new McpServer({ name: "app", version: "1" }));
-    server.registerTool("ping_tool", { inputSchema: {} }, () => ({
+  void it("auto-patches a required McpServer and groups a session's turn into one root-span trace", async () => {
+    registerInstrumentations({ instrumentations: [new McpInstrumentation()] });
+    setMcpOptions(true);
+    // biome-ignore lint/style/noCommonJs: required after the hook, to be patched
+    const sdk = require("@modelcontextprotocol/server");
+    const { InMemoryTransport, McpServer } = sdk;
+    const server = new McpServer({ name: "app", version: "1" });
+    server.registerTool("ping_tool", { inputSchema: z.object({}) }, () => ({
       content: [{ type: "text", text: "pong" }],
     }));
     const [clientTransport, serverTransport] =

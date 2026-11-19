@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer, type Server as HttpServer } from "node:http";
 import { type AddressInfo } from "node:net";
-import { after, afterEach, beforeEach, describe, it } from "node:test";
+import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 
 import { Client as ClientV2 } from "@modelcontextprotocol/client";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -26,18 +26,23 @@ import {
 } from "@opentelemetry/sdk-trace";
 import { z } from "zod";
 
-import { Laminar, wrapMcpServer } from "../src/index";
-import { CONTEXT_DESCRIPTION } from "../src/integrations/mcp/attributes";
-import {
-  resetMcpState,
-  resolveMcpOptions,
-} from "../src/integrations/mcp/index";
-import { isSecretKey, redact } from "../src/integrations/mcp/redact";
-import { traceIdForTurn } from "../src/integrations/mcp/turns";
+import { Laminar, type McpOptions } from "../src/index";
 import {
   _resetConfiguration,
   initializeTracing,
 } from "../src/opentelemetry-lib/configuration";
+import {
+  McpInstrumentation,
+  resetMcpState,
+  setMcpOptions,
+} from "../src/opentelemetry-lib/instrumentation/mcp";
+import { CONTEXT_DESCRIPTION } from "../src/opentelemetry-lib/instrumentation/mcp/attributes";
+import { resolveMcpOptions } from "../src/opentelemetry-lib/instrumentation/mcp/options";
+import {
+  isSecretKey,
+  redact,
+} from "../src/opentelemetry-lib/instrumentation/mcp/redact";
+import { traceIdForTurn } from "../src/opentelemetry-lib/instrumentation/mcp/turns";
 import { getTracer } from "../src/opentelemetry-lib/tracing";
 import { getParentSpanId } from "../src/opentelemetry-lib/tracing/compat";
 import { withForcedTraceId } from "../src/opentelemetry-lib/tracing/id-generator";
@@ -48,8 +53,18 @@ const CLIENT_INFO = { name: "claude-code", version: "2.0.1" };
 
 const textOf = (result: any): string => result.content?.[0]?.text;
 
-void describe("wrapMcpServer", () => {
+void describe("MCP observability mode", () => {
   const exporter = new InMemorySpanExporter();
+
+  void before(() => {
+    // What `instrumentModules: { mcp }` does (ESM); `require` auto-patches.
+    new McpInstrumentation().manuallyInstrument([
+      Server,
+      McpServer,
+      ServerV2,
+      McpServerV2,
+    ]);
+  });
 
   void beforeEach(() => {
     _resetConfiguration();
@@ -58,11 +73,14 @@ void describe("wrapMcpServer", () => {
       value: true,
       writable: true,
     });
+    // `Laminar.initialize({ mcp: true })`
+    setMcpOptions(true);
   });
 
   void afterEach(() => {
     exporter.reset();
     resetMcpState();
+    setMcpOptions(undefined);
   });
 
   void after(async () => {
@@ -82,15 +100,11 @@ void describe("wrapMcpServer", () => {
     return spans[0];
   };
 
-  // An McpServer (SDK 1.x) with a typical set of tools, wrapped.
-  const buildServer = (
-    options?: Parameters<typeof wrapMcpServer>[1],
-    received: unknown[] = [],
-  ) => {
-    const server = wrapMcpServer(
-      new McpServer({ name: "docs", version: "1.0.0" }),
-      options,
-    );
+  // An McpServer (SDK 1.x) with a typical set of tools, in MCP observability
+  // mode with `options`.
+  const buildServer = (options: McpOptions = {}, received: unknown[] = []) => {
+    setMcpOptions(options);
+    const server = new McpServer({ name: "docs", version: "1.0.0" });
     server.registerTool(
       "search_docs",
       {
@@ -469,9 +483,8 @@ void describe("wrapMcpServer", () => {
   });
 
   void it("groups overlapping calls of a session into one trace", async () => {
-    const server = wrapMcpServer(new McpServer({ name: "s", version: "1" }), {
-      turnGapMs: 0,
-    });
+    setMcpOptions({ turnGapMs: 0 });
+    const server = new McpServer({ name: "s", version: "1" });
     server.registerTool("slow", { inputSchema: {} }, async () => {
       await sleep(60);
       return { content: [{ type: "text", text: "ok" }] };
@@ -582,7 +595,7 @@ void describe("wrapMcpServer", () => {
   });
 
   void it("nests the handler's spans under the MCP span", async () => {
-    const server = wrapMcpServer(new McpServer({ name: "s", version: "1" }));
+    const server = new McpServer({ name: "s", version: "1" });
     server.registerTool("nested", { inputSchema: {} }, async () => {
       const span = getTracer().startSpan("inner");
       await sleep(1);
@@ -601,31 +614,44 @@ void describe("wrapMcpServer", () => {
     );
   });
 
-  void it("is a no-op when wrapped twice", async () => {
-    const server = wrapMcpServer(buildServer());
-    assert.equal(wrapMcpServer(server), server);
-    wrapMcpServer(server.server);
-    const client = await connect(server);
+  void it("mode off: every request, a child of the client's span, schemas untouched", async () => {
+    const received: unknown[] = [];
+    const server = buildServer({}, received);
+    setMcpOptions(undefined);
+    const client = await connect(server, "off-sess");
     const { tools } = await client.listTools();
     const search = tools.find((t) => t.name === "search_docs")!;
-    assert.ok((search.inputSchema.properties as any).context);
-    await client.callTool({ name: "search_docs", arguments: { query: "a" } });
-    assert.equal(mcpSpans().length, 1);
-  });
+    assert.equal((search.inputSchema.properties as any).context, undefined);
+    const traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+    const spanId = "00f067aa0ba902b7";
+    await client.callTool({
+      name: "search_docs",
+      arguments: { query: "q", context: "kept" },
+      _meta: { traceparent: `00-${traceId}-${spanId}-01` },
+    });
+    await client.callTool({ name: "fails", arguments: {} });
+    // `context` is an ordinary argument here.
+    assert.deepEqual(received, [{ query: "q" }]);
 
-  void it("leaves unsupported objects alone", () => {
-    const value = { foo: 1 };
-    assert.equal(wrapMcpServer(value), value);
-    assert.equal(wrapMcpServer(null), null);
+    const [list, call, failed] = mcpSpans();
+    assert.equal(list.name, "tools/list");
+    assert.equal(call.name, "tools/call search_docs");
+    assert.equal(call.kind, SpanKind.SERVER);
+    assert.equal(call.spanContext().traceId, traceId);
+    assert.equal(getParentSpanId(call as any), spanId);
+    assert.equal(call.links.length, 0);
+    assert.equal(call.attributes["mcp.session.id"], "off-sess");
+    assert.equal(call.attributes["lmnr.mcp.client.name"], "claude-code");
+    assert.equal(call.attributes["lmnr.mcp.context"], undefined);
+    assert.equal(failed.attributes["error.type"], "tool_error");
+    assert.notEqual(failed.spanContext().traceId, traceId);
   });
 
   void it("traces a low-level Server", async () => {
     const received: unknown[] = [];
-    const server = wrapMcpServer(
-      new Server(
-        { name: "low", version: "1.0.0" },
-        { capabilities: { tools: {} } },
-      ),
+    const server = new Server(
+      { name: "low", version: "1.0.0" },
+      { capabilities: { tools: {} } },
     );
     server.setRequestHandler(ListToolsRequestSchema, () => ({
       tools: [
@@ -722,9 +748,7 @@ void describe("wrapMcpServer", () => {
 
   void it("traces an McpServer of @modelcontextprotocol/server 2.x", async () => {
     const received: unknown[] = [];
-    const server = wrapMcpServer(
-      new McpServerV2({ name: "v2", version: "1.0.0" }),
-    );
+    const server = new McpServerV2({ name: "v2", version: "1.0.0" });
     server.registerTool(
       "search_docs",
       { inputSchema: z.object({ query: z.string() }).strict() },
@@ -797,11 +821,9 @@ void describe("wrapMcpServer", () => {
 
   void it("traces a low-level Server of @modelcontextprotocol/server 2.x", async () => {
     const received: unknown[] = [];
-    const server = wrapMcpServer(
-      new ServerV2(
-        { name: "low2", version: "1.0.0" },
-        { capabilities: { tools: {} } },
-      ),
+    const server = new ServerV2(
+      { name: "low2", version: "1.0.0" },
+      { capabilities: { tools: {} } },
     );
     server.setRequestHandler("tools/list", () => ({
       tools: [{ name: "echo", inputSchema: { type: "object" as const } }],
@@ -892,6 +914,13 @@ void describe("MCP redaction", () => {
 });
 
 void describe("MCP options and forced trace ids", () => {
+  void it("is off unless switched on", () => {
+    assert.equal(resolveMcpOptions(undefined).observe, false);
+    assert.equal(resolveMcpOptions(false).observe, false);
+    assert.equal(resolveMcpOptions(true).observe, true);
+    assert.equal(resolveMcpOptions(true).context, true);
+  });
+
   void it("clamps turnGapMs to 25 s", () => {
     assert.equal(resolveMcpOptions({ turnGapMs: 60_000 }).turnGapMs, 25_000);
     assert.equal(resolveMcpOptions({ turnGapMs: 5_000 }).turnGapMs, 5_000);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { TurnTracker } from "../src/integrations/mcp/turns";
+import { TurnTracker } from "../src/opentelemetry-lib/instrumentation/mcp/turns";
 
 const GAP_MS = 20_000;
 const TEN_MINUTES_MS = 10 * 60_000;

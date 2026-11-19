@@ -1,7 +1,6 @@
 import { type Context, type Span, SpanStatusCode } from "@opentelemetry/api";
-
-import { SPAN_OUTPUT } from "../../opentelemetry-lib/tracing/attributes";
-import { initializeLogger, toJson, truncateSpanPayload } from "../../utils";
+import { initializeLogger, toJson, truncateSpanPayload } from "../../../utils";
+import { SPAN_OUTPUT } from "../../tracing/attributes";
 import {
   ERROR_TYPE,
   GEN_AI_TOOL_CALL_RESULT,

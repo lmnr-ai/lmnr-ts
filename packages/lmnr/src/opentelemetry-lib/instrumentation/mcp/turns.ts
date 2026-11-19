@@ -1,7 +1,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 
-import { isValidTraceId } from "../../opentelemetry-lib/tracing/id-generator";
+import { isValidTraceId } from "../../tracing/id-generator";
 
 export const DEFAULT_TURN_GAP_MS = 20_000;
 /**

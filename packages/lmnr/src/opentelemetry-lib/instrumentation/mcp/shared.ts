@@ -1,22 +1,15 @@
-import { type ResolvedOptions } from "./options";
 import { TurnTracker } from "./turns";
 
 export type Handler = (request: any, extra: any) => unknown;
 
-// The request-handler table of a low-level `Server` (1.x) / `Protocol` (2.x).
-export interface ProtocolLike {
-  _requestHandlers: Map<string, Handler>;
-  getClientVersion?: () => unknown;
-}
-
+/** What the hook keeps per low-level `Server` (1.x) / `Protocol` (2.x). */
 export interface ServerState {
-  protocol: ProtocolLike;
+  /** The low-level server: `getClientVersion()`. */
+  protocol: any;
+  /** The `McpServer` around it, for its tool registry. */
   mcpServer?: any;
-  options: ResolvedOptions;
   /** From this server's `initialize` result (1.x stores it nowhere else). */
   protocolVersion?: string;
-  /** Whether a tool listed by this server declares its own `context`. */
-  listedOwnContext: Map<string, boolean>;
 }
 
 const MAX_ENTRIES = 10_000;
@@ -26,13 +19,13 @@ const MAX_ENTRIES = 10_000;
 export const turnTracker = new TurnTracker();
 // Tool name -> declares its own `context`, from every `tools/list` served in
 // this process. Fallback for low-level servers (no tool registry to inspect).
-export const listedOwnContextGlobal = new Map<string, boolean>();
+export const listedOwnContext = new Map<string, boolean>();
 export const warned = { ownContextTools: new Set<string>(), forcing: false };
 
 /** Exported for tests. */
 export const resetMcpState = () => {
   turnTracker.clear();
-  listedOwnContextGlobal.clear();
+  listedOwnContext.clear();
   warned.ownContextTools.clear();
   warned.forcing = false;
 };

@@ -1,10 +1,12 @@
-import { initializeLogger } from "../../utils";
+import { initializeLogger } from "../../../utils";
+import { shouldSendTraces } from "../../tracing";
 import { buildExtraKeys } from "./redact";
 import { DEFAULT_TURN_GAP_MS, MAX_TURN_GAP_MS } from "./turns";
 
 const logger = initializeLogger();
 
-export interface WrapMcpServerOptions {
+/** `Laminar.initialize({ mcp })`: MCP observability mode and its settings. */
+export interface McpOptions {
   /**
    * Add an optional `context` string argument to every tool's advertised
    * input schema, asking the model for one sentence on the user's overall
@@ -34,11 +36,22 @@ export interface WrapMcpServerOptions {
 }
 
 export interface ResolvedOptions {
+  /** MCP observability mode: root spans grouped by turn, `context` field. */
+  observe: boolean;
   context: boolean;
   recordPayloads: boolean;
   extraKeys: ReadonlySet<string>;
   turnGapMs: number;
 }
+
+/** Mode off: spans parented on the client, schemas untouched. */
+export const OFF: ResolvedOptions = {
+  observe: false,
+  context: false,
+  recordPayloads: true,
+  extraKeys: new Set(),
+  turnGapMs: DEFAULT_TURN_GAP_MS,
+};
 
 const resolveTurnGapMs = (turnGapMs: unknown): number => {
   if (turnGapMs === undefined) {
@@ -66,15 +79,34 @@ const resolveTurnGapMs = (turnGapMs: unknown): number => {
   return turnGapMs;
 };
 
-/** Exported for tests. */
+/** Exported for tests. Undefined (or false) is mode off. */
 export const resolveMcpOptions = (
-  options: WrapMcpServerOptions = {},
+  mcp: boolean | McpOptions | undefined,
 ): ResolvedOptions => {
+  if (!mcp) {
+    return OFF;
+  }
+  const options = mcp === true ? {} : mcp;
   const recordPayloads = options.recordPayloads !== false;
   return {
+    observe: true,
     context: recordPayloads && options.context !== false,
     recordPayloads,
     extraKeys: buildExtraKeys(options.redactKeys),
     turnGapMs: resolveTurnGapMs(options.turnGapMs),
   };
 };
+
+// Read per request: patches outlive `shutdown()` / `initialize()`.
+let current: ResolvedOptions = OFF;
+
+/** `Laminar.initialize` sets it, `Laminar.shutdown` resets it. */
+export const setMcpOptions = (mcp: boolean | McpOptions | undefined) => {
+  current = resolveMcpOptions(mcp);
+};
+
+/** The options for a request; `traceContent: false` also turns payloads off. */
+export const getMcpOptions = (): ResolvedOptions =>
+  shouldSendTraces()
+    ? current
+    : { ...current, context: false, recordPayloads: false };

@@ -1,11 +1,12 @@
-import { initializeLogger } from "../../utils";
+import { initializeLogger } from "../../../utils";
 import { CONTEXT_DESCRIPTION, CONTEXT_MAX_LENGTH } from "./attributes";
+import { type ResolvedOptions } from "./options";
 import { type McpRequest } from "./request";
 import {
   boundedSet,
   hasOwn,
   isPlainObject,
-  listedOwnContextGlobal,
+  listedOwnContext,
   type ServerState,
   warned,
 } from "./shared";
@@ -70,15 +71,11 @@ const toolDeclaresContext = (state: ServerState, name: string): boolean => {
       // Fall through to what tools/list showed.
     }
   }
-  return (
-    state.listedOwnContext.get(name) ??
-    listedOwnContextGlobal.get(name) ??
-    false
-  );
+  return listedOwnContext.get(name) ?? false;
 };
 
 /** A copy of a `tools/list` result whose tools advertise `context`. */
-export const injectContext = (state: ServerState, result: any): any => {
+export const injectContext = (result: any): any => {
   if (!isPlainObject(result) || !Array.isArray(result.tools)) {
     return result;
   }
@@ -94,8 +91,7 @@ export const injectContext = (state: ServerState, result: any): any => {
       return tool;
     }
     const own = hasOwnContextProperty(schema);
-    state.listedOwnContext.set(tool.name, own);
-    boundedSet(listedOwnContextGlobal, tool.name, own);
+    boundedSet(listedOwnContext, tool.name, own);
     if (own) {
       warnOwnContext(tool.name);
       return tool;
@@ -121,13 +117,14 @@ export const injectContext = (state: ServerState, result: any): any => {
  */
 export const splitContext = (
   state: ServerState,
+  options: ResolvedOptions,
   req: McpRequest,
   request: any,
 ): { forwarded: any; context?: unknown } => {
   const args = req.params.arguments;
   if (
     req.method !== "tools/call" ||
-    !state.options.context ||
+    !options.context ||
     !req.target ||
     !isPlainObject(args) ||
     !hasOwn(args, "context") ||

@@ -88,6 +88,7 @@ LMNR_{INSTRUMENT}_{OPTION}    # Per-instrumentation options, e.g. LMNR_LANGGRAPH
 - `src/opentelemetry-lib/instrumentation/google-aiplatform/AGENTS.md` - Vertex AI via google-genai helpers, `predict` overloads
 - `src/opentelemetry-lib/instrumentation/langchain/AGENTS.md` - callback handler injection, provider handoff, LangGraph topology
 - `src/opentelemetry-lib/instrumentation/mastra/AGENTS.md` - `MastraExporter`, span-type mapping, context linking, thinking tokens, host app setup
+- `src/opentelemetry-lib/instrumentation/mcp/AGENTS.md` - MCP servers: `McpInstrumentation` (`connect` patches on the `Server` / `McpServer` prototypes, 2.x auto-patched, 1.x and ESM via `instrumentModules.mcp`), MCP observability mode (`Laminar.initialize({ mcp })`) vs mode off, behaviour that must not change, removed mechanisms, version-specific error shapes, `context` field, turn → trace grouping, redaction, cross-SDK span contract
 - `src/opentelemetry-lib/instrumentation/openai/AGENTS.md` - patch targets, streams, post-hoc Responses spans, Decisions
 - `src/opentelemetry-lib/instrumentation/openai-agents/AGENTS.md` - TS vs Python parity, parent resolution, out-of-order span ends
 - `src/opentelemetry-lib/instrumentation/openrouter/AGENTS.md` - per-resource methods, embeddings input shapes, `callModel`, cassettes
@@ -95,4 +96,3 @@ LMNR_{INSTRUMENT}_{OPTION}    # Per-instrumentation options, e.g. LMNR_LANGGRAPH
 - `src/opentelemetry-lib/instrumentation/temporal/AGENTS.md` - deterministic sandbox, header propagation, workflow lifecycle span
 - `src/browser/stagehand/v3/AGENTS.md` - `sendCDP` fallback for stagehand 3.0.0 / 3.0.1
 - `src/integrations/AGENTS.md` - eve `LaminarReporter`
-- `src/integrations/mcp/AGENTS.md` - `wrapMcpServer` (MCP server observability): file map, behaviour that must not change, removed mechanisms, MCP SDK 1.x / 2.x hooks on `_requestHandlers`, version-specific error shapes, `context` field injection / stripping, turn → trace grouping, redaction, cross-SDK span contract

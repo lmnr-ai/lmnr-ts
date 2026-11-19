@@ -14,6 +14,7 @@ import { GoogleAIPlatformInstrumentation } from "../instrumentation/google-aipla
 import { GoogleGenAiInstrumentation } from "../instrumentation/google-genai";
 import { KernelInstrumentation } from "../instrumentation/kernel";
 import { LangChainInstrumentation } from "../instrumentation/langchain";
+import { McpInstrumentation } from "../instrumentation/mcp";
 import { OpenAIInstrumentation } from "../instrumentation/openai";
 import { OpenAIAgentsInstrumentation } from "../instrumentation/openai-agents";
 import { OpencodeInstrumentation } from "../instrumentation/opencode";
@@ -214,6 +215,8 @@ const initInstrumentations = (
 
   if (enabled("kernel")) instrumentations.push(new KernelInstrumentation());
 
+  if (enabled("mcp")) instrumentations.push(new McpInstrumentation());
+
   if (enabled("claudeAgentSDK"))
     instrumentations.push(new ClaudeAgentSDKInstrumentation());
 
@@ -358,6 +361,12 @@ const manuallyInitInstrumentations = (
     const kernelInstrumentation = new KernelInstrumentation();
     instrumentations.push(kernelInstrumentation);
     kernelInstrumentation.manuallyInstrument(instrumentModules.kernel);
+  }
+
+  if (instrumentModules?.mcp) {
+    const mcpInstrumentation = new McpInstrumentation();
+    instrumentations.push(mcpInstrumentation);
+    mcpInstrumentation.manuallyInstrument(instrumentModules.mcp);
   }
 
   if (instrumentModules?.claudeAgentSDK) {
