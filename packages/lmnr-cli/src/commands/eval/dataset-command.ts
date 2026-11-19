@@ -22,6 +22,7 @@ import {
   readDatasetState,
   type TaskHashes,
   taskFilter,
+  unlinkedTasks,
   writeDatasetState,
 } from "./dataset-state";
 import {
@@ -282,10 +283,11 @@ export const handleDatasetPull = async (
       continue;
     }
     const state = await readDatasetState(datasetDir);
-    const local = await hashLocalTasks(datasetDir, selected);
+    const managed = await unlinkedTasks(datasetDir, dataset, selected);
+    const local = await hashLocalTasks(datasetDir, managed);
     const plan = planPull(
       { pins, state, local, latest },
-      { selected, force: !!opts.force, latest: !!opts.latest },
+      { selected: managed, force: !!opts.force, latest: !!opts.latest },
     );
     planned.push({ dataset, datasetDir, originalState: state, plan });
     reports.push({
@@ -443,9 +445,10 @@ export const handleDatasetPush = async (
     }
     const pins = await readTasksToml(datasetDir);
     const state = await readDatasetState(datasetDir);
-    const local = await hashLocalTasks(datasetDir, selected);
+    const managed = await unlinkedTasks(datasetDir, dataset, selected);
+    const local = await hashLocalTasks(datasetDir, managed);
     const latest = await fetchLatest(client, dataset);
-    const plan = planPush({ pins, state, local, latest }, selected);
+    const plan = planPush({ pins, state, local, latest }, managed);
     planned.push({
       dataset,
       datasetDir,
@@ -512,11 +515,12 @@ export const pullRunTasks = async (
       gitignored = true;
     }
     const state = await readDatasetState(datasetDir);
+    const managed = await unlinkedTasks(datasetDir, dataset, selected);
     const local = await hashLocalTasks(
       datasetDir,
-      (task) => selected(task) && task in pins,
+      (task) => managed(task) && task in pins,
     );
-    const plan = planRunPull({ pins, state, local }, selected);
+    const plan = planRunPull({ pins, state, local }, managed);
     for (const { task, hash } of plan.edited) {
       logger.warn(
         `${dataset}/${task} has local edits; running it as it is ` +

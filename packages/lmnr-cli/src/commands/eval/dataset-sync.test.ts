@@ -317,6 +317,24 @@ void describe("extractVersion", () => {
       ),
     );
 
+  void it("returns each file's mode as the archive has it", async () => {
+    const tar = gzipSync(
+      await packTar([
+        { header: { name: "run.py", size: 1, mode: 0o775 }, body: "x" },
+        { header: { name: "./dir/a.txt", size: 1, mode: 0o664 }, body: "x" },
+      ]),
+    );
+    const modes = await extractVersion(
+      Readable.from([tar]),
+      path.join(root, "out"),
+    );
+    // Pull hashes with these, so a Windows disk (no exec bits) still matches.
+    expect(Object.fromEntries(modes)).toEqual({
+      "run.py": 0o755,
+      "dir/a.txt": 0o644,
+    });
+  });
+
   void it("skips links and rejects paths escaping the target dir", async () => {
     const out = path.join(root, "out");
     await extractVersion(

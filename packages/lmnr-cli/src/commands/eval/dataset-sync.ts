@@ -18,7 +18,8 @@ import {
 } from "../../errors";
 import type { TaskHashes } from "./dataset-state";
 import { TASKS_DIR } from "./datasets";
-import { hashTaskDir, packTaskDir } from "./task-hash";
+import { walkFiles } from "./pack";
+import { hashFiles, packTaskDir } from "./task-hash";
 import { compareBytes, type TaskPins } from "./tasks-toml";
 
 /**
@@ -323,30 +324,39 @@ const tempName = (prefix: string, task: string) =>
 /**
  * Extract a version archive into `dir` (which must not exist): only regular
  * files and directories, nothing outside `dir` (modern-tar rejects such
- * paths), modes `0o755` / `0o644` by the exec bit, current mtimes.
+ * paths), modes `0o755` / `0o644` by the exec bit, current mtimes. Returns
+ * each file's mode as the archive has it, by path.
  */
 export const extractVersion = async (
   archive: NodeJS.ReadableStream | Readable,
   dir: string,
-): Promise<void> => {
+): Promise<Map<string, number>> => {
   await mkdir(dir, { recursive: true });
+  const modes = new Map<string, number>();
   await pipeline(
     archive,
     createGunzip(),
     unpackTar(dir, {
       filter: (header) => header.type === "file" || header.type === "directory",
-      map: (header) => ({
-        ...header,
-        mode:
+      map: (header) => {
+        const mode =
           header.type === "directory" || ((header.mode ?? 0) & 0o111) !== 0
             ? 0o755
-            : 0o644,
-        mtime: undefined,
-        uid: undefined,
-        gid: undefined,
-      }),
+            : 0o644;
+        if (header.type === "file") {
+          modes.set(header.name.replace(/^(\.\/)+/, ""), mode);
+        }
+        return {
+          ...header,
+          mode,
+          mtime: undefined,
+          uid: undefined,
+          gid: undefined,
+        };
+      },
     }),
   );
+  return modes;
 };
 
 const exists = (p: string) =>
@@ -382,11 +392,15 @@ export const installTaskVersion = async (
       }
       throw datasetApiError(error);
     }
-    await extractVersion(
+    const modes = await extractVersion(
       Readable.fromWeb(body as WebReadableStream<Uint8Array>),
       temp,
     );
-    const got = await hashTaskDir(temp);
+    // The archive's modes, not this disk's: Windows has no exec bits to read.
+    const { files } = await walkFiles(temp);
+    const got = await hashFiles(
+      files.map((f) => ({ ...f, mode: modes.get(f.target) ?? f.mode })),
+    );
     if (got !== hash) {
       throw new Error(
         `Downloaded ${dataset}/${task} hashes to ${got}, not ${hash}: the ` +

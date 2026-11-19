@@ -1,5 +1,14 @@
 import { existsSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -187,6 +196,36 @@ void describe("eval dataset push / pull", () => {
     laminar.calls.length = 0;
     await handleDatasetPush(["support"], opts("clone"));
     expect(laminar.calls).toEqual(["get support"]);
+  });
+
+  void it("leaves symlinked task dirs alone", async () => {
+    await writeDataset();
+    await handleDatasetPush([], opts("evals"));
+    const ds = path.join(root, "evals/support");
+    const pins = await readTasksToml(ds);
+
+    // complaint now links to a folder outside the dataset.
+    await cp(
+      path.join(ds, "tasks/complaint"),
+      path.join(root, "shared/complaint"),
+      { recursive: true },
+    );
+    await write("shared/complaint/data.txt", "linked");
+    await rm(path.join(ds, "tasks/complaint"), { recursive: true });
+    await symlink(
+      path.join(root, "shared/complaint"),
+      path.join(ds, "tasks/complaint"),
+    );
+
+    // Push keeps its pin; pull and the run's pre-pull keep the link.
+    await handleDatasetPush([], opts("evals"));
+    expect(await readTasksToml(ds)).toEqual(pins);
+    await handleDatasetPull([], opts("evals"));
+    await pullRunTasks(path.join(root, "evals"), ["support"], undefined, {});
+    expect(
+      (await lstat(path.join(ds, "tasks/complaint"))).isSymbolicLink(),
+    ).toBe(true);
+    expect(await read("evals/support/tasks/complaint/data.txt")).toBe("linked");
   });
 
   void it("refuses to overwrite local edits without --force (exit 22)", async () => {

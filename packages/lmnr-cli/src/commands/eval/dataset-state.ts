@@ -4,6 +4,7 @@ import path from "node:path";
 import { errorMessage } from "@lmnr-ai/types";
 
 import { invalidEvalsDir } from "../../errors";
+import { initializeLogger } from "../../utils/logger";
 import { isValidHash, isValidTaskName, TASKS_DIR } from "./datasets";
 import { hashTaskDir } from "./task-hash";
 import { compareBytes } from "./tasks-toml";
@@ -13,6 +14,8 @@ import { compareBytes } from "./tasks-toml";
  * hash it had when it was last pulled or pushed on this disk (its "base").
  * A task dir whose hash differs from its base (or that has none) is edited.
  */
+const logger = initializeLogger();
+
 export const STATE_FILE = ".lmnr-state.json";
 
 export type TaskHashes = Record<string, string>;
@@ -60,24 +63,53 @@ export const writeDatasetState = async (
 };
 
 /**
- * Task dir names under `<dataset>/tasks/`: real directories only (no
- * symlinks), sorted. `invalid` lists dirs whose names Laminar wouldn't take.
+ * Task dir names under `<dataset>/tasks/`: real directories only, sorted.
+ * `invalid` lists dirs whose names Laminar wouldn't take; `linked` lists
+ * symlinks, which Harbor follows but pull and push leave alone.
  */
 export const listTaskDirs = async (
   datasetDir: string,
-): Promise<{ tasks: string[]; invalid: string[] }> => {
+): Promise<{ tasks: string[]; invalid: string[]; linked: string[] }> => {
   const entries = await readdir(path.join(datasetDir, TASKS_DIR), {
     withFileTypes: true,
   }).catch(() => []);
   const tasks: string[] = [];
   const invalid: string[] = [];
+  const linked: string[] = [];
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
     // Dot dirs are lmnr-cli's own temp dirs (or tool caches), never tasks.
     if (entry.name.startsWith(".")) continue;
+    if (entry.isSymbolicLink()) linked.push(entry.name);
+    if (!entry.isDirectory()) continue;
     (isValidTaskName(entry.name) ? tasks : invalid).push(entry.name);
   }
-  return { tasks: tasks.sort(compareBytes), invalid: invalid.sort() };
+  return {
+    tasks: tasks.sort(compareBytes),
+    invalid: invalid.sort(),
+    linked: linked.sort(compareBytes),
+  };
+};
+
+/**
+ * `selected` minus the dataset's symlinked task dirs, with a warning for each
+ * selected one. Treating a link as missing would make pull replace it with a
+ * downloaded copy and push drop its pin.
+ */
+export const unlinkedTasks = async (
+  datasetDir: string,
+  dataset: string,
+  selected: (task: string) => boolean,
+): Promise<(task: string) => boolean> => {
+  const linked = new Set((await listTaskDirs(datasetDir)).linked);
+  for (const task of linked) {
+    if (selected(task)) {
+      logger.warn(
+        `Leaving ${dataset}/tasks/${task} alone: it is a symlink, which ` +
+          "lmnr-cli doesn't pull, push or hash.",
+      );
+    }
+  }
+  return (task) => selected(task) && !linked.has(task);
 };
 
 /** The hash of each (valid) task dir of the dataset, optionally filtered. */

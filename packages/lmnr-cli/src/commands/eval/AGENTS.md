@@ -233,6 +233,9 @@
   <base>}}`, the base being the hash the task had when last pulled or pushed
   on THIS disk. Names: `^[A-Za-z0-9][A-Za-z0-9._-]*$` (datasets ≤ 100 bytes,
   tasks ≤ 255); task dirs starting with `.` (our temp dirs) are never tasks.
+  A symlinked task dir is unmanaged (`unlinkedTasks`, with a warning): pull,
+  push and run's pre-pull never hash, replace or unpin it (Harbor still
+  follows it), since treating it as missing would clobber the link.
 - **Hash** (`task-hash.ts`, only the CLI computes it): every regular file
   under the task dir minus symlinks, `.env*`, `.DS_Store`, `SKIPPED_DIRS`;
   sha256 hex of `"<755|644> <sha256(content)> <posix path>\n"` per file,
@@ -248,8 +251,11 @@
   checked for every dataset before anything is written; `missingVersions`
   then turns unknown pins into `version_not_found`. Downloads go to
   `tasks/.lmnr-pull-*` (`modern-tar` refuses escaping paths; only files and
-  dirs are extracted, modes normalized), are re-hashed against the target and
-  renamed into place. State is written even after a partial failure, for the
+  dirs are extracted, modes normalized), are re-hashed against the target
+  with the ARCHIVE's modes (Windows reports no exec bits) and renamed into
+  place. On Windows a pulled non-`.sh` executable still hashes as `644` on
+  disk afterwards, so such a task looks edited there (Harbor's own Windows
+  rule has the same gap). State is written even after a partial failure, for the
   tasks that were written. A folder without tasks.toml that Laminar lacks is
   skipped; a named dataset without a folder is created (or
   `dataset_not_found`).
