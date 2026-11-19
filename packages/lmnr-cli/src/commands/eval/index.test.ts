@@ -290,9 +290,9 @@ void describe("template env", () => {
 });
 
 void describe("images", () => {
-  void it("reads a dataset's lmnr.yaml images relative to its folder", async () => {
+  void it("reads a dataset's harbor.yaml images relative to its folder", async () => {
     await write(
-      "evals/ds/lmnr.yaml",
+      "evals/ds/harbor.yaml",
       "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n    context: ../..\n  plain:\n    dockerfile: plain/Dockerfile\n",
     );
     const defs = await loadImageDefs(path.join(root, "evals/ds"));
@@ -308,7 +308,12 @@ void describe("images", () => {
         context: path.join(root, "evals/ds/plain"),
       },
     ]);
-    expect(await loadImageDefs(path.join(root, "evals"))).toEqual([]);
+    await write("evals/none/harbor.yaml", "datasets: []\n");
+    expect(await loadImageDefs(path.join(root, "evals/none"))).toEqual([]);
+    // lmnr-cli's key: Harbor never sees it.
+    expect(
+      buildJobConfig({ images: { a: {} }, n_attempts: 1 }, {}, false),
+    ).toEqual({ n_attempts: 1 });
   });
 
   void it("guards a build with the image's ignore rules plus .git and env files", async () => {
@@ -444,17 +449,14 @@ void describe("images", () => {
     expect(found.images).toEqual(["python:3.12-slim"]);
   });
 
-  void it("builds referenced lmnr.yaml and per-task images, pulls the rest, each once", async () => {
+  void it("builds referenced harbor.yaml and per-task images, pulls the rest, each once", async () => {
     // Both datasets point at one shared Dockerfile: it is built once.
     for (const dataset of ["a", "b"]) {
       await write(
-        `evals/${dataset}/lmnr.yaml`,
-        "images:\n  app-evals:\n    dockerfile: ../image/Dockerfile\n" +
-          "  unused:\n    dockerfile: unused/Dockerfile\n",
-      );
-      await write(
         `evals/${dataset}/harbor.yaml`,
-        "datasets:\n  - path: tasks\n",
+        "images:\n  app-evals:\n    dockerfile: ../image/Dockerfile\n" +
+          "  unused:\n    dockerfile: unused/Dockerfile\n" +
+          "datasets:\n  - path: tasks\n",
       );
       await write(
         `evals/${dataset}/tasks/shared/task.toml`,
@@ -485,7 +487,7 @@ void describe("images", () => {
       {},
       pusher,
     );
-    // `unused` is in lmnr.yaml but no task references it: never built.
+    // `unused` is in harbor.yaml but no task references it: never built.
     expect(calls.sort()).toEqual([
       `build a/tasks/own/environment ${path.join("evals", "a", "tasks", "own", "environment")}`,
       `build app-evals ${path.join("evals", "image")}`,
@@ -507,12 +509,9 @@ void describe("images", () => {
   void it("builds each dataset's own definition of an image name", async () => {
     for (const dataset of ["a", "b"]) {
       await write(
-        `evals/${dataset}/lmnr.yaml`,
-        "images:\n  app-evals:\n    dockerfile: Dockerfile\n",
-      );
-      await write(
         `evals/${dataset}/harbor.yaml`,
-        "datasets:\n  - path: tasks\n",
+        "images:\n  app-evals:\n    dockerfile: Dockerfile\n" +
+          "datasets:\n  - path: tasks\n",
       );
       await write(
         `evals/${dataset}/tasks/t/task.toml`,
@@ -621,11 +620,11 @@ void describe("images", () => {
 
   void it("builds and pushes only the images of the tasks --task selects", async () => {
     await write(
-      "evals/s/lmnr.yaml",
+      "evals/s/harbor.yaml",
       "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n" +
-        "  other:\n    dockerfile: other/Dockerfile\n",
+        "  other:\n    dockerfile: other/Dockerfile\n" +
+        "datasets:\n  - path: tasks\n",
     );
-    await write("evals/s/harbor.yaml", "datasets:\n  - path: tasks\n");
     await write(
       "evals/s/tasks/app/task.toml",
       '[environment]\ndocker_image = "app-evals"\n',
@@ -705,14 +704,17 @@ void describe("harborArgs", () => {
 
   void it("passes the dataset and its task hashes file when given", () => {
     expect(
-      harborArgs("/tmp/job.json", "support", {
-        taskHashesFile: "/tmp/task-hashes.json",
+      harborArgs("/tmp/job.json", "acme/support", {
+        dataset: {
+          name: "acme/support",
+          taskHashesFile: "/tmp/task-hashes.json",
+        },
       }).slice(-6),
     ).toEqual([
       "--pk",
-      "group_name=support",
+      "group_name=acme/support",
       "--pk",
-      "dataset=support",
+      "dataset=acme/support",
       "--pk",
       "task_hashes_file=/tmp/task-hashes.json",
     ]);

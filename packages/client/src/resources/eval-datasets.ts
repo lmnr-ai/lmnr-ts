@@ -1,6 +1,9 @@
 import { BaseResource, type LaminarAuth } from "./index";
 
-/** One version of a task: its content hash, computed by lmnr-cli. */
+/**
+ * One version of a task: its content hash (Harbor's), computed by lmnr-cli.
+ * Dataset and task names are Harbor's `org/name`.
+ */
 export interface EvalTaskVersionRef {
   task: string;
   hash: string;
@@ -36,6 +39,13 @@ export type EvalDatasetPushResult =
   | { status: "moved"; moved: { task: string; latest: string }[] }
   /** Some versions were never uploaded; nothing was written. */
   | { status: "versions_missing"; missing: EvalTaskVersionRef[] };
+
+/**
+ * A Harbor `org/name` name as two path segments: the routes take the org and
+ * the name separately, so no encoded `/` ever reaches a proxy.
+ */
+const nameSegments = (name: string): string =>
+  name.split("/").map(encodeURIComponent).join("/");
 
 /** The server's cap on one `versions/missing` request. */
 const MAX_VERSIONS_PER_REQUEST = 10_000;
@@ -193,7 +203,7 @@ export class EvalDatasetsResource extends BaseResource {
   private url(dataset: string, path: string): string {
     return (
       `${this.baseHttpUrl}${this.apiPrefix}/eval-datasets/` +
-      `${encodeURIComponent(dataset)}${path}`
+      `${nameSegments(dataset)}${path}`
     );
   }
 
@@ -205,7 +215,7 @@ export class EvalDatasetsResource extends BaseResource {
   ): string {
     return this.url(
       dataset,
-      `/tasks/${encodeURIComponent(task)}/versions/` +
+      `/tasks/${nameSegments(task)}/versions/` +
         `${encodeURIComponent(hash)}${suffix}`,
     );
   }

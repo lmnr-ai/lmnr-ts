@@ -629,7 +629,7 @@ Examples:
     )
     .option(
       "--task <glob>",
-      "Task name glob to include (repeatable). Omitted → every task",
+      "Task dir name glob to include (repeatable). Omitted → every task",
       collectFlag,
     )
     .option(
@@ -653,15 +653,16 @@ Examples:
       "after",
       `
 Runs \`harbor run\` (pinned Harbor + Laminar plugin, via uvx) for each dataset:
-a directory directly inside --dir holding a harbor.yaml (a Harbor JobConfig),
-named after the dataset. Every trial is reported to Laminar as an evaluation
-datapoint; the evaluation's group is the dataset name.
+a directory directly inside --dir holding a harbor.yaml (a Harbor JobConfig).
+Name one by its folder or its [dataset] name. Every trial is reported to
+Laminar as an evaluation datapoint; the evaluation's group is the dataset name
+(<folder>/tasks/dataset.toml), else the folder name.
 
-Before running, tasks pinned in <dataset>/tasks.toml that are missing from
-<dataset>/tasks/, or unedited there with a new pin, are pulled from Laminar
-(see \`lmnr-cli eval dataset pull --help\`). Edited tasks run as they are,
-with a warning. When the folder name is a valid dataset name, each trial
-records its task's version hash, so Laminar links it to the version.
+Before running, tasks pinned in <folder>/tasks/dataset.toml that are missing
+from tasks/, or unedited there with a new pin, are pulled from Laminar (see
+\`lmnr-cli eval dataset pull --help\`). Edited tasks run as they are, with a
+warning. Each trial records its task's name and version hash, so Laminar links
+it to the version. --task matches task dir names, as Harbor does.
 
 Modes:
   (default)          Trials run on local Docker. Needs uv, Docker and
@@ -673,17 +674,18 @@ Modes:
                      the run goes on. Needs Docker and \`lmnr-cli login\` (or
                      LMNR_PROJECT_API_KEY).
 
-Images: tasks name their image with docker_image in task.toml. Images listed in
-<dataset>/lmnr.yaml are built from their Dockerfile with Docker on every run:
+Images: tasks name their image with docker_image in task.toml. Images listed
+under images in harbor.yaml (lmnr-cli's key; Harbor ignores it) are built from
+their Dockerfile with Docker on every run:
 
   images:
     myapp-evals:
-      dockerfile: image/Dockerfile   # relative to the dataset folder
+      dockerfile: agent/Dockerfile   # relative to the dataset folder
       context: ../..                 # build context, default: the Dockerfile's dir
 
 Every build lmnr-cli runs honors .dockerignore and never gets .git or .env*
 files. In local mode Harbor builds a task's own environment/Dockerfile itself,
-without that guard. For --remote, every image the tasks use (an lmnr.yaml
+without that guard. For --remote, every image the tasks use (a harbor.yaml
 image, a task's own environment/Dockerfile, or a registry image) is built or
 pulled for linux/amd64, and only layers Laminar doesn't have yet are uploaded.
 
@@ -718,43 +720,48 @@ Examples:
 
   evalDatasetCmd
     .command("pull")
-    .description("Bring tasks/ to the versions tasks.toml pins")
+    .description("Bring tasks/ to the versions dataset.toml pins")
     .argument("[datasets...]", "Datasets to pull. Omitted → every dataset")
     .option("--dir <dir>", "Evals folder", "evals")
     .option(
       "--task <glob>",
-      "Task name glob to pull (repeatable). Omitted → every task",
+      "Task name glob to pull ([task] name, with or without its org; repeatable). Omitted → every task",
       collectFlag,
     )
     .option("--force", "Overwrite (or delete) tasks with local edits")
     .option(
       "--latest",
-      "Pull each task's latest version in Laminar and pin it in tasks.toml",
+      "Pull each task's latest version in Laminar and pin it in dataset.toml",
     )
     .option("--dry-run", "List what would be added, changed or removed")
     .action(withLocalOpts(handleDatasetPull))
     .addHelpText(
       "after",
       `
-A dataset is a folder in --dir named after it:
+A dataset is a folder in --dir (name it by its folder or its [dataset] name):
 
-  <dataset>/harbor.yaml   Harbor job config (datasets: [{path: tasks}])
-  <dataset>/tasks.toml    task → version hash pins; commit it
-  <dataset>/tasks/        the tasks, pulled here; <dir>/.gitignore ignores it
+  <folder>/harbor.yaml          Harbor job config (datasets: [{path: tasks}])
+  <folder>/tasks/dataset.toml   Harbor's manifest: [dataset] name = "org/name"
+                                and [[tasks]] {name, digest} pins; commit it
+  <folder>/tasks/<dir>/         the tasks, each named by [task] name in its
+                                task.toml; <dir>/.gitignore ignores them
 
-Each selected task is brought to its pin in tasks.toml: a missing task dir is
-added, a different one is changed, and a task pulled here before that is no
-longer pinned is removed. A task is edited when its content changed since it
-was last pulled or pushed here; pull refuses to overwrite or remove edited
-tasks (exit 22) unless --force, and checks every task before writing anything.
+Tasks are known by [task] name (Harbor's org/name), never by their dir. A
+version is Harbor's content hash of the task (what \`harbor sync\` computes).
+Each selected task is brought to its pin: a missing task is added (into
+tasks/<name after the org>), a different one is changed, and a task pulled
+here before that is no longer pinned is removed. A task is edited when its
+content changed since it was last pulled or pushed here; pull refuses to
+overwrite or remove edited tasks (exit 22) unless --force, and checks every
+task before writing anything.
 
-With no datasets named, every folder with a harbor.yaml, tasks.toml or tasks/
-is pulled (a folder with no tasks.toml that Laminar doesn't have is skipped).
-A named dataset with no folder is created. A dataset with no tasks.toml is
-always pulled as --latest.
+With no datasets named, every folder with a tasks/dataset.toml is pulled (one
+Laminar doesn't have, with nothing pinned, is skipped). A dataset.toml that
+lists no tasks is pulled as --latest.
 
 Exit codes:
-  16  invalid_evals_dir (bad dataset name, unreadable tasks.toml)
+  16  invalid_evals_dir (no or bad dataset.toml, a task without its own
+      [task] name, a new task's dir already taken)
   22  local_edits (pull would overwrite local edits; use --force)
   1   version_not_found (a pinned version isn't in Laminar),
       dataset_not_found, storage_not_configured, other errors
@@ -785,28 +792,32 @@ Examples:
     .addHelpText(
       "after",
       `
-Each selected task dir in <dataset>/tasks/ is hashed (its content); versions
-Laminar doesn't have are uploaded, the dataset's tasks point at them (each
-becomes its task's latest version), and tasks.toml pins them.
+Each selected task in <folder>/tasks/ is hashed (Harbor's content hash);
+versions Laminar doesn't have are uploaded, the dataset's tasks point at them
+(each becomes its task's latest version), and tasks/dataset.toml pins them.
+Every task needs its own [task] name in task.toml (org/name): copy a task,
+then rename it. Tasks with .env* files are refused.
 
-A task pulled here before whose dir is gone loses its pin in tasks.toml
-(Laminar keeps it). Tasks pinned but never pulled here are left alone, so
-\`pull --task x\` then push doesn't unpin the others.
+A task pulled here before that is gone (its dir deleted, or renamed in
+task.toml) loses its pin (Laminar keeps it). Tasks pinned but never pulled
+here are left alone, so \`pull --task x\` then push doesn't unpin the others.
 
 Push refuses (exit 23, no override) when a task's pin moved since it was
-pulled here, edited or not: its latest version in Laminar changed, tasks.toml
-pins another version (e.g. after a git pull), or it was never pulled here and
-Laminar already has a different version. Pull, then push again.
+pulled here, edited or not: its latest version in Laminar changed,
+dataset.toml pins another version (e.g. after a git pull), or it was never
+pulled here and Laminar already has a different version. Pull, then push
+again.
 
 Exit codes:
-  16  invalid_evals_dir / archive_too_large (a task over 1 GiB packed)
+  16  invalid_evals_dir (no or bad dataset.toml, a task without its own
+      [task] name, .env* files) / archive_too_large (a task over 1 GiB packed)
   23  pin_moved (a task moved since it was pulled here)
   1   storage_not_configured, other errors
 
 Examples:
   $ lmnr-cli eval dataset push
   $ lmnr-cli eval dataset push support --dry-run
-  $ lmnr-cli eval dataset push support --task refund --json
+  $ lmnr-cli eval dataset push my-org/support --task refund --json
 `,
     );
 
@@ -1521,7 +1532,7 @@ Examples:
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json # Query spans
   lmnr-cli sql schema                                      # Show available tables
   lmnr-cli eval run --remote                               # Run Harbor evals in Laminar sandboxes
-  lmnr-cli eval dataset pull                               # Pull eval dataset tasks pinned in tasks.toml
+  lmnr-cli eval dataset pull                               # Pull eval dataset tasks pinned in dataset.toml
   lmnr-cli debug session new                               # Mint a fresh debug session
   lmnr-cli debug session open                              # Open the session in the browser
   lmnr-cli debug session set-name "title"                  # Rename the current debug session

@@ -11,22 +11,25 @@ import { archiveTooLarge, missingEnv } from "../../errors";
 import { onStderr } from "../../utils/command-capture";
 import { initializeLogger } from "../../utils/logger";
 import {
-  hashLocalTasks,
+  dirFilter,
   STATE_FILE,
-  type TaskHashes,
-  taskFilter,
+  scanTasks,
+  type TaskHashFile,
+  taskHashFile,
 } from "./dataset-state";
 import {
   apiErrorCode,
   datasetApiError,
   forEachLimit,
   installTaskVersion,
+  type PlacedVersion,
   TRANSFER_CONCURRENCY,
 } from "./dataset-sync";
+import { readDatasetToml } from "./dataset-toml";
 import {
+  DATASET_TOML,
   discoverDatasetFolders,
   globToRegExp,
-  isValidDatasetName,
   type RunOverrides,
   TASKS_DIR,
 } from "./datasets";
@@ -55,60 +58,68 @@ interface RunSpec extends RemoteImages, RemoteTasks {
   env: Record<string, string>;
 }
 
-/** How a remote run gets its tasks. */
+/** How a remote run gets its tasks, by dataset folder. */
 export interface RemoteTasks {
   /**
-   * By dataset, task → version: the run's tasks Laminar has, which aren't
-   * uploaded with the folder; the orchestrator downloads them into
-   * `<dataset>/tasks/<task>` first.
+   * The run's tasks Laminar has, which aren't uploaded with the folder; the
+   * orchestrator downloads them into `<folder>/tasks/<dir>` first.
    */
-  downloads: Record<string, TaskHashes>;
-  /** By dataset (valid names only): every run task's hash, for the plugin. */
-  taskHashes: Record<string, TaskHashes>;
+  downloads: Record<string, { dataset: string; tasks: PlacedVersion[] }>;
+  /** Datasets with a dataset.toml: every run task's hash, for the plugin. */
+  taskHashes: Record<string, TaskHashFile>;
 }
 
 /**
- * Hash the run's tasks (each dataset's task dirs `--task` selects) and ask
- * Laminar which versions it has: those are downloaded by the orchestrator
- * instead of uploaded. Datasets whose folder name Laminar wouldn't take are
+ * Hash the run's tasks (each eval dataset's task dirs `--task` selects) and
+ * ask Laminar which versions it has: those are downloaded by the
+ * orchestrator instead of uploaded. Folders without a dataset.toml are
  * uploaded whole.
  */
 export const remoteTaskVersions = async (
   client: LaminarClient,
   evalsDir: string,
-  datasets: string[],
+  folders: string[],
   overrides: RunOverrides,
 ): Promise<RemoteTasks> => {
-  const selected = taskFilter((overrides.tasks ?? []).map(globToRegExp));
+  const selected = dirFilter((overrides.tasks ?? []).map(globToRegExp));
   const tasks: RemoteTasks = { downloads: {}, taskHashes: {} };
-  for (const dataset of datasets) {
-    if (!isValidDatasetName(dataset)) continue;
-    const hashes = await hashLocalTasks(path.join(evalsDir, dataset), selected);
-    tasks.taskHashes[dataset] = hashes;
-    const versions = Object.entries(hashes).map(([task, hash]) => ({
-      task,
+  for (const folder of folders) {
+    const datasetDir = path.join(evalsDir, folder);
+    const manifest = await readDatasetToml(datasetDir);
+    if (!manifest) continue;
+    const hashes = await taskHashFile(
+      datasetDir,
+      await scanTasks(datasetDir),
+      selected,
+    );
+    tasks.taskHashes[folder] = hashes;
+    const versions = Object.entries(hashes).map(([dir, { name, hash }]) => ({
+      task: name,
       hash,
+      dir,
     }));
     if (versions.length === 0) continue;
     let missing: { task: string; hash: string }[];
     try {
-      missing = await client.evalDatasets.missingVersions(dataset, versions);
+      missing = await client.evalDatasets.missingVersions(
+        manifest.name,
+        versions.map(({ task, hash }) => ({ task, hash })),
+      );
     } catch (error) {
       if (apiErrorCode(error) !== "storage_not_configured") {
         throw datasetApiError(error);
       }
       logger.warn(
         "This Laminar deployment has no storage for eval datasets; " +
-          `uploading every task of ${dataset} with the run.`,
+          `uploading every task of ${manifest.name} with the run.`,
       );
       missing = versions;
     }
     const upload = new Set(missing.map((m) => `${m.task}\0${m.hash}`));
-    tasks.downloads[dataset] = Object.fromEntries(
-      versions
-        .filter((v) => !upload.has(`${v.task}\0${v.hash}`))
-        .map((v) => [v.task, v.hash]),
-    );
+    tasks.downloads[folder] = {
+      dataset: manifest.name,
+      tasks: versions.filter((v) => !upload.has(`${v.task}\0${v.hash}`)),
+    };
   }
   return tasks;
 };
@@ -126,16 +137,22 @@ export const remoteExclude = (
 ): ((target: string) => boolean) => {
   const run = new Set(datasets);
   const others = new Set(datasetFolders.filter((f) => !run.has(f)));
-  const selected = taskFilter((overrides.tasks ?? []).map(globToRegExp));
+  const selected = dirFilter((overrides.tasks ?? []).map(globToRegExp));
+  const downloaded = new Map(
+    Object.entries(downloads).map(([folder, { tasks }]) => [
+      folder,
+      new Set(tasks.map((t) => t.dir)),
+    ]),
+  );
   return (target) => {
     const [top, sub, name, ...rest] = target.split("/");
     if (others.has(top)) return true;
     if (!run.has(top) || sub !== TASKS_DIR || name === undefined) return false;
-    if (rest.length > 0) return false;
+    if (rest.length > 0 || name === DATASET_TOML) return false;
     return (
       name === STATE_FILE ||
       !selected(name) ||
-      downloads[top]?.[name] !== undefined
+      downloaded.get(top)?.has(name) === true
     );
   };
 };
@@ -167,7 +184,7 @@ export const startRemoteRun = async (
   // Tasks Laminar has are downloaded by the run, not uploaded.
   const tasks = await remoteTaskVersions(client, evalsDir, datasets, overrides);
   const downloaded = Object.values(tasks.downloads).reduce(
-    (n, d) => n + Object.keys(d).length,
+    (n, d) => n + d.tasks.length,
     0,
   );
   // Pack first: a too-large folder fails before minutes of image pushes.
@@ -250,21 +267,17 @@ const readRunSpec = (): RunSpec => {
   return spec as RunSpec;
 };
 
-/** Download the run's tasks Laminar has into `<dataset>/tasks/<task>`. */
+/** Download the run's tasks Laminar has into `<folder>/tasks/<dir>`. */
 const downloadTasks = async (
   client: LaminarClient,
   evalsDir: string,
   downloads: RunSpec["downloads"] = {},
 ) => {
-  for (const [dataset, tasks] of Object.entries(downloads)) {
-    const versions = Object.entries(tasks).map(([task, hash]) => ({
-      task,
-      hash,
-    }));
-    if (versions.length === 0) continue;
-    logger.info(`Downloading ${versions.length} task(s) of ${dataset}`);
-    await forEachLimit(versions, TRANSFER_CONCURRENCY, (v) =>
-      installTaskVersion(client, path.join(evalsDir, dataset), dataset, v),
+  for (const [folder, { dataset, tasks }] of Object.entries(downloads)) {
+    if (tasks.length === 0) continue;
+    logger.info(`Downloading ${tasks.length} task(s) of ${dataset}`);
+    await forEachLimit(tasks, TRANSFER_CONCURRENCY, (v) =>
+      installTaskVersion(client, path.join(evalsDir, folder), dataset, v),
     );
   }
 };

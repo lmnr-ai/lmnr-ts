@@ -17,15 +17,15 @@ import {
   versionNotFound,
 } from "../../errors";
 import type { TaskHashes } from "./dataset-state";
+import { compareBytes, type TaskPins } from "./dataset-toml";
 import { TASKS_DIR } from "./datasets";
-import { walkFiles } from "./pack";
-import { hashFiles, packTaskDir } from "./task-hash";
-import { compareBytes, type TaskPins } from "./tasks-toml";
+import { hashTaskDir, packTaskDir } from "./task-hash";
 
 /**
- * What pull / push / run know about one dataset. `local` has the hash of each
- * local task dir they look at (the `--task` selection); `latest` is each
- * task's latest version in Laminar, null when Laminar has no such dataset.
+ * What pull / push / run know about one dataset, by task name. `local` has
+ * the hash of each local task they look at (the `--task` selection); `latest`
+ * is each task's latest version in Laminar, null when Laminar has no such
+ * dataset; `pins` is null when dataset.toml lists no tasks.
  */
 export interface DatasetSnapshot {
   pins: TaskPins | null;
@@ -59,7 +59,7 @@ export interface PullOptions {
   /** `--task` globs as a predicate. */
   selected: (task: string) => boolean;
   force: boolean;
-  /** `--latest` (implied when the dataset has no tasks.toml). */
+  /** `--latest` (implied when dataset.toml lists no tasks). */
   latest: boolean;
 }
 
@@ -69,7 +69,7 @@ export interface PullPlan {
   removed: TaskVersion[];
   /** Edited tasks the pull would overwrite or delete (refused without --force). */
   edited: string[];
-  /** tasks.toml after the pull; `writePins` says whether it changes. */
+  /** dataset.toml's pins after the pull; `writePins` says whether they change. */
   pins: TaskPins;
   writePins: boolean;
   /** The local state after the pull. */
@@ -78,8 +78,8 @@ export interface PullPlan {
 
 /**
  * Plan `eval dataset pull` for one dataset. The target of each selected task
- * is its pin, or with `latest` (or no tasks.toml) Laminar's latest version,
- * which then replaces the selected tasks' pins. A task whose dir is missing
+ * is its pin, or with `latest` (or no pins) Laminar's latest version,
+ * which then replaces the selected tasks' pins. A task with no local dir
  * is added, one whose hash differs from the target is changed, and one that
  * was pulled here before but is no longer pinned is removed. Changing or
  * removing an edited task (its hash differs from its base, or it has none)
@@ -145,7 +145,7 @@ export const planPull = (
 /** Why push refuses a task: its pin moved since it was pulled here. */
 export interface MovedTask {
   task: string;
-  /** `laminar`: Laminar's latest moved; `pin`: tasks.toml moved. */
+  /** `laminar`: Laminar's latest moved; `pin`: dataset.toml's pin moved. */
   where: "laminar" | "pin";
   /** The version it moved to. */
   to: string;
@@ -161,7 +161,7 @@ export interface PushPlan {
   changed: (PushTask & { from: string })[];
   removed: TaskVersion[];
   moved: MovedTask[];
-  /** tasks.toml after the push; `writePins` says whether it changes. */
+  /** dataset.toml's pins after the push; `writePins` says whether they change. */
   pins: TaskPins;
   writePins: boolean;
   state: TaskHashes;
@@ -170,7 +170,7 @@ export interface PushPlan {
 /**
  * Plan `eval dataset push` for one dataset (`snapshot.local`: the selected
  * local task dirs). A task is refused as moved when Laminar's latest moved
- * past its base, when tasks.toml pins another version than its base (moved
+ * past its base, when dataset.toml pins another version than its base (moved
  * without a pull here), or, never pulled here, when Laminar already has
  * another latest version. A task whose hash is Laminar's latest and its pin
  * is unchanged; others are added (no pin) or changed. A task pulled here
@@ -318,45 +318,36 @@ export const TRANSFER_CONCURRENCY = 4;
 /** The server's cap on a version archive. */
 const MAX_VERSION_BYTES = 1024 * 1024 * 1024;
 
-const tempName = (prefix: string, task: string) =>
-  `.lmnr-${prefix}-${task}-${randomBytes(4).toString("hex")}`;
+const tempName = (prefix: string, dir: string) =>
+  `.lmnr-${prefix}-${dir}-${randomBytes(4).toString("hex")}`;
 
 /**
  * Extract a version archive into `dir` (which must not exist): only regular
  * files and directories, nothing outside `dir` (modern-tar rejects such
- * paths), modes `0o755` / `0o644` by the exec bit, current mtimes. Returns
- * each file's mode as the archive has it, by path.
+ * paths), modes `0o755` / `0o644` by the exec bit, current mtimes.
  */
 export const extractVersion = async (
   archive: NodeJS.ReadableStream | Readable,
   dir: string,
-): Promise<Map<string, number>> => {
+): Promise<void> => {
   await mkdir(dir, { recursive: true });
-  const modes = new Map<string, number>();
   await pipeline(
     archive,
     createGunzip(),
     unpackTar(dir, {
       filter: (header) => header.type === "file" || header.type === "directory",
-      map: (header) => {
-        const mode =
+      map: (header) => ({
+        ...header,
+        mode:
           header.type === "directory" || ((header.mode ?? 0) & 0o111) !== 0
             ? 0o755
-            : 0o644;
-        if (header.type === "file") {
-          modes.set(header.name.replace(/^(\.\/)+/, ""), mode);
-        }
-        return {
-          ...header,
-          mode,
-          mtime: undefined,
-          uid: undefined,
-          gid: undefined,
-        };
-      },
+            : 0o644,
+        mtime: undefined,
+        uid: undefined,
+        gid: undefined,
+      }),
     }),
   );
-  return modes;
 };
 
 const exists = (p: string) =>
@@ -365,8 +356,13 @@ const exists = (p: string) =>
     () => false,
   );
 
+/** A task version and the dir under `tasks/` it is (or goes) in. */
+export interface PlacedVersion extends TaskVersion {
+  dir: string;
+}
+
 /**
- * Download a task version into `<datasetDir>/tasks/<task>`: extracted into a
+ * Download a task version into `<datasetDir>/tasks/<dir>`: extracted into a
  * temp dir next to it, checked against `hash`, then swapped into place, so a
  * failure leaves the old dir as it was.
  */
@@ -374,11 +370,11 @@ export const installTaskVersion = async (
   client: LaminarClient,
   datasetDir: string,
   dataset: string,
-  { task, hash }: TaskVersion,
+  { task, hash, dir }: PlacedVersion,
 ): Promise<void> => {
   const tasksDir = path.join(datasetDir, TASKS_DIR);
   await mkdir(tasksDir, { recursive: true });
-  const temp = path.join(tasksDir, tempName("pull", task));
+  const temp = path.join(tasksDir, tempName("pull", dir));
   try {
     let body: ReadableStream<Uint8Array>;
     try {
@@ -392,23 +388,19 @@ export const installTaskVersion = async (
       }
       throw datasetApiError(error);
     }
-    const modes = await extractVersion(
+    await extractVersion(
       Readable.fromWeb(body as WebReadableStream<Uint8Array>),
       temp,
     );
-    // The archive's modes, not this disk's: Windows has no exec bits to read.
-    const { files } = await walkFiles(temp);
-    const got = await hashFiles(
-      files.map((f) => ({ ...f, mode: modes.get(f.target) ?? f.mode })),
-    );
+    const got = await hashTaskDir(temp);
     if (got !== hash) {
       throw new Error(
-        `Downloaded ${dataset}/${task} hashes to ${got}, not ${hash}: the ` +
-          "version in Laminar doesn't match its hash.",
+        `Downloaded ${dataset} task ${task} hashes to ${got}, not ${hash}: ` +
+          "the version in Laminar doesn't match its hash.",
       );
     }
-    const dest = path.join(tasksDir, task);
-    const old = path.join(tasksDir, tempName("old", task));
+    const dest = path.join(tasksDir, dir);
+    const old = path.join(tasksDir, tempName("old", dir));
     const hadOld = await exists(dest);
     if (hadOld) await rename(dest, old);
     await rename(temp, dest);
@@ -418,19 +410,19 @@ export const installTaskVersion = async (
   }
 };
 
-/** Delete `<datasetDir>/tasks/<task>`. */
+/** Delete `<datasetDir>/tasks/<dir>`. */
 export const removeTaskDir = async (
   datasetDir: string,
-  task: string,
+  dir: string,
 ): Promise<void> => {
-  await rm(path.join(datasetDir, TASKS_DIR, task), {
+  await rm(path.join(datasetDir, TASKS_DIR, dir), {
     recursive: true,
     force: true,
   });
 };
 
 /**
- * Pack `<datasetDir>/tasks/<task>` and upload it as version `hash`: the
+ * Pack `<datasetDir>/tasks/<dir>` and upload it as version `hash`: the
  * archive, then its index, which makes the version count. Fails if the dir
  * changed since it was hashed.
  */
@@ -438,19 +430,19 @@ export const uploadTaskVersion = async (
   client: LaminarClient,
   datasetDir: string,
   dataset: string,
-  { task, hash }: TaskVersion,
+  { task, hash, dir }: PlacedVersion,
 ): Promise<void> => {
-  const packed = await packTaskDir(path.join(datasetDir, TASKS_DIR, task));
+  const packed = await packTaskDir(path.join(datasetDir, TASKS_DIR, dir));
   if (packed.hash !== hash) {
     throw new CliError(
       "task_changed",
       1,
-      `Task ${dataset}/${task} changed while pushing; push again.`,
+      `Task ${task} of ${dataset} changed while pushing; push again.`,
     );
   }
   if (packed.archive.length > MAX_VERSION_BYTES) {
     throw archiveTooLarge(
-      `Task ${dataset}/${task} packs to ` +
+      `Task ${task} of ${dataset} packs to ` +
         `${(packed.archive.length / 1024 / 1024).toFixed(1)} MiB, over the ` +
         "1 GiB limit of a task version.",
     );
@@ -482,4 +474,6 @@ export const transferError = (
 ): unknown =>
   error instanceof CliError
     ? error
-    : new Error(`Could not ${verb} ${dataset}/${task}: ${errorMessage(error)}`);
+    : new Error(
+        `Could not ${verb} ${task} of ${dataset}: ${errorMessage(error)}`,
+      );

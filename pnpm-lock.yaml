@@ -319,6 +319,9 @@ importers:
       giget:
         specifier: ^3.2.0
         version: 3.3.1
+      ignore:
+        specifier: ^7.0.16
+        version: 7.0.16
       modern-tar:
         specifier: ^0.8.6
         version: 0.8.6
@@ -2053,6 +2056,10 @@ packages:
 
   ieee754@1.2.1:
     resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
+
+  ignore@7.0.16:
+    resolution: {integrity: sha512-52N+Y4HRMOJmbLmr+DqO4iSRyyB7N52gm7PWCT6h0p978+oKbqHCB7gIJIwZvBUsjlSdWbrBFqUSmIFNZMpn0A==}
+    engines: {node: '>= 4'}
 
   import-in-the-middle@3.5.3:
     resolution: {integrity: sha512-usm/IiY63VtOyx/dm7uEoZV+EsanCDmwRUroQZIkFLGu1NVXZ8mZqIOhaN4QIJ7EsbMTuQbJXwCySCx+ozMA8g==}
@@ -4774,6 +4781,8 @@ snapshots:
       - supports-color
 
   ieee754@1.2.1: {}
+
+  ignore@7.0.16: {}
 
   import-in-the-middle@3.5.3:
     dependencies:

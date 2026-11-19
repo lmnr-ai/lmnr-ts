@@ -6,16 +6,20 @@ import { parse as parseYaml } from "yaml";
 import { invalidEvalsDir } from "../../errors";
 
 /**
- * A dataset is a directory directly inside the evals folder (its name is the
- * dataset's name). `harbor.yaml` (a Harbor JobConfig) makes it runnable;
- * `tasks.toml` pins its task versions; `tasks/` holds the tasks themselves.
+ * A dataset is a directory directly inside the evals folder. `harbor.yaml` (a
+ * Harbor JobConfig, plus our `images`) makes it runnable; `tasks/` holds its
+ * tasks, and `tasks/dataset.toml` (Harbor's dataset manifest) names it in
+ * Laminar and pins its task versions.
  */
 export const DATASET_CONFIG = "harbor.yaml";
-export const TASKS_TOML = "tasks.toml";
 export const TASKS_DIR = "tasks";
+export const DATASET_TOML = "dataset.toml";
 
-/** `<dir>/.gitignore` keeps pulled tasks out of git: tasks.toml pins them. */
-const GITIGNORE_LINE = "*/tasks/";
+/**
+ * `<dir>/.gitignore` keeps pulled tasks out of git (dataset.toml pins them)
+ * but not the manifest itself.
+ */
+const GITIGNORE_LINES = [`*/${TASKS_DIR}/*`, `!*/${TASKS_DIR}/${DATASET_TOML}`];
 
 /**
  * Never walked into: VCS data, dependency/build caches and Harbor job output.
@@ -34,16 +38,28 @@ export const SKIPPED_DIRS = new Set([
   "jobs",
 ]);
 
-const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+/** Harbor's `ORG_NAME_PATTERN`; Harbor also rejects any `..`. */
+const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const HASH = /^[0-9a-f]{64}$/;
 
-/** Laminar's rule for dataset names (the folder name). */
-export const isValidDatasetName = (name: string): boolean =>
-  NAME.test(name) && Buffer.byteLength(name) <= 100;
+/**
+ * Harbor's `org/name` rule for dataset (`[dataset] name`) and task (`[task]
+ * name`) names, at most 255 bytes as Laminar stores them. The org is free
+ * text.
+ */
+export const isValidName = (name: unknown): name is string =>
+  typeof name === "string" &&
+  NAME.test(name) &&
+  !name.includes("..") &&
+  Buffer.byteLength(name) <= 255;
 
-/** Laminar's rule for task names (the task dir name). */
-export const isValidTaskName = (name: string): boolean =>
-  NAME.test(name) && Buffer.byteLength(name) <= 255;
+export const NAME_RULE =
+  "Names are `org/name`: two parts of letters, digits, '.', '_' and '-', " +
+  "each starting with a letter or digit, no '..'.";
+
+/** The part after the org: where a pulled task lands (`tasks/<short name>`). */
+export const shortName = (name: string): string =>
+  name.slice(name.indexOf("/") + 1);
 
 /** A task version hash: 64 lowercase hex chars. */
 export const isValidHash = (hash: unknown): hash is string =>
@@ -111,13 +127,12 @@ export const discoverDatasets = async (dir: string): Promise<string[]> => {
 /** Whether `datasetDir` is a dataset folder for pull / push. */
 export const isDatasetFolder = async (datasetDir: string): Promise<boolean> =>
   (await isFile(path.join(datasetDir, DATASET_CONFIG))) ||
-  (await isFile(path.join(datasetDir, TASKS_TOML))) ||
-  (await isDir(path.join(datasetDir, TASKS_DIR)));
+  (await isFile(path.join(datasetDir, TASKS_DIR, DATASET_TOML)));
 
 /**
  * Folders directly inside `dir` that pull / push work on: those with a
- * `harbor.yaml`, a `tasks.toml` or a `tasks/` dir, sorted. Empty when `dir`
- * doesn't exist.
+ * `harbor.yaml` or a `tasks/dataset.toml`, sorted. Empty when `dir` doesn't
+ * exist.
  */
 export const discoverDatasetFolders = async (
   dir: string,
@@ -135,20 +150,20 @@ export const discoverDatasetFolders = async (
 };
 
 /**
- * Make sure `<dir>/.gitignore` has the `*\/tasks/` line, appending it (and
- * creating the file) without touching what is there.
+ * Make sure `<dir>/.gitignore` has the {@link GITIGNORE_LINES}, appending the
+ * missing ones (and creating the file) without touching what is there.
  */
 export const ensureGitignore = async (dir: string): Promise<void> => {
   const file = path.join(dir, ".gitignore");
   const text = await readFile(file, "utf8").catch(() => null);
-  if (text?.split(/\r?\n/).some((line) => line.trim() === GITIGNORE_LINE)) {
-    return;
-  }
+  const present = new Set(text?.split(/\r?\n/).map((line) => line.trim()));
+  const missing = GITIGNORE_LINES.filter((line) => !present.has(line));
+  if (missing.length === 0) return;
   const prefix = text && !text.endsWith("\n") ? `${text}\n` : (text ?? "");
   await writeFile(
     file,
-    `${prefix}# Pulled by lmnr-cli; tasks.toml pins their versions.\n` +
-      `${GITIGNORE_LINE}\n`,
+    `${prefix}# Pulled by lmnr-cli; tasks/dataset.toml pins their versions.\n` +
+      missing.map((line) => `${line}\n`).join(""),
   );
 };
 
@@ -215,7 +230,9 @@ export const buildJobConfig = (
   overrides: RunOverrides,
   remote: boolean,
 ): JobConfig => {
-  const job: JobConfig = structuredClone(config);
+  // `images` is ours (lmnr-cli builds them); Harbor ignores unknown keys anyway.
+  const { images: _images, ...harborConfig } = config;
+  const job: JobConfig = structuredClone(harborConfig);
   if (remote) {
     // Trials run in Laminar sandboxes; provider-specific settings don't apply.
     const {

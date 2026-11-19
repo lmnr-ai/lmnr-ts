@@ -24,17 +24,19 @@ const jsonResponse = (status: number, body: unknown) => ({
 void describe("EvalDatasetsResource", () => {
   void it("gets a dataset, and null for dataset_not_found", async () => {
     const dataset = {
-      id: "support",
+      id: "acme/support",
       createdAt: "2026-11-01T00:00:00Z",
-      tasks: [{ id: "refund", hash: HASH, createdAt: "2026-11-01T00:00:00Z" }],
+      tasks: [
+        { id: "acme/refund", hash: HASH, createdAt: "2026-11-01T00:00:00Z" },
+      ],
     };
     const mockFetch = mock.fn(() => jsonResponse(200, dataset));
     global.fetch = mockFetch as any;
     const resource = new EvalDatasetsResource(BASE, userToken);
 
-    assert.deepStrictEqual(await resource.get("support"), dataset);
+    assert.deepStrictEqual(await resource.get("acme/support"), dataset);
     const [url, init] = mockFetch.mock.calls[0].arguments as any;
-    assert.strictEqual(url, `${BASE}/v1/cli/eval-datasets/support`);
+    assert.strictEqual(url, `${BASE}/v1/cli/eval-datasets/acme/support`);
     assert.strictEqual(init.headers["x-lmnr-project-id"], "proj-1");
 
     global.fetch = mock.fn(() =>
@@ -43,7 +45,7 @@ void describe("EvalDatasetsResource", () => {
         code: "dataset_not_found",
       }),
     ) as any;
-    assert.strictEqual(await resource.get("support"), null);
+    assert.strictEqual(await resource.get("acme/support"), null);
   });
 
   void it("throws errors with the server's code", async () => {
@@ -55,7 +57,7 @@ void describe("EvalDatasetsResource", () => {
     ) as any;
     const resource = new EvalDatasetsResource(BASE, apiKey);
 
-    await assert.rejects(resource.get("support"), (error: unknown) => {
+    await assert.rejects(resource.get("acme/support"), (error: unknown) => {
       assert.ok(error instanceof LaminarApiError);
       assert.strictEqual(error.status, 501);
       assert.strictEqual(error.code, "storage_not_configured");
@@ -70,7 +72,7 @@ void describe("EvalDatasetsResource", () => {
       statusText: "Not Found",
       text: () => "",
     })) as any;
-    await assert.rejects(resource.get("support"), (error: unknown) => {
+    await assert.rejects(resource.get("acme/support"), (error: unknown) => {
       assert.ok(error instanceof LaminarApiError);
       assert.strictEqual(error.code, undefined);
       assert.strictEqual(error.message, "404 Not Found");
@@ -92,7 +94,7 @@ void describe("EvalDatasetsResource", () => {
     const missing = await new EvalDatasetsResource(
       BASE,
       apiKey,
-    ).missingVersions("support", versions);
+    ).missingVersions("acme/support", versions);
 
     assert.deepStrictEqual(missing, [
       { task: "t0", hash: HASH },
@@ -102,7 +104,7 @@ void describe("EvalDatasetsResource", () => {
     const [url, init] = mockFetch.mock.calls[0].arguments as any;
     assert.strictEqual(
       url,
-      `${BASE}/v1/eval-datasets/support/versions/missing`,
+      `${BASE}/v1/eval-datasets/acme/support/versions/missing`,
     );
     assert.strictEqual(init.method, "POST");
     assert.strictEqual(JSON.parse(init.body).versions.length, 10_000);
@@ -114,13 +116,18 @@ void describe("EvalDatasetsResource", () => {
     const resource = new EvalDatasetsResource(BASE, userToken);
     const archive = new Uint8Array([0x1f, 0x8b, 1]);
 
-    await resource.uploadVersion("support", "refund.v2", HASH, archive);
-    await resource.uploadVersionIndex("support", "refund.v2", HASH, {
+    await resource.uploadVersion(
+      "acme/support",
+      "acme/refund.v2",
+      HASH,
+      archive,
+    );
+    await resource.uploadVersionIndex("acme/support", "acme/refund.v2", HASH, {
       files: [],
     });
 
     const calls = mockFetch.mock.calls.map((c) => c.arguments as any);
-    const versionUrl = `${BASE}/v1/cli/eval-datasets/support/tasks/refund.v2/versions/${HASH}`;
+    const versionUrl = `${BASE}/v1/cli/eval-datasets/acme/support/tasks/acme/refund.v2/versions/${HASH}`;
     assert.strictEqual(calls[0][0], versionUrl);
     assert.strictEqual(calls[0][1].method, "PUT");
     assert.strictEqual(calls[0][1].body, archive);
@@ -131,7 +138,7 @@ void describe("EvalDatasetsResource", () => {
 
     // A streamed archive needs `duplex: "half"`.
     const stream = new ReadableStream<Uint8Array>();
-    await resource.uploadVersion("support", "refund", HASH, stream);
+    await resource.uploadVersion("acme/support", "acme/refund", HASH, stream);
     assert.strictEqual(
       (mockFetch.mock.calls[2].arguments as any)[1].duplex,
       "half",
@@ -145,12 +152,12 @@ void describe("EvalDatasetsResource", () => {
     const resource = new EvalDatasetsResource(BASE, apiKey);
 
     assert.strictEqual(
-      await resource.downloadVersion("support", "refund", HASH),
+      await resource.downloadVersion("acme/support", "acme/refund", HASH),
       body,
     );
     assert.strictEqual(
       (mockFetch.mock.calls[0].arguments as any)[0],
-      `${BASE}/v1/eval-datasets/support/tasks/refund/versions/${HASH}`,
+      `${BASE}/v1/eval-datasets/acme/support/tasks/acme/refund/versions/${HASH}`,
     );
 
     global.fetch = mock.fn(() =>
@@ -159,36 +166,39 @@ void describe("EvalDatasetsResource", () => {
         code: "version_not_found",
       }),
     ) as any;
-    await assert.rejects(resource.downloadVersion("support", "refund", HASH), {
-      code: "version_not_found",
-    });
+    await assert.rejects(
+      resource.downloadVersion("acme/support", "acme/refund", HASH),
+      {
+        code: "version_not_found",
+      },
+    );
   });
 
   void it("returns a push's result or its 409 conflict", async () => {
-    const pushed = [{ id: "refund", hash: HASH, createdAt: "now" }];
+    const pushed = [{ id: "acme/refund", hash: HASH, createdAt: "now" }];
     const mockFetch = mock.fn(() => jsonResponse(200, { tasks: pushed }));
     global.fetch = mockFetch as any;
     const resource = new EvalDatasetsResource(BASE, apiKey);
-    const tasks = [{ task: "refund", hash: HASH, base: null }];
+    const tasks = [{ task: "acme/refund", hash: HASH, base: null }];
 
-    assert.deepStrictEqual(await resource.push("support", tasks), {
+    assert.deepStrictEqual(await resource.push("acme/support", tasks), {
       status: "pushed",
       tasks: pushed,
     });
     const [url, init] = mockFetch.mock.calls[0].arguments as any;
-    assert.strictEqual(url, `${BASE}/v1/eval-datasets/support/push`);
+    assert.strictEqual(url, `${BASE}/v1/eval-datasets/acme/support/push`);
     assert.deepStrictEqual(JSON.parse(init.body), { tasks });
 
-    const moved = [{ task: "refund", latest: "b".repeat(64) }];
+    const moved = [{ task: "acme/refund", latest: "b".repeat(64) }];
     global.fetch = mock.fn(() =>
       jsonResponse(409, { error: "Moved", code: "moved", moved }),
     ) as any;
-    assert.deepStrictEqual(await resource.push("support", tasks), {
+    assert.deepStrictEqual(await resource.push("acme/support", tasks), {
       status: "moved",
       moved,
     });
 
-    const missing = [{ task: "refund", hash: HASH }];
+    const missing = [{ task: "acme/refund", hash: HASH }];
     global.fetch = mock.fn(() =>
       jsonResponse(409, {
         error: "Missing",
@@ -196,7 +206,7 @@ void describe("EvalDatasetsResource", () => {
         missing,
       }),
     ) as any;
-    assert.deepStrictEqual(await resource.push("support", tasks), {
+    assert.deepStrictEqual(await resource.push("acme/support", tasks), {
       status: "versions_missing",
       missing,
     });
@@ -204,7 +214,7 @@ void describe("EvalDatasetsResource", () => {
     global.fetch = mock.fn(() =>
       jsonResponse(400, { error: "Empty push", code: "invalid_request" }),
     ) as any;
-    await assert.rejects(resource.push("support", []), {
+    await assert.rejects(resource.push("acme/support", []), {
       message: "400 Empty push",
     });
   });

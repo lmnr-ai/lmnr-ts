@@ -1,25 +1,26 @@
 # Harbor evals (`eval`)
 
-- `lmnr-cli eval run [dataset] [--dir evals]` runs each dataset
-  (`<dir>/<dataset>/harbor.yaml`, a Harbor JobConfig; the folder name is the
-  dataset name, formerly "suite") with **pinned** Harbor + the Laminar plugin
-  through `uvx` (`harbor.ts`: `HARBOR_VERSION`, `LMNR_PYTHON_VERSION`), from
-  inside the dataset dir so relative paths and custom agent imports resolve
-  the same way everywhere. Harbor's stdout goes to OUR stderr; stdout is data
-  only. Before running, `pullRunTasks` pulls pinned tasks (see "Eval
-  datasets" below). The plugin gets `--pk group_name=<dataset>` always, and
-  `--pk dataset=<dataset> --pk task_hashes_file=<staging>/task-hashes.json`
-  (`{<task dir>: <hash>}` of every valid task dir under `tasks/`) only when the
-  folder name is a valid dataset name. Wire names keep "suite"
-  (`hostedMetadata.suitePath`, `?suite=` on job uploads).
-  - default: trials on local Docker; `lmnr.yaml` images are `docker build`-ed first.
+- `lmnr-cli eval run [dataset] [--dir evals]` runs each dataset folder
+  (`<dir>/<folder>/harbor.yaml`, a Harbor JobConfig; named by folder or by
+  `[dataset] name`, formerly "suite") with **pinned** Harbor + the Laminar
+  plugin through `uvx` (`harbor.ts`: `HARBOR_VERSION`, `LMNR_PYTHON_VERSION`),
+  from inside the dataset dir so relative paths and custom agent imports
+  resolve the same way everywhere. Harbor's stdout goes to OUR stderr; stdout
+  is data only. Before running, `pullRunTasks` pulls pinned tasks (see "Eval
+  datasets" below). The plugin gets `--pk group_name=<dataset name, else
+  folder>` always, and `--pk dataset=<name> --pk
+  task_hashes_file=<staging>/task-hashes.json` (`{<task dir>: {name, hash}}`
+  of every named task under `tasks/`) only with a `tasks/dataset.toml`. Wire
+  names keep "suite" (`hostedMetadata.suitePath`, `?suite=` on job uploads).
+  - default: trials on local Docker; harbor.yaml `images` are `docker build`-ed first.
   - `--remote`: runs in Laminar sandboxes and prints the run's log until it
     ends. Hashes the run's tasks and asks `missingVersions`: tasks Laminar
     has are left out of the upload (`remoteExclude`: also other dataset
-    folders, tasks `--task` doesn't select, `.lmnr-state.json`) and listed in
-    `RunSpec.downloads`, which `eval orchestrate` downloads (run key, `/v1`)
-    into `<dataset>/tasks/<task>` before running; `RunSpec.taskHashes` feeds
-    the plugin. Without dataset storage (`storage_not_configured`) every task
+    folders, task dirs `--task` doesn't select, `.lmnr-state.json`; never
+    `dataset.toml`) and listed in `RunSpec.downloads` (`{<folder>: {dataset,
+    tasks: [{task, hash, dir}]}}`), which `eval orchestrate` downloads (run
+    key, `/v1`) into `<folder>/tasks/<dir>` before running;
+    `RunSpec.taskHashes` feeds the plugin. Without dataset storage (`storage_not_configured`) every task
     is uploaded. Packs the folder (`pack.ts`) and checks the 1 GiB
     cap BEFORE pushing images, then uploads it, `PUT
     /v1[/cli]/hosted-evals/uploads/{id}/index {files}` (a failure only
@@ -77,9 +78,9 @@
   job), `env.ts` (`--env`, `${VAR}`
   resolution, the Harbor process env), `datasets.ts` (dataset discovery, name
   rules, `.gitignore`, `SKIPPED_DIRS`, the run's tasks (`findTaskTomls`),
-  `buildJobConfig`), `harbor.ts` (uvx/Harbor only), `images.ts` (`lmnr.yaml`,
-  what tasks start from, `ensureRemoteImages`), `client.ts` (login or project
-  key client), `tasks-toml.ts`, `task-hash.ts`, `dataset-state.ts`,
+  `buildJobConfig`), `harbor.ts` (uvx/Harbor only), `images.ts` (harbor.yaml
+  `images`, what tasks start from, `ensureRemoteImages`), `client.ts` (login
+  or project key client), `dataset-toml.ts`, `task-hash.ts`, `dataset-state.ts`,
   `dataset-sync.ts` (pure pull / push / run planning, download + extract,
   upload), `dataset-command.ts` (`eval dataset pull / push`, `pullRunTasks`),
   `docker.ts` (builds, the ignore guard, `imagePusher`), `push.ts` (`docker
@@ -108,9 +109,12 @@
   remote run against the new version.
   `assets/` ships in the npm package (`files`); `environmentModulePath` finds it
   next to `dist/` or in the source tree.
-- **Images:** tasks name an image with `docker_image`; `<dataset>/lmnr.yaml`
-  `images: {name: {dockerfile, context}}` declares how to build it (paths
-  relative to the dataset dir; a leftover `<dir>/lmnr.yaml` only warns). Local
+- **Images:** tasks name an image with `docker_image`; `images: {name:
+  {dockerfile, context}}` in the dataset's harbor.yaml declares how to build
+  it (paths relative to the dataset dir). It is OUR key: `buildJobConfig`
+  drops it from the config Harbor gets (Harbor's `JobConfig` ignores unknown
+  keys anyway, so a bare `harbor run -c harbor.yaml` still works). A leftover
+  `lmnr.yaml` (evals root or dataset) only warns. Local
   runs `docker build` the ones the run's tasks reference (`localImageDefs`)
   and let Harbor handle the rest; local builds are tagged by name, so two
   datasets of one run defining a name differently is `invalid_evals_dir`.
@@ -134,8 +138,8 @@
   `docker_image`.
 - **Remote runs push every image the run's tasks use, from here**
   (`ensureRemoteImages`): per-task `environment/Dockerfile`s and the
-  `lmnr.yaml` images tasks reference are built (`pusher.build`; unreferenced
-  `lmnr.yaml` images are skipped), other `docker_image`s are pulled
+  harbor.yaml images tasks reference are built (`pusher.build`; unreferenced
+  ones are skipped), other `docker_image`s are pulled
   (`pusher.pull`, a `FROM <ref>` build in one temp dir, so the amd64 variant
   saves like a built image even from a multi-platform index). Each goes
   `docker build --platform linux/amd64` → `docker save -o` + unpack →
@@ -147,7 +151,7 @@
   server pushes into its registry (ECR) and Harbor's class waits on `POST
   /images/snapshots` before `POST /sandboxes {image: <digest>}` (lmnr
   `docs/internal/hosted-evals.md`). Each image has ONE display name for logs,
-  errors and its local tag (`ImageDef.name`: the `lmnr.yaml` name, the pulled
+  errors and its local tag (`ImageDef.name`: the harbor.yaml name, the pulled
   ref, or `<dataset>/<env dir key>`). One run builds an image once per
   Dockerfile + context and pulls a ref once. Docker is assumed for every
   mode: there is no fallback. Measured: an app change uploads one small
@@ -159,14 +163,14 @@
   the env var's shape is unchanged). Dockerfile keys are the env dir relative
   to the dataset dir (Harbor's cwd), always with `/` (`dockerfileKey`: a
   remote run looks a Windows-built map up on Linux).
-- **Remote limitations:** a per-task Dockerfile `FROM <lmnr.yaml image>` does
-  not work remotely and is not supported: remote pushes tag `lmnr.yaml` images
+- **Remote limitations:** a per-task Dockerfile `FROM <harbor.yaml image>` does
+  not work remotely and is not supported: remote pushes tag harbor.yaml images
   `lmnr-evals-remote:<hash>`, not by name, so the `FROM` resolves to a
   registry image or a stale local build. Tasks from git/registry datasets are
   fetched by Harbor, so their per-task Dockerfiles and `docker_image`s aren't
   pushed; local task paths outside the evals folder aren't packed either.
 - **Every build lmnr-cli runs excludes `.git` and `.env*` without copying the
-  context** (`guardedDockerfile` in `docker.ts`, local `lmnr.yaml` builds too;
+  context** (`guardedDockerfile` in `docker.ts`, local harbor.yaml image builds too;
   local per-task Dockerfiles are built by Harbor, unguarded): the Dockerfile is
   copied to a temp dir next to a generated `Dockerfile.dockerignore` = the
   image's own ignore file (`<Dockerfile>.dockerignore`, else the context's
@@ -220,59 +224,88 @@
   `filter="data"`). Every file is packed 0755 if it has any exec bit, else
   0644 (`fileMode`); on Windows, which has none, `.sh` files are 0755
   (Harbor's own rule, `needs_chmod`). Ownership and mtimes are fixed so local
-  user names and times don't leak. `walkFiles` is shared with task hashing, so
-  a version archive holds exactly the hashed files.
+  user names and times don't leak. Task version archives are packed from
+  `collectTaskFiles` instead (Harbor's selection; see below).
 
 ## Eval datasets (`eval dataset pull / push`)
 
-- **Files** per dataset: `tasks.toml` (`[tasks] name = "<hash>"`, written
-  with a header comment and bytewise-sorted keys; anything but a `[tasks]`
-  table of valid names → hash strings is `invalid_evals_dir`),
-  `tasks/<task>/` (git-ignored: `<dir>/.gitignore` gets `*/tasks/` from pull,
-  push and run, appended), `tasks/.lmnr-state.json` = `{tasks: {<task>:
-  <base>}}`, the base being the hash the task had when last pulled or pushed
-  on THIS disk. Names: `^[A-Za-z0-9][A-Za-z0-9._-]*$` (datasets ≤ 100 bytes,
-  tasks ≤ 255); task dirs starting with `.` (our temp dirs) are never tasks.
-  A symlinked task dir is unmanaged (`unlinkedTasks`, with a warning): pull,
-  push and run's pre-pull never hash, replace or unpin it (Harbor still
-  follows it), since treating it as missing would clobber the link.
-- **Hash** (`task-hash.ts`, only the CLI computes it): every regular file
-  under the task dir minus symlinks, `.env*`, `.DS_Store`, `SKIPPED_DIRS`;
-  sha256 hex of `"<755|644> <sha256(content)> <posix path>\n"` per file,
-  sorted by path bytewise. Test fixture with an independently computed hash in
-  `task-hash.test.ts`.
-- Per task: pin = tasks.toml, base = state, local = hash of the dir, edited
-  = local exists and ≠ base (no base counts as edited), latest = Laminar's
-  (`GET` dataset).
-- **pull** (`planPull`): target = pin (or latest with `--latest` / no
-  tasks.toml; selected tasks' pins are then replaced, others kept). Missing
-  dir → added, local ≠ target → changed, in state + pin gone + dir exists →
+- **Harbor's own files.** `<folder>/tasks/dataset.toml` is Harbor's dataset
+  manifest (`harbor.models.dataset.manifest`): `[dataset] name` is the
+  dataset's name in Laminar, `[[tasks]] {name, digest = "sha256:<hex>"}` its
+  pins (`dataset-toml.ts`; no `[[tasks]]` at all = no pins = pull takes the
+  latest, `tasks = []` = nothing pinned; every other key is kept on rewrite,
+  pins sorted bytewise). Each task is known by `[task] name` in its
+  `task.toml`, NEVER by its dir. Both names are Harbor's `org/name`
+  (`ORG_NAME_PATTERN`, no `..`, ≤ 255 bytes here; the org is free text).
+  `tasks/` is git-ignored except the manifest (`<dir>/.gitignore` gets
+  `*/tasks/*` + `!*/tasks/dataset.toml`); `tasks/.lmnr-state.json` =
+  `{tasks: {<name>: <base>}}`, the base being the hash the task had when last
+  pulled or pushed on THIS disk.
+- **Scanning** (`scanTasks`): dirs under `tasks/` with a `task.toml`; dot dirs
+  (our temp dirs) are skipped. pull and push fail (`assertNamedTasks`) on a
+  `task.toml` without a valid `[task] name` and on a name two dirs share (a
+  copied task); `eval run` doesn't. A symlinked task dir is unmanaged
+  (`linkedNames`, with a warning): pull, push and run's pre-pull never hash,
+  replace or unpin it (Harbor still follows it). A pulled task that has no
+  dir yet goes into `tasks/<name after the org>`; if that dir holds anything
+  else, pull fails (`placePull`) and run's pre-pull skips it with a warning.
+- **Hash** (`task-hash.ts`) = Harbor's `Packager.compute_content_hash`
+  (0.25.0), so `harbor sync` agrees: only `task.toml`, `instruction.md`,
+  `README.md`, `trajectory.json` and `environment/`, `tests/`, `solution/`,
+  `steps/` count, minus `.harborignore` rules (scoped to `tests/`,
+  `solution/`, `steps/*/{tests,solution}`, applied per directory, last match
+  wins, any `.harborignore` file itself excluded) and the task's `.gitignore`
+  (else Harbor's `DEFAULT_IGNORES`); sha256 hex of `"<path>\0<sha256 hex>\n"`
+  per file, by path (UTF-8 byte order = Python's code point order). Modes
+  don't count. Links to files are followed, links to dirs aren't walked, a
+  link leaving the task is an error. `task-hash.test.ts` holds trees whose
+  hashes Harbor itself computed; recompute them with
+  `uvx --from harbor==<HARBOR_VERSION> python` + `Packager` when bumping
+  Harbor. Matching uses the `ignore` package (`ignorecase: false`, as
+  `pathspec`); known gap: `pathspec` lets `!x` re-include a file inside an
+  ignored dir, `ignore` (like git) doesn't.
+- **What a version archive holds:** the hashed files PLUS the ignore files
+  that selected them (`.gitignore`, in-scope `.harborignore`s), which Harbor
+  itself doesn't package: without them a pulled copy would fall back to the
+  default ignores and hash differently. Files outside Harbor's set (e.g.
+  `notes.md` at the task root) are neither hashed nor stored. Push refuses
+  tasks whose hashed files include `.env*` (Harbor would hash them; a task
+  `.gitignore` can leave them out).
+- Per task: pin = dataset.toml, base = state, local = hash of its dir,
+  edited = local exists and ≠ base (no base counts as edited), latest =
+  Laminar's (`GET` dataset).
+- **pull** (`planPull`): target = pin (or latest with `--latest` / no pins;
+  selected tasks' pins are then replaced, others kept). No local dir →
+  added, local ≠ target → changed, in state + pin gone + dir exists →
   removed. Changing or removing an edited task without `--force` → 22,
   checked for every dataset before anything is written; `missingVersions`
   then turns unknown pins into `version_not_found`. Downloads go to
   `tasks/.lmnr-pull-*` (`modern-tar` refuses escaping paths; only files and
   dirs are extracted, modes normalized), are re-hashed against the target
-  with the ARCHIVE's modes (Windows reports no exec bits) and renamed into
-  place. On Windows a pulled non-`.sh` executable still hashes as `644` on
-  disk afterwards, so such a task looks edited there (Harbor's own Windows
-  rule has the same gap). State is written even after a partial failure, for the
-  tasks that were written. A folder without tasks.toml that Laminar lacks is
-  skipped; a named dataset without a folder is created (or
-  `dataset_not_found`).
+  and renamed into place. State is written even after a partial failure,
+  for the tasks that were written. A dataset Laminar lacks, with nothing
+  pinned, is skipped. Datasets are named by folder or `[dataset] name`; a
+  folder without dataset.toml is skipped with a warning (named: an error
+  showing the file to create).
 - **push** (`planPush`): pin moved → 23, no override, when (a) base set and
   latest ≠ base, (b) base and pin set and pin ≠ base, (c) no base and latest
   ≠ local. Else local = latest = pin → unchanged; otherwise added / changed,
   sent as `{task, hash, base: latest ?? null}` (in every accepted case the
   disk's base equals latest, and with `base` null the server would call any
-  older version a move). Tasks in state AND tasks.toml whose dir is gone lose
-  their pin; pinned-but-never-pulled tasks are untouched. Apply:
-  `missingVersions` → `packTaskDir` (re-checks the hash) → `uploadVersion` +
-  `uploadVersionIndex` → `push`; a 409 `moved` is 23 too. `--dry-run` runs
-  the GET, the checks and `missingVersions`.
+  older version a move). Tasks in state AND pinned that are no longer on
+  disk (dir deleted, or `[task] name` changed) lose their pin;
+  pinned-but-never-pulled tasks are untouched. Apply: `missingVersions` →
+  `packTaskDir` (re-checks the hash) → `uploadVersion` + `uploadVersionIndex`
+  → `push`; a 409 `moved` is 23 too. `--dry-run` runs the GET, the checks and
+  `missingVersions`.
+- **`--task`:** for `eval dataset` it globs the task name, with or without
+  its org (`taskFilter`); for `eval run` (and its pre-pull, and the remote
+  upload) it is Harbor's, matching task DIR names (`dirFilter`).
 - **run** (`planRunPull`): pulls selected pinned tasks that are missing or
   unedited with pin ≠ local; edited ones warn and run as they are. If Laminar
   can't be reached (or no login/key) and every such task is on disk, it warns
   and goes on.
-- Client: `client.evalDatasets` (`@lmnr-ai/client`), errors are
-  `LaminarApiError` with the server's `code`; the CLI checks `code` by the
-  error's `name` (`apiErrorCode`), since tests mock the client module.
+- Client: `client.evalDatasets` (`@lmnr-ai/client`) sends each `org/name` as
+  two path segments; errors are `LaminarApiError` with the server's `code`;
+  the CLI checks `code` by the error's `name` (`apiErrorCode`), since tests
+  mock the client module.

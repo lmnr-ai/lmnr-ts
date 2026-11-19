@@ -6,10 +6,10 @@ import path from "node:path";
 import { harborFailed } from "../../errors";
 import { findEnvKey } from "../../utils/env-file";
 import { initializeLogger } from "../../utils/logger";
-import { hashLocalTasks, type TaskHashes } from "./dataset-state";
+import { scanTasks, type TaskHashFile, taskHashFile } from "./dataset-state";
+import { readDatasetToml } from "./dataset-toml";
 import {
   buildJobConfig,
-  isValidDatasetName,
   type JobConfig,
   loadDatasetConfig,
   type RunOverrides,
@@ -29,7 +29,7 @@ export const HARBOR_VERSION = "0.25.0";
 export const LMNR_PYTHON_VERSION = "0.9.2";
 const PYTHON_VERSION = "3.13";
 const ENVIRONMENT_MODULE = "lmnr_hosted_env.py";
-/** In the staging dir: `{<task dir name>: <hash>}` for the plugin. */
+/** In the staging dir: `{<task dir name>: {name, hash}}` for the plugin. */
 const TASK_HASHES_FILE = "task-hashes.json";
 
 /** `assets/` next to `dist/` when bundled, three levels up in the source tree. */
@@ -47,16 +47,17 @@ interface PluginArgs {
   /** Self-hosted Laminar's gRPC port, for the plugin's trace export. */
   grpcPort?: string;
   /**
-   * The dataset's task hashes file; with it the plugin records the dataset
-   * name and each trial's task version. Only for valid dataset names.
+   * The eval dataset (`[dataset] name`) and its task hashes file; with them
+   * the plugin records the dataset and each trial's task and version.
    */
-  taskHashesFile?: string;
+  dataset?: { name: string; taskHashesFile: string };
 }
 
+/** `group` names the evaluation group: the dataset name, else the folder. */
 export const harborArgs = (
   configPath: string,
-  dataset: string,
-  { grpcPort, taskHashesFile }: PluginArgs = {},
+  group: string,
+  { grpcPort, dataset }: PluginArgs = {},
 ): string[] => [
   "--python",
   PYTHON_VERSION,
@@ -72,13 +73,13 @@ export const harborArgs = (
   "--plugin",
   "laminar",
   "--pk",
-  `group_name=${dataset}`,
-  ...(taskHashesFile
+  `group_name=${group}`,
+  ...(dataset
     ? [
         "--pk",
-        `dataset=${dataset}`,
+        `dataset=${dataset.name}`,
         "--pk",
-        `task_hashes_file=${taskHashesFile}`,
+        `task_hashes_file=${dataset.taskHashesFile}`,
       ]
     : []),
   // The plugin exports spans over gRPC (8443 unless told otherwise).
@@ -86,7 +87,8 @@ export const harborArgs = (
 ];
 
 interface HarborRun {
-  dataset: string;
+  /** The evaluation group: the dataset name, else the folder. */
+  group: string;
   datasetDir: string;
   config: JobConfig;
   /** Env for the Harbor process; `${VAR}` placeholders resolve against it. */
@@ -98,8 +100,8 @@ interface HarborRun {
   images?: DatasetImages;
   /** Self-hosted Laminar's gRPC port, for the plugin's trace export. */
   grpcPort?: string;
-  /** Each task dir's version hash; set for valid dataset names only. */
-  taskHashes?: TaskHashes;
+  /** The eval dataset's name and task hashes; unset without a dataset.toml. */
+  dataset?: { name: string; taskHashes: TaskHashFile };
   /** Gets Harbor's output as well as our stderr. */
   output?: CommandOutput;
 }
@@ -122,20 +124,18 @@ const runHarborDataset = async (run: HarborRun): Promise<number> => {
         path.join(staging, ENVIRONMENT_MODULE),
       );
     }
-    let taskHashesFile: string | undefined;
-    if (run.taskHashes) {
-      taskHashesFile = path.join(staging, TASK_HASHES_FILE);
-      await writeFile(taskHashesFile, JSON.stringify(run.taskHashes));
+    let dataset: PluginArgs["dataset"];
+    if (run.dataset) {
+      const taskHashesFile = path.join(staging, TASK_HASHES_FILE);
+      await writeFile(taskHashesFile, JSON.stringify(run.dataset.taskHashes));
+      dataset = { name: run.dataset.name, taskHashesFile };
     }
     const pythonPath = [staging, run.datasetDir, process.env.PYTHONPATH]
       .filter(Boolean)
       .join(path.delimiter);
     return await runCommand(
       "uvx",
-      harborArgs(configPath, run.dataset, {
-        grpcPort: run.grpcPort,
-        taskHashesFile,
-      }),
+      harborArgs(configPath, run.group, { grpcPort: run.grpcPort, dataset }),
       {
         cwd: run.datasetDir,
         env: {
@@ -175,10 +175,11 @@ export interface DatasetHooks {
    */
   output?: (dataset: string) => CommandOutput;
   /**
-   * Task hashes by dataset, when already known (a remote run's spec); other
-   * valid datasets have their task dirs hashed before they run.
+   * Task hashes by dataset folder, when already known (a remote run's spec);
+   * other datasets with a dataset.toml have their tasks hashed before they
+   * run.
    */
-  taskHashes?: Record<string, TaskHashes>;
+  taskHashes?: Record<string, TaskHashFile>;
 }
 
 /**
@@ -206,16 +207,22 @@ export const runDatasets = async (
     logger.info(
       `Running dataset ${dataset} ${images ? "in Laminar sandboxes" : "on local Docker"}`,
     );
+    const manifest = await readDatasetToml(datasetDir);
     const code = await runHarborDataset({
-      dataset,
+      group: manifest?.name ?? dataset,
       datasetDir,
       config,
       env,
       images: images && datasetImages(images, dataset),
       grpcPort,
       // The plugin links trials to Laminar's task versions by these.
-      taskHashes: isValidDatasetName(dataset)
-        ? (taskHashes?.[dataset] ?? (await hashLocalTasks(datasetDir)))
+      dataset: manifest
+        ? {
+            name: manifest.name,
+            taskHashes:
+              taskHashes?.[dataset] ??
+              (await taskHashFile(datasetDir, await scanTasks(datasetDir))),
+          }
         : undefined,
       output: output?.(dataset),
     });

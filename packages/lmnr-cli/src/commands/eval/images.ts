@@ -1,20 +1,19 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
-import { parse as parseYaml } from "yaml";
-
 import { invalidEvalsDir } from "../../errors";
 import {
+  DATASET_CONFIG,
   findTaskTomls,
   loadDatasetConfig,
   type RunOverrides,
 } from "./datasets";
 
-/** Optional dataset config: the images its tasks reference by `docker_image`. */
-export const LMNR_DATASET_CONFIG = "lmnr.yaml";
+/** Where images used to be declared; a leftover one only warns. */
+export const LEGACY_IMAGES_FILE = "lmnr.yaml";
 
 export interface ImageDef {
-  /** Shown in logs and errors; for `lmnr.yaml` images, the `docker_image`. */
+  /** Shown in logs and errors; for harbor.yaml images, the `docker_image`. */
   name: string;
   dockerfile: string;
   context: string;
@@ -22,7 +21,7 @@ export interface ImageDef {
 
 /**
  * Every image a remote run uses, as pushed manifest digests, by dataset (each
- * dataset has its own `lmnr.yaml`).
+ * dataset declares its own in its harbor.yaml).
  */
 export interface RemoteImages {
   /** By dataset, then `docker_image`. */
@@ -53,21 +52,26 @@ interface RawImage {
   context?: unknown;
 }
 
-/** The images `<datasetDir>/lmnr.yaml` declares, paths relative to the dataset dir. */
+/**
+ * The images `<datasetDir>/harbor.yaml` declares under `images` (lmnr-cli's
+ * key, not Harbor's: it is dropped from the job config Harbor gets), paths
+ * relative to the dataset dir.
+ */
 export const loadImageDefs = async (
   datasetDir: string,
 ): Promise<ImageDef[]> => {
-  const file = path.join(datasetDir, LMNR_DATASET_CONFIG);
-  const text = await readFile(file, "utf8").catch(() => null);
-  if (text === null) return [];
-  let parsed: { images?: Record<string, RawImage> } | null;
-  try {
-    parsed = parseYaml(text);
-  } catch (error) {
-    throw invalidEvalsDir(`Can't parse ${file}: ${String(error)}`);
+  const file = path.join(datasetDir, DATASET_CONFIG);
+  const images = (await loadDatasetConfig(datasetDir)).images;
+  if (images == null) return [];
+  if (typeof images !== "object" || Array.isArray(images)) {
+    throw invalidEvalsDir(
+      `${file}: images must map each image name to {dockerfile, context}.`,
+    );
   }
   const defs: ImageDef[] = [];
-  for (const [name, raw] of Object.entries(parsed?.images ?? {})) {
+  for (const [name, raw] of Object.entries(
+    images as Record<string, RawImage | null>,
+  )) {
     if (typeof raw?.dockerfile !== "string") {
       throw invalidEvalsDir(`${file}: images.${name}.dockerfile is required.`);
     }
@@ -82,7 +86,7 @@ export const loadImageDefs = async (
 };
 
 /**
- * The `lmnr.yaml` images a local run's tasks start from, each dataset's own.
+ * The harbor.yaml images a local run's tasks start from, each dataset's own.
  * Harbor builds per-task Dockerfiles and pulls other images itself. Local
  * builds are tagged with the image's name, so two datasets of one run can't
  * define a name differently.
@@ -104,7 +108,7 @@ export const localImageDefs = async (
         (seen.dockerfile !== def.dockerfile || seen.context !== def.context)
       ) {
         throw invalidEvalsDir(
-          `Image ${def.name} is defined differently by the lmnr.yaml of ` +
+          `Image ${def.name} is defined differently by the harbor.yaml of ` +
             `${seen.dataset} and ${dataset}; local builds are tagged by ` +
             "name, so run these datasets separately or rename one image.",
         );
@@ -168,7 +172,7 @@ export const dockerfileKey = (
 
 /**
  * Push every image the run's tasks use, so Laminar sandboxes can start from
- * them: per-task Dockerfiles and the `lmnr.yaml` images tasks reference (each
+ * them: per-task Dockerfiles and the harbor.yaml images tasks reference (each
  * dataset's own) are built here, other `docker_image`s are pulled. An image
  * is pushed once per run: builds by Dockerfile and context, pulls by ref.
  */
