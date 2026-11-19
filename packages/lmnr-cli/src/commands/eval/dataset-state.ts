@@ -77,7 +77,10 @@ export interface LocalTasks {
    * them, pull and push leave them alone.
    */
   linked: { dir: string; name?: string }[];
-  /** Every real dir, task or not: where a pull can't put another task. */
+  /**
+   * Every entry, task or not (dirs, links, files such as `dataset.toml`):
+   * where a pull can't put another task.
+   */
   taken: Set<string>;
 }
 
@@ -116,9 +119,10 @@ export const scanTasks = async (datasetDir: string): Promise<LocalTasks> => {
   for (const entry of entries) {
     // Dot dirs are lmnr-cli's own temp dirs (or tool caches), never tasks.
     if (entry.name.startsWith(".")) continue;
+    // A task named `<org>/dataset.toml` must not land on the manifest.
+    found.taken.add(entry.name);
     const linked = entry.isSymbolicLink();
     if (!linked && !entry.isDirectory()) continue;
-    found.taken.add(entry.name);
     const task = await taskNameOf(path.join(tasksDir, entry.name, "task.toml"));
     if (linked) {
       found.linked.push({

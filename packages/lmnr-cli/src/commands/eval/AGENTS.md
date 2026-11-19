@@ -247,8 +247,9 @@
   copied task); `eval run` doesn't. A symlinked task dir is unmanaged
   (`linkedNames`, with a warning): pull, push and run's pre-pull never hash,
   replace or unpin it (Harbor still follows it). A pulled task that has no
-  dir yet goes into `tasks/<name after the org>`; if that dir holds anything
-  else, pull fails (`placePull`) and run's pre-pull skips it with a warning.
+  dir yet goes into `tasks/<name after the org>`; if anything has that name
+  (another dir, or a file: `acme/dataset.toml` is a valid name), pull fails
+  (`placePull`) and run's pre-pull skips it with a warning.
 - **Hash** (`task-hash.ts`) = Harbor's `Packager.compute_content_hash`
   (0.25.0), so `harbor sync` agrees: only `task.toml`, `instruction.md`,
   `README.md`, `trajectory.json` and `environment/`, `tests/`, `solution/`,

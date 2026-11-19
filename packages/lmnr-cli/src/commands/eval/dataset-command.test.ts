@@ -335,6 +335,30 @@ void describe("eval dataset push / pull", () => {
     );
   });
 
+  void it("never pulls a task onto a file, such as dataset.toml", async () => {
+    await writeDataset();
+    await handleDatasetPush([], opts("evals"));
+    await cp(path.join(root, "evals"), path.join(root, "other"), {
+      recursive: true,
+    });
+    await write(
+      "other/support/tasks/x/task.toml",
+      taskToml("acme/dataset.toml"),
+    );
+    await handleDatasetPush([], opts("other"));
+
+    const manifest = await read("evals/support/tasks/dataset.toml");
+    await expect(
+      handleDatasetPull([], opts("evals", { latest: true })),
+    ).rejects.toMatchObject({
+      code: "invalid_evals_dir",
+      message: expect.stringContaining(
+        "Can't pull acme/dataset.toml into support/tasks/dataset.toml",
+      ),
+    });
+    expect(await read("evals/support/tasks/dataset.toml")).toBe(manifest);
+  });
+
   void it("leaves symlinked task dirs alone", async () => {
     await writeDataset();
     await handleDatasetPush([], opts("evals"));
