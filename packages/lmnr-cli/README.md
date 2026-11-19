@@ -56,9 +56,9 @@ and target a project via `--project-id` or the `.lmnr/project.json` link written
 by `lmnr-cli setup`.
 
 The project API key that `setup` writes to `./.env` (`LMNR_PROJECT_API_KEY`) is
-for your **application's SDK** (trace ingestion). The one CLI command that reads
-it is `eval run`: local runs report results with it, and `--remote` uses it
-when there is no login (e.g. in CI).
+for your **application's SDK** (trace ingestion). The CLI commands that read it
+are `eval run` and `eval dataset pull / push`: local runs report results with
+it, and `--remote` and `eval dataset` use it when there is no login (e.g. in CI).
 
 ### OAuth Device Flow
 
@@ -152,13 +152,13 @@ https://laminar.sh/docs/platform/debugger
 
 ### `eval run` - Harbor evals
 
-Run the [Harbor](https://harborframework.com) suites in an evals folder
-(`<dir>/<suite>/harbor.yaml`, default `evals`) and report every trial to Laminar
-as an evaluation, grouped by suite.
+Run the [Harbor](https://harborframework.com) datasets in an evals folder
+(`<dir>/<dataset>/harbor.yaml`, `--dir` defaults to `evals`) and report every
+trial to Laminar as an evaluation, grouped by dataset.
 
 ```bash
-lmnr-cli eval run                                  # trials on local Docker
-lmnr-cli eval run --suite support --task "refund-*"
+lmnr-cli eval run                                  # every dataset, local Docker
+lmnr-cli eval run support --task "refund-*"
 lmnr-cli eval run --remote                         # in Laminar sandboxes
 ```
 
@@ -168,14 +168,34 @@ leaves the run going.
 Both modes need Docker; local runs also need [uv](https://docs.astral.sh/uv/)
 and `LMNR_PROJECT_API_KEY`. `--remote` pushes
 the images tasks use from your local Docker. See `lmnr-cli eval run --help` for
-images (`lmnr.yaml`), secrets and flags. Exit codes:
+images (`<dataset>/lmnr.yaml`), secrets and flags. Exit codes:
 
 - `16` invalid evals folder, or the packed folder is over the upload limit
 - `17` `uv` or `docker` is not installed
-- `18` a suite's `harbor run` failed
+- `18` a dataset's `harbor run` failed
 - `19` an unset `${VAR}` placeholder or `LMNR_PROJECT_API_KEY`
 - `20` a Docker build, pull or save failed, or an image isn't linux/amd64
-- `21` a `--remote` run failed before its suites ran, or its sandbox was lost
+- `21` a `--remote` run failed before its datasets ran, or its sandbox was lost
+
+### `eval dataset pull / push` - Eval datasets
+
+A dataset's tasks are versioned in Laminar by content hash.
+`<dataset>/tasks.toml` (committed) pins each task's version; `<dataset>/tasks/`
+holds the tasks themselves and is git-ignored (`<dir>/.gitignore` gets
+`*/tasks/`).
+
+```bash
+lmnr-cli eval dataset push                         # upload new versions, pin them
+lmnr-cli eval dataset pull                         # bring tasks/ to the pins
+lmnr-cli eval dataset pull support --latest        # newest versions, re-pinned
+lmnr-cli eval dataset pull --dry-run --json        # what would change
+```
+
+`eval run` pulls missing pinned tasks (and unedited ones whose pin changed)
+before running; `--remote` uploads only the tasks Laminar doesn't have.
+Exit codes: `22` pull would overwrite local edits (use `--force`), `23` push
+refused because a task's pin moved since it was pulled here (pull, then push
+again).
 
 ### `setup` - One-shot onboarding
 

@@ -1,32 +1,36 @@
+import { stat } from "node:fs/promises";
 import path from "node:path";
 
-import { LaminarClient } from "@lmnr-ai/client";
+import type { LaminarClient } from "@lmnr-ai/client";
 import { InvalidArgumentError } from "commander";
 
-import { buildLaminarClient } from "../../auth/client";
-import { envHttpPort, resolveBaseUrl } from "../../auth/resolve";
 import type { GlobalOpts } from "../../auth/with-client";
 import { DEFAULT_FRONTEND_URL } from "../../constants";
 import { harborFailed, invalidEvalsDir, remoteRunFailed } from "../../errors";
 import { pc } from "../../utils/colors";
-import { findEnvKey } from "../../utils/env-file";
 import { readLocalProjectFile } from "../../utils/local-project-file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
+import { buildEvalClient } from "./client";
+import { DEFAULT_EVALS_DIR, pullRunTasks } from "./dataset-command";
+import {
+  DATASET_CONFIG,
+  discoverDatasets,
+  type RunOverrides,
+} from "./datasets";
 import { buildLocalImages } from "./docker";
-import { API_KEY_VAR, harborEnv, parseEnvFlags, resolveRunEnv } from "./env";
-import { assertSuitesPassed, runSuites } from "./harbor";
-import { localImageDefs } from "./images";
+import { harborEnv, parseEnvFlags, resolveRunEnv } from "./env";
+import { assertDatasetsPassed, runDatasets } from "./harbor";
+import { LMNR_DATASET_CONFIG, localImageDefs } from "./images";
 import { startRemoteRun } from "./remote";
 import { type FollowResult, followRunLog } from "./run-log";
 import { type EvaluationLink, parseEvaluationLine } from "./run-log-lines";
-import { discoverSuites, type RunOverrides } from "./suites";
 
 const logger = initializeLogger();
 
 interface EvalRunOpts extends GlobalOpts {
+  dir?: string;
   remote?: boolean;
-  suite?: string[];
   task?: string[];
   nAttempts?: number;
   nConcurrent?: number;
@@ -43,43 +47,29 @@ export const parsePositiveInt = (raw: string): number => {
   return n;
 };
 
-const selectSuites = async (
+const isFile = (file: string) =>
+  stat(file).then(
+    (s) => s.isFile(),
+    () => false,
+  );
+
+/** The named dataset (it must have a harbor.yaml), else every runnable one. */
+const selectDatasets = async (
   evalsDir: string,
-  requested: string[] | undefined,
+  requested: string | undefined,
 ): Promise<string[]> => {
-  const suites = await discoverSuites(evalsDir);
-  if (!requested?.length) return suites;
-  const unknown = requested.filter((s) => !suites.includes(s));
-  if (unknown.length > 0) {
+  if (!requested) return discoverDatasets(evalsDir);
+  if (!(await isFile(path.join(evalsDir, requested, DATASET_CONFIG)))) {
+    const known = await discoverDatasets(evalsDir).catch(() => []);
     throw invalidEvalsDir(
-      `Unknown --suite ${unknown.join(", ")}. ` +
-        `Suites in ${evalsDir}: ${suites.join(", ")}`,
+      `Unknown dataset ${requested}: no ${DATASET_CONFIG} in ` +
+        `${path.join(evalsDir, requested)}.` +
+        (known.length > 0
+          ? ` Datasets in ${evalsDir}: ${known.join(", ")}`
+          : ""),
     );
   }
-  return requested;
-};
-
-/**
- * Remote runs call the API as the logged-in user, or with the project API key
- * when there is no login (CI).
- */
-const buildRemoteClient = async (opts: GlobalOpts): Promise<LaminarClient> => {
-  try {
-    return await buildLaminarClient({
-      projectId: opts.projectId,
-      baseUrl: opts.baseUrl,
-      port: opts.port,
-    });
-  } catch (error) {
-    const key = await findEnvKey(process.cwd(), API_KEY_VAR);
-    if (!key) throw error;
-    logger.debug("No CLI login; using LMNR_PROJECT_API_KEY");
-    return new LaminarClient({
-      baseUrl: resolveBaseUrl(opts.baseUrl),
-      port: opts.port ?? envHttpPort(),
-      auth: { type: "apiKey", key: key.value },
-    });
-  }
+  return [requested];
 };
 
 const evaluationsUrl = async (
@@ -93,22 +83,22 @@ const evaluationsUrl = async (
   return `${frontend}/project/${id}/evaluations`;
 };
 
-/** Report a local run once its suites have finished. */
+/** Report a local run once its datasets have finished. */
 const reportLocal = async (
-  suites: string[],
+  datasets: string[],
   failed: string[],
   opts: GlobalOpts,
 ) => {
   const url = await evaluationsUrl(opts.projectId);
   if (opts.json) {
-    outputJson({ mode: "local", suites, failed, url });
+    outputJson({ mode: "local", datasets, failed, url });
   } else if (url) {
-    logger.info(`Results are in evaluations grouped by suite: ${url}`);
+    logger.info(`Results are in evaluations grouped by dataset: ${url}`);
   }
-  assertSuitesPassed(failed);
+  assertDatasetsPassed(failed);
 };
 
-/** Exit codes `eval orchestrate` ends with that mean "a suite failed". */
+/** Exit codes `eval orchestrate` ends with that mean "a dataset failed". */
 const HARBOR_FAILED_EXIT = 18;
 
 /** Turn how a followed remote run ended into this command's outcome. */
@@ -122,7 +112,9 @@ export const assertRemotePassed = (result: FollowResult) => {
   }
   if (result.kind !== "exited" || result.exitCode === 0) return;
   if (result.exitCode === HARBOR_FAILED_EXIT) {
-    throw harborFailed("A suite of the remote run failed; see its log above.");
+    throw harborFailed(
+      "A dataset of the remote run failed; see its log above.",
+    );
   }
   throw remoteRunFailed(
     `The remote run exited with code ${result.exitCode}; see its log above.`,
@@ -130,18 +122,18 @@ export const assertRemotePassed = (result: FollowResult) => {
 };
 
 /** Print a started remote run's log until it ends, then report it. */
-const formatLink = ({ suite, url }: EvaluationLink) =>
-  `${pc.bold(`Laminar evaluation for suite ${suite}:`)} ${pc.cyan(url)}`;
+const formatLink = ({ dataset, url }: EvaluationLink) =>
+  `${pc.bold(`Laminar evaluation for dataset ${dataset}:`)} ${pc.cyan(url)}`;
 
 /** The evaluation links a run printed, once more where they can't scroll away. */
 const formatLinks = (links: EvaluationLink[]) =>
   `\n${pc.bold("Results in Laminar:")}\n` +
-  links.map(({ suite, url }) => `  ${suite}: ${pc.cyan(url)}\n`).join("");
+  links.map(({ dataset, url }) => `  ${dataset}: ${pc.cyan(url)}\n`).join("");
 
 const followRemote = async (
   client: LaminarClient,
   run: { uploadId: string; sandboxId: string },
-  suites: string[],
+  datasets: string[],
   opts: GlobalOpts,
 ) => {
   const url = await evaluationsUrl(opts.projectId);
@@ -149,7 +141,7 @@ const followRemote = async (
     `Started remote run in sandbox ${run.sandboxId}; following its log ` +
       "(Ctrl-C stops following, the run goes on).",
   );
-  // Each suite's evaluation shows up in the log once the run creates it.
+  // Each dataset's evaluation shows up in the log once the run creates it.
   const links: EvaluationLink[] = [];
   const write = (text: string) => {
     const link = parseEvaluationLine(text.trimEnd());
@@ -185,7 +177,7 @@ const followRemote = async (
     outputJson({
       mode: "remote",
       ...run,
-      suites,
+      datasets,
       url,
       evaluations: links,
       exitCode: result.kind === "exited" ? result.exitCode : null,
@@ -193,23 +185,38 @@ const followRemote = async (
   } else if (links.length > 0) {
     process.stderr.write(formatLinks(links));
   } else if (url) {
-    logger.info(`Results are in evaluations grouped by suite: ${url}`);
+    logger.info(`Results are in evaluations grouped by dataset: ${url}`);
   }
   assertRemotePassed(result);
 };
 
 /**
- * `lmnr-cli eval run [dir]`: run Harbor suites locally on Docker (default), or
- * with `--remote` in Laminar sandboxes, following the run's log until it ends.
+ * `lmnr-cli eval run [dataset]`: run Harbor datasets locally on Docker
+ * (default), or with `--remote` in Laminar sandboxes, following the run's log
+ * until it ends. Pinned tasks missing from `tasks/` (or unedited with a new
+ * pin) are pulled first.
  */
 export const handleEvalRun = async (
-  dir: string,
+  dataset: string | undefined,
   opts: EvalRunOpts,
 ): Promise<void> => {
   // Parse --env before anything slow so a missing variable fails fast.
   const explicitEnv = opts.env ? parseEnvFlags(opts.env) : {};
-  const evalsDir = path.resolve(dir);
-  const suites = await selectSuites(evalsDir, opts.suite);
+  const evalsDir = path.resolve(opts.dir ?? DEFAULT_EVALS_DIR);
+  const datasets = await selectDatasets(evalsDir, dataset);
+  if (await isFile(path.join(evalsDir, LMNR_DATASET_CONFIG))) {
+    logger.warn(
+      `${path.join(evalsDir, LMNR_DATASET_CONFIG)} is not read anymore: ` +
+        `images are declared per dataset, in <dataset>/${LMNR_DATASET_CONFIG}.`,
+    );
+  }
+  let client: LaminarClient | undefined;
+  const getClient = async () => {
+    client ??= await buildEvalClient(opts);
+    return client;
+  };
+  await pullRunTasks(evalsDir, datasets, opts.task, opts, getClient);
+
   const overrides: RunOverrides = {
     tasks: opts.task,
     nAttempts: opts.nAttempts,
@@ -217,17 +224,17 @@ export const handleEvalRun = async (
     model: opts.model,
     extraAgentEnv: Object.keys(explicitEnv),
   };
-  const env = await resolveRunEnv(evalsDir, suites, overrides, explicitEnv);
+  const env = await resolveRunEnv(evalsDir, datasets, overrides, explicitEnv);
 
   if (!opts.remote) {
     const runEnv = await harborEnv(env, opts);
-    await buildLocalImages(await localImageDefs(evalsDir, suites, overrides));
-    const failed = await runSuites(evalsDir, suites, overrides, runEnv);
-    await reportLocal(suites, failed, opts);
+    await buildLocalImages(await localImageDefs(evalsDir, datasets, overrides));
+    const failed = await runDatasets(evalsDir, datasets, overrides, runEnv);
+    await reportLocal(datasets, failed, opts);
     return;
   }
 
-  const client = await buildRemoteClient(opts);
-  const run = await startRemoteRun(client, evalsDir, suites, overrides, env);
-  await followRemote(client, run, suites, opts);
+  const remote = await getClient();
+  const run = await startRemoteRun(remote, evalsDir, datasets, overrides, env);
+  await followRemote(remote, run, datasets, opts);
 };

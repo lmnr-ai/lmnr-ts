@@ -12,6 +12,26 @@ export type LaminarAuth =
   | { type: "apiKey"; key: string }
   | { type: "userToken"; token: string; projectId: string };
 
+/**
+ * An API error that carries the server's machine-readable `code` (routes that
+ * answer `{"error": "<message>", "code": "<code>"}`), so callers branch on
+ * `code` instead of the message text. `body` is the parsed JSON body, if any:
+ * some errors carry details (e.g. a 409's list of tasks).
+ */
+export class LaminarApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  readonly body?: unknown;
+
+  constructor(status: number, message: string, code?: string, body?: unknown) {
+    super(`${status} ${message}`);
+    this.name = "LaminarApiError";
+    this.status = status;
+    this.code = code;
+    this.body = body;
+  }
+}
+
 class BaseResource {
   protected readonly baseHttpUrl: string;
   protected readonly auth: LaminarAuth;
@@ -62,6 +82,33 @@ class BaseResource {
       // Not JSON — use it as-is.
     }
     throw new Error(`${response.status} ${message}`);
+  }
+
+  /**
+   * For routes that answer errors as `{error, code}`: a {@link LaminarApiError}
+   * with the server's message and code (the raw body as the message when it
+   * isn't that shape, e.g. a proxy error page).
+   */
+  protected async apiError(response: Response): Promise<LaminarApiError> {
+    let text = "";
+    try {
+      text = await response.text();
+    } catch {
+      // No readable body: fall back to the status text.
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return new LaminarApiError(response.status, text || response.statusText);
+    }
+    const { error, code } = (body ?? {}) as { error?: unknown; code?: unknown };
+    return new LaminarApiError(
+      response.status,
+      typeof error === "string" && error ? error : text,
+      typeof code === "string" ? code : undefined,
+      body,
+    );
   }
 }
 

@@ -5,56 +5,71 @@ import { gzipSync } from "node:zlib";
 
 import { type FileSource, packTar } from "modern-tar/fs";
 
-import { SKIPPED_DIRS } from "./suites";
+import { SKIPPED_DIRS } from "./datasets";
 
 /**
- * Never uploaded, besides `SKIPPED_DIRS`: local env files matter most — uploads
- * are readable by eval code in the sandbox, so secrets travel as env vars,
- * never as files.
+ * Never uploaded or hashed, besides `SKIPPED_DIRS`: local env files matter
+ * most — uploads are readable by eval code in the sandbox, so secrets travel
+ * as env vars, never as files.
  */
 const isExcludedFile = (name: string) =>
-  name === ".env" || name.startsWith(".env.") || name === ".DS_Store";
+  name.startsWith(".env") || name === ".DS_Store";
 
 /** An archive entry plus the size the index records. */
 export interface PackedFile extends FileSource {
   size: number;
+  /** `0o755` when the file is executable, else `0o644`. */
+  mode: number;
 }
 
-interface WalkResult {
+export interface WalkResult {
   /** Archive entries, POSIX paths relative to the walked root, sorted. */
   files: PackedFile[];
   skippedSymlinks: string[];
 }
 
 /**
- * Windows has no execute bits, so every file stats as non-executable there.
- * Shell scripts get them back by extension, Harbor's own rule (`needs_chmod`).
+ * `0o755` for a file with any exec bit, else `0o644`. Windows has no execute
+ * bits, so there shell scripts get them back by extension, Harbor's own rule
+ * (`needs_chmod`).
  */
-const windowsMode = (name: string) => (name.endsWith(".sh") ? 0o755 : 0o644);
+export const fileMode = (
+  name: string,
+  statMode: number,
+  platform: NodeJS.Platform,
+): number =>
+  (platform === "win32" ? name.endsWith(".sh") : (statMode & 0o111) !== 0)
+    ? 0o755
+    : 0o644;
 
-/** Fixed ownership and mtime: the upload carries no local user names or times. */
+/** Fixed ownership, mtime and mode: the upload carries no local user names or times. */
 export const fileEntry = (
   source: string,
   target: string,
   size: number,
-  platform: NodeJS.Platform,
+  mode: number,
 ): PackedFile => ({
   type: "file",
   source,
   target,
   size,
+  mode,
   mtime: new Date(0),
   uid: 0,
   gid: 0,
   uname: "",
   gname: "",
-  ...(platform === "win32" ? { mode: windowsMode(target) } : {}),
 });
 
-/** Walk `root` for packing, minus the upload exclusions. */
-const walkFiles = async (
+/**
+ * Walk `root` for packing and hashing, minus the upload exclusions: symlinks,
+ * `SKIPPED_DIRS`, `.env*` and `.DS_Store`. `exclude` gets each POSIX path
+ * relative to `root` (directories too: an excluded one isn't walked).
+ */
+export const walkFiles = async (
   root: string,
-  platform: NodeJS.Platform,
+  platform: NodeJS.Platform = process.platform,
+  exclude?: (target: string) => boolean,
 ): Promise<WalkResult> => {
   const files: PackedFile[] = [];
   const skippedSymlinks: string[] = [];
@@ -64,6 +79,7 @@ const walkFiles = async (
     for (const entry of entries) {
       const source = path.join(dir, entry.name);
       const target = rel ? `${rel}/${entry.name}` : entry.name;
+      if (exclude?.(target)) continue;
       if (entry.isSymbolicLink()) {
         // Sandboxes extract with Python's `filter="data"`, which rejects links
         // that escape the archive; skipping keeps uploads predictable.
@@ -71,8 +87,10 @@ const walkFiles = async (
       } else if (entry.isDirectory()) {
         if (!SKIPPED_DIRS.has(entry.name)) await walk(source, target);
       } else if (entry.isFile() && !isExcludedFile(entry.name)) {
-        const { size } = await stat(source);
-        files.push(fileEntry(source, target, size, platform));
+        const { size, mode } = await stat(source);
+        files.push(
+          fileEntry(source, target, size, fileMode(entry.name, mode, platform)),
+        );
       }
     }
   };
@@ -157,17 +175,20 @@ interface EvalsArchive {
 }
 
 /**
- * Pack the evals folder's CONTENTS (suites at the archive root, no `evals/`
+ * Pack the evals folder's CONTENTS (datasets at the archive root, no `evals/`
  * prefix — that is where the orchestrator runs from) into a `.tar.gz`, with
- * the index the UI reads single files by.
+ * the index the UI reads single files by. `exclude` leaves paths out (see
+ * {@link walkFiles}).
  */
 export const packEvalsDir = async (
   dir: string,
   platform: NodeJS.Platform = process.platform,
+  exclude?: (target: string) => boolean,
 ): Promise<EvalsArchive> => {
   const { files, skippedSymlinks } = await walkFiles(
     path.resolve(dir),
     platform,
+    exclude,
   );
   const { archive, index } = await packFiles(files);
   return { archive, index, fileCount: files.length, skippedSymlinks };

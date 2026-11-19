@@ -1,6 +1,7 @@
 import { BrowserEventsResource } from "./resources/browser-events";
 import { CliResource } from "./resources/cli";
 import { DatasetsResource } from "./resources/datasets";
+import { EvalDatasetsResource } from "./resources/eval-datasets";
 import { EvalsResource } from "./resources/evals";
 import { EvaluatorsResource } from "./resources/evaluators";
 import { HostedEvalsResource } from "./resources/hosted-evals";
@@ -20,6 +21,7 @@ export class LaminarClient {
   private _browserEvents: BrowserEventsResource;
   private _cli: CliResource;
   private _datasets: DatasetsResource;
+  private _evalDatasets: EvalDatasetsResource;
   private _evals: EvalsResource;
   private _evaluators: EvaluatorsResource;
   private _hostedEvals: HostedEvalsResource;
@@ -81,6 +83,7 @@ export class LaminarClient {
     this._browserEvents = new BrowserEventsResource(this.baseUrl, this.auth);
     this._cli = new CliResource(this.baseUrl, this.auth);
     this._datasets = new DatasetsResource(this.baseUrl, this.auth);
+    this._evalDatasets = new EvalDatasetsResource(this.baseUrl, this.auth);
     this._evals = new EvalsResource(this.baseUrl, this.auth);
     this._evaluators = new EvaluatorsResource(this.baseUrl, this.auth);
     this._hostedEvals = new HostedEvalsResource(this.baseUrl, this.auth);
@@ -161,6 +164,11 @@ export class LaminarClient {
     return this._datasets;
   }
 
+  /** Eval datasets: Harbor tasks as content-addressed versions. */
+  public get evalDatasets() {
+    return this._evalDatasets;
+  }
+
   public get evals() {
     return this._evals;
   }
@@ -200,12 +208,19 @@ export class LaminarClient {
 
 export type { CliProject, ProjectKeyProbe } from "./resources/cli";
 export type {
+  EvalDataset,
+  EvalDatasetPushResult,
+  EvalDatasetPushTask,
+  EvalDatasetTask,
+  EvalTaskVersionRef,
+} from "./resources/eval-datasets";
+export type {
   HostedEvalRunLogLine,
   HostedEvalRunLogPage,
   HostedEvalSandboxStatus,
   StartHostedEvalRunOptions,
 } from "./resources/hosted-evals";
-export type { LaminarAuth } from "./resources/index";
+export { LaminarApiError, type LaminarAuth } from "./resources/index";
 export type {
   CreateLlmProfileOptions,
   LlmProfileSecretsInput,
