@@ -657,20 +657,40 @@ void describe("MCP observability mode", () => {
     const server = buildServer();
     setMcpOptions(undefined);
     const client = await connect(server, "off-sess");
+    const traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+    const spanId = "00f067aa0ba902b7";
     await observe(
       { name: "outer", userId: "u1", metadata: { tenant: "acme" } },
-      () => client.callTool({ name: "search_docs", arguments: { query: "q" } }),
+      async () => {
+        await client.callTool({
+          name: "search_docs",
+          arguments: { query: "q" },
+        });
+        // A client span as the parent keeps them too.
+        await client.callTool({
+          name: "search_docs",
+          arguments: { query: "r" },
+          _meta: { traceparent: `00-${traceId}-${spanId}-01` },
+        });
+      },
     );
-    const call = onlySpan();
-    assert.equal(
-      call.attributes["lmnr.association.properties.session_id"],
-      "off-sess",
-    );
-    assert.equal(call.attributes["lmnr.association.properties.user_id"], "u1");
-    assert.equal(
-      call.attributes["lmnr.association.properties.metadata.tenant"],
-      "acme",
-    );
+    const [plain, remote] = mcpSpans();
+    assert.equal(remote.spanContext().traceId, traceId);
+    assert.equal(getParentSpanId(remote as any), spanId);
+    for (const call of [plain, remote]) {
+      assert.equal(
+        call.attributes["lmnr.association.properties.session_id"],
+        "off-sess",
+      );
+      assert.equal(
+        call.attributes["lmnr.association.properties.user_id"],
+        "u1",
+      );
+      assert.equal(
+        call.attributes["lmnr.association.properties.metadata.tenant"],
+        "acme",
+      );
+    }
   });
 
   void it("traces a low-level Server", async () => {

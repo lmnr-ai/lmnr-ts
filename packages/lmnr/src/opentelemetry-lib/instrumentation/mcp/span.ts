@@ -169,10 +169,13 @@ const startSpan = (
   if (!options.observe) {
     // Mode off: a child of the client's span when it sent one (the server
     // handles each request in a task of its own, so `_meta` is the only
-    // carrier), else of the active context.
+    // carrier), else of the active span. Either way on the active context, so
+    // an enclosing `observe()`'s association properties stay (as OTel's
+    // `extract` and the Python SDK do).
+    const active = LaminarContextManager.getContext();
     const parent = remoteSpanContext
-      ? trace.setSpanContext(ROOT_CONTEXT, remoteSpanContext)
-      : LaminarContextManager.getContext();
+      ? trace.setSpanContext(active, remoteSpanContext)
+      : active;
     return openSpan(options, req, contextValue, parent);
   }
   // Mode on. Trace id: client turn id > session turn tracker > client
