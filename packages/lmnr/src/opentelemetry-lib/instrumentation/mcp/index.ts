@@ -14,6 +14,7 @@ export { resetMcpState } from "./shared";
 
 const logger = initializeLogger();
 
+const SDK_V1 = "@modelcontextprotocol/sdk";
 const SDK_V2 = "@modelcontextprotocol/server";
 
 const STATE = Symbol.for("lmnr.mcp.server");
@@ -73,7 +74,11 @@ const hookServer = (protocol: any): ServerState | undefined => {
   if (!(table instanceof Map)) {
     return undefined;
   }
-  const state: ServerState = { protocol };
+  // Both majors come through the same patch (1.x only manually), so the
+  // package is told from the server: 2.x builds a handler context, 1.x passes
+  // `extra`.
+  const sdk = typeof protocol.buildContext === "function" ? SDK_V2 : SDK_V1;
+  const state: ServerState = { protocol, sdk };
   Object.defineProperty(protocol, STATE, { value: state });
   const originalSet = table.set;
   const wrapEntry = (method: string, handler: Handler): Handler =>

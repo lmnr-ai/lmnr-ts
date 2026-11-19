@@ -26,7 +26,7 @@ import {
 } from "@opentelemetry/sdk-trace";
 import { z } from "zod";
 
-import { Laminar, type McpOptions } from "../src/index";
+import { Laminar, type McpOptions, observe } from "../src/index";
 import {
   _resetConfiguration,
   initializeTracing,
@@ -646,6 +646,31 @@ void describe("MCP observability mode", () => {
     assert.equal(call.attributes["lmnr.mcp.context"], undefined);
     assert.equal(failed.attributes["error.type"], "tool_error");
     assert.notEqual(failed.spanContext().traceId, traceId);
+    assert.equal(
+      call.attributes["lmnr.span.instrumentation_scope.name"],
+      "@modelcontextprotocol/sdk",
+    );
+    assert.ok(call.attributes["lmnr.span.instrumentation_scope.version"]);
+  });
+
+  void it("mode off: the session adds to an enclosing observe's association properties", async () => {
+    const server = buildServer();
+    setMcpOptions(undefined);
+    const client = await connect(server, "off-sess");
+    await observe(
+      { name: "outer", userId: "u1", metadata: { tenant: "acme" } },
+      () => client.callTool({ name: "search_docs", arguments: { query: "q" } }),
+    );
+    const call = onlySpan();
+    assert.equal(
+      call.attributes["lmnr.association.properties.session_id"],
+      "off-sess",
+    );
+    assert.equal(call.attributes["lmnr.association.properties.user_id"], "u1");
+    assert.equal(
+      call.attributes["lmnr.association.properties.metadata.tenant"],
+      "acme",
+    );
   });
 
   void it("traces a low-level Server", async () => {
@@ -844,6 +869,10 @@ void describe("MCP observability mode", () => {
     assert.deepEqual(received, [{}]);
     const span = onlySpan();
     assert.equal(span.name, "tools/call echo");
+    assert.equal(
+      span.attributes["lmnr.span.instrumentation_scope.name"],
+      "@modelcontextprotocol/server",
+    );
     assert.equal(span.attributes["lmnr.mcp.context"], "goal");
     assert.equal(span.attributes["lmnr.mcp.client.name"], "claude-code");
   });

@@ -8,6 +8,8 @@ export interface ServerState {
   protocol: any;
   /** The `McpServer` around it, for its tool registry. */
   mcpServer?: any;
+  /** The npm package of the server class, for the instrumentation scope. */
+  sdk: string;
   /** From this server's `initialize` result (1.x stores it nowhere else). */
   protocolVersion?: string;
 }

@@ -10,12 +10,16 @@ import {
 import { initializeLogger } from "../../../utils";
 import { getTracer } from "../../tracing";
 import { SESSION_ID, SPAN_INPUT, SPAN_TYPE } from "../../tracing/attributes";
-import { LaminarContextManager } from "../../tracing/context";
+import {
+  ASSOCIATION_PROPERTIES_KEY,
+  LaminarContextManager,
+} from "../../tracing/context";
 import {
   enableForcedTraceIds,
   isValidTraceId,
   withForcedTraceId,
 } from "../../tracing/id-generator";
+import { instrumentationScopeAttributes } from "../shared/base";
 import {
   GEN_AI_OPERATION_NAME,
   GEN_AI_PROMPT_NAME,
@@ -122,12 +126,14 @@ const openSpan = (
   parent: Context,
   links?: Link[],
 ): ActiveSpan => {
-  // The session goes on every span the handler opens too.
+  // The session goes on every span the handler opens too, over what an
+  // enclosing `observe()` / `withTracingLevel` set (mode off). Not
+  // `setRawAssociationProperties`: it replaces the whole value.
   const baseContext = req.sessionId
-    ? LaminarContextManager.setRawAssociationProperties(
-        { sessionId: req.sessionId },
-        parent,
-      )
+    ? parent.setValue(ASSOCIATION_PROPERTIES_KEY, {
+        ...((parent.getValue(ASSOCIATION_PROPERTIES_KEY) as object) ?? {}),
+        sessionId: req.sessionId,
+      })
     : parent;
   const name = req.target ? `${req.method} ${req.target}` : req.method;
   const span = contextApi.with(baseContext, () =>
@@ -239,6 +245,7 @@ export const traceRequest = (
     const split = splitContext(state, options, req, request);
     forwarded = split.forwarded;
     active = startSpan(options, req, split.context);
+    active.span.setAttributes(instrumentationScopeAttributes(state.sdk));
   } catch (e) {
     logger.debug(`Laminar MCP: failed to start the span: ${String(e)}`);
   }
