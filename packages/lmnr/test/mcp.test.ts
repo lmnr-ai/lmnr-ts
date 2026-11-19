@@ -514,8 +514,8 @@ void describe("wrapMcpServer", () => {
     assert.notEqual(traceIdForTurn(undefined, "t"), traceIdForTurn("s", "t"));
   });
 
-  void it("reuses a traceparent's trace id with a link, as a root span", async () => {
-    const client = await connect(buildServer(), "sess-3");
+  void it("without a session, reuses a traceparent's trace id with a link, as a root span", async () => {
+    const client = await connect(buildServer());
     const traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
     const spanId = "00f067aa0ba902b7";
     await client.callTool({
@@ -529,6 +529,35 @@ void describe("wrapMcpServer", () => {
     assert.equal(span.links.length, 1);
     assert.equal(span.links[0].context.traceId, traceId);
     assert.equal(span.links[0].context.spanId, spanId);
+  });
+
+  void it("with a session, the turn tracker wins over per-call traceparents", async () => {
+    const client = await connect(buildServer(), "sess-tp");
+    const parents = [
+      ["11111111111111111111111111111111", "1111111111111111"],
+      ["22222222222222222222222222222222", "2222222222222222"],
+    ];
+    for (const [traceId, spanId] of parents) {
+      await client.callTool({
+        name: "search_docs",
+        arguments: { query: "a" },
+        _meta: { traceparent: `00-${traceId}-${spanId}-01` },
+      });
+    }
+    const spans = mcpSpans();
+    assert.equal(spans.length, 2);
+    assert.equal(
+      spans[0].spanContext().traceId,
+      spans[1].spanContext().traceId,
+    );
+    spans.forEach((span, i) => {
+      const [traceId, spanId] = parents[i];
+      assert.notEqual(span.spanContext().traceId, traceId);
+      assert.equal(getParentSpanId(span as any), undefined);
+      assert.equal(span.links.length, 1);
+      assert.equal(span.links[0].context.traceId, traceId);
+      assert.equal(span.links[0].context.spanId, spanId);
+    });
   });
 
   void it("ignores an invalid traceparent", async () => {

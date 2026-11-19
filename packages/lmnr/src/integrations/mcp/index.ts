@@ -665,8 +665,11 @@ const prepare = (
     attributes[LMNR_MCP_CLIENT_VERSION] = clientInfo.version;
   }
 
-  // Trace id: client turn id > client traceparent > session turn tracker >
-  // random. The span always stays a root; a traceparent becomes a link.
+  // Trace id: client turn id > session turn tracker > client traceparent >
+  // random. The span always stays a root; a traceparent is always a link.
+  // The tracker beats the traceparent because clients with their own tracing
+  // send a fresh trace id per call (one trace per call) or one for a whole
+  // session (many turns in one trace); the gap tracker is never that wrong.
   const remoteParent = parseTraceparent(meta[TRACEPARENT_META_KEY]);
   const links: Link[] = remoteParent
     ? [
@@ -685,11 +688,11 @@ const prepare = (
   let trackTurn = false;
   if (turnId) {
     forcedTraceId = traceIdForTurn(sessionId, turnId);
-  } else if (remoteParent) {
-    forcedTraceId = remoteParent.traceId;
   } else if (sessionId) {
     forcedTraceId = turnTracker.begin(sessionId, options.turnGapMs);
     trackTurn = true;
+  } else if (remoteParent) {
+    forcedTraceId = remoteParent.traceId;
   }
 
   try {
