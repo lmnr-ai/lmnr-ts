@@ -26,7 +26,11 @@ import {
   handleDebugSessionSetName,
   handleDebugSessionSummary,
 } from "./commands/debug";
-import { handleEvalRun, parsePositiveInt } from "./commands/eval";
+import {
+  handleEvalRun,
+  parseGroupName,
+  parsePositiveInt,
+} from "./commands/eval";
 import {
   handleDatasetPull,
   handleDatasetPush,
@@ -648,6 +652,11 @@ Examples:
       "Extra agent env var (repeatable). A bare KEY is read from your environment",
       collectFlag,
     )
+    .option(
+      "--group <name>",
+      "Evaluation group for this run (one dataset only). Omitted → the dataset name",
+      parseGroupName,
+    )
     .action(withLocalOpts(handleEvalRun))
     .addHelpText(
       "after",
@@ -655,8 +664,10 @@ Examples:
 Runs \`harbor run\` (pinned Harbor + Laminar plugin, via uvx) for each dataset:
 a directory directly inside --dir holding a harbor.yaml (a Harbor JobConfig).
 Name one by its folder or its [dataset] name. Every trial is reported to
-Laminar as an evaluation datapoint; the evaluation's group is the dataset name
-(<folder>/tasks/dataset.toml), else the folder name.
+Laminar as an evaluation datapoint. Each run of a dataset is a new evaluation
+in its group: --group, else the dataset name (<folder>/tasks/dataset.toml),
+else the folder name. Runs in one group are charted together; --group needs a
+single dataset (name it, or have only one in --dir).
 
 Before running, tasks pinned in <folder>/tasks/dataset.toml that are missing
 from tasks/, or unedited there with a new pin, are pulled from Laminar (see
@@ -708,6 +719,7 @@ Examples:
   $ lmnr-cli eval run support --task "refund-*" --n-attempts 3
   $ lmnr-cli eval run --dir ./my-evals --remote --n-concurrent 20
   $ lmnr-cli eval run --remote --model anthropic/claude-sonnet-5-5
+  $ lmnr-cli eval run support --group "support (prompt v2)"
 `,
     );
 

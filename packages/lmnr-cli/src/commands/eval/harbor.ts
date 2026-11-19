@@ -53,7 +53,7 @@ interface PluginArgs {
   dataset?: { name: string; taskHashesFile: string };
 }
 
-/** `group` names the evaluation group: the dataset name, else the folder. */
+/** `group` names the evaluation group: `--group`, else the dataset name, else the folder. */
 export const harborArgs = (
   configPath: string,
   group: string,
@@ -87,7 +87,7 @@ export const harborArgs = (
 ];
 
 interface HarborRun {
-  /** The evaluation group: the dataset name, else the folder. */
+  /** The evaluation group: `--group`, else the dataset name, else the folder. */
   group: string;
   datasetDir: string;
   config: JobConfig;
@@ -209,7 +209,7 @@ export const runDatasets = async (
     );
     const manifest = await readDatasetToml(datasetDir);
     const code = await runHarborDataset({
-      group: manifest?.name ?? dataset,
+      group: overrides.group ?? manifest?.name ?? dataset,
       datasetDir,
       config,
       env,

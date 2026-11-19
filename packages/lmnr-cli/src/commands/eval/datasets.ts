@@ -79,6 +79,8 @@ export interface RunOverrides {
   model?: string;
   /** `--env` names: referenced as `${KEY}` from every agent's env. */
   extraAgentEnv?: string[];
+  /** `--group`: the evaluation group, instead of the dataset name. */
+  group?: string;
 }
 
 export type JobConfig = Record<string, unknown>;

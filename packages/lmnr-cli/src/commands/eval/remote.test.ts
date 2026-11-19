@@ -359,6 +359,19 @@ void describe("remote tasks", () => {
     expect(seen[1].args.some((a) => a.startsWith("dataset="))).toBe(false);
     expect(seen[1].hashes).toBeUndefined();
   });
+
+  void it("groups the run by --group instead of the dataset name", async () => {
+    await writeEvals();
+    const seen: string[][] = [];
+    vi.mocked(runCommand).mockImplementation(async (_command, args) => {
+      seen.push(args);
+      return 0;
+    });
+    await runDatasets(root, ["a"], { group: "acme/a (prompt v2)" }, {});
+    expect(seen[0]).toContain("group_name=acme/a (prompt v2)");
+    // Still linked to its dataset.
+    expect(seen[0]).toContain("dataset=acme/a");
+  });
 });
 
 void describe("handleEvalOrchestrate", () => {

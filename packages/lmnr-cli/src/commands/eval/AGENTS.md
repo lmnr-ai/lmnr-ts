@@ -7,8 +7,10 @@
   from inside the dataset dir so relative paths and custom agent imports
   resolve the same way everywhere. Harbor's stdout goes to OUR stderr; stdout
   is data only. Before running, `pullRunTasks` pulls pinned tasks (see "Eval
-  datasets" below). The plugin gets `--pk group_name=<dataset name, else
-  folder>` always, and `--pk dataset=<name> --pk
+  datasets" below). The plugin gets `--pk group_name=<--group, else dataset
+  name, else folder>` always (`--group` is one dataset's: with several
+  selected it is an `InvalidArgumentError`; it travels to remote runs in
+  `RunOverrides`), and `--pk dataset=<name> --pk
   task_hashes_file=<staging>/task-hashes.json` (`{<task dir>: {name, hash}}`
   of every named task under `tasks/`) only with a `tasks/dataset.toml`. Wire
   names keep "suite" (`hostedMetadata.suitePath`, `?suite=` on job uploads).

@@ -40,7 +40,15 @@ interface EvalRunOpts extends GlobalOpts {
   nConcurrent?: number;
   model?: string;
   env?: string[];
+  group?: string;
 }
+
+/** Commander parser for `--group`. */
+export const parseGroupName = (raw: string): string => {
+  const group = raw.trim();
+  if (!group) throw new InvalidArgumentError("Must not be empty.");
+  return group;
+};
 
 /** Commander parser for `--n-attempts` / `--n-concurrent`. */
 export const parsePositiveInt = (raw: string): number => {
@@ -124,7 +132,7 @@ const reportLocal = async (
   if (opts.json) {
     outputJson({ mode: "local", datasets, failed, url });
   } else if (url) {
-    logger.info(`Results are in evaluations grouped by dataset: ${url}`);
+    logger.info(`Results are in evaluations: ${url}`);
   }
   assertDatasetsPassed(failed);
 };
@@ -216,7 +224,7 @@ const followRemote = async (
   } else if (links.length > 0) {
     process.stderr.write(formatLinks(links));
   } else if (url) {
-    logger.info(`Results are in evaluations grouped by dataset: ${url}`);
+    logger.info(`Results are in evaluations: ${url}`);
   }
   assertRemotePassed(result);
 };
@@ -235,6 +243,14 @@ export const handleEvalRun = async (
   const explicitEnv = opts.env ? parseEnvFlags(opts.env) : {};
   const evalsDir = path.resolve(opts.dir ?? DEFAULT_EVALS_DIR);
   const datasets = await selectDatasets(evalsDir, dataset);
+  if (opts.group && datasets.length > 1) {
+    // One group per dataset: two datasets' runs in one group would be charted
+    // as one series.
+    throw new InvalidArgumentError(
+      `--group names one dataset's runs, but ${evalsDir} has ` +
+        `${datasets.length} (${datasets.join(", ")}). Name the dataset to run.`,
+    );
+  }
   await warnLegacyImageFiles(evalsDir, datasets);
   let client: LaminarClient | undefined;
   const getClient = async () => {
@@ -249,6 +265,7 @@ export const handleEvalRun = async (
     nConcurrent: opts.nConcurrent,
     model: opts.model,
     extraAgentEnv: Object.keys(explicitEnv),
+    group: opts.group,
   };
   const env = await resolveRunEnv(evalsDir, datasets, overrides, explicitEnv);
 

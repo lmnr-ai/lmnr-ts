@@ -304,7 +304,6 @@ const jobUploads = async (
             (skipped.length > 5 ? ", ..." : ""),
         );
       }
-      // The wire still calls it a suite (`?suite=`).
       await client.hostedEvals.uploadJob(uploadId, dataset, archive);
       await client.hostedEvals.uploadJobIndex(uploadId, dataset, {
         files: index,

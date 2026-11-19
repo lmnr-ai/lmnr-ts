@@ -33,7 +33,12 @@ import {
   loadImageDefs,
   localImageDefs,
 } from "./images";
-import { assertRemotePassed, parsePositiveInt } from "./index";
+import {
+  assertRemotePassed,
+  handleEvalRun,
+  parseGroupName,
+  parsePositiveInt,
+} from "./index";
 import { packEvalsDir } from "./pack";
 
 let root: string;
@@ -765,6 +770,21 @@ void describe("parsePositiveInt", () => {
     for (const bad of ["0", "-1", "1.5", "abc", ""]) {
       expect(() => parsePositiveInt(bad)).toThrow(/positive integer/);
     }
+  });
+});
+
+void describe("--group", () => {
+  void it("takes a non-empty name", () => {
+    expect(parseGroupName("  support v2 ")).toBe("support v2");
+    expect(() => parseGroupName("  ")).toThrow(InvalidArgumentError);
+  });
+
+  void it("needs a single dataset", async () => {
+    await write("a/harbor.yaml", "datasets:\n  - path: tasks\n");
+    await write("b/harbor.yaml", "datasets:\n  - path: tasks\n");
+    await expect(
+      handleEvalRun(undefined, { dir: root, group: "mine" }),
+    ).rejects.toThrow(/--group names one dataset's runs.*\(a, b\)/);
   });
 });
 
