@@ -57,8 +57,13 @@ export const parseTraceparent = (value: unknown): RemoteParent | undefined => {
   return { traceId, spanId, traceFlags: parseInt(flags, 16) & 0xff };
 };
 
-interface TurnEntry {
-  traceId: string;
+/**
+ * One turn of a session. `begin` / `start` hand it to the call, and the call
+ * passes the same object to `end`, so a call only ever releases the turn it
+ * joined: a later turn that replaced this one in the tracker is untouched.
+ */
+export interface Turn {
+  readonly traceId: string;
   inFlight: number;
   lastActivity: number;
 }
@@ -74,17 +79,17 @@ interface TurnEntry {
  * follow-up.
  */
 export class TurnTracker {
-  private readonly entries = new Map<string, TurnEntry>();
+  private readonly entries = new Map<string, Turn>();
   private lastSweep = 0;
 
   constructor(private readonly now: () => number = Date.now) {}
 
   /**
-   * The trace id to reuse for a call of `sessionId` starting now, or
-   * undefined when the call starts a new turn. Marks the call in flight; pair
-   * with {@link start} (new turn) and always with {@link end}.
+   * The session's current turn, which a call of `sessionId` starting now
+   * joins, or undefined when the call starts a new turn. Marks the call in
+   * flight; pass the turn to {@link end} when the call ends.
    */
-  begin(sessionId: string, gapMs: number): string | undefined {
+  begin(sessionId: string, gapMs: number): Turn | undefined {
     const now = this.now();
     this.sweep(now);
     const entry = this.entries.get(sessionId);
@@ -96,30 +101,30 @@ export class TurnTracker {
       entry.inFlight += 1;
       entry.lastActivity = now;
       this.touch(sessionId, entry);
-      return entry.traceId;
+      return entry;
     }
     return undefined;
   }
 
-  /** Record that a call of `sessionId` started a new turn as `traceId`. */
-  start(sessionId: string, traceId: string): void {
-    const entry = {
+  /**
+   * Record that a call of `sessionId` started a new turn as `traceId`, with
+   * the call in flight; pass the returned turn to {@link end}.
+   */
+  start(sessionId: string, traceId: string): Turn {
+    const turn: Turn = {
       traceId,
       inFlight: 1,
       lastActivity: this.now(),
     };
-    this.touch(sessionId, entry);
+    this.touch(sessionId, turn);
     this.evictOverflow();
+    return turn;
   }
 
-  /** Record that a call of `sessionId` ended. */
-  end(sessionId: string): void {
-    const entry = this.entries.get(sessionId);
-    if (!entry) {
-      return;
-    }
-    entry.inFlight = Math.max(0, entry.inFlight - 1);
-    entry.lastActivity = this.now();
+  /** Record that a call of `turn` ended. */
+  end(turn: Turn): void {
+    turn.inFlight = Math.max(0, turn.inFlight - 1);
+    turn.lastActivity = this.now();
   }
 
   get size(): number {
@@ -131,7 +136,7 @@ export class TurnTracker {
   }
 
   // Re-insert so Map iteration order is least-recently-used first.
-  private touch(sessionId: string, entry: TurnEntry) {
+  private touch(sessionId: string, entry: Turn) {
     this.entries.delete(sessionId);
     this.entries.set(sessionId, entry);
   }

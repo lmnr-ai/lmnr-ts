@@ -58,6 +58,7 @@ import {
   DEFAULT_TURN_GAP_MS,
   MAX_TURN_GAP_MS,
   parseTraceparent,
+  type Turn,
   TurnTracker,
   traceIdForTurn,
 } from "./turns";
@@ -448,7 +449,8 @@ interface Prepared {
   forwarded: any;
   method: string;
   sessionId?: string;
-  trackTurn: boolean;
+  /** The session turn this call is in flight in, released when it ends. */
+  turn?: Turn;
 }
 
 const markError = (
@@ -481,8 +483,8 @@ const endSpan = (prepared: Prepared) => {
   try {
     prepared.span.end();
   } finally {
-    if (prepared.trackTurn && prepared.sessionId) {
-      turnTracker.end(prepared.sessionId);
+    if (prepared.turn) {
+      turnTracker.end(prepared.turn);
     }
   }
 };
@@ -687,17 +689,14 @@ const prepare = (
     : [];
   const turnId = nonEmptyString(aiInvocation?.turnId);
   let forcedTraceId: string | undefined;
-  let trackTurn = false;
+  let turn: Turn | undefined;
   let newTurn = false;
   if (turnId) {
     forcedTraceId = traceIdForTurn(sessionId, turnId);
   } else if (sessionId) {
-    forcedTraceId = turnTracker.begin(sessionId, options.turnGapMs);
-    trackTurn = true;
-    if (forcedTraceId === undefined) {
-      newTurn = true;
-      forcedTraceId = remoteParent?.traceId;
-    }
+    turn = turnTracker.begin(sessionId, options.turnGapMs);
+    newTurn = turn === undefined;
+    forcedTraceId = turn?.traceId ?? remoteParent?.traceId;
   } else if (remoteParent) {
     forcedTraceId = remoteParent.traceId;
   }
@@ -735,8 +734,8 @@ const prepare = (
     // forcing worked (a no-op span, e.g. Laminar not initialized, has an
     // invalid one and starts no turn).
     const startedTraceId = span.spanContext().traceId;
-    if (trackTurn && sessionId && newTurn && isValidTraceId(startedTraceId)) {
-      turnTracker.start(sessionId, startedTraceId);
+    if (sessionId && newTurn && isValidTraceId(startedTraceId)) {
+      turn = turnTracker.start(sessionId, startedTraceId);
     }
     return {
       span,
@@ -745,12 +744,12 @@ const prepare = (
       forwarded,
       method,
       sessionId,
-      trackTurn,
+      turn,
     };
   } catch (error) {
-    // A reused turn was already marked in flight by `begin`.
-    if (trackTurn && sessionId && !newTurn) {
-      turnTracker.end(sessionId);
+    // `begin` or `start` already marked the call in flight.
+    if (turn) {
+      turnTracker.end(turn);
     }
     throw error;
   }
