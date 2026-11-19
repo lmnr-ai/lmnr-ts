@@ -331,14 +331,14 @@ void describe("wrapMcpServer", () => {
     );
   });
 
-  void it("records the class of an exception thrown by a tool", async () => {
+  void it("records an exception a tool throws as the isError result it becomes", async () => {
     const client = await connect(buildServer());
     const result = await client.callTool({ name: "throws", arguments: {} });
-    // The SDK still answers with its own isError result.
+    // McpServer answers with its own isError result.
     assert.equal(result.isError, true);
     assert.equal(textOf(result), "boom");
     const span = onlySpan();
-    assert.equal(span.attributes["error.type"], "TypeError");
+    assert.equal(span.attributes["error.type"], "tool_error");
     const event = span.events.find((e) => e.name === "exception");
     assert.equal(event?.attributes?.["exception.message"], "boom");
   });
@@ -791,7 +791,7 @@ void describe("wrapMcpServer", () => {
     // 2.x answers an unknown tool with a JSON-RPC error.
     assert.equal(unknown.attributes["error.type"], "-32602");
     assert.equal(unknown.attributes["rpc.response.status_code"], "-32602");
-    assert.equal(thrown.attributes["error.type"], "SyntaxError");
+    assert.equal(thrown.attributes["error.type"], "tool_error");
     assert.equal(ok.spanContext().traceId, thrown.spanContext().traceId);
   });
 

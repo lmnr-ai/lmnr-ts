@@ -9,8 +9,8 @@
 ## Forced root trace ids (`id-generator.ts`) — LAM-2563
 
 - **Laminar's provider is built with `LaminarIdGenerator`**: random ids, except a root span created inside `withForcedTraceId(traceId, fn)` gets `traceId`. OTel calls the generator's `generateTraceId` only for spans without a valid parent, so children are unaffected. Used by `wrapMcpServer` to put every request of one user turn into one trace while each request stays a ROOT span. Never fake a remote parent for this: the dangling parent span id hides the span in the trace view.
-- The forced id is read from the active context (`FORCED_TRACE_ID_KEY`) with a synchronous module slot as fallback, because `context.with` is a no-op when no global context manager is registered. Span creation is synchronous, so the slot is equivalent.
-- **App-owned provider** (Laminar only as a `LaminarSpanProcessor`): `enableForcedTraceIds(tracer)` unwraps `LaminarTracer._tracer` and the api `ProxyTracer._getTracer()`, then wraps the SDK `Tracer`'s `_idGenerator.generateTraceId` in place (the field exists in OTel JS v1, v2 and v3) so it returns the forced id only inside `withForcedTraceId`. Returns false (random ids) for unknown tracer implementations.
+- The forced id lives in a module slot set only while `withForcedTraceId` runs. Span creation is synchronous, so no context key is needed (one would also be lost on hosts without a working global context manager).
+- **App-owned provider** (Laminar only as a `LaminarSpanProcessor`): `enableForcedTraceIds(tracer)` unwraps `LaminarTracer._tracer` and the api `ProxyTracer._getTracer()`, then wraps the SDK `Tracer`'s `_idGenerator.generateTraceId` in place (the field exists in OTel JS v1, v2 and v3) so it returns the forced id only inside `withForcedTraceId`. Returns false (random ids) for unknown tracer implementations. Kept on purpose: `LaminarSpanProcessor` in the app's provider is the standard Next.js / `@vercel/otel` setup, where MCP servers are often hosted, and without it every call of a turn becomes its own trace.
 
 ## Span batching / export — byte-size flush trigger
 

@@ -1,15 +1,8 @@
-import { context, createContextKey } from "@opentelemetry/api";
 import { type IdGenerator, RandomIdGenerator } from "@opentelemetry/sdk-trace";
 
 import { initializeLogger } from "../../utils";
 
 const logger = initializeLogger();
-
-/**
- * Context key holding a trace id that the next ROOT span must use. Set only
- * by {@link withForcedTraceId}, just around a span's creation.
- */
-export const FORCED_TRACE_ID_KEY = createContextKey("lmnr.forced_trace_id");
 
 const TRACE_ID_RE = /^[0-9a-f]{32}$/;
 const INVALID_TRACE_ID = "0".repeat(32);
@@ -19,25 +12,10 @@ export const isValidTraceId = (value: unknown): value is string =>
   TRACE_ID_RE.test(value) &&
   value !== INVALID_TRACE_ID;
 
-// Fallback for hosts without a working global context manager, where
-// `context.with` is a no-op. Span creation is synchronous, so a slot that is
-// set only for the duration of `withForcedTraceId` is equivalent.
-let forcedTraceIdSlot: string | undefined;
-
-/**
- * The trace id the current root span must use, if one was forced.
- */
-export const getForcedTraceId = (): string | undefined => {
-  try {
-    const fromContext = context.active().getValue(FORCED_TRACE_ID_KEY);
-    if (isValidTraceId(fromContext)) {
-      return fromContext;
-    }
-  } catch {
-    // Fall through to the slot.
-  }
-  return forcedTraceIdSlot;
-};
+// Set only while `withForcedTraceId` runs. Span creation is synchronous, so a
+// module slot needs no context manager (a context key would be lost on hosts
+// without a working global one).
+let forcedTraceId: string | undefined;
 
 /**
  * Run `fn` (which should create exactly one root span) with `traceId` forced
@@ -52,15 +30,12 @@ export const withForcedTraceId = <T>(
   if (!isValidTraceId(traceId)) {
     return fn();
   }
-  const previous = forcedTraceIdSlot;
-  forcedTraceIdSlot = traceId;
+  const previous = forcedTraceId;
+  forcedTraceId = traceId;
   try {
-    return context.with(
-      context.active().setValue(FORCED_TRACE_ID_KEY, traceId),
-      fn,
-    );
+    return fn();
   } finally {
-    forcedTraceIdSlot = previous;
+    forcedTraceId = previous;
   }
 };
 
@@ -78,7 +53,7 @@ export class LaminarIdGenerator implements IdGenerator {
   private readonly random = new RandomIdGenerator();
 
   generateTraceId(): string {
-    return getForcedTraceId() ?? this.random.generateTraceId();
+    return forcedTraceId ?? this.random.generateTraceId();
   }
 
   generateSpanId(): string {
@@ -116,7 +91,7 @@ export const enableForcedTraceIds = (tracer: unknown): boolean => {
           return true;
         }
         const original = generator.generateTraceId.bind(generator);
-        generator.generateTraceId = () => getForcedTraceId() ?? original();
+        generator.generateTraceId = () => forcedTraceId ?? original();
         patchedGenerators.add(generator);
         return true;
       }
