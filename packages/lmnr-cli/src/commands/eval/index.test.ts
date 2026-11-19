@@ -431,10 +431,8 @@ void describe("images", () => {
         "# Added by lmnr-cli",
         ".git",
         "**/.git",
-        ".env",
-        ".env.*",
-        "**/.env",
-        "**/.env.*",
+        ".env*",
+        "**/.env*",
         "",
       ]);
     } finally {
@@ -480,10 +478,8 @@ void describe("images", () => {
           "# Added by lmnr-cli",
           ".git",
           "**/.git",
-          ".env",
-          ".env.*",
-          "**/.env",
-          "**/.env.*",
+          ".env*",
+          "**/.env*",
           "",
         ].join("\n"),
       );

@@ -220,7 +220,7 @@ export const ensureTasksDir = async (dir: string): Promise<void> => {
   } else if (!s.isDirectory()) {
     throw invalidEvalsDir(
       `${dir} is ${s.isSymbolicLink() ? "a symlink" : "not a directory"}; ` +
-        "eval pull only writes into a real tasks/ directory.",
+        "eval dataset pull only writes into a real tasks/ directory.",
     );
   }
 };

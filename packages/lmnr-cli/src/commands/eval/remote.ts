@@ -1,5 +1,5 @@
 import { writeFileSync } from "node:fs";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -11,7 +11,12 @@ import { archiveTooLarge, missingEnv } from "../../errors";
 import { onStderr } from "../../utils/command-capture";
 import { initializeLogger } from "../../utils/logger";
 import { fetchTasks } from "./dataset-sync";
-import { type DatasetRun, type RunOverrides, TASKS_DIR } from "./datasets";
+import {
+  type DatasetRun,
+  listDatasetFolders,
+  type RunOverrides,
+  TASKS_DIR,
+} from "./datasets";
 import { imagePusher } from "./docker";
 import { API_KEY_VAR, harborEnv } from "./env";
 import { assertDatasetsPassed, type JobOutput, runDatasets } from "./harbor";
@@ -105,6 +110,35 @@ export const withStoredTasks = async (
 };
 
 /**
+ * What the upload leaves out (`packEvalsDir`'s `exclude`): only the run's
+ * tasks that Laminar doesn't have are packed, so every other entry of a run
+ * dataset's `tasks/`, and the `tasks/` of datasets not in the run, stay here.
+ */
+export const uploadExclusions = async (
+  evalsDir: string,
+  datasets: DatasetRun[],
+): Promise<Set<string>> => {
+  const exclude = new Set<string>();
+  const runPaths = new Set(datasets.map((run) => run.path));
+  for (const folder of await listDatasetFolders(evalsDir)) {
+    if (!runPaths.has(folder)) exclude.add(`${folder}/${TASKS_DIR}`);
+  }
+  for (const run of datasets) {
+    const entries = await readdir(path.join(evalsDir, run.path, TASKS_DIR), {
+      withFileTypes: true,
+    }).catch(() => []);
+    for (const entry of entries) {
+      const name = entry.name;
+      const upload = name in run.taskHashes && !(name in (run.tasks ?? {}));
+      if (entry.isDirectory() && !upload) {
+        exclude.add(`${run.path}/${TASKS_DIR}/${name}`);
+      }
+    }
+  }
+  return exclude;
+};
+
+/**
  * Pack and upload the evals folder, push its images, and start the run in an
  * orchestrator sandbox. Returns once that sandbox has started.
  */
@@ -127,19 +161,16 @@ export const startRemoteRun = async (
   }
 
   const datasets = await withStoredTasks(client, runs);
-  const exclude = new Set(
-    datasets.flatMap((run) =>
-      Object.keys(run.tasks ?? {}).map(
-        (task) => `${run.path}/${TASKS_DIR}/${task}`,
-      ),
-    ),
+  const stored = datasets.reduce(
+    (n, run) => n + Object.keys(run.tasks ?? {}).length,
+    0,
   );
-  if (exclude.size > 0) {
+  if (stored > 0) {
     logger.info(
-      `${exclude.size} task(s) are in Laminar already; the run gets them ` +
-        "from there",
+      `${stored} task(s) are in Laminar already; the run gets them from there`,
     );
   }
+  const exclude = await uploadExclusions(evalsDir, datasets);
   // Pack first: a too-large folder fails before minutes of image pushes.
   const { archive, index, fileCount, skippedSymlinks } = await packEvalsDir(
     evalsDir,

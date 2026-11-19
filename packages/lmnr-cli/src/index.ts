@@ -792,14 +792,17 @@ a pull or push here (removed) are dropped from tasks.toml; Laminar keeps their
 versions. --task limits all of that to matching task names. A new dataset is
 named after its folder. Commit tasks.toml afterwards.
 
-Refuses when tasks.toml pins another version of a task that is unedited here
-(tasks.toml changed since the pull, e.g. through git): pushing it would undo
-that version. Run \`lmnr-cli eval dataset pull\` first.
+Refuses, edited or not, when a pushed task's pin moved since it was pulled
+here: tasks.toml pins another version (it changed, e.g. through git), or a
+newer version was pushed to Laminar. Pushing would undo that version, and
+there is no override: pull (\`--latest\` for a version only Laminar has, with
+\`--force\` to drop your edits after copying them aside), re-apply any edits,
+then push again. --dry-run runs the same checks.
 
 Exit codes:
   16  invalid_evals_dir (no tasks/, a bad task or dataset name, a broken
       tasks.toml) / archive_too_large (a task over 512 MiB packed)
-  23  tasks_behind_lock (unedited tasks are older than tasks.toml pins)
+  23  tasks_behind_lock (a pushed task's pin moved since it was pulled here)
 
 Examples:
   $ lmnr-cli eval dataset push

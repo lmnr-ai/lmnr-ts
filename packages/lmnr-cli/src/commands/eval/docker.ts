@@ -20,14 +20,7 @@ const logger = initializeLogger();
  * Never sent to a build, whatever `.dockerignore` says: images leave the
  * machine for remote runs, and repo history or env files must not go with them.
  */
-const ALWAYS_IGNORED = [
-  ".git",
-  "**/.git",
-  ".env",
-  ".env.*",
-  "**/.env",
-  "**/.env.*",
-];
+const ALWAYS_IGNORED = [".git", "**/.git", ".env*", "**/.env*"];
 
 /** The ignore file `docker build` would use for `def`, if any. */
 const ownIgnoreRules = async (def: ImageDef): Promise<string> => {

@@ -218,9 +218,11 @@ images (`lmnr.yaml`), secrets and flags. Exit codes:
 - `21` a `--remote` run failed before its datasets ran, or its sandbox was lost
 - `22` `eval dataset pull` would overwrite local edits in `tasks/` (push them,
   or `--force`)
-- `23` `eval dataset push` of tasks older than `tasks.toml` pins: unedited
-  ones (`eval dataset pull` first), or edits that started from an older
-  version than the pin (pull that task with `--force`, re-apply the edit)
+- `23` `eval dataset push` of a task whose pin moved since it was pulled here,
+  edited or not: `tasks.toml` pins another version, or a newer version was
+  pushed to Laminar. Pull (`--latest` for a version only Laminar has,
+  `--force` to drop edits after copying them aside), re-apply any edits, push
+  again
 - `24` the eval dataset or a task version isn't in Laminar
 
 With `--json`, errors are `{"error": "<message>", "code": "<code>"}` on stdout.

@@ -32,8 +32,10 @@
     (hidden command), so `RunSpec` only has to stay readable by the SAME version.
     `RunSpec.datasets` is `[{path, taskHashes, tasks?}]`. `withStoredTasks`
     asks `POST .../tasks/missing` for the run's tasks; the ones Laminar has go
-    into `tasks` and are left out of the upload (`packEvalsDir`'s `exclude`,
-    `<dataset>/tasks/<task>`); unpushed / edited tasks are packed as before. A
+    into `tasks` and are left out of the upload (`uploadExclusions` →
+    `packEvalsDir`'s `exclude`): only the run's tasks Laminar doesn't have
+    are packed, so `--task`-filtered tasks and the `tasks/` of datasets not
+    in the run stay local too. A
     failing check only warns and packs everything. `eval orchestrate` downloads
     `tasks` (`fetchTasks`: run key, `/v1`, same cache / verify / install as
     pull) into `<dataset>/tasks/` before Harbor runs; it never syncs otherwise.
@@ -203,7 +205,7 @@
   - **Task hash** (`tasks.ts`, server stores it opaque): sha256 hex of
     `<mode> <content sha256> <path>\n` per file, paths sorted by UTF-8
     bytes (NOT JS string order: they differ above U+FFFF). Files are what
-    packing takes (`walkTaskFiles`: `SKIPPED_DIRS`, `isExcludedFile` = `.env*`,
+    packing takes (`walkTaskFiles`: `SKIPPED_DIRS`, `isExcludedFile` = `.env*` (any name starting `.env`),
     `.DS_Store`, `.lmnr-state.json`; symlinks skipped); mode is 755 if any
     exec bit (Windows: `.sh`), else 644 (`normalizedMode`). Task archives are
     packed with those normalized modes, so the archive behind a hash doesn't
@@ -230,9 +232,17 @@
     unedited ∧ toml ≠ state (incl. pin dropped) ⇒ `tasks_behind_lock` (the
     toml moved via git; pushing would undo it). Edited ∧ synced ∧ toml ≠
     state ∧ toml ≠ disk (`diverged`: the edit started from an older version)
-    ⇒ `tasks_behind_lock` too; there is no push override, the message says
-    to pull `--force` that task and re-apply the edit. `--task` scopes every
-    list.
+    ⇒ `tasks_behind_lock` too. Then Laminar's side (`movedInLaminar`, `GET
+    .../tasks`): a pushed task whose latest there is neither its base
+    (`baseOf`: sync state, else the toml pin) nor the pushed hash ⇒
+    `tasks_behind_lock` (a teammate pushed since; a dataset Laminar doesn't
+    have has nothing to check). The push itself sends `base` and the server
+    repeats that check under a row lock (409 `moved` ⇒ the same error), so
+    a push landing between our read and our push is refused too. There is
+    no push override; the message says to pull `--latest --force` that task
+    and re-apply the edit. `--task` scopes every list. A no-arg push skips
+    (warns) folders whose name is invalid, and a task dir replaced by a link
+    keeps its pin (not "removed").
   - Every dataset is planned and checked before any is touched; `--dry-run`
     runs the same checks (so it exits 22/23 too), then prints the plan
     (stdout; `--json` `{datasets: [...]}`) and writes / downloads nothing
@@ -272,9 +282,12 @@
   orchestrator exited with anything but 0 or 18, or its sandbox was lost; 18
   from it stays `harbor_failed`), 22 `local_changes` (`eval dataset pull`
   would overwrite / delete edited tasks), 23 `tasks_behind_lock` (`eval
-  dataset push` of unedited tasks older than `tasks.toml` pins), 24
-  `dataset_not_found` (a 404 from the dataset routes, except the "needs S3
-  storage" 404, which stays a plain error). Bad `--env` flags are commander
+  dataset push` of a task whose pin moved since it was pulled here: in
+  `tasks.toml`, or in Laminar), 24
+  `dataset_not_found` (a 404 from the dataset routes, except the "need S3
+  storage" 404, which stays a plain error; `isStorageMissing` matches that
+  phrase, which no not-found message can contain since names have no
+  spaces). Bad `--env` flags are commander
   `InvalidArgumentError`s. `--json` errors carry the code:
   `{"error": <message>, "code": <code>}` (`outputJsonError`).
 - **Secrets are Harbor `${VAR}` placeholders**, not flags: `findTemplateVars`

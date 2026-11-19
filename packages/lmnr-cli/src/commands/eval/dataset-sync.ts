@@ -140,7 +140,7 @@ const status = (error: unknown) => (error as { status?: unknown })?.status;
 
 /** A 404 that says the deployment has no storage for eval datasets, not that the dataset is missing. */
 const isStorageMissing = (error: unknown) =>
-  status(error) === 404 && /storage/i.test(errorMessage(error));
+  status(error) === 404 && /need S3 storage/.test(errorMessage(error));
 
 /** 404s from the dataset routes as `dataset_not_found`; the rest as they are. */
 const notFound = (error: unknown, what: string): unknown =>
@@ -521,18 +521,50 @@ const uploadMissing = async (
   return missing;
 };
 
-/** Make the versions their tasks' latest; a 409's missing ones are uploaded and retried once. */
+/** The version a pushed task's change started from: as pulled / pushed here, else as pinned. */
+const baseOf = (ds: LocalDataset, toml: TaskHashes, name: string) =>
+  ds.state.tasks[name] ?? toml[name] ?? null;
+
+const movedError = (moved: { name: string; tasks: string[] }[]) =>
+  tasksBehindLock(
+    "Newer versions of these tasks were pushed to Laminar since they were " +
+      "pulled here, so pushing them would replace those versions:\n" +
+      moved.map(({ name, tasks }) => `  ${name}: ${list(tasks)}\n`).join("") +
+      "Copy any edits aside, run `lmnr-cli eval dataset pull <dataset> " +
+      "--latest --force --task <task>`, re-apply them on top, then push.",
+  );
+
+/**
+ * Make the versions their tasks' latest; a 409's missing ones are uploaded
+ * and retried once. The server refuses (409 `moved`) when another version
+ * became a task's latest since its base, also between our check and here.
+ */
 const pushVersions = async (
   client: LaminarClient,
   ds: LocalDataset,
+  toml: TaskHashes,
   tasks: TaskHashes,
 ): Promise<string[]> => {
   const uploaded = await uploadMissing(client, ds, tasks);
   for (const batch of chunks(Object.keys(tasks), TASKS_PER_REQUEST)) {
     const names = new Set(batch);
     const body = pickTasks(tasks, (n) => names.has(n));
+    const base = Object.fromEntries(
+      batch.map((name) => [name, baseOf(ds, toml, name)]),
+    );
+    const push = async () => {
+      try {
+        await client.evalDatasets.pushTasks(ds.name, body, base);
+      } catch (error) {
+        const moved = (error as { moved?: string[] }).moved;
+        if (status(error) === 409 && moved?.length) {
+          throw movedError([{ name: ds.name, tasks: moved }]);
+        }
+        throw error;
+      }
+    };
     try {
-      await client.evalDatasets.pushTasks(ds.name, body);
+      await push();
     } catch (error) {
       // A version went missing between the check and the push (e.g. a
       // half-finished upload elsewhere): upload what the server lists, once.
@@ -545,10 +577,54 @@ const pushVersions = async (
           pickTasks(body, (n) => missing.includes(n)),
         )),
       );
-      await client.evalDatasets.pushTasks(ds.name, body);
+      await push();
     }
   }
   return [...new Set(uploaded)].sort(byteOrder);
+};
+
+const pushedTasks = (ds: LocalDataset, plan: PushPlan): TaskHashes => {
+  const names = new Set([...plan.added, ...plan.changed]);
+  return pickTasks(ds.hashes, (n) => names.has(n));
+};
+
+/**
+ * Pushed tasks whose latest version in Laminar is neither what they were
+ * pulled here as (else what `tasks.toml` pins) nor what is being pushed: a
+ * teammate pushed since, and pushing would make their version not latest. A
+ * task Laminar has that was never pulled here counts too.
+ */
+const movedInLaminar = async (
+  getClient: GetClient,
+  work: { ds: LocalDataset; toml: TaskHashes; plan: PushPlan }[],
+): Promise<{ name: string; tasks: string[] }[]> => {
+  const moved: { name: string; tasks: string[] }[] = [];
+  for (const { ds, toml, plan } of work) {
+    const pushed = pushedTasks(ds, plan);
+    if (Object.keys(pushed).length === 0) continue;
+    let latest: TaskHashes;
+    try {
+      latest = await fetchLatest(await getClient(), ds.name);
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== "dataset_not_found") {
+        throw error;
+      }
+      continue;
+    }
+    const tasks = Object.entries(pushed)
+      .filter(([name, hash]) => {
+        const current = latest[name];
+        return (
+          current !== undefined &&
+          current !== hash &&
+          current !== baseOf(ds, toml, name)
+        );
+      })
+      .map(([name]) => name)
+      .sort(byteOrder);
+    if (tasks.length > 0) moved.push({ name: ds.name, tasks });
+  }
+  return moved;
 };
 
 /**
@@ -577,9 +653,17 @@ export const pushDatasets = async (
         `${path.join(ds.dir, TASKS_DIR)} doesn't exist: nothing to push.`,
       );
     }
-    assertDatasetName(name);
+    if (!named && !isValidDatasetName(name)) {
+      logger.warn(`${name}: not a valid dataset name; skipped.`);
+      continue;
+    }
     const toml = ds.toml ?? {};
-    const plan = planPush(ds.hashes, ds.state, toml, scope);
+    const planned = planPush(ds.hashes, ds.state, toml, scope);
+    // A task dir replaced by a link is skipped, not deleted: its pin stays.
+    const plan = {
+      ...planned,
+      removed: planned.removed.filter((n) => !ds.local.symlinks.includes(n)),
+    };
     assertTaskNames(name, [...plan.added, ...plan.changed]);
     for (const link of ds.local.symlinks) {
       logger.warn(`${name}: skipping linked task dir ${link}`);
@@ -617,10 +701,12 @@ export const pushDatasets = async (
     );
   }
 
+  const moved = await movedInLaminar(getClient, work);
+  if (moved.length > 0) throw movedError(moved);
+
   const results: PushResult[] = [];
   for (const { ds, toml, plan } of work) {
-    const pushedNames = new Set([...plan.added, ...plan.changed]);
-    const pushed = pickTasks(ds.hashes, (n) => pushedNames.has(n));
+    const pushed = pushedTasks(ds, plan);
     const result: PushResult = {
       dataset: ds.name,
       added: plan.added,
@@ -634,7 +720,7 @@ export const pushDatasets = async (
     if (options.dryRun) continue;
 
     if (Object.keys(pushed).length > 0) {
-      result.uploaded = await pushVersions(await getClient(), ds, pushed);
+      result.uploaded = await pushVersions(await getClient(), ds, toml, pushed);
     }
     const nextToml = { ...toml, ...pushed };
     for (const name of plan.removed) delete nextToml[name];

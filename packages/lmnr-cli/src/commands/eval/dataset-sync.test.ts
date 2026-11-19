@@ -5,7 +5,9 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -87,22 +89,38 @@ const fakeLaminar = () => {
         versions.set(key(dataset, task), byHash);
       },
     ),
-    pushTasks: vi.fn(async (dataset: string, tasks: Record<string, string>) => {
-      const missing = Object.keys(tasks).filter(
-        (t) => !has(dataset, t, tasks[t]),
-      );
-      if (missing.length > 0) {
-        throw apiError(409, "Task versions not uploaded", missing);
-      }
-      for (const [task, hash] of Object.entries(tasks)) {
-        versions.get(key(dataset, task))!.set(hash, clock++);
-      }
-      return Object.entries(tasks).map(([name, hash]) => ({
-        name,
-        hash,
-        createdAt: "2026-11-18",
-      }));
-    }),
+    pushTasks: vi.fn(
+      async (
+        dataset: string,
+        tasks: Record<string, string>,
+        base?: Record<string, string | null>,
+      ) => {
+        // The server's base check: the newest version other than the pushed one.
+        const moved = Object.keys(tasks).filter((t) => {
+          const other = [...(versions.get(key(dataset, t)) ?? new Map())]
+            .filter(([hash]) => hash !== tasks[t])
+            .sort((a, b) => b[1] - a[1])[0]?.[0];
+          return base && other !== undefined && other !== (base[t] ?? null);
+        });
+        if (moved.length > 0) {
+          throw Object.assign(apiError(409, "Pull them first"), { moved });
+        }
+        const missing = Object.keys(tasks).filter(
+          (t) => !has(dataset, t, tasks[t]),
+        );
+        if (missing.length > 0) {
+          throw apiError(409, "Task versions not uploaded", missing);
+        }
+        for (const [task, hash] of Object.entries(tasks)) {
+          versions.get(key(dataset, task))!.set(hash, clock++);
+        }
+        return Object.entries(tasks).map(([name, hash]) => ({
+          name,
+          hash,
+          createdAt: "2026-11-18",
+        }));
+      },
+    ),
     downloadTask: vi.fn(async (dataset: string, task: string, hash: string) => {
       const blob = blobs.get(`${key(dataset, task)}/${hash}`);
       if (!blob || !has(dataset, task, hash)) {
@@ -232,7 +250,9 @@ void describe("eval dataset push", () => {
     expect(formatPushPlan(plan)).toBe(
       "support: 1 added, 0 changed, 0 removed, 0 unchanged\n  + refund\n",
     );
-    expect(server.getClient).not.toHaveBeenCalled();
+    // Only read: what Laminar has of the dataset (nothing yet).
+    expect(server.evalDatasets.uploadTask).not.toHaveBeenCalled();
+    expect(server.evalDatasets.pushTasks).not.toHaveBeenCalled();
     expect(await toml("support")).toBeNull();
     expect(existsSync(path.join(evals, ".gitignore"))).toBe(false);
 
@@ -308,6 +328,96 @@ void describe("eval dataset push", () => {
     expect(result).toMatchObject({ added: ["new"], changed: [] });
   });
 
+  void it("refuses to push over a version pushed to Laminar since the pull", async () => {
+    await writeSupport();
+    const server = fakeLaminar();
+    await pushDatasets(evals, undefined, {}, server.getClient);
+    // A teammate pushes a new refund from their clone; nothing reaches git yet.
+    const theirs = await cloneEvals();
+    await pullDatasets(theirs, undefined, {}, server.getClient);
+    await writeFile(
+      path.join(theirs, "support/tasks/refund/instruction.md"),
+      "Theirs.",
+    );
+    await pushDatasets(theirs, undefined, {}, server.getClient);
+    const latest = server.latest("support").refund;
+
+    // Ours edits refund too, and adds a task named like one only they have.
+    await write("support/tasks/refund/instruction.md", "Ours.");
+    for (const dryRun of [false, true]) {
+      await expect(
+        pushDatasets(evals, undefined, { dryRun }, server.getClient),
+      ).rejects.toMatchObject({
+        code: "tasks_behind_lock",
+        message: expect.stringMatching(/support: refund\n/),
+      });
+    }
+    expect(server.latest("support").refund).toBe(latest);
+
+    // Pull their version, re-apply the edit, push.
+    await pullDatasets(
+      evals,
+      undefined,
+      { latest: true, force: true, tasks: ["refund"] },
+      server.getClient,
+    );
+    await write("support/tasks/refund/instruction.md", "Ours.");
+    const [result] = await pushDatasets(evals, undefined, {}, server.getClient);
+    expect(result).toMatchObject({ changed: ["refund"] });
+  });
+
+  void it("is refused by Laminar when a version lands after its check", async () => {
+    await writeSupport();
+    const server = fakeLaminar();
+    await pushDatasets(evals, undefined, {}, server.getClient);
+    const before = server.latest("support");
+    const theirs = await cloneEvals();
+    await pullDatasets(theirs, undefined, {}, server.getClient);
+    await writeFile(
+      path.join(theirs, "support/tasks/refund/instruction.md"),
+      "Theirs.",
+    );
+    await pushDatasets(theirs, undefined, {}, server.getClient);
+    // Our check read Laminar before their push.
+    server.evalDatasets.listTasks.mockResolvedValueOnce(
+      Object.entries(before).map(([name, hash]) => ({
+        name,
+        hash,
+        createdAt: "2026-11-18",
+      })),
+    );
+    await write("support/tasks/refund/instruction.md", "Ours.");
+
+    await expect(
+      pushDatasets(evals, undefined, {}, server.getClient),
+    ).rejects.toMatchObject({
+      code: "tasks_behind_lock",
+      message: expect.stringMatching(/support: refund\n/),
+    });
+    expect(await toml("support")).toEqual(before);
+  });
+
+  void it("skips invalid folders without names, and keeps a linked task's pin", async () => {
+    await writeSupport();
+    const server = fakeLaminar();
+    await pushDatasets(evals, undefined, {}, server.getClient);
+    await write("_scratch/tasks/a/task.toml", "[task]\n");
+    await rename(
+      path.join(evals, "support/tasks/greet"),
+      path.join(root, "greet"),
+    );
+    await symlink(
+      path.join(root, "greet"),
+      path.join(evals, "support/tasks/greet"),
+    );
+
+    const results = await pushDatasets(evals, undefined, {}, server.getClient);
+
+    expect(results.map((r) => r.dataset)).toEqual(["support"]);
+    expect(results[0]).toMatchObject({ removed: [] });
+    expect(Object.keys((await toml("support")) ?? {})).toContain("greet");
+  });
+
   void it("rejects bad names and a missing tasks/ before uploading", async () => {
     await writeSupport();
     await write("support/tasks/bad name/task.toml", "[task]\n");
@@ -367,6 +477,7 @@ void describe("eval dataset pull", () => {
     await pullDatasets(clone, undefined, {}, server.getClient);
     expect(server.evalDatasets.downloadTask).toHaveBeenCalledTimes(2);
     // Up to date: no listTasks, nothing downloaded.
+    server.evalDatasets.listTasks.mockClear();
     const [again] = await pullDatasets(clone, undefined, {}, server.getClient);
     expect(again).toMatchObject({ added: [], unchanged: 2 });
     expect(server.evalDatasets.listTasks).not.toHaveBeenCalled();

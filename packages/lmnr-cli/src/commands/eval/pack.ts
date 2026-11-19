@@ -16,10 +16,7 @@ export const STATE_FILE = ".lmnr-state.json";
  * env vars, never as files. The sync state is local bookkeeping.
  */
 export const isExcludedFile = (name: string) =>
-  name === ".env" ||
-  name.startsWith(".env.") ||
-  name === ".DS_Store" ||
-  name === STATE_FILE;
+  name.startsWith(".env") || name === ".DS_Store" || name === STATE_FILE;
 
 /** An archive entry plus the size the index records. */
 export interface PackedFile extends FileSource {

@@ -12,7 +12,11 @@ import type { DatasetRun } from "./datasets";
 import { imagePusher } from "./docker";
 import { runDatasets } from "./harbor";
 import type { ImageDef } from "./images";
-import { handleEvalOrchestrate, startRemoteRun } from "./remote";
+import {
+  handleEvalOrchestrate,
+  startRemoteRun,
+  uploadExclusions,
+} from "./remote";
 import { runCommand } from "./run-command";
 import { hashTaskDir, packTask } from "./tasks";
 
@@ -159,6 +163,27 @@ void describe("startRemoteRun", () => {
         images: IMAGES,
       },
     });
+  });
+});
+
+void describe("uploadExclusions", () => {
+  void it("packs only the run's tasks that Laminar doesn't have", async () => {
+    await writeEvals();
+    await write("a/tasks/filtered/task.toml", "");
+    await write("a/tasks/.lmnr-state.json", "{}");
+    await write("other/harbor.yaml", "");
+    await write("other/tasks/big/task.toml", "");
+
+    const exclude = await uploadExclusions(root, [
+      { ...RUNS[0], tasks: { own: HASH("1") } },
+      RUNS[1],
+    ]);
+
+    expect([...exclude].sort()).toEqual([
+      "a/tasks/filtered",
+      "a/tasks/own",
+      "other/tasks",
+    ]);
   });
 });
 
