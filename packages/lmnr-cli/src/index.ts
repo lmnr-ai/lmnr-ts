@@ -27,6 +27,10 @@ import {
   handleDebugSessionSummary,
 } from "./commands/debug";
 import { handleEvalRun, parsePositiveInt } from "./commands/eval";
+import {
+  handleEvalDatasetPull,
+  handleEvalDatasetPush,
+} from "./commands/eval/dataset-sync";
 import { handleEvalOrchestrate } from "./commands/eval/remote";
 import {
   handleLlmProfileCreate,
@@ -592,10 +596,12 @@ Examples:
   const evalCmd = program
     .command("eval")
     .alias("evals")
-    .description("Run Harbor evals locally or in Laminar sandboxes")
+    .description(
+      "Run Harbor evals locally or in Laminar sandboxes; version eval datasets",
+    )
     .option(
       "--project-id <id>",
-      "Target project id for --remote. Defaults to the linked .lmnr/project.json",
+      "Target project id for --remote, push and pull. Defaults to the linked .lmnr/project.json",
     )
     .option(
       "--base-url <url>",
@@ -608,28 +614,27 @@ Examples:
     )
     .option("--json", "Output structured JSON to stdout");
 
+  const dirOption = [
+    "--dir <path>",
+    "Evals folder (one <dataset>/ folder per dataset)",
+    "evals",
+  ] as const;
+  const taskOption = [
+    "--task <glob>",
+    "Task name glob to include (repeatable). Omitted → every task",
+    collectFlag,
+  ] as const;
+
   evalCmd
     .command("run")
-    .description("Run the evals folder's Harbor suites")
-    .argument(
-      "[dir]",
-      "Evals folder (one <suite>/harbor.yaml per suite)",
-      "evals",
-    )
+    .description("Run the evals folder's datasets with Harbor")
+    .argument("[dataset]", "Dataset folder to run. Omitted → every dataset")
+    .option(...dirOption)
     .option(
       "--remote",
       "Run in Laminar sandboxes instead of local Docker, printing the run's log until it ends",
     )
-    .option(
-      "--suite <name>",
-      "Suite to run (repeatable). Omitted → every suite",
-      collectFlag,
-    )
-    .option(
-      "--task <glob>",
-      "Task name glob to include (repeatable). Omitted → every task",
-      collectFlag,
-    )
+    .option(...taskOption)
     .option(
       "--n-attempts <n>",
       "Attempts per task. Omitted → harbor.yaml",
@@ -650,25 +655,34 @@ Examples:
     .addHelpText(
       "after",
       `
-Runs \`harbor run\` (pinned Harbor + Laminar plugin, via uvx) for each suite:
-a directory directly inside [dir] holding a harbor.yaml (a Harbor JobConfig).
-Every trial is reported to Laminar as an evaluation datapoint, grouped by suite.
+Runs \`harbor run\` (pinned Harbor + Laminar plugin, via uvx) for each dataset:
+a folder directly inside the evals folder (--dir, default ./evals) holding a
+harbor.yaml (a Harbor JobConfig) and its tasks in tasks/. harbor.yaml must not
+set \`datasets\` or \`tasks\`: lmnr-cli runs the dataset's tasks/ folder. Every
+trial is reported to Laminar as an evaluation datapoint, grouped by dataset
+name, with the version (content hash) of its task.
+
+Before running, tasks that tasks.toml pins and tasks/ lacks, or holds at an
+older pin without local edits, are pulled (as \`eval dataset pull\` would).
+Edited tasks run as they are, with a warning.
 
 Modes:
   (default)          Trials run on local Docker. Needs uv, Docker and
                      LMNR_PROJECT_API_KEY (written to .env by \`lmnr-cli setup\`).
   --remote           Pushes the images, uploads the folder and starts the run
                      in a Laminar sandbox, then prints the run's log until it
-                     ends. Ctrl-C stops following; the run goes on. Needs
-                     Docker and \`lmnr-cli login\` (or LMNR_PROJECT_API_KEY).
+                     ends. Tasks whose version is in Laminar already are not
+                     uploaded: the run gets them from there. Ctrl-C stops
+                     following; the run goes on. Needs Docker and
+                     \`lmnr-cli login\` (or LMNR_PROJECT_API_KEY).
 
 Images: tasks name their image with docker_image in task.toml. Images listed in
-[dir]/lmnr.yaml are built from their Dockerfile with Docker on every run:
+<dataset>/lmnr.yaml are built from their Dockerfile with Docker on every run:
 
   images:
     myapp-evals:
-      dockerfile: image/Dockerfile   # relative to [dir]
-      context: ..                    # build context, default: the Dockerfile's dir
+      dockerfile: image/Dockerfile   # relative to the dataset folder
+      context: ../..                 # build context, default: the Dockerfile's dir
 
 Every build lmnr-cli runs honors .dockerignore and never gets .git or .env*
 files. In local mode Harbor builds a task's own environment/Dockerfile itself,
@@ -684,23 +698,119 @@ starts. For --remote they are sent with the run, never uploaded as files
 Exit codes:
   16  invalid_evals_dir / archive_too_large
   17  missing_tool (uv or Docker not installed)
-  18  harbor_failed (a suite's harbor run failed)
+  18  harbor_failed (a dataset's harbor run failed)
   19  missing_env (an unset \`\${VAR}\` or LMNR_PROJECT_API_KEY)
   20  docker_failed (a docker build, pull or save failed, or a wrong platform)
-  21  remote_run_failed (a --remote run failed before its suites ran, or
+  21  remote_run_failed (a --remote run failed before its datasets ran, or
       its sandbox was lost)
+  24  dataset_not_found (a task the auto-pull needs isn't in Laminar)
 
 Examples:
   $ lmnr-cli eval run
-  $ lmnr-cli eval run ./evals --suite support --task "refund-*" --n-attempts 3
+  $ lmnr-cli eval run support --task "refund-*" --n-attempts 3
   $ lmnr-cli eval run --remote --n-concurrent 20
-  $ lmnr-cli eval run --remote --model anthropic/claude-sonnet-5-5
+  $ lmnr-cli eval run --dir ./my-evals --remote --model anthropic/claude-sonnet-5-5
+`,
+    );
+
+  const evalDatasetCmd = evalCmd
+    .command("dataset")
+    .alias("datasets")
+    .description(
+      "Version eval datasets' tasks in Laminar (tasks.toml pins them)",
+    );
+
+  evalDatasetCmd
+    .command("pull")
+    .description("Get the task versions each dataset's tasks.toml pins")
+    .argument("[datasets...]", "Dataset names. Omitted → every dataset folder")
+    .option(...dirOption)
+    .option(...taskOption)
+    .option(
+      "--latest",
+      "Pull and pin the latest version of every task in Laminar",
+    )
+    .option("--force", "Overwrite or delete tasks edited locally")
+    .option("--dry-run", "Print what would change; download or write nothing")
+    .action(withLocalOpts(handleEvalDatasetPull))
+    .addHelpText(
+      "after",
+      `
+Makes <dataset>/tasks/ match the task versions <dataset>/tasks.toml pins:
+missing tasks are downloaded (added), tasks at another version replaced
+(changed), and tasks pulled or pushed here before that tasks.toml no longer
+pins deleted (removed). Tasks that were never synced and aren't pinned stay.
+--task limits all of that to matching task names.
+
+With --latest, or when the folder has no tasks.toml, the latest version of
+every task in Laminar is pulled and written into tasks.toml (pins of tasks
+Laminar doesn't have stay). A dataset name without a folder creates
+<dir>/<dataset>/. Downloads are cached by hash in $LMNR_CACHE_DIR,
+$XDG_CACHE_HOME/lmnr or ~/.cache/lmnr (eval-tasks/) and checked against it.
+
+Refuses when a task edited since its last pull or push would be changed or
+removed (nothing is touched then, in any dataset); --force discards those
+edits. Adds */tasks/ to <dir>/.gitignore: tasks live in Laminar.
+
+Calls the API as the logged-in user (\`lmnr-cli login\`), or with
+LMNR_PROJECT_API_KEY when there is no login.
+
+Exit codes:
+  16  invalid_evals_dir (a bad dataset name, a broken tasks.toml)
+  22  local_changes (edited tasks would be overwritten; push them or --force)
+  24  dataset_not_found (the dataset or a task version isn't in Laminar)
+
+Examples:
+  $ lmnr-cli eval dataset pull
+  $ lmnr-cli eval dataset pull support --task "refund-*"
+  $ lmnr-cli eval dataset pull support --latest --dry-run
+  $ lmnr-cli eval dataset pull --force --json
+`,
+    );
+
+  evalDatasetCmd
+    .command("push")
+    .description(
+      "Version each dataset's changed tasks in Laminar and pin them in tasks.toml",
+    )
+    .argument(
+      "[datasets...]",
+      "Dataset names. Omitted → every dataset folder with a tasks/ folder",
+    )
+    .option(...dirOption)
+    .option(...taskOption)
+    .option("--dry-run", "Print what would change; upload or write nothing")
+    .action(withLocalOpts(handleEvalDatasetPush))
+    .addHelpText(
+      "after",
+      `
+Hashes every task in <dataset>/tasks/ and compares it with tasks.toml: tasks
+not pinned yet (added) or at another version (changed) are uploaded when
+Laminar doesn't have that version, become their task's latest version in
+Laminar, and are pinned in tasks.toml. Pinned tasks deleted from tasks/ after
+a pull or push here (removed) are dropped from tasks.toml; Laminar keeps their
+versions. --task limits all of that to matching task names. A new dataset is
+named after its folder. Commit tasks.toml afterwards.
+
+Refuses when tasks.toml pins another version of a task that is unedited here
+(tasks.toml changed since the pull, e.g. through git): pushing it would undo
+that version. Run \`lmnr-cli eval dataset pull\` first.
+
+Exit codes:
+  16  invalid_evals_dir (no tasks/, a bad task or dataset name, a broken
+      tasks.toml) / archive_too_large (a task over 512 MiB packed)
+  23  tasks_behind_lock (unedited tasks are older than tasks.toml pins)
+
+Examples:
+  $ lmnr-cli eval dataset push
+  $ lmnr-cli eval dataset push support --dry-run
+  $ lmnr-cli eval dataset push support --task refund --json
 `,
     );
 
   evalCmd
     .command("orchestrate", { hidden: true })
-    .description("Run a remote run's suites (inside its Laminar sandbox)")
+    .description("Run a remote run's datasets (inside its Laminar sandbox)")
     .action(withLocalOpts(handleEvalOrchestrate));
 
   const llmProfileCmd = program
@@ -1409,6 +1519,8 @@ Examples:
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json # Query spans
   lmnr-cli sql schema                                      # Show available tables
   lmnr-cli eval run --remote                               # Run Harbor evals in Laminar sandboxes
+  lmnr-cli eval dataset push                               # Version eval datasets' tasks in Laminar
+  lmnr-cli eval dataset pull                               # Get the tasks each tasks.toml pins
   lmnr-cli debug session new                               # Mint a fresh debug session
   lmnr-cli debug session open                              # Open the session in the browser
   lmnr-cli debug session set-name "title"                  # Rename the current debug session
@@ -1424,7 +1536,6 @@ For more information about the Laminar platfrom:
   Documentation: https://laminar.sh/docs
 `,
   );
-
   await program.parseAsync();
 }
 

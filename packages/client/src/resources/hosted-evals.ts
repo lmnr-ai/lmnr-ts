@@ -44,7 +44,7 @@ export interface HostedEvalSandboxStatus {
  * - Remote runs: `upload` the `.tar.gz` of the evals folder and `uploadIndex`
  *   its file index, then `startRun` to orchestrate it in a Laminar sandbox. Results land in the project as
  *   regular evaluations. The orchestrator sends its output with
- *   `appendRunLogs` and each suite's Harbor job output with `uploadJob` /
+ *   `appendRunLogs` and each dataset's Harbor job output with `uploadJob` /
  *   `uploadJobIndex`; `getRunLogs` follows the run until it exits.
  */
 export class HostedEvalsResource extends BaseResource {
@@ -103,7 +103,7 @@ export class HostedEvalsResource extends BaseResource {
   }
 
   /**
-   * Upload a `.tar.gz` of the `evals/` folder's contents (suites at the archive
+   * Upload a `.tar.gz` of the `evals/` folder's contents (datasets at the archive
    * root). Sent as the raw request body; the server caps it at 1 GiB.
    */
   public async upload(archive: Uint8Array): Promise<{ uploadId: string }> {
@@ -135,16 +135,16 @@ export class HostedEvalsResource extends BaseResource {
   }
 
   /**
-   * Upload a remote run's Harbor job output for one suite (its trial dirs as
+   * Upload a remote run's Harbor job output for one dataset (its trial dirs as
    * a `.tar.gz`, packed like {@link upload}'s archive), for Laminar's trial log
    * view. Called from the run's orchestrator; the server caps it at 256 MiB.
    */
   public async uploadJob(
     uploadId: string,
-    suite: string,
+    dataset: string,
     archive: Uint8Array,
   ): Promise<void> {
-    const response = await fetch(this.jobUrl(uploadId, suite, ""), {
+    const response = await fetch(this.jobUrl(uploadId, dataset, ""), {
       method: "PUT",
       headers: { ...this.headers(), "Content-Type": "application/gzip" },
       body: archive as Uint8Array<ArrayBuffer>,
@@ -157,10 +157,10 @@ export class HostedEvalsResource extends BaseResource {
   /** The index of an archive sent with {@link uploadJob}; upload it after the archive. */
   public async uploadJobIndex(
     uploadId: string,
-    suite: string,
+    dataset: string,
     index: object,
   ): Promise<void> {
-    const response = await fetch(this.jobUrl(uploadId, suite, "/index"), {
+    const response = await fetch(this.jobUrl(uploadId, dataset, "/index"), {
       method: "PUT",
       headers: this.headers(),
       body: JSON.stringify(index),
@@ -247,8 +247,9 @@ export class HostedEvalsResource extends BaseResource {
     return `${this.baseHttpUrl}${this.apiPrefix}/hosted-evals${path}`;
   }
 
-  private jobUrl(uploadId: string, suite: string, suffix: string): string {
-    const query = new URLSearchParams({ suite });
+  /** The server's query parameter is still named `suite`; it takes the dataset's folder. */
+  private jobUrl(uploadId: string, dataset: string, suffix: string): string {
+    const query = new URLSearchParams({ suite: dataset });
     return this.url(`/uploads/${uploadId}/jobs${suffix}?${query}`);
   }
 }

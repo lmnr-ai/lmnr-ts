@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CliError } from "../errors";
 import { outputJson, outputJsonError } from "./output";
 
 describe("outputJson", () => {
@@ -76,6 +77,17 @@ describe("outputJsonError", () => {
     expect(() => outputJsonError("bad request")).toThrow("process.exit(1)");
     const output = logSpy.mock.calls[0][0] as string;
     expect(JSON.parse(output)).toEqual({ error: "bad request" });
+  });
+
+  it("adds a CliError's code", () => {
+    expect(() =>
+      outputJsonError(new CliError("local_changes", 22, "tasks/ changed"), 22),
+    ).toThrow("process.exit(22)");
+    const output = logSpy.mock.calls[0][0] as string;
+    expect(JSON.parse(output)).toEqual({
+      error: "tasks/ changed",
+      code: "local_changes",
+    });
   });
 
   it("uses custom exit code", () => {

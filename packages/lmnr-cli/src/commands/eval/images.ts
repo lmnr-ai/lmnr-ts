@@ -4,10 +4,12 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 
 import { invalidEvalsDir } from "../../errors";
-import { findTaskTomls, loadSuiteConfig, type RunOverrides } from "./suites";
-
-/** Optional evals-folder config: the images tasks reference by `docker_image`. */
-const LMNR_EVALS_CONFIG = "lmnr.yaml";
+import {
+  findTaskTomls,
+  IMAGES_CONFIG,
+  loadDatasetConfig,
+  type RunOverrides,
+} from "./datasets";
 
 export interface ImageDef {
   /** Shown in logs and errors; for `lmnr.yaml` images, the `docker_image`. */
@@ -16,19 +18,19 @@ export interface ImageDef {
   context: string;
 }
 
-/** Every image a remote run uses, as pushed manifest digests. */
-export interface RemoteImages {
+/**
+ * One dataset's images as pushed manifest digests, read by
+ * `lmnr_hosted_env.py` from `LMNR_EVAL_IMAGES`.
+ */
+export interface DatasetImages {
   /** By `docker_image`. */
   images: Record<string, string>;
-  /** By suite, then task `environment/` dir key (`dockerfileKey`). */
-  dockerfiles: Record<string, Record<string, string>>;
-}
-
-/** One suite's images, read by `lmnr_hosted_env.py` from `LMNR_EVAL_IMAGES`. */
-export interface SuiteImages {
-  images: Record<string, string>;
+  /** By task `environment/` dir key (`dockerfileKey`). */
   dockerfiles: Record<string, string>;
 }
+
+/** Every image a remote run uses, by dataset folder. */
+export type RemoteImages = Record<string, DatasetImages>;
 
 /**
  * Builds or pulls images for Laminar sandboxes and pushes them (`docker.ts`).
@@ -46,8 +48,11 @@ interface RawImage {
   context?: unknown;
 }
 
-export const loadImageDefs = async (evalsDir: string): Promise<ImageDef[]> => {
-  const file = path.join(evalsDir, LMNR_EVALS_CONFIG);
+/** A dataset's `lmnr.yaml` images; paths are relative to the dataset dir. */
+export const loadImageDefs = async (
+  datasetDir: string,
+): Promise<ImageDef[]> => {
+  const file = path.join(datasetDir, IMAGES_CONFIG);
   const text = await readFile(file, "utf8").catch(() => null);
   if (text === null) return [];
   let parsed: { images?: Record<string, RawImage> } | null;
@@ -61,10 +66,10 @@ export const loadImageDefs = async (evalsDir: string): Promise<ImageDef[]> => {
     if (typeof raw?.dockerfile !== "string") {
       throw invalidEvalsDir(`${file}: images.${name}.dockerfile is required.`);
     }
-    const dockerfile = path.resolve(evalsDir, raw.dockerfile);
+    const dockerfile = path.resolve(datasetDir, raw.dockerfile);
     const context =
       typeof raw.context === "string"
-        ? path.resolve(evalsDir, raw.context)
+        ? path.resolve(datasetDir, raw.context)
         : path.dirname(dockerfile);
     defs.push({ name, dockerfile, context });
   }
@@ -72,20 +77,15 @@ export const loadImageDefs = async (evalsDir: string): Promise<ImageDef[]> => {
 };
 
 /**
- * The `lmnr.yaml` images a local run's tasks start from. Harbor builds per-task
- * Dockerfiles and pulls other images itself.
+ * The `lmnr.yaml` images a dataset's local run starts tasks from. Harbor
+ * builds per-task Dockerfiles and pulls other images itself.
  */
 export const localImageDefs = async (
-  evalsDir: string,
-  suites: string[],
+  datasetDir: string,
   overrides: RunOverrides,
 ): Promise<ImageDef[]> => {
-  const used = new Set<string>();
-  for (const suite of suites) {
-    const tasks = await findTaskImages(path.join(evalsDir, suite), overrides);
-    for (const image of tasks.images) used.add(image);
-  }
-  return (await loadImageDefs(evalsDir)).filter((def) => used.has(def.name));
+  const used = new Set((await findTaskImages(datasetDir, overrides)).images);
+  return (await loadImageDefs(datasetDir)).filter((def) => used.has(def.name));
 };
 
 const DOCKER_IMAGE = /^\s*docker_image\s*=\s*["']([^"']+)["']/m;
@@ -98,24 +98,24 @@ interface TaskImages {
 }
 
 /**
- * What the run's tasks in this suite start from (`findTaskTomls`, so `--task`
- * applies), as Harbor decides it
+ * What the run's tasks in this dataset start from (`findTaskTomls`, so
+ * `--task` applies), as Harbor decides it
  * (`should_use_prebuilt_docker_image`): a task's `docker_image`, unless the
- * suite sets `environment.force_build` and the task has its own
+ * dataset sets `environment.force_build` and the task has its own
  * `environment/Dockerfile`, which is otherwise used only without a
  * `docker_image`.
  */
 export const findTaskImages = async (
-  suiteDir: string,
+  datasetDir: string,
   overrides: RunOverrides,
 ): Promise<TaskImages> => {
-  const environment = (await loadSuiteConfig(suiteDir)).environment as
+  const environment = (await loadDatasetConfig(datasetDir)).environment as
     | { force_build?: unknown }
     | undefined;
   const forceBuild = environment?.force_build === true;
   const dockerfiles: string[] = [];
   const images = new Set<string>();
-  for (const toml of await findTaskTomls(suiteDir, overrides)) {
+  for (const toml of await findTaskTomls(datasetDir, overrides)) {
     const image = DOCKER_IMAGE.exec(await readFile(toml, "utf8"))?.[1];
     const envDir = path.join(path.dirname(toml), "environment");
     const hasDockerfile = await stat(path.join(envDir, "Dockerfile")).then(
@@ -129,59 +129,62 @@ export const findTaskImages = async (
 };
 
 /**
- * `dockerfiles` key for a task's `environment/` dir: relative to the suite
+ * `dockerfiles` key for a task's `environment/` dir: relative to the dataset
  * dir, always with `/`. A remote run's map is built on the user's machine
  * (possibly Windows) and looked up in a Linux orchestrator.
  */
 export const dockerfileKey = (
-  suiteDir: string,
+  datasetDir: string,
   envDir: string,
   paths: path.PlatformPath = path,
-): string => paths.relative(suiteDir, envDir).split(paths.sep).join("/");
+): string => paths.relative(datasetDir, envDir).split(paths.sep).join("/");
 
 /**
  * Push every image the run's tasks use, so Laminar sandboxes can start from
  * them: per-task Dockerfiles and the `lmnr.yaml` images tasks reference are
- * built here, other `docker_image`s are pulled. Each is pushed once per run.
+ * built here, other `docker_image`s are pulled. Each dataset has its own
+ * `lmnr.yaml`, so the map is per dataset; an image two datasets share (the
+ * same Dockerfile and context, or the same pulled ref) is pushed once.
  */
 export const ensureRemoteImages = async (
   evalsDir: string,
-  suites: string[],
+  datasets: string[],
   overrides: RunOverrides,
   pusher: ImagePusher,
 ): Promise<RemoteImages> => {
-  const defs = new Map(
-    (await loadImageDefs(evalsDir)).map((def) => [def.name, def]),
-  );
-  const images = new Map<string, string>();
-  const dockerfiles: RemoteImages["dockerfiles"] = {};
-  for (const suite of suites) {
-    const suiteDir = path.join(evalsDir, suite);
-    const tasks = await findTaskImages(suiteDir, overrides);
+  const built = new Map<string, Promise<string>>();
+  const build = (def: ImageDef) => {
+    const key = `${def.dockerfile}\0${def.context}`;
+    if (!built.has(key)) built.set(key, pusher.build(def));
+    return built.get(key)!;
+  };
+  const pulled = new Map<string, Promise<string>>();
+  const pull = (ref: string) => {
+    if (!pulled.has(ref)) pulled.set(ref, pusher.pull(ref));
+    return pulled.get(ref)!;
+  };
+  const remote: RemoteImages = {};
+  for (const dataset of datasets) {
+    const datasetDir = path.join(evalsDir, dataset);
+    const defs = new Map(
+      (await loadImageDefs(datasetDir)).map((def) => [def.name, def]),
+    );
+    const tasks = await findTaskImages(datasetDir, overrides);
+    const images: Record<string, string> = {};
     for (const ref of tasks.images) {
-      if (images.has(ref)) continue;
       const def = defs.get(ref);
-      images.set(ref, def ? await pusher.build(def) : await pusher.pull(ref));
+      images[ref] = await (def ? build(def) : pull(ref));
     }
-    const suiteDockerfiles: Record<string, string> = {};
+    const dockerfiles: Record<string, string> = {};
     for (const envDir of tasks.dockerfiles) {
-      const key = dockerfileKey(suiteDir, envDir);
-      suiteDockerfiles[key] = await pusher.build({
-        name: `${suite}/${key}`,
+      const key = dockerfileKey(datasetDir, envDir);
+      dockerfiles[key] = await build({
+        name: `${dataset}/${key}`,
         dockerfile: path.join(envDir, "Dockerfile"),
         context: envDir,
       });
     }
-    dockerfiles[suite] = suiteDockerfiles;
+    remote[dataset] = { images, dockerfiles };
   }
-  return { images: Object.fromEntries(images), dockerfiles };
+  return remote;
 };
-
-/** `LMNR_EVAL_IMAGES` for one suite of a remote run. */
-export const suiteImages = (
-  remote: RemoteImages,
-  suite: string,
-): SuiteImages => ({
-  images: remote.images,
-  dockerfiles: remote.dockerfiles[suite] ?? {},
-});

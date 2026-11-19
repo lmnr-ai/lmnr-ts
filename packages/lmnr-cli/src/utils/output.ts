@@ -63,12 +63,18 @@ export const emitError = (
 
 /**
  * Write a JSON error to stdout and exit with code 1.
- * Use this in --json mode so agents can parse the failure.
+ * Use this in --json mode so agents can parse the failure. A `CliError`'s
+ * machine-readable code goes along as `code`.
  */
 export function outputJsonError(error: unknown, exitCode: number = 1): never {
+  const code =
+    error instanceof Error && error.name === "CliError"
+      ? (error as Error & { code?: unknown }).code
+      : undefined;
   console.log(
     JSON.stringify({
       error: errorMessage(error),
+      ...(typeof code === "string" ? { code } : {}),
     }),
   );
   process.exit(exitCode);
