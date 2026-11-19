@@ -544,7 +544,7 @@ void describe("MCP observability mode", () => {
     assert.equal(span.links[0].context.spanId, spanId);
   });
 
-  void it("with a session, a new turn starts with its traceparent and later calls join it", async () => {
+  void it("with a session, a turn gets a fresh trace id that later calls join, whatever their traceparent", async () => {
     const client = await connect(buildServer(), "sess-tp");
     const parents = [
       ["11111111111111111111111111111111", "1111111111111111"],
@@ -559,10 +559,11 @@ void describe("MCP observability mode", () => {
     }
     const spans = mcpSpans();
     assert.equal(spans.length, 2);
-    // The new turn starts with the first call's traceparent trace id; the
-    // second call (another traceparent, within the gap) joins that turn.
-    assert.equal(spans[0].spanContext().traceId, parents[0][0]);
-    assert.equal(spans[1].spanContext().traceId, parents[0][0]);
+    // One turn (the second call is within the gap), in a trace of its own: a
+    // client that keeps one trace per session would give every turn its id.
+    const turnTraceId = spans[0].spanContext().traceId;
+    assert.equal(spans[1].spanContext().traceId, turnTraceId);
+    assert.ok(!parents.some(([traceId]) => traceId === turnTraceId));
     spans.forEach((span, i) => {
       const [traceId, spanId] = parents[i];
       assert.equal(getParentSpanId(span as any), undefined);

@@ -170,12 +170,11 @@ const startSpan = (
     return openSpan(options, req, contextValue, parent);
   }
   // Mode on. Trace id: client turn id > session turn tracker > client
-  // traceparent > random. A session's NEW turn starts with the traceparent's
-  // trace id when there is one (later calls in the gap join it). The span
-  // always stays a root; a traceparent is always a link. The tracker beats
-  // the traceparent because clients with their own tracing send a fresh
-  // trace id per call (one trace per call) or one for a whole session (many
-  // turns in one trace); the gap tracker is never that wrong.
+  // traceparent (no session) > random; a session's NEW turn gets a random id.
+  // The span always stays a root; a traceparent is always a link. It never
+  // decides a session's trace: clients with their own tracing send a fresh
+  // trace id per call (one trace per call) or one for a whole session (every
+  // turn the same id); the gap tracker is never that wrong.
   const links: Link[] = remoteSpanContext
     ? [{ context: remoteSpanContext }]
     : [];
@@ -188,7 +187,7 @@ const startSpan = (
   } else if (sessionId) {
     turn = turnTracker.begin(sessionId, options.turnGapMs);
     newTurn = turn === undefined;
-    forcedTraceId = turn?.traceId ?? remoteParent?.traceId;
+    forcedTraceId = turn?.traceId;
   } else if (remoteParent) {
     forcedTraceId = remoteParent.traceId;
   }
