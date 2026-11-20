@@ -34,8 +34,6 @@ const BIG_BODY_BYTES = 50_000;
 const BIG_EXPORT_MS = 1500;
 const SMALL_EXPORT_MS = 100;
 const BYTE_LIMIT = 100_000;
-// Slack for timer jitter when asserting that a flush waited for the big send.
-const TIMING_SLACK_MS = 200;
 
 type TraceServer = {
   server: Server;
@@ -46,6 +44,18 @@ type TraceServer = {
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Polls instead of sleeping a fixed time: how long the first export takes to
+// reach the server depends on how loaded the machine is.
+const waitFor = async (cond: () => boolean, what: string, timeoutMs = 5000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (!cond()) {
+    if (Date.now() > deadline) {
+      assert.fail(`timed out waiting for ${what}`);
+    }
+    await sleep(10);
+  }
+};
 
 const startTraceServer = async (): Promise<TraceServer> => {
   let received = 0;
@@ -91,12 +101,6 @@ const endSpan = (name: string, bytes: number) => {
   span.end();
 };
 
-const timed = async (fn: () => Promise<void>) => {
-  const t0 = Date.now();
-  await fn();
-  return Date.now() - t0;
-};
-
 describe("Laminar.flush() awaits exports already in flight (LAM-2568)", () => {
   let ts: TraceServer;
 
@@ -130,16 +134,16 @@ describe("Laminar.flush() awaits exports already in flight (LAM-2568)", () => {
     const start = ts.received();
 
     endSpan("llm", 60_000);
-    await sleep(50);
-    assert.equal(ts.received() - start, 1, "the processor started the export");
+    await waitFor(
+      () => ts.received() - start === 1,
+      "the processor to start the export",
+    );
 
     // The buffer is empty, so upstream's forceFlush() alone resolves at once.
-    const flushMs = await timed(() => Laminar.flush());
+    // Asserted on server state, not wall-clock time, so CI load can't skew it.
+    assert.equal(ts.inFlight(), 1, "the export is still on the wire");
+    await Laminar.flush();
     assert.equal(ts.inFlight(), 0);
-    assert.ok(
-      flushMs >= BIG_EXPORT_MS - TIMING_SLACK_MS,
-      `flush took ${flushMs}ms`,
-    );
   });
 
   it("waits for a batch the flushBySize trigger started", async () => {
@@ -150,17 +154,16 @@ describe("Laminar.flush() awaits exports already in flight (LAM-2568)", () => {
     // sends the big LLM batch (#1, slow) and the root span opens the next one.
     endSpan("llm", 90_000);
     endSpan("root", 20_000);
-    await sleep(50);
-    assert.equal(ts.received() - start, 1, "size trigger started export #1");
+    await waitFor(
+      () => ts.received() - start === 1,
+      "size trigger to start export #1",
+    );
+    assert.equal(ts.inFlight(), 1, "export #1 is still on the wire");
 
     // flush() sends [root] (#2, fast); before the fix it awaited only #2.
-    const flushMs = await timed(() => Laminar.flush());
+    await Laminar.flush();
     assert.equal(ts.received() - start, 2);
     assert.equal(ts.inFlight(), 0);
-    assert.ok(
-      flushMs >= BIG_EXPORT_MS - TIMING_SLACK_MS,
-      `flush took ${flushMs}ms`,
-    );
   });
 
   it("waits with a user-supplied exporter in a LaminarSpanProcessor", async () => {
@@ -179,9 +182,10 @@ describe("Laminar.flush() awaits exports already in flight (LAM-2568)", () => {
       }),
     });
 
+    const start = ts.received();
     endSpan("llm", 90_000);
     endSpan("root", 20_000);
-    await sleep(50);
+    await waitFor(() => ts.received() > start, "the first export to start");
 
     await Laminar.flush();
     assert.equal(ts.inFlight(), 0);
@@ -190,9 +194,10 @@ describe("Laminar.flush() awaits exports already in flight (LAM-2568)", () => {
   it("shutdown() waits too", async () => {
     init({ flushBySize: true, maxExportBatchSizeBytes: BYTE_LIMIT });
 
+    const start = ts.received();
     endSpan("llm", 90_000);
     endSpan("root", 20_000);
-    await sleep(50);
+    await waitFor(() => ts.received() > start, "the first export to start");
 
     await Laminar.shutdown();
     assert.equal(ts.inFlight(), 0);
