@@ -2,7 +2,7 @@
   "name": "@lmnr-ai/lmnr-ts",
   "private": true,
   "version": "0.9.5",
-  "description": "Laminar AI TypeScript SDK",
+  "description": "TypeScript SDK and CLI for Laminar, the open-source observability platform for AI agents",
   "scripts": {
     "typecheck": "tsc",
     "build": "pnpm typecheck && pnpm -r build",

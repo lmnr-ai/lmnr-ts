@@ -2,7 +2,7 @@
 
 TypeScript SDK for [Laminar](https://www.laminar.sh).
 
-[Laminar](https://www.laminar.sh) is an open-source platform for engineering LLM products. Trace, evaluate, annotate, and analyze LLM data. Bring LLM applications to production with confidence.
+[Laminar](https://www.laminar.sh) is an open-source observability platform for AI agents. It traces every agent run, analyzes each trace to catch failures, and alerts you when a run goes wrong. This SDK instruments your agent with OpenTelemetry-compatible tracing and runs evals against it.
 
 Check our [open-source repo](https://github.com/lmnr-ai/lmnr) and don't forget to star it ⭐
 
