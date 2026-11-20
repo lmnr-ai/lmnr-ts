@@ -1,7 +1,7 @@
 {
   "name": "@lmnr-ai/lmnr",
   "version": "0.9.5",
-  "description": "TypeScript SDK for Laminar, the open-source observability platform for AI agents",
+  "description": "TypeScript SDK for Laminar, the open-source observability platform for AI agents, with flow-1, its own model for agent trace analysis",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
   "exports": {
