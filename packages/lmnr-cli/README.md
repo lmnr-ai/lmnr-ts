@@ -116,6 +116,8 @@ lmnr-cli sql schema                                      # Show available tables
 
 ### [`dataset`](src/commands/dataset/README.md) - Dataset Management
 
+> **Deprecated.** `lmnr-cli dataset` still works but prints a warning and will be removed in a future release. Use [`eval dataset`](#eval-dataset-pull--push---eval-datasets) for eval datasets.
+
 Create, inspect, rename, delete, and transfer dataset datapoints.
 
 ```bash

@@ -44,13 +44,13 @@ afterAll(() => {
   rmSync(credsDir, { recursive: true, force: true });
 });
 
-async function runCli(args: string[]): Promise<CliResult> {
+async function runCli(args: string[], logLevel = "silent"): Promise<CliResult> {
   try {
     const { stdout, stderr } = await exec("npx", ["tsx", CLI_PATH, ...args], {
       cwd: path.resolve(__dirname, "../.."),
       env: {
         ...process.env,
-        LMNR_LOG_LEVEL: "silent",
+        LMNR_LOG_LEVEL: logLevel,
         XDG_CONFIG_HOME: credsDir,
       },
     });
@@ -63,6 +63,37 @@ async function runCli(args: string[]): Promise<CliResult> {
     };
   }
 }
+
+describe("datasets CLI integration — deprecation", () => {
+  it("warns on stderr and still runs the command, keeping --json stdout clean", async () => {
+    const { stdout, stderr, exitCode } = await runCli(
+      ["dataset", "push", "--json", "--project-id", "fake-project", "./x"],
+      "warn",
+    );
+    expect(stderr).toContain("`lmnr-cli dataset` is deprecated");
+    expect(stderr).toContain("lmnr-cli eval dataset");
+    // The command itself still ran: its own validation error, as JSON.
+    expect(exitCode).not.toBe(0);
+    expect(JSON.parse(stdout.trim()).error).toContain("name or id");
+  });
+
+  it("is hidden below the warn level", async () => {
+    const { stderr } = await runCli(
+      ["dataset", "push", "--json", "--project-id", "fake-project", "./x"],
+      "error",
+    );
+    expect(stderr).not.toContain("deprecated");
+  });
+
+  it("marks the group as deprecated in help", async () => {
+    const { stdout } = await runCli(["dataset", "--help"]);
+    expect(stdout).toContain("Deprecated: `lmnr-cli dataset` is deprecated");
+    const top = await runCli(["--help"]);
+    expect(top.stdout).toMatch(/dataset \[options\]\s+\[deprecated\]/);
+    // Examples no longer advertise it.
+    expect(top.stdout).not.toContain("lmnr-cli dataset ");
+  });
+});
 
 describe("datasets CLI integration — validation errors", () => {
   it("datasets push --json with no name/id outputs JSON error", async () => {

@@ -7,6 +7,12 @@ Command-specific notes live in nested `AGENTS.md` files next to the code (each w
 - Logger (pino) always writes to stderr. This keeps stdout clean for data output for piping and agents.
 - Commands that support machine-readable output must accept a `--json` flag. This is added per command group (e.g. datasets), not globally, since interactive commands cannot support it.
 
+## Deprecating a command
+
+- Keep it working. Add a `preAction` hook on the command (or its group: the hook runs before every subcommand's action) that `logger.warn`s one line saying what replaces it. Logger output goes to stderr, so `--json` stdout stays parseable, and `LMNR_LOG_LEVEL=error` silences it.
+- Prefix its `description` with `[deprecated]`, add the warning to its own help (`addHelpText("before", ...)`), and drop it from the top-level help examples.
+- Example: `lmnr-cli dataset` (`DATASET_DEPRECATION` / `warnDatasetDeprecated` in `src/commands/dataset/index.ts`), replaced by `lmnr-cli eval dataset`.
+
 ## Package Boundaries
 
 - `lmnr-cli` is the standalone CLI (`npx lmnr-cli@latest`). It depends on

@@ -11,6 +11,7 @@ import {
 } from "./auth/with-client";
 import { handleAsk } from "./commands/ask";
 import {
+  DATASET_DEPRECATION,
   handleDatasetDelete,
   handleDatasetGet,
   handleDatasetsCreate,
@@ -18,6 +19,7 @@ import {
   handleDatasetsPull,
   handleDatasetsPush,
   handleDatasetUpdate,
+  warnDatasetDeprecated,
 } from "./commands/dataset";
 import {
   handleDebugSessionAddNote,
@@ -89,7 +91,10 @@ async function main() {
 
   const datasetsCmd = program
     .command("dataset")
-    .description("Manage datasets")
+    .description("[deprecated] Manage datasets. Use `lmnr-cli eval dataset`")
+    .addHelpText("before", `Deprecated: ${DATASET_DEPRECATION}\n`)
+    // Runs before every subcommand's action, so each one warns once.
+    .hook("preAction", warnDatasetDeprecated)
     .option(
       "--project-id <id>",
       "Target project id. Defaults to the linked .lmnr/project.json. " +
@@ -1539,9 +1544,6 @@ Examples:
   lmnr-cli project mint-key                                     # Mint + print a Project API Key
   lmnr-cli logout                                          # Log out
   lmnr-cli status                                          # Show user, project, and debug session
-  lmnr-cli dataset list --json                             # List all datasets
-  lmnr-cli dataset push data.jsonl -n my-dataset --json    # Push data to a dataset
-  lmnr-cli dataset pull output.jsonl -n my-dataset --json  # Pull data from a dataset
   lmnr-cli sql query "SELECT * FROM spans LIMIT 10" --json # Query spans
   lmnr-cli sql schema                                      # Show available tables
   lmnr-cli eval run --remote                               # Run Harbor evals in Laminar sandboxes
