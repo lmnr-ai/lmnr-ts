@@ -13,7 +13,6 @@ import {
   extractVersion,
   planPull,
   planPush,
-  planRunPull,
 } from "./dataset-sync";
 import { globToRegExp } from "./datasets";
 
@@ -297,31 +296,6 @@ void describe("planPush", () => {
     expect(plan.changed).toEqual([
       { task: "a", hash: H1, base: null, from: H1 },
     ]);
-  });
-});
-
-void describe("planRunPull", () => {
-  void it("pulls missing and unedited re-pinned tasks; edited ones run as they are", () => {
-    const plan = planRunPull(
-      {
-        pins: { missing: H1, same: H1, repinned: H2, edited: H2, mine: H2 },
-        state: { same: H1, repinned: H1, edited: H1 },
-        local: { same: H1, repinned: H1, edited: H3, mine: H3 },
-      },
-      all,
-    );
-    expect(plan.pull).toEqual([
-      { task: "missing", hash: H1 },
-      { task: "repinned", hash: H2 },
-    ]);
-    expect(plan.edited).toEqual([
-      { task: "edited", hash: H2 },
-      { task: "mine", hash: H2 },
-    ]);
-    expect(
-      planRunPull({ pins: { a: H1, b: H1 }, state: {}, local: {} }, only("b"))
-        .pull,
-    ).toEqual([{ task: "b", hash: H1 }]);
   });
 });
 

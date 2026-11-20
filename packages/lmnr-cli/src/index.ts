@@ -669,11 +669,12 @@ in its group: --group, else the dataset name (<folder>/tasks/dataset.toml),
 else the folder name. Runs in one group are charted together; --group needs a
 single dataset (name it, or have only one in --dir).
 
-Before running, tasks pinned in <folder>/tasks/dataset.toml that are missing
-from tasks/, or unedited there with a new pin, are pulled from Laminar (see
-\`lmnr-cli eval dataset pull --help\`). Edited tasks run as they are, with a
-warning. Each trial records its task's name and version hash, so Laminar links
-it to the version. --task matches task dir names, as Harbor does.
+It runs the tasks in <folder>/tasks/ as they are, edits included, and never
+pulls: get or update them with \`lmnr-cli eval dataset pull\` first (a fresh
+clone has none). It warns when tasks pinned in <folder>/tasks/dataset.toml are
+missing or older than their pin. Each trial records its task's name and
+version hash, so Laminar links it to the version. --task matches task dir
+names, as Harbor does.
 
 Modes:
   (default)          Trials run on local Docker. Needs uv, Docker and

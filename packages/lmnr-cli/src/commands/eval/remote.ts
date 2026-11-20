@@ -80,6 +80,8 @@ export const remoteTaskVersions = async (
   evalsDir: string,
   folders: string[],
   overrides: RunOverrides,
+  /** Task hashes already computed (`checkRunTasks`), by folder. */
+  hashed: Record<string, TaskHashFile> = {},
 ): Promise<RemoteTasks> => {
   const selected = dirFilter((overrides.tasks ?? []).map(globToRegExp));
   const tasks: RemoteTasks = { downloads: {}, taskHashes: {} };
@@ -87,11 +89,9 @@ export const remoteTaskVersions = async (
     const datasetDir = path.join(evalsDir, folder);
     const manifest = await readDatasetToml(datasetDir);
     if (!manifest) continue;
-    const hashes = await taskHashFile(
-      datasetDir,
-      await scanTasks(datasetDir),
-      selected,
-    );
+    const hashes =
+      hashed[folder] ??
+      (await taskHashFile(datasetDir, await scanTasks(datasetDir), selected));
     tasks.taskHashes[folder] = hashes;
     const versions = Object.entries(hashes).map(([dir, { name, hash }]) => ({
       task: name,
@@ -169,6 +169,7 @@ export const startRemoteRun = async (
   datasets: string[],
   overrides: RunOverrides,
   env: Record<string, string>,
+  taskHashes?: Record<string, TaskHashFile>,
 ): Promise<{ uploadId: string; sandboxId: string }> => {
   // The orchestrator gets its own short-lived key and URL from the server.
   const dropped = Object.keys(env).filter((k) => k.startsWith("LMNR_"));
@@ -182,7 +183,13 @@ export const startRemoteRun = async (
   }
 
   // Tasks Laminar has are downloaded by the run, not uploaded.
-  const tasks = await remoteTaskVersions(client, evalsDir, datasets, overrides);
+  const tasks = await remoteTaskVersions(
+    client,
+    evalsDir,
+    datasets,
+    overrides,
+    taskHashes,
+  );
   const downloaded = Object.values(tasks.downloads).reduce(
     (n, d) => n + d.tasks.length,
     0,

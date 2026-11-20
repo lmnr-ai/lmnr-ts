@@ -17,15 +17,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildEvalClient } from "./client";
 import {
+  checkRunTasks,
   handleDatasetPull,
   handleDatasetPush,
-  pullRunTasks,
 } from "./dataset-command";
 import { readDatasetState } from "./dataset-state";
 import { readDatasetToml, writeDatasetToml } from "./dataset-toml";
 import { hashTaskDir } from "./task-hash";
 
 vi.mock("./client", () => ({ buildEvalClient: vi.fn() }));
+// Tests run with LMNR_LOG_LEVEL=silent; checkRunTasks's warnings are asserted here.
+const logger = vi.hoisted(() => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+vi.mock("../../utils/logger", () => ({ initializeLogger: () => logger }));
 
 const apiError = (status: number, code: string) =>
   Object.assign(new Error(`${status} ${code}`), {
@@ -378,11 +386,11 @@ void describe("eval dataset push / pull", () => {
       path.join(ds, "tasks/complaint"),
     );
 
-    // Push keeps its pin; pull and the run's pre-pull keep the link.
+    // Push keeps its pin; pull and the run's check keep the link.
     await handleDatasetPush([], opts("evals"));
     expect(await pinsOf("evals/support")).toEqual(pins);
     await handleDatasetPull([], opts("evals"));
-    await pullRunTasks(path.join(root, "evals"), ["support"], undefined, {});
+    await checkRunTasks(path.join(root, "evals"), ["support"], undefined);
     expect(
       (await lstat(path.join(ds, "tasks/complaint"))).isSymbolicLink(),
     ).toBe(true);
@@ -594,29 +602,54 @@ void describe("eval dataset push / pull", () => {
   });
 });
 
-void describe("pullRunTasks", () => {
-  void it("pulls missing and re-pinned tasks; edited ones run as they are", async () => {
+void describe("checkRunTasks", () => {
+  const warned = () =>
+    logger.warn.mock.calls.map((c) => String(c[0])).join("\n");
+
+  void it("runs the tasks on disk without pulling, and hashes them once", async () => {
     await writeDataset();
     await handleDatasetPush([], opts("evals"));
     const ds = path.join(root, "evals/support");
     const evalsDir = path.join(root, "evals");
-    const build = vi.fn(async () => laminar.client);
+    laminar.calls.length = 0;
+    vi.mocked(buildEvalClient).mockClear();
+    logger.warn.mockClear();
 
-    // Missing task: pulled.
-    await rm(path.join(ds, "tasks/refund"), { recursive: true });
-    await pullRunTasks(evalsDir, ["support"], undefined, {}, build);
-    expect(existsSync(path.join(ds, "tasks/refund/task.toml"))).toBe(true);
-
-    // Edited task: left alone, no client needed.
+    // Edited and unpinned tasks run as they are, without a word.
     await write("evals/support/tasks/complaint/environment/data.txt", "mine");
-    build.mockClear();
-    await pullRunTasks(evalsDir, ["support"], undefined, {}, build);
+    await write("evals/support/tasks/new/task.toml", taskToml("acme/new"));
+    const hashes = await checkRunTasks(evalsDir, ["support"], undefined);
+    expect(warned()).toBe("");
+    expect(hashes.support).toEqual({
+      complaint: {
+        name: "acme/complaint",
+        hash: await hashTaskDir(path.join(ds, "tasks/complaint")),
+      },
+      new: {
+        name: "acme/new",
+        hash: await hashTaskDir(path.join(ds, "tasks/new")),
+      },
+      refund: {
+        name: "acme/refund",
+        hash: await hashTaskDir(path.join(ds, "tasks/refund")),
+      },
+    });
+    // --task is Harbor's: it matches task dirs.
     expect(
-      await read("evals/support/tasks/complaint/environment/data.txt"),
-    ).toBe("mine");
-    expect(build).not.toHaveBeenCalled();
+      Object.keys(
+        (await checkRunTasks(evalsDir, ["support"], ["ref*"])).support,
+      ),
+    ).toEqual(["refund"]);
+    expect(laminar.calls).toEqual([]);
+    expect(buildEvalClient).not.toHaveBeenCalled();
+  });
 
-    // Re-pinned (e.g. git pull) and unedited: pulled.
+  void it("warns about missing and outdated pinned tasks, and doesn't fix them", async () => {
+    await writeDataset();
+    await handleDatasetPush([], opts("evals"));
+    const evalsDir = path.join(root, "evals");
+    const ds = path.join(evalsDir, "support");
+    // A teammate pushes refund v2, and dataset.toml arrives with a git pull.
     await cp(evalsDir, path.join(root, "other"), { recursive: true });
     await write(
       "other/support/tasks/refund/task.toml",
@@ -627,24 +660,52 @@ void describe("pullRunTasks", () => {
       path.join(root, "other/support/tasks/dataset.toml"),
       path.join(ds, "tasks/dataset.toml"),
     );
-    // Laminar unreachable, but the task is on disk: the run goes on.
-    const down = vi.fn(async () => {
-      throw new Error("fetch failed");
+    await rm(path.join(ds, "tasks/complaint"), { recursive: true });
+
+    logger.warn.mockClear();
+    await checkRunTasks(evalsDir, ["support"], undefined, {
+      dir: path.join(root, "evals"),
     });
-    await pullRunTasks(evalsDir, ["support"], undefined, {}, down);
+    expect(warned()).toContain(
+      "1 pinned task(s) are not in tasks/ and won't run (acme/complaint)",
+    );
+    expect(warned()).toContain(
+      "1 task(s) are older than their pin (acme/refund)",
+    );
+    expect(warned()).toContain("lmnr-cli eval dataset pull support --dir");
     expect(await read("evals/support/tasks/refund/task.toml")).toBe(
       taskToml("acme/refund"),
     );
-    // eval run's --task is Harbor's: it matches task dirs.
-    await pullRunTasks(evalsDir, ["support"], ["ref*"], {}, build);
-    expect(await read("evals/support/tasks/refund/task.toml")).toBe(
-      taskToml("acme/refund", "v = 2\n"),
-    );
+    expect(existsSync(path.join(ds, "tasks/complaint"))).toBe(false);
 
-    // A missing task can't run without Laminar.
-    await rm(path.join(ds, "tasks/refund"), { recursive: true });
+    // Out of --task's selection: nothing to say.
+    logger.warn.mockClear();
+    await checkRunTasks(evalsDir, ["support"], ["nothing*"]);
+    expect(warned()).toBe("");
+  });
+
+  void it("fails on a dataset that pins tasks but has none on disk", async () => {
+    await writeDataset();
+    await handleDatasetPush([], opts("evals"));
+    const evalsDir = path.join(root, "evals");
+    for (const dir of ["refund", "complaint"]) {
+      await rm(path.join(evalsDir, "support/tasks", dir), { recursive: true });
+    }
     await expect(
-      pullRunTasks(evalsDir, ["support"], undefined, {}, down),
-    ).rejects.toThrow(/fetch failed/);
+      checkRunTasks(evalsDir, ["support"], undefined),
+    ).rejects.toMatchObject({
+      code: "invalid_evals_dir",
+      message: expect.stringContaining(
+        "pull them first: lmnr-cli eval dataset pull support",
+      ),
+    });
+    // A dataset that pins nothing yet has nothing to pull.
+    await writeFile(
+      path.join(evalsDir, "support/tasks/dataset.toml"),
+      `[dataset]\nname = "${DS}"\n`,
+    );
+    expect(await checkRunTasks(evalsDir, ["support"], undefined)).toEqual({
+      support: {},
+    });
   });
 });

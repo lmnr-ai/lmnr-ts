@@ -13,8 +13,8 @@ import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
 import { buildEvalClient } from "./client";
 import {
+  checkRunTasks,
   DEFAULT_EVALS_DIR,
-  pullRunTasks,
   readDatasetFolders,
 } from "./dataset-command";
 import {
@@ -232,8 +232,8 @@ const followRemote = async (
 /**
  * `lmnr-cli eval run [dataset]`: run Harbor datasets locally on Docker
  * (default), or with `--remote` in Laminar sandboxes, following the run's log
- * until it ends. Pinned tasks missing from `tasks/` (or unedited with a new
- * pin in dataset.toml) are pulled first.
+ * until it ends. Runs the tasks on disk as they are: nothing is pulled first
+ * (`eval dataset pull` does that), it only warns when they lag dataset.toml.
  */
 export const handleEvalRun = async (
   dataset: string | undefined,
@@ -252,12 +252,8 @@ export const handleEvalRun = async (
     );
   }
   await warnLegacyImageFiles(evalsDir, datasets);
-  let client: LaminarClient | undefined;
-  const getClient = async () => {
-    client ??= await buildEvalClient(opts);
-    return client;
-  };
-  await pullRunTasks(evalsDir, datasets, opts.task, opts, getClient);
+  // Runs the tasks on disk as they are; `eval dataset pull` syncs them.
+  const taskHashes = await checkRunTasks(evalsDir, datasets, opts.task, opts);
 
   const overrides: RunOverrides = {
     tasks: opts.task,
@@ -272,12 +268,26 @@ export const handleEvalRun = async (
   if (!opts.remote) {
     const runEnv = await harborEnv(env, opts);
     await buildLocalImages(await localImageDefs(evalsDir, datasets, overrides));
-    const failed = await runDatasets(evalsDir, datasets, overrides, runEnv);
+    const failed = await runDatasets(
+      evalsDir,
+      datasets,
+      overrides,
+      runEnv,
+      undefined,
+      { taskHashes },
+    );
     await reportLocal(datasets, failed, opts);
     return;
   }
 
-  const remote = await getClient();
-  const run = await startRemoteRun(remote, evalsDir, datasets, overrides, env);
+  const remote = await buildEvalClient(opts);
+  const run = await startRemoteRun(
+    remote,
+    evalsDir,
+    datasets,
+    overrides,
+    env,
+    taskHashes,
+  );
   await followRemote(remote, run, datasets, opts);
 };

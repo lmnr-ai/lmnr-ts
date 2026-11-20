@@ -6,13 +6,14 @@
   plugin through `uvx` (`harbor.ts`: `HARBOR_VERSION`, `LMNR_PYTHON_VERSION`),
   from inside the dataset dir so relative paths and custom agent imports
   resolve the same way everywhere. Harbor's stdout goes to OUR stderr; stdout
-  is data only. Before running, `pullRunTasks` pulls pinned tasks (see "Eval
-  datasets" below). The plugin gets `--pk group_name=<--group, else dataset
+  is data only. It runs the tasks on disk as they are and never pulls
+  (`checkRunTasks`, see "Eval datasets" below). The plugin gets `--pk group_name=<--group, else dataset
   name, else folder>` always (`--group` is one dataset's: with several
   selected it is an `InvalidArgumentError`; it travels to remote runs in
   `RunOverrides`), and `--pk dataset=<name> --pk
   task_hashes_file=<staging>/task-hashes.json` (`{<task dir>: {name, hash}}`
-  of every named task under `tasks/`) only with a `tasks/dataset.toml`. Wire
+  of the named task dirs `--task` selects, hashed once by `checkRunTasks` and
+  reused for `--remote`) only with a `tasks/dataset.toml`. Wire
   names keep "suite" (`hostedMetadata.suitePath`, `?suite=` on job uploads).
   - default: trials on local Docker; harbor.yaml `images` are `docker build`-ed first.
   - `--remote`: runs in Laminar sandboxes and prints the run's log until it
@@ -83,8 +84,8 @@
   `buildJobConfig`), `harbor.ts` (uvx/Harbor only), `images.ts` (harbor.yaml
   `images`, what tasks start from, `ensureRemoteImages`), `client.ts` (login
   or project key client), `dataset-toml.ts`, `task-hash.ts`, `dataset-state.ts`,
-  `dataset-sync.ts` (pure pull / push / run planning, download + extract,
-  upload), `dataset-command.ts` (`eval dataset pull / push`, `pullRunTasks`),
+  `dataset-sync.ts` (pure pull / push planning, download + extract,
+  upload), `dataset-command.ts` (`eval dataset pull / push`, `checkRunTasks`),
   `docker.ts` (builds, the ignore guard, `imagePusher`), `push.ts` (`docker
   save` output → layer upload), `run-command.ts` (spawn; a missing binary is
   `missing_tool`). Import graph is acyclic: `docker.ts` imports only types from
@@ -247,11 +248,11 @@
   (our temp dirs) are skipped. pull and push fail (`assertNamedTasks`) on a
   `task.toml` without a valid `[task] name` and on a name two dirs share (a
   copied task); `eval run` doesn't. A symlinked task dir is unmanaged
-  (`linkedNames`, with a warning): pull, push and run's pre-pull never hash,
-  replace or unpin it (Harbor still follows it). A pulled task that has no
+  (`linkedNames`, with a warning): pull and push never hash,
+  replace or unpin it, and `eval run`'s check skips it (Harbor still follows it). A pulled task that has no
   dir yet goes into `tasks/<name after the org>`; if anything has that name
   (another dir, or a file: `acme/dataset.toml` is a valid name), pull fails
-  (`placePull`) and run's pre-pull skips it with a warning.
+  (`placePull`).
 - **Hash** (`task-hash.ts`) = Harbor's `Packager.compute_content_hash`
   (0.25.0), so `harbor sync` agrees: only `task.toml`, `instruction.md`,
   `README.md`, `trajectory.json` and `environment/`, `tests/`, `solution/`,
@@ -302,12 +303,15 @@
   → `push`; a 409 `moved` is 23 too. `--dry-run` runs the GET, the checks and
   `missingVersions`.
 - **`--task`:** for `eval dataset` it globs the task name, with or without
-  its org (`taskFilter`); for `eval run` (and its pre-pull, and the remote
+  its org (`taskFilter`); for `eval run` (and its check, and the remote
   upload) it is Harbor's, matching task DIR names (`dirFilter`).
-- **run** (`planRunPull`): pulls selected pinned tasks that are missing or
-  unedited with pin ≠ local; edited ones warn and run as they are. If Laminar
-  can't be reached (or no login/key) and every such task is on disk, it warns
-  and goes on.
+- **run** (`checkRunTasks`): never pulls, like `pnpm dev` never installs;
+  local edits run without a word. Offline: a dataset with pins and no task
+  on disk (a fresh clone) is `invalid_evals_dir` with the pull command;
+  selected pinned tasks missing on disk, or unedited (local = base) with
+  pin ≠ local (a `git pull` moved the pin), warn with the pull command.
+  Local runs no longer touch the eval datasets API; `--remote` still asks
+  `missingVersions` to skip uploading what Laminar has.
 - Client: `client.evalDatasets` (`@lmnr-ai/client`) sends each `org/name` as
   two path segments; errors are `LaminarApiError` with the server's `code`;
   the CLI checks `code` by the error's `name` (`apiErrorCode`), since tests

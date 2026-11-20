@@ -2,7 +2,6 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 
 import type { LaminarClient } from "@lmnr-ai/client";
-import { errorMessage } from "@lmnr-ai/types";
 
 import type { GlobalOpts } from "../../auth/with-client";
 import {
@@ -24,7 +23,9 @@ import {
   readDatasetState,
   scanTasks,
   type TaskHashes,
+  type TaskHashFile,
   taskFilter,
+  taskHashFile,
   writeDatasetState,
 } from "./dataset-state";
 import {
@@ -37,7 +38,6 @@ import {
   type PushPlan,
   planPull,
   planPush,
-  planRunPull,
   removeTaskDir,
   shortHash,
   type TaskVersion,
@@ -615,86 +615,73 @@ export const handleDatasetPush = async (
 };
 
 /**
- * Before `eval run`: in each dataset whose dataset.toml pins tasks, pull the
- * selected pinned tasks that are missing, and the unedited ones whose pin
- * moved. `taskGlobs` are `eval run --task`'s, Harbor's: they match task dir
- * names (a missing task's dir is its name after the org). Edited tasks run
- * as they are, with a warning. When Laminar can't be reached (or there is no
- * login) but every such task is on disk, the run goes on with a warning.
+ * Before `eval run`, which runs the tasks on disk as they are and never pulls:
+ * hash each eval dataset's task dirs `--task` selects (Harbor's matching, by
+ * dir name), for the plugin and the remote upload. A dataset that pins tasks
+ * but has none on disk (a fresh clone) is an error; pinned tasks that are
+ * missing, or unedited since the last pull / push while their pin moved (a
+ * `git pull`), only warn. Locally edited tasks run without a word.
  */
-export const pullRunTasks = async (
+export const checkRunTasks = async (
   evalsDir: string,
   folders: string[],
   taskGlobs: string[] | undefined,
-  opts: GlobalOpts,
-  buildClient: (opts: GlobalOpts) => Promise<LaminarClient> = buildEvalClient,
-): Promise<void> => {
+  opts: { dir?: string } = {},
+): Promise<Record<string, TaskHashFile>> => {
   const selectedDir = dirFilter((taskGlobs ?? []).map(globToRegExp));
-  let client: LaminarClient | undefined;
-  let gitignored = false;
+  const result: Record<string, TaskHashFile> = {};
   for (const folder of folders) {
     const datasetDir = path.join(evalsDir, folder);
     const manifest = await readDatasetToml(datasetDir);
-    const pins = manifest?.pins;
-    if (!manifest || !pins) continue;
-    if (!gitignored) {
-      await ensureGitignore(evalsDir);
-      gitignored = true;
+    if (!manifest) continue;
+    const local = await scanTasks(datasetDir);
+    const hashes = await taskHashFile(datasetDir, local, selectedDir);
+    result[folder] = hashes;
+    const pins = manifest.pins ?? {};
+    const pull = `lmnr-cli eval dataset pull ${folder}${dirFlag(opts)}`;
+    const onDisk = Object.keys(local.dirs).length + local.linked.length;
+    if (onDisk === 0 && Object.keys(pins).length > 0) {
+      throw invalidEvalsDir(
+        `${taskPath(folder, "")} has no tasks, and ${DATASET_TOML} pins ` +
+          `${Object.keys(pins).length} task(s). eval run runs the tasks on disk; ` +
+          `pull them first: ${pull}`,
+      );
     }
     const state = await readDatasetState(datasetDir);
-    const local = await scanTasks(datasetDir);
-    const dirOf = (task: string) => local.dirs[task] ?? shortName(task);
-    const linked = linkedNames(folder, local, (task) =>
-      selectedDir(dirOf(task)),
+    const linked = linkedNames(folder, local, () => false);
+    const localHash = Object.fromEntries(
+      Object.values(hashes).map(({ name, hash }) => [name, hash]),
     );
-    const managed = (task: string) =>
-      selectedDir(dirOf(task)) && !linked.has(task);
-    const hashes = await hashLocalTasks(
-      datasetDir,
-      local,
-      (task) => managed(task) && task in pins,
-    );
-    const plan = planRunPull({ pins, state, local: hashes }, managed);
-    for (const { task, hash } of plan.edited) {
-      logger.warn(
-        `${task} (${taskPath(folder, dirOf(task))}) has local edits; running ` +
-          `it as it is (${DATASET_TOML} pins ${shortHash(hash)}).`,
-      );
-    }
-    const pulls: PlacedVersion[] = [];
-    for (const { task, hash } of plan.pull) {
-      const dir = dirOf(task);
-      if (local.dirs[task] === undefined && local.taken.has(dir)) {
-        logger.warn(
-          `Not pulling ${task}: ${taskPath(folder, dir)} holds another task.`,
-        );
-      } else pulls.push({ task, hash, dir });
-    }
-    if (pulls.length === 0) continue;
-
-    const working = { ...state };
-    logger.info(
-      `Pulling ${pulls.length} task(s) of ${manifest.name} pinned in ` +
-        DATASET_TOML,
-    );
-    try {
-      client ??= await buildClient(opts);
-      const c = client;
-      await forEachLimit(pulls, TRANSFER_CONCURRENCY, async (version) => {
-        await installTaskVersion(c, datasetDir, manifest.name, version);
-        working[version.task] = version.hash;
-      });
-    } catch (error) {
-      const absent = pulls.filter(({ task }) => hashes[task] === undefined);
-      if (absent.length > 0) throw error;
-      logger.warn(
-        `Could not pull the new pins of ${manifest.name} ` +
-          `(${errorMessage(error)}); running the tasks on disk.`,
-      );
-    } finally {
-      if (!sameHashes(working, state)) {
-        await writeDatasetState(datasetDir, working);
+    const missing: string[] = [];
+    const outdated: string[] = [];
+    for (const [task, pin] of Object.entries(pins)) {
+      if (linked.has(task)) continue;
+      const dir = local.dirs[task];
+      if (dir === undefined) {
+        if (selectedDir(shortName(task))) missing.push(task);
+      } else if (selectedDir(dir)) {
+        const current = localHash[task];
+        // Unedited since this disk's last pull / push, but pinned elsewhere.
+        if (current !== pin && current === state[task]) outdated.push(task);
       }
     }
+    if (missing.length + outdated.length > 0) {
+      const list = (tasks: string[]) =>
+        tasks.slice(0, 5).join(", ") + (tasks.length > 5 ? ", ..." : "");
+      logger.warn(
+        `${manifest.name} runs the tasks on disk, which differ from ` +
+          `${DATASET_TOML}:` +
+          (missing.length > 0
+            ? ` ${missing.length} pinned task(s) are not in tasks/ and won't ` +
+              `run (${list(missing)});`
+            : "") +
+          (outdated.length > 0
+            ? ` ${outdated.length} task(s) are older than their pin ` +
+              `(${list(outdated)});`
+            : "") +
+          ` to run the pinned versions: ${pull}`,
+      );
+    }
   }
+  return result;
 };

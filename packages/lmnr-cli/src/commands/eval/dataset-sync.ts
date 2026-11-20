@@ -234,36 +234,6 @@ export const planPush = (
   return plan;
 };
 
-export interface RunPullPlan {
-  /** Pinned tasks to pull before the run: missing, or unedited with a new pin. */
-  pull: TaskVersion[];
-  /** Edited tasks whose pin differs: they run as they are. */
-  edited: TaskVersion[];
-}
-
-/**
- * What `eval run` pulls first: each selected pinned task whose dir is
- * missing, or whose dir is unedited (still its base) but pinned to another
- * version. Edited tasks run as they are.
- */
-export const planRunPull = (
-  { pins, state, local }: Pick<DatasetSnapshot, "pins" | "state" | "local">,
-  selected: (task: string) => boolean,
-): RunPullPlan => {
-  const plan: RunPullPlan = { pull: [], edited: [] };
-  for (const task of sortedKeys(pins ?? {})) {
-    if (!selected(task)) continue;
-    const pin = (pins as TaskPins)[task];
-    const current = local[task];
-    if (current === undefined) plan.pull.push({ task, hash: pin });
-    else if (current === pin) continue;
-    else if (state[task] !== undefined && current === state[task]) {
-      plan.pull.push({ task, hash: pin });
-    } else plan.edited.push({ task, hash: pin });
-  }
-  return plan;
-};
-
 /** The `code` of a `LaminarApiError` from the client, if any. */
 export const apiErrorCode = (error: unknown): string | undefined => {
   if (!(error instanceof Error) || error.name !== "LaminarApiError") {
