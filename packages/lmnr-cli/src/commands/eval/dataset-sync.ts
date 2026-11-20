@@ -117,15 +117,19 @@ export interface PushPlan {
   /** Versions to upload and pin: new tasks, and edits of pinned ones. */
   added: TaskVersion[];
   changed: TaskUpdate[];
+  /**
+   * Versions already pinned that Laminar doesn't have (e.g. digests `harbor
+   * sync` wrote, or a push that failed before): uploaded, pins unchanged.
+   */
+  stored: TaskVersion[];
   skipped: SkippedTask[];
-  /** dataset.toml's pins after the push; written when anything was pushed. */
-  pins: TaskPins;
 }
 
 /**
  * Plan `eval dataset push` for one dataset (`snapshot.local`: the selected
- * local task dirs). A task whose hash is its pin is up to date. One Laminar
- * doesn't have is uploaded and pinned (added, or changed from its pin). One
+ * local task dirs). A task whose hash is its pin is up to date, or uploaded
+ * if Laminar doesn't have it. Another one Laminar doesn't have is uploaded
+ * and pinned (added, or changed from its pin). One
  * Laminar has under another pin is outdated, and one Laminar has with no pin
  * was dropped from dataset.toml: both are skipped. Pinned tasks with no
  * local dir keep their pins.
@@ -138,13 +142,16 @@ export const planPush = ({
   const plan: PushPlan = {
     added: [],
     changed: [],
+    stored: [],
     skipped: [],
-    pins: { ...(pins ?? {}) },
   };
   for (const task of sortedKeys(local)) {
     const hash = local[task];
     const pin = pins?.[task];
-    if (hash === pin) continue;
+    if (hash === pin) {
+      if (task in missing) plan.stored.push({ task, hash });
+      continue;
+    }
     if (!(task in missing)) {
       plan.skipped.push({
         task,
@@ -155,7 +162,6 @@ export const planPush = ({
     }
     if (pin === undefined) plan.added.push({ task, hash });
     else plan.changed.push({ task, from: pin, to: hash });
-    plan.pins[task] = hash;
   }
   return plan;
 };

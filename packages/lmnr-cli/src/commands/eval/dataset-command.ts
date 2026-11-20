@@ -191,6 +191,8 @@ interface DatasetReport {
   folder: string;
   added: TaskVersion[];
   changed: TaskUpdate[];
+  /** Push only: pinned versions uploaded because Laminar didn't have them. */
+  stored?: TaskVersion[];
   /** Pull only. */
   removed?: TaskVersion[];
   /** Local tasks left alone, and why. */
@@ -209,10 +211,15 @@ const printReport = (reports: DatasetReport[], verb: string) => {
   for (const r of reports) {
     const title = pc.bold(r.dataset) + pc.dim(` (${r.folder})`);
     const removed = r.removed ?? [];
+    const stored = r.stored ?? [];
     const counts =
       `${r.added.length} added, ${r.changed.length} changed` +
-      (r.removed ? `, ${removed.length} removed` : "");
-    if (r.added.length + r.changed.length + removed.length === 0) {
+      (r.removed ? `, ${removed.length} removed` : "") +
+      (stored.length > 0 ? `, ${stored.length} pinned version(s) stored` : "");
+    if (
+      r.added.length + r.changed.length + removed.length + stored.length ===
+      0
+    ) {
       emitErr(`${title}: up to date\n`);
     } else {
       emitErr(`${title}: ${verb} ${counts}\n`);
@@ -226,6 +233,9 @@ const printReport = (reports: DatasetReport[], verb: string) => {
           pc.dim(`${shortHash(t.from)} -> ${shortHash(t.to)}`) +
           "\n",
       );
+    }
+    for (const t of stored) {
+      emitErr(`  ${pc.green("^")} ${t.task} ${pc.dim(shortHash(t.hash))}\n`);
     }
     for (const t of removed) {
       emitErr(`  ${pc.red("-")} ${t.task} ${pc.dim(shortHash(t.hash))}\n`);
@@ -409,30 +419,44 @@ interface PlannedPush {
   plan: PushPlan;
 }
 
-/** The versions a push uploads: its new tasks and edits. */
+/** The versions a push uploads: its new tasks, edits and unstored pins. */
 const pushed = ({ plan }: PlannedPush): TaskVersion[] => [
   ...plan.added,
   ...plan.changed.map(({ task, to }) => ({ task, hash: to })),
+  ...plan.stored,
 ];
 
-/** Upload the new versions, then pin them in dataset.toml. */
+/**
+ * Upload the versions, then pin them in dataset.toml. If an upload fails, the
+ * ones that finished are still pinned: unpinned, a retry would skip them as
+ * dropped (Laminar has them) and a pull would delete them.
+ */
 const applyPush = async (
   client: LaminarClient,
   evalsDir: string,
   p: PlannedPush,
 ) => {
-  const { dataset, local, plan } = p;
+  const { dataset, local } = p;
   const upload = pushed(p);
   if (upload.length === 0) return;
   await ensureGitignore(evalsDir);
-  await forEachLimit(upload, TRANSFER_CONCURRENCY, ({ task, hash }) =>
-    uploadTaskVersion(client, dataset.dir, dataset.manifest.name, {
-      task,
-      hash,
-      dir: local.dirs[task],
-    }),
-  );
-  await writeDatasetToml(dataset.dir, dataset.manifest, plan.pins);
+  const pins = { ...(dataset.manifest.pins ?? {}) };
+  let pinned = 0;
+  try {
+    await forEachLimit(upload, TRANSFER_CONCURRENCY, async ({ task, hash }) => {
+      await uploadTaskVersion(client, dataset.dir, dataset.manifest.name, {
+        task,
+        hash,
+        dir: local.dirs[task],
+      });
+      if (pins[task] !== hash) {
+        pins[task] = hash;
+        pinned++;
+      }
+    });
+  } finally {
+    if (pinned > 0) await writeDatasetToml(dataset.dir, dataset.manifest, pins);
+  }
 };
 
 /** Refuse to upload task files Laminar won't store (`.env*`). */
@@ -500,6 +524,7 @@ export const handleDatasetPush = async (
       folder: dataset.folder,
       added: plan.added,
       changed: plan.changed,
+      stored: plan.stored,
       skipped: plan.skipped,
     })),
     opts,

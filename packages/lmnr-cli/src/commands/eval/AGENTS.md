@@ -278,7 +278,8 @@
   version's index registers it. Per task: pin = dataset.toml, local = hash
   of its dir, and "Laminar has it" = not in `missingVersions` of the local
   hashes (one batched call per dataset, also on `--dry-run`). The 2x2:
-  local = pin → nothing; local ≠ pin and Laminar lacks it (an edit) → pull
+  local = pin → nothing (push uploads it if Laminar lacks it, e.g. digests
+  `harbor sync` wrote: `stored`, pin unchanged); local ≠ pin and Laminar lacks it (an edit) → pull
   refuses (22, `--force` discards), push uploads + pins; local ≠ pin and
   Laminar has it (out of date, e.g. after a `git pull`) → pull replaces,
   push skips. Unpinned dir Laminar lacks (new task) → pull leaves it
@@ -300,7 +301,10 @@
 - **push** (`planPush`): `assertNoEnvFiles` → per version to push
   `packTaskDir` (re-checks the hash) → `uploadVersion` +
   `uploadVersionIndex` → dataset.toml written once the dataset's uploads
-  are done. Skipped tasks are listed in the report (`skipped` in `--json`,
+  are done, in a `finally`: if one upload fails, the versions that did
+  upload are still pinned (unpinned, a retry would skip them as dropped and
+  a pull would delete them). A kill between an index upload and that write
+  leaves the same state; it's narrow and accepted. Skipped tasks are listed in the report (`skipped` in `--json`,
   `!` lines on stderr) and don't fail the push.
 - **`--task`:** for `eval dataset` it globs the task name, with or without
   its org (`taskFilter`); for `eval run` (and its check, and the remote

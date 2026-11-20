@@ -816,7 +816,9 @@ Examples:
       `
 Each selected task in <folder>/tasks/ is hashed (Harbor's content hash).
 A version Laminar doesn't have (a new task, or an edit) is uploaded as a new
-version and pinned in tasks/dataset.toml; commit it. Versions are
+version and pinned in tasks/dataset.toml; commit it. Pinned versions Laminar
+doesn't have (e.g. digests \`harbor sync\` wrote) are uploaded too. If an
+upload fails, the versions that did upload are still pinned. Versions are
 independent: if two people push edits of the same task, both are stored, and
 merging dataset.toml in git decides which one the dataset uses.
 

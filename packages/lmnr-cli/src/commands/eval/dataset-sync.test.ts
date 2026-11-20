@@ -125,7 +125,6 @@ void describe("planPush", () => {
     expect(plan.added).toEqual([{ task: "n", hash: H4 }]);
     expect(plan.changed).toEqual([{ task: "a", from: H1, to: H3 }]);
     expect(plan.skipped).toEqual([]);
-    expect(plan.pins).toEqual({ a: H3, b: H2, n: H4 });
   });
 
   void it("is a no-op when every task is at its pin", () => {
@@ -133,6 +132,19 @@ void describe("planPush", () => {
     expect(plan.added).toEqual([]);
     expect(plan.changed).toEqual([]);
     expect(plan.skipped).toEqual([]);
+  });
+
+  void it("stores pinned versions Laminar doesn't have", () => {
+    const plan = planPush(
+      snap({
+        pins: { a: H1, b: H2 },
+        local: { a: H1, b: H2 },
+        missing: { a: H1 },
+      }),
+    );
+    expect(plan.stored).toEqual([{ task: "a", hash: H1 }]);
+    expect(plan.added).toEqual([]);
+    expect(plan.changed).toEqual([]);
   });
 
   void it("skips versions Laminar has under another pin, or none", () => {
@@ -149,17 +161,9 @@ void describe("planPush", () => {
       { task: "a", hash: H2, reason: "outdated" },
       { task: "d", hash: H3, reason: "unpinned" },
     ]);
-    expect(plan.pins).toEqual({ a: H1 });
   });
 
-  void it("keeps the pins of tasks with no local dir", () => {
-    const plan = planPush(
-      snap({ pins: { a: H1, b: H2 }, local: { a: H3 }, missing: { a: H3 } }),
-    );
-    expect(plan.pins).toEqual({ a: H3, b: H2 });
-  });
-
-  void it("pins every task of a dataset Laminar doesn't have", () => {
+  void it("adds every task of a dataset Laminar doesn't have", () => {
     const plan = planPush(
       snap({ pins: null, local: { a: H1, b: H2 }, missing: { a: H1, b: H2 } }),
     );
@@ -167,7 +171,6 @@ void describe("planPush", () => {
       { task: "a", hash: H1 },
       { task: "b", hash: H2 },
     ]);
-    expect(plan.pins).toEqual({ a: H1, b: H2 });
   });
 });
 

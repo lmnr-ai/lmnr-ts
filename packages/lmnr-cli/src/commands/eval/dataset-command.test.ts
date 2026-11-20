@@ -228,6 +228,61 @@ void describe("eval dataset push / pull", () => {
     expect(uploads()).toEqual([`upload ${DS}/acme/complaint`]);
   });
 
+  void it("uploads pinned versions Laminar doesn't have, keeping the pins", async () => {
+    await writeDataset();
+    await handleDatasetPush([], opts("evals"));
+    const manifest = await read("evals/support/tasks/dataset.toml");
+
+    // Another Laminar (or emptied storage): the same pins, nothing stored.
+    laminar = fakeLaminar();
+    vi.mocked(buildEvalClient).mockResolvedValue(laminar.client);
+    await handleDatasetPush([], opts("evals"));
+    expect(uploads()).toHaveLength(2);
+    expect(await read("evals/support/tasks/dataset.toml")).toBe(manifest);
+
+    await write("clone/support/harbor.yaml", "");
+    await mkdir(path.join(root, "clone/support/tasks"));
+    await takeManifest("evals", "clone");
+    await handleDatasetPull([], opts("clone"));
+    expect(
+      await read("clone/support/tasks/complaint/environment/data.txt"),
+    ).toBe("v1");
+  });
+
+  void it("pins the versions that uploaded when another upload fails", async () => {
+    await writeDataset();
+    const evalDatasets = (
+      laminar.client as unknown as {
+        evalDatasets: {
+          uploadVersionIndex: (d: string, t: string, h: string) => unknown;
+        };
+      }
+    ).evalDatasets;
+    const index = evalDatasets.uploadVersionIndex;
+    const failing = vi
+      .spyOn(evalDatasets, "uploadVersionIndex")
+      .mockImplementation(async (d, t, h) => {
+        if (t === "acme/refund") throw apiError(500, "internal");
+        return index(d, t, h);
+      });
+    await expect(handleDatasetPush([], opts("evals"))).rejects.toThrow();
+    expect(Object.keys((await pinsOf("evals/support"))!)).toEqual([
+      "acme/complaint",
+    ]);
+
+    // The retry pins the rest; the pulled-then-kept complaint stays.
+    failing.mockRestore();
+    await handleDatasetPush([], opts("evals"));
+    expect(Object.keys((await pinsOf("evals/support"))!)).toEqual([
+      "acme/complaint",
+      "acme/refund",
+    ]);
+    await handleDatasetPull([], opts("evals"));
+    expect(existsSync(path.join(root, "evals/support/tasks/refund"))).toBe(
+      true,
+    );
+  });
+
   void it("refuses tasks without their own [task] name", async () => {
     await writeDataset();
     await write("evals/support/tasks/unnamed/task.toml", "[task]\n");
