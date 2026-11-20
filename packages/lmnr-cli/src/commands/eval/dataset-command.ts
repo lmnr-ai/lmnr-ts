@@ -538,8 +538,8 @@ const assertNoEnvFiles = async (planned: PlannedPush[]) => {
   if (found.length > 0) {
     throw invalidEvalsDir(
       `Not pushing env files, which may hold secrets: ${found.join(", ")}. ` +
-        "Delete them, or list them in the task's .gitignore (Harbor then " +
-        "leaves them out too); pass secrets as ${VAR}s instead.",
+        "Delete them, or list them in the task's .gitignore; pass secrets " +
+        "as ${VAR}s instead.",
     );
   }
 };

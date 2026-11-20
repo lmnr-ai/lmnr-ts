@@ -732,7 +732,7 @@ Examples:
 
   evalDatasetCmd
     .command("pull")
-    .description("Bring tasks/ to the versions dataset.toml pins")
+    .description("Download tasks/ to match dataset.toml")
     .argument("[datasets...]", "Datasets to pull. Omitted → every dataset")
     .option("--dir <dir>", "Evals folder", "evals")
     .option(
