@@ -118,8 +118,12 @@ export const planPull = (
     writePins: pins === null || !samePins(pins, newPins),
     state: { ...state },
   };
-  const isEdited = (task: string) =>
-    state[task] === undefined || local[task] !== state[task];
+  // No sync state (tasks from git or a copy): the pin is the best guess at
+  // the version the dir came from.
+  const isEdited = (task: string) => {
+    const base = state[task] ?? pins?.[task];
+    return base === undefined || local[task] !== base;
+  };
 
   for (const task of sortedKeys(targets)) {
     const target = targets[task];
@@ -191,8 +195,9 @@ export const planPush = (
   };
   for (const task of sortedKeys(local)) {
     const hash = local[task];
-    const base = state[task];
     const pin = pins?.[task];
+    // No sync state (tasks from git or a copy): based on the pin.
+    const base = state[task] ?? pin;
     const current = latest?.[task];
     if (base !== undefined && current !== undefined && current !== base) {
       plan.moved.push({ task, where: "laminar", to: current });

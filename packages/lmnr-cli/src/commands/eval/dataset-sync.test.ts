@@ -93,6 +93,19 @@ void describe("planPull", () => {
     expect(plan.added).toEqual([{ task: "a", hash: H1 }]);
   });
 
+  void it("with no sync state, a dir still at its pin is not edited", () => {
+    const plan = pull(
+      {
+        pins: { a: H1, b: H1 },
+        local: { a: H1, b: H2 },
+        latest: { a: H3, b: H3 },
+      },
+      { latest: true },
+    );
+    expect(plan.changed.map((c) => c.task)).toEqual(["a", "b"]);
+    expect(plan.edited).toEqual(["b"]);
+  });
+
   void it("with --latest pins Laminar's latest, keeping unselected pins", () => {
     const plan = pull(
       {
@@ -253,6 +266,22 @@ void describe("planPush", () => {
     );
     expect(plan.changed.map((c) => c.task)).toEqual(["a"]);
     expect(plan.removed).toEqual([]);
+  });
+
+  void it("with no sync state, bases a task on its pin", () => {
+    // Tasks came from git: edited one, pin is Laminar's latest → pushable.
+    const plan = planPush(
+      snap({ pins: { a: H1 }, local: { a: H2 }, latest: { a: H1 } }),
+      all,
+    );
+    expect(plan.moved).toEqual([]);
+    expect(plan.changed).toEqual([{ task: "a", hash: H2, base: H1, from: H1 }]);
+    // Someone pushed past the pin: still refused.
+    const moved = planPush(
+      snap({ pins: { a: H1 }, local: { a: H2 }, latest: { a: H3 } }),
+      all,
+    );
+    expect(moved.moved).toEqual([{ task: "a", where: "laminar", to: H3 }]);
   });
 
   void it("pushes against a dataset Laminar doesn't have", () => {
