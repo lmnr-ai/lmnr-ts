@@ -1,7 +1,7 @@
 {
   "name": "@lmnr-ai/lmnr",
   "version": "0.9.5",
-  "description": "TypeScript SDK for Laminar AI",
+  "description": "TypeScript SDK for Laminar, the open-source observability platform for AI agents",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
   "exports": {
@@ -45,7 +45,13 @@
     "laminar",
     "lmnr",
     "sdk",
-    "lmnr.ai"
+    "lmnr.ai",
+    "observability",
+    "ai-agents",
+    "agent-observability",
+    "opentelemetry",
+    "tracing",
+    "evals"
   ],
   "author": "founders@lmnr.ai",
   "license": "Apache-2.0",
