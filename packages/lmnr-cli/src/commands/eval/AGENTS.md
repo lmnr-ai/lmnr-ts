@@ -19,8 +19,7 @@
   - `--remote`: runs in Laminar sandboxes and prints the run's log until it
     ends. Hashes the run's tasks and asks `missingVersions`: tasks Laminar
     has are left out of the upload (`remoteExclude`: also other dataset
-    folders, task dirs `--task` doesn't select, `.lmnr-state.json`; never
-    `dataset.toml`) and listed in `RunSpec.downloads` (`{<folder>: {dataset,
+    folders, task dirs `--task` doesn't select; never `dataset.toml`) and listed in `RunSpec.downloads` (`{<folder>: {dataset,
     tasks: [{task, hash, dir}]}}`), which `eval orchestrate` downloads (run
     key, `/v1`) into `<folder>/tasks/<dir>` before running;
     `RunSpec.taskHashes` feeds the plugin. Without dataset storage (`storage_not_configured`) every task
@@ -188,10 +187,10 @@
   `docker_failed` (build / pull / save, unreadable `docker save` output, a
   non-amd64 image, zstd layers), 21 `remote_run_failed` (a `--remote` run's
   orchestrator exited with anything but 0 or 18, or its sandbox was lost; 18
-  from it stays `harbor_failed`), 22 `local_edits` (pull would overwrite or
-  delete edited tasks; `--force`), 23 `pin_moved` (push refused). The eval
-  dataset API's `storage_not_configured`, `version_not_found` and
-  `dataset_not_found` exit 1 with their own `code`. Bad `--env` flags are
+  from it stays `harbor_failed`), 22 `local_edits` (pull would overwrite
+  versions Laminar doesn't have; `--force`). The eval dataset API's
+  `storage_not_configured` and `version_not_found` exit 1 with their own
+  `code`. Bad `--env` flags are
   commander `InvalidArgumentError`s.
 - **Secrets are Harbor `${VAR}` placeholders**, not flags: `findTemplateVars`
   scans harbor.yaml + the run's task.toml files (`findTaskTomls`, so a task
@@ -235,15 +234,12 @@
 - **Harbor's own files.** `<folder>/tasks/dataset.toml` is Harbor's dataset
   manifest (`harbor.models.dataset.manifest`): `[dataset] name` is the
   dataset's name in Laminar, `[[tasks]] {name, digest = "sha256:<hex>"}` its
-  pins (`dataset-toml.ts`; no `[[tasks]]` at all = no pins = pull takes the
-  latest, `tasks = []` = nothing pinned; every other key is kept on rewrite,
-  pins sorted bytewise). Each task is known by `[task] name` in its
+  pins (`dataset-toml.ts`; no `[[tasks]]` and `tasks = []` both pin nothing;
+  every other key is kept on rewrite, pins sorted bytewise). Each task is known by `[task] name` in its
   `task.toml`, NEVER by its dir. Both names are Harbor's `org/name`
   (`ORG_NAME_PATTERN`, no `..`, ≤ 255 bytes here; the org is free text).
   `tasks/` is git-ignored except the manifest (`<dir>/.gitignore` gets
-  `*/tasks/*` + `!*/tasks/dataset.toml`); `tasks/.lmnr-state.json` =
-  `{tasks: {<name>: <base>}}`, the base being the hash the task had when last
-  pulled or pushed on THIS disk.
+  `*/tasks/*` + `!*/tasks/dataset.toml`). There is no local sync state.
 - **Scanning** (`scanTasks`): dirs under `tasks/` with a `task.toml`; dot dirs
   (our temp dirs) are skipped. pull and push fail (`assertNamedTasks`) on a
   `task.toml` without a valid `[task] name` and on a name two dirs share (a
@@ -275,41 +271,46 @@
   `notes.md` at the task root) are neither hashed nor stored. Push refuses
   tasks whose hashed files include `.env*` (Harbor would hash them; a task
   `.gitignore` can leave them out).
-- Per task: pin = dataset.toml, base = state, local = hash of its dir,
-  edited = local exists and ≠ base (no base counts as edited), latest =
-  Laminar's (`GET` dataset).
-- **pull** (`planPull`): target = pin (or latest with `--latest` / no pins;
-  selected tasks' pins are then replaced, others kept). No local dir →
-  added, local ≠ target → changed, in state + pin gone + dir exists →
-  removed. Changing or removing an edited task without `--force` → 22,
-  checked for every dataset before anything is written; `missingVersions`
-  then turns unknown pins into `version_not_found`. Downloads go to
-  `tasks/.lmnr-pull-*` (`modern-tar` refuses escaping paths; only files and
-  dirs are extracted, modes normalized), are re-hashed against the target
-  and renamed into place. State is written even after a partial failure,
-  for the tasks that were written. A dataset Laminar lacks, with nothing
-  pinned, is skipped. Datasets are named by folder or `[dataset] name`; a
-  folder without dataset.toml is skipped with a warning (named: an error
-  showing the file to create).
-- **push** (`planPush`): pin moved → 23, no override, when (a) base set and
-  latest ≠ base, (b) base and pin set and pin ≠ base, (c) no base and latest
-  ≠ local. Else local = latest = pin → unchanged; otherwise added / changed,
-  sent as `{task, hash, base: latest ?? null}` (in every accepted case the
-  disk's base equals latest, and with `base` null the server would call any
-  older version a move). Tasks in state AND pinned that are no longer on
-  disk (dir deleted, or `[task] name` changed) lose their pin;
-  pinned-but-never-pulled tasks are untouched. Apply: `missingVersions` →
-  `packTaskDir` (re-checks the hash) → `uploadVersion` + `uploadVersionIndex`
-  → `push`; a 409 `moved` is 23 too. `--dry-run` runs the GET, the checks and
-  `missingVersions`.
+- **Versions are independent; Laminar keeps no "latest".** dataset.toml in
+  git is the only record of which version a dataset uses: concurrent pushes
+  of one task store two versions, and the git merge of dataset.toml picks
+  one. The server has no dataset `GET` and no push endpoint: uploading a
+  version's index registers it. Per task: pin = dataset.toml, local = hash
+  of its dir, and "Laminar has it" = not in `missingVersions` of the local
+  hashes (one batched call per dataset, also on `--dry-run`). The 2x2:
+  local = pin → nothing; local ≠ pin and Laminar lacks it (an edit) → pull
+  refuses (22, `--force` discards), push uploads + pins; local ≠ pin and
+  Laminar has it (out of date, e.g. after a `git pull`) → pull replaces,
+  push skips. Unpinned dir Laminar lacks (new task) → pull leaves it
+  (`skipped: unpushed`), push uploads + pins; unpinned dir Laminar has
+  (dropped from dataset.toml) → pull deletes it, push skips (`unpinned`).
+  Pinned task with no dir → pull downloads it, push keeps the pin (push
+  never unpins: deleting a task = deleting its `[[tasks]]` entry). Known
+  gap: an edit made before a `git pull` moved its pin gets pushed over the
+  teammate's pin; it shows in the dataset.toml diff.
+- **pull** (`planPull`): never writes dataset.toml. Conflicts (22) are
+  checked for every dataset before anything is written; a second
+  `missingVersions` on the versions to download turns unknown pins into
+  `version_not_found`. Downloads go to `tasks/.lmnr-pull-*` (`modern-tar`
+  refuses escaping paths; only files and dirs are extracted, modes
+  normalized), are re-hashed against the pin and renamed into place.
+  Datasets are named by folder or `[dataset] name`; a folder without
+  dataset.toml is skipped with a warning (named: an error showing the file
+  to create).
+- **push** (`planPush`): `assertNoEnvFiles` → per version to push
+  `packTaskDir` (re-checks the hash) → `uploadVersion` +
+  `uploadVersionIndex` → dataset.toml written once the dataset's uploads
+  are done. Skipped tasks are listed in the report (`skipped` in `--json`,
+  `!` lines on stderr) and don't fail the push.
 - **`--task`:** for `eval dataset` it globs the task name, with or without
   its org (`taskFilter`); for `eval run` (and its check, and the remote
   upload) it is Harbor's, matching task DIR names (`dirFilter`).
 - **run** (`checkRunTasks`): never pulls, like `pnpm dev` never installs;
-  local edits run without a word. Offline: a dataset with pins and no task
+  tasks run as they are on disk. Offline: a dataset with pins and no task
   on disk (a fresh clone) is `invalid_evals_dir` with the pull command;
-  selected pinned tasks missing on disk, or unedited (local = base) with
-  pin ≠ local (a `git pull` moved the pin), warn with the pull command.
+  selected pinned tasks missing on disk, or with local ≠ pin (an edit, or
+  out of date: offline it can't tell which), warn with the push and pull
+  commands.
   Local runs no longer touch the eval datasets API; `--remote` still asks
   `missingVersions` to skip uploading what Laminar has.
 - Client: `client.evalDatasets` (`@lmnr-ai/client`) sends each `org/name` as

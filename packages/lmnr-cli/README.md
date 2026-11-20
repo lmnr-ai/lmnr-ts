@@ -181,23 +181,27 @@ images (`<dataset>/lmnr.yaml`), secrets and flags. Exit codes:
 
 ### `eval dataset pull / push` - Eval datasets
 
-A dataset's tasks are versioned in Laminar by content hash.
-`<dataset>/tasks.toml` (committed) pins each task's version; `<dataset>/tasks/`
-holds the tasks themselves and is git-ignored (`<dir>/.gitignore` gets
-`*/tasks/`).
+A dataset's tasks are versioned in Laminar by content hash (Harbor's).
+`<dataset>/tasks/dataset.toml` (Harbor's manifest, committed) names the
+dataset and pins each task's version; the task dirs next to it are
+git-ignored (`<dir>/.gitignore` gets `*/tasks/*` and `!*/tasks/dataset.toml`).
+Laminar keeps every version side by side, with no "latest": if two people
+push edits of the same task, both are stored, and merging `dataset.toml` in
+git decides which one the dataset uses.
 
 ```bash
 lmnr-cli eval dataset push                         # upload new versions, pin them
 lmnr-cli eval dataset pull                         # bring tasks/ to the pins
-lmnr-cli eval dataset pull support --latest        # newest versions, re-pinned
 lmnr-cli eval dataset pull --dry-run --json        # what would change
 ```
 
-`eval run` pulls missing pinned tasks (and unedited ones whose pin changed)
-before running; `--remote` uploads only the tasks Laminar doesn't have.
-Exit codes: `22` pull would overwrite local edits (use `--force`), `23` push
-refused because a task's pin moved since it was pulled here (pull, then push
-again).
+Pull overwrites tasks that differ from their pin when Laminar has the local
+version, and deletes tasks dropped from `dataset.toml`. Push uploads and pins
+versions Laminar doesn't have (new tasks and edits) and skips, with a warning,
+tasks whose version Laminar has under another pin. `eval run` runs the tasks
+on disk and never pulls; `--remote` uploads only the tasks Laminar doesn't
+have. Exit code `22`: pull would overwrite versions Laminar doesn't have (push
+them, or `--force` to discard them).
 
 ### `setup` - One-shot onboarding
 

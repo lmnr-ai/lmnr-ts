@@ -228,7 +228,6 @@ void describe("runDatasets", () => {
 void describe("remote tasks", () => {
   void it("uploads only the run's tasks Laminar doesn't have", async () => {
     await writeEvals();
-    await write("a/tasks/.lmnr-state.json", "{}");
     await write("other/tasks/dataset.toml", '[dataset]\nname = "acme/other"\n');
     await write("other/tasks/x/task.toml", "");
     await write("shared/helper.py", "");

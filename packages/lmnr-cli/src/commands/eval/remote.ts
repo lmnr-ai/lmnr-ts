@@ -12,7 +12,6 @@ import { onStderr } from "../../utils/command-capture";
 import { initializeLogger } from "../../utils/logger";
 import {
   dirFilter,
-  STATE_FILE,
   scanTasks,
   type TaskHashFile,
   taskHashFile,
@@ -127,7 +126,7 @@ export const remoteTaskVersions = async (
 /**
  * What a remote run's upload leaves out (`packEvalsDir`'s `exclude`): dataset
  * folders the run doesn't include, and in the run's datasets the task dirs
- * `--task` doesn't select or the orchestrator downloads, plus the sync state.
+ * `--task` doesn't select or the orchestrator downloads.
  */
 export const remoteExclude = (
   datasetFolders: string[],
@@ -149,11 +148,7 @@ export const remoteExclude = (
     if (others.has(top)) return true;
     if (!run.has(top) || sub !== TASKS_DIR || name === undefined) return false;
     if (rest.length > 0 || name === DATASET_TOML) return false;
-    return (
-      name === STATE_FILE ||
-      !selected(name) ||
-      downloaded.get(top)?.has(name) === true
-    );
+    return !selected(name) || downloaded.get(top)?.has(name) === true;
   };
 };
 

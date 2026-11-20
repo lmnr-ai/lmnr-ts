@@ -22,16 +22,15 @@ import { TASKS_DIR } from "./datasets";
 import { hashTaskDir, packTaskDir } from "./task-hash";
 
 /**
- * What pull / push / run know about one dataset, by task name. `local` has
- * the hash of each local task they look at (the `--task` selection); `latest`
- * is each task's latest version in Laminar, null when Laminar has no such
- * dataset; `pins` is null when dataset.toml lists no tasks.
+ * What pull / push know about one dataset, by task name. `local` has the hash
+ * of each local task they look at (the `--task` selection); `missing` is the
+ * part of `local` Laminar doesn't have; `pins` is null when dataset.toml
+ * lists no tasks. Versions are independent: Laminar keeps no "latest".
  */
 export interface DatasetSnapshot {
   pins: TaskPins | null;
-  state: TaskHashes;
   local: TaskHashes;
-  latest: TaskHashes | null;
+  missing: TaskHashes;
 }
 
 export interface TaskVersion {
@@ -45,192 +44,119 @@ export interface TaskUpdate {
   to: string;
 }
 
+/** Why a local task was left alone. */
+export type SkipReason =
+  /** Pull: not pinned, and Laminar doesn't have it (a new task). */
+  | "unpushed"
+  /** Push: Laminar has it, and dataset.toml pins another version. */
+  | "outdated"
+  /** Push: not pinned, and Laminar has it (removed from dataset.toml). */
+  | "unpinned";
+
+export interface SkippedTask extends TaskVersion {
+  reason: SkipReason;
+}
+
 const sortedKeys = (record: Record<string, unknown>) =>
   Object.keys(record).sort(compareBytes);
-
-const samePins = (a: TaskPins, b: TaskPins) => {
-  const keys = Object.keys(a);
-  return (
-    keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k])
-  );
-};
-
-export interface PullOptions {
-  /** `--task` globs as a predicate. */
-  selected: (task: string) => boolean;
-  force: boolean;
-  /** `--latest` (implied when dataset.toml lists no tasks). */
-  latest: boolean;
-}
 
 export interface PullPlan {
   added: TaskVersion[];
   changed: TaskUpdate[];
   removed: TaskVersion[];
-  /** Edited tasks the pull would overwrite or delete (refused without --force). */
-  edited: string[];
-  /** dataset.toml's pins after the pull; `writePins` says whether they change. */
-  pins: TaskPins;
-  writePins: boolean;
-  /** The local state after the pull. */
-  state: TaskHashes;
+  skipped: SkippedTask[];
+  /**
+   * Tasks the pull would overwrite or delete whose local version Laminar
+   * doesn't have (edits): refused without `force`.
+   */
+  conflicts: string[];
 }
 
 /**
- * Plan `eval dataset pull` for one dataset. The target of each selected task
- * is its pin, or with `latest` (or no pins) Laminar's latest version,
- * which then replaces the selected tasks' pins. A task with no local dir
- * is added, one whose hash differs from the target is changed, and one that
- * was pulled here before but is no longer pinned is removed. Changing or
- * removing an edited task (its hash differs from its base, or it has none)
- * needs `force`. `snapshot.latest` must be set when pulling the latest.
+ * Plan `eval dataset pull` for one dataset: make the selected tasks match
+ * dataset.toml's pins. A pinned task with no local dir is added, one whose
+ * hash differs from its pin is changed, and an unpinned one Laminar has is
+ * removed (it was dropped from dataset.toml). An unpinned one Laminar doesn't
+ * have is a new task, left alone. Overwriting a version Laminar doesn't have
+ * is a conflict unless `force`. Never changes the pins.
  */
 export const planPull = (
-  { pins, state, local, latest }: DatasetSnapshot,
-  { selected, force, latest: pullLatest }: PullOptions,
+  { pins, local, missing }: DatasetSnapshot,
+  { selected, force }: { selected: (task: string) => boolean; force: boolean },
 ): PullPlan => {
-  const useLatest = pullLatest || pins === null;
-  let targets: TaskPins;
-  let newPins: TaskPins;
-  if (useLatest) {
-    targets = Object.fromEntries(
-      Object.entries(latest ?? {}).filter(([task]) => selected(task)),
-    );
-    newPins = {
-      ...Object.fromEntries(
-        Object.entries(pins ?? {}).filter(([task]) => !selected(task)),
-      ),
-      ...targets,
-    };
-  } else {
-    targets = Object.fromEntries(
-      Object.entries(pins).filter(([task]) => selected(task)),
-    );
-    newPins = { ...pins };
-  }
-
   const plan: PullPlan = {
     added: [],
     changed: [],
     removed: [],
-    edited: [],
-    pins: newPins,
-    writePins: pins === null || !samePins(pins, newPins),
-    state: { ...state },
+    skipped: [],
+    conflicts: [],
   };
-  // No sync state (tasks from git or a copy): the pin is the best guess at
-  // the version the dir came from.
-  const isEdited = (task: string) => {
-    const base = state[task] ?? pins?.[task];
-    return base === undefined || local[task] !== base;
-  };
-
+  const unsaved = (task: string) => task in missing && !force;
+  const targets = pins ?? {};
   for (const task of sortedKeys(targets)) {
+    if (!selected(task)) continue;
     const target = targets[task];
     const current = local[task];
     if (current === undefined) {
       plan.added.push({ task, hash: target });
     } else if (current !== target) {
       plan.changed.push({ task, from: current, to: target });
-      if (isEdited(task) && !force) plan.edited.push(task);
+      if (unsaved(task)) plan.conflicts.push(task);
     }
-    plan.state[task] = target;
   }
-  for (const task of sortedKeys(state)) {
-    if (!selected(task) || task in newPins) continue;
-    delete plan.state[task];
-    if (local[task] === undefined) continue;
-    plan.removed.push({ task, hash: local[task] });
-    if (isEdited(task) && !force) plan.edited.push(task);
+  for (const task of sortedKeys(local)) {
+    if (task in targets || !selected(task)) continue;
+    const hash = local[task];
+    if (task in missing) plan.skipped.push({ task, hash, reason: "unpushed" });
+    else plan.removed.push({ task, hash });
   }
   return plan;
 };
 
-/** Why push refuses a task: its pin moved since it was pulled here. */
-export interface MovedTask {
-  task: string;
-  /** `laminar`: Laminar's latest moved; `pin`: dataset.toml's pin moved. */
-  where: "laminar" | "pin";
-  /** The version it moved to. */
-  to: string;
-}
-
-export interface PushTask extends TaskVersion {
-  /** Laminar's latest when planned: the push fails if it moved since. */
-  base: string | null;
-}
-
 export interface PushPlan {
-  added: PushTask[];
-  changed: (PushTask & { from: string })[];
-  removed: TaskVersion[];
-  moved: MovedTask[];
-  /** dataset.toml's pins after the push; `writePins` says whether they change. */
+  /** Versions to upload and pin: new tasks, and edits of pinned ones. */
+  added: TaskVersion[];
+  changed: TaskUpdate[];
+  skipped: SkippedTask[];
+  /** dataset.toml's pins after the push; written when anything was pushed. */
   pins: TaskPins;
-  writePins: boolean;
-  state: TaskHashes;
 }
 
 /**
  * Plan `eval dataset push` for one dataset (`snapshot.local`: the selected
- * local task dirs). A task is refused as moved when Laminar's latest moved
- * past its base, when dataset.toml pins another version than its base (moved
- * without a pull here), or, never pulled here, when Laminar already has
- * another latest version. A task whose hash is Laminar's latest and its pin
- * is unchanged; others are added (no pin) or changed. A task pulled here
- * before whose dir is gone loses its pin (Laminar keeps it).
+ * local task dirs). A task whose hash is its pin is up to date. One Laminar
+ * doesn't have is uploaded and pinned (added, or changed from its pin). One
+ * Laminar has under another pin is outdated, and one Laminar has with no pin
+ * was dropped from dataset.toml: both are skipped. Pinned tasks with no
+ * local dir keep their pins.
  */
-export const planPush = (
-  { pins, state, local, latest }: DatasetSnapshot,
-  selected: (task: string) => boolean,
-): PushPlan => {
+export const planPush = ({
+  pins,
+  local,
+  missing,
+}: DatasetSnapshot): PushPlan => {
   const plan: PushPlan = {
     added: [],
     changed: [],
-    removed: [],
-    moved: [],
+    skipped: [],
     pins: { ...(pins ?? {}) },
-    writePins: false,
-    state: { ...state },
   };
   for (const task of sortedKeys(local)) {
     const hash = local[task];
     const pin = pins?.[task];
-    // No sync state (tasks from git or a copy): based on the pin.
-    const base = state[task] ?? pin;
-    const current = latest?.[task];
-    if (base !== undefined && current !== undefined && current !== base) {
-      plan.moved.push({ task, where: "laminar", to: current });
+    if (hash === pin) continue;
+    if (!(task in missing)) {
+      plan.skipped.push({
+        task,
+        hash,
+        reason: pin === undefined ? "unpinned" : "outdated",
+      });
       continue;
     }
-    if (base !== undefined && pin !== undefined && pin !== base) {
-      plan.moved.push({ task, where: "pin", to: pin });
-      continue;
-    }
-    if (base === undefined && current !== undefined && current !== hash) {
-      plan.moved.push({ task, where: "laminar", to: current });
-      continue;
-    }
-    plan.state[task] = hash;
-    if (hash === current && hash === pin) continue;
-    // Whatever base this disk had, it equals Laminar's latest here (or the
-    // task is new to Laminar): that is what the server checks against.
-    const update = { task, hash, base: current ?? null };
-    if (pin === undefined) plan.added.push(update);
-    else plan.changed.push({ ...update, from: pin });
+    if (pin === undefined) plan.added.push({ task, hash });
+    else plan.changed.push({ task, from: pin, to: hash });
     plan.pins[task] = hash;
   }
-  for (const task of sortedKeys(state)) {
-    if (!selected(task) || local[task] !== undefined) continue;
-    if (pins?.[task] === undefined) continue;
-    plan.removed.push({ task, hash: pins[task] });
-    delete plan.pins[task];
-    delete plan.state[task];
-  }
-  plan.writePins =
-    pins === null
-      ? Object.keys(plan.pins).length > 0
-      : !samePins(pins, plan.pins);
   return plan;
 };
 

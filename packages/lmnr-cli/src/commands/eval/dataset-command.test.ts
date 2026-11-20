@@ -21,7 +21,6 @@ import {
   handleDatasetPull,
   handleDatasetPush,
 } from "./dataset-command";
-import { readDatasetState } from "./dataset-state";
 import { readDatasetToml, writeDatasetToml } from "./dataset-toml";
 import { hashTaskDir } from "./task-hash";
 
@@ -43,53 +42,26 @@ const apiError = (status: number, code: string) =>
   });
 
 /**
- * An in-memory Laminar following the eval datasets contract: a version
- * counts once its index is uploaded, latest = last pushed (or uploaded).
+ * An in-memory Laminar following the eval datasets contract: versions are
+ * independent, and one counts once its index is uploaded.
  */
 const fakeLaminar = () => {
-  let clock = 0;
-  type Version = { archive: Uint8Array; at: number; indexed: boolean };
-  const store = new Map<string, Map<string, Map<string, Version>>>();
-  const versionsOf = (dataset: string, task: string) => {
-    const tasks = store.get(dataset) ?? new Map<string, Map<string, Version>>();
-    store.set(dataset, tasks);
-    const versions = tasks.get(task) ?? new Map<string, Version>();
-    tasks.set(task, versions);
-    return versions;
-  };
-  const counted = (dataset: string, task: string) =>
-    [...(store.get(dataset)?.get(task)?.entries() ?? [])].filter(
-      ([, v]) => v.indexed,
-    );
-  const latest = (dataset: string, task: string) =>
-    counted(dataset, task).sort(
-      ([ha, a], [hb, b]) => b.at - a.at || (hb > ha ? 1 : -1),
-    )[0];
+  type Version = { archive: Uint8Array; indexed: boolean };
+  const store = new Map<string, Version>();
+  const key = (dataset: string, task: string, hash: string) =>
+    `${dataset} ${task} ${hash}`;
   const has = (dataset: string, task: string, hash: string) =>
-    store.get(dataset)?.get(task)?.get(hash)?.indexed === true;
+    store.get(key(dataset, task, hash))?.indexed === true;
   const calls: string[] = [];
 
   const evalDatasets = {
-    get: async (dataset: string) => {
-      calls.push(`get ${dataset}`);
-      const tasks = [...(store.get(dataset)?.keys() ?? [])]
-        .filter((task) => counted(dataset, task).length > 0)
-        .sort();
-      if (tasks.length === 0) return null;
-      return {
-        id: dataset,
-        createdAt: "",
-        tasks: tasks.map((id) => ({
-          id,
-          hash: latest(dataset, id)[0],
-          createdAt: "",
-        })),
-      };
-    },
     missingVersions: async (
       dataset: string,
       versions: { task: string; hash: string }[],
-    ) => versions.filter((v) => !has(dataset, v.task, v.hash)),
+    ) => {
+      calls.push(`missing ${dataset}`);
+      return versions.filter((v) => !has(dataset, v.task, v.hash));
+    },
     uploadVersion: async (
       dataset: string,
       task: string,
@@ -97,42 +69,18 @@ const fakeLaminar = () => {
       archive: Uint8Array,
     ) => {
       calls.push(`upload ${dataset}/${task}`);
-      versionsOf(dataset, task).set(hash, { archive, at: 0, indexed: false });
+      store.set(key(dataset, task, hash), { archive, indexed: false });
     },
     uploadVersionIndex: async (dataset: string, task: string, hash: string) => {
-      const v = versionsOf(dataset, task).get(hash);
+      const v = store.get(key(dataset, task, hash));
       if (!v) throw apiError(404, "archive_not_found");
       v.indexed = true;
-      v.at = ++clock;
     },
     downloadVersion: async (dataset: string, task: string, hash: string) => {
       calls.push(`download ${dataset}/${task}`);
-      const v = store.get(dataset)?.get(task)?.get(hash);
+      const v = store.get(key(dataset, task, hash));
       if (!v?.indexed) throw apiError(404, "version_not_found");
       return new Blob([v.archive as Uint8Array<ArrayBuffer>]).stream();
-    },
-    push: async (
-      dataset: string,
-      tasks: { task: string; hash: string; base: string | null }[],
-    ) => {
-      calls.push(`push ${dataset} ${tasks.map((t) => t.task).join(",")}`);
-      const missing = tasks.filter((t) => !has(dataset, t.task, t.hash));
-      if (missing.length > 0) return { status: "versions_missing", missing };
-      const moved = tasks
-        .filter(({ task, hash, base }) => {
-          const versions = counted(dataset, task);
-          if (base === null) return versions.some(([h]) => h !== hash);
-          const baseAt = versions.find(([h]) => h === base)?.[1].at;
-          if (baseAt === undefined) return true;
-          return versions.some(
-            ([h, v]) => h !== base && h !== hash && v.at > baseAt,
-          );
-        })
-        .map(({ task }) => ({ task, latest: latest(dataset, task)[0] }));
-      if (moved.length > 0) return { status: "moved", moved };
-      for (const t of tasks)
-        versionsOf(dataset, t.task).get(t.hash)!.at = ++clock;
-      return { status: "pushed", tasks: [] };
     },
   };
   return { client: { evalDatasets } as unknown as LaminarClient, calls };
@@ -161,6 +109,14 @@ const setPins = async (dir: string, pins: Record<string, string>) => {
 };
 const taskToml = (name: string, extra = "") =>
   `[task]\nname = "${name}"\n${extra}`;
+
+/** `git pull` of another checkout's dataset.toml. */
+const takeManifest = (from: string, to: string) =>
+  cp(
+    path.join(root, from, "support/tasks/dataset.toml"),
+    path.join(root, to, "support/tasks/dataset.toml"),
+  );
+const uploads = () => laminar.calls.filter((c) => c.startsWith("upload"));
 
 /** A fresh `evals/support` dataset (acme/support) with two local tasks. */
 const writeDataset = async (dir = "evals") => {
@@ -202,34 +158,29 @@ void describe("eval dataset push / pull", () => {
     expect(await read("evals/support/tasks/dataset.toml")).toContain(
       `[[tasks]]\nname = "acme/complaint"\ndigest = "sha256:`,
     );
-    expect(await readDatasetState(path.join(root, "evals/support"))).toEqual(
-      pins,
-    );
     expect(await read("evals/.gitignore")).toContain(
       "*/tasks/*\n!*/tasks/dataset.toml\n",
     );
-    expect(laminar.calls.filter((c) => c.startsWith("upload"))).toHaveLength(2);
+    expect(uploads()).toHaveLength(2);
 
     // Another checkout: harbor.yaml + tasks/dataset.toml, no task dirs.
     await write("clone/support/harbor.yaml", "datasets:\n  - path: tasks\n");
-    await cp(
-      path.join(root, "evals/support/tasks/dataset.toml"),
-      path.join(root, "clone/support/tasks/dataset.toml"),
-    );
+    await mkdir(path.join(root, "clone/support/tasks"));
+    await takeManifest("evals", "clone");
     await handleDatasetPull([], opts("clone"));
     expect(
       await read("clone/support/tasks/complaint/environment/data.txt"),
     ).toBe("v1");
-    expect(await readDatasetState(path.join(root, "clone/support"))).toEqual(
-      pins,
-    );
+    expect(
+      existsSync(path.join(root, "clone/support/tasks/.lmnr-state.json")),
+    ).toBe(false);
 
-    // Nothing changed: a second push uploads and pushes nothing. The dataset
-    // can be named by its folder or its name.
+    // Nothing changed: a second push uploads nothing. The dataset can be
+    // named by its folder or its name.
     laminar.calls.length = 0;
     await handleDatasetPush(["support"], opts("clone"));
     await handleDatasetPush([DS], opts("clone"));
-    expect(laminar.calls).toEqual([`get ${DS}`, `get ${DS}`]);
+    expect(laminar.calls).toEqual([`missing ${DS}`, `missing ${DS}`]);
   });
 
   void it("knows tasks by [task] name, not by dir", async () => {
@@ -249,13 +200,14 @@ void describe("eval dataset push / pull", () => {
     laminar.calls.length = 0;
     await handleDatasetPush([], opts("evals"));
     expect(await pinsOf("evals/support")).toEqual(pins);
-    expect(laminar.calls).toEqual([`get ${DS}`]);
+    expect(laminar.calls).toEqual([`missing ${DS}`]);
     await handleDatasetPull([], opts("evals"));
     expect(existsSync(path.join(root, "evals/support/tasks/refund"))).toBe(
       false,
     );
 
-    // Renaming the task is a new task; the old one loses its pin.
+    // Renaming the task is a new task; the old one keeps its pin until it is
+    // taken out of dataset.toml.
     await write(
       "evals/support/tasks/refund-renamed/task.toml",
       taskToml("acme/refund-v2"),
@@ -263,6 +215,7 @@ void describe("eval dataset push / pull", () => {
     await handleDatasetPush([], opts("evals"));
     expect(Object.keys((await pinsOf("evals/support"))!)).toEqual([
       "acme/complaint",
+      "acme/refund",
       "acme/refund-v2",
     ]);
 
@@ -270,9 +223,9 @@ void describe("eval dataset push / pull", () => {
     await write("evals/support/tasks/complaint/environment/data.txt", "v2");
     laminar.calls.length = 0;
     await handleDatasetPush([], opts("evals", { task: ["refund*"] }));
-    expect(laminar.calls).toEqual([`get ${DS}`]);
+    expect(laminar.calls).toEqual([`missing ${DS}`]);
     await handleDatasetPush([], opts("evals", { task: ["acme/compl*"] }));
-    expect(laminar.calls).toContain(`push ${DS} acme/complaint`);
+    expect(uploads()).toEqual([`upload ${DS}/acme/complaint`]);
   });
 
   void it("refuses tasks without their own [task] name", async () => {
@@ -309,7 +262,7 @@ void describe("eval dataset push / pull", () => {
       code: "invalid_evals_dir",
       message: expect.stringContaining("support/tasks/refund/environment/.env"),
     });
-    expect(laminar.calls.some((c) => c.startsWith("upload"))).toBe(false);
+    expect(uploads()).toEqual([]);
     // Left out by the task's .gitignore, it's fine (and not hashed).
     await write("evals/support/tasks/refund/.gitignore", ".env\n");
     await handleDatasetPush([], opts("evals"));
@@ -324,11 +277,10 @@ void describe("eval dataset push / pull", () => {
     });
     await write("other/support/tasks/x/task.toml", taskToml("acme/new-case"));
     await handleDatasetPush([], opts("other"));
+    await takeManifest("other", "evals");
 
     await write("evals/support/tasks/new-case/notes.md", "mine");
-    await expect(
-      handleDatasetPull([], opts("evals", { latest: true })),
-    ).rejects.toMatchObject({
+    await expect(handleDatasetPull([], opts("evals"))).rejects.toMatchObject({
       code: "invalid_evals_dir",
       message: expect.stringContaining(
         "Can't pull acme/new-case into support/tasks/new-case",
@@ -337,7 +289,7 @@ void describe("eval dataset push / pull", () => {
     await rm(path.join(root, "evals/support/tasks/new-case"), {
       recursive: true,
     });
-    await handleDatasetPull([], opts("evals", { latest: true }));
+    await handleDatasetPull([], opts("evals"));
     expect(await read("evals/support/tasks/new-case/task.toml")).toBe(
       taskToml("acme/new-case"),
     );
@@ -354,11 +306,10 @@ void describe("eval dataset push / pull", () => {
       taskToml("acme/dataset.toml"),
     );
     await handleDatasetPush([], opts("other"));
+    await takeManifest("other", "evals");
 
     const manifest = await read("evals/support/tasks/dataset.toml");
-    await expect(
-      handleDatasetPull([], opts("evals", { latest: true })),
-    ).rejects.toMatchObject({
+    await expect(handleDatasetPull([], opts("evals"))).rejects.toMatchObject({
       code: "invalid_evals_dir",
       message: expect.stringContaining(
         "Can't pull acme/dataset.toml into support/tasks/dataset.toml",
@@ -399,154 +350,138 @@ void describe("eval dataset push / pull", () => {
     ).toBe("linked");
   });
 
-  void it("refuses to overwrite local edits without --force (exit 22)", async () => {
+  void it("updates tasks to their pins after a git pull, skipping them on push", async () => {
     await writeDataset();
     await handleDatasetPush([], opts("evals"));
-    const pinned = (await pinsOf("evals/support"))!["acme/complaint"];
+    await cp(path.join(root, "evals"), path.join(root, "other"), {
+      recursive: true,
+    });
+    await write("other/support/tasks/complaint/environment/data.txt", "v2");
+    await handleDatasetPush([], opts("other"));
+    await takeManifest("other", "evals");
 
-    // A teammate pushes v2 of complaint; here, it is edited locally.
+    // complaint here is at the old version, which Laminar has: push skips it.
+    laminar.calls.length = 0;
+    await handleDatasetPush([], opts("evals"));
+    expect(uploads()).toEqual([]);
+    expect(await pinsOf("evals/support")).toEqual(
+      await pinsOf("other/support"),
+    );
+
+    // Pull replaces it without --force: nothing local is lost.
+    await handleDatasetPull([], opts("evals"));
+    expect(
+      await read("evals/support/tasks/complaint/environment/data.txt"),
+    ).toBe("v2");
+  });
+
+  void it("refuses to overwrite versions Laminar doesn't have without --force (exit 22)", async () => {
+    await writeDataset();
+    await handleDatasetPush([], opts("evals"));
+
+    // A teammate pushes v2 of complaint; here, it is edited, and dataset.toml
+    // arrives with a git pull.
     await cp(path.join(root, "evals"), path.join(root, "other"), {
       recursive: true,
     });
     await write("other/support/tasks/complaint/environment/data.txt", "v2");
     await handleDatasetPush([], opts("other"));
     await write("evals/support/tasks/complaint/environment/data.txt", "mine");
+    await takeManifest("other", "evals");
 
-    await expect(
-      handleDatasetPull(["support"], opts("evals", { latest: true })),
-    ).rejects.toMatchObject({
-      code: "local_edits",
-      exitCode: 22,
-      message: expect.stringContaining(
-        "acme/complaint (support/tasks/complaint)",
-      ),
-    });
-    await expect(
-      handleDatasetPull(
-        ["support"],
-        opts("evals", { latest: true, dryRun: true }),
-      ),
-    ).rejects.toMatchObject({ exitCode: 22 });
+    for (const dryRun of [false, true]) {
+      await expect(
+        handleDatasetPull(["support"], opts("evals", { dryRun })),
+      ).rejects.toMatchObject({
+        code: "local_edits",
+        exitCode: 22,
+        message: expect.stringContaining(
+          "acme/complaint (support/tasks/complaint)",
+        ),
+      });
+    }
     // Nothing was written.
     expect(
       await read("evals/support/tasks/complaint/environment/data.txt"),
     ).toBe("mine");
-    expect((await pinsOf("evals/support"))!["acme/complaint"]).toBe(pinned);
 
-    await handleDatasetPull(
-      ["support"],
-      opts("evals", { latest: true, force: true }),
-    );
+    await handleDatasetPull(["support"], opts("evals", { force: true }));
     expect(
       await read("evals/support/tasks/complaint/environment/data.txt"),
     ).toBe("v2");
-    expect((await pinsOf("evals/support"))!["acme/complaint"]).not.toBe(pinned);
   });
 
-  void it("refuses a push whose pin moved in Laminar (exit 23) until pulled", async () => {
+  void it("stores concurrent edits as separate versions; dataset.toml picks one", async () => {
     await writeDataset();
     await handleDatasetPush([], opts("evals"));
     await cp(path.join(root, "evals"), path.join(root, "other"), {
       recursive: true,
     });
-    await write(
-      "other/support/tasks/refund/task.toml",
-      taskToml("acme/refund", "v = 2\n"),
-    );
-    await handleDatasetPush([], opts("other"));
 
-    // Unedited here, but Laminar moved: refused, dry run too.
-    await write("evals/support/tasks/complaint/environment/data.txt", "v3");
-    for (const dryRun of [true, false]) {
-      await expect(
-        handleDatasetPush([], opts("evals", { dryRun })),
-      ).rejects.toMatchObject({
-        code: "pin_moved",
-        exitCode: 23,
-        message: expect.stringContaining(
-          "eval dataset pull support --dir " +
-            `${path.join(root, "evals")} --latest --task acme/refund`,
-        ),
-      });
-    }
-    expect(laminar.calls.filter((c) => c.startsWith("push"))).toEqual([
-      `push ${DS} acme/complaint,acme/refund`,
-      `push ${DS} acme/refund`,
-    ]);
-
-    await handleDatasetPull(
-      ["support"],
-      opts("evals", { latest: true, task: ["acme/refund"] }),
-    );
-    await handleDatasetPush([], opts("evals"));
-    expect((await pinsOf("evals/support"))!["acme/complaint"]).toBe(
-      await hashTaskDir(path.join(root, "evals/support/tasks/complaint")),
-    );
-  });
-
-  void it("turns the server's 409 moved into exit 23", async () => {
-    await writeDataset();
-    await handleDatasetPush([], opts("evals"));
+    // Both edit refund and push: both versions are stored and pinned locally.
     await write(
       "evals/support/tasks/refund/task.toml",
+      taskToml("acme/refund", "v = 2\n"),
+    );
+    await write(
+      "other/support/tasks/refund/task.toml",
       taskToml("acme/refund", "v = 3\n"),
     );
-    const push = vi
-      .spyOn(
-        (laminar.client as unknown as { evalDatasets: { push: () => unknown } })
-          .evalDatasets,
-        "push",
-      )
-      .mockResolvedValue({
-        status: "moved",
-        moved: [{ task: "acme/refund", latest: "f".repeat(64) }],
-      });
-    await expect(handleDatasetPush([], opts("evals"))).rejects.toMatchObject({
-      code: "pin_moved",
-      message: expect.stringMatching(/acme\/refund: Laminar's latest/),
-    });
-    expect(push).toHaveBeenCalled();
+    await handleDatasetPush([], opts("evals"));
+    await handleDatasetPush([], opts("other"));
+    expect(uploads().slice(2)).toEqual([
+      `upload ${DS}/acme/refund`,
+      `upload ${DS}/acme/refund`,
+    ]);
+    const mine = (await pinsOf("evals/support"))!["acme/refund"];
+    const theirs = (await pinsOf("other/support"))!["acme/refund"];
+    expect(mine).not.toBe(theirs);
+
+    // The git merge takes theirs: pull switches without --force, since
+    // Laminar has this checkout's version too.
+    await takeManifest("other", "evals");
+    await handleDatasetPull([], opts("evals"));
+    expect(await read("evals/support/tasks/refund/task.toml")).toBe(
+      taskToml("acme/refund", "v = 3\n"),
+    );
   });
 
-  void it("removes tasks unpinned upstream and unpins tasks deleted here", async () => {
+  void it("removes tasks dropped from dataset.toml, never unpins on push", async () => {
     await writeDataset();
     await handleDatasetPush([], opts("evals"));
     const ds = path.join(root, "evals/support");
+    const pins = await pinsOf("evals/support");
 
-    // Deleting a pulled task's dir unpins it on push.
+    // Deleting a task's dir keeps its pin, and pull brings it back.
     await rm(path.join(ds, "tasks/refund"), { recursive: true });
+    await handleDatasetPush([], opts("evals"));
+    expect(await pinsOf("evals/support")).toEqual(pins);
+    await handleDatasetPull([], opts("evals"));
+    expect(existsSync(path.join(ds, "tasks/refund"))).toBe(true);
+
+    // Taking it out of dataset.toml: push skips it, pull removes the dir.
+    await setPins("evals/support", {
+      "acme/complaint": pins!["acme/complaint"],
+    });
     await handleDatasetPush([], opts("evals"));
     expect(Object.keys((await pinsOf("evals/support"))!)).toEqual([
       "acme/complaint",
     ]);
-
-    // A pin removed from dataset.toml (e.g. by git) removes the dir on pull.
-    await setPins("evals/support", {});
     await handleDatasetPull([], opts("evals", { dryRun: true, json: true }));
-    expect(existsSync(path.join(ds, "tasks/complaint"))).toBe(true);
+    expect(existsSync(path.join(ds, "tasks/refund"))).toBe(true);
     await handleDatasetPull([], opts("evals"));
-    expect(existsSync(path.join(ds, "tasks/complaint"))).toBe(false);
-    expect(await readDatasetState(ds)).toEqual({});
-    // An empty pin list stays one: it doesn't mean "pull the latest".
-    expect(await pinsOf("evals/support")).toEqual({});
+    expect(existsSync(path.join(ds, "tasks/refund"))).toBe(false);
+    expect(existsSync(path.join(ds, "tasks/complaint"))).toBe(true);
   });
 
-  void it("pulls the latest when dataset.toml pins nothing yet", async () => {
+  void it("leaves new tasks for push", async () => {
     await writeDataset();
-    await handleDatasetPush([], opts("evals"));
-    await write("fresh/support/harbor.yaml", "");
-    await write(
-      "fresh/support/tasks/dataset.toml",
-      `[dataset]\nname = "${DS}"\n`,
+    await handleDatasetPull([], opts("evals"));
+    expect(existsSync(path.join(root, "evals/support/tasks/refund"))).toBe(
+      true,
     );
-    await handleDatasetPull([DS], opts("fresh"));
-    expect(
-      await read("fresh/support/tasks/complaint/environment/data.txt"),
-    ).toBe("v1");
-    expect(await pinsOf("fresh/support")).toEqual(
-      await pinsOf("evals/support"),
-    );
-    expect(await read("fresh/.gitignore")).toContain("*/tasks/*");
+    expect(laminar.calls).toEqual([`missing ${DS}`]);
+    expect(await pinsOf("evals/support")).toBeNull();
   });
 
   void it("needs a dataset.toml naming each dataset", async () => {
@@ -568,16 +503,6 @@ void describe("eval dataset push / pull", () => {
     expect(laminar.calls).toEqual([]);
   });
 
-  void it("skips datasets Laminar doesn't have when nothing is pinned", async () => {
-    await write("evals/new/harbor.yaml", "");
-    await write(
-      "evals/new/tasks/dataset.toml",
-      '[dataset]\nname = "acme/new"\n',
-    );
-    await handleDatasetPull([], opts("evals"));
-    expect(laminar.calls).toEqual(["get acme/new"]);
-  });
-
   void it("fails clearly on a pinned version Laminar doesn't have", async () => {
     await writeDataset();
     await handleDatasetPush([], opts("evals"));
@@ -586,14 +511,20 @@ void describe("eval dataset push / pull", () => {
       code: "version_not_found",
       message: expect.stringContaining("acme/refund@eeeeeeeeeeee"),
     });
+    expect(existsSync(path.join(root, "evals/support/tasks/complaint"))).toBe(
+      true,
+    );
   });
 
   void it("explains a deployment without storage", async () => {
     await writeDataset();
     vi.spyOn(
-      (laminar.client as unknown as { evalDatasets: { get: () => unknown } })
-        .evalDatasets,
-      "get",
+      (
+        laminar.client as unknown as {
+          evalDatasets: { missingVersions: () => unknown };
+        }
+      ).evalDatasets,
+      "missingVersions",
     ).mockRejectedValue(apiError(501, "storage_not_configured"));
     await expect(handleDatasetPush([], opts("evals"))).rejects.toMatchObject({
       code: "storage_not_configured",
@@ -615,11 +546,13 @@ void describe("checkRunTasks", () => {
     vi.mocked(buildEvalClient).mockClear();
     logger.warn.mockClear();
 
-    // Edited and unpinned tasks run as they are, without a word.
+    // Edited and unpinned tasks run as they are; edits get a warning.
     await write("evals/support/tasks/complaint/environment/data.txt", "mine");
     await write("evals/support/tasks/new/task.toml", taskToml("acme/new"));
     const hashes = await checkRunTasks(evalsDir, ["support"], undefined);
-    expect(warned()).toBe("");
+    expect(warned()).toContain(
+      "1 task(s) differ from their pin (acme/complaint)",
+    );
     expect(hashes.support).toEqual({
       complaint: {
         name: "acme/complaint",
@@ -644,7 +577,7 @@ void describe("checkRunTasks", () => {
     expect(buildEvalClient).not.toHaveBeenCalled();
   });
 
-  void it("warns about missing and outdated pinned tasks, and doesn't fix them", async () => {
+  void it("warns about missing and differing pinned tasks, and doesn't fix them", async () => {
     await writeDataset();
     await handleDatasetPush([], opts("evals"));
     const evalsDir = path.join(root, "evals");
@@ -669,10 +602,9 @@ void describe("checkRunTasks", () => {
     expect(warned()).toContain(
       "1 pinned task(s) are not in tasks/ and won't run (acme/complaint)",
     );
-    expect(warned()).toContain(
-      "1 task(s) are older than their pin (acme/refund)",
-    );
-    expect(warned()).toContain("lmnr-cli eval dataset pull support --dir");
+    expect(warned()).toContain("1 task(s) differ from their pin (acme/refund)");
+    expect(warned()).toContain("`lmnr-cli eval dataset pull support --dir");
+    expect(warned()).toContain("`lmnr-cli eval dataset push support --dir");
     expect(await read("evals/support/tasks/refund/task.toml")).toBe(
       taskToml("acme/refund"),
     );

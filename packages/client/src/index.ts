@@ -207,13 +207,7 @@ export class LaminarClient {
 }
 
 export type { CliProject, ProjectKeyProbe } from "./resources/cli";
-export type {
-  EvalDataset,
-  EvalDatasetPushResult,
-  EvalDatasetPushTask,
-  EvalDatasetTask,
-  EvalTaskVersionRef,
-} from "./resources/eval-datasets";
+export type { EvalTaskVersionRef } from "./resources/eval-datasets";
 export type {
   HostedEvalRunLogLine,
   HostedEvalRunLogPage,

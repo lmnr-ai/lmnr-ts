@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { errorMessage } from "@lmnr-ai/types";
@@ -7,62 +7,13 @@ import { parse as parseToml } from "smol-toml";
 import { invalidEvalsDir } from "../../errors";
 import { initializeLogger } from "../../utils/logger";
 import { compareBytes } from "./dataset-toml";
-import { isValidHash, isValidName, NAME_RULE, TASKS_DIR } from "./datasets";
+import { isValidName, NAME_RULE, TASKS_DIR } from "./datasets";
 import { hashTaskDir } from "./task-hash";
 
-/**
- * Local sync state, `<dataset>/tasks/.lmnr-state.json`: for each task (by
- * name), the hash it had when it was last pulled or pushed on this disk (its
- * "base"). A task whose hash differs from its base (or that has none) is
- * edited.
- */
 const logger = initializeLogger();
 
-export const STATE_FILE = ".lmnr-state.json";
-
+/** Task name → version hash. */
 export type TaskHashes = Record<string, string>;
-
-const stateFile = (datasetDir: string) =>
-  path.join(datasetDir, TASKS_DIR, STATE_FILE);
-
-export const readDatasetState = async (
-  datasetDir: string,
-): Promise<TaskHashes> => {
-  const file = stateFile(datasetDir);
-  const text = await readFile(file, "utf8").catch(() => null);
-  if (text === null) return {};
-  let tasks: unknown;
-  try {
-    tasks = (JSON.parse(text) as { tasks?: unknown })?.tasks;
-  } catch (error) {
-    throw invalidEvalsDir(
-      `Can't parse ${file}: ${errorMessage(error)}. Delete it; the next ` +
-        "pull treats every task as edited (use --force).",
-    );
-  }
-  const state: TaskHashes = {};
-  if (typeof tasks !== "object" || tasks === null) return state;
-  for (const [task, hash] of Object.entries(tasks)) {
-    if (isValidName(task) && isValidHash(hash)) state[task] = hash;
-  }
-  return state;
-};
-
-export const writeDatasetState = async (
-  datasetDir: string,
-  state: TaskHashes,
-): Promise<void> => {
-  await mkdir(path.join(datasetDir, TASKS_DIR), { recursive: true });
-  const tasks = Object.fromEntries(
-    Object.keys(state)
-      .sort(compareBytes)
-      .map((task) => [task, state[task]]),
-  );
-  await writeFile(
-    stateFile(datasetDir),
-    `${JSON.stringify({ tasks }, null, 2)}\n`,
-  );
-};
 
 /** What `<dataset>/tasks/` holds, by `[task] name` from each `task.toml`. */
 export interface LocalTasks {

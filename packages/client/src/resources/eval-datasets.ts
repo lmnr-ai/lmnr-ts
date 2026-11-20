@@ -9,37 +9,6 @@ export interface EvalTaskVersionRef {
   hash: string;
 }
 
-/** A task of an eval dataset with its latest version. */
-export interface EvalDatasetTask {
-  id: string;
-  /** The latest version: the one pushed (or uploaded) last. */
-  hash: string;
-  createdAt: string;
-}
-
-export interface EvalDataset {
-  id: string;
-  createdAt: string;
-  /** One entry per task, its latest version, sorted by task id. */
-  tasks: EvalDatasetTask[];
-}
-
-/** One task of a push: its new version and the version it was based on. */
-export interface EvalDatasetPushTask {
-  task: string;
-  hash: string;
-  /** The task's latest version when it was pulled; null for a new task. */
-  base: string | null;
-}
-
-/** What {@link EvalDatasetsResource.push} ended with. */
-export type EvalDatasetPushResult =
-  | { status: "pushed"; tasks: EvalDatasetTask[] }
-  /** Some tasks moved past their `base`; nothing was written. */
-  | { status: "moved"; moved: { task: string; latest: string }[] }
-  /** Some versions were never uploaded; nothing was written. */
-  | { status: "versions_missing"; missing: EvalTaskVersionRef[] };
-
 /**
  * A Harbor `org/name` name as two path segments: the routes take the org and
  * the name separately, so no encoded `/` ever reaches a proxy.
@@ -55,9 +24,9 @@ const MAX_VERSIONS_PER_REQUEST = 10_000;
  * (lmnr-cli `eval dataset pull / push`).
  *
  * A version is uploaded with {@link uploadVersion} (the `.tar.gz` of the task
- * dir) then {@link uploadVersionIndex} (which makes it count, and latest);
- * {@link push} then records which versions the dataset points at, refusing
- * tasks that moved since they were pulled.
+ * dir) then {@link uploadVersionIndex}, which makes it count. Versions are
+ * independent: Laminar keeps no "latest", the dataset.toml in git pins which
+ * ones a dataset uses.
  *
  * Errors are {@link LaminarApiError}s: branch on `code`
  * (`storage_not_configured`, `version_not_found`, ...), never on the message.
@@ -65,19 +34,6 @@ const MAX_VERSIONS_PER_REQUEST = 10_000;
 export class EvalDatasetsResource extends BaseResource {
   constructor(baseHttpUrl: string, auth: LaminarAuth) {
     super(baseHttpUrl, auth);
-  }
-
-  /** The dataset and each task's latest version; null if Laminar has none. */
-  public async get(dataset: string): Promise<EvalDataset | null> {
-    const response = await fetch(this.url(dataset, ""), {
-      headers: this.headers(),
-    });
-    if (!response.ok) {
-      const error = await this.apiError(response);
-      if (error.code === "dataset_not_found") return null;
-      throw error;
-    }
-    return (await response.json()) as EvalDataset;
   }
 
   /** The versions Laminar doesn't have (all of them for an unknown dataset). */
@@ -126,7 +82,7 @@ export class EvalDatasetsResource extends BaseResource {
 
   /**
    * Upload the index of an uploaded version archive (`{files: [...]}`). The
-   * version then counts and becomes the task's latest.
+   * version then counts. Uploading a version Laminar has is a no-op.
    */
   public async uploadVersionIndex(
     dataset: string,
@@ -162,42 +118,6 @@ export class EvalDatasetsResource extends BaseResource {
       throw new Error(`Empty response for ${dataset}/${task}@${hash}`);
     }
     return response.body;
-  }
-
-  /**
-   * Point the dataset's tasks at the given (uploaded) versions, all or
-   * nothing. A conflict (409) is returned, not thrown: `moved` lists the
-   * tasks whose latest version moved past their `base`.
-   */
-  public async push(
-    dataset: string,
-    tasks: EvalDatasetPushTask[],
-  ): Promise<EvalDatasetPushResult> {
-    const response = await fetch(this.url(dataset, "/push"), {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ tasks }),
-    });
-    if (response.ok) {
-      const { tasks: pushed } = (await response.json()) as {
-        tasks: EvalDatasetTask[];
-      };
-      return { status: "pushed", tasks: pushed };
-    }
-    const error = await this.apiError(response);
-    if (response.status === 409) {
-      const body = (error.body ?? {}) as {
-        moved?: { task: string; latest: string }[];
-        missing?: EvalTaskVersionRef[];
-      };
-      if (error.code === "moved") {
-        return { status: "moved", moved: body.moved ?? [] };
-      }
-      if (error.code === "versions_missing") {
-        return { status: "versions_missing", missing: body.missing ?? [] };
-      }
-    }
-    throw error;
   }
 
   private url(dataset: string, path: string): string {

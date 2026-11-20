@@ -677,9 +677,10 @@ single dataset (name it, or have only one in --dir).
 It runs the tasks in <folder>/tasks/ as they are, edits included, and never
 pulls: get or update them with \`lmnr-cli eval dataset pull\` first (a fresh
 clone has none). It warns when tasks pinned in <folder>/tasks/dataset.toml are
-missing or older than their pin. Each trial records its task's name and
-version hash, so Laminar links it to the version. --task matches task dir
-names, as Harbor does.
+missing or differ from their pin (edited, or not pulled since dataset.toml
+changed). Each trial records its task's name and version hash, so Laminar
+links it to the version once it is pushed. --task matches task dir names, as
+Harbor does.
 
 Modes:
   (default)          Trials run on local Docker. Needs uv, Docker and
@@ -746,10 +747,9 @@ Examples:
       "Task name glob to pull ([task] name, with or without its org; repeatable). Omitted → every task",
       collectFlag,
     )
-    .option("--force", "Overwrite (or delete) tasks with local edits")
     .option(
-      "--latest",
-      "Pull each task's latest version in Laminar and pin it in dataset.toml",
+      "--force",
+      "Overwrite tasks whose local version Laminar doesn't have (discards it)",
     )
     .option("--dry-run", "List what would be added, changed or removed")
     .action(withLocalOpts(handleDatasetPull))
@@ -766,28 +766,32 @@ A dataset is a folder in --dir (name it by its folder or its [dataset] name):
 
 Tasks are known by [task] name (Harbor's org/name), never by their dir. A
 version is Harbor's content hash of the task (what \`harbor sync\` computes).
-Each selected task is brought to its pin: a missing task is added (into
-tasks/<name after the org>), a different one is changed, and a task pulled
-here before that is no longer pinned is removed. A task is edited when its
-content changed since it was last pulled or pushed here; pull refuses to
-overwrite or remove edited tasks (exit 22) unless --force, and checks every
-task before writing anything.
+Laminar stores versions side by side and keeps no "latest": dataset.toml,
+in git, is what says which version each task is at.
 
-With no datasets named, every folder with a tasks/dataset.toml is pulled (one
-Laminar doesn't have, with nothing pinned, is skipped). A dataset.toml that
-lists no tasks is pulled as --latest.
+Pull makes each selected task match its pin: a missing task is added (into
+tasks/<name after the org>), a different one is changed, and a task that
+isn't pinned but whose version Laminar has (dropped from dataset.toml) is
+removed. A task that isn't pinned and that Laminar doesn't have is new: it
+is left for push. Pull refuses (exit 22) to overwrite a task whose local
+version Laminar doesn't have (your edits) unless --force, which discards
+them, and checks every task before writing anything. It never changes
+dataset.toml.
+
+With no datasets named, every folder with a tasks/dataset.toml is pulled.
 
 Exit codes:
   16  invalid_evals_dir (no or bad dataset.toml, a task without its own
       [task] name, a new task's dir already taken)
-  22  local_edits (pull would overwrite local edits; use --force)
+  22  local_edits (pull would overwrite versions Laminar doesn't have; push
+      them, or --force to discard them)
   1   version_not_found (a pinned version isn't in Laminar),
-      dataset_not_found, storage_not_configured, other errors
+      storage_not_configured, other errors
 
 Examples:
   $ lmnr-cli eval dataset pull
   $ lmnr-cli eval dataset pull support --dry-run
-  $ lmnr-cli eval dataset pull support --latest --task "refund-*"
+  $ lmnr-cli eval dataset pull support --task "refund-*"
   $ lmnr-cli eval dataset pull support --force --json
 `,
     );
@@ -804,32 +808,28 @@ Examples:
     )
     .option(
       "--dry-run",
-      "Run every check and list what would be added, changed or removed",
+      "Run every check and list what would be added or changed",
     )
     .action(withLocalOpts(handleDatasetPush))
     .addHelpText(
       "after",
       `
-Each selected task in <folder>/tasks/ is hashed (Harbor's content hash);
-versions Laminar doesn't have are uploaded, the dataset's tasks point at them
-(each becomes its task's latest version), and tasks/dataset.toml pins them.
-Every task needs its own [task] name in task.toml (org/name): copy a task,
-then rename it. Tasks with .env* files are refused.
+Each selected task in <folder>/tasks/ is hashed (Harbor's content hash).
+A version Laminar doesn't have (a new task, or an edit) is uploaded as a new
+version and pinned in tasks/dataset.toml; commit it. Versions are
+independent: if two people push edits of the same task, both are stored, and
+merging dataset.toml in git decides which one the dataset uses.
 
-A task pulled here before that is gone (its dir deleted, or renamed in
-task.toml) loses its pin (Laminar keeps it). Tasks pinned but never pulled
-here are left alone, so \`pull --task x\` then push doesn't unpin the others.
-
-Push refuses (exit 23, no override) when a task's pin moved since it was
-pulled here, edited or not: its latest version in Laminar changed,
-dataset.toml pins another version (e.g. after a git pull), or it was never
-pulled here and Laminar already has a different version. Pull, then push
-again.
+Push skips, with a warning, a task whose version Laminar already has but
+isn't its pin (an older or newer version: pull to match dataset.toml), and a
+task with no pin whose version Laminar has (dropped from dataset.toml: pull
+removes it). Pinned tasks with no dir here keep their pins. Every task needs
+its own [task] name in task.toml (org/name): copy a task, then rename it.
+Tasks with .env* files are refused.
 
 Exit codes:
   16  invalid_evals_dir (no or bad dataset.toml, a task without its own
       [task] name, .env* files) / archive_too_large (a task over 1 GiB packed)
-  23  pin_moved (a task moved since it was pulled here)
   1   storage_not_configured, other errors
 
 Examples:

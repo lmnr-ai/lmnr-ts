@@ -22,32 +22,6 @@ const jsonResponse = (status: number, body: unknown) => ({
 });
 
 void describe("EvalDatasetsResource", () => {
-  void it("gets a dataset, and null for dataset_not_found", async () => {
-    const dataset = {
-      id: "acme/support",
-      createdAt: "2026-11-01T00:00:00Z",
-      tasks: [
-        { id: "acme/refund", hash: HASH, createdAt: "2026-11-01T00:00:00Z" },
-      ],
-    };
-    const mockFetch = mock.fn(() => jsonResponse(200, dataset));
-    global.fetch = mockFetch as any;
-    const resource = new EvalDatasetsResource(BASE, userToken);
-
-    assert.deepStrictEqual(await resource.get("acme/support"), dataset);
-    const [url, init] = mockFetch.mock.calls[0].arguments as any;
-    assert.strictEqual(url, `${BASE}/v1/cli/eval-datasets/acme/support`);
-    assert.strictEqual(init.headers["x-lmnr-project-id"], "proj-1");
-
-    global.fetch = mock.fn(() =>
-      jsonResponse(404, {
-        error: "Dataset not found",
-        code: "dataset_not_found",
-      }),
-    ) as any;
-    assert.strictEqual(await resource.get("acme/support"), null);
-  });
-
   void it("throws errors with the server's code", async () => {
     global.fetch = mock.fn(() =>
       jsonResponse(501, {
@@ -56,8 +30,12 @@ void describe("EvalDatasetsResource", () => {
       }),
     ) as any;
     const resource = new EvalDatasetsResource(BASE, apiKey);
+    const missing = () =>
+      resource.missingVersions("acme/support", [
+        { task: "acme/refund", hash: HASH },
+      ]);
 
-    await assert.rejects(resource.get("acme/support"), (error: unknown) => {
+    await assert.rejects(missing(), (error: unknown) => {
       assert.ok(error instanceof LaminarApiError);
       assert.strictEqual(error.status, 501);
       assert.strictEqual(error.code, "storage_not_configured");
@@ -72,7 +50,7 @@ void describe("EvalDatasetsResource", () => {
       statusText: "Not Found",
       text: () => "",
     })) as any;
-    await assert.rejects(resource.get("acme/support"), (error: unknown) => {
+    await assert.rejects(missing(), (error: unknown) => {
       assert.ok(error instanceof LaminarApiError);
       assert.strictEqual(error.code, undefined);
       assert.strictEqual(error.message, "404 Not Found");
@@ -130,6 +108,7 @@ void describe("EvalDatasetsResource", () => {
     const versionUrl = `${BASE}/v1/cli/eval-datasets/acme/support/tasks/acme/refund.v2/versions/${HASH}`;
     assert.strictEqual(calls[0][0], versionUrl);
     assert.strictEqual(calls[0][1].method, "PUT");
+    assert.strictEqual(calls[0][1].headers["x-lmnr-project-id"], "proj-1");
     assert.strictEqual(calls[0][1].body, archive);
     assert.strictEqual(calls[0][1].headers["Content-Type"], "application/gzip");
     assert.strictEqual(calls[0][1].duplex, undefined);
@@ -172,50 +151,5 @@ void describe("EvalDatasetsResource", () => {
         code: "version_not_found",
       },
     );
-  });
-
-  void it("returns a push's result or its 409 conflict", async () => {
-    const pushed = [{ id: "acme/refund", hash: HASH, createdAt: "now" }];
-    const mockFetch = mock.fn(() => jsonResponse(200, { tasks: pushed }));
-    global.fetch = mockFetch as any;
-    const resource = new EvalDatasetsResource(BASE, apiKey);
-    const tasks = [{ task: "acme/refund", hash: HASH, base: null }];
-
-    assert.deepStrictEqual(await resource.push("acme/support", tasks), {
-      status: "pushed",
-      tasks: pushed,
-    });
-    const [url, init] = mockFetch.mock.calls[0].arguments as any;
-    assert.strictEqual(url, `${BASE}/v1/eval-datasets/acme/support/push`);
-    assert.deepStrictEqual(JSON.parse(init.body), { tasks });
-
-    const moved = [{ task: "acme/refund", latest: "b".repeat(64) }];
-    global.fetch = mock.fn(() =>
-      jsonResponse(409, { error: "Moved", code: "moved", moved }),
-    ) as any;
-    assert.deepStrictEqual(await resource.push("acme/support", tasks), {
-      status: "moved",
-      moved,
-    });
-
-    const missing = [{ task: "acme/refund", hash: HASH }];
-    global.fetch = mock.fn(() =>
-      jsonResponse(409, {
-        error: "Missing",
-        code: "versions_missing",
-        missing,
-      }),
-    ) as any;
-    assert.deepStrictEqual(await resource.push("acme/support", tasks), {
-      status: "versions_missing",
-      missing,
-    });
-
-    global.fetch = mock.fn(() =>
-      jsonResponse(400, { error: "Empty push", code: "invalid_request" }),
-    ) as any;
-    await assert.rejects(resource.push("acme/support", []), {
-      message: "400 Empty push",
-    });
   });
 });

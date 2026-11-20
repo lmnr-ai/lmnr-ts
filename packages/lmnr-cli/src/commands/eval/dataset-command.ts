@@ -4,12 +4,7 @@ import path from "node:path";
 import type { LaminarClient } from "@lmnr-ai/client";
 
 import type { GlobalOpts } from "../../auth/with-client";
-import {
-  invalidEvalsDir,
-  localEdits,
-  pinMoved,
-  versionNotFound,
-} from "../../errors";
+import { invalidEvalsDir, localEdits, versionNotFound } from "../../errors";
 import { pc } from "../../utils/colors";
 import { initializeLogger } from "../../utils/logger";
 import { emitErr, outputJson } from "../../utils/output";
@@ -20,26 +15,25 @@ import {
   hashLocalTasks,
   type LocalTasks,
   linkedNames,
-  readDatasetState,
   scanTasks,
   type TaskHashes,
   type TaskHashFile,
   taskFilter,
   taskHashFile,
-  writeDatasetState,
 } from "./dataset-state";
 import {
   datasetApiError,
   forEachLimit,
   installTaskVersion,
-  type MovedTask,
   type PlacedVersion,
   type PullPlan,
   type PushPlan,
   planPull,
   planPush,
   removeTaskDir,
+  type SkippedTask,
   shortHash,
+  type TaskUpdate,
   type TaskVersion,
   TRANSFER_CONCURRENCY,
   uploadTaskVersion,
@@ -67,7 +61,6 @@ export interface DatasetSyncOpts extends GlobalOpts {
   dir?: string;
   task?: string[];
   force?: boolean;
-  latest?: boolean;
   dryRun?: boolean;
 }
 
@@ -87,36 +80,23 @@ const isDir = (p: string) =>
 const selection = (globs: string[] | undefined) =>
   taskFilter((globs ?? []).map(globToRegExp));
 
-const sameHashes = (a: TaskHashes, b: TaskHashes) =>
-  Object.keys(a).length === Object.keys(b).length &&
-  Object.keys(a).every((k) => a[k] === b[k]);
-
-/** Each task's latest version in Laminar; null when it has no such dataset. */
-const fetchLatest = async (
-  client: LaminarClient,
-  dataset: string,
-): Promise<TaskHashes | null> => {
-  try {
-    const found = await client.evalDatasets.get(dataset);
-    return found
-      ? Object.fromEntries(found.tasks.map((t) => [t.id, t.hash]))
-      : null;
-  } catch (error) {
-    throw datasetApiError(error);
-  }
-};
-
+/** The part of `local` Laminar doesn't have. */
 const missingVersions = async (
   client: LaminarClient,
   dataset: string,
-  versions: TaskVersion[],
-): Promise<TaskVersion[]> => {
-  if (versions.length === 0) return [];
+  local: TaskHashes,
+): Promise<TaskHashes> => {
+  const versions = Object.entries(local).map(([task, hash]) => ({
+    task,
+    hash,
+  }));
+  if (versions.length === 0) return {};
   try {
-    return await client.evalDatasets.missingVersions(
+    const missing = await client.evalDatasets.missingVersions(
       dataset,
-      versions.map(({ task, hash }) => ({ task, hash })),
+      versions,
     );
+    return Object.fromEntries(missing.map(({ task, hash }) => [task, hash]));
   } catch (error) {
     throw datasetApiError(error);
   }
@@ -210,28 +190,33 @@ interface DatasetReport {
   dataset: string;
   folder: string;
   added: TaskVersion[];
-  changed: { task: string; from: string; to: string }[];
-  removed: TaskVersion[];
-  /** Push only: versions uploaded (or, dry run, to upload). */
-  uploaded?: TaskVersion[];
-  skipped?: string;
+  changed: TaskUpdate[];
+  /** Pull only. */
+  removed?: TaskVersion[];
+  /** Local tasks left alone, and why. */
+  skipped: SkippedTask[];
 }
+
+const SKIPPED: Record<SkippedTask["reason"], string> = {
+  unpushed: "not in dataset.toml, not in Laminar: push adds it",
+  outdated:
+    "Laminar has this version but dataset.toml pins another: pull to match it",
+  unpinned:
+    "not in dataset.toml, and Laminar has this version: pull removes it",
+};
 
 const printReport = (reports: DatasetReport[], verb: string) => {
   for (const r of reports) {
     const title = pc.bold(r.dataset) + pc.dim(` (${r.folder})`);
-    if (r.skipped) {
-      emitErr(`${title}: skipped (${r.skipped})\n`);
-      continue;
-    }
+    const removed = r.removed ?? [];
     const counts =
-      `${r.added.length} added, ${r.changed.length} changed, ` +
-      `${r.removed.length} removed`;
-    if (r.added.length + r.changed.length + r.removed.length === 0) {
+      `${r.added.length} added, ${r.changed.length} changed` +
+      (r.removed ? `, ${removed.length} removed` : "");
+    if (r.added.length + r.changed.length + removed.length === 0) {
       emitErr(`${title}: up to date\n`);
-      continue;
+    } else {
+      emitErr(`${title}: ${verb} ${counts}\n`);
     }
-    emitErr(`${title}: ${verb} ${counts}\n`);
     for (const t of r.added) {
       emitErr(`  ${pc.green("+")} ${t.task} ${pc.dim(shortHash(t.hash))}\n`);
     }
@@ -242,7 +227,16 @@ const printReport = (reports: DatasetReport[], verb: string) => {
           "\n",
       );
     }
-    for (const t of r.removed) emitErr(`  ${pc.red("-")} ${t.task}\n`);
+    for (const t of removed) {
+      emitErr(`  ${pc.red("-")} ${t.task} ${pc.dim(shortHash(t.hash))}\n`);
+    }
+    for (const t of r.skipped) {
+      emitErr(
+        `  ${pc.dim("!")} ${t.task} ${pc.dim(shortHash(t.hash))} ` +
+          pc.dim(`skipped: ${SKIPPED[t.reason]}`) +
+          "\n",
+      );
+    }
   }
 };
 
@@ -292,53 +286,29 @@ const placePull = (
 
 interface PlannedPull {
   dataset: LocalDataset;
-  originalState: TaskHashes;
   plan: PullPlan;
   downloads: PlacedVersion[];
   removals: PlacedVersion[];
 }
 
-/** Download, swap in and delete what `plan` says, keeping the state in step. */
+/** Download, swap in and delete what `plan` says. */
 const applyPull = async (
   client: LaminarClient,
   evalsDir: string,
-  { dataset, originalState, plan, downloads, removals }: PlannedPull,
+  { dataset, downloads, removals }: PlannedPull,
 ) => {
   await ensureGitignore(evalsDir);
-  // On a failure, tasks already written keep their new base: they aren't edits.
-  const working = { ...originalState };
-  let done = false;
-  try {
-    await forEachLimit(downloads, TRANSFER_CONCURRENCY, async (version) => {
-      await installTaskVersion(
-        client,
-        dataset.dir,
-        dataset.manifest.name,
-        version,
-      );
-      working[version.task] = version.hash;
-    });
-    for (const { task, dir } of removals) {
-      await removeTaskDir(dataset.dir, dir);
-      delete working[task];
-    }
-    if (plan.writePins) {
-      await writeDatasetToml(dataset.dir, dataset.manifest, plan.pins);
-    }
-    done = true;
-  } finally {
-    const state = done ? plan.state : working;
-    if (!sameHashes(state, originalState) || downloads.length > 0) {
-      await writeDatasetState(dataset.dir, state);
-    }
-  }
+  await forEachLimit(downloads, TRANSFER_CONCURRENCY, (version) =>
+    installTaskVersion(client, dataset.dir, dataset.manifest.name, version),
+  );
+  for (const { dir } of removals) await removeTaskDir(dataset.dir, dir);
 };
 
 /**
  * `lmnr-cli eval dataset pull [<dataset>...]`: bring `tasks/` to the versions
- * dataset.toml pins (or, with `--latest`, Laminar's latest, written into
- * dataset.toml). Refuses (exit 22) to overwrite or delete edited tasks
- * without `--force`, before writing anything.
+ * dataset.toml pins, and delete unpinned tasks Laminar has. Refuses (exit 22)
+ * to overwrite versions Laminar doesn't have without `--force`, before
+ * writing anything. Never writes dataset.toml.
  */
 export const handleDatasetPull = async (
   named: string[],
@@ -350,35 +320,23 @@ export const handleDatasetPull = async (
   const client = await buildEvalClient(opts);
 
   const planned: PlannedPull[] = [];
-  const reports: DatasetReport[] = [];
   for (const dataset of datasets) {
     const { folder, dir: datasetDir, manifest } = dataset;
     const local = await scanTasks(datasetDir);
     assertNamedTasks(folder, local);
     const linked = linkedNames(folder, local, selected);
     const managed = (task: string) => selected(task) && !linked.has(task);
-    const latest = await fetchLatest(client, manifest.name);
-    if (latest === null && (manifest.pins === null || opts.latest)) {
-      logger.warn(`Skipping ${manifest.name}: Laminar has no such dataset.`);
-      reports.push({
-        dataset: manifest.name,
-        folder,
-        added: [],
-        changed: [],
-        removed: [],
-        skipped: "not in Laminar",
-      });
-      continue;
-    }
-    const state = await readDatasetState(datasetDir);
     const hashes = await hashLocalTasks(datasetDir, local, managed);
     const plan = planPull(
-      { pins: manifest.pins, state, local: hashes, latest },
-      { selected: managed, force: !!opts.force, latest: !!opts.latest },
+      {
+        pins: manifest.pins,
+        local: hashes,
+        missing: await missingVersions(client, manifest.name, hashes),
+      },
+      { selected: managed, force: !!opts.force },
     );
     planned.push({
       dataset,
-      originalState: state,
       plan,
       downloads: placePull(folder, local, [
         ...plan.added,
@@ -390,44 +348,40 @@ export const handleDatasetPull = async (
         dir: local.dirs[task],
       })),
     });
-    reports.push({
-      dataset: manifest.name,
-      folder,
-      added: plan.added,
-      changed: plan.changed,
-      removed: plan.removed,
-    });
   }
 
-  const edited = planned.flatMap(({ dataset, plan, downloads, removals }) => {
-    const dirs = new Map(
-      [...downloads, ...removals].map(({ task, dir }) => [task, dir]),
-    );
-    return plan.edited.map(
+  const conflicts = planned.flatMap(({ dataset, plan, downloads }) => {
+    const dirs = new Map(downloads.map(({ task, dir }) => [task, dir]));
+    return plan.conflicts.map(
       (task) =>
         `${task} (${taskPath(dataset.folder, dirs.get(task) ?? shortName(task))})`,
     );
   });
-  if (edited.length > 0) {
+  if (conflicts.length > 0) {
     throw localEdits(
-      `Pull would overwrite local edits: ${edited.join(", ")}. Push them ` +
-        "first if no one has pushed those tasks since you pulled them; " +
-        "otherwise save your edits, pull with --force (which discards " +
-        "them), re-apply them and push.",
+      `Pull would overwrite task versions Laminar doesn't have: ` +
+        `${conflicts.join(", ")}. Push them first (then merge ` +
+        `${DATASET_TOML} in git), or save your edits, pull with --force ` +
+        "(which discards them) and re-apply them.",
     );
   }
   for (const { dataset, downloads } of planned) {
+    const wanted = Object.fromEntries(
+      downloads.map(({ task, hash }) => [task, hash]),
+    );
     const missing = await missingVersions(
       client,
       dataset.manifest.name,
-      downloads,
+      wanted,
     );
-    if (missing.length > 0) {
+    if (Object.keys(missing).length > 0) {
       throw versionNotFound(
         `Laminar doesn't have these task versions of ${dataset.manifest.name} ` +
           `that ${DATASET_TOML} pins: ` +
-          missing.map((m) => `${m.task}@${shortHash(m.hash)}`).join(", ") +
-          ". Were they pushed? `--latest` pulls Laminar's latest instead.",
+          Object.entries(missing)
+            .map(([task, hash]) => `${task}@${shortHash(hash)}`)
+            .join(", ") +
+          ". Were they pushed?",
       );
     }
   }
@@ -435,97 +389,58 @@ export const handleDatasetPull = async (
   if (!opts.dryRun) {
     for (const p of planned) await applyPull(client, evalsDir, p);
   }
-  report(reports, opts, { done: "pulled", dryRun: "would pull" });
-};
-
-/** The message of a refused push (exit 23). */
-const movedMessage = (
-  moved: (MovedTask & { folder: string })[],
-  opts: DatasetSyncOpts,
-): string => {
-  const lines = moved.map(
-    ({ folder, task, where, to }) =>
-      `  ${task}: ` +
-      (where === "laminar"
-        ? `Laminar's latest version is now ${shortHash(to)}; pull it with ` +
-          `\`lmnr-cli eval dataset pull ${folder}${dirFlag(opts)} --latest ` +
-          `--task ${task}\``
-        : `${DATASET_TOML} now pins ${shortHash(to)}; pull it with ` +
-          `\`lmnr-cli eval dataset pull ${folder}${dirFlag(opts)} --task ` +
-          `${task}\``),
-  );
-  return (
-    "Push refused: these tasks moved since they were pulled here:\n" +
-    `${lines.join("\n")}\n` +
-    "Pull, then push again. A task with local edits needs --force to " +
-    "pull (which discards them): save your edits, pull with --force, " +
-    "re-apply them, then push."
+  report(
+    planned.map(({ dataset, plan }) => ({
+      dataset: dataset.manifest.name,
+      folder: dataset.folder,
+      added: plan.added,
+      changed: plan.changed,
+      removed: plan.removed,
+      skipped: plan.skipped,
+    })),
+    opts,
+    { done: "pulled", dryRun: "would pull" },
   );
 };
 
 interface PlannedPush {
   dataset: LocalDataset;
   local: LocalTasks;
-  originalState: TaskHashes;
   plan: PushPlan;
-  upload: PlacedVersion[];
 }
 
+/** The versions a push uploads: its new tasks and edits. */
+const pushed = ({ plan }: PlannedPush): TaskVersion[] => [
+  ...plan.added,
+  ...plan.changed.map(({ task, to }) => ({ task, hash: to })),
+];
+
+/** Upload the new versions, then pin them in dataset.toml. */
 const applyPush = async (
   client: LaminarClient,
   evalsDir: string,
-  { dataset, originalState, plan, upload }: PlannedPush,
-  opts: DatasetSyncOpts,
+  p: PlannedPush,
 ) => {
-  const { name } = dataset.manifest;
+  const { dataset, local, plan } = p;
+  const upload = pushed(p);
+  if (upload.length === 0) return;
   await ensureGitignore(evalsDir);
-  await forEachLimit(upload, TRANSFER_CONCURRENCY, (version) =>
-    uploadTaskVersion(client, dataset.dir, name, version),
+  await forEachLimit(upload, TRANSFER_CONCURRENCY, ({ task, hash }) =>
+    uploadTaskVersion(client, dataset.dir, dataset.manifest.name, {
+      task,
+      hash,
+      dir: local.dirs[task],
+    }),
   );
-  const tasks = [...plan.added, ...plan.changed].map(
-    ({ task, hash, base }) => ({ task, hash, base }),
-  );
-  if (tasks.length > 0) {
-    let result: Awaited<ReturnType<typeof client.evalDatasets.push>>;
-    try {
-      result = await client.evalDatasets.push(name, tasks);
-    } catch (error) {
-      throw datasetApiError(error);
-    }
-    if (result.status === "moved") {
-      throw pinMoved(
-        movedMessage(
-          result.moved.map(({ task, latest }) => ({
-            folder: dataset.folder,
-            task,
-            where: "laminar" as const,
-            to: latest,
-          })),
-          opts,
-        ),
-      );
-    }
-    if (result.status === "versions_missing") {
-      throw new Error(
-        `Laminar is missing uploaded versions of ${name}: ` +
-          result.missing.map((m) => `${m.task}@${m.hash}`).join(", ") +
-          ". Push again.",
-      );
-    }
-  }
-  if (plan.writePins) {
-    await writeDatasetToml(dataset.dir, dataset.manifest, plan.pins);
-  }
-  if (!sameHashes(plan.state, originalState)) {
-    await writeDatasetState(dataset.dir, plan.state);
-  }
+  await writeDatasetToml(dataset.dir, dataset.manifest, plan.pins);
 };
 
 /** Refuse to upload task files Laminar won't store (`.env*`). */
 const assertNoEnvFiles = async (planned: PlannedPush[]) => {
   const found: string[] = [];
-  for (const { dataset, local, plan } of planned) {
-    for (const { task } of [...plan.added, ...plan.changed]) {
+  for (const p of planned) {
+    const { dataset, local } = p;
+    for (const { task } of pushed(p)) {
       const dir = local.dirs[task];
       const { files } = await collectTaskFiles(
         path.join(dataset.dir, TASKS_DIR, dir),
@@ -546,9 +461,9 @@ const assertNoEnvFiles = async (planned: PlannedPush[]) => {
 
 /**
  * `lmnr-cli eval dataset push [<dataset>...]`: upload the versions of local
- * tasks Laminar doesn't have, point the dataset at them and pin them in
- * dataset.toml. Refuses (exit 23) tasks whose pin moved since they were
- * pulled here; no override.
+ * tasks Laminar doesn't have (new tasks and edits) and pin them in
+ * dataset.toml. Tasks whose version Laminar has under another pin (or no pin)
+ * are skipped with a warning.
  */
 export const handleDatasetPush = async (
   named: string[],
@@ -566,48 +481,26 @@ export const handleDatasetPush = async (
     assertNamedTasks(folder, local);
     const linked = linkedNames(folder, local, selected);
     const managed = (task: string) => selected(task) && !linked.has(task);
-    const state = await readDatasetState(datasetDir);
     const hashes = await hashLocalTasks(datasetDir, local, managed);
-    const latest = await fetchLatest(client, manifest.name);
-    const plan = planPush(
-      { pins: manifest.pins, state, local: hashes, latest },
-      managed,
-    );
-    planned.push({ dataset, local, originalState: state, plan, upload: [] });
+    const plan = planPush({
+      pins: manifest.pins,
+      local: hashes,
+      missing: await missingVersions(client, manifest.name, hashes),
+    });
+    planned.push({ dataset, local, plan });
   }
-
-  const moved = planned.flatMap(({ dataset, plan }) =>
-    plan.moved.map((m) => ({ folder: dataset.folder, ...m })),
-  );
-  if (moved.length > 0) throw pinMoved(movedMessage(moved, opts));
   await assertNoEnvFiles(planned);
 
-  for (const p of planned) {
-    const missing = await missingVersions(client, p.dataset.manifest.name, [
-      ...p.plan.added,
-      ...p.plan.changed,
-    ]);
-    p.upload = missing.map(({ task, hash }) => ({
-      task,
-      hash,
-      dir: p.local.dirs[task],
-    }));
-  }
   if (!opts.dryRun) {
-    for (const p of planned) await applyPush(client, evalsDir, p, opts);
+    for (const p of planned) await applyPush(client, evalsDir, p);
   }
   report(
-    planned.map(({ dataset, plan, upload }) => ({
+    planned.map(({ dataset, plan }) => ({
       dataset: dataset.manifest.name,
       folder: dataset.folder,
-      added: plan.added.map(({ task, hash }) => ({ task, hash })),
-      changed: plan.changed.map(({ task, from, hash }) => ({
-        task,
-        from,
-        to: hash,
-      })),
-      removed: plan.removed,
-      uploaded: upload.map(({ task, hash }) => ({ task, hash })),
+      added: plan.added,
+      changed: plan.changed,
+      skipped: plan.skipped,
     })),
     opts,
     { done: "pushed", dryRun: "would push" },
@@ -619,8 +512,8 @@ export const handleDatasetPush = async (
  * hash each eval dataset's task dirs `--task` selects (Harbor's matching, by
  * dir name), for the plugin and the remote upload. A dataset that pins tasks
  * but has none on disk (a fresh clone) is an error; pinned tasks that are
- * missing, or unedited since the last pull / push while their pin moved (a
- * `git pull`), only warn. Locally edited tasks run without a word.
+ * missing or differ from their pin (edited, or not pulled since a `git pull`)
+ * only warn: run stays offline, so it can't tell those apart.
  */
 export const checkRunTasks = async (
   evalsDir: string,
@@ -647,25 +540,22 @@ export const checkRunTasks = async (
           `pull them first: ${pull}`,
       );
     }
-    const state = await readDatasetState(datasetDir);
     const linked = linkedNames(folder, local, () => false);
     const localHash = Object.fromEntries(
       Object.values(hashes).map(({ name, hash }) => [name, hash]),
     );
     const missing: string[] = [];
-    const outdated: string[] = [];
+    const differ: string[] = [];
     for (const [task, pin] of Object.entries(pins)) {
       if (linked.has(task)) continue;
       const dir = local.dirs[task];
       if (dir === undefined) {
         if (selectedDir(shortName(task))) missing.push(task);
       } else if (selectedDir(dir)) {
-        const current = localHash[task];
-        // Unedited since this disk's last pull / push, but pinned elsewhere.
-        if (current !== pin && current === state[task]) outdated.push(task);
+        if (localHash[task] !== pin) differ.push(task);
       }
     }
-    if (missing.length + outdated.length > 0) {
+    if (missing.length + differ.length > 0) {
       const list = (tasks: string[]) =>
         tasks.slice(0, 5).join(", ") + (tasks.length > 5 ? ", ..." : "");
       logger.warn(
@@ -675,11 +565,14 @@ export const checkRunTasks = async (
             ? ` ${missing.length} pinned task(s) are not in tasks/ and won't ` +
               `run (${list(missing)});`
             : "") +
-          (outdated.length > 0
-            ? ` ${outdated.length} task(s) are older than their pin ` +
-              `(${list(outdated)});`
+          (differ.length > 0
+            ? ` ${differ.length} task(s) differ from their pin ` +
+              `(${list(differ)});`
             : "") +
-          ` to run the pinned versions: ${pull}`,
+          (differ.length > 0
+            ? ` push edits with \`${pull.replace(" pull ", " push ")}\`, or ` +
+              `get the pinned versions with \`${pull}\``
+            : ` get them with \`${pull}\``),
       );
     }
   }
