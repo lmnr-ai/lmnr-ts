@@ -9,6 +9,20 @@ import { renderTable } from "../../utils/table";
 
 const logger = initializeLogger();
 const DEFAULT_DATASET_PULL_BATCH_SIZE = 100;
+
+/** Why `lmnr-cli dataset` is deprecated and what to use instead. */
+export const DATASET_DEPRECATION =
+  "`lmnr-cli dataset` is deprecated and will be removed in a future " +
+  "release. Use `lmnr-cli eval dataset` for eval datasets (Harbor tasks " +
+  "versioned in Laminar); see `lmnr-cli eval dataset --help`.";
+
+/**
+ * Printed before every `lmnr-cli dataset` command. A logger warning goes to
+ * stderr, so `--json` output stays parseable; `LMNR_LOG_LEVEL=error` hides it.
+ */
+export const warnDatasetDeprecated = (): void => {
+  logger.warn(DATASET_DEPRECATION);
+};
 const DEFAULT_DATASET_PUSH_BATCH_SIZE = 100;
 
 const printDataset = (dataset: Dataset): void => {

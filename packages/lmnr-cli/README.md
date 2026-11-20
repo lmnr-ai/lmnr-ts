@@ -56,9 +56,9 @@ and target a project via `--project-id` or the `.lmnr/project.json` link written
 by `lmnr-cli setup`.
 
 The project API key that `setup` writes to `./.env` (`LMNR_PROJECT_API_KEY`) is
-for your **application's SDK** (trace ingestion). The one CLI command that reads
-it is `eval run`: local runs report results with it, and `--remote` uses it
-when there is no login (e.g. in CI).
+for your **application's SDK** (trace ingestion). The CLI commands that read it
+are `eval run` and `eval dataset pull / push`: local runs report results with
+it, and `--remote` and `eval dataset` use it when there is no login (e.g. in CI).
 
 ### OAuth Device Flow
 
@@ -116,6 +116,8 @@ lmnr-cli sql schema                                      # Show available tables
 
 ### [`dataset`](src/commands/dataset/README.md) - Dataset Management
 
+> **Deprecated.** `lmnr-cli dataset` still works but prints a warning and will be removed in a future release. Use [`eval dataset`](#eval-dataset-pull--push---eval-datasets) for eval datasets.
+
 Create, inspect, rename, delete, and transfer dataset datapoints.
 
 ```bash
@@ -152,13 +154,13 @@ https://laminar.sh/docs/platform/debugger
 
 ### `eval run` - Harbor evals
 
-Run the [Harbor](https://harborframework.com) suites in an evals folder
-(`<dir>/<suite>/harbor.yaml`, default `evals`) and report every trial to Laminar
-as an evaluation, grouped by suite.
+Run the [Harbor](https://harborframework.com) datasets in an evals folder
+(`<dir>/<dataset>/harbor.yaml`, `--dir` defaults to `evals`) and report every
+trial to Laminar as an evaluation, grouped by dataset.
 
 ```bash
-lmnr-cli eval run                                  # trials on local Docker
-lmnr-cli eval run --suite support --task "refund-*"
+lmnr-cli eval run                                  # every dataset, local Docker
+lmnr-cli eval run support --task "refund-*"
 lmnr-cli eval run --remote                         # in Laminar sandboxes
 ```
 
@@ -168,14 +170,38 @@ leaves the run going.
 Both modes need Docker; local runs also need [uv](https://docs.astral.sh/uv/)
 and `LMNR_PROJECT_API_KEY`. `--remote` pushes
 the images tasks use from your local Docker. See `lmnr-cli eval run --help` for
-images (`lmnr.yaml`), secrets and flags. Exit codes:
+images (`<dataset>/lmnr.yaml`), secrets and flags. Exit codes:
 
 - `16` invalid evals folder, or the packed folder is over the upload limit
 - `17` `uv` or `docker` is not installed
-- `18` a suite's `harbor run` failed
+- `18` a dataset's `harbor run` failed
 - `19` an unset `${VAR}` placeholder or `LMNR_PROJECT_API_KEY`
 - `20` a Docker build, pull or save failed, or an image isn't linux/amd64
-- `21` a `--remote` run failed before its suites ran, or its sandbox was lost
+- `21` a `--remote` run failed before its datasets ran, or its sandbox was lost
+
+### `eval dataset pull / push` - Eval datasets
+
+A dataset's tasks are versioned in Laminar by content hash (Harbor's).
+`<dataset>/tasks/dataset.toml` (Harbor's manifest, committed) names the
+dataset and pins each task's version; the task dirs next to it are
+git-ignored (`<dir>/.gitignore` gets `*/tasks/*` and `!*/tasks/dataset.toml`).
+Laminar keeps every version side by side, with no "latest": if two people
+push edits of the same task, both are stored, and merging `dataset.toml` in
+git decides which one the dataset uses.
+
+```bash
+lmnr-cli eval dataset push                         # upload new versions, pin them
+lmnr-cli eval dataset pull                         # bring tasks/ to the pins
+lmnr-cli eval dataset pull --dry-run --json        # what would change
+```
+
+Pull overwrites tasks that differ from their pin when Laminar has the local
+version, and deletes tasks dropped from `dataset.toml`. Push uploads and pins
+versions Laminar doesn't have (new tasks and edits) and skips, with a warning,
+tasks whose version Laminar has under another pin. `eval run` runs the tasks
+on disk and never pulls; `--remote` uploads only the tasks Laminar doesn't
+have. Exit code `22`: pull would overwrite versions Laminar doesn't have (push
+them, or `--force` to discard them).
 
 ### `setup` - One-shot onboarding
 

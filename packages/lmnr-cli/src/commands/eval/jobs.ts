@@ -3,6 +3,7 @@ import path from "node:path";
 
 import {
   fileEntry,
+  fileMode,
   type IndexedFile,
   type PackedFile,
   packFiles,
@@ -67,13 +68,15 @@ export const packJobDir = async (jobDir: string): Promise<JobArchive> => {
         continue;
       }
       if (!entry.isFile()) continue;
-      const { size } = await stat(source);
+      const { size, mode } = await stat(source);
       if (size > MAX_JOB_FILE_BYTES || total + size > MAX_JOB_BYTES) {
         skipped.push(target);
         continue;
       }
       total += size;
-      files.push(fileEntry(source, target, size, "linux"));
+      files.push(
+        fileEntry(source, target, size, fileMode(entry.name, mode, "linux")),
+      );
     }
   };
 

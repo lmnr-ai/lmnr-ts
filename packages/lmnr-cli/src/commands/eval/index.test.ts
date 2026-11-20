@@ -14,7 +14,14 @@ import { gunzipSync } from "node:zlib";
 import { InvalidArgumentError } from "commander";
 import { unpackTar } from "modern-tar";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
+import {
+  buildJobConfig,
+  discoverDatasets,
+  findTaskTomls,
+  findTemplateVars,
+  globToRegExp,
+  LAMINAR_ENVIRONMENT_IMPORT_PATH,
+} from "./datasets";
 import { guardedDockerfile } from "./docker";
 import { laminarBaseUrl, parseEnvFlags, resolveTemplateEnv } from "./env";
 import { HARBOR_VERSION, harborArgs, LMNR_PYTHON_VERSION } from "./harbor";
@@ -26,16 +33,13 @@ import {
   loadImageDefs,
   localImageDefs,
 } from "./images";
-import { assertRemotePassed, parsePositiveInt } from "./index";
-import { packEvalsDir } from "./pack";
 import {
-  buildJobConfig,
-  discoverSuites,
-  findTaskTomls,
-  findTemplateVars,
-  globToRegExp,
-  LAMINAR_ENVIRONMENT_IMPORT_PATH,
-} from "./suites";
+  assertRemotePassed,
+  handleEvalRun,
+  parseGroupName,
+  parsePositiveInt,
+} from "./index";
+import { packEvalsDir } from "./pack";
 
 let root: string;
 
@@ -58,14 +62,14 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-void describe("discoverSuites / packEvalsDir", () => {
-  void it("finds suites and packs the folder's contents at the archive root", async () => {
+void describe("discoverDatasets / packEvalsDir", () => {
+  void it("finds datasets and packs the folder's contents at the archive root", async () => {
     await write("hello/harbor.yaml", "agents: []");
     await write("hello/tasks/hello-world/task.toml");
     await write("other/harbor.yaml");
     await write("lmnr.yaml");
 
-    expect(await discoverSuites(root)).toEqual(["hello", "other"]);
+    expect(await discoverDatasets(root)).toEqual(["hello", "other"]);
     const { archive, fileCount } = await packEvalsDir(root);
     expect(fileCount).toBe(4);
     const names = (await filesOf(archive)).map((e) => e.header.name).sort();
@@ -167,14 +171,14 @@ void describe("discoverSuites / packEvalsDir", () => {
     expect(modes["hello/harbor.yaml"]).toBe(0o644);
   });
 
-  void it("rejects a folder without suites at its root", async () => {
+  void it("rejects a folder without datasets at its root", async () => {
     await write("evals/hello/harbor.yaml");
-    await expect(discoverSuites(root)).rejects.toMatchObject({
+    await expect(discoverDatasets(root)).rejects.toMatchObject({
       code: "invalid_evals_dir",
       exitCode: 16,
     });
     await expect(
-      discoverSuites(path.join(root, "missing")),
+      discoverDatasets(path.join(root, "missing")),
     ).rejects.toMatchObject({ code: "invalid_evals_dir" });
   });
 });
@@ -196,7 +200,7 @@ void describe("buildJobConfig", () => {
     expect(base.environment.type).toBe("docker");
   });
 
-  void it("leaves local runs on the suite's environment", () => {
+  void it("leaves local runs on the dataset's environment", () => {
     expect(buildJobConfig(base, {}, false).environment).toEqual(
       base.environment,
     );
@@ -291,25 +295,30 @@ void describe("template env", () => {
 });
 
 void describe("images", () => {
-  void it("reads lmnr.yaml images relative to the evals folder", async () => {
+  void it("reads a dataset's harbor.yaml images relative to its folder", async () => {
     await write(
-      "evals/lmnr.yaml",
-      "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n    context: ..\n  plain:\n    dockerfile: plain/Dockerfile\n",
+      "evals/ds/harbor.yaml",
+      "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n    context: ../..\n  plain:\n    dockerfile: plain/Dockerfile\n",
     );
-    const defs = await loadImageDefs(path.join(root, "evals"));
+    const defs = await loadImageDefs(path.join(root, "evals/ds"));
     expect(defs).toEqual([
       {
         name: "app-evals",
-        dockerfile: path.join(root, "evals/image/Dockerfile"),
+        dockerfile: path.join(root, "evals/ds/image/Dockerfile"),
         context: root,
       },
       {
         name: "plain",
-        dockerfile: path.join(root, "evals/plain/Dockerfile"),
-        context: path.join(root, "evals/plain"),
+        dockerfile: path.join(root, "evals/ds/plain/Dockerfile"),
+        context: path.join(root, "evals/ds/plain"),
       },
     ]);
-    expect(await loadImageDefs(root)).toEqual([]);
+    await write("evals/none/harbor.yaml", "datasets: []\n");
+    expect(await loadImageDefs(path.join(root, "evals/none"))).toEqual([]);
+    // lmnr-cli's key: Harbor never sees it.
+    expect(
+      buildJobConfig({ images: { a: {} }, n_attempts: 1 }, {}, false),
+    ).toEqual({ n_attempts: 1 });
   });
 
   void it("guards a build with the image's ignore rules plus .git and env files", async () => {
@@ -445,20 +454,21 @@ void describe("images", () => {
     expect(found.images).toEqual(["python:3.12-slim"]);
   });
 
-  void it("builds referenced lmnr.yaml and per-task images, pulls the rest, each once", async () => {
-    await write(
-      "evals/lmnr.yaml",
-      "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n" +
-        "  unused:\n    dockerfile: unused/Dockerfile\n",
-    );
-    for (const suite of ["a", "b"]) {
-      await write(`evals/${suite}/harbor.yaml`, "datasets:\n  - path: tasks\n");
+  void it("builds referenced harbor.yaml and per-task images, pulls the rest, each once", async () => {
+    // Both datasets point at one shared Dockerfile: it is built once.
+    for (const dataset of ["a", "b"]) {
       await write(
-        `evals/${suite}/tasks/shared/task.toml`,
+        `evals/${dataset}/harbor.yaml`,
+        "images:\n  app-evals:\n    dockerfile: ../image/Dockerfile\n" +
+          "  unused:\n    dockerfile: unused/Dockerfile\n" +
+          "datasets:\n  - path: tasks\n",
+      );
+      await write(
+        `evals/${dataset}/tasks/shared/task.toml`,
         '[environment]\ndocker_image = "app-evals"\n',
       );
       await write(
-        `evals/${suite}/tasks/public/task.toml`,
+        `evals/${dataset}/tasks/public/task.toml`,
         '[environment]\ndocker_image = "python:3.12-slim"\n',
       );
     }
@@ -482,22 +492,60 @@ void describe("images", () => {
       {},
       pusher,
     );
-    // `unused` is in lmnr.yaml but no task references it: never built.
+    // `unused` is in harbor.yaml but no task references it: never built.
     expect(calls.sort()).toEqual([
       `build a/tasks/own/environment ${path.join("evals", "a", "tasks", "own", "environment")}`,
       `build app-evals ${path.join("evals", "image")}`,
       "pull python:3.12-slim",
     ]);
+    const images = {
+      "app-evals": "sha256:app-evals",
+      "python:3.12-slim": "sha256:python:3.12-slim",
+    };
     expect(pushed).toEqual({
-      images: {
-        "app-evals": "sha256:app-evals",
-        "python:3.12-slim": "sha256:python:3.12-slim",
-      },
+      images: { a: images, b: images },
       dockerfiles: {
         a: { "tasks/own/environment": "sha256:a/tasks/own/environment" },
         b: {},
       },
     });
+  });
+
+  void it("builds each dataset's own definition of an image name", async () => {
+    for (const dataset of ["a", "b"]) {
+      await write(
+        `evals/${dataset}/harbor.yaml`,
+        "images:\n  app-evals:\n    dockerfile: Dockerfile\n" +
+          "datasets:\n  - path: tasks\n",
+      );
+      await write(
+        `evals/${dataset}/tasks/t/task.toml`,
+        '[environment]\ndocker_image = "app-evals"\n',
+      );
+    }
+    const evals = path.join(root, "evals");
+    const pushed = await ensureRemoteImages(
+      evals,
+      ["a", "b"],
+      {},
+      {
+        build: async (def) => `sha256:${path.relative(root, def.context)}`,
+        pull: async (ref) => `sha256:${ref}`,
+      },
+    );
+    expect(pushed.images).toEqual({
+      a: { "app-evals": `sha256:${path.join("evals", "a")}` },
+      b: { "app-evals": `sha256:${path.join("evals", "b")}` },
+    });
+
+    // Local builds are tagged by name: one run can't have both.
+    await expect(localImageDefs(evals, ["a", "b"], {})).rejects.toMatchObject({
+      code: "invalid_evals_dir",
+      message: expect.stringMatching(/defined differently/),
+    });
+    expect(
+      (await localImageDefs(evals, ["b"], {})).map((d) => d.context),
+    ).toEqual([path.join(evals, "b")]);
   });
 
   void it("follows linked task dirs and matches them by their target's name", async () => {
@@ -520,9 +568,9 @@ void describe("images", () => {
       path.join(root, "missing"),
       path.join(root, "s/tasks/dangling"),
     );
-    const suite = path.join(root, "s");
+    const dataset = path.join(root, "s");
     const dirs = async (tasks?: string[]) =>
-      (await findTaskTomls(suite, { tasks })).map((f) =>
+      (await findTaskTomls(dataset, { tasks })).map((f) =>
         path.basename(path.dirname(f)),
       );
 
@@ -553,9 +601,9 @@ void describe("images", () => {
     await write("s/tasks/notes/README.md");
     await write("s/unreferenced/task.toml", "");
     await write("shared/extra/task.toml", "");
-    const suite = path.join(root, "s");
+    const dataset = path.join(root, "s");
     const rel = async (overrides: object) =>
-      (await findTaskTomls(suite, overrides)).map((f) =>
+      (await findTaskTomls(dataset, overrides)).map((f) =>
         path.relative(root, path.dirname(f)).split(path.sep).join("/"),
       );
 
@@ -577,11 +625,11 @@ void describe("images", () => {
 
   void it("builds and pushes only the images of the tasks --task selects", async () => {
     await write(
-      "evals/lmnr.yaml",
+      "evals/s/harbor.yaml",
       "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n" +
-        "  other:\n    dockerfile: other/Dockerfile\n",
+        "  other:\n    dockerfile: other/Dockerfile\n" +
+        "datasets:\n  - path: tasks\n",
     );
-    await write("evals/s/harbor.yaml", "datasets:\n  - path: tasks\n");
     await write(
       "evals/s/tasks/app/task.toml",
       '[environment]\ndocker_image = "app-evals"\n',
@@ -610,7 +658,7 @@ void describe("images", () => {
     );
     expect(built).toEqual(["app-evals"]);
     expect(pushed).toEqual({
-      images: { "app-evals": "sha256:app-evals" },
+      images: { s: { "app-evals": "sha256:app-evals" } },
       dockerfiles: { s: {} },
     });
 
@@ -635,7 +683,8 @@ void describe("images", () => {
 });
 
 void describe("harborArgs", () => {
-  void it("runs the pinned Harbor with the Laminar plugin, grouped by suite", () => {
+  void it("runs the pinned Harbor with the Laminar plugin, grouped by dataset", () => {
+    expect(LMNR_PYTHON_VERSION).toBe("0.9.2");
     expect(harborArgs("/tmp/job.json", "support")).toEqual([
       "--python",
       "3.13",
@@ -653,9 +702,26 @@ void describe("harborArgs", () => {
       "--pk",
       "group_name=support",
     ]);
-    expect(harborArgs("/tmp/job.json", "s", "8001").slice(-2)).toEqual([
+    expect(
+      harborArgs("/tmp/job.json", "s", { grpcPort: "8001" }).slice(-2),
+    ).toEqual(["--pk", "grpc_port=8001"]);
+  });
+
+  void it("passes the dataset and its task hashes file when given", () => {
+    expect(
+      harborArgs("/tmp/job.json", "acme/support", {
+        dataset: {
+          name: "acme/support",
+          taskHashesFile: "/tmp/task-hashes.json",
+        },
+      }).slice(-6),
+    ).toEqual([
       "--pk",
-      "grpc_port=8001",
+      "group_name=acme/support",
+      "--pk",
+      "dataset=acme/support",
+      "--pk",
+      "task_hashes_file=/tmp/task-hashes.json",
     ]);
   });
 });
@@ -704,6 +770,21 @@ void describe("parsePositiveInt", () => {
     for (const bad of ["0", "-1", "1.5", "abc", ""]) {
       expect(() => parsePositiveInt(bad)).toThrow(/positive integer/);
     }
+  });
+});
+
+void describe("--group", () => {
+  void it("takes a non-empty name", () => {
+    expect(parseGroupName("  support v2 ")).toBe("support v2");
+    expect(() => parseGroupName("  ")).toThrow(InvalidArgumentError);
+  });
+
+  void it("needs a single dataset", async () => {
+    await write("a/harbor.yaml", "datasets:\n  - path: tasks\n");
+    await write("b/harbor.yaml", "datasets:\n  - path: tasks\n");
+    await expect(
+      handleEvalRun(undefined, { dir: root, group: "mine" }),
+    ).rejects.toThrow(/--group names one dataset's runs.*\(a, b\)/);
   });
 });
 

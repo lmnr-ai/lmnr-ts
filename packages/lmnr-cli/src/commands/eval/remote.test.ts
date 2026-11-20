@@ -6,17 +6,30 @@ import path from "node:path";
 import type { LaminarClient } from "@lmnr-ai/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { imagePusher } from "./docker";
-import { runSuites } from "./harbor";
+import { runDatasets } from "./harbor";
 import type { ImageDef } from "./images";
-import { handleEvalOrchestrate, startRemoteRun } from "./remote";
+import { packEvalsDir } from "./pack";
+import {
+  handleEvalOrchestrate,
+  remoteExclude,
+  remoteTaskVersions,
+  startRemoteRun,
+} from "./remote";
 import { runCommand } from "./run-command";
+import { hashTaskDir, packTaskDir } from "./task-hash";
 
 vi.mock("./docker", () => ({ imagePusher: vi.fn() }));
 vi.mock("./run-command", () => ({ runCommand: vi.fn() }));
 
 const appended = vi.hoisted(() => [] as string[]);
+/** Version archives the mocked client serves, by hash. */
+const served = vi.hoisted(() => new Map<string, Uint8Array>());
 vi.mock("@lmnr-ai/client", () => ({
   LaminarClient: class {
+    evalDatasets = {
+      downloadVersion: async (_d: string, _t: string, hash: string) =>
+        new Blob([served.get(hash) as Uint8Array<ArrayBuffer>]).stream(),
+    };
     hostedEvals = {
       appendRunLogs: async (_id: string, lines: { text: string }[]) => {
         appended.push(...lines.map((l) => l.text));
@@ -36,28 +49,41 @@ const write = async (rel: string, content = "x") => {
   await writeFile(file, content);
 };
 
-/** Two suites sharing `app-evals`; suite `a` also has its own Dockerfile. */
+/**
+ * Two datasets (acme/a, acme/b) using `app-evals`; dataset `a` also has its
+ * own Dockerfile.
+ */
 const writeEvals = async () => {
-  await write(
-    "lmnr.yaml",
-    "images:\n  app-evals:\n    dockerfile: image/Dockerfile\n",
-  );
-  for (const suite of ["a", "b"]) {
+  for (const dataset of ["a", "b"]) {
     await write(
-      `${suite}/harbor.yaml`,
-      "environment:\n  type: docker\ndatasets:\n  - path: tasks\n",
+      `${dataset}/harbor.yaml`,
+      "images:\n  app-evals:\n    dockerfile: ../image/Dockerfile\n" +
+        "environment:\n  type: docker\ndatasets:\n  - path: tasks\n",
     );
     await write(
-      `${suite}/tasks/shared/task.toml`,
-      '[environment]\ndocker_image = "app-evals"\n',
+      `${dataset}/tasks/dataset.toml`,
+      `[dataset]\nname = "acme/${dataset}"\n`,
+    );
+    await write(
+      `${dataset}/tasks/shared/task.toml`,
+      '[task]\nname = "acme/shared"\n' +
+        '[environment]\ndocker_image = "app-evals"\n',
     );
   }
-  await write("a/tasks/own/task.toml", "");
+  await write("a/tasks/own/task.toml", '[task]\nname = "acme/own"\n');
   await write("a/tasks/own/environment/Dockerfile", "FROM alpine");
 };
 
+const hashed = async (dir: string) => ({
+  name: `acme/${path.basename(dir)}`,
+  hash: await hashTaskDir(path.join(root, dir)),
+});
+
 const IMAGES = {
-  images: { "app-evals": "sha256:app-evals" },
+  images: {
+    a: { "app-evals": "sha256:app-evals" },
+    b: { "app-evals": "sha256:app-evals" },
+  },
   dockerfiles: {
     a: { "tasks/own/environment": "sha256:a/tasks/own/environment" },
     b: {},
@@ -72,6 +98,7 @@ afterEach(async () => {
   vi.mocked(runCommand).mockReset();
   vi.mocked(imagePusher).mockReset();
   appended.length = 0;
+  served.clear();
   for (const key of [
     "LMNR_EVAL_RUN",
     "LMNR_EVAL_UPLOAD_ID",
@@ -84,7 +111,7 @@ afterEach(async () => {
 });
 
 void describe("startRemoteRun", () => {
-  void it("sends one image map and per-suite Dockerfile digests", async () => {
+  void it("sends per-dataset image maps and Dockerfile digests", async () => {
     await writeEvals();
     vi.mocked(imagePusher).mockReturnValue({
       build: async (def: ImageDef) => `sha256:${def.name}`,
@@ -97,6 +124,11 @@ void describe("startRemoteRun", () => {
         upload: async () => ({ uploadId: "up-1" }),
         uploadIndex,
         startRun,
+      },
+      evalDatasets: {
+        // Laminar has none of the tasks: all are uploaded.
+        missingVersions: async (_dataset: string, versions: unknown[]) =>
+          versions,
       },
     } as unknown as LaminarClient;
 
@@ -118,17 +150,28 @@ void describe("startRemoteRun", () => {
       uploadId: "up-1",
       cliVersion: expect.any(String),
       spec: {
-        suites: ["a", "b"],
+        datasets: ["a", "b"],
         overrides: { nAttempts: 2 },
         env: { OPENAI_API_KEY: "sk" },
         ...IMAGES,
+        downloads: {
+          a: { dataset: "acme/a", tasks: [] },
+          b: { dataset: "acme/b", tasks: [] },
+        },
+        taskHashes: {
+          a: {
+            own: await hashed("a/tasks/own"),
+            shared: await hashed("a/tasks/shared"),
+          },
+          b: { shared: await hashed("b/tasks/shared") },
+        },
       },
     });
   });
 });
 
-void describe("runSuites", () => {
-  void it("gives each remote suite LMNR_EVAL_IMAGES with its own Dockerfiles", async () => {
+void describe("runDatasets", () => {
+  void it("gives each remote dataset LMNR_EVAL_IMAGES with its own images", async () => {
     await writeEvals();
     const seen: { cwd?: string; images?: string }[] = [];
     vi.mocked(runCommand).mockImplementation(async (_command, _args, opts) => {
@@ -136,22 +179,22 @@ void describe("runSuites", () => {
       return 0;
     });
 
-    expect(await runSuites(root, ["a", "b"], {}, {}, IMAGES)).toEqual([]);
+    expect(await runDatasets(root, ["a", "b"], {}, {}, IMAGES)).toEqual([]);
     expect(seen.map((s) => s.cwd)).toEqual([
       path.join(root, "a"),
       path.join(root, "b"),
     ]);
     expect(seen.map((s) => JSON.parse(s.images ?? "null"))).toEqual([
-      { images: IMAGES.images, dockerfiles: IMAGES.dockerfiles.a },
-      { images: IMAGES.images, dockerfiles: {} },
+      { images: IMAGES.images.a, dockerfiles: IMAGES.dockerfiles.a },
+      { images: IMAGES.images.b, dockerfiles: {} },
     ]);
 
     seen.length = 0;
-    expect(await runSuites(root, ["b"], {}, {})).toEqual([]);
+    expect(await runDatasets(root, ["b"], {}, {})).toEqual([]);
     expect(seen).toEqual([{ cwd: path.join(root, "b"), images: undefined }]);
   });
 
-  void it("writes each suite's job where onSuiteEnd reads it, failed or not", async () => {
+  void it("writes each dataset's job where onDatasetEnd reads it, failed or not", async () => {
     await writeEvals();
     const configs: Record<string, unknown>[] = [];
     vi.mocked(runCommand).mockImplementation(async (_command, args) => {
@@ -162,14 +205,14 @@ void describe("runSuites", () => {
     const ended: string[][] = [];
     const jobs = {
       dir: path.join(root, "jobs-out"),
-      onSuiteEnd: async (suite: string, jobDir: string) => {
-        ended.push([suite, jobDir]);
+      onDatasetEnd: async (dataset: string, jobDir: string) => {
+        ended.push([dataset, jobDir]);
       },
     };
 
-    expect(await runSuites(root, ["a", "b"], {}, {}, IMAGES, { jobs })).toEqual(
-      ["a"],
-    );
+    expect(
+      await runDatasets(root, ["a", "b"], {}, {}, IMAGES, { jobs }),
+    ).toEqual(["a"]);
     // The job keeps Harbor's name: the plugin names the evaluation after it.
     expect(configs.map((c) => [c.jobs_dir, c.job_name])).toEqual([
       [path.join(jobs.dir, "a"), undefined],
@@ -179,6 +222,154 @@ void describe("runSuites", () => {
       ["a", path.join(jobs.dir, "a")],
       ["b", path.join(jobs.dir, "b")],
     ]);
+  });
+});
+
+void describe("remote tasks", () => {
+  void it("uploads only the run's tasks Laminar doesn't have", async () => {
+    await writeEvals();
+    await write("other/tasks/dataset.toml", '[dataset]\nname = "acme/other"\n');
+    await write("other/tasks/x/task.toml", "");
+    await write("shared/helper.py", "");
+    // No dataset.toml: not an eval dataset, uploaded whole.
+    await write("local only/harbor.yaml", "");
+    await write("local only/tasks/t/task.toml", "");
+    const shared = await hashTaskDir(path.join(root, "a/tasks/shared"));
+    const missingVersions = vi.fn(
+      async (dataset: string, versions: { task: string; hash: string }[]) =>
+        // Laminar has acme/a's acme/shared only.
+        versions.filter(
+          (v) => !(dataset === "acme/a" && v.task === "acme/shared"),
+        ),
+    );
+    const client = {
+      evalDatasets: { missingVersions },
+    } as unknown as LaminarClient;
+
+    const tasks = await remoteTaskVersions(
+      client,
+      root,
+      ["a", "b", "local only"],
+      {},
+    );
+    expect(tasks.downloads).toEqual({
+      a: {
+        dataset: "acme/a",
+        tasks: [{ task: "acme/shared", hash: shared, dir: "shared" }],
+      },
+      b: { dataset: "acme/b", tasks: [] },
+    });
+    expect(Object.keys(tasks.taskHashes)).toEqual(["a", "b"]);
+    expect(tasks.taskHashes.a.shared).toEqual({
+      name: "acme/shared",
+      hash: shared,
+    });
+    expect(missingVersions).toHaveBeenCalledTimes(2);
+
+    const { index } = await packEvalsDir(
+      root,
+      "linux",
+      remoteExclude(
+        ["a", "b", "local only", "other"],
+        ["a", "b", "local only"],
+        {},
+        tasks.downloads,
+      ),
+    );
+    expect(index.map((f) => f.path).sort()).toEqual([
+      "a/harbor.yaml",
+      "a/tasks/dataset.toml",
+      "a/tasks/own/environment/Dockerfile",
+      "a/tasks/own/task.toml",
+      "b/harbor.yaml",
+      "b/tasks/dataset.toml",
+      "b/tasks/shared/task.toml",
+      "local only/harbor.yaml",
+      "local only/tasks/t/task.toml",
+      "shared/helper.py",
+    ]);
+
+    // --task leaves the other tasks out of the hashes and the upload.
+    const own = await remoteTaskVersions(client, root, ["a"], {
+      tasks: ["own"],
+    });
+    expect(Object.keys(own.taskHashes.a)).toEqual(["own"]);
+    const { index: ownIndex } = await packEvalsDir(
+      root,
+      "linux",
+      remoteExclude(
+        ["a", "b", "local only", "other"],
+        ["a"],
+        { tasks: ["own"] },
+        own.downloads,
+      ),
+    );
+    expect(ownIndex.map((f) => f.path).sort()).toEqual([
+      "a/harbor.yaml",
+      "a/tasks/dataset.toml",
+      "a/tasks/own/environment/Dockerfile",
+      "a/tasks/own/task.toml",
+      "shared/helper.py",
+    ]);
+  });
+
+  void it("uploads every task when Laminar has no dataset storage", async () => {
+    await writeEvals();
+    const client = {
+      evalDatasets: {
+        missingVersions: async () => {
+          throw Object.assign(new Error("501"), {
+            name: "LaminarApiError",
+            code: "storage_not_configured",
+          });
+        },
+      },
+    } as unknown as LaminarClient;
+    const tasks = await remoteTaskVersions(client, root, ["a"], {});
+    expect(tasks.downloads).toEqual({ a: { dataset: "acme/a", tasks: [] } });
+  });
+
+  void it("passes the dataset and its task hashes to the plugin", async () => {
+    await writeEvals();
+    await write("local only/harbor.yaml", "datasets:\n  - path: tasks\n");
+    const seen: { args: string[]; hashes?: unknown }[] = [];
+    vi.mocked(runCommand).mockImplementation(async (_command, args) => {
+      const pk = args.find((a) => a.startsWith("task_hashes_file="));
+      seen.push({
+        args,
+        hashes: pk
+          ? JSON.parse(await readFile(pk.split("=")[1], "utf8"))
+          : undefined,
+      });
+      return 0;
+    });
+
+    await runDatasets(root, ["a", "local only"], {}, {}, undefined, {
+      taskHashes: { b: {} },
+    });
+    expect(seen[0].args).toContain("group_name=acme/a");
+    expect(seen[0].args).toContain("dataset=acme/a");
+    expect(seen[0].hashes).toEqual({
+      own: await hashed("a/tasks/own"),
+      shared: await hashed("a/tasks/shared"),
+    });
+    // No dataset.toml: grouped by the folder, but no dataset or hashes.
+    expect(seen[1].args).toContain("group_name=local only");
+    expect(seen[1].args.some((a) => a.startsWith("dataset="))).toBe(false);
+    expect(seen[1].hashes).toBeUndefined();
+  });
+
+  void it("groups the run by --group instead of the dataset name", async () => {
+    await writeEvals();
+    const seen: string[][] = [];
+    vi.mocked(runCommand).mockImplementation(async (_command, args) => {
+      seen.push(args);
+      return 0;
+    });
+    await runDatasets(root, ["a"], { group: "acme/a (prompt v2)" }, {});
+    expect(seen[0]).toContain("group_name=acme/a (prompt v2)");
+    // Still linked to its dataset.
+    expect(seen[0]).toContain("dataset=acme/a");
   });
 });
 
@@ -203,19 +394,36 @@ void describe("handleEvalOrchestrate", () => {
   void it("sends Harbor's output and the failure to the run's log", async () => {
     await writeEvals();
     const marker = path.join(root, "log-started");
+    // b/tasks/pulled is in Laminar: the run downloads it first.
+    await write("src/pulled/task.toml", '[task]\nname = "acme/pulled"\n');
+    const pulled = await packTaskDir(path.join(root, "src/pulled"));
+    served.set(pulled.hash, pulled.archive);
+    const hashes = { pulled: { name: "acme/pulled", hash: pulled.hash } };
     process.env.LMNR_EVAL_RUN = JSON.stringify({
-      suites: ["b"],
+      datasets: ["b"],
       overrides: {},
       env: {},
       images: {},
       dockerfiles: { b: {} },
+      downloads: {
+        b: {
+          dataset: "acme/b",
+          tasks: [{ task: "acme/pulled", hash: pulled.hash, dir: "pulled" }],
+        },
+      },
+      taskHashes: { b: hashes },
     });
     process.env.LMNR_EVAL_UPLOAD_ID = "up-1";
     process.env.LMNR_RUN_LOG_MARKER = marker;
     process.env.LMNR_PROJECT_API_KEY = "run-key";
     let columns: string | undefined;
-    vi.mocked(runCommand).mockImplementation(async (_command, _args, opts) => {
+    let hashesFile: string | undefined;
+    let downloaded = false;
+    vi.mocked(runCommand).mockImplementation(async (_command, args, opts) => {
       columns = opts?.env?.COLUMNS;
+      downloaded = existsSync(path.join(root, "b/tasks/pulled/task.toml"));
+      const pk = args.find((a) => a.startsWith("task_hashes_file="));
+      hashesFile = pk && (await readFile(pk.split("=")[1], "utf8"));
       opts?.output?.stdout.write(
         "trial 1/1 done\nResults written to /tmp/job/result.json\n" +
           "2026-11-13 18:39:22,645::lmnr.integrations.harbor.plugin::INFO: " +
@@ -237,10 +445,12 @@ void describe("handleEvalOrchestrate", () => {
     const harbor = appended.indexOf("trial 1/1 done");
     expect(appended.slice(harbor, harbor + 3)).toEqual([
       "trial 1/1 done",
-      "Laminar evaluation for suite b: https://lmnr.test/e/1",
+      "Laminar evaluation for dataset b: https://lmnr.test/e/1",
       "partial",
     ]);
     expect(columns).toBe("500");
+    expect(downloaded).toBe(true);
+    expect(JSON.parse(hashesFile ?? "{}")).toEqual(hashes);
     expect(appended.findIndex((t) => t.startsWith("ERROR: "))).toBeGreaterThan(
       harbor + 1,
     );

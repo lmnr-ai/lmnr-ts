@@ -1,5 +1,11 @@
 # lmnr-cli dataset
 
+> **Deprecated.** Every `lmnr-cli dataset` command still works, but prints a
+> warning on stderr and will be removed in a future release. Use
+> `lmnr-cli eval dataset` for eval datasets (Harbor tasks versioned in Laminar).
+> The warning never touches stdout, so `--json` output stays parseable;
+> `LMNR_LOG_LEVEL=error` hides it.
+
 Manage datasets in your Laminar project from the command line.
 
 ```bash

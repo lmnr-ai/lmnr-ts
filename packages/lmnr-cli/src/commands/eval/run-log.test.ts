@@ -62,14 +62,14 @@ void describe("createRunLogShipper", () => {
     const other = shipper.writer();
     harbor.write("Results written to /tmp/job");
     harbor.end();
-    harbor.write("next suite\n");
+    harbor.write("next dataset\n");
     other.write("ERROR: failed\n");
     harbor.end();
     await shipper.close();
 
     expect(sent).toEqual([
       "Results written to /tmp/job",
-      "next suite",
+      "next dataset",
       "ERROR: failed",
     ]);
   });

@@ -7,6 +7,12 @@ Command-specific notes live in nested `AGENTS.md` files next to the code (each w
 - Logger (pino) always writes to stderr. This keeps stdout clean for data output for piping and agents.
 - Commands that support machine-readable output must accept a `--json` flag. This is added per command group (e.g. datasets), not globally, since interactive commands cannot support it.
 
+## Deprecating a command
+
+- Keep it working. Add a `preAction` hook on the command (or its group: the hook runs before every subcommand's action) that `logger.warn`s one line saying what replaces it. Logger output goes to stderr, so `--json` stdout stays parseable, and `LMNR_LOG_LEVEL=error` silences it.
+- Prefix its `description` with `[deprecated]`, add the warning to its own help (`addHelpText("before", ...)`), and drop it from the top-level help examples.
+- Example: `lmnr-cli dataset` (`DATASET_DEPRECATION` / `warnDatasetDeprecated` in `src/commands/dataset/index.ts`), replaced by `lmnr-cli eval dataset`.
+
 ## Package Boundaries
 
 - `lmnr-cli` is the standalone CLI (`npx lmnr-cli@latest`). It depends on
@@ -47,7 +53,7 @@ If you are going to build out a new feature, make sure you read that article to 
 ## Nested AGENTS.md files
 
 - `src/commands/debug/AGENTS.md` - debug sessions, `.lmnr/debug-session.json` resolution and contract, notes as session blocks
-- `src/commands/eval/AGENTS.md` - `eval run` / `eval orchestrate` (Harbor evals): modes, remote image push, remote runs, exit codes
+- `src/commands/eval/AGENTS.md` - `eval run` / `eval orchestrate` (Harbor evals) and `eval dataset pull / push` (eval datasets: Harbor dataset.toml / [task] names, independent versions, Harbor task hash, pull/push rules): modes, remote image push, remote runs, exit codes
 - `src/commands/llm-profile/AGENTS.md` - LLM profile CRUD, provider flags, update semantics
 - `src/commands/setup/AGENTS.md` - probing an existing project API key
 - `src/commands/signal/AGENTS.md` - trigger / filter / mode flags, repeatable flags, partial updates, backfill

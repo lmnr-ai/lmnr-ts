@@ -10,7 +10,7 @@ import {
   findTemplateVars,
   type RunOverrides,
   type TemplateVars,
-} from "./suites";
+} from "./datasets";
 
 export const API_KEY_VAR = "LMNR_PROJECT_API_KEY";
 
@@ -67,18 +67,21 @@ export const resolveTemplateEnv = async (
 };
 
 /**
- * The run's env: values for every `${VAR}` the suites reference, plus the
+ * The run's env: values for every `${VAR}` the datasets reference, plus the
  * `--env` values (which win). Fails when a required one is unset.
  */
 export const resolveRunEnv = async (
   evalsDir: string,
-  suites: string[],
+  datasets: string[],
   overrides: RunOverrides,
   explicitEnv: Record<string, string>,
 ): Promise<Record<string, string>> => {
   const vars: TemplateVars = { required: new Set(), optional: new Set() };
-  for (const suite of suites) {
-    const found = await findTemplateVars(path.join(evalsDir, suite), overrides);
+  for (const dataset of datasets) {
+    const found = await findTemplateVars(
+      path.join(evalsDir, dataset),
+      overrides,
+    );
     for (const name of found.required) vars.required.add(name);
     for (const name of found.optional) vars.optional.add(name);
   }
@@ -86,7 +89,7 @@ export const resolveRunEnv = async (
   const stillMissing = missing.filter((name) => !(name in explicitEnv));
   if (stillMissing.length > 0) {
     throw missingEnv(
-      `The suites reference unset variables: ${stillMissing.join(", ")}. ` +
+      `The datasets reference unset variables: ${stillMissing.join(", ")}. ` +
         "Export them, add them to .env, or pass --env KEY=VALUE.",
     );
   }
