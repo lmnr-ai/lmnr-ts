@@ -557,7 +557,12 @@ export const checkRunTasks = async (
     result[folder] = hashes;
     const pins = manifest.pins ?? {};
     const pull = `lmnr-cli eval dataset pull ${folder}${dirFlag(opts)}`;
-    const onDisk = Object.keys(local.dirs).length + local.linked.length;
+    // Every task dir counts, named or not: Harbor runs them all.
+    const onDisk =
+      Object.keys(local.dirs).length +
+      local.linked.length +
+      local.unnamed.length +
+      Object.values(local.duplicates).flat().length;
     if (onDisk === 0 && Object.keys(pins).length > 0) {
       throw invalidEvalsDir(
         `${taskPath(folder, "")} has no tasks, and ${DATASET_TOML} pins ` +

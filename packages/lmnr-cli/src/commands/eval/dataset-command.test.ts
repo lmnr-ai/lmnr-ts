@@ -686,6 +686,22 @@ void describe("checkRunTasks", () => {
         "pull them first: lmnr-cli eval dataset pull support",
       ),
     });
+    // Task dirs without their own [task] name still run (Harbor doesn't need
+    // one), so they aren't an empty checkout.
+    await write("evals/support/tasks/unnamed/task.toml", "[agent]\n");
+    await expect(
+      checkRunTasks(evalsDir, ["support"], undefined),
+    ).resolves.toBeDefined();
+    await rm(path.join(evalsDir, "support/tasks/unnamed"), { recursive: true });
+    // Nor are dirs that share one name.
+    await write("evals/support/tasks/a/task.toml", taskToml("acme/copy"));
+    await write("evals/support/tasks/b/task.toml", taskToml("acme/copy"));
+    await expect(
+      checkRunTasks(evalsDir, ["support"], undefined),
+    ).resolves.toBeDefined();
+    for (const dir of ["a", "b"]) {
+      await rm(path.join(evalsDir, "support/tasks", dir), { recursive: true });
+    }
     // A dataset that pins nothing yet has nothing to pull.
     await writeFile(
       path.join(evalsDir, "support/tasks/dataset.toml"),

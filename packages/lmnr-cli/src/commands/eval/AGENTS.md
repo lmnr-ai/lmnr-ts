@@ -311,7 +311,8 @@
   upload) it is Harbor's, matching task DIR names (`dirFilter`).
 - **run** (`checkRunTasks`): never pulls, like `pnpm dev` never installs;
   tasks run as they are on disk. Offline: a dataset with pins and no task
-  on disk (a fresh clone) is `invalid_evals_dir` with the pull command;
+  on disk (a fresh clone; any task dir counts, even one without its own
+  `[task] name`, since Harbor runs it) is `invalid_evals_dir` with the pull command;
   selected pinned tasks missing on disk, or with local ≠ pin (an edit, or
   out of date: offline it can't tell which), warn with the push and pull
   commands.
