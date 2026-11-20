@@ -1,6 +1,6 @@
 {
   "name": "lmnr-cli",
-  "version": "0.6.0",
+  "version": "0.5.8",
   "description": "CLI for the Laminar agent observability platform",
   "main": "dist/index.cjs",
   "bin": {
