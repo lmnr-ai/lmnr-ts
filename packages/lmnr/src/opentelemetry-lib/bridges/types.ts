@@ -56,6 +56,11 @@ export interface Bridge {
   uninstall(): void;
   /** Called from `Laminar.flush()`. Optional health check. */
   onFlush?(): void;
+  /**
+   * Called from `Laminar.shutdown()` before its final flush, so spans the
+   * bridge emits here are exported. Must not throw.
+   */
+  onShutdown?(): void;
 }
 
 /**

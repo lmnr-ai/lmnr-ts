@@ -23,11 +23,21 @@
 
 Same as Python `runs.py`:
 
-- `onCreate` converts the inputs to attributes at once (`inputAttributes`, `requestAttributes`) and drops them from the stored run; `onUpdate` merges the update (non-null fields win) and emits. A create that already has `end_time` is emitted at once and a later update for it ignored. An update whose create was never seen is recorded as a complete root run (except on the non-batched path, above). Open and finished runs are insertion-ordered `Map`s bounded at 10k; runs that never end are dropped.
+- `onCreate` converts the inputs to attributes at once (`inputAttributes`, `requestAttributes`) and drops them from the stored run; `onUpdate` merges the update (non-null fields win) and emits. A create that already has `end_time` is emitted at once and a later update for it ignored. An update whose create was never seen is recorded as a complete root run (except on the non-batched path, above). Open and finished runs are insertion-ordered `Map`s bounded at 10k; a run evicted from the open map is dropped.
 - **Ids:** trace id = the LangSmith trace UUID's 32 hex digits; span id = 64-bit FNV-1a (BigInt) of the run UUID's lowercase text, `|| 1`. Cross-language vectors from lmnr-python's `span_id_for` / `trace_id_for` are in `test/langsmith-bridge.test.ts`; regenerate them there if either side changes.
 - **Spans:** a real span from Laminar's provider (tracer `langsmith`, version = the patched copy's `package.json` version, also stamped as `lmnr.span.bridge.version`), with the run's ids stamped over the SDK's afterwards as the Mastra exporter / pi-durable do (`Object.assign(span.spanContext(), …)`, `dropPathInfo` of the allocated id, `parentSpanContext` / `parentSpanId`, then `lmnr.span.path` / `ids_path` overwritten with the node's). Started inside `context.with(<Laminar context at create>)`, because `LaminarSpanProcessor.onStart` reads association properties from `context.active()`; the run's attributes are passed as start attributes, so Laminar's own (`observe({ sessionId })`, metadata) are applied after them and win. Errors become an `exception` event plus ERROR status.
 - Times: JS `start_time` is an ISO string whose last three microsecond digits are an ordering counter (kept as a sub-millisecond fraction); `end_time` is epoch milliseconds. End is clamped to start.
 - Nesting, glue runs (nested `RunnableSequence` / `RunnableLambda` and `langsmith:hidden` runs, e.g. LangGraph's `__start__`), distributed parents and parent paths: as in Python.
+
+## Runs that never end (`endOpenRuns`, `exit.ts`)
+
+LangSmith sends a run's create at its start, so after an exit mid-run it keeps the run as in progress. Laminar records a run when it ends, so without this the run would be missing entirely (its finished children were recorded, as orphans). `recorder.endOpenRuns()` emits every open run, latest first so children end before parents, with end = now, no output, and `langsmith.run.incomplete: true` (not ERROR: an abandoned generator isn't a failure). The runs move to the finished map, so an update that still arrives is ignored. Same in Python (`end_open_runs`, `atexit`). When it runs:
+
+- `Laminar.shutdown()` calls the bridge's `onShutdown()` (a new optional `Bridge` hook, `shutdownBridges`) **before** its final flush. `uninstall` runs after the flush, too late to export.
+- `beforeExit`: the event loop is empty, so an open run never ends (an abandoned async generator, an awaited promise that never settles). The flush keeps the loop alive; the event fires again with nothing left to end.
+- `SIGINT` / `SIGTERM`: Node exits at once by default, and any listener turns that off. So the hook acts only when it is the **sole** listener (`process.listenerCount(signal) > 1` means the app owns the signal and decides when to exit; `Laminar.shutdown()` in its handler ends the runs). It removes its listeners (a second Ctrl-C exits at once), ends the runs, flushes for at most `SIGNAL_FLUSH_TIMEOUT_MS` (3 s), then `process.kill(process.pid, signal)`, which now exits by the signal as it would have (exit code 130 / 143). Side effect: LangSmith's own batch queue also gets those milliseconds to send.
+- Not covered: `process.exit()` and `exit` listeners (no async work possible), SIGKILL / OOM kills.
+- Tests: `records runs that never ended as incomplete at shutdown` (in process) and the `LangSmith bridge process exit` suite, which spawns `test/langsmith-bridge/exit-child.ts` (`node --import tsx`) for `beforeExit`, an unhandled SIGINT (asserts exit by signal) and an app SIGINT handler (exit code 7). The child's exporter writes after a 100 ms delay, so its lines only appear if the exit waited for the export; writes are `writeSync` because the process may die right after.
 
 ## Translation (`translate.ts`)
 
@@ -50,6 +60,7 @@ Port of Python `translate.py`, reusing the Langfuse bridge's `normalizeMessages`
 - **Bundled apps** (esbuild / Next.js server bundles where `langsmith` is inlined and not resolvable from `node_modules`): nothing is patched. The Langfuse bridge avoids this through a global slot; LangSmith has none.
 - Laminar spans created _inside_ a run nest under the nearest Laminar span, not under the run (the run's span exists only once it ended); distributed traces whose upstream root ran under a Laminar span split into two Laminar traces; as in Python.
 - On the non-batched path an update whose create came before `initialize()` is dropped.
+- A run open at `process.exit()` or a hard kill is lost (see Runs that never end).
 - Under tsx, a LangChain / LangGraph run (not `traceable`) posted in the first event-loop turn after `initialize()` has no inputs (see the tap section).
 - The trace id debug mode records for a root run (`recordDebugTraceId`) is the SDK-allocated one, read before the run's id is stamped over it (same as pi-durable roots).
 

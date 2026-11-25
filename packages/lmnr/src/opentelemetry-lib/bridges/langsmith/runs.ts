@@ -57,11 +57,14 @@ const logger = initializeLogger();
 // The LangSmith run a span came from, to find it in LangSmith.
 export const LANGSMITH_RUN_ID = "langsmith.run.id";
 export const LANGSMITH_RUN_TYPE = "langsmith.run.type";
+// Set on a run that had not ended when Laminar shut down or the process
+// exited; its span ends then (`endOpenRuns`).
+export const LANGSMITH_RUN_INCOMPLETE = "langsmith.run.incomplete";
 
 // Open runs, and recently finished ones (for children that start after their
 // parent ended, and updates that follow a complete create). Both bounded: a
-// run whose update never comes (process exit, an abandoned generator) is
-// dropped rather than emitted with a made-up end.
+// run whose update never comes is dropped when evicted. At shutdown and
+// process exit, the runs still open are emitted as incomplete.
 export const MAX_OPEN_RUNS = 10_000;
 export const MAX_FINISHED_RUNS = 10_000;
 
@@ -308,7 +311,38 @@ export class LangSmithRunRecorder {
     }
   }
 
-  private emit(runId: string, openRun: OpenRun, run: Json): void {
+  /**
+   * Emit every run that hasn't ended, ending now and marked
+   * `langsmith.run.incomplete`. For shutdown and process exit, after which
+   * its update can't arrive: LangSmith keeps such a run as in progress, and
+   * without this Laminar would have no span for it. Latest first, so
+   * children end before their parents. Returns how many spans were emitted.
+   */
+  endOpenRuns(): number {
+    const runs = [...this.open].reverse();
+    this.open.clear();
+    let emitted = 0;
+    for (const [runId, openRun] of runs) {
+      setBounded(this.finished, runId, openRun.node, MAX_FINISHED_RUNS);
+      if (openRun.skipped) continue;
+      try {
+        this.emit(runId, openRun, openRun.run, true);
+        emitted += 1;
+      } catch (e) {
+        logger.debug(
+          `LangSmith bridge failed to record an open run: ${errorMessage(e)}`,
+        );
+      }
+    }
+    return emitted;
+  }
+
+  private emit(
+    runId: string,
+    openRun: OpenRun,
+    run: Json,
+    incomplete = false,
+  ): void {
     const runType = run.run_type;
     const extra = asObject(run.extra);
     const metadata = asObject(extra.metadata);
@@ -322,6 +356,7 @@ export class LangSmithRunRecorder {
       [LANGSMITH_RUN_ID]: runId,
     };
     if (typeof runType === "string") attributes[LANGSMITH_RUN_TYPE] = runType;
+    if (incomplete) attributes[LANGSMITH_RUN_INCOMPLETE] = true;
     if (openRun.bridgeVersion) {
       attributes[SPAN_BRIDGE_VERSION] = openRun.bridgeVersion;
     }

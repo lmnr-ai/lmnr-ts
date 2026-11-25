@@ -14,11 +14,13 @@
 import { errorMessage } from "@lmnr-ai/types";
 
 import { initializeLogger } from "../../../utils";
+import { forceFlush } from "../../tracing/index";
 import {
   type Bridge,
   type BridgeContext,
   type InstrumentationKey,
 } from "../types";
+import { ExitHooks } from "./exit";
 import { LangSmithRunRecorder } from "./runs";
 import { LangSmithTap, langsmithCopies } from "./tap";
 
@@ -48,6 +50,8 @@ export class LangSmithBridge implements Bridge {
   readonly inheritsGlobalContext = false;
 
   private tap: LangSmithTap | undefined;
+  private recorder: LangSmithRunRecorder | undefined;
+  private exitHooks: ExitHooks | undefined;
 
   isAvailable(): boolean {
     try {
@@ -64,7 +68,8 @@ export class LangSmithBridge implements Bridge {
 
   install(_ctx: BridgeContext): void {
     this.uninstall();
-    const tap = new LangSmithTap(new LangSmithRunRecorder());
+    const recorder = new LangSmithRunRecorder();
+    const tap = new LangSmithTap(recorder);
     try {
       if (!tap.install()) {
         tap.uninstall();
@@ -78,6 +83,10 @@ export class LangSmithBridge implements Bridge {
       return;
     }
     this.tap = tap;
+    this.recorder = recorder;
+    // Runs still open when the process exits are recorded as incomplete.
+    this.exitHooks = new ExitHooks(() => recorder.endOpenRuns(), forceFlush);
+    this.exitHooks.install();
     tap.installImported().catch((e: unknown) => {
       logger.debug(
         `Laminar langsmith bridge: patching imported copies failed: ${errorMessage(e)}`,
@@ -86,8 +95,26 @@ export class LangSmithBridge implements Bridge {
     logger.debug("Laminar langsmith bridge installed");
   }
 
+  /**
+   * Record the runs that haven't ended as incomplete, before Laminar's final
+   * flush: once the bridge is uninstalled, their updates can't arrive.
+   */
+  onShutdown(): void {
+    try {
+      const ended = this.recorder?.endOpenRuns() ?? 0;
+      if (ended > 0) {
+        logger.debug(`Laminar langsmith bridge: ${ended} runs had not ended`);
+      }
+    } catch (e) {
+      logger.debug(
+        `Laminar langsmith bridge: ending open runs failed: ${errorMessage(e)}`,
+      );
+    }
+  }
+
   uninstall(): void {
     try {
+      this.exitHooks?.uninstall();
       this.tap?.uninstall();
     } catch (e) {
       logger.debug(
@@ -95,6 +122,8 @@ export class LangSmithBridge implements Bridge {
       );
     } finally {
       this.tap = undefined;
+      this.recorder = undefined;
+      this.exitHooks = undefined;
     }
   }
 }

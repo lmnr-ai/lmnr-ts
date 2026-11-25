@@ -125,3 +125,15 @@ export const flushBridges = (bridges: readonly Bridge[]): void => {
     }
   }
 };
+
+export const shutdownBridges = (bridges: readonly Bridge[]): void => {
+  for (const bridge of bridges) {
+    try {
+      bridge.onShutdown?.();
+    } catch (e) {
+      logger.debug(
+        `Laminar ${bridge.name} bridge shutdown hook failed: ${errorMessage(e)}`,
+      );
+    }
+  }
+};

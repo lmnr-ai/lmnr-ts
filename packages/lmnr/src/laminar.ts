@@ -38,6 +38,7 @@ import {
   installBridges,
   type LaminarBridge,
   resolveBridges,
+  shutdownBridges,
   uninstallBridges,
   warnAboutOverlaps,
 } from "./opentelemetry-lib/bridges";
@@ -1343,6 +1344,8 @@ export class Laminar {
       // .lmnr/debug-session.json. Idempotent — the process-exit hooks are a
       // fallback.
       getRuntime()?.emitPointer();
+      // Bridges may emit spans now (LangSmith: runs that never ended).
+      shutdownBridges(this.bridges);
       await forceFlush();
       // The processor is not shut down (initialize() can build a new one), so
       // stop its trajectory snapshots and exit hook explicitly. This also

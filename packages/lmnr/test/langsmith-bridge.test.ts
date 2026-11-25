@@ -12,6 +12,7 @@
  * - "live": the real SDK end to end.
  */
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -699,6 +700,75 @@ void describe("LangSmith bridge (live)", () => {
     });
   }
 
+  void it("records runs that never ended as incomplete at shutdown", async () => {
+    initLaminar();
+    const { client, settle } = langsmithClient();
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const options = { client, tracingEnabled: true };
+    const lookup = traceable(async () => "found", {
+      ...options,
+      name: "lookup",
+      run_type: "tool",
+    });
+    const stuck = traceable(() => blocked, {
+      ...options,
+      name: "stuck",
+      run_type: "tool",
+    });
+    const agent = traceable(
+      async (_question: string) => {
+        await lookup();
+        await stuck();
+      },
+      { ...options, name: "agent" },
+    );
+    const running = agent("plan a trip");
+    for (let i = 0; i < 20; i++) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    assert.deepStrictEqual(
+      lmSpans().map((s) => s.name),
+      ["lookup"],
+    );
+
+    await Laminar.shutdown();
+    const spans = lmSpans();
+    assert.deepStrictEqual(
+      spans.map((s) => s.name),
+      ["lookup", "stuck", "agent"],
+      "children end before their parents",
+    );
+    const incomplete = "langsmith.run.incomplete";
+    assert.strictEqual(
+      byName("lookup", spans).attributes[incomplete],
+      undefined,
+    );
+    assert.strictEqual(byName("stuck", spans).attributes[incomplete], true);
+    assert.strictEqual(byName("agent", spans).attributes[incomplete], true);
+    const root = byName("agent", spans);
+    assert.strictEqual(
+      parentId(byName("stuck", spans)),
+      root.spanContext().spanId,
+    );
+    assert.deepStrictEqual(
+      byName("stuck", spans).attributes["lmnr.span.path"],
+      ["agent", "stuck"],
+    );
+    assert.deepStrictEqual(json(root, "lmnr.span.input"), {
+      input: "plan a trip",
+    });
+    assert.strictEqual(root.attributes["lmnr.span.output"], undefined);
+
+    // The runs end after the bridge was uninstalled: nothing more is recorded.
+    release();
+    await running;
+    await settle();
+    assert.strictEqual(lmSpans().length, 3);
+  });
+
   void it("nests a LangSmith trace under the Laminar span it started in", async () => {
     initLaminar();
     const { client, settle } = langsmithClient();
@@ -1110,6 +1180,67 @@ void describe("LangSmith bridge (live)", () => {
     assert.ok(operation.item.attachments.file[1] instanceof Uint8Array);
     await prototype.processRunOperation({ action: "feedback", item: {} });
     tap.uninstall();
+  });
+});
+
+void describe("LangSmith bridge process exit", () => {
+  // `exit-child.ts`: an agent whose `stuck` tool never ends, then an exit.
+  const runChild = (
+    mode: string,
+    signal?: NodeJS.Signals,
+  ): Promise<{ lines: string[]; code: number | null; signal: string | null }> =>
+    new Promise((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          join(__dirname, "langsmith-bridge/exit-child.ts"),
+          mode,
+        ],
+        { stdio: ["ignore", "pipe", "inherit"] },
+      );
+      let output = "";
+      child.stdout.on("data", (chunk: Buffer) => {
+        output += chunk.toString();
+        if (signal && output.includes("ready\n")) child.kill(signal);
+      });
+      const timer = setTimeout(() => child.kill("SIGKILL"), 30_000);
+      child.on("error", reject);
+      child.on("close", (code, exitSignal) => {
+        clearTimeout(timer);
+        resolve({
+          lines: output.split("\n").filter((l) => l.startsWith("exported")),
+          code,
+          signal: exitSignal,
+        });
+      });
+    });
+
+  const expected = [
+    "exported lookup false",
+    "exported stuck true",
+    "exported agent true",
+  ];
+
+  void it("records open runs when the event loop empties", async () => {
+    const { lines, code } = await runChild("beforeExit");
+    assert.deepStrictEqual(lines, expected);
+    // An unsettled top-level promise isn't an error here (not top-level await).
+    assert.strictEqual(code, 0);
+  });
+
+  void it("records open runs on SIGINT, then exits by the signal", async () => {
+    const result = await runChild("signal", "SIGINT");
+    assert.deepStrictEqual(result.lines, expected);
+    assert.strictEqual(result.signal, "SIGINT");
+  });
+
+  void it("leaves SIGINT to the app's own handler", async () => {
+    // The app's handler calls `Laminar.shutdown()`, which ends the open runs.
+    const result = await runChild("signal-handled", "SIGINT");
+    assert.deepStrictEqual(result.lines, expected);
+    assert.strictEqual(result.code, 7);
   });
 });
 
