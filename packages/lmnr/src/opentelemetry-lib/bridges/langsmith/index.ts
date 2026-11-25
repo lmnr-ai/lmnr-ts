@@ -14,7 +14,7 @@
 import { errorMessage } from "@lmnr-ai/types";
 
 import { initializeLogger } from "../../../utils";
-import { forceFlush } from "../../tracing/index";
+import { getSpanProcessor } from "../../tracing/index";
 import {
   type Bridge,
   type BridgeContext,
@@ -85,7 +85,15 @@ export class LangSmithBridge implements Bridge {
     this.tap = tap;
     this.recorder = recorder;
     // Runs still open when the process exits are recorded as incomplete.
-    this.exitHooks = new ExitHooks(() => recorder.endOpenRuns(), forceFlush);
+    // Flush the processor itself: `forceFlush()` first waits up to 5 s for
+    // pending streams, which never finish once the process is exiting (Ctrl-C
+    // mid-response), and would outlast the signal path's 3 s cap.
+    this.exitHooks = new ExitHooks(
+      () => recorder.endOpenRuns(),
+      async () => {
+        await getSpanProcessor()?.forceFlush();
+      },
+    );
     this.exitHooks.install();
     tap.installImported().catch((e: unknown) => {
       logger.debug(

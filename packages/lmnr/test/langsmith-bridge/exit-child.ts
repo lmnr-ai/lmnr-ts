@@ -8,6 +8,8 @@
  * - `signal`: the run waits on a long timer; the parent sends SIGINT.
  * - `signal-handled`: as `signal`, with the app's own SIGINT handler, which
  *   shuts Laminar down and exits with code 7.
+ * - `signal-stream`: as `signal`, while a streamed response is still being
+ *   read (`Laminar.flush()` would wait up to 5 s for it).
  *
  * Writes `ready` once the runs are open, and `exported <name> <incomplete>`
  * per span the exporter received (after a delay, so the line only appears if
@@ -20,7 +22,7 @@ import { ExportResultCode } from "@opentelemetry/core";
 import { Client } from "langsmith";
 import { traceable } from "langsmith/traceable";
 
-import { Laminar, LaminarSpanProcessor } from "../../src/index";
+import { Laminar, LaminarSpanProcessor, observe } from "../../src/index";
 
 const mode = process.argv[2];
 const write = (line: string) => writeSync(1, `${line}\n`);
@@ -29,7 +31,8 @@ Laminar.initialize({
   projectApiKey: "test",
   bridges: ["langsmith"],
   spanProcessor: new LaminarSpanProcessor({
-    disableBatch: true,
+    // Batched, as by default: spans wait in the buffer until a flush.
+    disableBatch: false,
     exporter: {
       export: (spans: any[], done: (result: any) => void) => {
         setTimeout(() => {
@@ -76,6 +79,21 @@ const agent = traceable(
   },
   { ...options, name: "agent" },
 );
+
+if (mode === "signal-stream") {
+  // A stream that never ends, like an LLM response cut off by Ctrl-C.
+  const stream = observe({ name: "stream" }, () =>
+    (async function* () {
+      yield "partial";
+      await new Promise<void>(() => undefined);
+    })(),
+  );
+  void (async () => {
+    for await (const _ of stream) {
+      // Read until the process exits.
+    }
+  })();
+}
 
 void agent("plan a trip");
 setTimeout(() => write("ready"), 300);

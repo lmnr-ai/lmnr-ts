@@ -1201,9 +1201,14 @@ void describe("LangSmith bridge process exit", () => {
         { stdio: ["ignore", "pipe", "inherit"] },
       );
       let output = "";
+      let signaled = false;
       child.stdout.on("data", (chunk: Buffer) => {
         output += chunk.toString();
-        if (signal && output.includes("ready\n")) child.kill(signal);
+        // Once: a second Ctrl-C exits at once, before the export.
+        if (signal && !signaled && output.includes("ready\n")) {
+          signaled = true;
+          child.kill(signal);
+        }
       });
       const timer = setTimeout(() => child.kill("SIGKILL"), 30_000);
       child.on("error", reject);
@@ -1232,6 +1237,14 @@ void describe("LangSmith bridge process exit", () => {
 
   void it("records open runs on SIGINT, then exits by the signal", async () => {
     const result = await runChild("signal", "SIGINT");
+    assert.deepStrictEqual(result.lines, expected);
+    assert.strictEqual(result.signal, "SIGINT");
+  });
+
+  void it("exports on SIGINT while a stream is still being read", async () => {
+    // `Laminar.flush()` first waits up to 5 s for pending streams, longer than
+    // the 3 s cap, so the exit flushes the span processor directly.
+    const result = await runChild("signal-stream", "SIGINT");
     assert.deepStrictEqual(result.lines, expected);
     assert.strictEqual(result.signal, "SIGINT");
   });
