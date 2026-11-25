@@ -3,6 +3,7 @@ import { errorMessage } from "@lmnr-ai/types";
 import { initializeLogger } from "../../utils";
 import { type InitializeOptions } from "../interfaces";
 import { LangfuseBridge } from "./langfuse";
+import { LangSmithBridge } from "./langsmith";
 import {
   type Bridge,
   type BridgeContext,
@@ -22,6 +23,7 @@ const logger = initializeLogger();
 
 const BRIDGES = new Map<string, () => Bridge>([
   ["langfuse", () => new LangfuseBridge()],
+  ["langsmith", () => new LangSmithBridge()],
 ] satisfies [LaminarBridge, () => Bridge][]);
 
 /**

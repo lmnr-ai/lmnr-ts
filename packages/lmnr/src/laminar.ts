@@ -214,9 +214,12 @@ export class Laminar {
    * @param {LaminarBridge[]} props.bridges - Third-party tracing SDKs whose spans are
    * also sent to Laminar, e.g. `["langfuse"]`: spans created with `@langfuse/tracing`
    * (and `@langfuse/openai`, `@langfuse/langchain`) keep going to Langfuse unchanged
-   * and are mirrored into Laminar. With a bridge, `inheritGlobalContext` is turned on,
-   * and unless `instrumentModules` is passed, Laminar's own LLM provider and framework
-   * auto-instrumentations are skipped so calls are not traced twice.
+   * and are mirrored into Laminar. `"langsmith"` records every run the `langsmith`
+   * SDK sends (`traceable`, its wrappers, LangChain and LangGraph) as a Laminar span,
+   * without changing what LangSmith receives. The Langfuse bridge turns on
+   * `inheritGlobalContext`. Unless `instrumentModules` is passed, Laminar's own LLM
+   * provider and framework auto-instrumentations that the bridge covers are skipped so
+   * calls are not traced twice.
    *
    * Environment variables:
    * - `LMNR_TRAJECTORY_PATH`: write the run as an lmnr-atif trajectory (Harbor's ATIF

@@ -1,6 +1,6 @@
 {
   "name": "@lmnr-ai/lmnr",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "description": "TypeScript SDK for Laminar AI",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -140,6 +140,7 @@
     "ai-v6": "npm:ai@ai-v6",
     "ajv": "^8.20.0",
     "cohere-ai": "8.3.0",
+    "langsmith": "0.14.0",
     "nock": "^14.0.17",
     "openai": "^7.45.1",
     "playwright": "^1.63.0",

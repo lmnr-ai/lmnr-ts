@@ -273,16 +273,19 @@ importers:
         version: 7.0.163(zod@4.6.7)
       ai-v5:
         specifier: npm:ai@ai-v5
-        version: ai@5.0.291(zod@4.6.7)
+        version: ai@5.0.292(zod@4.6.7)
       ai-v6:
         specifier: npm:ai@ai-v6
-        version: ai@6.0.333(zod@4.6.7)
+        version: ai@6.0.336(zod@4.6.7)
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
       cohere-ai:
         specifier: 8.3.0
         version: 8.3.0(@smithy/signature-v4@5.7.5)
+      langsmith:
+        specifier: 0.14.0
+        version: 0.14.0(@opentelemetry/api@1.10.0)(@opentelemetry/exporter-trace-otlp-proto@0.300.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.10.0))(openai@7.52.0(@aws-sdk/credential-provider-node@3.972.93)(@smithy/signature-v4@5.7.5)(google-auth-library@11.3.3)(undici@7.30.2)(ws@8.22.1)(zod@4.6.7))(ws@8.22.1)
       nock:
         specifier: ^14.0.17
         version: 14.0.17
@@ -365,14 +368,14 @@ importers:
 
 packages:
 
-  '@ai-sdk/gateway@2.0.182':
-    resolution: {integrity: sha512-YreJd3QXpFxMKFZWcdf+amZC4pQTpqvZ8u3FJQMDwaD7cLtfJ5LmZowdmO4TypdGNHnOyULFEDt4KrgFvY7DDA==}
+  '@ai-sdk/gateway@2.0.183':
+    resolution: {integrity: sha512-NauHEFW53zcmSJdDMHxoEfCYx45YMiKf0HZMgtUDPPI310RogrUgSVh3uPt0FcyQDlCAI0sOspWlQv4vEmyOMQ==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/gateway@3.0.238':
-    resolution: {integrity: sha512-Kqdof17ZXdaKaHsoY/Z4HSbji86DVbIaG0kSgQwrKlEQIfp9Aip2S6xbba063EtLKWx0m/psvzCBYP73YUyWKA==}
+  '@ai-sdk/gateway@3.0.241':
+    resolution: {integrity: sha512-a+YmzuIQvI78Y+x/fPulZcjSaLgPsZfaa/Phf23uWKXvrn4rrQ92Gkgq3vwvsLEVQHq0IdLyZblMzACbsauyEg==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -1586,14 +1589,14 @@ packages:
     resolution: {integrity: sha512-TQf59BsZnytt8GdJKLPfUZ54g/iaUL2OWDSFCCvMOhsHduDQxO8xC4PNeyIkVcA5KwL2phPSv0douC0fgWzmnA==}
     engines: {node: '>= 20'}
 
-  ai@5.0.291:
-    resolution: {integrity: sha512-Rpx7Jpw2eANmMgjkH8mikoLbXYa4lohmpobH5MYDupawJ78EPr+vP7Xw5ksa0sNTCvGgGWyX52xBr4Z6GH4QoA==}
+  ai@5.0.292:
+    resolution: {integrity: sha512-SXzfGeR+7tuBjRvbJbEzgWmmdLkUYtNOhazAOrEwOpYOiNrCKaoQg38FxqdhDJ9jbGcxgWNEJZsseD5R6JZ06g==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  ai@6.0.333:
-    resolution: {integrity: sha512-mY+EpkQtTRHHJZ6CaKKJETsYmAEITKKPKmVY+FhJGUjDaLLl7CaF2Qgv8ShGN4eZgSSHbi34yfWx71QvQgKyOQ==}
+  ai@6.0.336:
+    resolution: {integrity: sha512-QI/goioS6Y+chX/lyuiNb8zX0je9QVlV0rKH8KOeQ4Uv22AXeOM1awfHLp3LeMUWUWPiNcfPxnNox1su7W4sjQ==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -2140,8 +2143,8 @@ packages:
   jws@4.0.1:
     resolution: {integrity: sha512-EKI/M/yqPncGUUh44xz0PxSidXFr/+r0pA70+gIYhjv+et7yxM+s29Y+VGDkovRofQem0fs7Uvf4+YmAdyRduA==}
 
-  langsmith@0.11.8:
-    resolution: {integrity: sha512-rAskvQCNjwGqwjA9fOJGugZ1vLB66yaivxWGSTA9ldtF9+P00gvXH1DEr0kW798cyUyBlZolFO0kPb//zDNc7w==}
+  langsmith@0.14.0:
+    resolution: {integrity: sha512-GpOpjx2rfsfKD6A4nnWfG9kxYbLlx9//catR1eCUwW/nMQxj4Mq2OQL7NJO9MQ5ZcGnvgsnUZdxBZLd2JJC1qA==}
     peerDependencies:
       '@opentelemetry/api': '*'
       '@opentelemetry/exporter-trace-otlp-proto': '*'
@@ -2956,14 +2959,14 @@ packages:
 
 snapshots:
 
-  '@ai-sdk/gateway@2.0.182(zod@4.6.7)':
+  '@ai-sdk/gateway@2.0.183(zod@4.6.7)':
     dependencies:
       '@ai-sdk/provider': 2.0.5
       '@ai-sdk/provider-utils': 3.0.46(zod@4.6.7)
       '@vercel/oidc': 3.1.0
       zod: 4.6.7
 
-  '@ai-sdk/gateway@3.0.238(zod@4.6.7)':
+  '@ai-sdk/gateway@3.0.241(zod@4.6.7)':
     dependencies:
       '@ai-sdk/provider': 3.0.19
       '@ai-sdk/provider-utils': 4.0.67(zod@4.6.7)
@@ -3550,7 +3553,7 @@ snapshots:
       '@cfworker/json-schema': 4.1.6
       '@standard-schema/spec': 1.1.0
       js-tiktoken: 1.0.21
-      langsmith: 0.11.8(@opentelemetry/api@1.10.0)(@opentelemetry/exporter-trace-otlp-proto@0.300.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.10.0))(openai@7.52.0(@aws-sdk/credential-provider-node@3.972.93)(@smithy/signature-v4@5.7.5)(google-auth-library@11.3.3)(undici@7.30.2)(ws@8.22.1)(zod@4.6.7))(ws@8.22.1)
+      langsmith: 0.14.0(@opentelemetry/api@1.10.0)(@opentelemetry/exporter-trace-otlp-proto@0.300.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.10.0))(openai@7.52.0(@aws-sdk/credential-provider-node@3.972.93)(@smithy/signature-v4@5.7.5)(google-auth-library@11.3.3)(undici@7.30.2)(ws@8.22.1)(zod@4.6.7))(ws@8.22.1)
       mustache: 4.2.0
       p-queue: 6.6.2
       zod: 4.6.7
@@ -4282,17 +4285,17 @@ snapshots:
 
   agent-base@9.0.0: {}
 
-  ai@5.0.291(zod@4.6.7):
+  ai@5.0.292(zod@4.6.7):
     dependencies:
-      '@ai-sdk/gateway': 2.0.182(zod@4.6.7)
+      '@ai-sdk/gateway': 2.0.183(zod@4.6.7)
       '@ai-sdk/provider': 2.0.5
       '@ai-sdk/provider-utils': 3.0.46(zod@4.6.7)
       '@opentelemetry/api': 1.9.0
       zod: 4.6.7
 
-  ai@6.0.333(zod@4.6.7):
+  ai@6.0.336(zod@4.6.7):
     dependencies:
-      '@ai-sdk/gateway': 3.0.238(zod@4.6.7)
+      '@ai-sdk/gateway': 3.0.241(zod@4.6.7)
       '@ai-sdk/provider': 3.0.19
       '@ai-sdk/provider-utils': 4.0.67(zod@4.6.7)
       '@opentelemetry/api': 1.10.0
@@ -4851,7 +4854,7 @@ snapshots:
       jwa: 2.0.1
       safe-buffer: 5.2.1
 
-  langsmith@0.11.8(@opentelemetry/api@1.10.0)(@opentelemetry/exporter-trace-otlp-proto@0.300.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.10.0))(openai@7.52.0(@aws-sdk/credential-provider-node@3.972.93)(@smithy/signature-v4@5.7.5)(google-auth-library@11.3.3)(undici@7.30.2)(ws@8.22.1)(zod@4.6.7))(ws@8.22.1):
+  langsmith@0.14.0(@opentelemetry/api@1.10.0)(@opentelemetry/exporter-trace-otlp-proto@0.300.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.10.0))(openai@7.52.0(@aws-sdk/credential-provider-node@3.972.93)(@smithy/signature-v4@5.7.5)(google-auth-library@11.3.3)(undici@7.30.2)(ws@8.22.1)(zod@4.6.7))(ws@8.22.1):
     dependencies:
       p-queue: 6.6.2
     optionalDependencies:

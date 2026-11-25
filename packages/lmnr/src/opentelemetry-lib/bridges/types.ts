@@ -5,7 +5,7 @@ import { type LaminarSpanProcessor } from "../tracing/processor";
  * Third-party tracing SDKs (source SDKs) whose spans Laminar can receive
  * alongside the source SDK's own backend: `Laminar.initialize({ bridges: ["langfuse"] })`.
  */
-export type LaminarBridge = "langfuse";
+export type LaminarBridge = "langfuse" | "langsmith";
 
 /** A key of `instrumentModules`, i.e. one Laminar auto-instrumentation. */
 export type InstrumentationKey = keyof NonNullable<
@@ -16,16 +16,16 @@ export interface BridgeContext {
   /**
    * The processor of the Laminar pipeline `initialize()` just built. A bridge
    * that receives finished spans from the source SDK (Langfuse) hands Laminar's
-   * copies to it. A bridge that builds spans itself, from intercepted requests
-   * say, creates them with Laminar's `getTracer()` instead and needs nothing
-   * from here.
+   * copies to it. A bridge that builds spans itself (LangSmith, from the runs
+   * it taps) creates them with Laminar's tracer provider instead and needs
+   * nothing from here.
    */
   spanProcessor: LaminarSpanProcessor;
 }
 
 /**
  * One bridge. Bridges differ in how they hook the source SDK (Langfuse: its
- * OpenTelemetry tracer provider; LangSmith or Braintrust: the network), so
+ * OpenTelemetry tracer provider; LangSmith: its client's send queue), so
  * the interface fixes only the lifecycle `Laminar.initialize()` / `shutdown()`
  * drive. `inheritsGlobalContext` is the one OpenTelemetry-specific setting.
  * Same contract as lmnr-python's `LaminarBridge`.
@@ -41,7 +41,8 @@ export interface Bridge {
   /**
    * Nest Laminar spans under the source SDK's span that is active in the
    * global OpenTelemetry context (turns on `inheritGlobalContext`). Only for
-   * SDKs built on OpenTelemetry; a network-level bridge sets false.
+   * SDKs built on OpenTelemetry; a bridge that taps the SDK otherwise
+   * (LangSmith) sets false.
    */
   readonly inheritsGlobalContext: boolean;
   /**
