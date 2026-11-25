@@ -18,3 +18,19 @@
   and its messages are shown verbatim (an unknown operator is a zod error naming the field).
   `--skip-similar` / `--type new-cluster` are not checked against clustering, same as the UI. Do not add a client-side operator list (see the `--filter` note in
   `src/commands/signal/AGENTS.md`).
+
+## Metric alerts (`alert metric`)
+
+- `alert metric create|list|update|delete` covers `METRIC` alerts (cost, tokens, traffic, error
+  rate, latency). Writes go through the same `/v1/cli/alerts` body with `type: "METRIC"`; a
+  metric alert has no signal, so `signalId` is `null` and the rule comes back in `rule`.
+- **The rule is a JSON object passed as `--rule` and is never checked here.** The server runs the
+  same validation as the UI form and its messages are shown verbatim, so don't add a client-side
+  list of metrics, windows or threshold rules beyond the help text. `--template <id>` is also
+  resolved by the server (an unknown id comes back with the list of valid ones).
+- `--rule` is a patch: on create its keys override the template's, on update they are merged over
+  the stored rule. Snooze is `--rule '{"snoozedUntil":"<ISO time>"}'`; mute is `--disabled`.
+- `list` is the one read command in the group. It runs SQL over `alerts` (`type = 'METRIC'`) and
+  only adds a one-line rule summary, so it stays inside the "reads are SQL" rule above. Alert
+  state and incident history are not in SQL, so the CLI cannot show whether a rule is firing.
+- `delete` is the plain `alert delete` handler.

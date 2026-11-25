@@ -13,6 +13,9 @@ import {
   handleAlertCreate,
   handleAlertDelete,
   handleAlertUpdate,
+  handleMetricAlertCreate,
+  handleMetricAlertList,
+  handleMetricAlertUpdate,
 } from "./commands/alert";
 import { handleAsk } from "./commands/ask";
 import {
@@ -871,7 +874,8 @@ Examples:
     .command("alert")
     .alias("alerts")
     .description(
-      "Create, update and delete alerts that notify you when a signal fires",
+      "Create, update and delete alerts that notify you when a signal fires " +
+        "or a metric crosses a threshold",
     )
     .option(
       "--project-id <id>",
@@ -894,6 +898,9 @@ Examples:
 To list or inspect alerts, query them with SQL (alerts, alert_targets,
 alert_filters; see \`lmnr-cli sql schema\`):
   $ lmnr-cli sql query "SELECT id, name, type, signal_id, metadata FROM alerts"
+
+Alerts on cost, tokens, traffic, error rate and latency live under
+\`lmnr-cli alert metric\`.
 `,
     );
 
@@ -1012,6 +1019,144 @@ your own emails, use \`lmnr-cli alert update <alert-id> --no-notify-me\`.
 
 Examples:
   $ lmnr-cli alert delete 1e0c7a4b-5d1f-4a43-9b8e-2f6e1c3d9a10
+`,
+    );
+
+  const metricAlertCmd = alertCmd
+    .command("metric")
+    .alias("metrics")
+    .description(
+      "Alerts on a project's cost, tokens, traffic, error rate and latency",
+    );
+
+  const METRIC_RULE_HELP = `
+A rule is a JSON object. The server checks it and fills in what you leave out.
+  metric        total_cost | cost_per_trace | trace_cost | input_tokens |
+                output_tokens | total_tokens | tokens_per_trace | trace_count |
+                error_rate (percent) | latency_p50 | latency_p95 (seconds)
+  window        {"minutes": 5 | 15 | 60 | 1440}, or {"monthToDate": true} for
+                a budget
+  condition     {"type":"value"}: compare the number itself
+                {"type":"change","compareTo":"1w"}: percent of the same window
+                  5m | 15m | 1h | 1d | 1w | 30d earlier (130 = 30% higher)
+                {"type":"budget","amount":2000}: month-to-date spend in dollars
+                {"type":"trace_p99"}: one trace's cost as a percent of the
+                  project's p99 trace cost (trace_cost only)
+  direction     above | below
+  warning, critical, resolve
+                thresholds. At least one of warning / critical, and resolve
+                (where an open incident closes). A budget needs none of them
+  filters       [{"column","operator","value"}], the traces table filters
+  groupBy       "model" for separate incidents per model, or null
+  minChange     change only: smallest absolute difference that still counts
+  checksInARow  checks that must breach in a row before it fires (default 3)
+  minTraces     skip a check with fewer traces than this
+  onNoData      skip | zero | alert
+  snoozedUntil  ISO time; no messages are sent until then (null ends it)
+`;
+
+  const addMetricAlertOptions = (cmd: Command): Command =>
+    cmd
+      .option("--name <name>", "Alert name")
+      .option("--rule <json>", "Rule keys as a JSON object (see below)")
+      .option("--disabled", "Mute the alert")
+      .option("--no-disabled", "Unmute the alert")
+      .option("--notify-me", "Send the alert to your email")
+      .option("--no-notify-me", "Don't send the alert to your email")
+      .option(
+        "--slack-channel <channel>",
+        "Slack channel id or #name in the connected workspace (repeatable). " +
+          "On update, REPLACES every Slack target",
+        collectFlag,
+      );
+
+  addMetricAlertOptions(
+    metricAlertCmd
+      .command("create")
+      .description("Create a metric alert from a template, a rule, or both")
+      .option(
+        "--template <id>",
+        "cost-spike | monthly-budget | runaway-trace | error-rate | " +
+          "traffic-stopped",
+      ),
+  )
+    .action(withProjectClient(handleMetricAlertCreate))
+    .addHelpText(
+      "after",
+      `
+Templates: cost-spike (hourly cost vs the same hour last week), monthly-budget
+(needs the budget amount in --rule), runaway-trace (one trace far above the
+project's p99 cost), error-rate, traffic-stopped. Keys in --rule override the
+template's. Without a template, --name and a full rule are required. Your email
+is subscribed unless you pass --no-notify-me.
+${METRIC_RULE_HELP}
+Examples:
+  $ lmnr-cli alert metric create --template cost-spike
+  $ lmnr-cli alert metric create --template monthly-budget \\
+      --rule '{"condition":{"type":"budget","amount":2000}}'
+  $ lmnr-cli alert metric create --template error-rate --name "Errors, prod" \\
+      --rule '{"warning":2,"critical":10,"resolve":1}' --slack-channel '#oncall'
+  $ lmnr-cli alert metric create --name "p95 latency" --rule '{"metric":
+      "latency_p95","window":{"minutes":15},"condition":{"type":"value"},
+      "direction":"above","warning":30,"resolve":20}'
+`,
+    );
+
+  metricAlertCmd
+    .command("list")
+    .description("List the project's metric alerts")
+    .action(withProjectClient(handleMetricAlertList))
+    .addHelpText(
+      "after",
+      `
+Reads the alerts SQL table. For the raw rules, or to join targets, query it
+directly:
+  $ lmnr-cli sql query "SELECT id, name, metadata FROM alerts WHERE type = 'METRIC'"
+
+Examples:
+  $ lmnr-cli alert metric list
+  $ lmnr-cli alert metric list --json
+`,
+    );
+
+  addMetricAlertOptions(
+    metricAlertCmd
+      .command("update")
+      .description("Update a metric alert (only the flags you pass change)")
+      .argument("<alert-id>", "Alert id (from `alert metric list`)")
+      .option("--no-slack-channels", "Remove every Slack target"),
+  )
+    .action(withProjectClient(handleMetricAlertUpdate))
+    .addHelpText(
+      "after",
+      `
+Partial update: omitted flags keep their stored values, and the keys in --rule
+are merged over the stored rule. Changing what the rule measures or its
+thresholds starts its checks over. --slack-channel replaces every Slack target.
+--[no-]notify-me only adds or removes YOUR email.
+${METRIC_RULE_HELP}
+Examples:
+  $ lmnr-cli alert metric update 1e0c7a4b-... --rule '{"warning":140}'
+  $ lmnr-cli alert metric update 1e0c7a4b-... --disabled
+  $ lmnr-cli alert metric update 1e0c7a4b-... \\
+      --rule '{"snoozedUntil":"2026-01-01T09:00:00Z"}'
+  $ lmnr-cli alert metric update 1e0c7a4b-... --rule '{"snoozedUntil":null}'
+`,
+    );
+
+  metricAlertCmd
+    .command("delete")
+    .description("Delete a metric alert with its targets and incident history")
+    .argument("<alert-id>", "Alert id (from `alert metric list`)")
+    .action(withProjectClient(handleAlertDelete))
+    .addHelpText(
+      "after",
+      `
+Deletion is permanent and unsubscribes everyone, not just you. To pause it
+instead, use \`lmnr-cli alert metric update <alert-id> --disabled\`.
+
+Examples:
+  $ lmnr-cli alert metric delete 1e0c7a4b-5d1f-4a43-9b8e-2f6e1c3d9a10
 `,
     );
 

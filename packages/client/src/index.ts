@@ -214,6 +214,7 @@ export class LaminarClient {
 
 export type {
   CreateAlertOptions,
+  CreateMetricAlertOptions,
   UpdateAlertOptions,
 } from "./resources/alerts";
 export type { CliProject, ProjectKeyProbe } from "./resources/cli";

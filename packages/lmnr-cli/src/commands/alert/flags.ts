@@ -12,7 +12,9 @@ import { parseFilter } from "../signal/validate";
 
 const SEVERITIES: AlertSeverity[] = ["info", "warning", "critical"];
 
-const TYPES: Record<string, AlertType> = {
+type SignalAlertType = Exclude<AlertType, "METRIC">;
+
+const TYPES: Record<string, SignalAlertType> = {
   "signal-event": "SIGNAL_EVENT",
   "new-cluster": "NEW_CLUSTER",
   SIGNAL_EVENT: "SIGNAL_EVENT",
@@ -39,7 +41,7 @@ export interface AlertCreateFlagOpts extends AlertShapeOpts {
   type?: string;
 }
 
-export const parseAlertType = (raw: string): AlertType => {
+export const parseAlertType = (raw: string): SignalAlertType => {
   const type = TYPES[raw];
   if (type === undefined) {
     throw new Error(`--type must be signal-event or new-cluster, got "${raw}"`);

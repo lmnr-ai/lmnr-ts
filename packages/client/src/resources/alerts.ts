@@ -2,6 +2,7 @@ import {
   type Alert,
   type AlertSeverity,
   type AlertType,
+  type MetricAlertRule,
   type SignalFilter,
 } from "@lmnr-ai/types";
 
@@ -12,7 +13,7 @@ export interface CreateAlertOptions {
   /** Defaults to `"<signal name> alert"`. */
   name?: string;
   /** Defaults to `SIGNAL_EVENT`. */
-  type?: AlertType;
+  type?: Exclude<AlertType, "METRIC">;
   /** `SIGNAL_EVENT` only. Defaults to `["critical"]`. */
   severities?: AlertSeverity[];
   skipSimilar?: boolean;
@@ -26,13 +27,30 @@ export interface CreateAlertOptions {
 }
 
 /**
+ * A `METRIC` alert: a rule checked on a schedule. Pass a `template` id, a
+ * `rule`, or both (the rule's keys override the template's).
+ */
+export interface CreateMetricAlertOptions {
+  type: "METRIC";
+  /** Required without a template; defaults to the template's name. */
+  name?: string;
+  template?: string;
+  rule?: Partial<MetricAlertRule>;
+  disabled?: boolean;
+  /** Send the alert to the caller's email. Defaults to true. */
+  notifyMe?: boolean;
+  /** Channel ids or names (`#name`) in the workspace's connected Slack. */
+  slackChannels?: string[];
+}
+
+/**
  * A partial patch: omitted fields keep their stored value. `slackChannels` and
- * `filters` replace the whole list (`[]` clears it). The type and signal can't
- * change.
+ * `filters` replace the whole list (`[]` clears it). `rule` (`METRIC` only) is
+ * merged key by key over the stored rule. The type and signal can't change.
  */
 export type UpdateAlertOptions = Partial<
   Omit<CreateAlertOptions, "signalId" | "type">
->;
+> & { rule?: Partial<MetricAlertRule> };
 
 /**
  * Alert writes over the CLI user-token surface (`/v1/cli/alerts`). Validation
@@ -81,7 +99,9 @@ export class AlertsResource extends BaseResource {
     return response.json() as Promise<T>;
   }
 
-  public async create(options: CreateAlertOptions): Promise<Alert> {
+  public async create(
+    options: CreateAlertOptions | CreateMetricAlertOptions,
+  ): Promise<Alert> {
     return this.request("POST", "", options);
   }
 
