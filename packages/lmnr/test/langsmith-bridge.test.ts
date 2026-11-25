@@ -40,6 +40,7 @@ import {
   traceIdFor,
 } from "../src/opentelemetry-lib/bridges/langsmith/runs";
 import {
+  isSupportedVersion,
   LangSmithTap,
   langsmithCopies,
 } from "../src/opentelemetry-lib/bridges/langsmith/tap";
@@ -929,14 +930,53 @@ void describe("LangSmith bridge (live)", () => {
 
   void it("patches the CommonJS and ESM copies of langsmith", () => {
     const copies = langsmithCopies();
-    const root = join(cjsRequire.resolve("langsmith/package.json"), "..");
-    const esmClient = cjsRequire(join(root, "index.mjs")).Client;
-    const esmRunTree = cjsRequire(join(root, "run_trees.mjs")).RunTree;
+    const manifestPath = cjsRequire.resolve("langsmith/package.json");
+    const root = join(manifestPath, "..");
+    const { exports } = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const esmFile = (subpath: string): string => {
+      const entry = exports[subpath];
+      const target =
+        typeof entry === "string" ? entry : (entry.import ?? entry.default);
+      return join(root, typeof target === "string" ? target : target.default);
+    };
+    const esmClient = cjsRequire(esmFile(".")).Client;
+    const esmRunTree = cjsRequire(esmFile("./run_trees")).RunTree;
     assert.ok(copies.some((c) => c.client === Client.prototype));
     assert.ok(copies.some((c) => c.client === esmClient.prototype));
     assert.ok(copies.some((c) => c.runTree === RunTree.prototype));
     assert.ok(copies.some((c) => c.runTree === esmRunTree.prototype));
     assert.notStrictEqual(esmClient, Client);
+  });
+
+  void it("patches the copy an app's import gets (tsx)", async () => {
+    // Under tsx, `import()` reaches a different copy than `require(esm)`.
+    const imported = await import("langsmith");
+    const prototype = imported.Client.prototype as Record<string, any>;
+    const original = prototype.processRunOperation;
+    const tap = new LangSmithTap(new LangSmithRunRecorder());
+    assert.ok(tap.install());
+    await tap.installImported();
+    assert.notStrictEqual(prototype.processRunOperation, original);
+    tap.uninstall();
+    assert.strictEqual(prototype.processRunOperation, original);
+  });
+
+  void it("skips langsmith copies older than the supported floor", () => {
+    assert.ok(isSupportedVersion("0.10.0"));
+    assert.ok(isSupportedVersion("0.14.0"));
+    assert.ok(isSupportedVersion("1.0.0-rc.1"));
+    assert.ok(isSupportedVersion(undefined));
+    assert.ok(!isSupportedVersion("0.9.3"));
+    assert.ok(!isSupportedVersion("0.3.80"));
+    const tap = new LangSmithTap(new LangSmithRunRecorder());
+    const processRunOperation = () => Promise.resolve();
+    const prototype: Record<string, any> = { processRunOperation };
+    assert.ok(
+      !tap.install([
+        { client: prototype, runTree: undefined, version: "0.5.0" },
+      ]),
+    );
+    assert.strictEqual(prototype.processRunOperation, processRunOperation);
   });
 
   void it("does not mutate the run LangSmith queues", async () => {

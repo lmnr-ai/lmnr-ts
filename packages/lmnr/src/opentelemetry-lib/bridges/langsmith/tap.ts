@@ -28,6 +28,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { errorMessage } from "@lmnr-ai/types";
 import { type Context, ROOT_CONTEXT } from "@opentelemetry/api";
@@ -40,6 +41,30 @@ const logger = initializeLogger();
 
 type Json = Record<string, any>;
 type AnyFunction = (...args: any[]) => any;
+
+/**
+ * Oldest langsmith the bridge supports. Earlier versions have
+ * `processRunOperation` (the batched path) but no
+ * `_mergeRuntimeEnvAndMaskMetadata`, so `autoBatchTracing: false` runs would
+ * be missed; the test suite passes from 0.10.0 on.
+ */
+export const MIN_LANGSMITH_VERSION = "0.10.0";
+
+/** `version >= minimum` for `major.minor.patch` versions (a prerelease
+ * counts as its release). An unknown or unparseable version is let through. */
+export const isSupportedVersion = (
+  version: string | undefined,
+  minimum = MIN_LANGSMITH_VERSION,
+): boolean => {
+  const parse = (v: string) =>
+    /^\d+\.\d+\.\d+/.exec(v)?.[0].split(".").map(Number);
+  const [a, b] = [version ? parse(version) : undefined, parse(minimum)];
+  if (!a || !b) return true;
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] > b[i];
+  }
+  return true;
+};
 
 // LangChain run ids → Laminar's context where LangChain started the run.
 const MAX_LANGCHAIN_CONTEXTS = 10_000;
@@ -189,18 +214,54 @@ const load = (path: string): Json | undefined => {
   }
 };
 
-/** Every copy of `langsmith` reachable from here, deduplicated. */
-export const langsmithCopies = (): LangSmithCopy[] => {
+/**
+ * `import()` a resolved file: the copy the ESM loader holds, which is what an
+ * app's `import` gets. Usually the same objects `require(esm)` returned, but
+ * loaders that compile ESM to CommonJS for `require` (tsx) give `require` a
+ * separate copy, so the app's copy is reached only this way.
+ */
+const importModule = async (path: string): Promise<Json | undefined> => {
+  try {
+    const loaded: unknown = await import(pathToFileURL(path).href);
+    return isObject(loaded) ? loaded : undefined;
+  } catch (e) {
+    logger.debug(
+      `LangSmith bridge could not import ${path}: ${errorMessage(e)}`,
+    );
+    return undefined;
+  }
+};
+
+type Loaded = [module: Json | undefined, version: string | undefined];
+
+const loadAll = (pkg: string, subpath: string): Loaded[] =>
+  [...packageFiles(pkg, subpath)].map(([path, version]) => [
+    load(path),
+    version,
+  ]);
+
+const importAll = (pkg: string, subpath: string): Promise<Loaded[]> =>
+  Promise.all(
+    [...packageFiles(pkg, subpath)].map(
+      async ([path, version]): Promise<Loaded> => [
+        await importModule(path),
+        version,
+      ],
+    ),
+  );
+
+/** The distinct `Client` / `RunTree` prototypes of loaded `langsmith` files. */
+const copiesOf = (clients: Loaded[], runTrees: Loaded[]): LangSmithCopy[] => {
   const copies: LangSmithCopy[] = [];
   const seen = new Set<unknown>();
-  for (const [path, version] of packageFiles("langsmith", ".")) {
-    const client = load(path)?.Client;
+  for (const [module, version] of clients) {
+    const client = module?.Client;
     if (typeof client !== "function" || seen.has(client.prototype)) continue;
     seen.add(client.prototype);
     copies.push({ client: client.prototype, runTree: undefined, version });
   }
-  for (const [path, version] of packageFiles("langsmith", "./run_trees")) {
-    const runTree = load(path)?.RunTree;
+  for (const [module, version] of runTrees) {
+    const runTree = module?.RunTree;
     if (typeof runTree !== "function" || seen.has(runTree.prototype)) continue;
     seen.add(runTree.prototype);
     copies.push({ client: undefined, runTree: runTree.prototype, version });
@@ -208,17 +269,35 @@ export const langsmithCopies = (): LangSmithCopy[] => {
   return copies;
 };
 
-/** `BaseTracer.prototype` of every reachable `@langchain/core` copy. */
-const langchainTracerPrototypes = (): Json[] => {
+/** The distinct `BaseTracer.prototype`s of loaded `@langchain/core` files. */
+const tracerPrototypesOf = (modules: Loaded[]): Json[] => {
   const prototypes: Json[] = [];
-  for (const path of packageFiles("@langchain/core", "./tracers/base").keys()) {
-    const prototype = load(path)?.BaseTracer?.prototype;
+  for (const [module] of modules) {
+    const prototype = module?.BaseTracer?.prototype;
     if (isObject(prototype) && !prototypes.includes(prototype)) {
       prototypes.push(prototype);
     }
   }
   return prototypes;
 };
+
+/** Every copy of `langsmith` reachable from here, deduplicated. */
+export const langsmithCopies = (): LangSmithCopy[] =>
+  copiesOf(loadAll("langsmith", "."), loadAll("langsmith", "./run_trees"));
+
+/** The copies `import()` reaches (see `importModule`). */
+export const importedLangsmithCopies = async (): Promise<LangSmithCopy[]> =>
+  copiesOf(
+    await importAll("langsmith", "."),
+    await importAll("langsmith", "./run_trees"),
+  );
+
+/** `BaseTracer.prototype` of every reachable `@langchain/core` copy. */
+const langchainTracerPrototypes = (): Json[] =>
+  tracerPrototypesOf(loadAll("@langchain/core", "./tracers/base"));
+
+const importedLangchainTracerPrototypes = async (): Promise<Json[]> =>
+  tracerPrototypesOf(await importAll("@langchain/core", "./tracers/base"));
 
 /** A JSON copy of a run, without `attachments` (file bytes). */
 const snapshot = (run: unknown): Json | undefined => {
@@ -426,6 +505,10 @@ export class LangSmithTap {
     name: string,
     wrap: (o: AnyFunction) => AnyFunction,
   ): boolean {
+    // Already ours: `require` and `import()` often reach the same copy.
+    if (this.patches.some((p) => p.target === target && p.name === name)) {
+      return true;
+    }
     const original = target[name];
     if (typeof original !== "function") return false;
     const wrapper = wrap(original);
@@ -435,10 +518,55 @@ export class LangSmithTap {
     return true;
   }
 
-  /** Patch every reachable copy. False when no client could be tapped. */
-  install(copies: LangSmithCopy[] = langsmithCopies()): boolean {
+  /**
+   * Patch every copy `require` reaches. False when no client could be
+   * tapped. Then call `installImported()` for the copies only `import()`
+   * reaches.
+   */
+  install(
+    copies: LangSmithCopy[] = langsmithCopies(),
+    tracerPrototypes: () => Json[] = langchainTracerPrototypes,
+  ): boolean {
+    const tapped = this.patchCopies(copies);
+    if (tapped) this.patchTracers(tracerPrototypes());
+    this.active = tapped;
+    return tapped;
+  }
+
+  /**
+   * Patch the copies only `import()` reaches, e.g. an app's `import
+   * "langsmith"` under tsx. Asynchronous, so a run started in the same tick
+   * as `Laminar.initialize()` may reach a copy before it is patched; its
+   * update is then recorded as a complete run.
+   */
+  async installImported(): Promise<void> {
+    const [copies, tracerPrototypes] = await Promise.all([
+      importedLangsmithCopies(),
+      importedLangchainTracerPrototypes(),
+    ]);
+    if (!this.active) return;
+    this.patchCopies(copies);
+    this.patchTracers(tracerPrototypes);
+  }
+
+  private patchTracers(prototypes: Json[]): void {
+    for (const prototype of prototypes) {
+      for (const name of LANGCHAIN_RUN_START_METHODS) {
+        this.patch(prototype, name, (o) => this.wrapLangchainRunStart(o));
+      }
+    }
+  }
+
+  private patchCopies(copies: LangSmithCopy[]): boolean {
     let tapped = false;
     for (const { client, runTree, version } of copies) {
+      if (!isSupportedVersion(version)) {
+        logger.warn(
+          `The Laminar langsmith bridge needs langsmith >= ${MIN_LANGSMITH_VERSION}; ` +
+            `skipping langsmith ${version}, whose runs will not be sent to Laminar.`,
+        );
+        continue;
+      }
       if (client) {
         if (
           this.patch(client, "processRunOperation", (o) =>
@@ -465,14 +593,6 @@ export class LangSmithTap {
         this.patch(runTree, "patchRun", (o) => this.wrapRunTreeSend(o));
       }
     }
-    if (tapped) {
-      for (const prototype of langchainTracerPrototypes()) {
-        for (const name of LANGCHAIN_RUN_START_METHODS) {
-          this.patch(prototype, name, (o) => this.wrapLangchainRunStart(o));
-        }
-      }
-    }
-    this.active = tapped;
     return tapped;
   }
 
