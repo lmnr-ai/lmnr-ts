@@ -18,6 +18,7 @@ import {
   StringUUID,
 } from "../../utils";
 import { getLangVersion } from "../../version";
+import { dropAiSdkWrapperContent } from "./ai-sdk-wrapper";
 import {
   ASSOCIATION_PROPERTIES,
   ASSOCIATION_PROPERTIES_OVERRIDES,
@@ -408,6 +409,11 @@ export class LaminarSpanProcessor implements SpanProcessor {
     this._spanIdLists.delete(spanId);
     this._spanIdToPath.delete(spanId);
     makeSpanOtelV2Compatible(span);
+    // The span has ended, so `setAttribute` is a no-op; edit the attributes in
+    // place before the exporter reads them.
+    if (span.attributes) {
+      dropAiSdkWrapperContent(span.attributes);
+    }
     if (this.trajectory !== undefined) {
       try {
         this.trajectory.onEnd(span as Span);

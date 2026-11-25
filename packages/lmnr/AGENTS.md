@@ -81,7 +81,7 @@ LMNR_{INSTRUMENT}_{OPTION}    # Per-instrumentation options, e.g. LMNR_LANGGRAPH
 - `src/opentelemetry-lib/tracing/AGENTS.md` - `startActiveSpan` / context stack, byte-size batch flush, `forceFlush` awaiting in-flight exports, span payload size limit, release stamp, trajectory file (`LMNR_TRAJECTORY_PATH` modes, collector, exit hook, precise span times), per-instrumentation `instrumentOptions`
 - `src/opentelemetry-lib/bridges/AGENTS.md` - `bridges` option: `Bridge` interface + registry, disabling conflicting auto-instrumentations, Langfuse bridge (tracer-provider wrapper, shadow/copy mirroring, self-healing provider slot, attribute translation, 4.x–6.x test suites on aliased packages)
 - `src/opentelemetry-lib/instrumentation/AGENTS.md` - `LaminarInstrumentation` base class, `wrapMethod`, shared helpers (`toJson`, `recordSpanError`, `traceCall`, `instrumentStream`), instrumentation scope / package version stamping, registering instrumentations, ALS across async iterators, `makeSpanOtelV2Compatible`, OpenCode
-- `src/opentelemetry-lib/instrumentation/aisdk/AGENTS.md` - AI SDK v7 telemetry integration, debug replay consumer
+- `src/opentelemetry-lib/instrumentation/aisdk/AGENTS.md` - AI SDK v7 telemetry integration, v5/v6 wrapper-span content stripping, debug replay consumer
 - `src/opentelemetry-lib/instrumentation/anthropic/AGENTS.md` - `APIPromise` preservation, in-place stream wrapping, built-in SDK OTel
 - `src/opentelemetry-lib/instrumentation/claude-agent-sdk/AGENTS.md` - settings.json precedence over process env, proxy flag settings
 - `src/opentelemetry-lib/instrumentation/cohere/AGENTS.md` - v1 / v2 patch targets, `HttpResponsePromise`, NDJSON vs SSE streams
