@@ -27,7 +27,7 @@ import {
   InMemorySpanExporter,
   type ReadableSpan,
 } from "@opentelemetry/sdk-trace";
-import { Client } from "langsmith";
+import { Client, overrideFetchImplementation } from "langsmith";
 import { RunTree } from "langsmith/run_trees";
 import { traceable } from "langsmith/traceable";
 import { z } from "zod";
@@ -40,7 +40,6 @@ import {
   traceIdFor,
 } from "../src/opentelemetry-lib/bridges/langsmith/runs";
 import {
-  isSupportedVersion,
   LangSmithTap,
   langsmithCopies,
 } from "../src/opentelemetry-lib/bridges/langsmith/tap";
@@ -123,6 +122,11 @@ const langsmithClient = (options: Record<string, unknown> = {}) => {
     fetchImplementation: fetchImplementation as typeof fetch,
     ...options,
   });
+  // langsmith < 0.3.87 has no `fetchImplementation` option, only the global
+  // override. Clients are used one at a time, so it can follow the newest.
+  if (!("fetchImplementation" in client)) {
+    overrideFetchImplementation(fetchImplementation as typeof fetch);
+  }
   const settle = async () => {
     await awaitAllCallbacks();
     await client.awaitPendingTraceBatches();
@@ -913,8 +917,11 @@ void describe("LangSmith bridge (live)", () => {
       ...(client
         ? [
             "processRunOperation",
-            "_mergeRuntimeEnvAndMaskMetadata",
             "updateRun",
+            // langsmith < 0.8 has no `_mergeRuntimeEnvAndMaskMetadata`.
+            ...(typeof client._mergeRuntimeEnvAndMaskMetadata === "function"
+              ? ["_mergeRuntimeEnvAndMaskMetadata"]
+              : ["createRun", "prepareRunCreateOrUpdateInputs"]),
           ].map((name) => [client, name] as const)
         : []),
       ...(runTree
@@ -961,22 +968,123 @@ void describe("LangSmith bridge (live)", () => {
     assert.strictEqual(prototype.processRunOperation, original);
   });
 
-  void it("skips langsmith copies older than the supported floor", () => {
-    assert.ok(isSupportedVersion("0.10.0"));
-    assert.ok(isSupportedVersion("0.14.0"));
-    assert.ok(isSupportedVersion("1.0.0-rc.1"));
-    assert.ok(isSupportedVersion(undefined));
-    assert.ok(!isSupportedVersion("0.9.3"));
-    assert.ok(!isSupportedVersion("0.3.80"));
-    const tap = new LangSmithTap(new LangSmithRunRecorder());
-    const processRunOperation = () => Promise.resolve();
-    const prototype: Record<string, any> = { processRunOperation };
+  void it("patches a copy when traceable first runs a run in it", () => {
+    // Under tsx, `import()` lands a turn after `initialize()`; a `traceable`
+    // called before then posts its run inside the shared storage's `run`.
+    const storage = (globalThis as Record<symbol, any>)[
+      Symbol.for("ls:tracing_async_local_storage")
+    ];
+    assert.ok(storage, "langsmith/traceable creates the shared storage");
+    class AppClient {
+      processRunOperation(_operation: Record<string, any>) {
+        return Promise.resolve();
+      }
+    }
+    class AppRunTree {
+      readonly id = "00000000-0000-7000-8000-00000000000c";
+      readonly client = new AppClient();
+      postRun() {
+        const run = {
+          id: this.id,
+          name: "app",
+          inputs: { a: 1 },
+          extra: { runtime: { sdk_version: "9.9.9" } },
+        };
+        return this.client.processRunOperation({ action: "create", item: run });
+      }
+    }
+    const clientPrototype = AppClient.prototype as Record<string, any>;
+    const original = clientPrototype.processRunOperation;
+    const originalRun = storage.run;
+    const recorder = new LangSmithRunRecorder();
+    const creates: [Record<string, any>, string | undefined][] = [];
+    recorder.onCreate = (run: Record<string, any>, _context, version) => {
+      creates.push([run, version]);
+    };
+    const tap = new LangSmithTap(recorder);
+    assert.ok(tap.install());
+    try {
+      const runTree = new AppRunTree();
+      void storage.run(runTree, () => runTree.postRun());
+      assert.notStrictEqual(clientPrototype.processRunOperation, original);
+      assert.strictEqual(creates.length, 1);
+      assert.deepStrictEqual(creates[0][0].inputs, { a: 1 });
+      // The copy's version comes from the run's runtime info.
+      assert.strictEqual(creates[0][1], "9.9.9");
+    } finally {
+      tap.uninstall();
+    }
+    assert.strictEqual(clientPrototype.processRunOperation, original);
+    assert.strictEqual(storage.run, originalRun);
+  });
+
+  void it("reads unbatched creates on langsmith < 0.8", async () => {
+    // langsmith < 0.8 has no `_mergeRuntimeEnvAndMaskMetadata`; `createRun`
+    // prepares (samples, redacts) the run, then queues or POSTs it.
+    const posted: Record<string, any>[] = [];
+    class OldClient {
+      constructor(readonly autoBatchTracing: boolean) {}
+      async prepareRunCreateOrUpdateInputs(
+        run: Record<string, any>,
+      ): Promise<Record<string, any>> {
+        return { ...run, inputs: { redacted: true } };
+      }
+      processRunOperation(operation: Record<string, any>) {
+        operation.item = { ...operation.item };
+        return Promise.resolve();
+      }
+      async createRun(run: Record<string, any>) {
+        const runCreate = await this.prepareRunCreateOrUpdateInputs(run);
+        if (this.autoBatchTracing) {
+          void this.processRunOperation({ action: "create", item: runCreate });
+          return;
+        }
+        runCreate.extra = { runtime: { sdk: "langsmith-js" } };
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        posted.push(runCreate);
+      }
+    }
+    const recorder = new LangSmithRunRecorder();
+    const creates: Record<string, any>[] = [];
+    recorder.onCreate = (run: Record<string, any>) => {
+      creates.push(run);
+    };
+    const tap = new LangSmithTap(recorder);
+    const prototype = OldClient.prototype as unknown as Record<string, any>;
     assert.ok(
-      !tap.install([
-        { client: prototype, runTree: undefined, version: "0.5.0" },
+      tap.install([
+        { client: prototype, runTree: undefined, version: "0.7.17" },
       ]),
     );
-    assert.strictEqual(prototype.processRunOperation, processRunOperation);
+    try {
+      const run = {
+        id: "00000000-0000-7000-8000-00000000000a",
+        inputs: { a: 1 },
+      };
+      const sending = new OldClient(false).createRun(run);
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      // Recorded before the POST resolves, so children find it.
+      assert.strictEqual(posted.length, 0);
+      assert.strictEqual(creates.length, 1);
+      assert.deepStrictEqual(creates[0].inputs, { redacted: true });
+      assert.deepStrictEqual(creates[0].extra, {
+        runtime: { sdk: "langsmith-js" },
+      });
+      await sending;
+
+      await new OldClient(true).createRun({
+        ...run,
+        id: `${run.id.slice(0, -1)}b`,
+      });
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      assert.strictEqual(
+        creates.length,
+        2,
+        "a batched create is recorded once",
+      );
+    } finally {
+      tap.uninstall();
+    }
   });
 
   void it("does not mutate the run LangSmith queues", async () => {

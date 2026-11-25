@@ -20,12 +20,7 @@ import {
   type InstrumentationKey,
 } from "../types";
 import { LangSmithRunRecorder } from "./runs";
-import {
-  isSupportedVersion,
-  LangSmithTap,
-  langsmithCopies,
-  MIN_LANGSMITH_VERSION,
-} from "./tap";
+import { LangSmithTap, langsmithCopies } from "./tap";
 
 const logger = initializeLogger();
 
@@ -56,17 +51,7 @@ export class LangSmithBridge implements Bridge {
 
   isAvailable(): boolean {
     try {
-      const clients = langsmithCopies().filter((copy) => copy.client);
-      if (clients.some((copy) => isSupportedVersion(copy.version))) {
-        return true;
-      }
-      if (clients.length > 0) {
-        logger.warn(
-          `Laminar langsmith bridge: needs langsmith >= ${MIN_LANGSMITH_VERSION}, ` +
-            `found ${clients.map((copy) => copy.version).join(", ")}; skipping.`,
-        );
-        return false;
-      }
+      if (langsmithCopies().some((copy) => copy.client)) return true;
     } catch (e) {
       logger.debug(`Laminar langsmith bridge: ${errorMessage(e)}`);
     }

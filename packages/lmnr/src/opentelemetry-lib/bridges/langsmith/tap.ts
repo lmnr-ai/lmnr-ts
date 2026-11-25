@@ -42,30 +42,6 @@ const logger = initializeLogger();
 type Json = Record<string, any>;
 type AnyFunction = (...args: any[]) => any;
 
-/**
- * Oldest langsmith the bridge supports. Earlier versions have
- * `processRunOperation` (the batched path) but no
- * `_mergeRuntimeEnvAndMaskMetadata`, so `autoBatchTracing: false` runs would
- * be missed; the test suite passes from 0.10.0 on.
- */
-export const MIN_LANGSMITH_VERSION = "0.10.0";
-
-/** `version >= minimum` for `major.minor.patch` versions (a prerelease
- * counts as its release). An unknown or unparseable version is let through. */
-export const isSupportedVersion = (
-  version: string | undefined,
-  minimum = MIN_LANGSMITH_VERSION,
-): boolean => {
-  const parse = (v: string) =>
-    /^\d+\.\d+\.\d+/.exec(v)?.[0].split(".").map(Number);
-  const [a, b] = [version ? parse(version) : undefined, parse(minimum)];
-  if (!a || !b) return true;
-  for (let i = 0; i < 3; i++) {
-    if (a[i] !== b[i]) return a[i] > b[i];
-  }
-  return true;
-};
-
 // LangChain run ids → Laminar's context where LangChain started the run.
 const MAX_LANGCHAIN_CONTEXTS = 10_000;
 
@@ -101,7 +77,36 @@ interface UpdateScope {
   batched: boolean;
 }
 
+/** One `Client.createRun()` call on langsmith < 0.8 (`wrapCreateRun`). */
+interface CreateScope {
+  batched: boolean;
+  prepared: boolean;
+}
+
+// The `AsyncLocalStorage` every `langsmith` copy (and `@langchain/core`)
+// shares through `globalThis`; `traceable` calls `postRun()` inside its `run`.
+const TRACING_ALS_KEY = Symbol.for("ls:tracing_async_local_storage");
+
+/** The object on `value`'s prototype chain that owns method `name`. */
+const ownerOf = (value: unknown, name: string): Json | undefined => {
+  let current: unknown = value;
+  while (isObject(current)) {
+    if (Object.hasOwn(current, name)) {
+      return typeof current[name] === "function" ? current : undefined;
+    }
+    current = Object.getPrototypeOf(current);
+  }
+  return undefined;
+};
+
+/** `extra.runtime.sdk_version`, which LangSmith merges into every run. */
+const runtimeVersion = (run: Json): string | undefined => {
+  const version = run.extra?.runtime?.sdk_version;
+  return typeof version === "string" ? version : undefined;
+};
+
 const runTreeScope = new AsyncLocalStorage<Scope>();
+const createScope = new AsyncLocalStorage<CreateScope>();
 const updateScope = new AsyncLocalStorage<UpdateScope>();
 
 interface Patch {
@@ -344,7 +349,8 @@ export class LangSmithTap {
       run: data,
       // An update whose create was never seen is recorded as a root run.
       context: kind === "create" ? this.contextFor(data.id) : ROOT_CONTEXT,
-      version,
+      // Copies patched on first use (`patchOnFirstRun`) have no known version.
+      version: version ?? runtimeVersion(data),
       knownOnly,
     };
     const scope = runTreeScope.getStore();
@@ -402,8 +408,11 @@ export class LangSmithTap {
         isObject(operation) &&
         (operation.action === "create" || operation.action === "update")
       ) {
-        const scope = updateScope.getStore();
-        if (scope && operation.action === "update") scope.batched = true;
+        const scope =
+          operation.action === "update"
+            ? updateScope.getStore()
+            : createScope.getStore();
+        if (scope) scope.batched = true;
         tap.guard(() => tap.capture(operation.action, operation.item, version));
       }
       return result;
@@ -426,6 +435,50 @@ export class LangSmithTap {
           () => undefined,
         );
       }
+      return result;
+    };
+  }
+
+  /**
+   * `Client.createRun(run)` on langsmith < 0.8, which has no
+   * `_mergeRuntimeEnvAndMaskMetadata`: opens the scope `wrapPrepare` reads.
+   */
+  private wrapCreateRun(original: AnyFunction): AnyFunction {
+    const tap = this;
+    return function (this: unknown, ...args: any[]) {
+      if (!tap.active) return original.apply(this, args);
+      const scope: CreateScope = { batched: false, prepared: false };
+      return createScope.run(scope, () => original.apply(this, args));
+    };
+  }
+
+  /**
+   * `Client.prepareRunCreateOrUpdateInputs(run)` on langsmith < 0.8: the
+   * sampled, redacted run `createRun` sends. `createRun` then either queues
+   * it (`processRunOperation`, recorded there) or POSTs it itself, merging
+   * its runtime info into `run.extra` in place. Both happen in the reaction
+   * after ours, so the check waits one more microtask; it still runs before
+   * the POST resolves, so the run's children find it.
+   */
+  private wrapPrepare(
+    original: AnyFunction,
+    version: string | undefined,
+  ): AnyFunction {
+    const tap = this;
+    return function (this: unknown, ...args: any[]) {
+      const result = original.apply(this, args);
+      const scope = createScope.getStore();
+      // Only `createRun`'s own call; batch ingestion calls it outside one.
+      if (!tap.active || !scope || scope.prepared) return result;
+      scope.prepared = true;
+      Promise.resolve(result).then(
+        (prepared) =>
+          queueMicrotask(() => {
+            if (scope.batched) return;
+            tap.guard(() => tap.capture("create", prepared, version));
+          }),
+        () => undefined,
+      );
       return result;
     };
   }
@@ -528,16 +581,60 @@ export class LangSmithTap {
     tracerPrototypes: () => Json[] = langchainTracerPrototypes,
   ): boolean {
     const tapped = this.patchCopies(copies);
-    if (tapped) this.patchTracers(tracerPrototypes());
+    if (tapped) {
+      this.patchTracers(tracerPrototypes());
+      this.patchOnFirstRun();
+    }
     this.active = tapped;
     return tapped;
   }
 
   /**
+   * Patch a copy `require` can't reach (an app's `import` under tsx) when it
+   * first runs a run, before that run is posted: `traceable` calls
+   * `postRun()` inside the shared `AsyncLocalStorage`'s `run(runTree, ...)`,
+   * so wrapping that one instance reaches the run tree's and its client's
+   * classes synchronously. `installImported()` covers the rest, one event
+   * loop turn later. Nothing happens if no copy has created the storage yet.
+   */
+  private patchOnFirstRun(): void {
+    const storage: unknown = (globalThis as Json)[TRACING_ALS_KEY];
+    if (!isObject(storage) || typeof storage.run !== "function") return;
+    const seen = new WeakSet<object>();
+    const tap = this;
+    this.patch(
+      storage,
+      "run",
+      (original) =>
+        function (this: unknown, ...args: any[]) {
+          const store: unknown = args[0];
+          if (tap.active && isObject(store)) {
+            const prototype = Object.getPrototypeOf(store);
+            if (isObject(prototype) && !seen.has(prototype)) {
+              seen.add(prototype);
+              tap.guard(() => tap.patchRunCopy(store));
+            }
+          }
+          return original.apply(this, args);
+        },
+    );
+  }
+
+  private patchRunCopy(store: Json): void {
+    const runTree = ownerOf(store, "postRun");
+    const client = ownerOf(store.client, "processRunOperation");
+    // `patch` skips what `require` or `import()` already reached.
+    if (runTree && client) {
+      this.patchCopies([{ client, runTree, version: undefined }]);
+    }
+  }
+
+  /**
    * Patch the copies only `import()` reaches, e.g. an app's `import
-   * "langsmith"` under tsx. Asynchronous, so a run started in the same tick
-   * as `Laminar.initialize()` may reach a copy before it is patched; its
-   * update is then recorded as a complete run.
+   * "langsmith"` under tsx. Asynchronous: it lands one event loop turn after
+   * `Laminar.initialize()`. `traceable` runs before then are covered by
+   * `patchOnFirstRun`; a LangChain or hand-built `RunTree` run posted before
+   * then loses its create, and its update is recorded as a complete run.
    */
   async installImported(): Promise<void> {
     const [copies, tracerPrototypes] = await Promise.all([
@@ -560,13 +657,6 @@ export class LangSmithTap {
   private patchCopies(copies: LangSmithCopy[]): boolean {
     let tapped = false;
     for (const { client, runTree, version } of copies) {
-      if (!isSupportedVersion(version)) {
-        logger.warn(
-          `The Laminar langsmith bridge needs langsmith >= ${MIN_LANGSMITH_VERSION}; ` +
-            `skipping langsmith ${version}, whose runs will not be sent to Laminar.`,
-        );
-        continue;
-      }
       if (client) {
         if (
           this.patch(client, "processRunOperation", (o) =>
@@ -574,9 +664,17 @@ export class LangSmithTap {
           )
         ) {
           tapped = true;
-          this.patch(client, "_mergeRuntimeEnvAndMaskMetadata", (o) =>
-            this.wrapUnbatchedCreate(o, version),
-          );
+          if (typeof client._mergeRuntimeEnvAndMaskMetadata === "function") {
+            this.patch(client, "_mergeRuntimeEnvAndMaskMetadata", (o) =>
+              this.wrapUnbatchedCreate(o, version),
+            );
+          } else {
+            // langsmith < 0.8: read unbatched creates another way.
+            this.patch(client, "createRun", (o) => this.wrapCreateRun(o));
+            this.patch(client, "prepareRunCreateOrUpdateInputs", (o) =>
+              this.wrapPrepare(o, version),
+            );
+          }
           this.patch(client, "updateRun", (o) =>
             this.wrapUpdateRun(o, version),
           );
