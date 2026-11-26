@@ -192,6 +192,19 @@ void describe("applyEvalRunner", () => {
     });
   });
 
+  void it("writes the runner's artifacts into the job config", () => {
+    const artifacts = [
+      "/srv/app/out/",
+      { source: "/var/lib/app/state.db", destination: "app.db" },
+    ];
+    expect(
+      applyEvalRunner({}, description({ artifacts }), "harbor.yaml").artifacts,
+    ).toEqual(artifacts);
+    expect(
+      applyEvalRunner({}, description({ artifacts: [] }), "harbor.yaml"),
+    ).not.toHaveProperty("artifacts");
+  });
+
   void it("leaves the verifier to Harbor with verify = task", () => {
     const job = applyEvalRunner(
       { verifier: { import_path: "my.verifier:V" } },
@@ -207,6 +220,7 @@ void describe("applyEvalRunner", () => {
     [{ agents: [{ name: "claude-code" }] }, /sets name/],
     [{ agents: [{ env: { A: "1" } }] }, /both define the agent env/],
     [{ verifier: { import_path: "v:V" } }, /both define the verifier/],
+    [{ artifacts: ["/srv/out"] }, /eval.py owns them/],
   ])(
     "rejects harbor.yaml defining what eval.py owns: %j",
     (config, message) => {

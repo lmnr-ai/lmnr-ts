@@ -15,10 +15,11 @@ export const MAX_JOB_FILE_BYTES = 50 * 1024 * 1024;
 export const MAX_JOB_BYTES = 256 * 1024 * 1024;
 
 /**
- * Collected copies of the sandbox's files: often large, rarely what explains
- * a trial. `<trial>/artifacts` and, for multi-step trials, each step's.
+ * Each step's collected copies of a multi-step trial's files: often large,
+ * rarely what explains a trial. `<trial>/artifacts` is uploaded (within the
+ * caps): an `eval.py` runner grades from it, so the Files view shows it.
  */
-const ARTIFACTS_DIR = /^[^/]+\/(steps\/[^/]+\/)?artifacts$/;
+const STEP_ARTIFACTS_DIR = /^[^/]+\/steps\/[^/]+\/artifacts$/;
 
 /**
  * The job Harbor wrote into a fresh `jobs_dir`, named as Harbor names it (a
@@ -49,7 +50,7 @@ interface JobArchive {
 /**
  * Pack the trial dirs of a finished Harbor job (`<job>/<trial>/...`, paths
  * relative to the job dir) for Laminar's trial log view. Job-level files and
- * artifacts are left out and sizes are capped. Symlinks are skipped. Secrets
+ * steps' artifacts are left out and sizes are capped. Symlinks are skipped. Secrets
  * are as Harbor left them: it scrubs trial dirs itself before `harbor run` exits.
  */
 export const packJobDir = async (jobDir: string): Promise<JobArchive> => {
@@ -64,7 +65,7 @@ export const packJobDir = async (jobDir: string): Promise<JobArchive> => {
       const source = path.join(dir, entry.name);
       const target = rel ? `${rel}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
-        if (!ARTIFACTS_DIR.test(target)) await walk(source, target);
+        if (!STEP_ARTIFACTS_DIR.test(target)) await walk(source, target);
         continue;
       }
       if (!entry.isFile()) continue;

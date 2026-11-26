@@ -49,7 +49,17 @@ export interface EvalDescription {
    * versions don't report it.
    */
   modules?: string[];
+  /**
+   * The runner's `artifacts`, as Harbor job config entries (container paths
+   * or `{source, destination?, exclude?}`). Optional: older lmnr versions
+   * don't report it.
+   */
+  artifacts?: EvalArtifact[];
 }
+
+export type EvalArtifact =
+  | string
+  | { source: string; destination?: string; exclude?: string[] };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -153,7 +163,9 @@ export const parseDescription = (
     !(description.default_image in description.images) ||
     !isRecord(description.env) ||
     !Array.isArray(description.secrets) ||
-    !isRecord(description.task_template)
+    !isRecord(description.task_template) ||
+    (description.artifacts !== undefined &&
+      !Array.isArray(description.artifacts))
   ) {
     throw invalidEvalsDir(`Describing ${file} printed an unexpected shape.`);
   }
@@ -186,7 +198,8 @@ export const evalDescription = (datasetDir: string): EvalDescription => {
 /**
  * The job config of an `eval.py` dataset: its harbor.yaml (if any) plus what
  * eval.py owns. eval.py owns the images, the agent (import path, kwargs, env)
- * and the verifier's import path; harbor.yaml defining one of them too is an
+ * the verifier's import path and the job-level `artifacts` (task.toml
+ * `artifacts` still add to them); harbor.yaml defining one of them too is an
  * error, so nobody has to merge two lists in their head. harbor.yaml `agents`
  * entries without an import path each run the runner with their own
  * `model_name` / extra `kwargs` (a model sweep). eval.py's `model` is the
@@ -204,6 +217,13 @@ export const applyEvalRunner = (
   if (job.images != null) {
     throw invalidEvalsDir(
       `${both} images. Declare them only in ${EVAL_PY} (\`image = ...\`).`,
+    );
+  }
+  if (job.artifacts != null) {
+    throw invalidEvalsDir(
+      `${configFile} sets artifacts, but ${EVAL_PY} owns them. Declare them ` +
+        "on the runner (`artifacts = [...]`); a task.toml's `artifacts` " +
+        "still add to them.",
     );
   }
   const kwargs = { runner: runnerRef(description) };
@@ -265,6 +285,9 @@ export const applyEvalRunner = (
 
   if (job.datasets === undefined && job.tasks === undefined) {
     job.datasets = [{ path: "tasks" }];
+  }
+  if (description.artifacts?.length) {
+    job.artifacts = structuredClone(description.artifacts);
   }
   // lmnr-cli's `images` key (see images.ts); registry images are pulled.
   job.images = Object.fromEntries(

@@ -23,13 +23,14 @@ afterEach(async () => {
 });
 
 void describe("packJobDir", () => {
-  void it("packs trial dirs only, without artifacts or big files", async () => {
+  void it("packs trial dirs and their artifacts, without steps' artifacts or big files", async () => {
     await write("config.json", "{}");
     await write("job.log", "job");
     await write(".sources/t/task.toml", "");
     await write("hello__abc/trial.log", "trial");
     await write("hello__abc/agent/oracle.txt", "agent");
     await write("hello__abc/artifacts/manifest.json", "[]");
+    await write("hello__abc/artifacts/logs/artifacts/state.db", "db");
     await write("hello__abc/steps/one/agent/out.txt", "step");
     await write("hello__abc/steps/one/artifacts/big.bin", "a");
     await write(
@@ -41,6 +42,8 @@ void describe("packJobDir", () => {
 
     expect(index.map((f) => f.path)).toEqual([
       "hello__abc/agent/oracle.txt",
+      "hello__abc/artifacts/logs/artifacts/state.db",
+      "hello__abc/artifacts/manifest.json",
       "hello__abc/steps/one/agent/out.txt",
       "hello__abc/trial.log",
     ]);

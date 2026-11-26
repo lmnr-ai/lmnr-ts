@@ -66,8 +66,9 @@
     after each `harbor run` exits (passed or not) the one job dir in there
     (`findJobDir`) has its trial dirs packed with
     `packFiles` and sent with `uploadJob` + `uploadJobIndex` (`LMNR_EVAL_UPLOAD_ID`,
-    run key). Job-level files, `<trial>/artifacts` and `steps/*/artifacts` are
-    left out; files over 50 MiB and anything past 256 MiB are skipped. A
+    run key). Job-level files and `steps/*/artifacts` are left out;
+    `<trial>/artifacts` is kept (an `eval.py` runner grades from it; the Files
+    view shows it as `logs/artifacts/`); files over 50 MiB and anything past 256 MiB are skipped. A
     failure only warns. The sandbox (and the job) is deleted after the run, so
     this is the only copy.
   - **No extra secret pass:** Harbor scrubs each trial dir before `harbor run`
@@ -259,10 +260,12 @@
   win): eval.py owns images (→ our `images` key; registry images are no build,
   tasks name their ref), the agent (`LaminarAgent`, `kwargs.runner =
   agent/eval.py:<Class>`, `env` = describe's env with secrets as `${NAME}`),
-  and `verifier.import_path` / `kwargs` (`LaminarVerifier`, unless `verify ==
-  "task"`). harbor.yaml defining any of those (images, an `agents` entry with
-  `import_path` or `name` or `env`, verifier import path / kwargs) is
-  `invalid_evals_dir`. harbor.yaml `agents` entries without them become one
+  `verifier.import_path` / `kwargs` (`LaminarVerifier`, unless `verify ==
+  "task"`), and the job-level `artifacts` (describe's optional `artifacts`,
+  Harbor entries; a task.toml's `artifacts` still add to them in Harbor).
+  harbor.yaml defining any of those (images, an `agents` entry with
+  `import_path` or `name` or `env`, verifier import path / kwargs,
+  `artifacts`) is `invalid_evals_dir`. harbor.yaml `agents` entries without them become one
   `LaminarAgent` each with their `model_name` / extra `kwargs` (model sweep).
   Runner `model` is the default `model_name`. Missing `datasets` and `tasks` →
   `datasets: [{path: tasks}]`.
