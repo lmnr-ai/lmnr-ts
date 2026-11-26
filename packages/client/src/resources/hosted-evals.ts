@@ -11,7 +11,18 @@ export interface StartHostedEvalRunOptions {
    * as JSON; the server passes it through without reading it.
    */
   spec: object;
+  /**
+   * Variables set on the orchestrator's env, each sent in an
+   * `x-lmnr-env-<name>` header instead of the body, so an outbound proxy (a
+   * Laminar Agent sandbox's) can put in a value the caller only holds as a
+   * placeholder.
+   */
+  secretEnv?: Record<string, string>;
 }
+
+/** `x-lmnr-env-<name>`, lowercase with `-` for `_` (nginx drops underscores). */
+const secretEnvHeader = (name: string) =>
+  `x-lmnr-env-${name.toLowerCase().replace(/_/g, "-")}`;
 
 /** One line of a remote run's log, numbered from 0 by the run's orchestrator. */
 export interface HostedEvalRunLogLine {
@@ -229,13 +240,22 @@ export class HostedEvalsResource extends BaseResource {
   }
 
   /** Start a remote run. Returns once its orchestrator sandbox has started. */
-  public async startRun(
-    options: StartHostedEvalRunOptions,
-  ): Promise<{ sandboxId: string }> {
+  public async startRun({
+    secretEnv = {},
+    ...options
+  }: StartHostedEvalRunOptions): Promise<{ sandboxId: string }> {
+    const names = Object.keys(secretEnv);
     const response = await fetch(this.url("/runs"), {
       method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify(options),
+      headers: {
+        ...this.headers(),
+        ...Object.fromEntries(
+          names.map((name) => [secretEnvHeader(name), secretEnv[name]]),
+        ),
+      },
+      body: JSON.stringify(
+        names.length > 0 ? { ...options, secretEnv: names } : options,
+      ),
     });
     if (!response.ok) {
       await this.handleErrorMessage(response);

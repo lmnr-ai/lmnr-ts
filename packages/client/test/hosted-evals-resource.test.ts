@@ -57,6 +57,44 @@ void describe("HostedEvalsResource", () => {
     assert.strictEqual(url, "https://api.test.com:443/v1/hosted-evals/runs");
     assert.strictEqual(init.headers["Content-Type"], "application/json");
     assert.deepStrictEqual(JSON.parse(init.body), options);
+    assert.ok(
+      !Object.keys(init.headers).some((h) => h.startsWith("x-lmnr-env-")),
+    );
+  });
+
+  void it("sends secretEnv values as headers and only names in the body", async () => {
+    const mockFetch = mock.fn(() => ({
+      ok: true,
+      json: () => ({ sandboxId: "sb-1" }),
+    }));
+    global.fetch = mockFetch as any;
+
+    const options = { uploadId: "up-1", cliVersion: "0.5.3", spec: {} };
+    await new HostedEvalsResource("https://api.test.com:443", {
+      type: "apiKey",
+      key: "k",
+    }).startRun({
+      ...options,
+      secretEnv: {
+        ANTHROPIC_API_KEY: "placeholder",
+        CUSTOM_LLM_AB12_HEADER_0: "h0",
+      },
+    });
+
+    const [, init] = mockFetch.mock.calls[0].arguments as any;
+    assert.strictEqual(init.headers.Authorization, "Bearer k");
+    assert.strictEqual(
+      init.headers["x-lmnr-env-anthropic-api-key"],
+      "placeholder",
+    );
+    assert.strictEqual(
+      init.headers["x-lmnr-env-custom-llm-ab12-header-0"],
+      "h0",
+    );
+    assert.deepStrictEqual(JSON.parse(init.body), {
+      ...options,
+      secretEnv: ["ANTHROPIC_API_KEY", "CUSTOM_LLM_AB12_HEADER_0"],
+    });
   });
 
   void it("surfaces the server's {error} message", async () => {

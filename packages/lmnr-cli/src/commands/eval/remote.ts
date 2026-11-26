@@ -33,7 +33,7 @@ import {
   TASKS_DIR,
 } from "./datasets";
 import { imagePusher } from "./docker";
-import { API_KEY_VAR, harborEnv } from "./env";
+import { API_KEY_VAR, harborEnv, SANDBOX_PROXY_PLACEHOLDER } from "./env";
 import { assertDatasetsPassed, type JobOutput, runDatasets } from "./harbor";
 import { ensureRemoteImages, type RemoteImages } from "./images";
 import { findJobDir, packJobDir } from "./jobs";
@@ -168,14 +168,19 @@ export const startRemoteRun = async (
 ): Promise<{ uploadId: string; sandboxId: string }> => {
   // The orchestrator gets its own short-lived key and URL from the server.
   const dropped = Object.keys(env).filter((k) => k.startsWith("LMNR_"));
-  const runEnv = Object.fromEntries(
-    Object.entries(env).filter(([k]) => !k.startsWith("LMNR_")),
-  );
+  const sent = Object.entries(env).filter(([k]) => !k.startsWith("LMNR_"));
   if (dropped.length > 0) {
     logger.warn(
       `Not sending ${dropped.join(", ")}: remote runs report with their own key.`,
     );
   }
+  // In a Laminar Agent sandbox, LLM keys are placeholders its outbound proxy
+  // replaces in headers: these go as headers, and the server sets them on the
+  // orchestrator's env, which Harbor inherits.
+  const isPlaceholder = ([, v]: [string, string]) =>
+    v === SANDBOX_PROXY_PLACEHOLDER;
+  const runEnv = Object.fromEntries(sent.filter((e) => !isPlaceholder(e)));
+  const secretEnv = Object.fromEntries(sent.filter(isPlaceholder));
 
   // Tasks Laminar has are downloaded by the run, not uploaded.
   const tasks = await remoteTaskVersions(
@@ -250,6 +255,7 @@ export const startRemoteRun = async (
     uploadId,
     cliVersion: version,
     spec,
+    ...(Object.keys(secretEnv).length > 0 ? { secretEnv } : {}),
   });
   return { uploadId, sandboxId };
 };

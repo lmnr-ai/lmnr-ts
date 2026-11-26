@@ -202,7 +202,14 @@
   itself. `--env KEY[=V]` adds vars and references them from every agent as
   `${KEY}`, so literal values never hit the job config. Remote runs send the
   values in the spec and drop `LMNR_*` (the orchestrator gets its own key and
-  URL).
+  URL). Values equal to `SANDBOX_PROXY_PLACEHOLDER` (a Laminar Agent
+  sandbox's LLM keys: its outbound proxy injects the real ones as headers)
+  go as `startRun`'s `secretEnv` instead: `x-lmnr-env-<name>` headers the
+  proxy fills in for the Laminar host, which the server sets on the
+  orchestrator's env, and Harbor inherits it (`{...process.env,
+  ...spec.env}`), so they must stay out of `spec.env`. Only the sandbox's own
+  variable names work: `--env MY_KEY=$ANTHROPIC_API_KEY` has no proxy rule
+  and the server 400s it (lmnr `docs/internal/hosted-evals.md`).
 - `LMNR_GRPC_PORT` (env or `.env`) becomes `--pk grpc_port=`: the plugin
   exports spans over gRPC and defaults to 8443, so self-hosted traces need it.
 - Auth: local runs need `LMNR_PROJECT_API_KEY` (the plugin reports with it;

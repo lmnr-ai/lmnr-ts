@@ -6,6 +6,7 @@ import path from "node:path";
 import type { LaminarClient } from "@lmnr-ai/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { imagePusher } from "./docker";
+import { SANDBOX_PROXY_PLACEHOLDER } from "./env";
 import { runDatasets } from "./harbor";
 import type { ImageDef } from "./images";
 import { packEvalsDir } from "./pack";
@@ -166,6 +167,46 @@ void describe("startRemoteRun", () => {
           b: { shared: await hashed("b/tasks/shared") },
         },
       },
+    });
+  });
+
+  void it("sends sandbox proxy placeholders as secretEnv, not in the spec", async () => {
+    await writeEvals();
+    vi.mocked(imagePusher).mockReturnValue({
+      build: async (def: ImageDef) => `sha256:${def.name}`,
+      pull: async (ref: string) => `sha256:${ref}`,
+    });
+    const startRun = vi.fn(async () => ({ sandboxId: "sb-1" }));
+    const client = {
+      hostedEvals: {
+        upload: async () => ({ uploadId: "up-1" }),
+        uploadIndex: async () => undefined,
+        startRun,
+      },
+      evalDatasets: {
+        missingVersions: async (_dataset: string, versions: unknown[]) =>
+          versions,
+      },
+    } as unknown as LaminarClient;
+
+    await startRemoteRun(
+      client,
+      root,
+      ["a"],
+      {},
+      {
+        ANTHROPIC_API_KEY: SANDBOX_PROXY_PLACEHOLDER,
+        LMNR_PROJECT_API_KEY: SANDBOX_PROXY_PLACEHOLDER,
+        MODEL: "claude",
+      },
+    );
+
+    const [options] = startRun.mock.calls[0] as unknown as [
+      { spec: { env: Record<string, string> }; secretEnv?: object },
+    ];
+    expect(options.spec.env).toEqual({ MODEL: "claude" });
+    expect(options.secretEnv).toEqual({
+      ANTHROPIC_API_KEY: SANDBOX_PROXY_PLACEHOLDER,
     });
   });
 });
