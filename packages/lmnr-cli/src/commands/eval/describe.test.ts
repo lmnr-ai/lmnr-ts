@@ -81,6 +81,7 @@ afterEach(async () => {
   process.chdir(cwd);
   vi.mocked(runCommand).mockReset();
   vi.mocked(captureCommand).mockReset();
+  logger.info.mockClear();
   logger.warn.mockClear();
   for (const key of [
     "LMNR_PROJECT_API_KEY",
@@ -293,6 +294,19 @@ void describe("eval task new", () => {
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining(`${dir} has no tests/test.sh`),
     );
+
+    // --json too: the warning is on stderr, stdout stays the JSON.
+    logger.warn.mockClear();
+    const log = vi.spyOn(console, "log").mockReturnValue(undefined);
+    await handleEvalTaskNew(dir, { json: true });
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual({
+      dir,
+      files: [],
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining(`${dir} has no tests/test.sh`),
+    );
+    log.mockRestore();
   });
 
   void it("needs <dataset>/tasks/<name> of an eval.py dataset", async () => {

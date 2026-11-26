@@ -327,14 +327,7 @@ export const handleEvalTaskNew = async (
   }
   await mkdir(taskDir, { recursive: true });
   const changes = await ensureTaskDirFiles(datasetDir, taskDir, defaults);
-  if (opts.json) {
-    outputJson({ dir: taskDir, files: changes });
-    return;
-  }
-  logTaskFileChanges(path.basename(datasetDir), changes);
-  if (changes.length === 0) {
-    logger.info(`${dir} already has the files Harbor needs`);
-  }
+  // On stderr, so also with --json.
   if (
     !defaults.testShStub &&
     !(await exists(path.join(taskDir, "tests", "test.sh")))
@@ -344,5 +337,13 @@ export const handleEvalTaskNew = async (
       `${dir} has no tests/test.sh, which grades it: ${EVAL_PY} sets ` +
         `verify = "task". Write one that writes /logs/verifier/reward.txt.`,
     );
+  }
+  if (opts.json) {
+    outputJson({ dir: taskDir, files: changes });
+    return;
+  }
+  logTaskFileChanges(path.basename(datasetDir), changes);
+  if (changes.length === 0) {
+    logger.info(`${dir} already has the files Harbor needs`);
   }
 };
