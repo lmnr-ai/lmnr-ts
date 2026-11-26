@@ -50,18 +50,18 @@ void describe("buildCreateMetricAlert", () => {
   void it("merges rule keys, name and targets", () => {
     expect(
       buildCreateMetricAlert({
-        template: "monthly-budget",
-        rule: '{"condition":{"type":"budget","amount":2000}}',
-        name: "Budget",
+        template: "daily-spending-limit",
+        rule: '{"condition":{"limit":50}}',
+        name: "Spend",
         notifyMe: false,
         slackChannel: ["#oncall"],
         disabled: true,
       }),
     ).toEqual({
       type: "METRIC",
-      template: "monthly-budget",
-      rule: { condition: { type: "budget", amount: 2000 } },
-      name: "Budget",
+      template: "daily-spending-limit",
+      rule: { condition: { limit: 50 } },
+      name: "Spend",
       notifyMe: false,
       slackChannels: ["#oncall"],
       disabled: true,
@@ -107,7 +107,7 @@ void describe("describeRule", () => {
     );
   });
 
-  void it("describes a split value rule and a budget", () => {
+  void it("describes a split value rule and a spending limit", () => {
     expect(
       describeRule({
         ...RULE,
@@ -123,11 +123,32 @@ void describe("describeRule", () => {
       describeRule({
         ...RULE,
         window: { monthToDate: true },
-        condition: { type: "budget", amount: 2000 },
+        condition: { type: "spending_limit", limit: 2000, warnAtPercent: 90 },
         warning: null,
         critical: null,
       }),
-    ).toBe("total_cost over month to date, budget 2000");
+    ).toBe("total_cost over month to date, limit 2000, warn at 90%");
+    expect(
+      describeRule({
+        ...RULE,
+        window: { minutes: 1440 },
+        condition: { type: "spending_limit", limit: 50 },
+        warning: null,
+        critical: null,
+      }),
+    ).toBe("total_cost over 1d, limit 50, warn at 80%");
+  });
+
+  void it("lists a rule with a condition it does not know", () => {
+    expect(
+      describeRule({
+        ...RULE,
+        window: { monthToDate: true },
+        condition: { type: "budget" } as never,
+        warning: null,
+        critical: null,
+      }),
+    ).toBe("total_cost over month to date, budget (no thresholds)");
   });
 
   void it("describes a stored rule that leaves unset keys out", () => {

@@ -2,8 +2,8 @@ import type { SignalFilter } from "./signals";
 
 /**
  * `SIGNAL_EVENT` fires per extracted event; `NEW_CLUSTER` when events form a new
- * cluster; `METRIC` checks a number (cost, tokens, traffic, error rate,
- * latency) on a schedule.
+ * cluster; `METRIC` checks a number (cost, tokens, traffic, errors, latency)
+ * on a schedule.
  */
 export type AlertType = "SIGNAL_EVENT" | "NEW_CLUSTER" | "METRIC";
 
@@ -23,19 +23,26 @@ export type MetricAlertMetric =
   | "total_tokens"
   | "tokens_per_trace"
   | "trace_count"
+  | "error_traces"
   | "error_rate"
+  | "no_cost_rate"
+  | "no_tokens_rate"
   | "latency_p50"
   | "latency_p95";
 
 /**
  * What a threshold is compared with: the value itself, the value as a percent
- * of the same window shifted back by `compareTo`, month-to-date spend against a
- * budget, or one trace's cost as a percent of the project's p99 trace cost.
+ * of the same window shifted back by `compareTo`, spend against a limit
+ * (warning at `warnAtPercent` of it, 80 by default, and critical at the limit),
+ * or one trace's cost as a percent of the project's p99 trace cost.
  */
 export type MetricAlertCondition =
   | { type: "value" }
-  | { type: "change"; compareTo: "5m" | "15m" | "1h" | "1d" | "1w" | "30d" }
-  | { type: "budget"; amount: number }
+  | {
+      type: "change";
+      compareTo: "5m" | "15m" | "30m" | "1h" | "1d" | "1w" | "30d";
+    }
+  | { type: "spending_limit"; limit: number; warnAtPercent?: number }
   | { type: "trace_p99" };
 
 /** The rule of a `METRIC` alert. The server validates it and owns the defaults. */
@@ -45,14 +52,17 @@ export interface MetricAlertRule {
   filters: { column: string; operator: string; value: unknown }[];
   /** `model` keeps separate state and incidents per model. */
   groupBy?: "model" | null;
-  /** Budgets use `{ monthToDate: true }`; `minutes` is 5, 15, 60 or 1440. */
+  /**
+   * `minutes` is 5, 15, 30, 60 or 1440. A spending limit covers the last day
+   * (`{ minutes: 1440 }`) or the month so far (`{ monthToDate: true }`).
+   */
   window: { minutes: number } | { monthToDate: true };
   condition: MetricAlertCondition;
   direction: "above" | "below";
-  /** At least one of `warning` / `critical`, except for budgets (neither). */
+  /** At least one of `warning` / `critical`, except for a spending limit (neither). */
   warning?: number | null;
   critical?: number | null;
-  /** The value at which an open incident closes. */
+  /** Where an open incident closes. Unset, it follows the first threshold. */
   resolve?: number | null;
   /** `change` only: smallest absolute difference that still counts. */
   minChange?: number | null;

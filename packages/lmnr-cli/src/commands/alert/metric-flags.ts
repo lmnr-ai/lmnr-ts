@@ -91,6 +91,9 @@ export const buildUpdateMetricAlert = (
   return patch;
 };
 
+/** The server's default for a spending limit stored without `warnAtPercent`. */
+const DEFAULT_WARN_AT_PERCENT = 80;
+
 const describeWindow = (window: MetricAlertRule["window"]): string => {
   if ("monthToDate" in window) {
     return "month to date";
@@ -104,8 +107,9 @@ const describeWindow = (window: MetricAlertRule["window"]): string => {
 
 const describeCondition = (rule: MetricAlertRule): string => {
   const { condition } = rule;
-  if (condition.type === "budget") {
-    return `budget ${condition.amount}`;
+  if (condition.type === "spending_limit") {
+    const warnAt = condition.warnAtPercent ?? DEFAULT_WARN_AT_PERCENT;
+    return `limit ${condition.limit}, warn at ${warnAt}%`;
   }
   const unit =
     condition.type === "change"
@@ -117,6 +121,10 @@ const describeCondition = (rule: MetricAlertRule): string => {
     rule.warning != null ? `warning ${rule.warning}${unit}` : null,
     rule.critical != null ? `critical ${rule.critical}${unit}` : null,
   ].filter((t) => t !== null);
+  // A rule the server no longer accepts still has to be listed, so it can be deleted.
+  if (thresholds.length === 0) {
+    return `${condition.type} (no thresholds)`;
+  }
   return `${rule.direction} ${thresholds.join(", ")}`;
 };
 

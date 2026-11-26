@@ -21,8 +21,8 @@
 
 ## Metric alerts (`alert metric`)
 
-- `alert metric create|list|update|delete` covers `METRIC` alerts (cost, tokens, traffic, error
-  rate, latency). Writes go through the same `/v1/cli/alerts` body with `type: "METRIC"`; a
+- `alert metric create|list|update|delete` covers `METRIC` alerts (cost, tokens, traffic, errors,
+  latency). Writes go through the same `/v1/cli/alerts` body with `type: "METRIC"`; a
   metric alert has no signal, so `signalId` is `null` and the rule comes back in `rule`.
 - **The rule is a JSON object passed as `--rule` and is never checked here.** The server runs the
   same validation as the UI form and its messages are shown verbatim, so don't add a client-side
@@ -35,6 +35,10 @@
   state and incident history are not in SQL, so the CLI cannot show whether a rule is firing.
   It prints two lines per alert, not a `renderTable`: the table shortens ids to fit the terminal,
   and `update` / `delete` need them whole.
-- A stored rule leaves unset keys out (no `critical`, no `resolve` on a budget) when it was written
+- Three templates carry no number (`cost-spike`, `expensive-trace`, `daily-spending-limit`): the
+  UI suggests one from the project's data, the CLI caller passes it in `--rule`. `condition` is
+  merged one level down by the server, so `{"condition":{"limit":50}}` is enough for a limit.
+- A stored rule leaves unset keys out (no `critical`, no `resolve`, no thresholds on a spending
+  limit) when it was written
   through this path, and holds explicit `null`s when the UI wrote it. Check with `!= null`.
 - `delete` is the plain `alert delete` handler.
