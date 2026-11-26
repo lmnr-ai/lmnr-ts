@@ -277,6 +277,24 @@ void describe("eval task new", () => {
     expect(toml).toContain('docker_image = "support-evals"');
   });
 
+  void it('warns about a missing test.sh with verify = "task"', async () => {
+    await write("evals/support/agent/eval.py", EVAL_PY);
+    await write(
+      "evals/support/tasks/refund/task.toml",
+      '[task]\nname = "a/b"\n',
+    );
+    await write("evals/support/tasks/refund/instruction.md", "Do it.\n");
+    describeOk({ ...DESCRIPTION, verify: "task" });
+    const dir = path.join(root, "evals/support/tasks/refund");
+    await handleEvalTaskNew(dir, {});
+    expect(logger.info).not.toHaveBeenCalledWith(
+      expect.stringContaining("test.sh"),
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining(`${dir} has no tests/test.sh`),
+    );
+  });
+
   void it("needs <dataset>/tasks/<name> of an eval.py dataset", async () => {
     await write("evals/support/harbor.yaml");
     await expect(

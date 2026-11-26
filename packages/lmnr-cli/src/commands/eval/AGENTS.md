@@ -277,7 +277,9 @@
   by a non-comment line.
 - **Task files** (`ensureTaskFiles`, `task-files.ts`): before `checkRunTasks`
   in `eval run` (so before hashing and packing; the orchestrator never writes),
-  at the start of `eval dataset push` (`--dry-run` lists), and in `eval task
+  at the start of `eval dataset push` (`--dry-run` lists them, then plans
+  from a temp copy of `tasks/` with them written, since they add tasks and
+  change hashes; push only reads `tasks/`), and in `eval task
   new <dataset>/tasks/<name>`. Every non-dot dir directly under `tasks/` gets a
   missing `task.toml` (`[task] name = <org of [dataset] name, else the folder
   name>/<dir>`, `[environment] docker_image = <default image, or its registry

@@ -286,6 +286,7 @@ export const ensureTaskFiles = async (
   datasetDir: string,
   description: EvalDescription,
   dryRun = false,
+  log = true,
 ): Promise<TaskFileChange[]> => {
   const defaults = await taskDefaults(datasetDir, description);
   const changes: TaskFileChange[] = [];
@@ -294,7 +295,7 @@ export const ensureTaskFiles = async (
       ...(await ensureTaskDirFiles(datasetDir, taskDir, defaults, dryRun)),
     );
   }
-  logTaskFileChanges(path.basename(datasetDir), changes, dryRun);
+  if (log) logTaskFileChanges(path.basename(datasetDir), changes, dryRun);
   return changes;
 };
 
@@ -332,8 +333,16 @@ export const handleEvalTaskNew = async (
   }
   logTaskFileChanges(path.basename(datasetDir), changes);
   if (changes.length === 0) {
-    logger.info(
-      `${dir} already has task.toml, instruction.md and tests/test.sh`,
+    logger.info(`${dir} already has the files Harbor needs`);
+  }
+  if (
+    !defaults.testShStub &&
+    !(await exists(path.join(taskDir, "tests", "test.sh")))
+  ) {
+    // verify = "task": the task's own test.sh grades it, so no stub.
+    logger.warn(
+      `${dir} has no tests/test.sh, which grades it: ${EVAL_PY} sets ` +
+        `verify = "task". Write one that writes /logs/verifier/reward.txt.`,
     );
   }
 };
