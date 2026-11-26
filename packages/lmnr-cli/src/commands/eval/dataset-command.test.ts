@@ -157,8 +157,8 @@ void describe("eval dataset push of an eval.py dataset", () => {
     model: null,
     env: {},
     secrets: [],
-    task_template: {},
-    verify: "runner",
+    new_task_toml: {},
+    grade_with_test_sh: false,
     warnings: [],
   };
 

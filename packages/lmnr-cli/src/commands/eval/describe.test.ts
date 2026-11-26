@@ -55,9 +55,9 @@ const DESCRIPTION: EvalDescription = {
   model: "anthropic/claude-sonnet-5-5",
   env: { APP_KEY: "${APP_KEY}" },
   secrets: ["APP_KEY", "JUDGE_KEY"],
-  task_template: {},
-  verify: "runner",
-  warnings: ["SupportEval defines run(), so `entrypoint` is ignored."],
+  new_task_toml: {},
+  grade_with_test_sh: false,
+  warnings: ["SupportEval defines run(), so `run_command` is ignored."],
 };
 
 const describeOk = (description: EvalDescription = DESCRIPTION) =>
@@ -117,7 +117,7 @@ void describe("describeEvalPy", () => {
       expect.objectContaining({ cwd: datasetDir }),
     );
     expect(logger.warn).toHaveBeenCalledWith(
-      "support/agent/eval.py: SupportEval defines run(), so `entrypoint` is ignored.",
+      "support/agent/eval.py: SupportEval defines run(), so `run_command` is ignored.",
     );
   });
 
@@ -314,14 +314,14 @@ void describe("eval task new", () => {
     expect(toml).toContain('docker_image = "support-evals"');
   });
 
-  void it('warns about a missing test.sh with verify = "task"', async () => {
+  void it("warns about a missing test.sh with grade_with_test_sh", async () => {
     await write("evals/support/agent/eval.py", EVAL_PY);
     await write(
       "evals/support/tasks/refund/task.toml",
       '[task]\nname = "a/b"\n',
     );
     await write("evals/support/tasks/refund/instruction.md", "Do it.\n");
-    describeOk({ ...DESCRIPTION, verify: "task" });
+    describeOk({ ...DESCRIPTION, grade_with_test_sh: true });
     const dir = path.join(root, "evals/support/tasks/refund");
     await handleEvalTaskNew(dir, {});
     expect(logger.info).not.toHaveBeenCalledWith(

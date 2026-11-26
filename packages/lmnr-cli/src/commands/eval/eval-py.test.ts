@@ -68,8 +68,8 @@ const description = (
   model: "anthropic/claude-sonnet-5-5",
   env: { ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}", SUPPORT_TONE: "formal" },
   secrets: ["ANTHROPIC_API_KEY", "JUDGE_API_KEY"],
-  task_template: { agent: { timeout_sec: 300 } },
-  verify: "runner",
+  new_task_toml: { agent: { timeout_sec: 300 } },
+  grade_with_test_sh: false,
   warnings: [],
   ...overrides,
 });
@@ -208,7 +208,7 @@ void describe("applyEvalRunner", () => {
   void it("leaves the verifier to Harbor with verify = task", () => {
     const job = applyEvalRunner(
       { verifier: { import_path: "my.verifier:V" } },
-      description({ verify: "task" }),
+      description({ grade_with_test_sh: true }),
       "harbor.yaml",
     );
     expect(job.verifier).toEqual({ import_path: "my.verifier:V" });
@@ -356,11 +356,11 @@ void describe("task files", () => {
     expect(await ensureTaskFiles(datasetDir(), description())).toEqual([]);
   });
 
-  void it('writes no test.sh stub with verify = "task"', async () => {
+  void it("writes no test.sh stub with grade_with_test_sh", async () => {
     await write("support/tasks/refund/environment/case.json", "{}");
     const changes = await ensureTaskFiles(
       datasetDir(),
-      description({ verify: "task" }),
+      description({ grade_with_test_sh: true }),
     );
     expect(changes.map((c) => c.file)).toEqual([
       "tasks/refund/task.toml",
@@ -376,7 +376,7 @@ void describe("task files", () => {
     await ensureTaskFiles(
       datasetDir(),
       description({
-        task_template: {
+        new_task_toml: {
           environment: { cpus: 2 },
           verifier: { env: { K: "${K}" } },
         },

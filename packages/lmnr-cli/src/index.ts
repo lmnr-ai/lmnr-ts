@@ -703,7 +703,7 @@ eval.py; what the app needs goes in the image. lmnr-cli reads eval.py with
 uvx, runs it through lmnr's Harbor adapters, and resolves its \`secrets\` like
 \`\${VAR}\`s. Before a run (and a push) it writes the files Harbor needs that a
 task dir lacks: task.toml ([task] name = <dataset org>/<dir>, the default
-image, the runner's task_template), instruction.md and a stub tests/test.sh.
+image, the runner's new_task_toml), instruction.md and a stub tests/test.sh.
 A task.toml that exists is only completed, never rewritten. A harbor.yaml
 next to eval.py may set job settings (concurrency, attempts, environment,
 datasets) and model sweeps (agents entries with only model_name), but not
@@ -765,7 +765,7 @@ Examples:
       `
 For a dataset with an agent/eval.py: creates <dir> if needed and writes the
 files it lacks: task.toml ([task] name = <org of [dataset] name>/<name>, the
-runner's default image and task_template), instruction.md and a stub
+runner's default image and new_task_toml), instruction.md and a stub
 tests/test.sh. Then add the case's data: environment/ (what the app reads),
 tests/expected.json (the reference answer), tests/fixtures/ (data the agent
 must not see). \`eval run\` and \`eval dataset push\` write the same files for

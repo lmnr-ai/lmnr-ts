@@ -263,8 +263,8 @@
   win): eval.py owns images (→ our `images` key; registry images are no build,
   tasks name their ref), the agent (`LaminarAgent`, `kwargs.runner =
   agent/eval.py:<Class>`, `env` = describe's env with secrets as `${NAME}`),
-  `verifier.import_path` / `kwargs` (`LaminarVerifier`, unless `verify ==
-  "task"`), and the job-level `artifacts` (describe's optional `artifacts`,
+  `verifier.import_path` / `kwargs` (`LaminarVerifier`, unless
+  `grade_with_test_sh`), and the job-level `artifacts` (describe's optional `artifacts`,
   Harbor entries; a task.toml's `artifacts` still add to them in Harbor).
   harbor.yaml defining any of those (images, an `agents` entry with
   `import_path` or `name` or `env`, verifier import path / kwargs,
@@ -300,8 +300,8 @@
   new <dataset>/tasks/<name>`. Every non-dot dir directly under `tasks/` gets a
   missing `task.toml` (`[task] name = <org of [dataset] name, else the folder
   name>/<dir>`, `[environment] docker_image = <default image, or its registry
-  ref>`, then the runner's `task_template` merged per table, via smol-toml), `instruction.md` and `tests/test.sh` (0755;
-  not with `verify = "task"`, where a stub would hide a missing real one).
+  ref>`, then the runner's `new_task_toml` merged per table, via smol-toml), `instruction.md` and `tests/test.sh` (0755;
+  not with `grade_with_test_sh`, where a stub would hide a missing real one).
   An existing `task.toml` missing `[task] name` / `docker_image` gets the key
   INSERTED AS TEXT (`insertTomlKey`): after the table's header, or as a new
   table above the first table and the comment lines right above it (never at

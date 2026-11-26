@@ -516,8 +516,8 @@ void describe("handleEvalOrchestrate", () => {
       model: null,
       env: {},
       secrets: [],
-      task_template: {},
-      verify: "runner",
+      new_task_toml: {},
+      grade_with_test_sh: false,
       warnings: [],
     };
     process.env.LMNR_EVAL_RUN = JSON.stringify({

@@ -66,10 +66,10 @@ interface TaskDefaults {
   image: string;
   /** Every `docker_image` a task may name: the runner's images. */
   images: string[];
-  /** The runner's `task_template`. */
+  /** The runner's `new_task_toml`. */
   template: Record<string, unknown>;
   /**
-   * Write a stub tests/test.sh. Not with `verify = "task"`: there each task's
+   * Write a stub tests/test.sh. Not with `grade_with_test_sh`: there each task's
    * own test.sh grades, and a stub would hide a missing one.
    */
   testShStub: boolean;
@@ -93,8 +93,8 @@ const taskDefaults = async (
     org,
     image: defaultTaskImage(description),
     images: taskImageNames(description),
-    template: description.task_template,
-    testShStub: description.verify === "runner",
+    template: description.new_task_toml,
+    testShStub: !description.grade_with_test_sh,
   };
 };
 
@@ -374,10 +374,10 @@ export const handleEvalTaskNew = async (
     !defaults.testShStub &&
     !(await exists(path.join(taskDir, "tests", "test.sh")))
   ) {
-    // verify = "task": the task's own test.sh grades it, so no stub.
+    // grade_with_test_sh: the task's own test.sh grades it, so no stub.
     logger.warn(
       `${dir} has no tests/test.sh, which grades it: ${EVAL_PY} sets ` +
-        `verify = "task". Write one that writes /logs/verifier/reward.txt.`,
+        `grade_with_test_sh = True. Write one that writes /logs/verifier/reward.txt.`,
     );
   }
   if (opts.json) {

@@ -38,10 +38,13 @@ export interface EvalDescription {
   env: Record<string, string>;
   /** Env var names lmnr-cli must resolve, like a required `${VAR}`. */
   secrets: string[];
-  /** `task.toml` tables written into new tasks. */
-  task_template: Record<string, unknown>;
-  /** `runner`: grade with `verify()`; `task`: with each task's tests/test.sh. */
-  verify: "runner" | "task";
+  /** `task.toml` tables written into tasks that have no `task.toml` yet. */
+  new_task_toml: Record<string, unknown>;
+  /**
+   * Grade with Harbor's default verifier (each task's tests/test.sh, in the
+   * container) instead of the runner's `verify()`.
+   */
+  grade_with_test_sh: boolean;
   warnings: string[];
   /**
    * The runner's module files, relative to the evals root (`eval.py` and any
@@ -163,7 +166,8 @@ export const parseDescription = (
     !(description.default_image in description.images) ||
     !isRecord(description.env) ||
     !Array.isArray(description.secrets) ||
-    !isRecord(description.task_template) ||
+    !isRecord(description.new_task_toml) ||
+    typeof description.grade_with_test_sh !== "boolean" ||
     (description.artifacts !== undefined &&
       !Array.isArray(description.artifacts))
   ) {
@@ -265,7 +269,7 @@ export const applyEvalRunner = (
     };
   });
 
-  if (description.verify === "runner") {
+  if (!description.grade_with_test_sh) {
     const verifier = job.verifier ?? {};
     if (!isRecord(verifier)) {
       throw invalidEvalsDir(`${configFile}: verifier must be a mapping.`);
@@ -273,7 +277,8 @@ export const applyEvalRunner = (
     if (verifier.import_path != null || verifier.kwargs != null) {
       throw invalidEvalsDir(
         `${both} the verifier. Remove verifier.import_path / kwargs, or set ` +
-          `verify = "task" in ${EVAL_PY} to grade with each task's tests/test.sh.`,
+          `grade_with_test_sh = True in ${EVAL_PY} to grade with each task's ` +
+          "tests/test.sh.",
       );
     }
     job.verifier = {
