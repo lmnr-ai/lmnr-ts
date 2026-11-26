@@ -114,8 +114,8 @@ const describeCondition = (rule: MetricAlertRule): string => {
         ? "% of p99"
         : "";
   const thresholds = [
-    rule.warning !== null ? `warning ${rule.warning}${unit}` : null,
-    rule.critical !== null ? `critical ${rule.critical}${unit}` : null,
+    rule.warning != null ? `warning ${rule.warning}${unit}` : null,
+    rule.critical != null ? `critical ${rule.critical}${unit}` : null,
   ].filter((t) => t !== null);
   return `${rule.direction} ${thresholds.join(", ")}`;
 };

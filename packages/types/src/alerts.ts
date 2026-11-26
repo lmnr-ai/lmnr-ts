@@ -44,24 +44,24 @@ export interface MetricAlertRule {
   /** Trace filters, the same `{column, operator, value}` the traces table uses. */
   filters: { column: string; operator: string; value: unknown }[];
   /** `model` keeps separate state and incidents per model. */
-  groupBy: "model" | null;
+  groupBy?: "model" | null;
   /** Budgets use `{ monthToDate: true }`; `minutes` is 5, 15, 60 or 1440. */
   window: { minutes: number } | { monthToDate: true };
   condition: MetricAlertCondition;
   direction: "above" | "below";
-  /** At least one of `warning` / `critical`, except for budgets (both null). */
-  warning: number | null;
-  critical: number | null;
+  /** At least one of `warning` / `critical`, except for budgets (neither). */
+  warning?: number | null;
+  critical?: number | null;
   /** The value at which an open incident closes. */
-  resolve: number | null;
+  resolve?: number | null;
   /** `change` only: smallest absolute difference that still counts. */
-  minChange: number | null;
+  minChange?: number | null;
   checksInARow: number;
-  minTraces: number | null;
-  onNoData: "skip" | "zero" | "alert" | null;
+  minTraces?: number | null;
+  onNoData?: "skip" | "zero" | "alert" | null;
   /** ISO timestamp; no messages are sent until then. */
-  snoozedUntil: string | null;
-  disabled: boolean;
+  snoozedUntil?: string | null;
+  disabled?: boolean;
 }
 
 export interface Alert {

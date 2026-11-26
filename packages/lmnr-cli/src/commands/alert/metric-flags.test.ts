@@ -129,6 +129,21 @@ void describe("describeRule", () => {
       }),
     ).toBe("total_cost over month to date, budget 2000");
   });
+
+  void it("describes a stored rule that leaves unset keys out", () => {
+    expect(
+      describeRule({
+        metric: "latency_p95",
+        filters: [],
+        window: { minutes: 15 },
+        condition: { type: "value" },
+        direction: "above",
+        warning: 30,
+        resolve: 20,
+        checksInARow: 3,
+      }),
+    ).toBe("latency_p95 over 15m, above warning 30");
+  });
 });
 
 void describe("ruleStatus", () => {

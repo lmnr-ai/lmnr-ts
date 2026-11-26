@@ -33,4 +33,8 @@
 - `list` is the one read command in the group. It runs SQL over `alerts` (`type = 'METRIC'`) and
   only adds a one-line rule summary, so it stays inside the "reads are SQL" rule above. Alert
   state and incident history are not in SQL, so the CLI cannot show whether a rule is firing.
+  It prints two lines per alert, not a `renderTable`: the table shortens ids to fit the terminal,
+  and `update` / `delete` need them whole.
+- A stored rule leaves unset keys out (no `critical`, no `resolve` on a budget) when it was written
+  through this path, and holds explicit `null`s when the UI wrote it. Check with `!= null`.
 - `delete` is the plain `alert delete` handler.

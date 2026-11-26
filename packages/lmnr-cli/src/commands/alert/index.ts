@@ -4,7 +4,6 @@ import type { Alert, MetricAlertRule } from "@lmnr-ai/types";
 import type { GlobalOpts } from "../../auth/with-client";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson, printData } from "../../utils/output";
-import { renderTable } from "../../utils/table";
 import { resolveSignalId } from "../signal";
 import {
   type AlertCreateFlagOpts,
@@ -37,7 +36,7 @@ const printMetricAlert = (alert: Alert, rule: MetricAlertRule): void => {
   logger.info(`${alert.name} (${alert.id})`);
   logger.info(`  type:         ${alert.type}`);
   logger.info(`  rule:         ${describeRule(rule)}`);
-  if (rule.resolve !== null) {
+  if (rule.resolve != null) {
     logger.info(`  resolves at:  ${rule.resolve}`);
   }
   if (rule.filters.length > 0) {
@@ -186,15 +185,10 @@ export const handleMetricAlertList = async (
     logger.info("No metric alerts. Create one with `alert metric create`.");
     return;
   }
-  printData(
-    renderTable(
-      ["id", "name", "rule", "status"],
-      alerts.map((a) => [
-        a.id,
-        a.name,
-        describeRule(a.rule),
-        ruleStatus(a.rule),
-      ]),
-    ),
-  );
+  // Not a table: a table would cut the ids short to fit the terminal, and
+  // `update` and `delete` need them whole.
+  for (const a of alerts) {
+    printData(`${a.id}  ${a.name}  (${ruleStatus(a.rule)})`);
+    printData(`  ${describeRule(a.rule)}`);
+  }
 };
