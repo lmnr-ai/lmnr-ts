@@ -51,6 +51,9 @@ import {
   shortName,
   TASKS_DIR,
 } from "./datasets";
+import { describeEvalPy } from "./describe";
+import { hasEvalPy } from "./eval-py";
+import { ensureTaskFiles } from "./task-files";
 import { collectTaskFiles, envFiles } from "./task-hash";
 
 const logger = initializeLogger();
@@ -497,6 +500,12 @@ export const handleDatasetPush = async (
   const datasets = await selectDatasets(evalsDir, named);
   const selected = selection(opts.task);
   const client = await buildEvalClient(opts);
+  // eval.py datasets: no task is pushed without the files Harbor needs.
+  for (const { dir } of datasets) {
+    if (await hasEvalPy(dir)) {
+      await ensureTaskFiles(dir, await describeEvalPy(dir), opts.dryRun);
+    }
+  }
 
   const planned: PlannedPush[] = [];
   for (const dataset of datasets) {

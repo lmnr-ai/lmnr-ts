@@ -1,7 +1,8 @@
 # Harbor evals (`eval`)
 
 - `lmnr-cli eval run [dataset] [--dir evals]` runs each dataset folder
-  (`<dir>/<folder>/harbor.yaml`, a Harbor JobConfig; named by folder or by
+  (`<dir>/<folder>/harbor.yaml`, a Harbor JobConfig, and/or
+  `<folder>/agent/eval.py`, see "eval.py datasets"; named by folder or by
   `[dataset] name`, formerly "suite") with **pinned** Harbor + the Laminar
   plugin through `uvx` (`harbor.ts`: `HARBOR_VERSION`, `LMNR_PYTHON_VERSION`),
   from inside the dataset dir so relative paths and custom agent imports
@@ -73,7 +74,10 @@
     exits, but only values from the agent's / verifier's env (not the task's
     `[environment] env`, resolved inside each environment backend). Uploads
     carry that gap as is; fixing it upstream is LAM-2534.
-- Modules: `index.ts` (`eval run` flow, reporting), `remote.ts` (`RunSpec`,
+- Modules: `index.ts` (`eval run` flow, reporting), `eval-py.ts` (eval.py
+  datasets: describe JSON types, PEP 723, the describe cache, the ownership
+  merge), `describe.ts` (runs `lmnr.evals.describe`), `task-files.ts` (the
+  task files written for eval.py datasets, `eval task new`), `remote.ts` (`RunSpec`,
   `startRemoteRun`, `eval orchestrate`), `run-log.ts` (the run's log: shipper
   and follower), `run-log-lines.ts` (what the log shows of Harbor's output),
   `jobs.ts` (packing a finished Harbor
@@ -235,6 +239,73 @@
   (Harbor's own rule, `needs_chmod`). Ownership and mtimes are fixed so local
   user names and times don't leak. Task version archives are packed from
   `collectTaskFiles` instead (Harbor's selection; see below).
+
+## eval.py datasets (LAM-2588 phase 1)
+
+- A dataset folder with `agent/eval.py` (one `EvalRunner` subclass, lmnr-python
+  `src/lmnr/evals/AGENTS.md`) is runnable with or without a harbor.yaml
+  (`isRunnableDataset`; discovery, `isDatasetFolder` and `selectDatasets` use it).
+- **Describe first.** `describeDatasets` runs `uvx --python 3.13 --from <lmnr
+  spec> [--with <PEP 723 dep>...] python -m lmnr.evals.describe agent/eval.py`
+  from the dataset dir (`captureCommand`: output is collected, never shown; on
+  failure the error is Python's stderr minus uv's progress lines, plus a hint
+  when the pinned lmnr has no `lmnr.evals`) and caches the JSON per dataset dir
+  (`setEvalDescription`). `loadDatasetConfig` throws if an eval.py dataset wasn't
+  described, so every path that builds its job config (run, images, `${VAR}`s,
+  `findTaskTomls`) must come after it. JSON `version` must be
+  `DESCRIBE_VERSION` (1); bump both repos together.
+- **Ownership** (`applyEvalRunner`, applied inside `loadDatasetConfig`, before
+  `buildJobConfig`'s CLI overrides, so `--model` / `--env` / `--task` still
+  win): eval.py owns images (→ our `images` key; registry images are no build,
+  tasks name their ref), the agent (`LaminarAgent`, `kwargs.runner =
+  agent/eval.py:<Class>`, `env` = describe's env with secrets as `${NAME}`),
+  and `verifier.import_path` / `kwargs` (`LaminarVerifier`, unless `verify ==
+  "task"`). harbor.yaml defining any of those (images, an `agents` entry with
+  `import_path` or `name` or `env`, verifier import path / kwargs) is
+  `invalid_evals_dir`. harbor.yaml `agents` entries without them become one
+  `LaminarAgent` each with their `model_name` / extra `kwargs` (model sweep).
+  Runner `model` is the default `model_name`. Missing `datasets` and `tasks` →
+  `datasets: [{path: tasks}]`.
+- **Secrets**: describe's `secrets` are required template vars and its env's
+  `${...}` are scanned (`findTemplateVars`), so they resolve exactly like
+  harbor.yaml `${VAR}`s (shell, `.env.local`, `.env`; exit 19) and their values
+  reach the Harbor process env, where `verify()` reads them.
+- **PEP 723**: `parseScriptDependencies` (the `# /// script` block, parsed as
+  TOML) → `--with` for describe AND `harbor run` (`evalDependencies`, read from
+  the file in the orchestrator too). Note the content regex (PEP 723's own)
+  absorbs inner `# ///` lines, so two blocks only count as two when separated
+  by a non-comment line.
+- **Task files** (`ensureTaskFiles`, `task-files.ts`): before `checkRunTasks`
+  in `eval run` (so before hashing and packing; the orchestrator never writes),
+  at the start of `eval dataset push` (`--dry-run` lists), and in `eval task
+  new <dataset>/tasks/<name>`. Every non-dot dir directly under `tasks/` gets a
+  missing `task.toml` (`[task] name = <org of [dataset] name, else the folder
+  name>/<dir>`, `[environment] docker_image = <default image, or its registry
+  ref>` unless `environment/Dockerfile`, then the runner's `task_template`
+  merged per table, via smol-toml), `instruction.md` and `tests/test.sh` (0755;
+  not with `verify = "task"`, where a stub would hide a missing real one).
+  An existing `task.toml` missing `[task] name` / `docker_image` gets the key
+  INSERTED AS TEXT (`insertTomlKey`): after the table's header, or as a new
+  table above the first table and the comment lines right above it (never at
+  the top: root keys would move into it); `[environment]` is inserted first so
+  a new `[task]` lands above it. A dir name that isn't a `NAME_RULE` part fails
+  instead of writing.
+- **Remote**: `RunSpec.runners` (describe JSON by folder) is set into the cache
+  by `eval orchestrate` (paths in it are the client's; only image builds use
+  them, and those happen on the client). `RunSpec.lmnrSpec` carries
+  `LMNR_EVAL_LMNR_SPEC` when set.
+- **`LMNR_EVAL_LMNR_SPEC`** (undocumented, development): replaces
+  `lmnr==${LMNR_PYTHON_VERSION}` for describe and Harbor's `--with` (a checkout
+  path, or `lmnr @ git+https://...@branch`), to test before an lmnr release. uv
+  caches the build of a local path: after editing the checkout, `uv cache clean
+  lmnr` (it waits for other uv processes' cache lock). Local E2E (Docker
+  available in the agent sandbox): `LMNR_EVAL_LMNR_SPEC=/repos/lmnr-python node
+  dist/index.cjs eval run` from a copy of lmnr-python's `examples/agent-evals`,
+  with the shell's `LMNR_PROJECT_API_KEY` / `LMNR_LOG_LEVEL` unset (they beat
+  `.env`) and `LMNR_GRPC_PORT=8001` in its `.env`.
+- Release order: lmnr-python (with `lmnr.evals`) first, then bump
+  `LMNR_PYTHON_VERSION` here; `--remote` runs `npx lmnr-cli@<version>`, so it
+  can only be checked once both are published.
 
 ## Eval datasets (`eval dataset pull / push`)
 

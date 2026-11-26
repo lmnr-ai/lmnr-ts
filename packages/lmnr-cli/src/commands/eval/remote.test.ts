@@ -7,6 +7,7 @@ import type { LaminarClient } from "@lmnr-ai/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { imagePusher } from "./docker";
 import { SANDBOX_PROXY_PLACEHOLDER } from "./env";
+import type { EvalDescription } from "./eval-py";
 import { runDatasets } from "./harbor";
 import type { ImageDef } from "./images";
 import { packEvalsDir } from "./pack";
@@ -496,5 +497,59 @@ void describe("handleEvalOrchestrate", () => {
       harbor + 1,
     );
     expect(existsSync(marker)).toBe(true);
+  });
+
+  void it("builds an eval.py dataset's job from the spec's runner", async () => {
+    await write(
+      "support/agent/eval.py",
+      '# /// script\n# dependencies = ["x"]\n# ///\n',
+    );
+    await write(
+      "support/tasks/refund/task.toml",
+      '[task]\nname = "a/refund"\n',
+    );
+    const runner: EvalDescription = {
+      version: 1,
+      runner: "SupportEval",
+      images: { py: { kind: "registry", ref: "python:3.13" } },
+      default_image: "py",
+      model: null,
+      env: {},
+      secrets: [],
+      task_template: {},
+      verify: "runner",
+      warnings: [],
+    };
+    process.env.LMNR_EVAL_RUN = JSON.stringify({
+      datasets: ["support"],
+      overrides: {},
+      env: {},
+      images: {},
+      dockerfiles: {},
+      downloads: {},
+      taskHashes: {},
+      runners: { support: runner },
+    });
+    process.env.LMNR_PROJECT_API_KEY = "run-key";
+    let args: string[] = [];
+    let job: Record<string, unknown> = {};
+    vi.mocked(runCommand).mockImplementation(async (_command, a) => {
+      args = a;
+      job = JSON.parse(await readFile(a[a.indexOf("-c") + 1], "utf8"));
+      return 0;
+    });
+    const cwd = vi.spyOn(process, "cwd").mockReturnValue(root);
+    try {
+      await handleEvalOrchestrate();
+    } finally {
+      cwd.mockRestore();
+    }
+    expect(args).toEqual(expect.arrayContaining(["--with", "x"]));
+    expect(job.agents).toEqual([
+      expect.objectContaining({
+        import_path: "lmnr.integrations.harbor.runner:LaminarAgent",
+        kwargs: { runner: "agent/eval.py:SupportEval" },
+      }),
+    ]);
   });
 });

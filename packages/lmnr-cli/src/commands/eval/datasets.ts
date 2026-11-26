@@ -4,12 +4,19 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 
 import { invalidEvalsDir } from "../../errors";
+import {
+  applyEvalRunner,
+  EVAL_PY,
+  evalDescription,
+  hasEvalPy,
+} from "./eval-py";
 
 /**
  * A dataset is a directory directly inside the evals folder. `harbor.yaml` (a
- * Harbor JobConfig, plus our `images`) makes it runnable; `tasks/` holds its
- * tasks, and `tasks/dataset.toml` (Harbor's dataset manifest) names it in
- * Laminar and pins its task versions.
+ * Harbor JobConfig, plus our `images`) or `agent/eval.py` (an `EvalRunner`,
+ * `eval-py.ts`) makes it runnable; `tasks/` holds its tasks, and
+ * `tasks/dataset.toml` (Harbor's dataset manifest) names it in Laminar and
+ * pins its task versions.
  */
 export const DATASET_CONFIG = "harbor.yaml";
 export const TASKS_DIR = "tasks";
@@ -105,22 +112,27 @@ const assertEvalsDir = async (dir: string): Promise<string> => {
   return root;
 };
 
-/** Runnable dataset names directly inside `dir` (a `harbor.yaml`), sorted. */
+/** Whether `datasetDir` can run: it has a `harbor.yaml` or an `agent/eval.py`. */
+export const isRunnableDataset = async (datasetDir: string): Promise<boolean> =>
+  (await isFile(path.join(datasetDir, DATASET_CONFIG))) ||
+  (await hasEvalPy(datasetDir));
+
+/** Runnable dataset names directly inside `dir`, sorted. */
 export const discoverDatasets = async (dir: string): Promise<string[]> => {
   const root = await assertEvalsDir(dir);
   const entries = await readdir(root, { withFileTypes: true });
   const datasets: string[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || SKIPPED_DIRS.has(entry.name)) continue;
-    if (await isFile(path.join(root, entry.name, DATASET_CONFIG))) {
+    if (await isRunnableDataset(path.join(root, entry.name))) {
       datasets.push(entry.name);
     }
   }
   if (datasets.length === 0) {
     throw invalidEvalsDir(
-      `No datasets in ${root}: expected <dataset>/${DATASET_CONFIG} ` +
-        "directly inside it. Pass the evals folder itself (--dir), not its " +
-        "parent or a dataset.",
+      `No datasets in ${root}: expected <dataset>/${DATASET_CONFIG} or ` +
+        `<dataset>/${EVAL_PY} directly inside it. Pass the evals folder ` +
+        "itself (--dir), not its parent or a dataset.",
     );
   }
   return datasets.sort();
@@ -128,13 +140,13 @@ export const discoverDatasets = async (dir: string): Promise<string[]> => {
 
 /** Whether `datasetDir` is a dataset folder for pull / push. */
 export const isDatasetFolder = async (datasetDir: string): Promise<boolean> =>
-  (await isFile(path.join(datasetDir, DATASET_CONFIG))) ||
+  (await isRunnableDataset(datasetDir)) ||
   (await isFile(path.join(datasetDir, TASKS_DIR, DATASET_TOML)));
 
 /**
  * Folders directly inside `dir` that pull / push work on: those with a
- * `harbor.yaml` or a `tasks/dataset.toml`, sorted. Empty when `dir` doesn't
- * exist.
+ * `harbor.yaml`, an `agent/eval.py` or a `tasks/dataset.toml`, sorted. Empty
+ * when `dir` doesn't exist.
  */
 export const discoverDatasetFolders = async (
   dir: string,
@@ -169,10 +181,7 @@ export const ensureGitignore = async (dir: string): Promise<void> => {
   );
 };
 
-export const loadDatasetConfig = async (
-  datasetDir: string,
-): Promise<JobConfig> => {
-  const file = path.join(datasetDir, DATASET_CONFIG);
+const readHarborYaml = async (file: string): Promise<JobConfig> => {
   let parsed: unknown;
   try {
     parsed = parseYaml(await readFile(file, "utf8"));
@@ -184,6 +193,20 @@ export const loadDatasetConfig = async (
     throw invalidEvalsDir(`${file} must be a mapping (a Harbor JobConfig).`);
   }
   return parsed as JobConfig;
+};
+
+/**
+ * The dataset's job config, before CLI overrides: its harbor.yaml, plus, for
+ * an `agent/eval.py` dataset (harbor.yaml optional), the agent, verifier and
+ * images eval.py owns (`applyEvalRunner`; eval.py must have been described).
+ */
+export const loadDatasetConfig = async (
+  datasetDir: string,
+): Promise<JobConfig> => {
+  const file = path.join(datasetDir, DATASET_CONFIG);
+  if (!(await hasEvalPy(datasetDir))) return readHarborYaml(file);
+  const config = (await isFile(file)) ? await readHarborYaml(file) : {};
+  return applyEvalRunner(config, evalDescription(datasetDir), file);
 };
 
 /** fnmatch-style glob (`*`, `?`, `[...]`), the way Harbor filters task names. */
@@ -358,16 +381,24 @@ export const findTaskTomls = async (
   return tomls.sort();
 };
 
-/** `${VAR}` names referenced by the dataset's harbor.yaml and its tasks' task.toml files. */
+/**
+ * `${VAR}` names referenced by the dataset's harbor.yaml and its tasks'
+ * task.toml files, plus an eval.py's `secrets` (required) and `env`.
+ */
 export const findTemplateVars = async (
   datasetDir: string,
   overrides: RunOverrides,
 ): Promise<TemplateVars> => {
   const vars: TemplateVars = { required: new Set(), optional: new Set() };
-  collectTemplates(
-    await readFile(path.join(datasetDir, DATASET_CONFIG), "utf8"),
-    vars,
-  );
+  const harborYaml = path.join(datasetDir, DATASET_CONFIG);
+  if (await isFile(harborYaml)) {
+    collectTemplates(await readFile(harborYaml, "utf8"), vars);
+  }
+  if (await hasEvalPy(datasetDir)) {
+    const description = evalDescription(datasetDir);
+    for (const name of description.secrets) vars.required.add(name);
+    collectTemplates(Object.values(description.env).join("\n"), vars);
+  }
   for (const file of await findTaskTomls(datasetDir, overrides)) {
     collectTemplates(await readFile(file, "utf8"), vars);
   }

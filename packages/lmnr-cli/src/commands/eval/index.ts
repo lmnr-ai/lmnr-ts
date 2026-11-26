@@ -20,15 +20,19 @@ import {
 import {
   DATASET_CONFIG,
   discoverDatasets,
+  isRunnableDataset,
   type RunOverrides,
 } from "./datasets";
+import { describeDatasets } from "./describe";
 import { buildLocalImages } from "./docker";
 import { harborEnv, parseEnvFlags, resolveRunEnv } from "./env";
+import { EVAL_PY } from "./eval-py";
 import { assertDatasetsPassed, runDatasets } from "./harbor";
 import { LEGACY_IMAGES_FILE, localImageDefs } from "./images";
 import { startRemoteRun } from "./remote";
 import { type FollowResult, followRunLog } from "./run-log";
 import { type EvaluationLink, parseEvaluationLine } from "./run-log-lines";
+import { ensureTaskFiles } from "./task-files";
 
 const logger = initializeLogger();
 
@@ -67,28 +71,25 @@ const isFile = (file: string) =>
 
 /**
  * The folder of the requested dataset (a folder name or a `[dataset] name`;
- * it must have a harbor.yaml), else every runnable one.
+ * it must have a harbor.yaml or an agent/eval.py), else every runnable one.
  */
 const selectDatasets = async (
   evalsDir: string,
   requested: string | undefined,
 ): Promise<string[]> => {
   if (!requested) return discoverDatasets(evalsDir);
-  if (await isFile(path.join(evalsDir, requested, DATASET_CONFIG))) {
+  if (await isRunnableDataset(path.join(evalsDir, requested))) {
     return [requested];
   }
   const named = (await readDatasetFolders(evalsDir)).find(
     (f) => f.manifest?.name === requested,
   );
-  if (
-    named &&
-    (await isFile(path.join(evalsDir, named.folder, DATASET_CONFIG)))
-  ) {
+  if (named && (await isRunnableDataset(path.join(evalsDir, named.folder)))) {
     return [named.folder];
   }
   const known = await discoverDatasets(evalsDir).catch(() => []);
   throw invalidEvalsDir(
-    `Unknown dataset ${requested}: no ${DATASET_CONFIG} in ` +
+    `Unknown dataset ${requested}: no ${DATASET_CONFIG} or ${EVAL_PY} in ` +
       `${path.join(evalsDir, requested)}, and no dataset folder with that ` +
       "[dataset] name." +
       (known.length > 0 ? ` Datasets in ${evalsDir}: ${known.join(", ")}` : ""),
@@ -252,6 +253,12 @@ export const handleEvalRun = async (
     );
   }
   await warnLegacyImageFiles(evalsDir, datasets);
+  // eval.py datasets: read each runner, then write the task files Harbor
+  // needs that tasks lack, before anything hashes or packs them.
+  const runners = await describeDatasets(evalsDir, datasets);
+  for (const [folder, description] of Object.entries(runners)) {
+    await ensureTaskFiles(path.join(evalsDir, folder), description);
+  }
   // Runs the tasks on disk as they are; `eval dataset pull` syncs them.
   const taskHashes = await checkRunTasks(evalsDir, datasets, opts.task, opts);
 
@@ -288,6 +295,7 @@ export const handleEvalRun = async (
     overrides,
     env,
     taskHashes,
+    runners,
   );
   await followRemote(remote, run, datasets, opts);
 };

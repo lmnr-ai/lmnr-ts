@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -14,6 +14,7 @@ import {
   loadDatasetConfig,
   type RunOverrides,
 } from "./datasets";
+import { evalPyPath, hasEvalPy, parseScriptDependencies } from "./eval-py";
 import { type DatasetImages, datasetImages, type RemoteImages } from "./images";
 import { type CommandOutput, runCommand } from "./run-command";
 
@@ -26,11 +27,28 @@ const logger = initializeLogger();
  * between releases.
  */
 export const HARBOR_VERSION = "0.25.0";
-export const LMNR_PYTHON_VERSION = "0.9.2";
-const PYTHON_VERSION = "3.13";
+export const LMNR_PYTHON_VERSION = "0.9.3";
+export const PYTHON_VERSION = "3.13";
 const ENVIRONMENT_MODULE = "lmnr_hosted_env.py";
 /** In the staging dir: `{<task dir name>: {name, hash}}` for the plugin. */
 const TASK_HASHES_FILE = "task-hashes.json";
+
+/**
+ * The `lmnr` requirement next to Harbor and for describing eval.py.
+ * `LMNR_EVAL_LMNR_SPEC` (undocumented, for development) replaces it, e.g.
+ * with a checkout (`/path/to/lmnr-python`) or `lmnr @ git+https://...@branch`.
+ */
+export const lmnrSpec = (): string =>
+  process.env.LMNR_EVAL_LMNR_SPEC?.trim() || `lmnr==${LMNR_PYTHON_VERSION}`;
+
+/** An eval.py's PEP 723 `dependencies` (none without eval.py). */
+export const evalDependencies = async (
+  datasetDir: string,
+): Promise<string[]> => {
+  if (!(await hasEvalPy(datasetDir))) return [];
+  const file = evalPyPath(datasetDir);
+  return parseScriptDependencies(await readFile(file, "utf8"), file);
+};
 
 /** `assets/` next to `dist/` when bundled, three levels up in the source tree. */
 const environmentModulePath = (): string => {
@@ -51,20 +69,23 @@ interface PluginArgs {
    * the plugin records the dataset and each trial's task and version.
    */
   dataset?: { name: string; taskHashesFile: string };
+  /** More packages for the Harbor process: an eval.py's PEP 723 deps. */
+  dependencies?: string[];
 }
 
 /** `group` names the evaluation group: `--group`, else the dataset name, else the folder. */
 export const harborArgs = (
   configPath: string,
   group: string,
-  { grpcPort, dataset }: PluginArgs = {},
+  { grpcPort, dataset, dependencies = [] }: PluginArgs = {},
 ): string[] => [
   "--python",
   PYTHON_VERSION,
   "--from",
   `harbor==${HARBOR_VERSION}`,
   "--with",
-  `lmnr==${LMNR_PYTHON_VERSION}`,
+  lmnrSpec(),
+  ...dependencies.flatMap((dep) => ["--with", dep]),
   "harbor",
   "run",
   "-c",
@@ -135,7 +156,11 @@ const runHarborDataset = async (run: HarborRun): Promise<number> => {
       .join(path.delimiter);
     return await runCommand(
       "uvx",
-      harborArgs(configPath, run.group, { grpcPort: run.grpcPort, dataset }),
+      harborArgs(configPath, run.group, {
+        grpcPort: run.grpcPort,
+        dataset,
+        dependencies: await evalDependencies(run.datasetDir),
+      }),
       {
         cwd: run.datasetDir,
         env: {
