@@ -84,7 +84,10 @@ export interface Alert {
    * ANDed, groups are ORed. Empty = fire on every matching event.
    */
   filters: SignalFilter[][];
-  /** The rule of a `METRIC` alert; `null` for the signal alert types. */
-  rule: MetricAlertRule | null;
+  /**
+   * The rule of a `METRIC` alert; `null` for the signal alert types, and
+   * absent from a server that has no metric alerts.
+   */
+  rule?: MetricAlertRule | null;
   createdAt: string;
 }

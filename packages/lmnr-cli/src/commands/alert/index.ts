@@ -51,7 +51,8 @@ const printMetricAlert = (alert: Alert, rule: MetricAlertRule): void => {
 };
 
 const printAlert = (alert: Alert): void => {
-  if (alert.rule !== null) {
+  // A server without metric alerts leaves `rule` out.
+  if (alert.rule != null) {
     printMetricAlert(alert, alert.rule);
     return;
   }
