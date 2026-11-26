@@ -23,17 +23,23 @@ import {
   EVAL_PY,
   type EvalDescription,
   hasEvalPy,
+  taskImageNames,
 } from "./eval-py";
 
 const logger = initializeLogger();
 
 /**
  * Harbor only runs a task dir with `task.toml`, `instruction.md` and
- * `tests/test.sh`, and `task.toml` must name an image (unless the task has its
- * own `environment/Dockerfile`). For eval.py datasets lmnr-cli writes whatever
- * is missing into the task dir, so a new case is just its data. After that
- * `task.toml` is the task's source of truth: an existing one is only
- * completed (a missing key inserted as text, comments kept), never rewritten.
+ * `tests/test.sh`, and `task.toml` must name an image. For eval.py datasets
+ * lmnr-cli writes whatever is missing into the task dir, so a new case is just
+ * its data. After that `task.toml` is the task's source of truth: an existing
+ * one is only completed (a missing key inserted as text, comments kept), never
+ * rewritten.
+ *
+ * Tasks of an eval.py dataset never bring their own image: they start from one
+ * the runner declares (`checkTaskImage`). Harbor would build or pull any other
+ * image itself, without what the runner adds to its images (services and the
+ * Laminar layer in later phases).
  */
 export const INSTRUCTION_STUB = "Handle the case in this task.\n";
 export const TEST_SH_STUB = `#!/bin/bash\necho "graded by ${EVAL_PY}"\n`;
@@ -56,8 +62,10 @@ const exists = (file: string) =>
 export interface TaskDefaults {
   /** The `[task] name` org: the `[dataset] name`'s, else the folder name. */
   org: string;
-  /** `[environment] docker_image`. */
+  /** `[environment] docker_image` of new tasks: the runner's default image. */
   image: string;
+  /** Every `docker_image` a task may name: the runner's images. */
+  images: string[];
   /** The runner's `task_template`. */
   template: Record<string, unknown>;
   /**
@@ -84,20 +92,17 @@ export const taskDefaults = async (
   return {
     org,
     image: defaultTaskImage(description),
+    images: taskImageNames(description),
     template: description.task_template,
     testShStub: description.verify === "runner",
   };
 };
 
 /** A new task's `task.toml`: its name, the default image, then the template. */
-export const newTaskToml = (
-  name: string,
-  defaults: TaskDefaults,
-  hasDockerfile: boolean,
-): string => {
+export const newTaskToml = (name: string, defaults: TaskDefaults): string => {
   const doc: Record<string, unknown> = {
     task: { name },
-    environment: hasDockerfile ? {} : { docker_image: defaults.image },
+    environment: { docker_image: defaults.image },
   };
   for (const [key, value] of Object.entries(defaults.template)) {
     const current = doc[key];
@@ -105,9 +110,6 @@ export const newTaskToml = (
       isRecord(current) && isRecord(value) ? { ...current, ...value } : value;
   }
   (doc.task as Record<string, unknown>).name = name;
-  if (isRecord(doc.environment) && Object.keys(doc.environment).length === 0) {
-    delete doc.environment;
-  }
   return stringifyToml(doc);
 };
 
@@ -157,9 +159,54 @@ export interface TaskFileChange {
   added?: string[];
 }
 
+const readTaskToml = async (
+  tomlFile: string,
+): Promise<{ text: string; doc: Record<string, unknown> } | null> => {
+  const text = await readFile(tomlFile, "utf8").catch(() => null);
+  if (text === null) return null;
+  try {
+    return { text, doc: parseToml(text) };
+  } catch (error) {
+    throw invalidEvalsDir(`Can't parse ${tomlFile}: ${errorMessage(error)}`);
+  }
+};
+
+/**
+ * Fail unless `taskDir` starts from one of the runner's images: no
+ * `environment/Dockerfile`, and a `docker_image` (if set) the runner declares.
+ */
+export const checkTaskImage = async (
+  datasetDir: string,
+  taskDir: string,
+  defaults: TaskDefaults,
+): Promise<void> => {
+  const rel = path.relative(datasetDir, taskDir).split(path.sep).join("/");
+  const hint =
+    `Tasks of an ${EVAL_PY} dataset start from one of its runner's images ` +
+    `(${defaults.images.join(", ")}). For a different system, declare a ` +
+    `named image on the runner (image = {"default": ..., "<name>": ...}) ` +
+    `and set docker_image = "<name>" in the task's task.toml.`;
+  if (await exists(path.join(taskDir, "environment", "Dockerfile"))) {
+    throw invalidEvalsDir(
+      `${rel}/environment/Dockerfile: a task can't bring its own image. ${hint}`,
+    );
+  }
+  const toml = await readTaskToml(path.join(taskDir, "task.toml"));
+  const environment = isRecord(toml?.doc.environment)
+    ? toml.doc.environment
+    : {};
+  const image = environment.docker_image;
+  if (typeof image === "string" && !defaults.images.includes(image)) {
+    throw invalidEvalsDir(
+      `${rel}/task.toml: docker_image = ${tomlString(image)} isn't one of ` +
+        `the runner's images. ${hint}`,
+    );
+  }
+};
+
 /**
  * Write the files Harbor needs that `taskDir` lacks. With `dryRun`, only
- * report them.
+ * report them. Checks the task's image first (`checkTaskImage`).
  */
 export const ensureTaskDirFiles = async (
   datasetDir: string,
@@ -181,29 +228,19 @@ export const ensureTaskDirFiles = async (
       );
     }
   };
-  const hasDockerfile = await exists(
-    path.join(taskDir, "environment", "Dockerfile"),
-  );
+  await checkTaskImage(datasetDir, taskDir, defaults);
 
   const tomlFile = path.join(taskDir, "task.toml");
-  const text = await readFile(tomlFile, "utf8").catch(() => null);
-  if (text === null) {
+  const toml = await readTaskToml(tomlFile);
+  if (toml === null) {
     assertNamePart();
-    if (!dryRun) {
-      await writeFile(tomlFile, newTaskToml(name, defaults, hasDockerfile));
-    }
+    if (!dryRun) await writeFile(tomlFile, newTaskToml(name, defaults));
     changes.push({ file: rel(tomlFile), change: "created" });
   } else {
-    let doc: Record<string, unknown>;
-    try {
-      doc = parseToml(text);
-    } catch (error) {
-      throw invalidEvalsDir(`Can't parse ${tomlFile}: ${errorMessage(error)}`);
-    }
+    const { text, doc } = toml;
     const needsName = !isRecord(doc.task) || typeof doc.task.name !== "string";
     const environment = isRecord(doc.environment) ? doc.environment : {};
-    const needsImage =
-      !hasDockerfile && typeof environment.docker_image !== "string";
+    const needsImage = typeof environment.docker_image !== "string";
     // [environment] first, so a new [task] table lands above it.
     let updated = text;
     const added: string[] = [];
@@ -289,8 +326,13 @@ export const ensureTaskFiles = async (
   log = true,
 ): Promise<TaskFileChange[]> => {
   const defaults = await taskDefaults(datasetDir, description);
+  const dirs = await taskDirs(datasetDir);
+  // Every task's image first, so a bad one stops the run before any write.
+  for (const taskDir of dirs) {
+    await checkTaskImage(datasetDir, taskDir, defaults);
+  }
   const changes: TaskFileChange[] = [];
-  for (const taskDir of await taskDirs(datasetDir)) {
+  for (const taskDir of dirs) {
     changes.push(
       ...(await ensureTaskDirFiles(datasetDir, taskDir, defaults, dryRun)),
     );

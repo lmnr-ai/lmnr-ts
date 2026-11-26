@@ -189,6 +189,7 @@ void describe("eval run with an eval.py dataset", () => {
           context: path.join(root, "evals/support/agent"),
         },
       },
+      modules: ["_shared/support.py", "support/agent/eval.py"],
     });
     const calls: {
       command: string;
@@ -228,6 +229,13 @@ void describe("eval run with an eval.py dataset", () => {
       "--with",
       "anthropic>=1",
     ]);
+    // The runner's modules, for the Files view of a remote run.
+    expect(harbor?.args).toEqual(
+      expect.arrayContaining([
+        "--pk",
+        'runner_modules=["_shared/support.py","support/agent/eval.py"]',
+      ]),
+    );
     // Secrets reach the Harbor process, where verify() reads them.
     expect(harbor?.env).toEqual(
       expect.objectContaining({ APP_KEY: "app", JUDGE_KEY: "judge" }),

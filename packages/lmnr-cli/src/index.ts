@@ -705,7 +705,13 @@ image, the runner's task_template), instruction.md and a stub tests/test.sh.
 A task.toml that exists is only completed, never rewritten. A harbor.yaml
 next to eval.py may set job settings (concurrency, attempts, environment,
 datasets) and model sweeps (agents entries with only model_name), but not
-images, agent import paths or env, or the verifier's import path.
+images, agent import paths or env, or the verifier's import path. Tasks start
+from the runner's images only: a task's own environment/Dockerfile, or a
+docker_image the runner doesn't declare, fails the run (declare a named image
+on the runner instead). Folders in the evals folder that aren't datasets (e.g.
+_shared/) hold Python modules every eval.py can import, such as a shared
+runner to subclass; relative paths resolve against the file that declares
+them.
 
 Images: tasks name their image with docker_image in task.toml. Images listed
 under images in harbor.yaml (lmnr-cli's key; Harbor ignores it) are built from
@@ -765,7 +771,8 @@ task dirs that lack them, so copying a data-only dir into tasks/ works too.
 
 Exit codes:
   16  invalid_evals_dir (not <dataset>/tasks/<name>, no agent/eval.py, an
-      eval.py that doesn't load, an invalid name)
+      eval.py that doesn't load, an invalid name, a task image the runner
+      doesn't declare)
   17  missing_tool (uv not installed)
 
 Examples:

@@ -283,8 +283,7 @@
   new <dataset>/tasks/<name>`. Every non-dot dir directly under `tasks/` gets a
   missing `task.toml` (`[task] name = <org of [dataset] name, else the folder
   name>/<dir>`, `[environment] docker_image = <default image, or its registry
-  ref>` unless `environment/Dockerfile`, then the runner's `task_template`
-  merged per table, via smol-toml), `instruction.md` and `tests/test.sh` (0755;
+  ref>`, then the runner's `task_template` merged per table, via smol-toml), `instruction.md` and `tests/test.sh` (0755;
   not with `verify = "task"`, where a stub would hide a missing real one).
   An existing `task.toml` missing `[task] name` / `docker_image` gets the key
   INSERTED AS TEXT (`insertTomlKey`): after the table's header, or as a new
@@ -292,6 +291,24 @@
   the top: root keys would move into it); `[environment]` is inserted first so
   a new `[task]` lands above it. A dir name that isn't a `NAME_RULE` part fails
   instead of writing.
+- **Task image rules** (`checkTaskImage`, main doc 2.1.2): a task of an
+  eval.py dataset never brings its own image. An `environment/Dockerfile`, or
+  a `docker_image` not in `taskImageNames` (image names; a registry image's
+  ref), is `invalid_evals_dir` with a hint to declare a named image on the
+  runner. `ensureTaskFiles` checks every task before writing any file (so
+  `eval run`, `eval dataset push` and its `--dry-run` fail first), and `eval
+  task new` checks its dir. Harbor would otherwise build or pull that image
+  itself, without what the runner adds (services, the Laminar layer: phases
+  2-3).
+- **Shared runners**: folders in the evals root that are neither a dataset
+  (`isRunnableDataset`) nor skipped hold shared Python (`_shared/`); lmnr
+  puts the evals root on `sys.path`. Discovery already ignores them and remote
+  runs pack them (`remoteExclude` drops only OTHER dataset folders). Describe's
+  optional `modules` (the runner's files relative to the evals root) go to
+  the plugin as `--pk runner_modules=<JSON>` (`harborArgs`), local and in the
+  orchestrator (from `RunSpec.runners`); the plugin puts the ones outside the
+  dataset's `agent/` into `hosted_metadata.runnerModules` for the Files view's
+  `runner/` folder.
 - **Remote**: `RunSpec.runners` (describe JSON by folder) is set into the cache
   by `eval orchestrate` (paths in it are the client's; only image builds use
   them, and those happen on the client). `RunSpec.lmnrSpec` carries

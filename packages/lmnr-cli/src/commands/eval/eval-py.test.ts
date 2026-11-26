@@ -357,8 +357,8 @@ void describe("task files", () => {
     ).rejects.toThrow();
   });
 
-  void it("merges the template and skips docker_image for a task Dockerfile", async () => {
-    await write("support/tasks/own/environment/Dockerfile", "FROM x");
+  void it("merges the template into a new task.toml", async () => {
+    await write("support/tasks/own/environment/case.json", "{}");
     await ensureTaskFiles(
       datasetDir(),
       description({
@@ -370,8 +370,51 @@ void describe("task files", () => {
     );
     // No dataset.toml: the org is the folder name.
     expect(await read("support/tasks/own/task.toml")).toBe(
-      '[task]\nname = "support/own"\n\n[environment]\ncpus = 2\n\n' +
+      '[task]\nname = "support/own"\n\n[environment]\n' +
+        'docker_image = "support-evals"\ncpus = 2\n\n' +
         '[verifier.env]\nK = "${K}"\n',
+    );
+  });
+
+  void it("rejects a task Dockerfile before writing anything", async () => {
+    await write("support/tasks/a-new/environment/case.json", "{}");
+    await write("support/tasks/own/environment/Dockerfile", "FROM x");
+    await expect(ensureTaskFiles(datasetDir(), description())).rejects.toThrow(
+      expect.objectContaining({
+        code: "invalid_evals_dir",
+        message: expect.stringMatching(
+          /tasks\/own\/environment\/Dockerfile: a task can't bring its own image\. .*\(support-evals\).*docker_image = "<name>"/,
+        ),
+      }),
+    );
+    // Checked before the other task got its files.
+    await expect(
+      stat(path.join(root, "support/tasks/a-new/task.toml")),
+    ).rejects.toThrow();
+  });
+
+  void it("only allows docker_images the runner declares", async () => {
+    const images: EvalDescription["images"] = {
+      "support-evals": {
+        kind: "dockerfile",
+        dockerfile: "/abs/Dockerfile",
+        context: "/abs",
+      },
+      slim: { kind: "registry", ref: "python:3.13-slim" },
+    };
+    await write(
+      "support/tasks/ocr/task.toml",
+      '[task]\nname = "a/ocr"\n[environment]\ndocker_image = "python:3.13-slim"\n',
+    );
+    await ensureTaskFiles(datasetDir(), description({ images }));
+    await write(
+      "support/tasks/ocr/task.toml",
+      '[task]\nname = "a/ocr"\n[environment]\ndocker_image = "ubuntu:24.04"\n',
+    );
+    await expect(
+      ensureTaskFiles(datasetDir(), description({ images })),
+    ).rejects.toThrow(
+      "tasks/ocr/task.toml: docker_image = \"ubuntu:24.04\" isn't one of the runner's images",
     );
   });
 

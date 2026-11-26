@@ -43,6 +43,12 @@ export interface EvalDescription {
   /** `runner`: grade with `verify()`; `task`: with each task's tests/test.sh. */
   verify: "runner" | "task";
   warnings: string[];
+  /**
+   * The runner's module files, relative to the evals root (`eval.py` and any
+   * shared module it imports, e.g. `_shared/support.py`). Optional: older lmnr
+   * versions don't report it.
+   */
+  modules?: string[];
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -62,10 +68,21 @@ export const runnerRef = (description: EvalDescription): string =>
   `${EVAL_PY}:${description.runner}`;
 
 /** What a new task's `docker_image` is: the image's name, or its registry ref. */
-export const defaultTaskImage = (description: EvalDescription): string => {
-  const image = description.images[description.default_image];
-  return image?.kind === "registry" ? image.ref : description.default_image;
-};
+/** What a task names in `docker_image` for an image: its name, or a registry image's ref. */
+const taskImageName = (name: string, image: EvalImage | undefined): string =>
+  image?.kind === "registry" ? image.ref : name;
+
+export const defaultTaskImage = (description: EvalDescription): string =>
+  taskImageName(
+    description.default_image,
+    description.images[description.default_image],
+  );
+
+/** Every `docker_image` a task of the dataset may name. */
+export const taskImageNames = (description: EvalDescription): string[] =>
+  Object.entries(description.images).map(([name, image]) =>
+    taskImageName(name, image),
+  );
 
 const PEP_723_BLOCK =
   /^# \/\/\/ ([a-zA-Z0-9-]+)[ \t]*\r?\n((?:^#(?:| .*)\r?\n)*)^# \/\/\/[ \t]*$/gm;

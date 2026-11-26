@@ -14,7 +14,12 @@ import {
   loadDatasetConfig,
   type RunOverrides,
 } from "./datasets";
-import { evalPyPath, hasEvalPy, parseScriptDependencies } from "./eval-py";
+import {
+  evalDescription,
+  evalPyPath,
+  hasEvalPy,
+  parseScriptDependencies,
+} from "./eval-py";
 import { type DatasetImages, datasetImages, type RemoteImages } from "./images";
 import { type CommandOutput, runCommand } from "./run-command";
 
@@ -71,13 +76,15 @@ interface PluginArgs {
   dataset?: { name: string; taskHashesFile: string };
   /** More packages for the Harbor process: an eval.py's PEP 723 deps. */
   dependencies?: string[];
+  /** An eval.py runner's module files, for the Files view (`runner_modules`). */
+  runnerModules?: string[];
 }
 
 /** `group` names the evaluation group: `--group`, else the dataset name, else the folder. */
 export const harborArgs = (
   configPath: string,
   group: string,
-  { grpcPort, dataset, dependencies = [] }: PluginArgs = {},
+  { grpcPort, dataset, dependencies = [], runnerModules = [] }: PluginArgs = {},
 ): string[] => [
   "--python",
   PYTHON_VERSION,
@@ -102,6 +109,9 @@ export const harborArgs = (
         "--pk",
         `task_hashes_file=${dataset.taskHashesFile}`,
       ]
+    : []),
+  ...(runnerModules.length > 0
+    ? ["--pk", `runner_modules=${JSON.stringify(runnerModules)}`]
     : []),
   // The plugin exports spans over gRPC (8443 unless told otherwise).
   ...(grpcPort ? ["--pk", `grpc_port=${grpcPort}`] : []),
@@ -160,6 +170,9 @@ const runHarborDataset = async (run: HarborRun): Promise<number> => {
         grpcPort: run.grpcPort,
         dataset,
         dependencies: await evalDependencies(run.datasetDir),
+        runnerModules: (await hasEvalPy(run.datasetDir))
+          ? (evalDescription(run.datasetDir).modules ?? [])
+          : [],
       }),
       {
         cwd: run.datasetDir,
