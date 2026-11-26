@@ -59,7 +59,7 @@ const exists = (file: string) =>
   );
 
 /** What new tasks of a dataset get. */
-export interface TaskDefaults {
+interface TaskDefaults {
   /** The `[task] name` org: the `[dataset] name`'s, else the folder name. */
   org: string;
   /** `[environment] docker_image` of new tasks: the runner's default image. */
@@ -75,7 +75,7 @@ export interface TaskDefaults {
   testShStub: boolean;
 }
 
-export const taskDefaults = async (
+const taskDefaults = async (
   datasetDir: string,
   description: EvalDescription,
 ): Promise<TaskDefaults> => {
@@ -99,7 +99,7 @@ export const taskDefaults = async (
 };
 
 /** A new task's `task.toml`: its name, the default image, then the template. */
-export const newTaskToml = (name: string, defaults: TaskDefaults): string => {
+const newTaskToml = (name: string, defaults: TaskDefaults): string => {
   const doc: Record<string, unknown> = {
     task: { name },
     environment: { docker_image: defaults.image },
@@ -152,7 +152,7 @@ export const insertTomlKey = (
 const tomlString = (value: string) => JSON.stringify(value);
 
 /** A written (or, dry, would-be-written) file, relative to the dataset folder. */
-export interface TaskFileChange {
+interface TaskFileChange {
   file: string;
   change: "created" | "completed";
   /** For a completed task.toml: the keys added. */
@@ -175,7 +175,7 @@ const readTaskToml = async (
  * Fail unless `taskDir` starts from one of the runner's images: no
  * `environment/Dockerfile`, and a `docker_image` (if set) the runner declares.
  */
-export const checkTaskImage = async (
+const checkTaskImage = async (
   datasetDir: string,
   taskDir: string,
   defaults: TaskDefaults,
@@ -208,7 +208,7 @@ export const checkTaskImage = async (
  * Write the files Harbor needs that `taskDir` lacks. With `dryRun`, only
  * report them. Checks the task's image first (`checkTaskImage`).
  */
-export const ensureTaskDirFiles = async (
+const ensureTaskDirFiles = async (
   datasetDir: string,
   taskDir: string,
   defaults: TaskDefaults,
@@ -293,7 +293,7 @@ const taskDirs = async (datasetDir: string): Promise<string[]> => {
     .sort();
 };
 
-export const logTaskFileChanges = (
+const logTaskFileChanges = (
   folder: string,
   changes: TaskFileChange[],
   dryRun = false,

@@ -37,6 +37,7 @@ Work inside a specific package with `pnpm --filter @lmnr-ai/lmnr ...` or `cd pac
 ## Coding Style
 
 - Prefer arrow functions: `const foo = async (...) => { ... }` over named `function foo()`.
+- Export a name only when another module (a test counts) imports it. Keep a file's helpers, constants and types unexported otherwise, so its exports read as its interface; drop an `export` once its last importer goes away.
 - Rely on pre-commit hooks; don't run project-wide type-checks manually.
 - Use `errorMessage(err)` from `@lmnr-ai/types` for stringifying unknown error values. `@lmnr-ai/types/utils.ts` is the canonical home for small shared runtime helpers that all packages can depend on (it already has a runtime build, not just types).
 

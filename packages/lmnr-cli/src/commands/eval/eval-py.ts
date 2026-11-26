@@ -19,9 +19,9 @@ export const LAMINAR_AGENT_IMPORT_PATH =
 export const LAMINAR_VERIFIER_IMPORT_PATH =
   "lmnr.integrations.harbor.runner:LaminarVerifier";
 /** The `version` of describe's JSON this CLI reads. */
-export const DESCRIBE_VERSION = 1;
+const DESCRIBE_VERSION = 1;
 
-export type EvalImage =
+type EvalImage =
   | { kind: "dockerfile"; dockerfile: string; context: string }
   | { kind: "registry"; ref: string };
 
@@ -57,7 +57,7 @@ export interface EvalDescription {
   artifacts?: EvalArtifact[];
 }
 
-export type EvalArtifact =
+type EvalArtifact =
   | string
   | { source: string; destination?: string; exclude?: string[] };
 
@@ -74,7 +74,7 @@ export const hasEvalPy = (datasetDir: string): Promise<boolean> =>
   );
 
 /** `agents[].kwargs.runner`: relative to Harbor's cwd, the dataset folder. */
-export const runnerRef = (description: EvalDescription): string =>
+const runnerRef = (description: EvalDescription): string =>
   `${EVAL_PY}:${description.runner}`;
 
 /** What a new task's `docker_image` is: the image's name, or its registry ref. */
