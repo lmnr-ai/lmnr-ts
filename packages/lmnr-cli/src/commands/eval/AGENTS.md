@@ -68,7 +68,10 @@
     `packFiles` and sent with `uploadJob` + `uploadJobIndex` (`LMNR_EVAL_UPLOAD_ID`,
     run key). Job-level files and `steps/*/artifacts` are left out;
     `<trial>/artifacts` is kept (an `eval.py` runner grades from it; the Files
-    view shows it as `logs/artifacts/`); files over 50 MiB and anything past 256 MiB are skipped. A
+    view shows it as `logs/artifacts/`) but packed after every trial's other
+    files, from what the cap leaves, so copied app state never pushes out a
+    log (the walk is in name order: `artifacts/` would come before
+    `trial.log`); files over 50 MiB and anything past 256 MiB are skipped. A
     failure only warns. The sandbox (and the job) is deleted after the run, so
     this is the only copy.
   - **No extra secret pass:** Harbor scrubs each trial dir before `harbor run`
