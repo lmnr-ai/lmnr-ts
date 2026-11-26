@@ -1,4 +1,6 @@
-import { readFile, stat } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { invalidEvalsDir } from "../../errors";
@@ -8,6 +10,12 @@ import {
   loadDatasetConfig,
   type RunOverrides,
 } from "./datasets";
+import {
+  type EvalDescription,
+  evalDescription,
+  type GeneratedImage,
+  hasEvalPy,
+} from "./eval-py";
 
 /** Where images used to be declared; a leftover one only warns. */
 export const LEGACY_IMAGES_FILE = "lmnr.yaml";
@@ -17,7 +25,139 @@ export interface ImageDef {
   name: string;
   dockerfile: string;
   context: string;
+  /**
+   * The ignore file to build with, instead of `<Dockerfile>.dockerignore` or
+   * the context's `.dockerignore` (a generated image's `ignore_file`).
+   */
+  ignoreFile?: string;
+  /** `dockerfile` is a generated one (`generatedImageDef`). */
+  generated?: boolean;
 }
+
+/** BuildKit parser directives: only at the top, and they change the build. */
+const PARSER_DIRECTIVE = /^#\s*(syntax|escape|check)\s*=/i;
+/** A heredoc start (`<<EOF`, `<<-'EOF'`); its body runs until the delimiter line. */
+const HEREDOC = /<<(-?)(["']?)([A-Za-z_][A-Za-z0-9_]*)\2/g;
+
+/**
+ * The part of a Dockerfile that decides what is built: comment lines (a
+ * generated Dockerfile's provenance) are dropped, except the parser
+ * directives at the top and heredoc lines, which are content (a shebang, a
+ * written file).
+ */
+export const dockerfileForHash = (text: string): string => {
+  const kept: string[] = [];
+  const heredocs: { delimiter: string; tabs: boolean }[] = [];
+  let header = true;
+  for (const line of text.split(/\r?\n/)) {
+    if (heredocs.length > 0) {
+      kept.push(line);
+      const { delimiter, tabs } = heredocs[0];
+      if ((tabs ? line.replace(/^\t+/, "") : line) === delimiter) {
+        heredocs.shift();
+      }
+      continue;
+    }
+    if (header && PARSER_DIRECTIVE.test(line)) {
+      kept.push(line);
+      continue;
+    }
+    header = false;
+    if (line.trimStart().startsWith("#")) continue;
+    kept.push(line);
+    for (const m of line.matchAll(HEREDOC)) {
+      heredocs.push({ delimiter: m[3], tabs: m[1] === "-" });
+    }
+  }
+  return kept.join("\n");
+};
+
+/**
+ * Generated Dockerfiles are built from `<tmp>/lmnr-generated/<hash>/Dockerfile`,
+ * `hash` covering what decides the build: the Dockerfile minus its comments
+ * (`dockerfileForHash`), the context, the ignore file's path and content. Two
+ * images (or datasets) with one definition get one path, so a run builds and
+ * pushes them once, whatever their provenance comments say.
+ */
+const generatedImageDef = async (
+  name: string,
+  image: GeneratedImage,
+): Promise<ImageDef> => {
+  const ignoreText = image.ignore_file
+    ? await readFile(image.ignore_file, "utf8").catch(() => "")
+    : "";
+  const hash = createHash("sha256")
+    .update(
+      [
+        dockerfileForHash(image.dockerfile_text),
+        image.context,
+        image.ignore_file ?? "",
+        ignoreText,
+      ].join("\0"),
+    )
+    .digest("hex");
+  const dir = path.join(tmpdir(), "lmnr-generated", hash);
+  const dockerfile = path.join(dir, "Dockerfile");
+  await mkdir(dir, { recursive: true });
+  // Written whole, then renamed: another run may be reading the same path.
+  const partial = `${dockerfile}.${randomBytes(6).toString("hex")}`;
+  await writeFile(partial, image.dockerfile_text);
+  await rename(partial, dockerfile);
+  return {
+    name,
+    dockerfile,
+    context: image.context,
+    ...(image.ignore_file ? { ignoreFile: image.ignore_file } : {}),
+    generated: true,
+  };
+};
+
+/** The images an eval.py runner builds: its Dockerfile and generated ones. */
+const evalImageDefs = async (
+  description: EvalDescription,
+): Promise<ImageDef[]> => {
+  const defs: ImageDef[] = [];
+  for (const [name, image] of Object.entries(description.images)) {
+    if (image.kind === "dockerfile") {
+      defs.push({ name, dockerfile: image.dockerfile, context: image.context });
+    } else if (image.kind === "generated") {
+      defs.push(await generatedImageDef(name, image));
+    }
+  }
+  return defs;
+};
+
+/** One build per definition: images whose builds this says are the same. */
+const buildKey = (def: ImageDef): string =>
+  [def.dockerfile, def.context, def.ignoreFile ?? ""].join("\0");
+
+/** A generated Dockerfile's file name where runs keep it for review. */
+export const generatedDockerfileName = (image: string): string =>
+  `${image.replace(/[^A-Za-z0-9._-]/g, "_")}.Dockerfile`;
+
+/** Where a remote run's upload holds them, in each dataset folder. */
+export const GENERATED_UPLOAD_DIR = "agent/.generated";
+
+/**
+ * The generated Dockerfiles of the images the run's tasks in this eval.py
+ * dataset use, by file name (`generatedDockerfileName`), as describe printed
+ * them (provenance comments included): runs keep them for review.
+ */
+export const generatedDockerfiles = async (
+  datasetDir: string,
+  overrides: RunOverrides,
+): Promise<Record<string, string>> => {
+  if (!(await hasEvalPy(datasetDir))) return {};
+  const used = new Set((await findTaskImages(datasetDir, overrides)).images);
+  return Object.fromEntries(
+    Object.entries(evalDescription(datasetDir).images).flatMap(
+      ([name, image]) =>
+        image.kind === "generated" && used.has(name)
+          ? [[generatedDockerfileName(name), image.dockerfile_text]]
+          : [],
+    ),
+  );
+};
 
 /**
  * Every image a remote run uses, as pushed manifest digests, by dataset (each
@@ -55,11 +195,15 @@ interface RawImage {
 /**
  * The images `<datasetDir>/harbor.yaml` declares under `images` (lmnr-cli's
  * key, not Harbor's: it is dropped from the job config Harbor gets), paths
- * relative to the dataset dir.
+ * relative to the dataset dir; for an eval.py dataset, the runner's
+ * Dockerfile and generated images (registry images are no build).
  */
 export const loadImageDefs = async (
   datasetDir: string,
 ): Promise<ImageDef[]> => {
+  if (await hasEvalPy(datasetDir)) {
+    return evalImageDefs(evalDescription(datasetDir));
+  }
   const file = path.join(datasetDir, DATASET_CONFIG);
   const images = (await loadDatasetConfig(datasetDir)).images;
   if (images == null) return [];
@@ -86,38 +230,50 @@ export const loadImageDefs = async (
 };
 
 /**
- * The harbor.yaml images a local run's tasks start from, each dataset's own.
- * Harbor builds per-task Dockerfiles and pulls other images itself. Local
- * builds are tagged with the image's name, so two datasets of one run can't
- * define a name differently.
+ * The images a local run's tasks start from that lmnr-cli builds (harbor.yaml
+ * images, an eval.py runner's Dockerfile and generated ones), each dataset's
+ * own, grouped into one entry per build (`buildKey`) with every name to tag it
+ * with. Harbor builds per-task Dockerfiles and pulls other images itself.
+ * Local builds are tagged with the image's name, so two datasets of one run
+ * can't define a name differently (generated ones: differently but for
+ * comments).
  */
 export const localImageDefs = async (
   evalsDir: string,
   datasets: string[],
   overrides: RunOverrides,
-): Promise<ImageDef[]> => {
-  const defs = new Map<string, ImageDef & { dataset: string }>();
+): Promise<LocalBuild[]> => {
+  const byName = new Map<string, { key: string; dataset: string }>();
+  const builds = new Map<string, LocalBuild>();
   for (const dataset of datasets) {
     const datasetDir = path.join(evalsDir, dataset);
     const used = new Set((await findTaskImages(datasetDir, overrides)).images);
     for (const def of await loadImageDefs(datasetDir)) {
       if (!used.has(def.name)) continue;
-      const seen = defs.get(def.name);
-      if (
-        seen &&
-        (seen.dockerfile !== def.dockerfile || seen.context !== def.context)
-      ) {
+      const key = buildKey(def);
+      const seen = byName.get(def.name);
+      if (seen && seen.key !== key) {
         throw invalidEvalsDir(
-          `Image ${def.name} is defined differently by the harbor.yaml of ` +
-            `${seen.dataset} and ${dataset}; local builds are tagged by ` +
-            "name, so run these datasets separately or rename one image.",
+          `Image ${def.name} is defined differently by ${seen.dataset} and ` +
+            `${dataset}; local builds are tagged by name, so run these ` +
+            "datasets separately or rename one image.",
         );
       }
-      if (!seen) defs.set(def.name, { ...def, dataset });
+      if (seen) continue;
+      byName.set(def.name, { key, dataset });
+      const build = builds.get(key);
+      if (build) build.tags.push(def.name);
+      else builds.set(key, { def, tags: [def.name] });
     }
   }
-  return [...defs.values()].map(({ dataset: _dataset, ...def }) => def);
+  return [...builds.values()];
 };
+
+/** One local build: `def`, tagged with each name that defines it so. */
+export interface LocalBuild {
+  def: ImageDef;
+  tags: string[];
+}
 
 const DOCKER_IMAGE = /^\s*docker_image\s*=\s*["']([^"']+)["']/m;
 
@@ -174,7 +330,9 @@ export const dockerfileKey = (
  * Push every image the run's tasks use, so Laminar sandboxes can start from
  * them: per-task Dockerfiles and the harbor.yaml images tasks reference (each
  * dataset's own) are built here, other `docker_image`s are pulled. An image
- * is pushed once per run: builds by Dockerfile and context, pulls by ref.
+ * is pushed once per run: builds by Dockerfile, context and ignore file
+ * (generated Dockerfiles by content), pulls by ref; each name it has maps to
+ * its digest.
  */
 export const ensureRemoteImages = async (
   evalsDir: string,
@@ -185,7 +343,7 @@ export const ensureRemoteImages = async (
   const built = new Map<string, string>();
   const pulled = new Map<string, string>();
   const build = async (def: ImageDef) => {
-    const key = `${def.dockerfile}\0${def.context}`;
+    const key = buildKey(def);
     let digest = built.get(key);
     if (digest === undefined) {
       digest = await pusher.build(def);

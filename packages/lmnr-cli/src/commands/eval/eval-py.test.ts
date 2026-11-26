@@ -127,6 +127,43 @@ void describe("parseDescription", () => {
       /printed no JSON/,
     );
   });
+
+  void it("reads generated images, steps, services and classes", () => {
+    const desc = description({
+      images: {
+        "support-evals": {
+          kind: "generated",
+          dockerfile_text: "FROM python:3.13-slim\n",
+          context: "/abs",
+          ignore_file: "/abs/app.Dockerfile.dockerignore",
+          steps: [{ origin: "_shared/support.py:12", step: "python 3.13" }],
+        },
+      },
+      services: [
+        {
+          name: "postgres",
+          kind: "Postgres",
+          version: "16",
+          source: "postgres:16-bookworm",
+          env: ["DATABASE_URL"],
+          origin: "_shared/support.py:15 (SupportRunner)",
+        },
+      ],
+      classes: [{ name: "SupportEval", file: "support/agent/eval.py" }],
+    });
+    expect(parseDescription(JSON.stringify(desc), "eval.py")).toEqual(desc);
+    for (const image of [
+      { kind: "generated", context: "/abs" },
+      { kind: "nix", ref: "x" },
+    ]) {
+      expect(() =>
+        parseDescription(
+          JSON.stringify({ ...desc, images: { "support-evals": image } }),
+          "eval.py",
+        ),
+      ).toThrow(/unexpected shape/);
+    }
+  });
 });
 
 void describe("applyEvalRunner", () => {
@@ -148,12 +185,6 @@ void describe("applyEvalRunner", () => {
         kwargs: RUNNER_KWARGS,
       },
       datasets: [{ path: "tasks" }],
-      images: {
-        "support-evals": {
-          dockerfile: "/abs/support/agent/Dockerfile",
-          context: "/abs",
-        },
-      },
     });
   });
 

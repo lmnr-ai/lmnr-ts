@@ -1,12 +1,12 @@
 import path from "node:path";
 
 import { invalidEvalsDir } from "../../errors";
-import { initializeLogger } from "../../utils/logger";
 import {
   EVAL_PY,
   type EvalDescription,
   evalPyPath,
   hasEvalPy,
+  logEvalWarnings,
   parseDescription,
   setEvalDescription,
 } from "./eval-py";
@@ -17,8 +17,6 @@ import {
   pythonRequirements,
 } from "./harbor";
 import { captureCommand } from "./run-command";
-
-const logger = initializeLogger();
 
 /** uv's own progress lines, which say nothing about the user's file. */
 const UV_NOISE =
@@ -42,11 +40,14 @@ export const describeArgs = (requirements: string[]): string[] => [
 
 /**
  * Import the dataset's `agent/eval.py` with `lmnr` and `pythonRequirements`,
- * and read its `EvalRunner`: images, env, secrets, task template. Its warnings are logged; an import or configuration error is
- * `invalid_evals_dir` with Python's message.
+ * and read its `EvalRunner`: images, env, secrets, task template. Its
+ * warnings are logged unless `logWarnings` is false (`eval describe` prints
+ * them); an import or configuration error is `invalid_evals_dir` with
+ * Python's message.
  */
 export const describeEvalPy = async (
   datasetDir: string,
+  { logWarnings = true }: { logWarnings?: boolean } = {},
 ): Promise<EvalDescription> => {
   const file = evalPyPath(datasetDir);
   const { code, stdout, stderr } = await captureCommand(
@@ -67,10 +68,7 @@ export const describeEvalPy = async (
     throw invalidEvalsDir(`Can't load ${file}:\n${message}${hint}`);
   }
   const description = parseDescription(stdout, file);
-  const folder = path.basename(datasetDir);
-  for (const warning of description.warnings) {
-    logger.warn(`${folder}/${EVAL_PY}: ${warning}`);
-  }
+  if (logWarnings) logEvalWarnings(path.basename(datasetDir), description);
   return description;
 };
 

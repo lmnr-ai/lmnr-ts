@@ -73,7 +73,7 @@ const isFile = (file: string) =>
  * The folder of the requested dataset (a folder name or a `[dataset] name`;
  * it must have a harbor.yaml or an agent/eval.py), else every runnable one.
  */
-const selectDatasets = async (
+export const selectDatasets = async (
   evalsDir: string,
   requested: string | undefined,
 ): Promise<string[]> => {

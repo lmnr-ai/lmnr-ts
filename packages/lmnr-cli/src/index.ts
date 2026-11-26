@@ -37,6 +37,7 @@ import {
   handleDatasetPull,
   handleDatasetPush,
 } from "./commands/eval/dataset-command";
+import { handleEvalDescribe } from "./commands/eval/describe-command";
 import { handleEvalOrchestrate } from "./commands/eval/remote";
 import { handleEvalTaskNew } from "./commands/eval/task-files";
 import {
@@ -710,7 +711,10 @@ datasets) and model sweeps (agents entries with only model_name), but not
 images, agent import paths or env, or the verifier's import path. Tasks start
 from the runner's images only: a task's own environment/Dockerfile, or a
 docker_image the runner doesn't declare, fails the run (declare a named image
-on the runner instead). Folders in the evals folder that aren't datasets (e.g.
+on the runner instead). An image with builder steps or services becomes a
+generated Dockerfile; identical definitions build (and push) once, and each
+run keeps the Dockerfile it built (see \`lmnr-cli eval describe --help\`).
+Folders in the evals folder that aren't datasets (e.g.
 _shared/) hold Python modules every eval.py can import, such as a shared
 runner to subclass; relative paths resolve against the file that declares
 them.
@@ -750,6 +754,44 @@ Examples:
   $ lmnr-cli eval run --dir ./my-evals --remote --n-concurrent 20
   $ lmnr-cli eval run --remote --model anthropic/claude-sonnet-5-5
   $ lmnr-cli eval run support --group "support (prompt v2)"
+`,
+    );
+
+  evalCmd
+    .command("describe")
+    .description("Print each eval.py dataset's resolved runner")
+    .argument("[dataset]", "Dataset to describe. Omitted → every dataset")
+    .option(
+      "--dir <dir>",
+      "Evals folder (one <dataset>/harbor.yaml or <dataset>/agent/eval.py per dataset)",
+      "evals",
+    )
+    .action(withLocalOpts(handleEvalDescribe))
+    .addHelpText(
+      "after",
+      `
+Reads each selected dataset's agent/eval.py the way \`eval run\` does first
+(same dataset selection, same uvx environment) and prints what the run would
+use: the runner class and the classes it inherits from, with their files;
+each image with every base, service and builder step and where it was
+declared, and for a generated image where runs keep its Dockerfile (local:
+next to the job's config.json in Harbor's jobs dir; --remote: the run's
+files in Laminar, <dataset>/agent/.generated/); services (kind, version,
+source image, the env var names they set); secret and env names (never
+values); new_task_toml; grade_with_test_sh; warnings. Datasets with only a
+harbor.yaml are listed as such. Nothing is built or run.
+
+--json prints describe's JSON by dataset folder (null for a harbor.yaml
+dataset) on stdout.
+
+Exit codes:
+  16  invalid_evals_dir (unknown dataset, an eval.py that doesn't load)
+  17  missing_tool (uv not installed)
+
+Examples:
+  $ lmnr-cli eval describe
+  $ lmnr-cli eval describe support
+  $ lmnr-cli eval describe support --json
 `,
     );
 

@@ -23,7 +23,13 @@ import {
   hasEvalPy,
   parseScriptDependencies,
 } from "./eval-py";
-import { type DatasetImages, datasetImages, type RemoteImages } from "./images";
+import {
+  type DatasetImages,
+  datasetImages,
+  generatedDockerfiles,
+  type RemoteImages,
+} from "./images";
+import { jobDirNames, newJobDir } from "./jobs";
 import { type CommandOutput, runCommand } from "./run-command";
 
 const logger = initializeLogger();
@@ -275,6 +281,35 @@ export interface DatasetHooks {
 }
 
 /**
+ * Write a dataset's generated Dockerfiles (`generatedDockerfiles`) into its
+ * local job dir, next to Harbor's `config.json`, as `<image>.Dockerfile`:
+ * files, since Harbor's tools count every dir in a job dir as a trial.
+ */
+const keepGeneratedDockerfiles = async (
+  dataset: string,
+  jobDir: string | undefined,
+  dockerfiles: Record<string, string>,
+): Promise<void> => {
+  const names = Object.keys(dockerfiles);
+  if (!jobDir || names.length === 0) return;
+  try {
+    for (const name of names) {
+      await writeFile(path.join(jobDir, name), dockerfiles[name]);
+    }
+  } catch (error) {
+    logger.warn(
+      `Could not keep the generated Dockerfiles of dataset ${dataset} in ` +
+        `${jobDir}: ${errorMessage(error)}`,
+    );
+    return;
+  }
+  logger.info(
+    `Generated Dockerfile(s) of dataset ${dataset}: ` +
+      names.map((name) => path.join(jobDir, name)).join(", "),
+  );
+};
+
+/**
  * Run each dataset with Harbor in turn. With `images`, trials run in Laminar
  * sandboxes; without, on local Docker. Returns the datasets that failed.
  */
@@ -296,6 +331,15 @@ export const runDatasets = async (
       images !== undefined,
     );
     if (jobs) config.jobs_dir = path.join(jobs.dir, dataset);
+    // Local runs keep the generated Dockerfiles they built in the job dir.
+    const generated = images
+      ? {}
+      : await generatedDockerfiles(datasetDir, overrides);
+    const jobsDir = path.resolve(
+      datasetDir,
+      typeof config.jobs_dir === "string" ? config.jobs_dir : "jobs",
+    );
+    const jobsBefore = await jobDirNames(jobsDir);
     logger.info(
       `Running dataset ${dataset} ${images ? "in Laminar sandboxes" : "on local Docker"}`,
     );
@@ -322,6 +366,11 @@ export const runDatasets = async (
       logger.error(`harbor run failed for dataset ${dataset} (exit ${code})`);
       failed.push(dataset);
     }
+    await keepGeneratedDockerfiles(
+      dataset,
+      await newJobDir(jobsDir, jobsBefore, config.job_name),
+      generated,
+    );
     await jobs?.onDatasetEnd(dataset, path.join(jobs.dir, dataset));
   }
   return failed;

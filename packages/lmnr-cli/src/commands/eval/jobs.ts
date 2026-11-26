@@ -46,6 +46,37 @@ export const findJobDir = async (
   return latest === undefined ? undefined : path.join(jobsDir, latest);
 };
 
+/** The job dirs in `jobsDir` by name (none when it doesn't exist yet). */
+export const jobDirNames = async (jobsDir: string): Promise<Set<string>> => {
+  const entries = await readdir(jobsDir, { withFileTypes: true }).catch(
+    () => [],
+  );
+  return new Set(
+    entries
+      .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+      .map((e) => e.name),
+  );
+};
+
+/**
+ * The job a local `harbor run` wrote into `jobsDir`, which may hold earlier
+ * jobs (`before`): the config's `job_name`, else the newest new dir.
+ * `undefined` when Harbor exited before writing one.
+ */
+export const newJobDir = async (
+  jobsDir: string,
+  before: Set<string>,
+  jobName: unknown,
+): Promise<string | undefined> => {
+  const now = await jobDirNames(jobsDir);
+  if (typeof jobName === "string") {
+    return now.has(jobName) ? path.join(jobsDir, jobName) : undefined;
+  }
+  const added = [...now].filter((name) => !before.has(name)).sort();
+  const latest = added[added.length - 1];
+  return latest === undefined ? undefined : path.join(jobsDir, latest);
+};
+
 interface JobArchive {
   archive: Buffer;
   index: IndexedFile[];

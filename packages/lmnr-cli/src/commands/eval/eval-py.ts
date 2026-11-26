@@ -5,7 +5,10 @@ import { errorMessage } from "@lmnr-ai/types";
 import { parse as parseToml } from "smol-toml";
 
 import { invalidEvalsDir } from "../../errors";
+import { initializeLogger } from "../../utils/logger";
 import type { JobConfig } from "./datasets";
+
+const logger = initializeLogger();
 
 /**
  * A dataset can be one Python file: `<folder>/agent/eval.py` with an
@@ -21,16 +24,54 @@ export const LAMINAR_VERIFIER_IMPORT_PATH =
 /** The `version` of describe's JSON this CLI reads. */
 const DESCRIBE_VERSION = 1;
 
-type EvalImage =
-  | { kind: "dockerfile"; dockerfile: string; context: string }
-  | { kind: "registry"; ref: string };
+/** One base, service or builder step of an image, and where it was declared. */
+interface EvalImageStep {
+  origin: string;
+  step: string;
+}
+
+/**
+ * A Dockerfile lmnr generated (builder steps, services): BuildKit syntax,
+ * COPY / bind-mount sources relative to `context`, `#` comment lines naming
+ * where each step was declared.
+ */
+export interface GeneratedImage {
+  kind: "generated";
+  dockerfile_text: string;
+  context: string;
+  /** The ignore file to build with instead of the context's `.dockerignore`. */
+  ignore_file?: string;
+  steps?: EvalImageStep[];
+}
+
+export type EvalImage =
+  | {
+      kind: "dockerfile";
+      dockerfile: string;
+      context: string;
+      steps?: EvalImageStep[];
+    }
+  | { kind: "registry"; ref: string; steps?: EvalImageStep[] }
+  | GeneratedImage;
+
+/** A service the runner declares (`Postgres("16")`), started in its image. */
+interface EvalService {
+  name: string;
+  kind: string;
+  version: string;
+  /** The image the service is installed from. */
+  source: string;
+  /** Env var names the service sets for the app. */
+  env: string[];
+  origin: string;
+}
 
 /** `python -m lmnr.evals.describe agent/eval.py`'s output. */
 export interface EvalDescription {
   version: number;
   /** The `EvalRunner` subclass. */
   runner: string;
-  /** By name; Dockerfile paths are absolute (resolved where describe ran). */
+  /** By name; paths are absolute (resolved where describe ran). */
   images: Record<string, EvalImage>;
   default_image: string;
   model: string | null;
@@ -58,6 +99,13 @@ export interface EvalDescription {
    * don't report it.
    */
   artifacts?: EvalArtifact[];
+  /** The runner's services. Optional, like the fields below: older lmnr versions don't report them. */
+  services?: EvalService[];
+  /**
+   * The runner class, then its bases, with their files (relative to the evals
+   * root, absolute outside it, null when unknown).
+   */
+  classes?: { name: string; file: string | null }[];
 }
 
 type EvalArtifact =
@@ -135,6 +183,28 @@ export const parseScriptDependencies = (text: string, file: string) => {
   return deps as string[];
 };
 
+const isImage = (image: unknown): image is EvalImage => {
+  if (!isRecord(image)) return false;
+  switch (image.kind) {
+    case "registry":
+      return typeof image.ref === "string";
+    case "dockerfile":
+      return (
+        typeof image.dockerfile === "string" &&
+        typeof image.context === "string"
+      );
+    case "generated":
+      return (
+        typeof image.dockerfile_text === "string" &&
+        typeof image.context === "string" &&
+        (image.ignore_file === undefined ||
+          typeof image.ignore_file === "string")
+      );
+    default:
+      return false;
+  }
+};
+
 /** Check describe's JSON against what this CLI reads. */
 export const parseDescription = (
   stdout: string,
@@ -163,13 +233,17 @@ export const parseDescription = (
   if (
     typeof description.runner !== "string" ||
     !isRecord(description.images) ||
+    !Object.values(description.images).every(isImage) ||
     !(description.default_image in description.images) ||
     !isRecord(description.env) ||
     !Array.isArray(description.secrets) ||
     !isRecord(description.new_task_toml) ||
     typeof description.grade_with_test_sh !== "boolean" ||
     (description.artifacts !== undefined &&
-      !Array.isArray(description.artifacts))
+      !Array.isArray(description.artifacts)) ||
+    (description.services !== undefined &&
+      !Array.isArray(description.services)) ||
+    (description.classes !== undefined && !Array.isArray(description.classes))
   ) {
     throw invalidEvalsDir(`Describing ${file} printed an unexpected shape.`);
   }
@@ -187,6 +261,19 @@ export const setEvalDescription = (
   description: EvalDescription,
 ): void => {
   descriptions.set(path.resolve(datasetDir), description);
+};
+
+/**
+ * Log describe's warnings (e.g. a service on version "latest"). Every run
+ * does, local or in a remote run's orchestrator, so they reach the run's log.
+ */
+export const logEvalWarnings = (
+  folder: string,
+  description: EvalDescription,
+): void => {
+  for (const warning of description.warnings) {
+    logger.warn(`${folder}/${EVAL_PY}: ${warning}`);
+  }
 };
 
 export const evalDescription = (datasetDir: string): EvalDescription => {
@@ -294,13 +381,6 @@ export const applyEvalRunner = (
   if (description.artifacts?.length) {
     job.artifacts = structuredClone(description.artifacts);
   }
-  // lmnr-cli's `images` key (see images.ts); registry images are pulled.
-  job.images = Object.fromEntries(
-    Object.entries(description.images).flatMap(([name, image]) =>
-      image.kind === "dockerfile"
-        ? [[name, { dockerfile: image.dockerfile, context: image.context }]]
-        : [],
-    ),
-  );
+  // The images are built from the description (`loadImageDefs`), not `images`.
   return job;
 };

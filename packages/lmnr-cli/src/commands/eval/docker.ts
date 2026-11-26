@@ -10,7 +10,7 @@ import { unpackTar } from "modern-tar/fs";
 
 import { dockerFailed, invalidEvalsDir } from "../../errors";
 import { initializeLogger } from "../../utils/logger";
-import type { ImageDef, ImagePusher } from "./images";
+import type { ImageDef, ImagePusher, LocalBuild } from "./images";
 import { REMOTE_PLATFORM, readSavedImage, uploadSavedImage } from "./push";
 import { runCommand } from "./run-command";
 
@@ -29,8 +29,18 @@ const ALWAYS_IGNORED = [
   "**/.env.*",
 ];
 
-/** The ignore file `docker build` would use for `def`, if any. */
+/**
+ * The ignore file `docker build` would use for `def`, if any; a generated
+ * image's `ignoreFile` (its base Dockerfile's own) must exist.
+ */
 const ownIgnoreRules = async (def: ImageDef): Promise<string> => {
+  if (def.ignoreFile) {
+    const text = await readFile(def.ignoreFile, "utf8").catch(() => null);
+    if (text === null) {
+      throw invalidEvalsDir(`Ignore file not found: ${def.ignoreFile}`);
+    }
+    return text;
+  }
   for (const file of [
     `${def.dockerfile}.dockerignore`,
     path.join(def.context, ".dockerignore"),
@@ -85,9 +95,10 @@ export const guardedDockerfile = async (def: ImageDef): Promise<string> => {
 const buildFrom = async (
   dir: string,
   context: string,
-  tag: string,
+  tags: string[],
   args: string[],
   failure: string,
+  note = "",
 ): Promise<void> => {
   try {
     const code = await runCommand("docker", [
@@ -95,11 +106,10 @@ const buildFrom = async (
       ...args,
       "-f",
       path.join(dir, "Dockerfile"),
-      "-t",
-      tag,
+      ...tags.flatMap((tag) => ["-t", tag]),
       context,
     ]);
-    if (code !== 0) throw dockerFailed(`${failure} (exit ${code}).`);
+    if (code !== 0) throw dockerFailed(`${failure} (exit ${code}).${note}`);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -111,21 +121,26 @@ const buildFrom = async (
  */
 const dockerBuild = async (
   def: ImageDef,
-  tag: string,
+  tags: string[],
   args: string[] = [],
 ): Promise<void> =>
   buildFrom(
     await guardedDockerfile(def),
     def.context,
-    tag,
+    tags,
     args,
     `docker build of ${def.name} failed`,
+    // Kept after the run (content-addressed), for reading the failing step.
+    def.generated ? ` Its generated Dockerfile: ${def.dockerfile}` : "",
   );
 
-/** Build harbor.yaml images locally, tagged with the name tasks reference. */
-export const buildLocalImages = async (defs: ImageDef[]): Promise<void> => {
-  for (const def of defs) {
-    await dockerBuild(def, def.name);
+/**
+ * Build the images lmnr-cli builds for a local run, each once, tagged with
+ * every name tasks reference it by.
+ */
+export const buildLocalImages = async (builds: LocalBuild[]): Promise<void> => {
+  for (const { def, tags } of builds) {
+    await dockerBuild(def, tags);
   }
 };
 
@@ -164,7 +179,7 @@ export const imagePusher = (client: LaminarClient): ImagePusher => ({
   build: async (def) => {
     const tag = remoteTag(def.name);
     logger.info(`Building ${def.name} for ${REMOTE_PLATFORM}`);
-    await dockerBuild(def, tag, ["--platform", REMOTE_PLATFORM]);
+    await dockerBuild(def, [tag], ["--platform", REMOTE_PLATFORM]);
     return saveAndUpload(client, tag, def.name);
   },
   pull: async (ref) => {
@@ -176,7 +191,7 @@ export const imagePusher = (client: LaminarClient): ImagePusher => ({
     await buildFrom(
       dir,
       dir,
-      tag,
+      [tag],
       ["--platform", REMOTE_PLATFORM],
       `docker pull of ${ref} failed`,
     );

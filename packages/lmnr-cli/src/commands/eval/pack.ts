@@ -178,18 +178,22 @@ interface EvalsArchive {
  * Pack the evals folder's CONTENTS (datasets at the archive root, no `evals/`
  * prefix — that is where the orchestrator runs from) into a `.tar.gz`, with
  * the index the UI reads single files by. `exclude` leaves paths out (see
- * {@link walkFiles}).
+ * {@link walkFiles}); `extra` files are packed after the walked ones, in place
+ * of any file on disk at their path.
  */
 export const packEvalsDir = async (
   dir: string,
   platform: NodeJS.Platform = process.platform,
   exclude?: (target: string) => boolean,
+  extra: PackedFile[] = [],
 ): Promise<EvalsArchive> => {
+  const replaced = new Set(extra.map((f) => f.target));
   const { files, skippedSymlinks } = await walkFiles(
     path.resolve(dir),
     platform,
-    exclude,
+    (target) => replaced.has(target) || exclude?.(target) === true,
   );
-  const { archive, index } = await packFiles(files);
-  return { archive, index, fileCount: files.length, skippedSymlinks };
+  const all = [...files, ...extra];
+  const { archive, index } = await packFiles(all);
+  return { archive, index, fileCount: all.length, skippedSymlinks };
 };

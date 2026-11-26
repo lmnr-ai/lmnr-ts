@@ -167,6 +167,13 @@ lmnr-cli eval run --remote                         # in Laminar sandboxes
 `--remote` prints the run's log until it ends; Ctrl-C stops following and
 leaves the run going.
 
+`lmnr-cli eval describe [dataset] [--json]` prints what each `agent/eval.py`
+dataset resolves to (runner classes, images with each step and where it was
+declared, services, secret and env names, warnings) without building or
+running anything. Runs keep each generated Dockerfile they build: local runs
+next to the Harbor job's `config.json`, remote runs in the run's files as
+`<dataset>/agent/.generated/<image>.Dockerfile`.
+
 Both modes need Docker; local runs also need [uv](https://docs.astral.sh/uv/)
 and `LMNR_PROJECT_API_KEY`. `--remote` pushes
 the images tasks use from your local Docker. See `lmnr-cli eval run --help` for
