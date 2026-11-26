@@ -11,10 +11,10 @@ import {
   setEvalDescription,
 } from "./eval-py";
 import {
-  evalDependencies,
   LMNR_PYTHON_VERSION,
   lmnrSpec,
   PYTHON_VERSION,
+  pythonRequirements,
 } from "./harbor";
 import { captureCommand } from "./run-command";
 
@@ -24,13 +24,16 @@ const logger = initializeLogger();
 const UV_NOISE =
   /^\s*(Installed|Resolved|Prepared|Downloading|Downloaded|Built|Building|Uninstalled|Audited) /;
 
-/** The `uvx` arguments that describe a dataset's eval.py, from its folder. */
-export const describeArgs = (dependencies: string[]): string[] => [
+/**
+ * The `uvx` arguments that describe a dataset's eval.py, from its folder.
+ * `requirements` are `pythonRequirements`: importing eval.py needs them.
+ */
+export const describeArgs = (requirements: string[]): string[] => [
   "--python",
   PYTHON_VERSION,
   "--from",
   lmnrSpec(),
-  ...dependencies.flatMap((dep) => ["--with", dep]),
+  ...requirements,
   "python",
   "-m",
   "lmnr.evals.describe",
@@ -38,9 +41,8 @@ export const describeArgs = (dependencies: string[]): string[] => [
 ];
 
 /**
- * Import the dataset's `agent/eval.py` with `lmnr` (and its PEP 723
- * dependencies) and read its `EvalRunner`: images, env, secrets, task
- * template. Its warnings are logged; an import or configuration error is
+ * Import the dataset's `agent/eval.py` with `lmnr` and `pythonRequirements`,
+ * and read its `EvalRunner`: images, env, secrets, task template. Its warnings are logged; an import or configuration error is
  * `invalid_evals_dir` with Python's message.
  */
 export const describeEvalPy = async (
@@ -49,7 +51,7 @@ export const describeEvalPy = async (
   const file = evalPyPath(datasetDir);
   const { code, stdout, stderr } = await captureCommand(
     "uvx",
-    describeArgs(await evalDependencies(datasetDir)),
+    describeArgs(await pythonRequirements(datasetDir)),
     { cwd: datasetDir, env: process.env },
   );
   if (code !== 0) {

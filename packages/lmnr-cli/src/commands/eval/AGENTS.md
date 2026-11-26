@@ -250,7 +250,7 @@
   `src/lmnr/evals/AGENTS.md`) is runnable with or without a harbor.yaml
   (`isRunnableDataset`; discovery, `isDatasetFolder` and `selectDatasets` use it).
 - **Describe first.** `describeDatasets` runs `uvx --python 3.13 --from <lmnr
-  spec> [--with <PEP 723 dep>...] python -m lmnr.evals.describe agent/eval.py`
+  spec> <pythonRequirements> python -m lmnr.evals.describe agent/eval.py`
   from the dataset dir (`captureCommand`: output is collected, never shown; on
   failure the error is Python's stderr minus uv's progress lines, plus a hint
   when the pinned lmnr has no `lmnr.evals`) and caches the JSON per dataset dir
@@ -276,9 +276,20 @@
   `${...}` are scanned (`findTemplateVars`), so they resolve exactly like
   harbor.yaml `${VAR}`s (shell, `.env.local`, `.env`; exit 19) and their values
   reach the Harbor process env, where `verify()` reads them.
-- **PEP 723**: `parseScriptDependencies` (the `# /// script` block, parsed as
-  TOML) → `--with` for describe AND `harbor run` (`evalDependencies`, read from
-  the file in the orchestrator too). Note the content regex (PEP 723's own)
+- **Packages for the Harbor process** (`pythonRequirements` in `harbor.ts`,
+  for describe AND `harbor run`, local and in the orchestrator, every
+  dataset): eval.py and `verify()` run on the host, only their `ctx`
+  commands run in the container, so what eval.py, shared runners or a custom
+  agent import must be in the uvx environment; what the app or a container
+  script needs belongs in the image. Recommended: the evals root's
+  `pyproject.toml` (the dataset dir's parent; remote uploads include it) →
+  `--with-requirements <abs path>`, used only when it has a `[project]` table
+  (uv fails on one without; a tools-only file is left alone; invalid TOML is
+  `invalid_evals_dir`). uv reads only `[project] dependencies`: not
+  dependency groups, not `requires-python` (the Harbor process is Python
+  3.13), no lock. Optional, per dataset: eval.py's PEP 723 block
+  (`parseScriptDependencies`, the `# /// script` block parsed as TOML) →
+  `--with` each, after the pyproject. The content regex (PEP 723's own)
   absorbs inner `# ///` lines, so two blocks only count as two when separated
   by a non-comment line.
 - **Task files** (`ensureTaskFiles`, `task-files.ts`): before `checkRunTasks`

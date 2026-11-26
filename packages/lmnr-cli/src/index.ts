@@ -696,9 +696,11 @@ Modes:
 eval.py datasets: agent/eval.py holds one EvalRunner subclass (Python,
 \`from lmnr.evals import EvalRunner, Image, secret\`) with the image, the env,
 the secrets and the setup / run / collect / verify steps; no agent.py,
-verifier script or harbor.yaml is needed. lmnr-cli reads it with uvx (plus the
-packages in its \`# /// script\` dependencies, which also run verify()), runs
-it through lmnr's Harbor adapters, and resolves its \`secrets\` like
+verifier script or harbor.yaml is needed. eval.py and verify() run on this
+machine, not in the container: packages they import go in the evals folder's
+pyproject.toml ([project] dependencies), or in a \`# /// script\` block in
+eval.py; what the app needs goes in the image. lmnr-cli reads eval.py with
+uvx, runs it through lmnr's Harbor adapters, and resolves its \`secrets\` like
 \`\${VAR}\`s. Before a run (and a push) it writes the files Harbor needs that a
 task dir lacks: task.toml ([task] name = <dataset org>/<dir>, the default
 image, the runner's task_template), instruction.md and a stub tests/test.sh.

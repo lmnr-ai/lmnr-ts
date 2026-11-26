@@ -9,7 +9,7 @@ import {
   LAMINAR_AGENT_IMPORT_PATH,
   LAMINAR_VERIFIER_IMPORT_PATH,
 } from "./eval-py";
-import { LMNR_PYTHON_VERSION } from "./harbor";
+import { LMNR_PYTHON_VERSION, pythonRequirements } from "./harbor";
 import { handleEvalRun } from "./index";
 import { captureCommand, runCommand } from "./run-command";
 import { handleEvalTaskNew } from "./task-files";
@@ -119,6 +119,34 @@ void describe("describeEvalPy", () => {
     expect(logger.warn).toHaveBeenCalledWith(
       "support/agent/eval.py: SupportEval defines run(), so `entrypoint` is ignored.",
     );
+  });
+
+  void it("installs the evals root's pyproject.toml, then PEP 723 deps", async () => {
+    await write("evals/support/agent/eval.py", EVAL_PY);
+    await write(
+      "evals/pyproject.toml",
+      '[project]\nname = "evals"\nversion = "0"\ndependencies = ["openai"]\n',
+    );
+    describeOk();
+    await describeEvalPy(path.join(root, "evals/support"));
+    expect(vi.mocked(captureCommand).mock.calls[0][1].slice(4, 8)).toEqual([
+      "--with-requirements",
+      path.join(root, "evals/pyproject.toml"),
+      "--with",
+      "anthropic>=1",
+    ]);
+  });
+
+  void it("leaves a pyproject.toml without [project] alone", async () => {
+    await write("evals/pyproject.toml", "[tool.ruff]\nline-length = 100\n");
+    await write("evals/support/harbor.yaml", "");
+    expect(await pythonRequirements(path.join(root, "evals/support"))).toEqual(
+      [],
+    );
+    await write("evals/pyproject.toml", "[project\n");
+    await expect(
+      pythonRequirements(path.join(root, "evals/support")),
+    ).rejects.toThrow(expect.objectContaining({ code: "invalid_evals_dir" }));
   });
 
   void it("uses LMNR_EVAL_LMNR_SPEC instead of the pinned lmnr", () => {
