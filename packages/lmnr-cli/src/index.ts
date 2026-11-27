@@ -1026,40 +1026,33 @@ Examples:
     .command("metric")
     .alias("metrics")
     .description(
-      "Alerts on a project's cost, tokens, traffic, errors and latency",
+      "Alerts on a project's cost, tokens, traffic, LLM errors and latency",
     );
 
   const METRIC_RULE_HELP = `
 A rule is a JSON object. The server checks it and fills in what you leave out.
-  metric        total_cost | cost_per_trace | trace_cost | input_tokens |
-                output_tokens | total_tokens | tokens_per_trace | trace_count |
-                error_traces (count) | error_rate | no_cost_rate |
-                no_tokens_rate (percent of traces) | llm_no_cost_rate |
-                llm_no_tokens_rate (percent of LLM calls, no filters) |
-                latency_p50 | latency_p95 (seconds)
-                Evaluation and playground traces are left out unless a filter
-                is on trace_type
-  window        {"minutes": 5 | 15 | 30 | 60 | 1440}. A spending limit takes
-                {"minutes": 1440} (last 24 hours) or {"monthToDate": true}
+  metric        span_count (spans of any type) | total_cost | input_tokens |
+                output_tokens | total_tokens | llm_calls | llm_errors (count) |
+                llm_error_rate | llm_no_cost_rate | llm_no_tokens_rate
+                (percent of LLM calls) | llm_latency_p50 | llm_latency_p95
+                (seconds, one LLM call)
+                Every metric is read from spans, in the minute a span ended.
+                Spans of evaluation and playground traces are left out
+  window        {"minutes": 5 | 15 | 30 | 60 | 1440}
   condition     {"type":"value"}: compare the number itself
                 {"type":"change","compareTo":"1w"}: percent of the same window
                   5m | 15m | 30m | 1h | 1d | 1w | 30d earlier (130 = 30% higher)
-                {"type":"spending_limit","limit":50,"warnAtPercent":80}: spend
-                  in dollars. Critical at the limit, warning at warnAtPercent
-                  of it (default 80)
-                {"type":"trace_p99"}: one trace's cost as a percent of the
-                  project's p99 trace cost (trace_cost only)
   direction     above | below
   warning, critical, resolve
                 thresholds. At least one of warning / critical. resolve is
                 where an open incident closes; left out, it follows the first
-                threshold. A spending limit takes none of the three
-  filters       [{"column","operator","value"}], the traces table filters
-  groupBy       "model" for separate incidents per model, or null
+                threshold
+  groupBy       "model" for separate incidents per model, or null. Every
+                metric except span_count can be split
   minChange     change only: smallest absolute difference that still counts
   checksInARow  checks that must breach in a row before it fires (default 3)
-  minTraces     skip a check with fewer traces than this (fewer LLM calls
-                for llm_no_cost_rate and llm_no_tokens_rate)
+  minCalls      rates and latencies only: skip a check with fewer LLM calls
+                than this (default 50)
   onNoData      skip | zero | alert
   snoozedUntil  ISO time; no messages are sent until then (null ends it)
 `;
@@ -1085,10 +1078,8 @@ A rule is a JSON object. The server checks it and fills in what you leave out.
       .description("Create a metric alert from a template, a rule, or both")
       .option(
         "--template <id>",
-        "error-spike | cost-spike | error-rate | traffic-stopped | " +
-          "cost-tracking-stopped | token-usage-missing | " +
-          "daily-spending-limit | expensive-trace | " +
-          "unusually-expensive-trace | cost-vs-last-week",
+        "traffic-stopped | cost-spike | llm-error-spike | llm-error-rate | " +
+          "cost-tracking-stopped | token-usage-missing | slow-llm-calls",
       ),
   )
     .action(withProjectClient(handleMetricAlertCreate))
@@ -1096,17 +1087,13 @@ A rule is a JSON object. The server checks it and fills in what you leave out.
       "after",
       `
 Templates:
-  error-spike                errored traces in 15 minutes
-  cost-spike                 hourly cost above a fixed amount (*)
-  error-rate                 share of traces that fail
-  traffic-stopped            no traces for 15 minutes
-  cost-tracking-stopped      most LLM calls arrive without a cost
-  token-usage-missing        most LLM calls arrive without token counts
-  daily-spending-limit       spend over the last 24 hours against a limit (*)
-  expensive-trace            one trace above a fixed cost (*)
-  unusually-expensive-trace  one trace far above the project's p99 cost
-  cost-vs-last-week          hourly cost against the same hour a week ago
-(*) carries no number: pass warning / critical, or the limit, in --rule.
+  traffic-stopped        no spans arrive at all
+  cost-spike             cost is far above an earlier window
+  llm-error-spike        failed LLM calls are far above an earlier window
+  llm-error-rate         too large a share of LLM calls fails
+  cost-tracking-stopped  most LLM calls arrive without a cost
+  token-usage-missing    most LLM calls arrive without token counts
+  slow-llm-calls         p95 duration of an LLM call is too long
 
 Keys in --rule override the template's. Without a template, --name and a full
 rule are required. Your email is subscribed unless you pass --no-notify-me.
@@ -1115,13 +1102,14 @@ Examples:
   $ lmnr-cli alert metric create --template traffic-stopped
   $ lmnr-cli alert metric create --template cost-spike \\
       --rule '{"warning":20,"critical":50}'
-  $ lmnr-cli alert metric create --template daily-spending-limit \\
-      --rule '{"condition":{"limit":50}}'
-  $ lmnr-cli alert metric create --template error-rate --name "Errors, prod" \\
-      --rule '{"warning":2,"critical":10}' --slack-channel '#oncall'
-  $ lmnr-cli alert metric create --name "p95 latency" --rule '{"metric":
-      "latency_p95","window":{"minutes":15},"condition":{"type":"value"},
-      "direction":"above","warning":30}'
+  $ lmnr-cli alert metric create --template llm-error-rate \\
+      --name "LLM errors, prod" --rule '{"warning":2,"critical":10}' \\
+      --slack-channel '#oncall'
+  $ lmnr-cli alert metric create --template slow-llm-calls \\
+      --rule '{"groupBy":"model","warning":30}'
+  $ lmnr-cli alert metric create --name "Output tokens" --rule '{"metric":
+      "output_tokens","window":{"minutes":60},"condition":{"type":"value"},
+      "direction":"above","warning":2000000}'
 `,
     );
 

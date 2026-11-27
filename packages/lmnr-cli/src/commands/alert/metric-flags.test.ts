@@ -11,7 +11,6 @@ import {
 
 const RULE: MetricAlertRule = {
   metric: "total_cost",
-  filters: [],
   groupBy: null,
   window: { minutes: 60 },
   condition: { type: "change", compareTo: "1w" },
@@ -21,7 +20,7 @@ const RULE: MetricAlertRule = {
   resolve: 120,
   minChange: 1,
   checksInARow: 3,
-  minTraces: null,
+  minCalls: null,
   onNoData: null,
   snoozedUntil: null,
   disabled: false,
@@ -50,8 +49,8 @@ void describe("buildCreateMetricAlert", () => {
   void it("merges rule keys, name and targets", () => {
     expect(
       buildCreateMetricAlert({
-        template: "daily-spending-limit",
-        rule: '{"condition":{"limit":50}}',
+        template: "cost-spike",
+        rule: '{"condition":{"compareTo":"1d"}}',
         name: "Spend",
         notifyMe: false,
         slackChannel: ["#oncall"],
@@ -59,8 +58,8 @@ void describe("buildCreateMetricAlert", () => {
       }),
     ).toEqual({
       type: "METRIC",
-      template: "daily-spending-limit",
-      rule: { condition: { limit: 50 } },
+      template: "cost-spike",
+      rule: { condition: { compareTo: "1d" } },
       name: "Spend",
       notifyMe: false,
       slackChannels: ["#oncall"],
@@ -107,55 +106,46 @@ void describe("describeRule", () => {
     );
   });
 
-  void it("describes a split value rule and a spending limit", () => {
+  void it("describes a split value rule and a day-long window", () => {
     expect(
       describeRule({
         ...RULE,
-        metric: "error_rate",
+        metric: "llm_error_rate",
         groupBy: "model",
         window: { minutes: 15 },
         condition: { type: "value" },
         critical: null,
         warning: 5,
       }),
-    ).toBe("error_rate by model over 15m, above warning 5");
+    ).toBe("llm_error_rate by model over 15m, above warning 5");
     expect(
       describeRule({
         ...RULE,
-        window: { monthToDate: true },
-        condition: { type: "spending_limit", limit: 2000, warnAtPercent: 90 },
-        warning: null,
-        critical: null,
-      }),
-    ).toBe("total_cost over month to date, limit 2000, warn at 90%");
-    expect(
-      describeRule({
-        ...RULE,
+        metric: "span_count",
         window: { minutes: 1440 },
-        condition: { type: "spending_limit", limit: 50 },
+        condition: { type: "value" },
+        direction: "below",
         warning: null,
-        critical: null,
+        critical: 1,
       }),
-    ).toBe("total_cost over 1d, limit 50, warn at 80%");
+    ).toBe("span_count over 1d, below critical 1");
   });
 
   void it("lists a rule with a condition it does not know", () => {
     expect(
       describeRule({
         ...RULE,
-        window: { monthToDate: true },
         condition: { type: "budget" } as never,
         warning: null,
         critical: null,
       }),
-    ).toBe("total_cost over month to date, budget (no thresholds)");
+    ).toBe("total_cost over 1h, budget (no thresholds)");
   });
 
   void it("describes a stored rule that leaves unset keys out", () => {
     expect(
       describeRule({
-        metric: "latency_p95",
-        filters: [],
+        metric: "llm_latency_p95",
         window: { minutes: 15 },
         condition: { type: "value" },
         direction: "above",
@@ -163,7 +153,7 @@ void describe("describeRule", () => {
         resolve: 20,
         checksInARow: 3,
       }),
-    ).toBe("latency_p95 over 15m, above warning 30");
+    ).toBe("llm_latency_p95 over 15m, above warning 30");
   });
 });
 

@@ -39,12 +39,6 @@ const printMetricAlert = (alert: Alert, rule: MetricAlertRule): void => {
   if (rule.resolve != null) {
     logger.info(`  resolves at:  ${rule.resolve}`);
   }
-  if (rule.filters.length > 0) {
-    const filters = rule.filters
-      .map((f) => `${f.column} ${f.operator} ${JSON.stringify(f.value)}`)
-      .join(" AND ");
-    logger.info(`  filters:      ${filters}`);
-  }
   logger.info(`  status:       ${ruleStatus(rule)}`);
   printTargets(alert);
   logger.info(`  created:      ${alert.createdAt}`);
