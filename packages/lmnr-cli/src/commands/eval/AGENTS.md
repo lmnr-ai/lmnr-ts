@@ -252,7 +252,13 @@
   `checkProjectKey` (`client.ts`) calls `datasets.listDatasets()` (`GET
   /v1/datasets`, read-only, the same project-key `/v1` scope as the plugin's
   evaluation calls; the server's `GET /v1/project` has no client method)
-  with the Harbor env's key and `LMNR_BASE_URL`. Without it a bad key or URL
+  with the Harbor env's key and `LMNR_BASE_URL`, through `isolatedClient`:
+  `new LaminarClient` runs `loadEnv`, which copies every `.env` /
+  `.env.local` / `.env.<NODE_ENV>` variable into `process.env`, and a local
+  run spreads `process.env` into Harbor and Docker (`runDatasets`), so the
+  check restores `process.env` after constructing it; a local run never
+  built a client before, and its env only takes what lmnr-cli resolves
+  (`${VAR}`s, `--env`, `harborEnv`). Without it a bad key or URL
   let the run go ahead with its results going nowhere (the plugin only
   logs). Not for `--remote` (it calls the API anyway) nor `eval
   orchestrate`. Tests that run `handleEvalRun` locally mock

@@ -56,6 +56,28 @@ const networkReason = (error: unknown): string => {
 };
 
 /**
+ * A `LaminarClient` that leaves `process.env` as it found it. Its constructor
+ * loads `.env`, `.env.local` and `.env.<NODE_ENV>` into `process.env`
+ * (`loadEnv`), and a local run hands `process.env` to Harbor and Docker, so
+ * every variable in those files (app secrets, `DOCKER_HOST`, `PYTHONPATH`)
+ * would reach the builds and trials. The run's env only takes what it
+ * resolves itself (`${VAR}`s, `--env`, `harborEnv`).
+ */
+const isolatedClient = (
+  options: ConstructorParameters<typeof LaminarClient>[0],
+): LaminarClient => {
+  const before = { ...process.env };
+  try {
+    return new LaminarClient(options);
+  } finally {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in before)) delete process.env[key];
+    }
+    Object.assign(process.env, before);
+  }
+};
+
+/**
  * Fail unless Laminar takes the project key of a local run (`env` is the
  * Harbor process env, `harborEnv`): the Laminar plugin creates the
  * evaluation with it, and when it can't, the run still goes ahead and its
@@ -68,7 +90,7 @@ export const checkProjectKey = async (
   timeoutMs = KEY_CHECK_TIMEOUT_MS,
 ): Promise<void> => {
   const baseUrl = env.LMNR_BASE_URL;
-  const client = new LaminarClient({
+  const client = isolatedClient({
     baseUrl,
     auth: { type: "apiKey", key: env[API_KEY_VAR] },
   });

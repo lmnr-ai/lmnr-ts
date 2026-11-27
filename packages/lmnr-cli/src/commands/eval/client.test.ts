@@ -10,6 +10,8 @@ vi.mock("@lmnr-ai/client", () => ({
     datasets = { listDatasets: client.listDatasets };
     constructor(args: unknown) {
       client.ctor(args);
+      // Like the real constructor's `loadEnv`: .env files into process.env.
+      process.env.LMNR_TEST_DOTENV_ONLY = "from .env";
     }
   },
 }));
@@ -34,6 +36,13 @@ void describe("checkProjectKey", () => {
       auth: { type: "apiKey", key: "proj-key" },
     });
     expect(client.listDatasets).toHaveBeenCalledTimes(1);
+  });
+
+  void it("leaves process.env as it was: the run hands it to Harbor", async () => {
+    client.listDatasets.mockResolvedValue([]);
+    await checkProjectKey(ENV);
+    expect(client.ctor).toHaveBeenCalledTimes(1);
+    expect(process.env.LMNR_TEST_DOTENV_ONLY).toBeUndefined();
   });
 
   void it("fails with laminar_key_rejected on a rejected key", async () => {
