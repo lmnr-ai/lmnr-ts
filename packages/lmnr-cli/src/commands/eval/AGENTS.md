@@ -95,7 +95,7 @@
   `buildJobConfig`), `harbor.ts` (uvx/Harbor only), `images.ts` (harbor.yaml
   `images` and eval.py images, generated Dockerfiles' content addressing, what
   tasks start from, `ensureRemoteImages`), `client.ts` (login
-  or project key client), `dataset-toml.ts`, `task-hash.ts`, `dataset-state.ts`,
+  or project key client; `checkProjectKey`), `dataset-toml.ts`, `task-hash.ts`, `dataset-state.ts`,
   `dataset-sync.ts` (pure pull / push planning, download + extract,
   upload), `dataset-command.ts` (`eval dataset pull / push`, `checkRunTasks`),
   `docker.ts` (builds, the ignore guard, `imagePusher`), `push.ts` (`docker
@@ -208,7 +208,9 @@
   orchestrator exited with anything but 0, 18 or 23, or its sandbox was lost;
   18 / 23 from it stay `harbor_failed` / `trials_errored`), 22 `local_edits`
   (pull would overwrite versions Laminar doesn't have; `--force`), 23
-  `trials_errored` (every trial of a dataset errored; see "Errored trials"). The eval dataset API's
+  `trials_errored` (every trial of a dataset errored; see "Errored trials"),
+  24 `laminar_key_rejected` (401 / 403) / `laminar_unreachable` (network
+  error, other status, no answer in 30 s) from the key check (see "Auth"). The eval dataset API's
   `storage_not_configured` and `version_not_found` exit 1 with their own
   `code`. Bad `--env` flags are
   commander `InvalidArgumentError`s.
@@ -245,7 +247,16 @@
 - `LMNR_GRPC_PORT` (env or `.env`) becomes `--pk grpc_port=`: the plugin
   exports spans over gRPC and defaults to 8443, so self-hosted traces need it.
 - Auth: local runs need `LMNR_PROJECT_API_KEY` (the plugin reports with it;
-  in the orchestrator it is the run key). `--remote` calls the API as the logged-in user and falls back to
+  in the orchestrator it is the run key). A local `eval run` checks it right
+  after `harborEnv` (missing key → 19 as before), before any build:
+  `checkProjectKey` (`client.ts`) calls `datasets.listDatasets()` (`GET
+  /v1/datasets`, read-only, the same project-key `/v1` scope as the plugin's
+  evaluation calls; the server's `GET /v1/project` has no client method)
+  with the Harbor env's key and `LMNR_BASE_URL`. Without it a bad key or URL
+  let the run go ahead with its results going nowhere (the plugin only
+  logs). Not for `--remote` (it calls the API anyway) nor `eval
+  orchestrate`. Tests that run `handleEvalRun` locally mock
+  `@lmnr-ai/client` (`describe.test.ts`). `--remote` calls the API as the logged-in user and falls back to
   the project key when there is no login (CI).
 - **The archive is a run of gzip members** (`packFiles`), so the UI can read
   one file without the whole archive: consecutive files of one directory share

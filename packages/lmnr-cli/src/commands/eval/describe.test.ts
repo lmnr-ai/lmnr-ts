@@ -27,6 +27,13 @@ const logger = vi.hoisted(() => ({
   debug: vi.fn(),
 }));
 vi.mock("../../utils/logger", () => ({ initializeLogger: () => logger }));
+/** The project key check of local runs (`checkProjectKey`). */
+const listDatasets = vi.hoisted(() => vi.fn());
+vi.mock("@lmnr-ai/client", () => ({
+  LaminarClient: class {
+    datasets = { listDatasets };
+  },
+}));
 
 let root: string;
 let cwd: string;
@@ -78,6 +85,7 @@ const describeOk = (description: EvalDescription = DESCRIPTION) =>
   });
 
 beforeEach(async () => {
+  listDatasets.mockReset().mockResolvedValue([]);
   root = await mkdtemp(path.join(tmpdir(), "lmnr-describe-"));
   // Secrets and the project key come from the env or .env in the cwd.
   cwd = process.cwd();
@@ -424,6 +432,19 @@ void describe("eval run with an eval.py dataset", () => {
         message: expect.stringMatching(/JUDGE_KEY/),
       }),
     );
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+
+  void it("fails before building when Laminar rejects the project key", async () => {
+    await write("evals/support/agent/eval.py", EVAL_PY);
+    describeOk();
+    listDatasets.mockRejectedValue(new Error("401 invalid project API key"));
+    await expect(
+      handleEvalRun(undefined, { dir: path.join(root, "evals") }),
+    ).rejects.toThrow(
+      expect.objectContaining({ code: "laminar_key_rejected", exitCode: 24 }),
+    );
+    expect(listDatasets).toHaveBeenCalledTimes(1);
     expect(runCommand).not.toHaveBeenCalled();
   });
 });

@@ -16,7 +16,7 @@ import { pc } from "../../utils/colors";
 import { readLocalProjectFile } from "../../utils/local-project-file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
-import { buildEvalClient } from "./client";
+import { buildEvalClient, checkProjectKey } from "./client";
 import {
   checkRunTasks,
   DEFAULT_EVALS_DIR,
@@ -307,6 +307,8 @@ export const handleEvalRun = async (
 
   if (!opts.remote) {
     const runEnv = await harborEnv(env, opts);
+    // Before minutes of builds and trials whose results would go nowhere.
+    await checkProjectKey(runEnv);
     await buildLocalImages(await localImageDefs(evalsDir, datasets, overrides));
     const outcome = await runDatasets(
       evalsDir,

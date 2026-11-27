@@ -689,7 +689,9 @@ Harbor does.
 
 Modes:
   (default)          Trials run on local Docker. Needs uv, Docker and
-                     LMNR_PROJECT_API_KEY (written to .env by \`lmnr-cli setup\`).
+                     LMNR_PROJECT_API_KEY (written to .env by \`lmnr-cli setup\`),
+                     which is checked against Laminar (LMNR_BASE_URL) before
+                     anything is built, so results can't silently go nowhere.
   --remote           Pushes the images, uploads the folder and starts the run
                      in a Laminar sandbox, then prints the run's log until it
                      ends. Only tasks Laminar doesn't have are uploaded (unpushed
@@ -765,6 +767,8 @@ Exit codes:
   21  remote_run_failed (a --remote run failed before its datasets ran, or
       its sandbox was lost)
   23  trials_errored (every trial of a dataset errored, so nothing was graded)
+  24  laminar_key_rejected / laminar_unreachable (local runs: Laminar rejected
+      LMNR_PROJECT_API_KEY, or didn't answer at LMNR_BASE_URL)
 
 Examples:
   $ lmnr-cli eval run
