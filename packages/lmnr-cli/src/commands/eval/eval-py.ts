@@ -59,11 +59,12 @@ interface EvalService {
   name: string;
   kind: string;
   version: string;
-  /** The image the service is installed from. */
-  source: string;
+  /** The image the service is installed from (none for an install-only custom service). */
+  source: string | null;
   /** Env var names the service sets for the app. */
   env: string[];
-  origin: string;
+  /** Where it was declared (none without a call site). */
+  origin: string | null;
 }
 
 /** `python -m lmnr.evals.describe agent/eval.py`'s output. */
@@ -114,7 +115,7 @@ export interface EvalDescription {
   laminar_layer?: LaminarLayer;
 }
 
-/** A mock: `type` function (an observed function's span name) or http. */
+/** A mock: `type` function (an observed function's mock key) or http. */
 interface EvalMock {
   key: string;
   type: "function" | "http";
@@ -152,7 +153,6 @@ export const hasEvalPy = (datasetDir: string): Promise<boolean> =>
 const runnerRef = (description: EvalDescription): string =>
   `${EVAL_PY}:${description.runner}`;
 
-/** What a new task's `docker_image` is: the image's name, or its registry ref. */
 /** What a task names in `docker_image` for an image: its name, or a registry image's ref. */
 const taskImageName = (name: string, image: EvalImage | undefined): string =>
   image?.kind === "registry" ? image.ref : name;

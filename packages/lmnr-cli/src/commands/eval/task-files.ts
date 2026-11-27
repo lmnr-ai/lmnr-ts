@@ -38,8 +38,8 @@ const logger = initializeLogger();
  *
  * Tasks of an eval.py dataset never bring their own image: they start from one
  * the runner declares (`checkTaskImage`). Harbor would build or pull any other
- * image itself, without what the runner adds to its images (services and the
- * Laminar layer in later phases).
+ * image itself, without what the runner adds to its images (services, the
+ * Laminar layer).
  */
 export const INSTRUCTION_STUB = "Handle the case in this task.\n";
 export const TEST_SH_STUB = `#!/bin/bash\necho "graded by ${EVAL_PY}"\n`;

@@ -95,9 +95,10 @@ const formatDescription = (
   for (const s of services) {
     body.push(
       ...indent([
-        `${s.name}: ${s.kind} ${s.version} from ${s.source}`,
+        `${s.name}: ${s.kind} ${s.version}` +
+          (s.source ? ` from ${s.source}` : ""),
         `  env: ${list(s.env)}`,
-        `  declared at ${s.origin}`,
+        ...(s.origin ? [`  declared at ${s.origin}`] : []),
       ]),
     );
   }

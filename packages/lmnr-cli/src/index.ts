@@ -653,7 +653,10 @@ Examples:
       "Concurrent trials. Omitted → harbor.yaml",
       parsePositiveInt,
     )
-    .option("--model <name>", "Agent model override. Omitted → harbor.yaml")
+    .option(
+      "--model <name>",
+      "Agent model override. Omitted → harbor.yaml, else the eval.py runner's model",
+    )
     .option(
       "--env <KEY[=VALUE]>",
       "Extra agent env var (repeatable). A bare KEY is read from your environment",
@@ -708,11 +711,13 @@ image, the runner's new_task_toml), instruction.md and a stub tests/test.sh.
 A task.toml that exists is only completed, never rewritten. A harbor.yaml
 next to eval.py may set job settings (concurrency, attempts, environment,
 datasets) and model sweeps (agents entries with only model_name), but not
-images, agent import paths or env, or the verifier's import path. Tasks start
+images, artifacts, agent import paths, names or env, or the verifier's import
+path / kwargs. Tasks start
 from the runner's images only: a task's own environment/Dockerfile, or a
 docker_image the runner doesn't declare, fails the run (declare a named image
-on the runner instead). An image with builder steps or services becomes a
-generated Dockerfile; identical definitions build (and push) once, and each
+on the runner instead). Every runner image becomes a generated Dockerfile
+(lmnr adds its Laminar layer: Python and lmnr under /opt/lmnr); identical
+definitions build (and push) once, and each
 run keeps the Dockerfile it built (see \`lmnr-cli eval describe --help\`).
 Folders in the evals folder that aren't datasets (e.g.
 _shared/) hold Python modules every eval.py can import, such as a shared
@@ -777,8 +782,9 @@ each image with every base, service and builder step and where it was
 declared, and for a generated image where runs keep its Dockerfile (local:
 next to the job's config.json in Harbor's jobs dir; --remote: the run's
 files in Laminar, <dataset>/agent/.generated/); services (kind, version,
-source image, the env var names they set); secret and env names (never
-values); new_task_toml; grade_with_test_sh; warnings. Datasets with only a
+source image, the env var names they set); mocks (key, type, handler, base
+URL env); mock_dependencies; the Laminar layer (Python and lmnr); secret and
+env names (never values); new_task_toml; grade_with_test_sh; warnings. Datasets with only a
 harbor.yaml are listed as such. Nothing is built or run.
 
 --json prints describe's JSON by dataset folder (null for a harbor.yaml
@@ -806,7 +812,8 @@ Examples:
       "after",
       `
 For a dataset with an agent/eval.py: creates <dir> if needed and writes the
-files it lacks: task.toml ([task] name = <org of [dataset] name>/<name>, the
+files it lacks: task.toml ([task] name = <org of [dataset] name, else the
+dataset folder>/<name>, the
 runner's default image and new_task_toml), instruction.md and a stub
 tests/test.sh. Then add the case's data: environment/ (what the app reads),
 tests/expected.json (the reference answer), tests/fixtures/ (data the agent

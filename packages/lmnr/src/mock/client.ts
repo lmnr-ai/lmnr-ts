@@ -74,11 +74,23 @@ export class MockClient {
     if (this.keys !== undefined) {
       return this.keys;
     }
-    // Two concurrent first fetches are harmless.
+    // No lock: concurrent first fetches are harmless, as long as one that
+    // fails after another has succeeded doesn't fail its call.
     this.checkBackoff();
-    return this.parseKeys(
-      await httpRequest("GET", `${this.url}/keys`, undefined, KEYS_TIMEOUT_MS),
+    const result = await httpRequest(
+      "GET",
+      `${this.url}/keys`,
+      undefined,
+      KEYS_TIMEOUT_MS,
     );
+    try {
+      return this.parseKeys(result);
+    } catch (e) {
+      if (this.keys !== undefined) {
+        return this.keys;
+      }
+      throw e;
+    }
   }
 
   private parseKeys(result: HttpResult): Set<string> {

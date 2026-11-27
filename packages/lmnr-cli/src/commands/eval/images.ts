@@ -176,7 +176,7 @@ export const generatedDockerfiles = async (
 
 /**
  * Every image a remote run uses, as pushed manifest digests, by dataset (each
- * dataset declares its own in its harbor.yaml).
+ * dataset declares its own in its harbor.yaml or agent/eval.py).
  */
 export interface RemoteImages {
   /** By dataset, then `docker_image`. */

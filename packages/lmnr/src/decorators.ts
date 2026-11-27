@@ -67,8 +67,8 @@ interface ObserveOptions {
  * @param options.tags - Tags to associate with the span.
  * @param options.mockKey - The key an eval's mocks use for this function. In an
  * eval run with mocks (`LMNR_MOCK_URL` set), a call whose key is mocked is answered
- * by the trial's mock server instead of running, and returns a Promise. Defaults to the
- * span name.
+ * by the trial's mock server instead of running (an `async` function gets a Promise,
+ * any other the value itself). Defaults to the span name.
  * @param options.mockable - Set to `false` so this function always runs, even when
  * its key is mocked. Defaults to `true`.
  * @param fn - The function to wrap
@@ -194,7 +194,7 @@ const resolveMockKey = (
   options: Partial<ObserveOptions>,
   spanName: string,
 ): string | undefined =>
-  options.mockable === false ? undefined : (options.mockKey ?? spanName);
+  options.mockable === false ? undefined : options.mockKey || spanName;
 
 /**
  * Builds context-level association properties that propagate to child spans.

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
 import path from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
@@ -16,7 +17,11 @@ import {
   observeExperimentalDecorator,
 } from "../src";
 import { MOCK_FAILURE } from "../src/mock";
-import { RETRY_BACKOFF_MS, resetMockClient } from "../src/mock/client";
+import {
+  MockClient,
+  RETRY_BACKOFF_MS,
+  resetMockClient,
+} from "../src/mock/client";
 import {
   _resetConfiguration,
   initializeTracing,
@@ -663,5 +668,35 @@ void describe("lmnr-mock conformance", () => {
         await server.close();
       }
     });
+  }
+});
+
+void it("an async key fetch failing after another succeeded returns the keys", async () => {
+  // The first /keys request fails late (503); a second one, made while the
+  // first is in flight, succeeds. The first call must still get the keys.
+  let requests = 0;
+  let failFirst: (() => void) | undefined;
+  const server = createHttpServer((req, res) => {
+    requests += 1;
+    if (requests === 1) {
+      failFirst = () => res.writeHead(503).end("busy");
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ keys: ["k"] }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as { port: number };
+  try {
+    const client = new MockClient(`http://127.0.0.1:${port}/_lmnr/v1/t`, 1000);
+    const first = client.mockedKeys();
+    while (failFirst === undefined) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.deepEqual([...(await client.mockedKeys())], ["k"]);
+    failFirst();
+    assert.deepEqual([...(await first)], ["k"]);
+  } finally {
+    server.close();
   }
 });
