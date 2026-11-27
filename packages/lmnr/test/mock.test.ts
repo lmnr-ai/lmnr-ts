@@ -145,12 +145,13 @@ const useMockUrl = (url: string | undefined) => {
 
 const rejectsMocked = async (
   promise: Promise<unknown>,
-  name: string,
+  type: string,
   message: string | RegExp,
 ) => {
   await assert.rejects(promise, (error: unknown) => {
     assert.ok(error instanceof MockedError);
-    assert.equal(error.name, name);
+    assert.equal(error.type, type);
+    assert.equal(error.name, type);
     if (typeof message === "string") {
       assert.equal(error.message, message);
     } else {
@@ -243,7 +244,7 @@ void describe("observe mocks", () => {
     assert.equal(call.body.span_id, span.spanContext().spanId);
   });
 
-  void it("throws a MockedError named after the raised type", async () => {
+  void it("throws a MockedError of the raised type", async () => {
     await server.reply("payments.refund", 200, {
       action: "raise",
       error: { type: "DuplicateRefund", message: "already refunded" },
@@ -594,6 +595,9 @@ void describe("observe mocks", () => {
   void it("exports MockedError", () => {
     const error = new MockedError("Kind", "message");
     assert.ok(error instanceof Error);
+    assert.equal(error.type, "Kind");
+    assert.equal(error.name, "Kind");
+    assert.equal(error.message, "message");
     assert.equal(String(error), "Kind: message");
   });
 });

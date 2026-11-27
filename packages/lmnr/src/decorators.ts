@@ -76,7 +76,7 @@ interface ObserveOptions {
  * @returns Promise with the result of the wrapped function.
  * @throws Exception - Re-throws the exception if the wrapped function throws an exception.
  * @throws MockedError - In an eval run with mocks, when the mock handler raises
- * `mock.Error`, or when a mocked call fails (`name === "MockFailure"`).
+ * `mock.Error` (its `type`), or when a mocked call fails (`type === "MockFailure"`).
  *
  * @example
  * ```typescript
