@@ -91,7 +91,12 @@ export const buildUpdateMetricAlert = (
   return patch;
 };
 
-const describeWindow = ({ minutes }: MetricAlertRule["window"]): string => {
+const describeWindow = (window: MetricAlertRule["window"]): string => {
+  const minutes: unknown = window?.minutes;
+  // Listed all the same, like a condition the server does not accept.
+  if (typeof minutes !== "number") {
+    return "an unknown window";
+  }
   if (minutes % 1440 === 0) {
     return `${minutes / 1440}d`;
   }

@@ -142,6 +142,18 @@ void describe("describeRule", () => {
     ).toBe("total_cost over 1h, budget (no thresholds)");
   });
 
+  void it("lists a rule with a window it does not know", () => {
+    expect(
+      describeRule({ ...RULE, window: { monthToDate: true } as never }),
+    ).toBe(
+      "total_cost over an unknown window, above warning 130% of 1w earlier, " +
+        "critical 150% of 1w earlier",
+    );
+    expect(describeRule({ ...RULE, window: undefined as never })).toContain(
+      "over an unknown window",
+    );
+  });
+
   void it("describes a stored rule that leaves unset keys out", () => {
     expect(
       describeRule({
