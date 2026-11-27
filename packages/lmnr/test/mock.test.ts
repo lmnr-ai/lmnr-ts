@@ -664,6 +664,8 @@ void describe("lmnr-mock conformance", () => {
           }
           const recorded = (await server.calls()).pop();
           assert.deepEqual(recorded?.body.args, args);
+          // Only Python has keyword arguments.
+          assert.equal(recorded?.body.kwargs, undefined);
           if (call.body.lang === "typescript") {
             assert.deepEqual(recorded?.body.args, call.body.args);
           }
