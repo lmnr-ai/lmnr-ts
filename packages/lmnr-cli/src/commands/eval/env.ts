@@ -78,8 +78,7 @@ export const withRysticToken = async (
   if (remote) {
     if (!(RYSTIC_TOKEN in explicitEnv)) return explicitEnv;
     logger.warn(
-      `Not sending --env ${RYSTIC_TOKEN}: remote runs get their own Rystic ` +
-        "token from Laminar.",
+      `Not sending --env ${RYSTIC_TOKEN}: remote runs do not need a Rystic token.`,
     );
     const { [RYSTIC_TOKEN]: _dropped, ...rest } = explicitEnv;
     return rest;
