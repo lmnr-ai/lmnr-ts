@@ -22,9 +22,12 @@ import {
   handleDatasetPush,
 } from "./dataset-command";
 import { readDatasetToml, writeDatasetToml } from "./dataset-toml";
+import { describeEvalPy } from "./describe";
+import type { EvalDescription } from "./eval-py";
 import { hashTaskDir } from "./task-hash";
 
 vi.mock("./client", () => ({ buildEvalClient: vi.fn() }));
+vi.mock("./describe", () => ({ describeEvalPy: vi.fn() }));
 // Tests run with LMNR_LOG_LEVEL=silent; checkRunTasks's warnings are asserted here.
 const logger = vi.hoisted(() => ({
   debug: vi.fn(),
@@ -143,6 +146,50 @@ beforeEach(async () => {
 afterEach(async () => {
   vi.restoreAllMocks();
   await rm(root, { recursive: true, force: true });
+});
+
+void describe("eval dataset push of an eval.py dataset", () => {
+  const description: EvalDescription = {
+    version: 1,
+    runner: "SupportEval",
+    images: { "support-evals": { kind: "registry", ref: "python:3.13" } },
+    default_image: "support-evals",
+    model: null,
+    env: {},
+    secrets: [],
+    new_task_toml: {},
+    grade_with_test_sh: false,
+    warnings: [],
+  };
+
+  void it("plans --dry-run with the task files a push would write", async () => {
+    vi.mocked(describeEvalPy).mockResolvedValue(description);
+    await write("evals/support/agent/eval.py", "");
+    await write(
+      "evals/support/tasks/dataset.toml",
+      `[dataset]\nname = "${DS}"\n`,
+    );
+    // A data-only case: not a task until its task.toml is written.
+    await write("evals/support/tasks/refund/environment/case.json", "{}");
+    const log = vi.spyOn(console, "log").mockReturnValue(undefined);
+
+    await handleDatasetPush([], opts("evals", { dryRun: true, json: true }));
+    const report = JSON.parse(String(log.mock.calls[0][0]));
+    expect(
+      report.datasets[0].added.map((v: { task: string }) => v.task),
+    ).toEqual(["acme/refund"]);
+    // Nothing written, nothing uploaded.
+    expect(
+      existsSync(path.join(root, "evals/support/tasks/refund/task.toml")),
+    ).toBe(false);
+    expect(uploads()).toEqual([]);
+
+    // The real push writes the same files, so it pushes the version planned.
+    await handleDatasetPush([], opts("evals"));
+    expect((await pinsOf("evals/support"))!["acme/refund"]).toBe(
+      report.datasets[0].added[0].hash,
+    );
+  });
 });
 
 void describe("eval dataset push / pull", () => {

@@ -684,7 +684,7 @@ void describe("images", () => {
 
 void describe("harborArgs", () => {
   void it("runs the pinned Harbor with the Laminar plugin, grouped by dataset", () => {
-    expect(LMNR_PYTHON_VERSION).toBe("0.9.2");
+    expect(LMNR_PYTHON_VERSION).toBe("0.9.3");
     expect(harborArgs("/tmp/job.json", "support")).toEqual([
       "--python",
       "3.13",

@@ -1,9 +1,12 @@
 import { existsSync } from "node:fs";
-import { copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { harborFailed } from "../../errors";
+import { errorMessage } from "@lmnr-ai/types";
+import { parse as parseToml } from "smol-toml";
+
+import { harborFailed, invalidEvalsDir } from "../../errors";
 import { findEnvKey } from "../../utils/env-file";
 import { initializeLogger } from "../../utils/logger";
 import { scanTasks, type TaskHashFile, taskHashFile } from "./dataset-state";
@@ -14,6 +17,12 @@ import {
   loadDatasetConfig,
   type RunOverrides,
 } from "./datasets";
+import {
+  evalDescription,
+  evalPyPath,
+  hasEvalPy,
+  parseScriptDependencies,
+} from "./eval-py";
 import { type DatasetImages, datasetImages, type RemoteImages } from "./images";
 import { type CommandOutput, runCommand } from "./run-command";
 
@@ -26,11 +35,79 @@ const logger = initializeLogger();
  * between releases.
  */
 export const HARBOR_VERSION = "0.25.0";
-export const LMNR_PYTHON_VERSION = "0.9.2";
-const PYTHON_VERSION = "3.13";
+export const LMNR_PYTHON_VERSION = "0.9.3";
+export const PYTHON_VERSION = "3.13";
 const ENVIRONMENT_MODULE = "lmnr_hosted_env.py";
 /** In the staging dir: `{<task dir name>: {name, hash}}` for the plugin. */
 const TASK_HASHES_FILE = "task-hashes.json";
+
+/**
+ * The `lmnr` requirement next to Harbor and for describing eval.py.
+ * `LMNR_EVAL_LMNR_SPEC` (undocumented, for development) replaces it, e.g.
+ * with a checkout (`/path/to/lmnr-python`) or `lmnr @ git+https://...@branch`.
+ */
+export const lmnrSpec = (): string =>
+  process.env.LMNR_EVAL_LMNR_SPEC?.trim() || `lmnr==${LMNR_PYTHON_VERSION}`;
+
+/** In the evals root: what code in the Harbor process imports. */
+const EVALS_PYPROJECT = "pyproject.toml";
+
+/**
+ * The evals root's `pyproject.toml`, if it has a `[project]` table (uv needs
+ * one; a file with only tool settings is left alone).
+ */
+const evalsPyproject = async (
+  datasetDir: string,
+): Promise<string | undefined> => {
+  const file = path.join(
+    path.dirname(path.resolve(datasetDir)),
+    EVALS_PYPROJECT,
+  );
+  let text: string;
+  try {
+    text = await readFile(file, "utf8");
+  } catch {
+    return undefined;
+  }
+  let toml: Record<string, unknown>;
+  try {
+    toml = parseToml(text);
+  } catch (error) {
+    throw invalidEvalsDir(`${file} is not valid TOML: ${errorMessage(error)}`);
+  }
+  const project = toml.project;
+  return typeof project === "object" &&
+    project !== null &&
+    !Array.isArray(project)
+    ? file
+    : undefined;
+};
+
+/**
+ * `uvx` arguments for the packages code in the Harbor process imports
+ * (eval.py and its `verify()`, shared runners, custom agents): the evals
+ * root's `pyproject.toml` `[project] dependencies` (`--with-requirements`;
+ * uv reads only those, not dependency groups or `requires-python`), then an
+ * eval.py's PEP 723 `dependencies` (`--with` each). Packages the app or a
+ * container script needs belong in the image instead.
+ */
+export const pythonRequirements = async (
+  datasetDir: string,
+): Promise<string[]> => {
+  const args: string[] = [];
+  const pyproject = await evalsPyproject(datasetDir);
+  if (pyproject) args.push("--with-requirements", pyproject);
+  if (await hasEvalPy(datasetDir)) {
+    const file = evalPyPath(datasetDir);
+    for (const dep of parseScriptDependencies(
+      await readFile(file, "utf8"),
+      file,
+    )) {
+      args.push("--with", dep);
+    }
+  }
+  return args;
+};
 
 /** `assets/` next to `dist/` when bundled, three levels up in the source tree. */
 const environmentModulePath = (): string => {
@@ -51,20 +128,25 @@ interface PluginArgs {
    * the plugin records the dataset and each trial's task and version.
    */
   dataset?: { name: string; taskHashesFile: string };
+  /** More packages for the Harbor process (`pythonRequirements`). */
+  requirements?: string[];
+  /** An eval.py runner's module files, for the Files view (`runner_modules`). */
+  runnerModules?: string[];
 }
 
 /** `group` names the evaluation group: `--group`, else the dataset name, else the folder. */
 export const harborArgs = (
   configPath: string,
   group: string,
-  { grpcPort, dataset }: PluginArgs = {},
+  { grpcPort, dataset, requirements = [], runnerModules = [] }: PluginArgs = {},
 ): string[] => [
   "--python",
   PYTHON_VERSION,
   "--from",
   `harbor==${HARBOR_VERSION}`,
   "--with",
-  `lmnr==${LMNR_PYTHON_VERSION}`,
+  lmnrSpec(),
+  ...requirements,
   "harbor",
   "run",
   "-c",
@@ -81,6 +163,9 @@ export const harborArgs = (
         "--pk",
         `task_hashes_file=${dataset.taskHashesFile}`,
       ]
+    : []),
+  ...(runnerModules.length > 0
+    ? ["--pk", `runner_modules=${JSON.stringify(runnerModules)}`]
     : []),
   // The plugin exports spans over gRPC (8443 unless told otherwise).
   ...(grpcPort ? ["--pk", `grpc_port=${grpcPort}`] : []),
@@ -135,7 +220,14 @@ const runHarborDataset = async (run: HarborRun): Promise<number> => {
       .join(path.delimiter);
     return await runCommand(
       "uvx",
-      harborArgs(configPath, run.group, { grpcPort: run.grpcPort, dataset }),
+      harborArgs(configPath, run.group, {
+        grpcPort: run.grpcPort,
+        dataset,
+        requirements: await pythonRequirements(run.datasetDir),
+        runnerModules: (await hasEvalPy(run.datasetDir))
+          ? (evalDescription(run.datasetDir).modules ?? [])
+          : [],
+      }),
       {
         cwd: run.datasetDir,
         env: {

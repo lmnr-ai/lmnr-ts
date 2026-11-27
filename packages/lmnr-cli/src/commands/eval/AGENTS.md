@@ -1,7 +1,8 @@
 # Harbor evals (`eval`)
 
 - `lmnr-cli eval run [dataset] [--dir evals]` runs each dataset folder
-  (`<dir>/<folder>/harbor.yaml`, a Harbor JobConfig; named by folder or by
+  (`<dir>/<folder>/harbor.yaml`, a Harbor JobConfig, and/or
+  `<folder>/agent/eval.py`, see "eval.py datasets"; named by folder or by
   `[dataset] name`, formerly "suite") with **pinned** Harbor + the Laminar
   plugin through `uvx` (`harbor.ts`: `HARBOR_VERSION`, `LMNR_PYTHON_VERSION`),
   from inside the dataset dir so relative paths and custom agent imports
@@ -65,15 +66,22 @@
     after each `harbor run` exits (passed or not) the one job dir in there
     (`findJobDir`) has its trial dirs packed with
     `packFiles` and sent with `uploadJob` + `uploadJobIndex` (`LMNR_EVAL_UPLOAD_ID`,
-    run key). Job-level files, `<trial>/artifacts` and `steps/*/artifacts` are
-    left out; files over 50 MiB and anything past 256 MiB are skipped. A
+    run key). Job-level files and `steps/*/artifacts` are left out;
+    `<trial>/artifacts` is kept (an `eval.py` runner grades from it; the Files
+    view shows it as `logs/artifacts/`) but packed after every trial's other
+    files, from what the cap leaves, so copied app state never pushes out a
+    log (the walk is in name order: `artifacts/` would come before
+    `trial.log`); files over 50 MiB and anything past 256 MiB are skipped. A
     failure only warns. The sandbox (and the job) is deleted after the run, so
     this is the only copy.
   - **No extra secret pass:** Harbor scrubs each trial dir before `harbor run`
     exits, but only values from the agent's / verifier's env (not the task's
     `[environment] env`, resolved inside each environment backend). Uploads
     carry that gap as is; fixing it upstream is LAM-2534.
-- Modules: `index.ts` (`eval run` flow, reporting), `remote.ts` (`RunSpec`,
+- Modules: `index.ts` (`eval run` flow, reporting), `eval-py.ts` (eval.py
+  datasets: describe JSON types, PEP 723, the describe cache, the ownership
+  merge), `describe.ts` (runs `lmnr.evals.describe`), `task-files.ts` (the
+  task files written for eval.py datasets, `eval task new`), `remote.ts` (`RunSpec`,
   `startRemoteRun`, `eval orchestrate`), `run-log.ts` (the run's log: shipper
   and follower), `run-log-lines.ts` (what the log shows of Harbor's output),
   `jobs.ts` (packing a finished Harbor
@@ -235,6 +243,105 @@
   (Harbor's own rule, `needs_chmod`). Ownership and mtimes are fixed so local
   user names and times don't leak. Task version archives are packed from
   `collectTaskFiles` instead (Harbor's selection; see below).
+
+## eval.py datasets (LAM-2588 phase 1)
+
+- A dataset folder with `agent/eval.py` (one `EvalRunner` subclass, lmnr-python
+  `src/lmnr/evals/AGENTS.md`) is runnable with or without a harbor.yaml
+  (`isRunnableDataset`; discovery, `isDatasetFolder` and `selectDatasets` use it).
+- **Describe first.** `describeDatasets` runs `uvx --python 3.13 --from <lmnr
+  spec> <pythonRequirements> python -m lmnr.evals.describe agent/eval.py`
+  from the dataset dir (`captureCommand`: output is collected, never shown; on
+  failure the error is Python's stderr minus uv's progress lines, plus a hint
+  when the pinned lmnr has no `lmnr.evals`) and caches the JSON per dataset dir
+  (`setEvalDescription`). `loadDatasetConfig` throws if an eval.py dataset wasn't
+  described, so every path that builds its job config (run, images, `${VAR}`s,
+  `findTaskTomls`) must come after it. JSON `version` must be
+  `DESCRIBE_VERSION` (1); bump both repos together.
+- **Ownership** (`applyEvalRunner`, applied inside `loadDatasetConfig`, before
+  `buildJobConfig`'s CLI overrides, so `--model` / `--env` / `--task` still
+  win): eval.py owns images (→ our `images` key; registry images are no build,
+  tasks name their ref), the agent (`LaminarAgent`, `kwargs.runner =
+  agent/eval.py:<Class>`, `env` = describe's env with secrets as `${NAME}`),
+  `verifier.import_path` / `kwargs` (`LaminarVerifier`, unless
+  `grade_with_test_sh`), and the job-level `artifacts` (describe's optional `artifacts`,
+  Harbor entries; a task.toml's `artifacts` still add to them in Harbor).
+  harbor.yaml defining any of those (images, an `agents` entry with
+  `import_path` or `name` or `env`, verifier import path / kwargs,
+  `artifacts`) is `invalid_evals_dir`. harbor.yaml `agents` entries without them become one
+  `LaminarAgent` each with their `model_name` / extra `kwargs` (model sweep).
+  Runner `model` is the default `model_name`. Missing `datasets` and `tasks` →
+  `datasets: [{path: tasks}]`.
+- **Secrets**: describe's `secrets` are required template vars and its env's
+  `${...}` are scanned (`findTemplateVars`), so they resolve exactly like
+  harbor.yaml `${VAR}`s (shell, `.env.local`, `.env`; exit 19) and their values
+  reach the Harbor process env, where `verify()` reads them.
+- **Packages for the Harbor process** (`pythonRequirements` in `harbor.ts`,
+  for describe AND `harbor run`, local and in the orchestrator, every
+  dataset): eval.py and `verify()` run on the host, only their `ctx`
+  commands run in the container, so what eval.py, shared runners or a custom
+  agent import must be in the uvx environment; what the app or a container
+  script needs belongs in the image. Recommended: the evals root's
+  `pyproject.toml` (the dataset dir's parent; remote uploads include it) →
+  `--with-requirements <abs path>`, used only when it has a `[project]` table
+  (uv fails on one without; a tools-only file is left alone; invalid TOML is
+  `invalid_evals_dir`). uv reads only `[project] dependencies`: not
+  dependency groups, not `requires-python` (the Harbor process is Python
+  3.13), no lock. Optional, per dataset: eval.py's PEP 723 block
+  (`parseScriptDependencies`, the `# /// script` block parsed as TOML) →
+  `--with` each, after the pyproject. The content regex (PEP 723's own)
+  absorbs inner `# ///` lines, so two blocks only count as two when separated
+  by a non-comment line.
+- **Task files** (`ensureTaskFiles`, `task-files.ts`): before `checkRunTasks`
+  in `eval run` (so before hashing and packing; the orchestrator never writes),
+  at the start of `eval dataset push` (`--dry-run` lists them, then plans
+  from a temp copy of `tasks/` with them written, since they add tasks and
+  change hashes; push only reads `tasks/`), and in `eval task
+  new <dataset>/tasks/<name>`. Every non-dot dir directly under `tasks/` gets a
+  missing `task.toml` (`[task] name = <org of [dataset] name, else the folder
+  name>/<dir>`, `[environment] docker_image = <default image, or its registry
+  ref>`, then the runner's `new_task_toml` merged per table, via smol-toml), `instruction.md` and `tests/test.sh` (0755;
+  not with `grade_with_test_sh`, where a stub would hide a missing real one).
+  An existing `task.toml` missing `[task] name` / `docker_image` gets the key
+  INSERTED AS TEXT (`insertTomlKey`): after the table's header, or as a new
+  table above the first table and the comment lines right above it (never at
+  the top: root keys would move into it); `[environment]` is inserted first so
+  a new `[task]` lands above it. A dir name that isn't a `NAME_RULE` part fails
+  instead of writing.
+- **Task image rules** (`checkTaskImage`, main doc 2.1.2): a task of an
+  eval.py dataset never brings its own image. An `environment/Dockerfile`, or
+  a `docker_image` not in `taskImageNames` (image names; a registry image's
+  ref), is `invalid_evals_dir` with a hint to declare a named image on the
+  runner. `ensureTaskFiles` checks every task before writing any file (so
+  `eval run`, `eval dataset push` and its `--dry-run` fail first), and `eval
+  task new` checks its dir. Harbor would otherwise build or pull that image
+  itself, without what the runner adds (services, the Laminar layer: phases
+  2-3).
+- **Shared runners**: folders in the evals root that are neither a dataset
+  (`isRunnableDataset`) nor skipped hold shared Python (`_shared/`); lmnr
+  puts the evals root on `sys.path`. Discovery already ignores them and remote
+  runs pack them (`remoteExclude` drops only OTHER dataset folders). Describe's
+  optional `modules` (the runner's files relative to the evals root) go to
+  the plugin as `--pk runner_modules=<JSON>` (`harborArgs`), local and in the
+  orchestrator (from `RunSpec.runners`); the plugin puts the ones outside the
+  dataset's `agent/` into `hosted_metadata.runnerModules` for the Files view's
+  `runner/` folder.
+- **Remote**: `RunSpec.runners` (describe JSON by folder) is set into the cache
+  by `eval orchestrate` (paths in it are the client's; only image builds use
+  them, and those happen on the client). `RunSpec.lmnrSpec` carries
+  `LMNR_EVAL_LMNR_SPEC` when set.
+- **`LMNR_EVAL_LMNR_SPEC`** (undocumented, development): replaces
+  `lmnr==${LMNR_PYTHON_VERSION}` for describe and Harbor's `--with` (a checkout
+  path, or `lmnr @ git+https://...@branch`), to test before an lmnr release. uv
+  caches the build of a local path: after editing the checkout, `uv cache clean
+  lmnr` (it waits for other uv processes' cache lock). Local E2E (Docker
+  available in the agent sandbox): `LMNR_EVAL_LMNR_SPEC=/repos/lmnr-python node
+  dist/index.cjs eval run` from a copy of lmnr-python's `examples/agent-evals`,
+  with the shell's `LMNR_PROJECT_API_KEY` / `LMNR_LOG_LEVEL` unset (they beat
+  `.env`) and `LMNR_GRPC_PORT=8001` in its `.env`.
+- Release order: lmnr-python (with `lmnr.evals`) first, then bump
+  `LMNR_PYTHON_VERSION` here; `--remote` runs `npx lmnr-cli@<version>`, so it
+  can only be checked once both are published.
 
 ## Eval datasets (`eval dataset pull / push`)
 

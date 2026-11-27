@@ -59,3 +59,38 @@ export const runCommand = (
     });
     child.on("close", (code) => resolve(code ?? 1));
   });
+
+/**
+ * Run `command` and collect its output instead of showing it, e.g. a helper
+ * that prints JSON. Nothing reaches our stderr.
+ */
+export const captureCommand = (
+  command: string,
+  args: string[],
+  options: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+): Promise<{ code: number; stdout: string; stderr: string }> =>
+  new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      env: options.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr?.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", (error: NodeJS.ErrnoException) => {
+      reject(
+        error.code === "ENOENT"
+          ? missingTool(`\`${command}\` is not installed or not on PATH.`)
+          : error,
+      );
+    });
+    child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
+  });

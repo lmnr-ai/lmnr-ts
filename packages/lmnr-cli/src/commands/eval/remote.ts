@@ -34,6 +34,7 @@ import {
 } from "./datasets";
 import { imagePusher } from "./docker";
 import { API_KEY_VAR, harborEnv, SANDBOX_PROXY_PLACEHOLDER } from "./env";
+import { type EvalDescription, setEvalDescription } from "./eval-py";
 import { assertDatasetsPassed, type JobOutput, runDatasets } from "./harbor";
 import { ensureRemoteImages, type RemoteImages } from "./images";
 import { findJobDir, packJobDir } from "./jobs";
@@ -55,6 +56,13 @@ interface RunSpec extends RemoteImages, RemoteTasks {
   overrides: RunOverrides;
   /** Values for the datasets' `${VAR}` placeholders and `--env` flags. */
   env: Record<string, string>;
+  /**
+   * The described `agent/eval.py` of each eval.py dataset, so the
+   * orchestrator builds the same job configs without describing again.
+   */
+  runners?: Record<string, EvalDescription>;
+  /** `LMNR_EVAL_LMNR_SPEC` (development override), when set. */
+  lmnrSpec?: string;
 }
 
 /** How a remote run gets its tasks, by dataset folder. */
@@ -165,6 +173,7 @@ export const startRemoteRun = async (
   overrides: RunOverrides,
   env: Record<string, string>,
   taskHashes?: Record<string, TaskHashFile>,
+  runners: Record<string, EvalDescription> = {},
 ): Promise<{ uploadId: string; sandboxId: string }> => {
   // The orchestrator gets its own short-lived key and URL from the server.
   const dropped = Object.keys(env).filter((k) => k.startsWith("LMNR_"));
@@ -244,12 +253,15 @@ export const startRemoteRun = async (
         `files: ${errorMessage(error)}`,
     );
   }
+  const lmnrSpec = process.env.LMNR_EVAL_LMNR_SPEC?.trim();
   const spec: RunSpec = {
     datasets,
     overrides,
     env: runEnv,
     ...images,
     ...tasks,
+    ...(Object.keys(runners).length > 0 ? { runners } : {}),
+    ...(lmnrSpec ? { lmnrSpec } : {}),
   };
   const { sandboxId } = await client.hostedEvals.startRun({
     uploadId,
@@ -338,6 +350,10 @@ const jobUploads = async (
  */
 export const handleEvalOrchestrate = async (): Promise<void> => {
   const spec = readRunSpec();
+  for (const [folder, description] of Object.entries(spec.runners ?? {})) {
+    setEvalDescription(path.join(process.cwd(), folder), description);
+  }
+  if (spec.lmnrSpec) process.env.LMNR_EVAL_LMNR_SPEC = spec.lmnrSpec;
   const env = await harborEnv(spec.env, {});
   const client = new LaminarClient({
     baseUrl: env.LMNR_BASE_URL,

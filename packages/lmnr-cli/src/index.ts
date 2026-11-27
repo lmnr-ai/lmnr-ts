@@ -38,6 +38,7 @@ import {
   handleDatasetPush,
 } from "./commands/eval/dataset-command";
 import { handleEvalOrchestrate } from "./commands/eval/remote";
+import { handleEvalTaskNew } from "./commands/eval/task-files";
 import {
   handleLlmProfileCreate,
   handleLlmProfileDelete,
@@ -629,7 +630,7 @@ Examples:
     .argument("[dataset]", "Dataset to run. Omitted → every dataset")
     .option(
       "--dir <dir>",
-      "Evals folder (one <dataset>/harbor.yaml per dataset)",
+      "Evals folder (one <dataset>/harbor.yaml or <dataset>/agent/eval.py per dataset)",
       "evals",
     )
     .option(
@@ -667,8 +668,8 @@ Examples:
       "after",
       `
 Runs \`harbor run\` (pinned Harbor + Laminar plugin, via uvx) for each dataset:
-a directory directly inside --dir holding a harbor.yaml (a Harbor JobConfig).
-Name one by its folder or its [dataset] name. Every trial is reported to
+a directory directly inside --dir holding a harbor.yaml (a Harbor JobConfig)
+or an agent/eval.py (see below). Name one by its folder or its [dataset] name. Every trial is reported to
 Laminar as an evaluation datapoint. Each run of a dataset is a new evaluation
 in its group: --group, else the dataset name (<folder>/tasks/dataset.toml),
 else the folder name. Runs in one group are charted together; --group needs a
@@ -691,6 +692,28 @@ Modes:
                      edits); the run downloads the rest. Ctrl-C stops following;
                      the run goes on. Needs Docker and \`lmnr-cli login\` (or
                      LMNR_PROJECT_API_KEY).
+
+eval.py datasets: agent/eval.py holds one EvalRunner subclass (Python,
+\`from lmnr.evals import EvalRunner, Image, secret\`) with the image, the env,
+the secrets and the setup / run / collect / verify steps; no agent.py,
+verifier script or harbor.yaml is needed. eval.py and verify() run on this
+machine, not in the container: packages they import go in the evals folder's
+pyproject.toml ([project] dependencies), or in a \`# /// script\` block in
+eval.py; what the app needs goes in the image. lmnr-cli reads eval.py with
+uvx, runs it through lmnr's Harbor adapters, and resolves its \`secrets\` like
+\`\${VAR}\`s. Before a run (and a push) it writes the files Harbor needs that a
+task dir lacks: task.toml ([task] name = <dataset org>/<dir>, the default
+image, the runner's new_task_toml), instruction.md and a stub tests/test.sh.
+A task.toml that exists is only completed, never rewritten. A harbor.yaml
+next to eval.py may set job settings (concurrency, attempts, environment,
+datasets) and model sweeps (agents entries with only model_name), but not
+images, agent import paths or env, or the verifier's import path. Tasks start
+from the runner's images only: a task's own environment/Dockerfile, or a
+docker_image the runner doesn't declare, fails the run (declare a named image
+on the runner instead). Folders in the evals folder that aren't datasets (e.g.
+_shared/) hold Python modules every eval.py can import, such as a shared
+runner to subclass; relative paths resolve against the file that declares
+them.
 
 Images: tasks name their image with docker_image in task.toml. Images listed
 under images in harbor.yaml (lmnr-cli's key; Harbor ignores it) are built from
@@ -727,6 +750,35 @@ Examples:
   $ lmnr-cli eval run --dir ./my-evals --remote --n-concurrent 20
   $ lmnr-cli eval run --remote --model anthropic/claude-sonnet-5-5
   $ lmnr-cli eval run support --group "support (prompt v2)"
+`,
+    );
+
+  evalCmd
+    .command("task")
+    .description("Create tasks of eval.py datasets")
+    .command("new")
+    .description("Create a task dir with the files Harbor needs")
+    .argument("<dir>", "The task dir: <dataset>/tasks/<name>")
+    .action(withLocalOpts(handleEvalTaskNew))
+    .addHelpText(
+      "after",
+      `
+For a dataset with an agent/eval.py: creates <dir> if needed and writes the
+files it lacks: task.toml ([task] name = <org of [dataset] name>/<name>, the
+runner's default image and new_task_toml), instruction.md and a stub
+tests/test.sh. Then add the case's data: environment/ (what the app reads),
+tests/expected.json (the reference answer), tests/fixtures/ (data the agent
+must not see). \`eval run\` and \`eval dataset push\` write the same files for
+task dirs that lack them, so copying a data-only dir into tasks/ works too.
+
+Exit codes:
+  16  invalid_evals_dir (not <dataset>/tasks/<name>, no agent/eval.py, an
+      eval.py that doesn't load, an invalid name, a task image the runner
+      doesn't declare)
+  17  missing_tool (uv not installed)
+
+Examples:
+  $ lmnr-cli eval task new evals/support/tasks/refund-double-charge
 `,
     );
 
@@ -827,7 +879,9 @@ isn't its pin (an older or newer version: pull to match dataset.toml), and a
 task with no pin whose version Laminar has (dropped from dataset.toml: pull
 removes it). Pinned tasks with no dir here keep their pins. Every task needs
 its own [task] name in task.toml (org/name): copy a task, then rename it.
-Tasks with .env* files are refused.
+Tasks with .env* files are refused. For a dataset with an agent/eval.py,
+the files Harbor needs that a task dir lacks (task.toml, instruction.md,
+tests/test.sh) are written first, as \`eval run\` does; --dry-run lists them.
 
 Exit codes:
   16  invalid_evals_dir (no or bad dataset.toml, a task without its own

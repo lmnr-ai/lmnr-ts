@@ -1,4 +1,5 @@
-import { stat } from "node:fs/promises";
+import { cp, mkdtemp, rm, stat } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import type { LaminarClient } from "@lmnr-ai/client";
@@ -51,6 +52,9 @@ import {
   shortName,
   TASKS_DIR,
 } from "./datasets";
+import { describeEvalPy } from "./describe";
+import { hasEvalPy } from "./eval-py";
+import { ensureTaskFiles } from "./task-files";
 import { collectTaskFiles, envFiles } from "./task-hash";
 
 const logger = initializeLogger();
@@ -415,6 +419,8 @@ export const handleDatasetPull = async (
 
 interface PlannedPush {
   dataset: LocalDataset;
+  /** Where its tasks were scanned: the dataset dir, or a copy on --dry-run. */
+  dir: string;
   local: LocalTasks;
   plan: PushPlan;
 }
@@ -467,7 +473,7 @@ const assertNoEnvFiles = async (planned: PlannedPush[]) => {
     for (const { task } of pushed(p)) {
       const dir = local.dirs[task];
       const { files } = await collectTaskFiles(
-        path.join(dataset.dir, TASKS_DIR, dir),
+        path.join(p.dir, TASKS_DIR, dir),
       );
       found.push(
         ...envFiles(files).map((f) => `${taskPath(dataset.folder, dir)}/${f}`),
@@ -497,23 +503,50 @@ export const handleDatasetPush = async (
   const datasets = await selectDatasets(evalsDir, named);
   const selected = selection(opts.task);
   const client = await buildEvalClient(opts);
-
+  // Where each dataset's tasks are planned from: its own dir, except on
+  // --dry-run for an eval.py dataset that lacks task files.
+  const planDirs = new Map<string, string>();
+  let scratch: string | undefined;
   const planned: PlannedPush[] = [];
-  for (const dataset of datasets) {
-    const { folder, dir: datasetDir, manifest } = dataset;
-    const local = await scanTasks(datasetDir);
-    assertNamedTasks(folder, local);
-    const linked = linkedNames(folder, local, selected);
-    const managed = (task: string) => selected(task) && !linked.has(task);
-    const hashes = await hashLocalTasks(datasetDir, local, managed);
-    const plan = planPush({
-      pins: manifest.pins,
-      local: hashes,
-      missing: await missingVersions(client, manifest.name, hashes),
-    });
-    planned.push({ dataset, local, plan });
+  try {
+    // eval.py datasets: no task is pushed without the files Harbor needs.
+    for (const { folder, dir } of datasets) {
+      if (!(await hasEvalPy(dir))) continue;
+      const description = await describeEvalPy(dir);
+      const changes = await ensureTaskFiles(dir, description, opts.dryRun);
+      if (opts.dryRun && changes.length > 0) {
+        // Plan from a copy with the files written, as a real push would:
+        // new tasks and completed task.tomls change the plan.
+        scratch ??= await mkdtemp(path.join(os.tmpdir(), "lmnr-push-dry-"));
+        const copy = path.join(scratch, folder);
+        await cp(path.join(dir, TASKS_DIR), path.join(copy, TASKS_DIR), {
+          recursive: true,
+          verbatimSymlinks: true,
+        });
+        await ensureTaskFiles(copy, description, false, false);
+        planDirs.set(dir, copy);
+      }
+    }
+
+    for (const dataset of datasets) {
+      const { folder, manifest } = dataset;
+      const dir = planDirs.get(dataset.dir) ?? dataset.dir;
+      const local = await scanTasks(dir);
+      assertNamedTasks(folder, local);
+      const linked = linkedNames(folder, local, selected);
+      const managed = (task: string) => selected(task) && !linked.has(task);
+      const hashes = await hashLocalTasks(dir, local, managed);
+      const plan = planPush({
+        pins: manifest.pins,
+        local: hashes,
+        missing: await missingVersions(client, manifest.name, hashes),
+      });
+      planned.push({ dataset, dir, local, plan });
+    }
+    await assertNoEnvFiles(planned);
+  } finally {
+    if (scratch) await rm(scratch, { recursive: true, force: true });
   }
-  await assertNoEnvFiles(planned);
 
   if (!opts.dryRun) {
     for (const p of planned) await applyPush(client, evalsDir, p);
