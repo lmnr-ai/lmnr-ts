@@ -178,7 +178,7 @@ export function observeBase<
           const mocked = mockCall(mockKey, fn, thisArg, args, span);
           res =
             mocked !== undefined
-              ? (mocked as ReturnType<F>)
+              ? (mocked.result as ReturnType<F>)
               : fn.apply(thisArg as ThisParameterType<F>, args);
         } catch (error) {
           try {

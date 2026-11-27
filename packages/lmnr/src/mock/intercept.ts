@@ -13,22 +13,19 @@ import {
 import { initializeLogger } from "../utils";
 import { getMockClient, type MockClient } from "./client";
 import { MOCK_FAILURE, MockedError } from "./errors";
-import { requestBody } from "./protocol";
+import { type Outcome, requestBody } from "./protocol";
 
 const logger = initializeLogger();
 
 /**
- * The Promise to return instead of running `fn`, or `undefined` to run it as
- * usual. With `LMNR_MOCK_URL` unset this is one cached check.
+ * What to return instead of running `fn` (`{ result }`), or `undefined` to
+ * run it as usual. With `LMNR_MOCK_URL` unset this is one cached check.
  *
- * A mocked call's answer always comes back as a Promise. Nothing is checked
- * up front: a function that isn't declared `async` is still mocked, with a
- * warning, since its callers get a Promise where they may expect a value.
- *
- * The key set loads asynchronously on the first observed call. An `async`
- * function waits for it. Any other function called before it has loaded runs
- * as usual (it can't wait without changing what it returns); if its key turns
- * out to be mocked, a warning says so once the keys arrive.
+ * An `async` function's mocked call is a Promise, made without blocking. Any
+ * other function gets its answer synchronously, like in Python: the keys and
+ * the call block this thread until the server answers (`*Sync` in
+ * `client.ts`). So a function that isn't declared `async` but returns a
+ * Promise gets the mocked value itself (`await` still works on it).
  */
 export const mockCall = (
   key: string | undefined,
@@ -36,7 +33,7 @@ export const mockCall = (
   thisArg: unknown,
   args: unknown[],
   span: Span,
-): Promise<unknown> | undefined => {
+): { result: unknown } | undefined => {
   if (key === undefined) {
     return undefined;
   }
@@ -45,57 +42,33 @@ export const mockCall = (
     return undefined;
   }
   const kind = Object.prototype.toString.call(fn);
+  const isAsync = kind === "[object AsyncFunction]";
   const callReal = () => fn.apply(thisArg, args);
-  const decide = (keys: Set<string>): Promise<unknown> | undefined => {
-    if (!keys.has(key)) {
-      return undefined;
-    }
-    if (kind.endsWith("GeneratorFunction]")) {
-      throw new MockedError(
-        MOCK_FAILURE,
-        `${key}: generators can't be mocked yet`,
-      );
-    }
-    if (kind !== "[object AsyncFunction]") {
-      warnOnce(
-        `${key} isn't declared async: its mocked calls return a Promise`,
-      );
-    }
-    return run(client, key, span, args, callReal);
-  };
-
-  const keys = client.loadedKeys();
-  if (keys !== undefined) {
-    return decide(keys);
-  }
-  if (kind === "[object AsyncFunction]") {
-    return client.mockedKeys().then((loaded) => decide(loaded) ?? callReal());
+  const loaded = client.loadedKeys();
+  if (loaded === undefined && isAsync) {
+    return {
+      result: client
+        .mockedKeys()
+        .then((keys) =>
+          keys.has(key) ? run(client, key, span, args, callReal) : callReal(),
+        ),
+    };
   }
   // Throws while the server is unreachable: fail closed.
-  client.startLoading();
-  void client.mockedKeys().then(
-    (loaded) => {
-      if (loaded.has(key)) {
-        warnOnce(
-          `${key} ran unmocked: it was called before the mock keys loaded`,
-        );
-      }
-    },
-    () => {
-      // An unreachable server fails the next call (`startLoading`).
-    },
-  );
-  return undefined;
-};
-
-// Exported for tests.
-export const warned = new Set<string>();
-
-const warnOnce = (message: string) => {
-  if (!warned.has(message)) {
-    warned.add(message);
-    logger.warn(`observe, mock ${message}`);
+  if (!(loaded ?? client.mockedKeysSync()).has(key)) {
+    return undefined;
   }
+  if (kind.endsWith("GeneratorFunction]")) {
+    throw new MockedError(
+      MOCK_FAILURE,
+      `${key}: generators can't be mocked yet`,
+    );
+  }
+  return {
+    result: isAsync
+      ? run(client, key, span, args, callReal)
+      : runSync(client, key, span, args, callReal),
+  };
 };
 
 const run = async (
@@ -105,23 +78,52 @@ const run = async (
   args: unknown[],
   callReal: () => unknown,
 ): Promise<unknown> => {
-  const context = span.spanContext();
-  const valid = isSpanContextValid(context);
-  const body = requestBody(
-    args,
-    valid ? context.traceId : null,
-    valid ? context.spanId : null,
-  );
   let outcome;
   try {
-    outcome = await client.call(key, body);
+    outcome = await client.call(key, body(span, args));
   } catch (e) {
     mark(span, key, "error");
     throw e;
   }
+  return await settle(span, key, outcome, callReal);
+};
+
+const runSync = (
+  client: MockClient,
+  key: string,
+  span: Span,
+  args: unknown[],
+  callReal: () => unknown,
+): unknown => {
+  let outcome;
+  try {
+    outcome = client.callSync(key, body(span, args));
+  } catch (e) {
+    mark(span, key, "error");
+    throw e;
+  }
+  return settle(span, key, outcome, callReal);
+};
+
+const body = (span: Span, args: unknown[]): string => {
+  const context = span.spanContext();
+  const valid = isSpanContextValid(context);
+  return requestBody(
+    args,
+    valid ? context.traceId : null,
+    valid ? context.spanId : null,
+  );
+};
+
+const settle = (
+  span: Span,
+  key: string,
+  outcome: Outcome,
+  callReal: () => unknown,
+): unknown => {
   if (outcome.action === "passthrough") {
     mark(span, key, "passthrough");
-    return await callReal();
+    return callReal();
   }
   if (outcome.action === "raise") {
     mark(span, key, "raise", true);
