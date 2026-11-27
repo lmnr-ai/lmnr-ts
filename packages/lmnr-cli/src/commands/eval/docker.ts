@@ -11,6 +11,7 @@ import { unpackTar } from "modern-tar/fs";
 import { dockerFailed, invalidEvalsDir } from "../../errors";
 import { initializeLogger } from "../../utils/logger";
 import type { ImageDef, ImagePusher, LocalBuild } from "./images";
+import { buildContextArgs } from "./layer";
 import { REMOTE_PLATFORM, readSavedImage, uploadSavedImage } from "./push";
 import { runCommand } from "./run-command";
 
@@ -128,7 +129,7 @@ const dockerBuild = async (
     await guardedDockerfile(def),
     def.context,
     tags,
-    args,
+    [...args, ...(await buildContextArgs(def.buildContexts ?? []))],
     `docker build of ${def.name} failed`,
     // Kept after the run (content-addressed), for reading the failing step.
     def.generated ? ` Its generated Dockerfile: ${def.dockerfile}` : "",

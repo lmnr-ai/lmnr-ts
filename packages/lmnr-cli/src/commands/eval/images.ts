@@ -32,6 +32,11 @@ export interface ImageDef {
   ignoreFile?: string;
   /** `dockerfile` is a generated one (`generatedImageDef`). */
   generated?: boolean;
+  /**
+   * Named build contexts it reads (`--build-context`), e.g. `lmnr-dev` for
+   * the Laminar layer's wheel (`layer.ts`).
+   */
+  buildContexts?: string[];
 }
 
 /** BuildKit parser directives: only at the top, and they change the build. */
@@ -82,6 +87,7 @@ export const dockerfileForHash = (text: string): string => {
 const generatedImageDef = async (
   name: string,
   image: GeneratedImage,
+  buildContexts: string[],
 ): Promise<ImageDef> => {
   const ignoreText = image.ignore_file
     ? await readFile(image.ignore_file, "utf8").catch(() => "")
@@ -109,6 +115,7 @@ const generatedImageDef = async (
     context: image.context,
     ...(image.ignore_file ? { ignoreFile: image.ignore_file } : {}),
     generated: true,
+    ...(buildContexts.length > 0 ? { buildContexts } : {}),
   };
 };
 
@@ -121,7 +128,10 @@ const evalImageDefs = async (
     if (image.kind === "dockerfile") {
       defs.push({ name, dockerfile: image.dockerfile, context: image.context });
     } else if (image.kind === "generated") {
-      defs.push(await generatedImageDef(name, image));
+      const contexts = Object.keys(
+        description.laminar_layer?.build_contexts ?? {},
+      );
+      defs.push(await generatedImageDef(name, image, contexts));
     }
   }
   return defs;
@@ -129,7 +139,12 @@ const evalImageDefs = async (
 
 /** One build per definition: images whose builds this says are the same. */
 const buildKey = (def: ImageDef): string =>
-  [def.dockerfile, def.context, def.ignoreFile ?? ""].join("\0");
+  [
+    def.dockerfile,
+    def.context,
+    def.ignoreFile ?? "",
+    ...(def.buildContexts ?? []),
+  ].join("\0");
 
 /** A generated Dockerfile's file name where runs keep it for review. */
 export const generatedDockerfileName = (image: string): string =>

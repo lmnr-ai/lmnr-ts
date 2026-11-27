@@ -16,6 +16,7 @@ import {
   PYTHON_VERSION,
   pythonRequirements,
 } from "./harbor";
+import { layerLmnrArgs } from "./layer";
 import { captureCommand } from "./run-command";
 
 /** uv's own progress lines, which say nothing about the user's file. */
@@ -24,9 +25,13 @@ const UV_NOISE =
 
 /**
  * The `uvx` arguments that describe a dataset's eval.py, from its folder.
- * `requirements` are `pythonRequirements`: importing eval.py needs them.
+ * `requirements` are `pythonRequirements`: importing eval.py needs them;
+ * `layerArgs` (`layerLmnrArgs`) say which lmnr the Laminar layer installs.
  */
-export const describeArgs = (requirements: string[]): string[] => [
+export const describeArgs = (
+  requirements: string[],
+  layerArgs: string[] = [],
+): string[] => [
   "--python",
   PYTHON_VERSION,
   "--from",
@@ -36,6 +41,7 @@ export const describeArgs = (requirements: string[]): string[] => [
   "-m",
   "lmnr.evals.describe",
   EVAL_PY,
+  ...layerArgs,
 ];
 
 /**
@@ -52,7 +58,7 @@ export const describeEvalPy = async (
   const file = evalPyPath(datasetDir);
   const { code, stdout, stderr } = await captureCommand(
     "uvx",
-    describeArgs(await pythonRequirements(datasetDir)),
+    describeArgs(await pythonRequirements(datasetDir), await layerLmnrArgs()),
     { cwd: datasetDir, env: process.env },
   );
   if (code !== 0) {
