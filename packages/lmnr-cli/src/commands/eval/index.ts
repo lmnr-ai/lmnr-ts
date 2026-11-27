@@ -30,7 +30,12 @@ import {
 } from "./datasets";
 import { describeDatasets } from "./describe";
 import { buildLocalImages } from "./docker";
-import { harborEnv, parseEnvFlags, resolveRunEnv } from "./env";
+import {
+  harborEnv,
+  parseEnvFlags,
+  resolveRunEnv,
+  withRysticToken,
+} from "./env";
 import { EVAL_PY } from "./eval-py";
 import {
   assertDatasetsPassed,
@@ -264,7 +269,7 @@ export const handleEvalRun = async (
   opts: EvalRunOpts,
 ): Promise<void> => {
   // Parse --env before anything slow so a missing variable fails fast.
-  const explicitEnv = opts.env ? parseEnvFlags(opts.env) : {};
+  const flagEnv = opts.env ? parseEnvFlags(opts.env) : {};
   const evalsDir = path.resolve(opts.dir ?? DEFAULT_EVALS_DIR);
   const datasets = await selectDatasets(evalsDir, dataset);
   if (opts.group && datasets.length > 1) {
@@ -279,6 +284,11 @@ export const handleEvalRun = async (
   // eval.py datasets: read each runner, then write the task files Harbor
   // needs that tasks lack, before anything hashes or packs them.
   const runners = await describeDatasets(evalsDir, datasets);
+  const explicitEnv = await withRysticToken(
+    flagEnv,
+    runners,
+    opts.remote === true,
+  );
   for (const [folder, description] of Object.entries(runners)) {
     await ensureTaskFiles(path.join(evalsDir, folder), description);
   }

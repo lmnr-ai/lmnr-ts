@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { describeArgs, describeEvalPy } from "./describe";
 import { handleEvalDescribe } from "./describe-command";
+import { withRysticToken } from "./env";
 import {
   type EvalDescription,
   LAMINAR_AGENT_IMPORT_PATH,
@@ -89,6 +90,7 @@ afterEach(async () => {
     "APP_KEY",
     "JUDGE_KEY",
     "LMNR_EVAL_LMNR_SPEC",
+    "RYSTIC_TOKEN",
   ]) {
     delete process.env[key];
   }
@@ -413,6 +415,101 @@ void describe("eval run with an eval.py dataset", () => {
       }),
     );
     expect(runCommand).not.toHaveBeenCalled();
+  });
+});
+
+void describe("RYSTIC_TOKEN", () => {
+  const RYSTIC: EvalDescription = {
+    ...DESCRIPTION,
+    services: [
+      {
+        name: "slack",
+        kind: "Rystic",
+        version: "1",
+        source: null,
+        env: ["SLACK_API_URL"],
+        origin: null,
+      },
+    ],
+  };
+
+  void it("resolves it for local runs of a dataset with a Rystic mirror", async () => {
+    await write(".env", "RYSTIC_TOKEN=from-dotenv\n");
+    expect(await withRysticToken({ A: "1" }, { s: RYSTIC }, false)).toEqual({
+      A: "1",
+      RYSTIC_TOKEN: "from-dotenv",
+    });
+    process.env.RYSTIC_TOKEN = "from-shell";
+    expect(await withRysticToken({}, { s: RYSTIC }, false)).toEqual({
+      RYSTIC_TOKEN: "from-shell",
+    });
+    // --env wins; no Rystic mirror, nothing added.
+    expect(
+      await withRysticToken({ RYSTIC_TOKEN: "flag" }, { s: RYSTIC }, false),
+    ).toEqual({ RYSTIC_TOKEN: "flag" });
+    expect(await withRysticToken({}, { s: DESCRIPTION }, false)).toEqual({});
+  });
+
+  void it("drops --env RYSTIC_TOKEN on remote runs", async () => {
+    process.env.RYSTIC_TOKEN = "from-shell";
+    expect(
+      await withRysticToken(
+        { A: "1", RYSTIC_TOKEN: "flag" },
+        { s: RYSTIC },
+        true,
+      ),
+    ).toEqual({ A: "1" });
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringMatching(/^Not sending --env RYSTIC_TOKEN/),
+    );
+    expect(await withRysticToken({}, { s: RYSTIC }, true)).toEqual({});
+  });
+
+  void it("passes it to every agent of a local run, or fails before building", async () => {
+    await write("evals/support/agent/eval.py", EVAL_PY);
+    await write(
+      "evals/support/tasks/refund/task.toml",
+      '[task]\nname = "a/b"\n',
+    );
+    describeOk({
+      ...RYSTIC,
+      images: {
+        "support-evals": {
+          kind: "generated",
+          dockerfile_text: "FROM python:3.13-slim\n",
+          context: path.join(root, "evals"),
+        },
+      },
+    });
+    await expect(
+      handleEvalRun(undefined, { dir: path.join(root, "evals") }),
+    ).rejects.toThrow(
+      expect.objectContaining({
+        code: "missing_env",
+        exitCode: 19,
+        message:
+          "Rystic mirrors need Rystic access in local (not `--remote`) " +
+          "runs. Set RYSTIC_TOKEN to your Rystic API key (in your shell, " +
+          ".env.local or .env).",
+      }),
+    );
+    expect(runCommand).not.toHaveBeenCalled();
+
+    await write(".env.local", "RYSTIC_TOKEN=mine\n");
+    let job: { agents?: { env?: Record<string, string> }[] } = {};
+    let harborEnv: NodeJS.ProcessEnv | undefined;
+    vi.mocked(runCommand).mockImplementation(async (command, args, opts) => {
+      if (command === "uvx") {
+        job = JSON.parse(await readFile(args[args.indexOf("-c") + 1], "utf8"));
+        harborEnv = opts?.env;
+      }
+      return 0;
+    });
+    await handleEvalRun(undefined, { dir: path.join(root, "evals") });
+    expect(job.agents?.[0].env).toEqual(
+      expect.objectContaining({ RYSTIC_TOKEN: "${RYSTIC_TOKEN}" }),
+    );
+    expect(harborEnv?.RYSTIC_TOKEN).toBe("mine");
   });
 });
 

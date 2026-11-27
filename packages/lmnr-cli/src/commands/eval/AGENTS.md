@@ -299,6 +299,15 @@
   `${...}` are scanned (`findTemplateVars`), so they resolve exactly like
   harbor.yaml `${VAR}`s (shell, `.env.local`, `.env`; exit 19) and their values
   reach the Harbor process env, where `verify()` reads them.
+- **`RYSTIC_TOKEN`** (`withRysticToken` in `env.ts`, right after describe):
+  when a selected dataset's describe `services` has `kind: "Rystic"` (a
+  Rystic mirror's `display_name`) and the run is local, `RYSTIC_TOKEN` is
+  added to the `--env` values (`findEnvKey`: shell, `.env.local`, `.env`), so
+  it reaches every agent as `${RYSTIC_TOKEN}`; an explicit `--env
+  RYSTIC_TOKEN` wins. Unset → `missing_env` (19) before any build, worded
+  like lmnr-python's `mirrors/rystic.py` `NO_ACCESS`. `--remote` never sends
+  it (Laminar gives each trial its own token, which a user value would
+  replace): `--env RYSTIC_TOKEN` is dropped with a warning, mirror or not.
 - **Packages for the Harbor process** (`pythonRequirements` in `harbor.ts`,
   for describe AND `harbor run`, local and in the orchestrator, every
   dataset): eval.py and `verify()` run on the host, only their `ctx`

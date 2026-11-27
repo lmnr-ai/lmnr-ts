@@ -743,6 +743,11 @@ Secrets: \`\${VAR}\` placeholders in harbor.yaml and task.toml are filled from
 your environment or .env / .env.local; a missing one fails the run before it
 starts. For --remote they are sent with the run, never uploaded as files
 (.env*, .git, node_modules, virtualenvs, caches and jobs/ are never packed).
+Rystic mirrors pull their twin with your Rystic API key on local runs:
+RYSTIC_TOKEN is read like --env RYSTIC_TOKEN (shell, .env.local, .env) and
+passed to every agent; unset, the run fails before building (19). --remote
+never sends it (Laminar gives each trial its own token) and drops
+--env RYSTIC_TOKEN with a warning.
 
 Errored trials: a trial that raised and got no reward (not an agent timeout
 that was still graded) is errored. Each dataset with errored trials logs
@@ -754,7 +759,8 @@ Exit codes:
   16  invalid_evals_dir / archive_too_large
   17  missing_tool (uv or Docker not installed)
   18  harbor_failed (a dataset's harbor run failed)
-  19  missing_env (an unset \`\${VAR}\` or LMNR_PROJECT_API_KEY)
+  19  missing_env (an unset \`\${VAR}\`, LMNR_PROJECT_API_KEY, or RYSTIC_TOKEN
+      for a Rystic mirror)
   20  docker_failed (a docker build, pull or save failed, or a wrong platform)
   21  remote_run_failed (a --remote run failed before its datasets ran, or
       its sandbox was lost)
