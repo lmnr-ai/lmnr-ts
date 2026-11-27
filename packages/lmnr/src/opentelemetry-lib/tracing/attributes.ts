@@ -17,6 +17,10 @@ export const SPAN_INSTRUMENTATION_SCOPE_VERSION =
 // and that SDK's version.
 export const SPAN_BRIDGE_NAME = "lmnr.span.bridge.name";
 export const SPAN_BRIDGE_VERSION = "lmnr.span.bridge.version";
+// An observed call the eval's mock server answered (`src/mock`).
+export const SPAN_MOCKED = "lmnr.span.mocked";
+export const MOCK_KEY = "lmnr.mock.key";
+export const MOCK_OUTCOME = "lmnr.mock.outcome";
 export const OVERRIDE_PARENT_SPAN = "lmnr.internal.override_parent_span";
 export const TRACE_HAS_BROWSER_SESSION = "lmnr.internal.has_browser_session";
 export const EXTRACTED_FROM_NEXT_JS = "lmnr.span.extracted_from.next_js";
