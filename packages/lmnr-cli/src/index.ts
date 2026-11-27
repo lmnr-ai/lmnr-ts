@@ -1034,8 +1034,9 @@ A rule is a JSON object. The server checks it and fills in what you leave out.
   metric        total_cost | cost_per_trace | trace_cost | input_tokens |
                 output_tokens | total_tokens | tokens_per_trace | trace_count |
                 error_traces (count) | error_rate | no_cost_rate |
-                no_tokens_rate (percent of traces) | latency_p50 |
-                latency_p95 (seconds)
+                no_tokens_rate (percent of traces) | llm_no_cost_rate |
+                llm_no_tokens_rate (percent of LLM calls, no filters) |
+                latency_p50 | latency_p95 (seconds)
                 Evaluation and playground traces are left out unless a filter
                 is on trace_type
   window        {"minutes": 5 | 15 | 30 | 60 | 1440}. A spending limit takes
@@ -1057,7 +1058,8 @@ A rule is a JSON object. The server checks it and fills in what you leave out.
   groupBy       "model" for separate incidents per model, or null
   minChange     change only: smallest absolute difference that still counts
   checksInARow  checks that must breach in a row before it fires (default 3)
-  minTraces     skip a check with fewer traces than this
+  minTraces     skip a check with fewer traces than this (fewer LLM calls
+                for llm_no_cost_rate and llm_no_tokens_rate)
   onNoData      skip | zero | alert
   snoozedUntil  ISO time; no messages are sent until then (null ends it)
 `;
@@ -1098,8 +1100,8 @@ Templates:
   cost-spike                 hourly cost above a fixed amount (*)
   error-rate                 share of traces that fail
   traffic-stopped            no traces for 15 minutes
-  cost-tracking-stopped      most traces arrive without a cost
-  token-usage-missing        most traces arrive without token counts
+  cost-tracking-stopped      most LLM calls arrive without a cost
+  token-usage-missing        most LLM calls arrive without token counts
   daily-spending-limit       spend over the last 24 hours against a limit (*)
   expensive-trace            one trace above a fixed cost (*)
   unusually-expensive-trace  one trace far above the project's p99 cost

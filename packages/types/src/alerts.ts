@@ -27,6 +27,8 @@ export type MetricAlertMetric =
   | "error_rate"
   | "no_cost_rate"
   | "no_tokens_rate"
+  | "llm_no_cost_rate"
+  | "llm_no_tokens_rate"
   | "latency_p50"
   | "latency_p95";
 
