@@ -86,7 +86,8 @@
   `startRemoteRun`, `eval orchestrate`), `run-log.ts` (the run's log: shipper
   and follower), `run-log-lines.ts` (what the log shows of Harbor's output),
   `jobs.ts` (packing a finished Harbor
-  job), `env.ts` (`--env`, `${VAR}`
+  job), `layer.ts` (which `lmnr` the Laminar layer installs: `--layer-lmnr`,
+  the `lmnr-dev` wheel build context), `env.ts` (`--env`, `${VAR}`
   resolution, the Harbor process env), `datasets.ts` (dataset discovery, name
   rules, `.gitignore`, `SKIPPED_DIRS`, the run's tasks (`findTaskTomls`),
   `buildJobConfig`), `harbor.ts` (uvx/Harbor only), `images.ts` (harbor.yaml
@@ -252,13 +253,14 @@
   user names and times don't leak. Task version archives are packed from
   `collectTaskFiles` instead (Harbor's selection; see below).
 
-## eval.py datasets (LAM-2588 phases 1-2)
+## eval.py datasets (LAM-2588)
 
 - A dataset folder with `agent/eval.py` (one `EvalRunner` subclass, lmnr-python
   `src/lmnr/evals/AGENTS.md`) is runnable with or without a harbor.yaml
   (`isRunnableDataset`; discovery, `isDatasetFolder` and `selectDatasets` use it).
 - **Describe first.** `describeDatasets` runs `uvx --python 3.13 --from <lmnr
-  spec> <pythonRequirements> python -m lmnr.evals.describe agent/eval.py`
+  spec> <pythonRequirements> python -m lmnr.evals.describe agent/eval.py` (plus `--layer-lmnr`, see
+  "The Laminar layer")
   from the dataset dir (`captureCommand`: output is collected, never shown; on
   failure the error is Python's stderr minus uv's progress lines, plus a hint
   when the pinned lmnr has no `lmnr.evals`) and caches the JSON per dataset dir
@@ -334,7 +336,7 @@
   base_url_env?}]`), `mock_dependencies` and `laminar_layer` (`{python, lmnr,
   build_contexts}`) (all new fields optional, still `version: 1`;
   `parseDescription` rejects unknown image kinds).
-- **The Laminar layer** (lmnr-python `evals/layer.py`, phase 3): describe adds
+- **The Laminar layer** (lmnr-python `evals/layer.py`): describe adds
   `/opt/lmnr` (Python, `lmnr`, the mock server) to every generated image.
   `layer.ts` decides which `lmnr`: `layerLmnrArgs()` passes describe
   `--layer-lmnr=wheel` when `LMNR_EVAL_LMNR_SPEC` is a directory, the spec
@@ -349,7 +351,7 @@
   written to `<os tmp>/lmnr-generated/<sha256>/Dockerfile` (written whole
   then renamed; never deleted, so a failed build's `docker_failed` message
   points at it), hash = `dockerfileForHash(text)` + context + ignore file path
-  + its content. `dockerfileForHash` drops `#` comment lines (lmnr's
+  and its content. `dockerfileForHash` drops `#` comment lines (lmnr's
   provenance) but keeps BuildKit parser directives at the top
   (`syntax|escape|check`, Python's `_PARSER_DIRECTIVE`) and every heredoc
   line (lmnr's service bundles have `#` lines in `RUN <<'EOF'` scripts; a

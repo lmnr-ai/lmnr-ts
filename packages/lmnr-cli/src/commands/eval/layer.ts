@@ -15,7 +15,7 @@ import { captureCommand } from "./run-command";
  */
 
 /** The named build context describe asks for when the layer installs a wheel. */
-export const WHEEL_CONTEXT = "lmnr-dev";
+const WHEEL_CONTEXT = "lmnr-dev";
 
 /** `LMNR_EVAL_LMNR_SPEC`, when it is a directory (a checkout). */
 const localSpec = async (): Promise<string | undefined> => {

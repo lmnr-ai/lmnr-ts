@@ -46,7 +46,7 @@ export const describeArgs = (
 
 /**
  * Import the dataset's `agent/eval.py` with `lmnr` and `pythonRequirements`,
- * and read its `EvalRunner`: images, env, secrets, task template. Its
+ * and read its `EvalRunner`: images, env, secrets, new_task_toml. Its
  * warnings are logged unless `logWarnings` is false (`eval describe` prints
  * them); an import or configuration error is `invalid_evals_dir` with
  * Python's message.
