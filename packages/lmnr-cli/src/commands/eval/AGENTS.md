@@ -286,10 +286,10 @@
 - **Ownership** (`applyEvalRunner`, applied inside `loadDatasetConfig`, before
   `buildJobConfig`'s CLI overrides, so `--model` / `--env` / `--task` still
   win): eval.py owns images (built from the description, see "Images from
-  describe"; registry images are no build, tasks name their ref), the agent (`LaminarAgent`, `kwargs.runner =
+  describe"; tasks name them by image name), the agent (`LaminarAgent`, `kwargs.runner =
   agent/eval.py:<Class>`, `env` = describe's env with secrets as `${NAME}`),
   `verifier.import_path` / `kwargs` (`LaminarVerifier`, unless
-  `grade_with_test_sh`), and the job-level `artifacts` (describe's optional `artifacts`,
+  `grade_with_test_sh`), and the job-level `artifacts` (describe's `artifacts`,
   Harbor entries; a task.toml's `artifacts` still add to them in Harbor).
   harbor.yaml defining any of those (images, an `agents` entry with
   `import_path` or `name` or `env`, verifier import path / kwargs,
@@ -336,8 +336,7 @@
   `<folder>/tasks/<name>`, `<name>` a `NAME_RULE` part, checked before
   describe; JSON `{dir, files}`). Every non-dot dir directly under `tasks/` gets a
   missing `task.toml` (`[task] name = <org of [dataset] name, else the folder
-  name>/<dir>`, `[environment] docker_image = <default image, or its registry
-  ref>`, then the runner's `new_task_toml` merged per table, via smol-toml), `instruction.md` and `tests/test.sh` (0755;
+  name>/<dir>`, `[environment] docker_image = <default image>`, then the runner's `new_task_toml` merged per table, via smol-toml), `instruction.md` and `tests/test.sh` (0755;
   not with `grade_with_test_sh`, where a stub would hide a missing real one).
   An existing `task.toml` missing `[task] name` / `docker_image` gets the key
   INSERTED AS TEXT (`insertTomlKey`): after the table's header, or as a new
@@ -347,22 +346,24 @@
   instead of writing.
 - **Task image rules** (`checkTaskImage`, main doc 2.1.2): a task of an
   eval.py dataset never brings its own image. An `environment/Dockerfile`, or
-  a `docker_image` not in `taskImageNames` (image names; a registry image's
-  ref), is `invalid_evals_dir` with a hint to declare a named image on the
+  a `docker_image` not in `taskImageNames` (the image names), is `invalid_evals_dir` with a hint to declare a named image on the
   runner. `ensureTaskFiles` checks every task before writing any file (so
   `eval run`, `eval dataset push` and its `--dry-run` fail first), and `eval
   task new` checks its dir. Harbor would otherwise build or pull that image
   itself, without what the runner adds (services, the Laminar layer).
 - **Images from describe** (`loadImageDefs` reads the description, not
   harbor.yaml's key: `applyEvalRunner` no longer writes `job.images`):
-  `registry` (no build), `dockerfile` (the user's), `generated`
-  (`{dockerfile_text, context, ignore_file?}`: builder steps or services;
-  BuildKit heredocs, bind mounts, multi-stage `COPY --from`; sources relative
-  to `context`). Every kind may carry `steps: [{origin, step}]`; describe
-  also has optional `services`, `classes`, `mocks` (`[{key, type, handler,
-  base_url_env?}]`), `mock_dependencies` and `laminar_layer` (`{python, lmnr,
-  build_contexts}`) (all new fields optional, still `version: 1`;
-  `parseDescription` rejects unknown image kinds).
+  every image is `generated` (`{dockerfile_text, context, ignore_file?,
+  steps: [{origin, step}]}`; BuildKit heredocs, bind mounts, multi-stage
+  `COPY --from`; sources relative to `context`): lmnr adds its Laminar layer
+  to every image, so a registry ref or the user's Dockerfile is only the
+  base (lmnr-python still has `registry` / `dockerfile` compiled kinds, but
+  describe never emits them; `parseDescription` rejects them). Describe always
+  emits, and `parseDescription` requires, `modules`, `artifacts`, `services`
+  (`[{name, kind, version, source, env, origin}]`), `classes`, `mocks`
+  (`[{key, type, handler, base_url_env?}]`), `mock_dependencies` and
+  `laminar_layer` (`{python, lmnr | null, build_contexts}`); still `version:
+  1`.
 - **The Laminar layer** (lmnr-python `evals/layer.py`): describe adds
   `/opt/lmnr` (Python, `lmnr`, the mock server) to every generated image.
   `layer.ts` decides which `lmnr`: `layerLmnrArgs()` passes describe
@@ -415,7 +416,7 @@
   (`isRunnableDataset`) nor skipped hold shared Python (`_shared/`); lmnr
   puts the evals root on `sys.path`. Discovery already ignores them and remote
   runs pack them (`remoteExclude` drops only OTHER dataset folders). Describe's
-  optional `modules` (the runner's files relative to the evals root) go to
+  `modules` (the runner's files relative to the evals root) go to
   the plugin as `--pk runner_modules=<JSON>` (`harborArgs`), local and in the
   orchestrator (from `RunSpec.runners`); the plugin puts the ones outside the
   dataset's `agent/` into `hosted_metadata.runnerModules` for the Files view's

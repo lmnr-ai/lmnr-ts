@@ -48,9 +48,10 @@ const DESCRIPTION: EvalDescription = {
   runner: "SupportEval",
   images: {
     "support-evals": {
-      kind: "dockerfile",
-      dockerfile: "/abs/Dockerfile",
+      kind: "generated",
+      dockerfile_text: "FROM python:3.13-slim\n",
       context: "/abs",
+      steps: [],
     },
   },
   default_image: "support-evals",
@@ -60,6 +61,13 @@ const DESCRIPTION: EvalDescription = {
   new_task_toml: {},
   grade_with_test_sh: false,
   warnings: ["SupportEval defines run(), so `run_command` is ignored."],
+  modules: ["support/agent/eval.py"],
+  artifacts: [],
+  services: [],
+  classes: [{ name: "SupportEval", file: "support/agent/eval.py" }],
+  mocks: [],
+  mock_dependencies: [],
+  laminar_layer: { python: "3.13", lmnr: "lmnr==0.9.3", build_contexts: {} },
 };
 
 const describeOk = (description: EvalDescription = DESCRIPTION) =>
@@ -210,14 +218,14 @@ void describe("eval run with an eval.py dataset", () => {
       '[dataset]\nname = "acme/support"\n',
     );
     await write("evals/support/tasks/refund/environment/ticket.json", "{}");
-    await write("evals/support/agent/Dockerfile", "FROM python:3.13-slim\n");
     describeOk({
       ...DESCRIPTION,
       images: {
         "support-evals": {
-          kind: "dockerfile",
-          dockerfile: path.join(root, "evals/support/agent/Dockerfile"),
+          kind: "generated",
+          dockerfile_text: "FROM python:3.13-slim\n",
           context: path.join(root, "evals/support/agent"),
+          steps: [],
         },
       },
       modules: ["_shared/support.py", "support/agent/eval.py"],
@@ -305,6 +313,7 @@ void describe("eval run with an eval.py dataset", () => {
           kind: "generated",
           dockerfile_text: text,
           context: path.join(root, "evals"),
+          steps: [],
         },
       },
     });
@@ -354,6 +363,7 @@ void describe("eval run with an eval.py dataset", () => {
           dockerfile_text:
             "FROM python:3.13-slim\nCOPY --from=lmnr-dev / /tmp/\n",
           context: path.join(root, "evals"),
+          steps: [],
         },
       },
       laminar_layer: {
@@ -478,6 +488,7 @@ void describe("RYSTIC_TOKEN", () => {
           kind: "generated",
           dockerfile_text: "FROM python:3.13-slim\n",
           context: path.join(root, "evals"),
+          steps: [],
         },
       },
     });
@@ -630,7 +641,13 @@ void describe("eval describe", () => {
           },
         ],
       },
-      py: { kind: "registry", ref: "python:3.13-slim", steps: [] },
+      py: {
+        kind: "generated",
+        dockerfile_text: "FROM python:3.13-slim\n",
+        context: "/abs",
+        ignore_file: "/abs/py.Dockerfile.dockerignore",
+        steps: [],
+      },
     },
     services: [
       {
@@ -715,7 +732,10 @@ void describe("eval describe", () => {
         "      generated Dockerfile, kept by each run that builds it:",
         `        local:  ${path.join(jobs, "<job>", "support-evals.Dockerfile")}`,
         "        remote: support/agent/.generated/support-evals.Dockerfile in the run's files",
-        "    py (registry python:3.13-slim)",
+        "    py (generated, context /abs, ignore file /abs/py.Dockerfile.dockerignore)",
+        "      generated Dockerfile, kept by each run that builds it:",
+        `        local:  ${path.join(jobs, "<job>", "py.Dockerfile")}`,
+        "        remote: support/agent/.generated/py.Dockerfile in the run's files",
         "  services:",
         "    postgres: Postgres 16 from postgres:16-bookworm",
         "      env: DATABASE_URL",

@@ -85,7 +85,7 @@ export const withRysticToken = async (
     return rest;
   }
   const usesRystic = Object.values(runners).some((r) =>
-    (r.services ?? []).some((s) => s.kind === RYSTIC_KIND),
+    r.services.some((s) => s.kind === RYSTIC_KIND),
   );
   if (!usesRystic || RYSTIC_TOKEN in explicitEnv) return explicitEnv;
   const found = await findEnvKey(process.cwd(), RYSTIC_TOKEN);

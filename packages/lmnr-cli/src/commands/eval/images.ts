@@ -119,20 +119,14 @@ const generatedImageDef = async (
   };
 };
 
-/** The images an eval.py runner builds: its Dockerfile and generated ones. */
+/** The images an eval.py runner builds: every one is generated. */
 const evalImageDefs = async (
   description: EvalDescription,
 ): Promise<ImageDef[]> => {
+  const contexts = Object.keys(description.laminar_layer.build_contexts);
   const defs: ImageDef[] = [];
   for (const [name, image] of Object.entries(description.images)) {
-    if (image.kind === "dockerfile") {
-      defs.push({ name, dockerfile: image.dockerfile, context: image.context });
-    } else if (image.kind === "generated") {
-      const contexts = Object.keys(
-        description.laminar_layer?.build_contexts ?? {},
-      );
-      defs.push(await generatedImageDef(name, image, contexts));
-    }
+    defs.push(await generatedImageDef(name, image, contexts));
   }
   return defs;
 };
@@ -167,7 +161,7 @@ export const generatedDockerfiles = async (
   return Object.fromEntries(
     Object.entries(evalDescription(datasetDir).images).flatMap(
       ([name, image]) =>
-        image.kind === "generated" && used.has(name)
+        used.has(name)
           ? [[generatedDockerfileName(name), image.dockerfile_text]]
           : [],
     ),
@@ -211,7 +205,7 @@ interface RawImage {
  * The images `<datasetDir>/harbor.yaml` declares under `images` (lmnr-cli's
  * key, not Harbor's: it is dropped from the job config Harbor gets), paths
  * relative to the dataset dir; for an eval.py dataset, the runner's
- * Dockerfile and generated images (registry images are no build).
+ * generated images.
  */
 export const loadImageDefs = async (
   datasetDir: string,

@@ -55,6 +55,17 @@ vi.mock("@lmnr-ai/client", () => ({
 
 let root: string;
 
+/** The describe fields these tests don't look at. */
+const DESCRIBED = {
+  modules: [],
+  artifacts: [],
+  services: [],
+  classes: [],
+  mocks: [],
+  mock_dependencies: [],
+  laminar_layer: { python: "3.13", lmnr: "lmnr==0.9.3", build_contexts: {} },
+};
+
 const write = async (rel: string, content = "x") => {
   const file = path.join(root, rel);
   await mkdir(path.dirname(file), { recursive: true });
@@ -239,11 +250,17 @@ void describe("startRemoteRun with generated images", () => {
       version: 1,
       runner: "SupportEval",
       images: {
-        app: { kind: "generated", dockerfile_text: text, context: root },
+        app: {
+          kind: "generated",
+          dockerfile_text: text,
+          context: root,
+          steps: [],
+        },
         unused: {
           kind: "generated",
           dockerfile_text: "FROM b\n",
           context: root,
+          steps: [],
         },
       },
       default_image: "app",
@@ -253,6 +270,7 @@ void describe("startRemoteRun with generated images", () => {
       new_task_toml: {},
       grade_with_test_sh: false,
       warnings: [],
+      ...DESCRIBED,
     };
     setEvalDescription(path.join(root, "support"), runner);
     const before = await hashed("support/tasks/refund");
@@ -694,7 +712,14 @@ void describe("handleEvalOrchestrate", () => {
     const runner: EvalDescription = {
       version: 1,
       runner: "SupportEval",
-      images: { py: { kind: "registry", ref: "python:3.13" } },
+      images: {
+        py: {
+          kind: "generated",
+          dockerfile_text: "FROM python:3.13\n",
+          context: root,
+          steps: [],
+        },
+      },
       default_image: "py",
       model: null,
       env: {},
@@ -702,6 +727,7 @@ void describe("handleEvalOrchestrate", () => {
       new_task_toml: {},
       grade_with_test_sh: false,
       warnings: ['services["postgres"] uses version "latest"'],
+      ...DESCRIBED,
     };
     process.env.LMNR_EVAL_RUN = JSON.stringify({
       datasets: ["support"],

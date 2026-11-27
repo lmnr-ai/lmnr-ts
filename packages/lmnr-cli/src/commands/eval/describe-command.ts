@@ -10,7 +10,7 @@ import { describeEvalPy } from "./describe";
 import {
   EVAL_PY,
   type EvalDescription,
-  type EvalImage,
+  type GeneratedImage,
   hasEvalPy,
   setEvalDescription,
 } from "./eval-py";
@@ -27,24 +27,14 @@ const list = (items: string[]) =>
 const indent = (lines: string[], by = "  ") => lines.map((l) => by + l);
 
 /** `steps` as aligned `<step>  <origin>` lines. */
-const formatSteps = (steps: EvalImage["steps"] = []) => {
+const formatSteps = (steps: GeneratedImage["steps"]) => {
   const width = Math.max(0, ...steps.map((s) => s.step.length));
   return steps.map(({ step, origin }) => `${step.padEnd(width)}  ${origin}`);
 };
 
-const imageKind = (image: EvalImage): string => {
-  switch (image.kind) {
-    case "registry":
-      return `registry ${image.ref}`;
-    case "dockerfile":
-      return `dockerfile ${image.dockerfile}, context ${image.context}`;
-    case "generated":
-      return (
-        `generated, context ${image.context}` +
-        (image.ignore_file ? `, ignore file ${image.ignore_file}` : "")
-      );
-  }
-};
+const imageKind = (image: GeneratedImage): string =>
+  `generated, context ${image.context}` +
+  (image.ignore_file ? `, ignore file ${image.ignore_file}` : "");
 
 /**
  * One dataset's runner, human-readable. `jobsDir` is where its local runs
@@ -57,7 +47,7 @@ const formatDescription = (
   jobsDir: string,
 ): string => {
   const body: string[] = [`runner: ${description.runner}`];
-  if (description.classes?.length) {
+  if (description.classes.length > 0) {
     const width = Math.max(...description.classes.map((c) => c.name.length));
     body.push(
       ...indent(
@@ -77,20 +67,18 @@ const formatDescription = (
     ];
     const entry = [`${name} (${tags.join("; ")})`];
     entry.push(...indent(formatSteps(image.steps)));
-    if (image.kind === "generated") {
-      const file = generatedDockerfileName(name);
-      entry.push(
-        ...indent([
-          "generated Dockerfile, kept by each run that builds it:",
-          `  local:  ${path.join(jobsDir, "<job>", file)}`,
-          `  remote: ${folder}/${GENERATED_UPLOAD_DIR}/${file} in the run's files`,
-        ]),
-      );
-    }
+    const file = generatedDockerfileName(name);
+    entry.push(
+      ...indent([
+        "generated Dockerfile, kept by each run that builds it:",
+        `  local:  ${path.join(jobsDir, "<job>", file)}`,
+        `  remote: ${folder}/${GENERATED_UPLOAD_DIR}/${file} in the run's files`,
+      ]),
+    );
     body.push(...indent(entry));
   }
 
-  const services = description.services ?? [];
+  const { services, mocks } = description;
   body.push(`services:${services.length > 0 ? "" : " none"}`);
   for (const s of services) {
     body.push(
@@ -102,7 +90,6 @@ const formatDescription = (
       ]),
     );
   }
-  const mocks = description.mocks ?? [];
   body.push(`mocks:${mocks.length > 0 ? "" : " none"}`);
   for (const m of mocks) {
     body.push(
@@ -112,15 +99,13 @@ const formatDescription = (
       ]),
     );
   }
-  if (description.mock_dependencies?.length) {
+  if (description.mock_dependencies.length > 0) {
     body.push(`mock_dependencies: ${list(description.mock_dependencies)}`);
   }
   const layer = description.laminar_layer;
-  if (layer) {
-    body.push(
-      `laminar layer: Python ${layer.python}, ${layer.lmnr ?? "lmnr wheel (local checkout)"}`,
-    );
-  }
+  body.push(
+    `laminar layer: Python ${layer.python}, ${layer.lmnr ?? "lmnr wheel (local checkout)"}`,
+  );
   body.push(`secrets: ${list(description.secrets)}`);
   body.push(`env: ${list(Object.keys(description.env))}`);
   const toml = stringifyToml(description.new_task_toml).trimEnd();

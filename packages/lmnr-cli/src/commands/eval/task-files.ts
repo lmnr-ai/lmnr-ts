@@ -15,12 +15,7 @@ import { invalidEvalsDir } from "../../errors";
 import { initializeLogger } from "../../utils/logger";
 import { readDatasetToml } from "./dataset-toml";
 import { NAME_RULE, SKIPPED_DIRS, TASKS_DIR } from "./datasets";
-import {
-  defaultTaskImage,
-  EVAL_PY,
-  type EvalDescription,
-  taskImageNames,
-} from "./eval-py";
+import { EVAL_PY, type EvalDescription, taskImageNames } from "./eval-py";
 
 const logger = initializeLogger();
 
@@ -87,7 +82,7 @@ const taskDefaults = async (
   }
   return {
     org,
-    image: defaultTaskImage(description),
+    image: description.default_image,
     images: taskImageNames(description),
     template: description.new_task_toml,
     testShStub: !description.grade_with_test_sh,

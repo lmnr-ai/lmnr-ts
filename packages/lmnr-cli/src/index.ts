@@ -792,7 +792,7 @@ Reads each selected dataset's agent/eval.py the way \`eval run\` does first
 (same dataset selection, same uvx environment) and prints what the run would
 use: the runner class and the classes it inherits from, with their files;
 each image with every base, service and builder step and where it was
-declared, and for a generated image where runs keep its Dockerfile (local:
+declared, and where runs keep its generated Dockerfile (local:
 next to the job's config.json in Harbor's jobs dir; --remote: the run's
 files in Laminar, <dataset>/agent/.generated/); services (kind, version,
 source image, the env var names they set); mocks (key, type, handler, base

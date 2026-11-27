@@ -236,7 +236,7 @@ const runHarborDataset = async (run: HarborRun): Promise<number> => {
         dataset,
         requirements: await pythonRequirements(run.datasetDir),
         runnerModules: (await hasEvalPy(run.datasetDir))
-          ? (evalDescription(run.datasetDir).modules ?? [])
+          ? evalDescription(run.datasetDir).modules
           : [],
       }),
       {
