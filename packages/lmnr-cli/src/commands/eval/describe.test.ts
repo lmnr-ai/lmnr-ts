@@ -14,7 +14,7 @@ import {
 import { LMNR_PYTHON_VERSION, pythonRequirements } from "./harbor";
 import { handleEvalRun } from "./index";
 import { captureCommand, runCommand } from "./run-command";
-import { handleEvalTaskNew } from "./task-files";
+import { handleEvalTaskNew } from "./task-command";
 
 vi.mock("./run-command", () => ({
   runCommand: vi.fn(),
@@ -514,16 +514,37 @@ void describe("RYSTIC_TOKEN", () => {
 });
 
 void describe("eval task new", () => {
+  const evals = () => ({ dir: path.join(root, "evals") });
+
   void it("creates a task dir with Harbor's files", async () => {
     await write("evals/support/agent/eval.py", EVAL_PY);
     describeOk();
-    await handleEvalTaskNew(path.join(root, "evals/support/tasks/refund"), {});
+    await handleEvalTaskNew("support", "refund", evals());
     const toml = await readFile(
       path.join(root, "evals/support/tasks/refund/task.toml"),
       "utf8",
     );
     expect(toml).toContain('name = "support/refund"');
     expect(toml).toContain('docker_image = "support-evals"');
+    expect(logger.info).toHaveBeenCalledWith(
+      "created support/tasks/refund/task.toml",
+    );
+  });
+
+  void it("finds the dataset by its [dataset] name, in evals by default", async () => {
+    await write("evals/support/agent/eval.py", EVAL_PY);
+    await write(
+      "evals/support/tasks/dataset.toml",
+      '[dataset]\nname = "acme/support"\n',
+    );
+    describeOk();
+    await handleEvalTaskNew("acme/support", "refund", {});
+    expect(
+      await readFile(
+        path.join(root, "evals/support/tasks/refund/task.toml"),
+        "utf8",
+      ),
+    ).toContain('name = "acme/refund"');
   });
 
   void it("warns about a missing test.sh with grade_with_test_sh", async () => {
@@ -535,36 +556,53 @@ void describe("eval task new", () => {
     await write("evals/support/tasks/refund/instruction.md", "Do it.\n");
     describeOk({ ...DESCRIPTION, grade_with_test_sh: true });
     const dir = path.join(root, "evals/support/tasks/refund");
-    await handleEvalTaskNew(dir, {});
+    const shown = path.relative(process.cwd(), dir);
+    await handleEvalTaskNew("support", "refund", evals());
     expect(logger.info).not.toHaveBeenCalledWith(
       expect.stringContaining("test.sh"),
     );
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining(`${dir} has no tests/test.sh`),
+      expect.stringContaining(`${shown} has no tests/test.sh`),
     );
 
     // --json too: the warning is on stderr, stdout stays the JSON.
     logger.warn.mockClear();
     const log = vi.spyOn(console, "log").mockReturnValue(undefined);
-    await handleEvalTaskNew(dir, { json: true });
+    await handleEvalTaskNew("support", "refund", { ...evals(), json: true });
     expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual({
       dir,
       files: [],
     });
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining(`${dir} has no tests/test.sh`),
+      expect.stringContaining(`${shown} has no tests/test.sh`),
     );
     log.mockRestore();
   });
 
-  void it("needs <dataset>/tasks/<name> of an eval.py dataset", async () => {
+  void it("needs a known eval.py dataset and a valid name", async () => {
     await write("evals/support/harbor.yaml");
     await expect(
-      handleEvalTaskNew(path.join(root, "evals/support/tasks/refund"), {}),
-    ).rejects.toThrow(expect.objectContaining({ code: "invalid_evals_dir" }));
-    await expect(
-      handleEvalTaskNew(path.join(root, "evals/support/refund"), {}),
-    ).rejects.toThrow(expect.objectContaining({ code: "invalid_evals_dir" }));
+      handleEvalTaskNew("support", "refund", evals()),
+    ).rejects.toThrow(
+      expect.objectContaining({
+        code: "invalid_evals_dir",
+        message: expect.stringMatching(
+          /^Dataset support has no agent\/eval\.py/,
+        ),
+      }),
+    );
+    await expect(handleEvalTaskNew("nope", "refund", evals())).rejects.toThrow(
+      expect.objectContaining({
+        code: "invalid_evals_dir",
+        message: expect.stringMatching(/^Unknown dataset nope/),
+      }),
+    );
+    for (const name of ["../escape", "a/b", ".hidden"]) {
+      await expect(handleEvalTaskNew("support", name, evals())).rejects.toThrow(
+        expect.objectContaining({ code: "invalid_evals_dir" }),
+      );
+    }
+    expect(captureCommand).not.toHaveBeenCalled();
   });
 });
 

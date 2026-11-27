@@ -11,18 +11,14 @@ import path from "node:path";
 import { errorMessage } from "@lmnr-ai/types";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 
-import type { GlobalOpts } from "../../auth/with-client";
 import { invalidEvalsDir } from "../../errors";
 import { initializeLogger } from "../../utils/logger";
-import { outputJson } from "../../utils/output";
 import { readDatasetToml } from "./dataset-toml";
 import { NAME_RULE, SKIPPED_DIRS, TASKS_DIR } from "./datasets";
-import { describeEvalPy } from "./describe";
 import {
   defaultTaskImage,
   EVAL_PY,
   type EvalDescription,
-  hasEvalPy,
   taskImageNames,
 } from "./eval-py";
 
@@ -293,7 +289,7 @@ const taskDirs = async (datasetDir: string): Promise<string[]> => {
     .sort();
 };
 
-const logTaskFileChanges = (
+export const logTaskFileChanges = (
   folder: string,
   changes: TaskFileChange[],
   dryRun = false,
@@ -341,51 +337,34 @@ export const ensureTaskFiles = async (
   return changes;
 };
 
+/** Fail unless `name` can name a new task dir (a `NAME_RULE` part). */
+export const assertTaskDirName = (name: string): void => {
+  if (!isNamePart(name)) {
+    throw invalidEvalsDir(`${name} is no valid task name part. ${NAME_RULE}`);
+  }
+};
+
 /**
- * `lmnr-cli eval task new <dir>`: create `<dataset>/tasks/<name>` (if needed)
- * with the files Harbor needs, for a dataset with an `agent/eval.py`.
+ * Create `<datasetDir>/tasks/<name>` (if needed) with the files Harbor needs
+ * that it lacks, for `eval task new`. `missingTestSh`: it has no
+ * tests/test.sh and gets no stub (`grade_with_test_sh`).
  */
-export const handleEvalTaskNew = async (
-  dir: string,
-  opts: GlobalOpts,
-): Promise<void> => {
-  const taskDir = path.resolve(dir);
-  const datasetDir = path.dirname(path.dirname(taskDir));
-  if (
-    path.basename(path.dirname(taskDir)) !== TASKS_DIR ||
-    !(await hasEvalPy(datasetDir))
-  ) {
-    throw invalidEvalsDir(
-      `${dir} must be <dataset>/${TASKS_DIR}/<name>, in a dataset folder ` +
-        `with ${EVAL_PY}.`,
-    );
-  }
-  const description = await describeEvalPy(datasetDir);
+export const writeNewTask = async (
+  datasetDir: string,
+  name: string,
+  description: EvalDescription,
+): Promise<{
+  taskDir: string;
+  changes: TaskFileChange[];
+  missingTestSh: boolean;
+}> => {
+  assertTaskDirName(name);
   const defaults = await taskDefaults(datasetDir, description);
-  if (!isNamePart(path.basename(taskDir))) {
-    throw invalidEvalsDir(
-      `${path.basename(taskDir)} is no valid task name part. ${NAME_RULE}`,
-    );
-  }
+  const taskDir = path.join(datasetDir, TASKS_DIR, name);
   await mkdir(taskDir, { recursive: true });
   const changes = await ensureTaskDirFiles(datasetDir, taskDir, defaults);
-  // On stderr, so also with --json.
-  if (
+  const missingTestSh =
     !defaults.testShStub &&
-    !(await exists(path.join(taskDir, "tests", "test.sh")))
-  ) {
-    // grade_with_test_sh: the task's own test.sh grades it, so no stub.
-    logger.warn(
-      `${dir} has no tests/test.sh, which grades it: ${EVAL_PY} sets ` +
-        `grade_with_test_sh = True. Write one that writes /logs/verifier/reward.txt.`,
-    );
-  }
-  if (opts.json) {
-    outputJson({ dir: taskDir, files: changes });
-    return;
-  }
-  logTaskFileChanges(path.basename(datasetDir), changes);
-  if (changes.length === 0) {
-    logger.info(`${dir} already has the files Harbor needs`);
-  }
+    !(await exists(path.join(taskDir, "tests", "test.sh")));
+  return { taskDir, changes, missingTestSh };
 };

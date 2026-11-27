@@ -39,7 +39,7 @@ import {
 } from "./commands/eval/dataset-command";
 import { handleEvalDescribe } from "./commands/eval/describe-command";
 import { handleEvalOrchestrate } from "./commands/eval/remote";
-import { handleEvalTaskNew } from "./commands/eval/task-files";
+import { handleEvalTaskNew } from "./commands/eval/task-command";
 import {
   handleLlmProfileCreate,
   handleLlmProfileDelete,
@@ -819,28 +819,34 @@ Examples:
     .description("Create tasks of eval.py datasets")
     .command("new")
     .description("Create a task dir with the files Harbor needs")
-    .argument("<dir>", "The task dir: <dataset>/tasks/<name>")
+    .argument("<dataset>", "Dataset: its folder or its [dataset] name")
+    .argument("<name>", "Task dir name: creates <dataset folder>/tasks/<name>")
+    .option(
+      "--dir <dir>",
+      "Evals folder (one <dataset>/harbor.yaml or <dataset>/agent/eval.py per dataset)",
+      "evals",
+    )
     .action(withLocalOpts(handleEvalTaskNew))
     .addHelpText(
       "after",
       `
-For a dataset with an agent/eval.py: creates <dir> if needed and writes the
-files it lacks: task.toml ([task] name = <org of [dataset] name, else the
-dataset folder>/<name>, the
-runner's default image and new_task_toml), instruction.md and a stub
-tests/test.sh. Then add the case's data: environment/ (what the app reads),
+For a dataset with an agent/eval.py (named like for \`eval run\`: its folder
+in --dir or its [dataset] name): creates <folder>/tasks/<name> if needed and
+writes the files it lacks: task.toml ([task] name = <org of [dataset] name,
+else the dataset folder>/<name>, the runner's default image and
+new_task_toml), instruction.md and a stub tests/test.sh. Then add the case's data: environment/ (what the app reads),
 tests/expected.json (the reference answer), tests/fixtures/ (data the agent
 must not see). \`eval run\` and \`eval dataset push\` write the same files for
 task dirs that lack them, so copying a data-only dir into tasks/ works too.
 
 Exit codes:
-  16  invalid_evals_dir (not <dataset>/tasks/<name>, no agent/eval.py, an
-      eval.py that doesn't load, an invalid name, a task image the runner
-      doesn't declare)
+  16  invalid_evals_dir (unknown dataset, no agent/eval.py, an eval.py that
+      doesn't load, an invalid name, a task image the runner doesn't declare)
   17  missing_tool (uv not installed)
 
 Examples:
-  $ lmnr-cli eval task new evals/support/tasks/refund-double-charge
+  $ lmnr-cli eval task new support refund-double-charge
+  $ lmnr-cli eval task new acme/support refund-double-charge --dir ./my-evals
 `,
     );
 

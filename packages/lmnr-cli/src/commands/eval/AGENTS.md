@@ -82,7 +82,9 @@
   `eval-py.ts` (eval.py datasets: describe JSON types, PEP 723, the describe
   cache, the ownership merge, `logEvalWarnings`), `describe.ts` (runs
   `lmnr.evals.describe`), `describe-command.ts` (`eval describe`), `task-files.ts` (the
-  task files written for eval.py datasets, `eval task new`), `remote.ts` (`RunSpec`,
+  task files written for eval.py datasets), `task-command.ts` (`eval task
+  new`; its own module because it imports `selectDatasets` from `index.ts`,
+  which imports `task-files.ts`), `remote.ts` (`RunSpec`,
   `startRemoteRun`, `eval orchestrate`), `run-log.ts` (the run's log: shipper
   and follower), `run-log-lines.ts` (what the log shows of Harbor's output),
   `jobs.ts` (packing a finished Harbor
@@ -328,8 +330,11 @@
   in `eval run` (so before hashing and packing; the orchestrator never writes),
   at the start of `eval dataset push` (`--dry-run` lists them, then plans
   from a temp copy of `tasks/` with them written, since they add tasks and
-  change hashes; push only reads `tasks/`), and in `eval task
-  new <dataset>/tasks/<name>`. Every non-dot dir directly under `tasks/` gets a
+  change hashes; push only reads `tasks/`), and in `eval task new <dataset>
+  <name> [--dir evals]` (`<dataset>` resolved by `selectDatasets` like `eval
+  run [dataset]`: folder or `[dataset] name`; writes
+  `<folder>/tasks/<name>`, `<name>` a `NAME_RULE` part, checked before
+  describe; JSON `{dir, files}`). Every non-dot dir directly under `tasks/` gets a
   missing `task.toml` (`[task] name = <org of [dataset] name, else the folder
   name>/<dir>`, `[environment] docker_image = <default image, or its registry
   ref>`, then the runner's `new_task_toml` merged per table, via smol-toml), `instruction.md` and `tests/test.sh` (0755;
