@@ -184,9 +184,10 @@ const getSync = (
       // The app's `--require` / `--import` hooks have no business here.
       execArgv: [],
     });
-    // Anything the worker still throws (it catches its own errors) is
-    // already a failed fetch here; unhandled, it would crash the app.
-    worker.on("error", () => {});
+    worker.on("error", () => {
+      // The worker catches its own errors; anything else is already a failed
+      // fetch here (no answer), and unhandled it would crash the app.
+    });
     worker.unref();
     Atomics.wait(flag, 0, 0, waitMs);
     const received = receiveMessageOnPort(port1);
