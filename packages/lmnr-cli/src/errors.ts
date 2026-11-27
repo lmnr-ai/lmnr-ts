@@ -57,6 +57,8 @@ export const dockerFailed = (m: string) => new CliError("docker_failed", 20, m);
 export const remoteRunFailed = (m: string) =>
   new CliError("remote_run_failed", 21, m);
 export const localEdits = (m: string) => new CliError("local_edits", 22, m);
+export const trialsErrored = (m: string) =>
+  new CliError("trials_errored", 23, m);
 // Eval dataset API failures without an exit code of their own.
 export const storageNotConfigured = (m: string) =>
   new CliError("storage_not_configured", 1, m);

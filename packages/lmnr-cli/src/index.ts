@@ -744,6 +744,12 @@ your environment or .env / .env.local; a missing one fails the run before it
 starts. For --remote they are sent with the run, never uploaded as files
 (.env*, .git, node_modules, virtualenvs, caches and jobs/ are never packed).
 
+Errored trials: a trial that raised and got no reward (not an agent timeout
+that was still graded) is errored. Each dataset with errored trials logs
+"N/M trials errored" with the first exception; --json lists every dataset's
+counts under trials. A dataset whose trials ALL errored fails the run (23)
+once every dataset has run.
+
 Exit codes:
   16  invalid_evals_dir / archive_too_large
   17  missing_tool (uv or Docker not installed)
@@ -752,6 +758,7 @@ Exit codes:
   20  docker_failed (a docker build, pull or save failed, or a wrong platform)
   21  remote_run_failed (a --remote run failed before its datasets ran, or
       its sandbox was lost)
+  23  trials_errored (every trial of a dataset errored, so nothing was graded)
 
 Examples:
   $ lmnr-cli eval run

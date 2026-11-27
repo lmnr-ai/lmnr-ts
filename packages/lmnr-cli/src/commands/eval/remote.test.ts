@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { imagePusher } from "./docker";
 import { SANDBOX_PROXY_PLACEHOLDER } from "./env";
 import { type EvalDescription, setEvalDescription } from "./eval-py";
-import { runDatasets } from "./harbor";
+import { assertDatasetsPassed, runDatasets } from "./harbor";
 import type { ImageDef } from "./images";
 import { packEvalsDir } from "./pack";
 import {
@@ -310,7 +310,9 @@ void describe("runDatasets", () => {
       return 0;
     });
 
-    expect(await runDatasets(root, ["a", "b"], {}, {}, IMAGES)).toEqual([]);
+    expect(
+      (await runDatasets(root, ["a", "b"], {}, {}, IMAGES)).failed,
+    ).toEqual([]);
     expect(seen.map((s) => s.cwd)).toEqual([
       path.join(root, "a"),
       path.join(root, "b"),
@@ -321,7 +323,7 @@ void describe("runDatasets", () => {
     ]);
 
     seen.length = 0;
-    expect(await runDatasets(root, ["b"], {}, {})).toEqual([]);
+    expect((await runDatasets(root, ["b"], {}, {})).failed).toEqual([]);
     expect(seen).toEqual([{ cwd: path.join(root, "b"), images: undefined }]);
   });
 
@@ -342,7 +344,7 @@ void describe("runDatasets", () => {
     };
 
     expect(
-      await runDatasets(root, ["a", "b"], {}, {}, IMAGES, { jobs }),
+      (await runDatasets(root, ["a", "b"], {}, {}, IMAGES, { jobs })).failed,
     ).toEqual(["a"]);
     // The job keeps Harbor's name: the plugin names the evaluation after it.
     expect(configs.map((c) => [c.jobs_dir, c.job_name])).toEqual([
@@ -353,6 +355,98 @@ void describe("runDatasets", () => {
       ["a", path.join(jobs.dir, "a")],
       ["b", path.join(jobs.dir, "b")],
     ]);
+  });
+});
+
+void describe("errored trials", () => {
+  /** A `harbor run` that writes these trial results into its job dir. */
+  const harborWriting =
+    (byDataset: Record<string, Record<string, unknown>[]>, code = 0) =>
+    async (_command: string, _args: string[], opts?: { cwd?: string }) => {
+      const dataset = path.basename(opts?.cwd ?? "");
+      for (const [i, result] of (byDataset[dataset] ?? []).entries()) {
+        await write(
+          `${dataset}/jobs/2026-11-27__10-00-00/t${i}__x/result.json`,
+          JSON.stringify(result),
+        );
+      }
+      return code;
+    };
+  const raised = (type: string, message: string) => ({
+    exception_info: { exception_type: type, exception_message: message },
+    verifier_result: null,
+  });
+  const graded = {
+    exception_info: null,
+    verifier_result: { rewards: { r: 1 } },
+  };
+
+  void it("fails with 23 when every trial of a dataset errored, after every dataset ran", async () => {
+    await writeEvals();
+    vi.mocked(runCommand).mockImplementation(
+      harborWriting({
+        a: [
+          raised("RuntimeError", "app never started\nTraceback"),
+          raised("X", "y"),
+        ],
+        b: [graded, raised("AgentTimeoutError", "slow")],
+      }),
+    );
+
+    const outcome = await runDatasets(root, ["a", "b"], {}, {});
+    expect(outcome.failed).toEqual([]);
+    const jobDir = path.join(root, "a/jobs/2026-11-27__10-00-00");
+    expect(outcome.trials).toEqual({
+      a: {
+        total: 2,
+        errored: 2,
+        firstError: {
+          type: "RuntimeError",
+          message: "app never started\nTraceback",
+        },
+        jobDir,
+      },
+      b: expect.objectContaining({ total: 2, errored: 1 }),
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Dataset a: 2/2 trials errored (first: RuntimeError: app never started)",
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Dataset b: 1/2 trials errored (first: AgentTimeoutError: slow)",
+    );
+    expect(() => assertDatasetsPassed(outcome)).toThrow(
+      expect.objectContaining({
+        code: "trials_errored",
+        exitCode: 23,
+        message:
+          "Every trial errored, so nothing was graded, in: a (2 trials; " +
+          "first: RuntimeError: app never started; each trial's " +
+          `exception.txt in ${jobDir})`,
+      }),
+    );
+    // Only some errored: a warning, not a failure.
+    expect(() =>
+      assertDatasetsPassed({ failed: [], trials: { b: outcome.trials.b } }),
+    ).not.toThrow();
+  });
+
+  void it("keeps Harbor's own failure first and counts no job as no trials", async () => {
+    await writeEvals();
+    vi.mocked(runCommand).mockImplementation(
+      harborWriting({ a: [raised("X", "y")] }, 2),
+    );
+    const outcome = await runDatasets(root, ["a", "b"], {}, {}, IMAGES);
+    expect(outcome.failed).toEqual(["a", "b"]);
+    // Remote trials' job dirs go with their sandbox: not named.
+    expect(outcome.trials.a).toEqual({
+      total: 1,
+      errored: 1,
+      firstError: { type: "X", message: "y" },
+    });
+    expect(outcome.trials.b).toEqual({ total: 0, errored: 0 });
+    expect(() => assertDatasetsPassed(outcome)).toThrow(
+      expect.objectContaining({ code: "harbor_failed", exitCode: 18 }),
+    );
   });
 });
 

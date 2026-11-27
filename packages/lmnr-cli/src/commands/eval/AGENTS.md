@@ -203,12 +203,25 @@
   (also a missing or malformed `LMNR_EVAL_RUN` in `eval orchestrate`), 20
   `docker_failed` (build / pull / save, unreadable `docker save` output, a
   non-amd64 image, zstd layers), 21 `remote_run_failed` (a `--remote` run's
-  orchestrator exited with anything but 0 or 18, or its sandbox was lost; 18
-  from it stays `harbor_failed`), 22 `local_edits` (pull would overwrite
-  versions Laminar doesn't have; `--force`). The eval dataset API's
+  orchestrator exited with anything but 0, 18 or 23, or its sandbox was lost;
+  18 / 23 from it stay `harbor_failed` / `trials_errored`), 22 `local_edits`
+  (pull would overwrite versions Laminar doesn't have; `--force`), 23
+  `trials_errored` (every trial of a dataset errored; see "Errored trials"). The eval dataset API's
   `storage_not_configured` and `version_not_found` exit 1 with their own
   `code`. Bad `--env` flags are
   commander `InvalidArgumentError`s.
+- **Errored trials** (`readTrialOutcomes` in `jobs.ts`, Harbor 0.25.0's
+  `TrialResult`): after each dataset's `harbor run` (local and in `eval
+  orchestrate`), `runDatasets` reads `<job>/<trial>/result.json` (the job dir
+  `newJobDir` finds; no `result.json` = not counted; Harbor deletes retried
+  attempts' dirs). A trial is errored when it raised (`exception_info`, or a
+  `step_results[].exception_info`) AND has no reward (`verifier_result.rewards`
+  null / empty): a graded agent timeout is a result. Any errored → `Dataset d:
+  N/M trials errored (first: <type>: <first message line>)` warning; local
+  `--json` has `trials: {<dataset>: {total, errored, firstError?, jobDir?}}`.
+  `assertDatasetsPassed` runs after every dataset: `harbor_failed` (18) first,
+  else datasets whose trials ALL errored (total > 0) → `trials_errored` (23),
+  naming each with its first exception (and, locally, the job dir).
 - **Secrets are Harbor `${VAR}` placeholders**, not flags: `findTemplateVars`
   scans harbor.yaml + the run's task.toml files (`findTaskTomls`, so a task
   `--task` leaves out needs none of its vars), `resolveTemplateEnv` reads ONLY those

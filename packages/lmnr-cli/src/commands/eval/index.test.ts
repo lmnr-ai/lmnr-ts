@@ -968,6 +968,9 @@ void describe("assertRemotePassed", () => {
     expect(() => assertRemotePassed({ kind: "exited", exitCode: 18 })).toThrow(
       expect.objectContaining({ code: "harbor_failed", exitCode: 18 }),
     );
+    expect(() => assertRemotePassed({ kind: "exited", exitCode: 23 })).toThrow(
+      expect.objectContaining({ code: "trials_errored", exitCode: 23 }),
+    );
     expect(() => assertRemotePassed({ kind: "exited", exitCode: 1 })).toThrow(
       expect.objectContaining({ code: "remote_run_failed", exitCode: 21 }),
     );

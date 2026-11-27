@@ -445,7 +445,7 @@ export const handleEvalOrchestrate = async (): Promise<void> => {
   try {
     warnRunners();
     await downloadTasks(client, cwd, spec.downloads);
-    const failed = await runDatasets(
+    const outcome = await runDatasets(
       cwd,
       spec.datasets,
       spec.overrides,
@@ -464,7 +464,7 @@ export const handleEvalOrchestrate = async (): Promise<void> => {
         taskHashes: spec.taskHashes,
       },
     );
-    assertDatasetsPassed(failed);
+    assertDatasetsPassed(outcome);
   } catch (error) {
     // The caller logs it and exits right away, before a flush could run.
     shipper.writer().write(`ERROR: ${errorMessage(error)}\n`);

@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -75,6 +75,86 @@ export const newJobDir = async (
   const added = [...now].filter((name) => !before.has(name)).sort();
   const latest = added[added.length - 1];
   return latest === undefined ? undefined : path.join(jobsDir, latest);
+};
+
+/** A trial's exception (Harbor's `ExceptionInfo`). */
+interface TrialException {
+  type: string;
+  message: string;
+}
+
+/** How a dataset's trials ended, from each trial's `result.json`. */
+export interface TrialOutcomes {
+  /** Trials with a `result.json`. */
+  total: number;
+  /** Trials that raised and got no reward (`trialException`). */
+  errored: number;
+  /** The first errored trial's exception, trial dirs in name order. */
+  firstError?: TrialException;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const exceptionOf = (info: unknown): TrialException | undefined =>
+  isRecord(info) && typeof info.exception_type === "string"
+    ? {
+        type: info.exception_type,
+        message:
+          typeof info.exception_message === "string"
+            ? info.exception_message
+            : "",
+      }
+    : undefined;
+
+/**
+ * Why a trial (Harbor 0.25.0's `TrialResult`) errored, or `undefined` when it
+ * didn't: it raised (`exception_info`, or a step's, as Harbor's
+ * `_recorded_exceptions`) and has no reward (`verifier_result.rewards` unset
+ * or empty). A trial that raised but was still graded (an agent timeout) is a
+ * result, not a broken eval.
+ */
+export const trialException = (result: unknown): TrialException | undefined => {
+  if (!isRecord(result)) return undefined;
+  const verifier = result.verifier_result;
+  const rewards = isRecord(verifier) ? verifier.rewards : undefined;
+  if (isRecord(rewards) && Object.keys(rewards).length > 0) return undefined;
+  const steps = Array.isArray(result.step_results) ? result.step_results : [];
+  return [
+    result.exception_info,
+    ...steps.map((s) => (isRecord(s) ? s.exception_info : undefined)),
+  ]
+    .map(exceptionOf)
+    .find((e) => e !== undefined);
+};
+
+/**
+ * Count the errored trials of a finished job (`<job>/<trial>/result.json`).
+ * Trial dirs without a readable `result.json` (unfinished) aren't counted;
+ * Harbor deletes a retried attempt's dir, so each trial counts once.
+ */
+export const readTrialOutcomes = async (
+  jobDir: string | undefined,
+): Promise<TrialOutcomes> => {
+  const outcomes: TrialOutcomes = { total: 0, errored: 0 };
+  if (!jobDir) return outcomes;
+  const trials = [...(await jobDirNames(jobDir))].sort();
+  for (const trial of trials) {
+    let result: unknown;
+    try {
+      result = JSON.parse(
+        await readFile(path.join(jobDir, trial, "result.json"), "utf8"),
+      );
+    } catch {
+      continue;
+    }
+    outcomes.total += 1;
+    const error = trialException(result);
+    if (!error) continue;
+    outcomes.errored += 1;
+    outcomes.firstError ??= error;
+  }
+  return outcomes;
 };
 
 interface JobArchive {
