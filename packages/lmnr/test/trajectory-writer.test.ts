@@ -208,7 +208,12 @@ class RuntimeError extends Error {
   override name = "RuntimeError";
 }
 
-const toolLoop = (h: Harness, root = "agent", failTool = false): Span => {
+const toolLoop = (
+  h: Harness,
+  root = "agent",
+  failTool = false,
+  mocked = false,
+): Span => {
   const ask = { role: "user", content: "Look up x" };
   return h.span(root, {}, ROOT_CONTEXT, (_, ctx) => {
     llmCall(h, ctx, [ask], [TOOL_CALL]);
@@ -222,6 +227,9 @@ const toolLoop = (h: Harness, root = "agent", failTool = false): Span => {
           tool.setStatus({ code: SpanStatusCode.ERROR });
         } else {
           tool.setAttribute("lmnr.span.output", '"found x"');
+        }
+        if (mocked) {
+          tool.setAttribute("lmnr.span.mocked", true);
         }
       },
     );
@@ -297,6 +305,22 @@ void describe("trajectory collector", () => {
     assert.equal(result.extra.lmnr.status, "error");
     assert.equal(result.extra.lmnr.error.type, "RuntimeError");
     assert.equal(result.extra.lmnr.error.message, "no x");
+  });
+
+  void it("a mocked tool call is marked", async () => {
+    const h = harness(path.join(dir, "t.json"), false);
+    toolLoop(h, "agent", false, true);
+    await h.processor.forceFlush();
+    const call = h.read().steps[1].tool_calls[0];
+    assert.equal(call.extra.lmnr.mocked, true);
+
+    const plain = harness(path.join(dir, "plain.json"), false);
+    toolLoop(plain);
+    await plain.processor.forceFlush();
+    assert.equal(
+      "mocked" in plain.read().steps[1].tool_calls[0].extra.lmnr,
+      false,
+    );
   });
 
   void it("a snapshot while spans are open is incomplete", async () => {

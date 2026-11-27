@@ -8,6 +8,7 @@ import { AttributeValue, context, type Span, trace } from "@opentelemetry/api";
 import { suppressTracing } from "@opentelemetry/core";
 
 import { Laminar } from "../../laminar";
+import { mockCall } from "../../mock";
 import {
   deserializeLaminarSpanContext,
   initializeLogger,
@@ -41,6 +42,9 @@ export type DecoratorConfig = {
   inputParameters?: unknown[];
   suppressTracing?: boolean;
   parentSpanContext?: string | LaminarSpanContext;
+  // The key a trial's mock server may answer this call under (`src/mock`);
+  // `undefined` never consults it.
+  mockKey?: string;
 };
 
 // Overload for when thisArg is provided (method call)
@@ -76,6 +80,7 @@ export function observeBase<
     inputParameters,
     suppressTracing: shouldSuppressTracing,
     parentSpanContext,
+    mockKey,
   }: DecoratorConfig,
   fn: F,
   thisArg?: ThisParameterType<F>,
@@ -170,7 +175,11 @@ export function observeBase<
 
         let res: ReturnType<F>;
         try {
-          res = fn.apply(thisArg as ThisParameterType<F>, args);
+          const mocked = mockCall(mockKey, fn, thisArg, args, span);
+          res =
+            mocked !== undefined
+              ? (mocked.result as ReturnType<F>)
+              : fn.apply(thisArg as ThisParameterType<F>, args);
         } catch (error) {
           try {
             span.recordException(error as Error);

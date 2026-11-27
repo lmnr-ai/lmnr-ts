@@ -27,6 +27,7 @@ TS port of the Python SDK's `lmnr/sdk/trajectory/` (lmnr-python PRs #402 / #405 
 
 - **The normalizer and builder read shapes only this SDK records** (lmnr-python#410, ported line for line): AI SDK LanguageModel prompt parts (`tool-call`, `tool-result` with `output: {type, value}`, `file` with `mediaType`), OTel GenAI semconv `{role, parts}` with typed parts (LangChain.js), chat tool calls with top-level `arguments` (google-genai). A `json` / `error-json` tool output goes through `pyJsonDumps`, not `resultContent`'s list branch. TOOL spans are identified by `toolName` / `toolCallId` (`gen_ai.tool.*`, then `ai.toolCall.*`), not the span name; the collector keeps `ai.toolCall.id` / `.name` for this.
 - **A failed call (no output) still counts as an empty assistant message** in the builder's "input extends the previous one" check, because a reader adds one for every agent step (§6.4). Found replaying a TS-written file through the Python plugin; fixed in both SDKs.
+- **`tool_call.extra.lmnr.mocked`** (spec 0.1.1): a TOOL span with `lmnr.span.mocked: true` (set by `src/mock/` when an eval's mock server answered the call) marks both matched and synthetic tool calls; the tracing collector's `keep` keeps that attribute. The golden cases `anthropic-tool-loop` and `errors-dispatch-multitrace` carry one each.
 
 ## Writer (`writer.ts`)
 

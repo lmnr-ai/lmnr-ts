@@ -42,6 +42,7 @@ export {
   type LaminarReporterOptions,
 } from "./integrations/eve";
 export { Laminar, type LaminarInitializeProps } from "./laminar";
+export { MockedError } from "./mock";
 export { LaminarSpanProcessor } from "./opentelemetry-lib/";
 export { type LaminarBridge } from "./opentelemetry-lib/bridges";
 export {

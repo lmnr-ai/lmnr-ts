@@ -7,7 +7,8 @@
       "!**/.next/**",
       "!examples/**",
       "!assets/recorder/record.umd.min.cjs",
-      "!spec/lmnr-atif/**"
+      "!spec/lmnr-atif/**",
+      "!spec/lmnr-mock/**"
     ]
   },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2 },

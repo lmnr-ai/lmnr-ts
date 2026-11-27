@@ -39,6 +39,8 @@ interface ObserveOptions {
   parentSpanContext?: string | LaminarSpanContext;
   metadata?: Record<string, any>;
   tags?: string[];
+  mockKey?: string;
+  mockable?: boolean;
 }
 
 /**
@@ -63,10 +65,18 @@ interface ObserveOptions {
  * @param options.metadata - Metadata to add to a trace for further filtering. Must be
  * JSON serializable.
  * @param options.tags - Tags to associate with the span.
+ * @param options.mockKey - The key an eval's mocks use for this function. In an
+ * eval run with mocks (`LMNR_MOCK_URL` set), a call whose key is mocked is answered
+ * by the trial's mock server instead of running, and returns a Promise. Defaults to the
+ * span name.
+ * @param options.mockable - Set to `false` so this function always runs, even when
+ * its key is mocked. Defaults to `true`.
  * @param fn - The function to wrap
  * @param args - Arguments to pass to the function
  * @returns Promise with the result of the wrapped function.
  * @throws Exception - Re-throws the exception if the wrapped function throws an exception.
+ * @throws MockedError - In an eval run with mocks, when the mock handler raises
+ * `mock.Error`, or when a mocked call fails (`name === "MockFailure"`).
  *
  * @example
  * ```typescript
@@ -100,6 +110,7 @@ export function observe<
     tags,
   } = options;
   const spanName = name ?? fn.name;
+  const mockKey = resolveMockKey(options, spanName);
 
   const observeOptions = {
     sessionId,
@@ -123,6 +134,7 @@ export function observe<
       ignoreInput,
       ignoreOutput,
       parentSpanContext,
+      mockKey,
     },
     fn,
     undefined,
@@ -176,6 +188,13 @@ export function withTracingLevel<
 
   return result;
 }
+
+/** `mockKey`, else the span name; `undefined` when `mockable: false`. */
+const resolveMockKey = (
+  options: Partial<ObserveOptions>,
+  spanName: string,
+): string | undefined =>
+  options.mockable === false ? undefined : (options.mockKey ?? spanName);
 
 /**
  * Builds context-level association properties that propagate to child spans.
@@ -399,6 +418,7 @@ export function observeDecorator<This, Args extends unknown[], Return>(
           ignoreInput: actualConfig.ignoreInput,
           ignoreOutput: actualConfig.ignoreOutput,
           parentSpanContext: actualConfig.parentSpanContext,
+          mockKey: resolveMockKey(actualConfig, observeName),
         },
         originalMethod,
         this,
@@ -494,6 +514,7 @@ export function observeExperimentalDecorator(
           ignoreInput: actualConfig.ignoreInput,
           ignoreOutput: actualConfig.ignoreOutput,
           parentSpanContext: actualConfig.parentSpanContext,
+          mockKey: resolveMockKey(actualConfig, observeName),
         },
         originalMethod,
         this,

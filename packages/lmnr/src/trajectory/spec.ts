@@ -8,7 +8,7 @@
  */
 
 // Version of `spec/lmnr-atif/lmnr-atif.md` this package implements.
-export const SPEC_VERSION = "0.1.0";
+export const SPEC_VERSION = "0.1.1";
 
 // Every Laminar field lives under `extra[NAMESPACE]`.
 export const NAMESPACE = "lmnr";
