@@ -338,7 +338,7 @@
   `/opt/lmnr` (Python, `lmnr`, the mock server) to every generated image.
   `layer.ts` decides which `lmnr`: `layerLmnrArgs()` passes describe
   `--layer-lmnr=wheel` when `LMNR_EVAL_LMNR_SPEC` is a directory, the spec
-  itself otherwise (a VCS URL, installed in the layer's stage), nothing
+  itself otherwise (a git URL, installed in the layer's stage), nothing
   without it (describe installs its own version). A generated image whose
   `laminar_layer.build_contexts` lists `lmnr-dev` gets `--build-context
   lmnr-dev=<dir>` (`buildContextArgs`, `docker.ts`): `uv build --wheel` of

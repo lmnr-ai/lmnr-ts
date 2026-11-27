@@ -29,7 +29,7 @@ export const DATASET_TOML = "dataset.toml";
 const GITIGNORE_LINES = [`*/${TASKS_DIR}/*`, `!*/${TASKS_DIR}/${DATASET_TOML}`];
 
 /**
- * Never walked into: VCS data, dependency/build caches and Harbor job output.
+ * Never walked into: `.git`, dependency/build caches and Harbor job output.
  * Not packed for upload (`pack.ts`), not hashed (`task-hash.ts`) and not
  * searched for datasets.
  */

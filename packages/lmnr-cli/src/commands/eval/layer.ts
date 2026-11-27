@@ -10,7 +10,7 @@ import { captureCommand } from "./run-command";
  * `/opt/lmnr`, in every image of an eval.py runner. It installs the `lmnr`
  * describe runs as (`LMNR_PYTHON_VERSION`), unless `LMNR_EVAL_LMNR_SPEC` says
  * otherwise: a local checkout is built into a wheel here and passed to the
- * build as the `lmnr-dev` named context; any other spec (a VCS URL) is
+ * build as the `lmnr-dev` named context; any other spec (a git URL) is
  * installed as it is.
  */
 
