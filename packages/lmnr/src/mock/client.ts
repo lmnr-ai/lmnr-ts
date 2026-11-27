@@ -37,8 +37,8 @@ type Method = "GET" | "POST";
 
 export class MockClient {
   // Never log `url`: it holds the trial's token.
-  readonly url: string;
-  readonly timeoutMs: number;
+  private readonly url: string;
+  private readonly timeoutMs: number;
   private keys: Set<string> | undefined;
   private retryAt = 0;
   private backoffMs = RETRY_BACKOFF_MS;

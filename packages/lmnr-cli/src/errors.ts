@@ -57,6 +57,13 @@ export const dockerFailed = (m: string) => new CliError("docker_failed", 20, m);
 export const remoteRunFailed = (m: string) =>
   new CliError("remote_run_failed", 21, m);
 export const localEdits = (m: string) => new CliError("local_edits", 22, m);
+export const trialsErrored = (m: string) =>
+  new CliError("trials_errored", 23, m);
+// A local eval run's check of its project key: rejected, or no answer.
+export const laminarKeyRejected = (m: string) =>
+  new CliError("laminar_key_rejected", 24, m);
+export const laminarUnreachable = (m: string) =>
+  new CliError("laminar_unreachable", 24, m);
 // Eval dataset API failures without an exit code of their own.
 export const storageNotConfigured = (m: string) =>
   new CliError("storage_not_configured", 1, m);

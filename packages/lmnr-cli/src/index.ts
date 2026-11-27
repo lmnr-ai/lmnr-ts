@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { errorMessage } from "@lmnr-ai/types";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 
 import { version } from "../package.json";
 import {
@@ -34,12 +34,13 @@ import {
   parsePositiveInt,
 } from "./commands/eval";
 import {
+  DEFAULT_EVALS_DIR,
   handleDatasetPull,
   handleDatasetPush,
 } from "./commands/eval/dataset-command";
 import { handleEvalDescribe } from "./commands/eval/describe-command";
 import { handleEvalOrchestrate } from "./commands/eval/remote";
-import { handleEvalTaskNew } from "./commands/eval/task-files";
+import { handleEvalTaskNew } from "./commands/eval/task-command";
 import {
   handleLlmProfileCreate,
   handleLlmProfileDelete,
@@ -604,6 +605,13 @@ Examples:
 `,
     );
 
+  /** `--dir` of every eval command that reads the evals folder. */
+  const evalsDirOption = () =>
+    new Option(
+      "--dir <dir>",
+      "Evals folder (one <dataset>/harbor.yaml or <dataset>/agent/eval.py per dataset)",
+    ).default(DEFAULT_EVALS_DIR);
+
   const evalCmd = program
     .command("eval")
     .alias("evals")
@@ -629,11 +637,7 @@ Examples:
     .command("run")
     .description("Run the evals folder's Harbor datasets")
     .argument("[dataset]", "Dataset to run. Omitted → every dataset")
-    .option(
-      "--dir <dir>",
-      "Evals folder (one <dataset>/harbor.yaml or <dataset>/agent/eval.py per dataset)",
-      "evals",
-    )
+    .addOption(evalsDirOption())
     .option(
       "--remote",
       "Run in Laminar sandboxes instead of local Docker, printing the run's log until it ends",
@@ -689,7 +693,9 @@ Harbor does.
 
 Modes:
   (default)          Trials run on local Docker. Needs uv, Docker and
-                     LMNR_PROJECT_API_KEY (written to .env by \`lmnr-cli setup\`).
+                     LMNR_PROJECT_API_KEY (written to .env by \`lmnr-cli setup\`),
+                     which is checked against Laminar (LMNR_BASE_URL) before
+                     anything is built, so results can't silently go nowhere.
   --remote           Pushes the images, uploads the folder and starts the run
                      in a Laminar sandbox, then prints the run's log until it
                      ends. Only tasks Laminar doesn't have are uploaded (unpushed
@@ -743,15 +749,30 @@ Secrets: \`\${VAR}\` placeholders in harbor.yaml and task.toml are filled from
 your environment or .env / .env.local; a missing one fails the run before it
 starts. For --remote they are sent with the run, never uploaded as files
 (.env*, .git, node_modules, virtualenvs, caches and jobs/ are never packed).
+Rystic mirrors pull their twin with your Rystic API key on local runs:
+RYSTIC_TOKEN is read like --env RYSTIC_TOKEN (shell, .env.local, .env) and
+passed to every agent; unset, the run fails before building (19). --remote
+never sends it (Laminar gives each trial its own token) and drops
+--env RYSTIC_TOKEN with a warning.
+
+Errored trials: a trial that raised and got no reward (not an agent timeout
+that was still graded) is errored. Each dataset with errored trials logs
+"N/M trials errored" with the first exception; --json lists every dataset's
+counts under trials. A dataset whose trials ALL errored fails the run (23)
+once every dataset has run.
 
 Exit codes:
   16  invalid_evals_dir / archive_too_large
   17  missing_tool (uv or Docker not installed)
   18  harbor_failed (a dataset's harbor run failed)
-  19  missing_env (an unset \`\${VAR}\` or LMNR_PROJECT_API_KEY)
+  19  missing_env (an unset \`\${VAR}\`, LMNR_PROJECT_API_KEY, or RYSTIC_TOKEN
+      for a Rystic mirror)
   20  docker_failed (a docker build, pull or save failed, or a wrong platform)
   21  remote_run_failed (a --remote run failed before its datasets ran, or
       its sandbox was lost)
+  23  trials_errored (every trial of a dataset errored, so nothing was graded)
+  24  laminar_key_rejected / laminar_unreachable (local runs: Laminar rejected
+      LMNR_PROJECT_API_KEY, or didn't answer at LMNR_BASE_URL)
 
 Examples:
   $ lmnr-cli eval run
@@ -766,11 +787,7 @@ Examples:
     .command("describe")
     .description("Print each eval.py dataset's resolved runner")
     .argument("[dataset]", "Dataset to describe. Omitted → every dataset")
-    .option(
-      "--dir <dir>",
-      "Evals folder (one <dataset>/harbor.yaml or <dataset>/agent/eval.py per dataset)",
-      "evals",
-    )
+    .addOption(evalsDirOption())
     .action(withLocalOpts(handleEvalDescribe))
     .addHelpText(
       "after",
@@ -779,7 +796,7 @@ Reads each selected dataset's agent/eval.py the way \`eval run\` does first
 (same dataset selection, same uvx environment) and prints what the run would
 use: the runner class and the classes it inherits from, with their files;
 each image with every base, service and builder step and where it was
-declared, and for a generated image where runs keep its Dockerfile (local:
+declared, and where runs keep its generated Dockerfile (local:
 next to the job's config.json in Harbor's jobs dir; --remote: the run's
 files in Laminar, <dataset>/agent/.generated/); services (kind, version,
 source image, the env var names they set); mocks (key, type, handler, base
@@ -806,28 +823,30 @@ Examples:
     .description("Create tasks of eval.py datasets")
     .command("new")
     .description("Create a task dir with the files Harbor needs")
-    .argument("<dir>", "The task dir: <dataset>/tasks/<name>")
+    .argument("<dataset>", "Dataset: its folder or its [dataset] name")
+    .argument("<name>", "Task dir name: creates <dataset folder>/tasks/<name>")
+    .addOption(evalsDirOption())
     .action(withLocalOpts(handleEvalTaskNew))
     .addHelpText(
       "after",
       `
-For a dataset with an agent/eval.py: creates <dir> if needed and writes the
-files it lacks: task.toml ([task] name = <org of [dataset] name, else the
-dataset folder>/<name>, the
-runner's default image and new_task_toml), instruction.md and a stub
-tests/test.sh. Then add the case's data: environment/ (what the app reads),
+For a dataset with an agent/eval.py (named like for \`eval run\`: its folder
+in --dir or its [dataset] name): creates <folder>/tasks/<name> if needed and
+writes the files it lacks: task.toml ([task] name = <org of [dataset] name,
+else the dataset folder>/<name>, the runner's default image and
+new_task_toml), instruction.md and a stub tests/test.sh. Then add the case's data: environment/ (what the app reads),
 tests/expected.json (the reference answer), tests/fixtures/ (data the agent
 must not see). \`eval run\` and \`eval dataset push\` write the same files for
 task dirs that lack them, so copying a data-only dir into tasks/ works too.
 
 Exit codes:
-  16  invalid_evals_dir (not <dataset>/tasks/<name>, no agent/eval.py, an
-      eval.py that doesn't load, an invalid name, a task image the runner
-      doesn't declare)
+  16  invalid_evals_dir (unknown dataset, no agent/eval.py, an eval.py that
+      doesn't load, an invalid name, a task image the runner doesn't declare)
   17  missing_tool (uv not installed)
 
 Examples:
-  $ lmnr-cli eval task new evals/support/tasks/refund-double-charge
+  $ lmnr-cli eval task new support refund-double-charge
+  $ lmnr-cli eval task new acme/support refund-double-charge --dir ./my-evals
 `,
     );
 
@@ -842,7 +861,7 @@ Examples:
     .command("pull")
     .description("Download tasks/ to match dataset.toml")
     .argument("[datasets...]", "Datasets to pull. Omitted → every dataset")
-    .option("--dir <dir>", "Evals folder", "evals")
+    .addOption(evalsDirOption())
     .option(
       "--task <glob>",
       "Task name glob to pull ([task] name, with or without its org; repeatable). Omitted → every task",
@@ -901,7 +920,7 @@ Examples:
     .command("push")
     .description("Upload local task versions to Laminar and pin them")
     .argument("[datasets...]", "Datasets to push. Omitted → every dataset")
-    .option("--dir <dir>", "Evals folder", "evals")
+    .addOption(evalsDirOption())
     .option(
       "--task <glob>",
       "Task name glob to push (repeatable). Omitted → every task",

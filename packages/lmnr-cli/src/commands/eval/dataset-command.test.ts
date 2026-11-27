@@ -152,7 +152,14 @@ void describe("eval dataset push of an eval.py dataset", () => {
   const description: EvalDescription = {
     version: 1,
     runner: "SupportEval",
-    images: { "support-evals": { kind: "registry", ref: "python:3.13" } },
+    images: {
+      "support-evals": {
+        kind: "generated",
+        dockerfile_text: "FROM python:3.13\n",
+        context: "/abs",
+        steps: [],
+      },
+    },
     default_image: "support-evals",
     model: null,
     env: {},
@@ -160,6 +167,13 @@ void describe("eval dataset push of an eval.py dataset", () => {
     new_task_toml: {},
     grade_with_test_sh: false,
     warnings: [],
+    modules: ["support/agent/eval.py"],
+    artifacts: [],
+    services: [],
+    classes: [{ name: "SupportEval", file: "support/agent/eval.py" }],
+    mocks: [],
+    mock_dependencies: [],
+    laminar_layer: { python: "3.13", lmnr: "lmnr==0.9.3", build_contexts: {} },
   };
 
   void it("plans --dry-run with the task files a push would write", async () => {

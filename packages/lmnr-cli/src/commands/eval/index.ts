@@ -6,17 +6,18 @@ import { InvalidArgumentError } from "commander";
 
 import type { GlobalOpts } from "../../auth/with-client";
 import { DEFAULT_FRONTEND_URL } from "../../constants";
-import { harborFailed, invalidEvalsDir, remoteRunFailed } from "../../errors";
+import {
+  harborFailed,
+  invalidEvalsDir,
+  remoteRunFailed,
+  trialsErrored,
+} from "../../errors";
 import { pc } from "../../utils/colors";
 import { readLocalProjectFile } from "../../utils/local-project-file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
-import { buildEvalClient } from "./client";
-import {
-  checkRunTasks,
-  DEFAULT_EVALS_DIR,
-  readDatasetFolders,
-} from "./dataset-command";
+import { buildEvalClient, checkProjectKey } from "./client";
+import { checkRunTasks, readDatasetFolders } from "./dataset-command";
 import {
   DATASET_CONFIG,
   discoverDatasets,
@@ -25,19 +26,28 @@ import {
 } from "./datasets";
 import { describeDatasets } from "./describe";
 import { buildLocalImages } from "./docker";
-import { harborEnv, parseEnvFlags, resolveRunEnv } from "./env";
+import {
+  harborEnv,
+  parseEnvFlags,
+  resolveRunEnv,
+  withRysticToken,
+} from "./env";
 import { EVAL_PY } from "./eval-py";
-import { assertDatasetsPassed, runDatasets } from "./harbor";
+import {
+  assertDatasetsPassed,
+  type DatasetsOutcome,
+  runDatasets,
+} from "./harbor";
 import { LEGACY_IMAGES_FILE, localImageDefs } from "./images";
 import { startRemoteRun } from "./remote";
 import { type FollowResult, followRunLog } from "./run-log";
 import { type EvaluationLink, parseEvaluationLine } from "./run-log-lines";
-import { ensureTaskFiles } from "./task-files";
+import { ensureTaskFiles, logTaskFileChanges } from "./task-files";
 
 const logger = initializeLogger();
 
 interface EvalRunOpts extends GlobalOpts {
-  dir?: string;
+  dir: string;
   remote?: boolean;
   task?: string[];
   nAttempts?: number;
@@ -126,20 +136,28 @@ const evaluationsUrl = async (
 /** Report a local run once its datasets have finished. */
 const reportLocal = async (
   datasets: string[],
-  failed: string[],
+  outcome: DatasetsOutcome,
   opts: GlobalOpts,
 ) => {
   const url = await evaluationsUrl(opts.projectId);
   if (opts.json) {
-    outputJson({ mode: "local", datasets, failed, url });
+    outputJson({
+      mode: "local",
+      datasets,
+      failed: outcome.failed,
+      // Per dataset: {total, errored, firstError?: {type, message}, jobDir?}.
+      trials: outcome.trials,
+      url,
+    });
   } else if (url) {
     logger.info(`Results are in evaluations: ${url}`);
   }
-  assertDatasetsPassed(failed);
+  assertDatasetsPassed(outcome);
 };
 
 /** Exit codes `eval orchestrate` ends with that mean "a dataset failed". */
 const HARBOR_FAILED_EXIT = 18;
+const TRIALS_ERRORED_EXIT = 23;
 
 /** Turn how a followed remote run ended into this command's outcome. */
 export const assertRemotePassed = (result: FollowResult) => {
@@ -154,6 +172,12 @@ export const assertRemotePassed = (result: FollowResult) => {
   if (result.exitCode === HARBOR_FAILED_EXIT) {
     throw harborFailed(
       "A dataset of the remote run failed; see its log above.",
+    );
+  }
+  if (result.exitCode === TRIALS_ERRORED_EXIT) {
+    throw trialsErrored(
+      "Every trial of a dataset of the remote run errored, so nothing was " +
+        "graded; see its log above.",
     );
   }
   throw remoteRunFailed(
@@ -241,8 +265,8 @@ export const handleEvalRun = async (
   opts: EvalRunOpts,
 ): Promise<void> => {
   // Parse --env before anything slow so a missing variable fails fast.
-  const explicitEnv = opts.env ? parseEnvFlags(opts.env) : {};
-  const evalsDir = path.resolve(opts.dir ?? DEFAULT_EVALS_DIR);
+  const flagEnv = opts.env ? parseEnvFlags(opts.env) : {};
+  const evalsDir = path.resolve(opts.dir);
   const datasets = await selectDatasets(evalsDir, dataset);
   if (opts.group && datasets.length > 1) {
     // One group per dataset: two datasets' runs in one group would be charted
@@ -256,8 +280,16 @@ export const handleEvalRun = async (
   // eval.py datasets: read each runner, then write the task files Harbor
   // needs that tasks lack, before anything hashes or packs them.
   const runners = await describeDatasets(evalsDir, datasets);
+  const explicitEnv = await withRysticToken(
+    flagEnv,
+    runners,
+    opts.remote === true,
+  );
   for (const [folder, description] of Object.entries(runners)) {
-    await ensureTaskFiles(path.join(evalsDir, folder), description);
+    logTaskFileChanges(
+      folder,
+      await ensureTaskFiles(path.join(evalsDir, folder), description),
+    );
   }
   // Runs the tasks on disk as they are; `eval dataset pull` syncs them.
   const taskHashes = await checkRunTasks(evalsDir, datasets, opts.task, opts);
@@ -274,8 +306,10 @@ export const handleEvalRun = async (
 
   if (!opts.remote) {
     const runEnv = await harborEnv(env, opts);
+    // Before minutes of builds and trials whose results would go nowhere.
+    await checkProjectKey(runEnv);
     await buildLocalImages(await localImageDefs(evalsDir, datasets, overrides));
-    const failed = await runDatasets(
+    const outcome = await runDatasets(
       evalsDir,
       datasets,
       overrides,
@@ -283,7 +317,7 @@ export const handleEvalRun = async (
       undefined,
       { taskHashes },
     );
-    await reportLocal(datasets, failed, opts);
+    await reportLocal(datasets, outcome, opts);
     return;
   }
 

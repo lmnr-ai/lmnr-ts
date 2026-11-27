@@ -56,6 +56,13 @@ const EVAL_DESCRIPTION: EvalDescription = {
   new_task_toml: {},
   grade_with_test_sh: false,
   warnings: [],
+  modules: [],
+  artifacts: [],
+  services: [],
+  classes: [],
+  mocks: [],
+  mock_dependencies: [],
+  laminar_layer: { python: "3.13", lmnr: "lmnr==0.9.3", build_contexts: {} },
 };
 
 const write = async (rel: string, content = "x") => {
@@ -730,6 +737,7 @@ void describe("images", () => {
         "",
       ].join("\n"),
       context: path.join(evals, "_shared"),
+      steps: [],
     });
     const datasets: Record<string, EvalDescription["images"]> = {
       // Same definition, declared from different places: one build.
@@ -967,6 +975,9 @@ void describe("assertRemotePassed", () => {
     expect(() => assertRemotePassed({ kind: "unsupported" })).not.toThrow();
     expect(() => assertRemotePassed({ kind: "exited", exitCode: 18 })).toThrow(
       expect.objectContaining({ code: "harbor_failed", exitCode: 18 }),
+    );
+    expect(() => assertRemotePassed({ kind: "exited", exitCode: 23 })).toThrow(
+      expect.objectContaining({ code: "trials_errored", exitCode: 23 }),
     );
     expect(() => assertRemotePassed({ kind: "exited", exitCode: 1 })).toThrow(
       expect.objectContaining({ code: "remote_run_failed", exitCode: 21 }),

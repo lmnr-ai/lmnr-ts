@@ -54,7 +54,7 @@ import {
 } from "./datasets";
 import { describeEvalPy } from "./describe";
 import { hasEvalPy } from "./eval-py";
-import { ensureTaskFiles } from "./task-files";
+import { ensureTaskFiles, logTaskFileChanges } from "./task-files";
 import { collectTaskFiles, envFiles } from "./task-hash";
 
 const logger = initializeLogger();
@@ -62,7 +62,7 @@ const logger = initializeLogger();
 export const DEFAULT_EVALS_DIR = "evals";
 
 export interface DatasetSyncOpts extends GlobalOpts {
-  dir?: string;
+  dir: string;
   task?: string[];
   force?: boolean;
   dryRun?: boolean;
@@ -185,7 +185,7 @@ const selectDatasets = async (
 };
 
 /** The flags that point a suggested command at the same evals folder. */
-const dirFlag = (opts: DatasetSyncOpts) =>
+const dirFlag = (opts: { dir?: string }) =>
   opts.dir && path.resolve(opts.dir) !== path.resolve(DEFAULT_EVALS_DIR)
     ? ` --dir ${opts.dir}`
     : "";
@@ -328,7 +328,7 @@ export const handleDatasetPull = async (
   named: string[],
   opts: DatasetSyncOpts,
 ): Promise<void> => {
-  const evalsDir = path.resolve(opts.dir ?? DEFAULT_EVALS_DIR);
+  const evalsDir = path.resolve(opts.dir);
   const datasets = await selectDatasets(evalsDir, named);
   const selected = selection(opts.task);
   const client = await buildEvalClient(opts);
@@ -499,12 +499,12 @@ export const handleDatasetPush = async (
   named: string[],
   opts: DatasetSyncOpts,
 ): Promise<void> => {
-  const evalsDir = path.resolve(opts.dir ?? DEFAULT_EVALS_DIR);
+  const evalsDir = path.resolve(opts.dir);
   const datasets = await selectDatasets(evalsDir, named);
   const selected = selection(opts.task);
   const client = await buildEvalClient(opts);
   // Where each dataset's tasks are planned from: its own dir, except on
-  // --dry-run for an eval.py dataset that lacks task files.
+  // --dry-run for an eval.py dataset, which plans from a copy of its tasks.
   const planDirs = new Map<string, string>();
   let scratch: string | undefined;
   const planned: PlannedPush[] = [];
@@ -513,19 +513,24 @@ export const handleDatasetPush = async (
     for (const { folder, dir } of datasets) {
       if (!(await hasEvalPy(dir))) continue;
       const description = await describeEvalPy(dir);
-      const changes = await ensureTaskFiles(dir, description, opts.dryRun);
-      if (opts.dryRun && changes.length > 0) {
-        // Plan from a copy with the files written, as a real push would:
-        // new tasks and completed task.tomls change the plan.
-        scratch ??= await mkdtemp(path.join(os.tmpdir(), "lmnr-push-dry-"));
-        const copy = path.join(scratch, folder);
-        await cp(path.join(dir, TASKS_DIR), path.join(copy, TASKS_DIR), {
-          recursive: true,
-          verbatimSymlinks: true,
-        });
-        await ensureTaskFiles(copy, description, false, false);
-        planDirs.set(dir, copy);
+      if (!opts.dryRun) {
+        logTaskFileChanges(folder, await ensureTaskFiles(dir, description));
+        continue;
       }
+      // Write them into a copy and plan from it, as a real push would: new
+      // tasks and completed task.tomls change the plan.
+      scratch ??= await mkdtemp(path.join(os.tmpdir(), "lmnr-push-dry-"));
+      const copy = path.join(scratch, folder);
+      await cp(path.join(dir, TASKS_DIR), path.join(copy, TASKS_DIR), {
+        recursive: true,
+        verbatimSymlinks: true,
+      });
+      logTaskFileChanges(
+        folder,
+        await ensureTaskFiles(copy, description),
+        true,
+      );
+      planDirs.set(dir, copy);
     }
 
     for (const dataset of datasets) {

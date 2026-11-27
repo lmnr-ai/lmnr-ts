@@ -5,10 +5,11 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
-  findJobDir,
   MAX_JOB_BYTES,
   MAX_JOB_FILE_BYTES,
   packJobDir,
+  readTrialOutcomes,
+  trialException,
 } from "./jobs";
 
 let root: string;
@@ -82,14 +83,82 @@ void describe("packJobDir", () => {
   });
 });
 
-void describe("findJobDir", () => {
-  void it("finds the job Harbor named, or nothing when it wrote none", async () => {
-    expect(await findJobDir(path.join(root, "missing"))).toBeUndefined();
-    await write(".lock", "");
-    expect(await findJobDir(root)).toBeUndefined();
-    await write("2026-11-12__09-40-03/config.json", "{}");
-    expect(await findJobDir(root)).toBe(
-      path.join(root, "2026-11-12__09-40-03"),
+const exception = (type: string, message = "boom") => ({
+  exception_type: type,
+  exception_message: message,
+  exception_traceback: "Traceback ...",
+  occurred_at: "2026-11-27T10:00:00Z",
+});
+
+void describe("trialException", () => {
+  void it("counts a trial that raised and got no reward", () => {
+    expect(
+      trialException({
+        exception_info: exception("RuntimeError", "no app"),
+        verifier_result: null,
+      }),
+    ).toEqual({ type: "RuntimeError", message: "no app" });
+    expect(
+      trialException({
+        exception_info: exception("RuntimeError"),
+        verifier_result: { rewards: {} },
+      }),
+    ).toMatchObject({ type: "RuntimeError" });
+    // A multi-step trial records it on the step.
+    expect(
+      trialException({
+        exception_info: null,
+        step_results: [
+          { exception_info: null },
+          { exception_info: exception("StepError") },
+        ],
+      }),
+    ).toMatchObject({ type: "StepError" });
+  });
+
+  void it("doesn't count a graded trial or one that didn't raise", () => {
+    // An agent timeout that was still graded is a result.
+    expect(
+      trialException({
+        exception_info: exception("AgentTimeoutError"),
+        verifier_result: { rewards: { reward: 0 } },
+      }),
+    ).toBeUndefined();
+    expect(
+      trialException({ exception_info: null, verifier_result: null }),
+    ).toBeUndefined();
+    expect(trialException("not a result")).toBeUndefined();
+  });
+});
+
+void describe("readTrialOutcomes", () => {
+  void it("counts the job's trials with a result and the errored ones", async () => {
+    await write("result.json", "{}");
+    await write("config.json", "{}");
+    await write(
+      "b__2/result.json",
+      JSON.stringify({ exception_info: exception("SecondError") }),
     );
+    await write(
+      "a__1/result.json",
+      JSON.stringify({ exception_info: exception("FirstError", "first") }),
+    );
+    await write(
+      "c__3/result.json",
+      JSON.stringify({ verifier_result: { rewards: { reward: 1 } } }),
+    );
+    // Unfinished: no result yet.
+    await write("d__4/trial.log", "");
+    await write(".sources/x/result.json", "{}");
+
+    expect(await readTrialOutcomes(root)).toEqual({
+      total: 3,
+      errored: 2,
+      firstError: { type: "FirstError", message: "first" },
+    });
+    expect(await readTrialOutcomes(undefined)).toEqual({
+      total: 0,
+      errored: 0,
+    });
   });
 });

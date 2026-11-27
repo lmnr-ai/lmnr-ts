@@ -31,9 +31,10 @@ interface EvalImageStep {
 }
 
 /**
- * A Dockerfile lmnr generated (builder steps, services): BuildKit syntax,
- * COPY / bind-mount sources relative to `context`, `#` comment lines naming
- * where each step was declared.
+ * A Dockerfile lmnr generated: BuildKit syntax, COPY / bind-mount sources
+ * relative to `context`, `#` comment lines naming where each step was
+ * declared. Every image describe emits is one, since lmnr adds its Laminar
+ * layer to each (a registry ref or the user's Dockerfile becomes its base).
  */
 export interface GeneratedImage {
   kind: "generated";
@@ -41,18 +42,8 @@ export interface GeneratedImage {
   context: string;
   /** The ignore file to build with instead of the context's `.dockerignore`. */
   ignore_file?: string;
-  steps?: EvalImageStep[];
+  steps: EvalImageStep[];
 }
-
-export type EvalImage =
-  | {
-      kind: "dockerfile";
-      dockerfile: string;
-      context: string;
-      steps?: EvalImageStep[];
-    }
-  | { kind: "registry"; ref: string; steps?: EvalImageStep[] }
-  | GeneratedImage;
 
 /** A service the runner declares (`Postgres("16")`), started in its image. */
 interface EvalService {
@@ -73,7 +64,7 @@ export interface EvalDescription {
   /** The `EvalRunner` subclass. */
   runner: string;
   /** By name; paths are absolute (resolved where describe ran). */
-  images: Record<string, EvalImage>;
+  images: Record<string, GeneratedImage>;
   default_image: string;
   model: string | null;
   /** The container env; secrets are `${NAME}` placeholders. */
@@ -90,29 +81,27 @@ export interface EvalDescription {
   warnings: string[];
   /**
    * The runner's module files, relative to the evals root (`eval.py` and any
-   * shared module it imports, e.g. `_shared/support.py`). Optional: older lmnr
-   * versions don't report it.
+   * shared module it imports, e.g. `_shared/support.py`).
    */
-  modules?: string[];
+  modules: string[];
   /**
    * The runner's `artifacts`, as Harbor job config entries (container paths
-   * or `{source, destination?, exclude?}`). Optional: older lmnr versions
-   * don't report it.
+   * or `{source, destination?, exclude?}`).
    */
-  artifacts?: EvalArtifact[];
-  /** The runner's services. Optional, like the fields below: older lmnr versions don't report them. */
-  services?: EvalService[];
+  artifacts: EvalArtifact[];
+  /** The runner's services. */
+  services: EvalService[];
   /**
    * The runner class, then its bases, with their files (relative to the evals
    * root, absolute outside it, null when unknown).
    */
-  classes?: { name: string; file: string | null }[];
-  /** The runner's mocks. Optional, like the fields below (lmnr phase 3). */
-  mocks?: EvalMock[];
+  classes: { name: string; file: string | null }[];
+  /** The runner's mocks. */
+  mocks: EvalMock[];
   /** pip requirements installed next to the mock server. */
-  mock_dependencies?: string[];
+  mock_dependencies: string[];
   /** The Laminar layer every image gets (Python + lmnr in `/opt/lmnr`). */
-  laminar_layer?: LaminarLayer;
+  laminar_layer: LaminarLayer;
 }
 
 /** A mock: `type` function (an observed function's mock key) or http. */
@@ -137,7 +126,8 @@ type EvalArtifact =
   | string
   | { source: string; destination?: string; exclude?: string[] };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+/** A JSON / TOML object (not an array or null). */
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 export const evalPyPath = (datasetDir: string): string =>
@@ -153,21 +143,9 @@ export const hasEvalPy = (datasetDir: string): Promise<boolean> =>
 const runnerRef = (description: EvalDescription): string =>
   `${EVAL_PY}:${description.runner}`;
 
-/** What a task names in `docker_image` for an image: its name, or a registry image's ref. */
-const taskImageName = (name: string, image: EvalImage | undefined): string =>
-  image?.kind === "registry" ? image.ref : name;
-
-export const defaultTaskImage = (description: EvalDescription): string =>
-  taskImageName(
-    description.default_image,
-    description.images[description.default_image],
-  );
-
-/** Every `docker_image` a task of the dataset may name. */
+/** Every `docker_image` a task of the dataset may name: the image names. */
 export const taskImageNames = (description: EvalDescription): string[] =>
-  Object.entries(description.images).map(([name, image]) =>
-    taskImageName(name, image),
-  );
+  Object.keys(description.images);
 
 const PEP_723_BLOCK =
   /^# \/\/\/ ([a-zA-Z0-9-]+)[ \t]*\r?\n((?:^#(?:| .*)\r?\n)*)^# \/\/\/[ \t]*$/gm;
@@ -207,27 +185,22 @@ export const parseScriptDependencies = (text: string, file: string) => {
   return deps as string[];
 };
 
-const isImage = (image: unknown): image is EvalImage => {
-  if (!isRecord(image)) return false;
-  switch (image.kind) {
-    case "registry":
-      return typeof image.ref === "string";
-    case "dockerfile":
-      return (
-        typeof image.dockerfile === "string" &&
-        typeof image.context === "string"
-      );
-    case "generated":
-      return (
-        typeof image.dockerfile_text === "string" &&
-        typeof image.context === "string" &&
-        (image.ignore_file === undefined ||
-          typeof image.ignore_file === "string")
-      );
-    default:
-      return false;
-  }
-};
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((v) => typeof v === "string");
+
+const isImage = (image: unknown): image is GeneratedImage =>
+  isRecord(image) &&
+  image.kind === "generated" &&
+  typeof image.dockerfile_text === "string" &&
+  typeof image.context === "string" &&
+  (image.ignore_file === undefined || typeof image.ignore_file === "string") &&
+  Array.isArray(image.steps);
+
+const isLaminarLayer = (layer: unknown): layer is LaminarLayer =>
+  isRecord(layer) &&
+  typeof layer.python === "string" &&
+  (layer.lmnr === null || typeof layer.lmnr === "string") &&
+  isRecord(layer.build_contexts);
 
 /** Check describe's JSON against what this CLI reads. */
 export const parseDescription = (
@@ -263,18 +236,14 @@ export const parseDescription = (
     !Array.isArray(description.secrets) ||
     !isRecord(description.new_task_toml) ||
     typeof description.grade_with_test_sh !== "boolean" ||
-    (description.artifacts !== undefined &&
-      !Array.isArray(description.artifacts)) ||
-    (description.services !== undefined &&
-      !Array.isArray(description.services)) ||
-    (description.classes !== undefined &&
-      !Array.isArray(description.classes)) ||
-    (description.mocks !== undefined && !Array.isArray(description.mocks)) ||
-    (description.laminar_layer !== undefined &&
-      !(
-        isRecord(description.laminar_layer) &&
-        isRecord(description.laminar_layer.build_contexts)
-      ))
+    !isStringArray(description.warnings) ||
+    !isStringArray(description.modules) ||
+    !Array.isArray(description.artifacts) ||
+    !Array.isArray(description.services) ||
+    !Array.isArray(description.classes) ||
+    !Array.isArray(description.mocks) ||
+    !isStringArray(description.mock_dependencies) ||
+    !isLaminarLayer(description.laminar_layer)
   ) {
     throw invalidEvalsDir(`Describing ${file} printed an unexpected shape.`);
   }
@@ -409,7 +378,7 @@ export const applyEvalRunner = (
   if (job.datasets === undefined && job.tasks === undefined) {
     job.datasets = [{ path: "tasks" }];
   }
-  if (description.artifacts?.length) {
+  if (description.artifacts.length > 0) {
     job.artifacts = structuredClone(description.artifacts);
   }
   // The images are built from the description (`loadImageDefs`), not `images`.

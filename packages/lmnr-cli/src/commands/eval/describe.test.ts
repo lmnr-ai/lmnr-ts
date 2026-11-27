@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { describeArgs, describeEvalPy } from "./describe";
 import { handleEvalDescribe } from "./describe-command";
+import { withRysticToken } from "./env";
 import {
   type EvalDescription,
   LAMINAR_AGENT_IMPORT_PATH,
@@ -13,7 +14,7 @@ import {
 import { LMNR_PYTHON_VERSION, pythonRequirements } from "./harbor";
 import { handleEvalRun } from "./index";
 import { captureCommand, runCommand } from "./run-command";
-import { handleEvalTaskNew } from "./task-files";
+import { handleEvalTaskNew } from "./task-command";
 
 vi.mock("./run-command", () => ({
   runCommand: vi.fn(),
@@ -26,6 +27,8 @@ const logger = vi.hoisted(() => ({
   debug: vi.fn(),
 }));
 vi.mock("../../utils/logger", () => ({ initializeLogger: () => logger }));
+/** The project key check of local runs (`checkProjectKey`, `fetch`). */
+const keyCheck = vi.fn();
 
 let root: string;
 let cwd: string;
@@ -47,9 +50,10 @@ const DESCRIPTION: EvalDescription = {
   runner: "SupportEval",
   images: {
     "support-evals": {
-      kind: "dockerfile",
-      dockerfile: "/abs/Dockerfile",
+      kind: "generated",
+      dockerfile_text: "FROM python:3.13-slim\n",
       context: "/abs",
+      steps: [],
     },
   },
   default_image: "support-evals",
@@ -59,6 +63,13 @@ const DESCRIPTION: EvalDescription = {
   new_task_toml: {},
   grade_with_test_sh: false,
   warnings: ["SupportEval defines run(), so `run_command` is ignored."],
+  modules: ["support/agent/eval.py"],
+  artifacts: [],
+  services: [],
+  classes: [{ name: "SupportEval", file: "support/agent/eval.py" }],
+  mocks: [],
+  mock_dependencies: [],
+  laminar_layer: { python: "3.13", lmnr: "lmnr==0.9.3", build_contexts: {} },
 };
 
 const describeOk = (description: EvalDescription = DESCRIPTION) =>
@@ -69,6 +80,8 @@ const describeOk = (description: EvalDescription = DESCRIPTION) =>
   });
 
 beforeEach(async () => {
+  keyCheck.mockReset().mockResolvedValue(new Response("[]"));
+  vi.stubGlobal("fetch", keyCheck);
   root = await mkdtemp(path.join(tmpdir(), "lmnr-describe-"));
   // Secrets and the project key come from the env or .env in the cwd.
   cwd = process.cwd();
@@ -80,6 +93,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   process.chdir(cwd);
+  vi.unstubAllGlobals();
   vi.mocked(runCommand).mockReset();
   vi.mocked(captureCommand).mockReset();
   logger.info.mockClear();
@@ -89,6 +103,7 @@ afterEach(async () => {
     "APP_KEY",
     "JUDGE_KEY",
     "LMNR_EVAL_LMNR_SPEC",
+    "RYSTIC_TOKEN",
   ]) {
     delete process.env[key];
   }
@@ -208,14 +223,14 @@ void describe("eval run with an eval.py dataset", () => {
       '[dataset]\nname = "acme/support"\n',
     );
     await write("evals/support/tasks/refund/environment/ticket.json", "{}");
-    await write("evals/support/agent/Dockerfile", "FROM python:3.13-slim\n");
     describeOk({
       ...DESCRIPTION,
       images: {
         "support-evals": {
-          kind: "dockerfile",
-          dockerfile: path.join(root, "evals/support/agent/Dockerfile"),
+          kind: "generated",
+          dockerfile_text: "FROM python:3.13-slim\n",
           context: path.join(root, "evals/support/agent"),
+          steps: [],
         },
       },
       modules: ["_shared/support.py", "support/agent/eval.py"],
@@ -303,6 +318,7 @@ void describe("eval run with an eval.py dataset", () => {
           kind: "generated",
           dockerfile_text: text,
           context: path.join(root, "evals"),
+          steps: [],
         },
       },
     });
@@ -352,6 +368,7 @@ void describe("eval run with an eval.py dataset", () => {
           dockerfile_text:
             "FROM python:3.13-slim\nCOPY --from=lmnr-dev / /tmp/\n",
           context: path.join(root, "evals"),
+          steps: [],
         },
       },
       laminar_layer: {
@@ -414,19 +431,149 @@ void describe("eval run with an eval.py dataset", () => {
     );
     expect(runCommand).not.toHaveBeenCalled();
   });
+
+  void it("fails before building when Laminar rejects the project key", async () => {
+    await write("evals/support/agent/eval.py", EVAL_PY);
+    describeOk();
+    keyCheck.mockResolvedValue(new Response("invalid key", { status: 401 }));
+    await expect(
+      handleEvalRun(undefined, { dir: path.join(root, "evals") }),
+    ).rejects.toThrow(
+      expect.objectContaining({ code: "laminar_key_rejected", exitCode: 24 }),
+    );
+    expect(keyCheck).toHaveBeenCalledTimes(1);
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+});
+
+void describe("RYSTIC_TOKEN", () => {
+  const RYSTIC: EvalDescription = {
+    ...DESCRIPTION,
+    services: [
+      {
+        name: "slack",
+        kind: "Rystic",
+        version: "1",
+        source: null,
+        env: ["SLACK_API_URL"],
+        origin: null,
+      },
+    ],
+  };
+
+  void it("resolves it for local runs of a dataset with a Rystic mirror", async () => {
+    await write(".env", "RYSTIC_TOKEN=from-dotenv\n");
+    expect(await withRysticToken({ A: "1" }, { s: RYSTIC }, false)).toEqual({
+      A: "1",
+      RYSTIC_TOKEN: "from-dotenv",
+    });
+    process.env.RYSTIC_TOKEN = "from-shell";
+    expect(await withRysticToken({}, { s: RYSTIC }, false)).toEqual({
+      RYSTIC_TOKEN: "from-shell",
+    });
+    // --env wins; no Rystic mirror, nothing added.
+    expect(
+      await withRysticToken({ RYSTIC_TOKEN: "flag" }, { s: RYSTIC }, false),
+    ).toEqual({ RYSTIC_TOKEN: "flag" });
+    expect(await withRysticToken({}, { s: DESCRIPTION }, false)).toEqual({});
+  });
+
+  void it("drops --env RYSTIC_TOKEN on remote runs", async () => {
+    process.env.RYSTIC_TOKEN = "from-shell";
+    expect(
+      await withRysticToken(
+        { A: "1", RYSTIC_TOKEN: "flag" },
+        { s: RYSTIC },
+        true,
+      ),
+    ).toEqual({ A: "1" });
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringMatching(/^Not sending --env RYSTIC_TOKEN/),
+    );
+    expect(await withRysticToken({}, { s: RYSTIC }, true)).toEqual({});
+  });
+
+  void it("passes it to every agent of a local run, or fails before building", async () => {
+    await write("evals/support/agent/eval.py", EVAL_PY);
+    await write(
+      "evals/support/tasks/refund/task.toml",
+      '[task]\nname = "a/b"\n',
+    );
+    describeOk({
+      ...RYSTIC,
+      images: {
+        "support-evals": {
+          kind: "generated",
+          dockerfile_text: "FROM python:3.13-slim\n",
+          context: path.join(root, "evals"),
+          steps: [],
+        },
+      },
+    });
+    await expect(
+      handleEvalRun(undefined, { dir: path.join(root, "evals") }),
+    ).rejects.toThrow(
+      expect.objectContaining({
+        code: "missing_env",
+        exitCode: 19,
+        message:
+          "Rystic mirrors need Rystic access in local (not `--remote`) " +
+          "runs. Set RYSTIC_TOKEN to your Rystic API key (in your shell, " +
+          ".env.local or .env).",
+      }),
+    );
+    expect(runCommand).not.toHaveBeenCalled();
+
+    await write(".env.local", "RYSTIC_TOKEN=mine\n");
+    let job: { agents?: { env?: Record<string, string> }[] } = {};
+    let harborEnv: NodeJS.ProcessEnv | undefined;
+    vi.mocked(runCommand).mockImplementation(async (command, args, opts) => {
+      if (command === "uvx") {
+        job = JSON.parse(await readFile(args[args.indexOf("-c") + 1], "utf8"));
+        harborEnv = opts?.env;
+      }
+      return 0;
+    });
+    await handleEvalRun(undefined, { dir: path.join(root, "evals") });
+    expect(job.agents?.[0].env).toEqual(
+      expect.objectContaining({ RYSTIC_TOKEN: "${RYSTIC_TOKEN}" }),
+    );
+    expect(harborEnv?.RYSTIC_TOKEN).toBe("mine");
+  });
 });
 
 void describe("eval task new", () => {
+  const evals = () => ({ dir: path.join(root, "evals") });
+
   void it("creates a task dir with Harbor's files", async () => {
     await write("evals/support/agent/eval.py", EVAL_PY);
     describeOk();
-    await handleEvalTaskNew(path.join(root, "evals/support/tasks/refund"), {});
+    await handleEvalTaskNew("support", "refund", evals());
     const toml = await readFile(
       path.join(root, "evals/support/tasks/refund/task.toml"),
       "utf8",
     );
     expect(toml).toContain('name = "support/refund"');
     expect(toml).toContain('docker_image = "support-evals"');
+    expect(logger.info).toHaveBeenCalledWith(
+      "created support/tasks/refund/task.toml",
+    );
+  });
+
+  void it("finds the dataset by its [dataset] name", async () => {
+    await write("evals/support/agent/eval.py", EVAL_PY);
+    await write(
+      "evals/support/tasks/dataset.toml",
+      '[dataset]\nname = "acme/support"\n',
+    );
+    describeOk();
+    await handleEvalTaskNew("acme/support", "refund", { dir: "evals" });
+    expect(
+      await readFile(
+        path.join(root, "evals/support/tasks/refund/task.toml"),
+        "utf8",
+      ),
+    ).toContain('name = "acme/refund"');
   });
 
   void it("warns about a missing test.sh with grade_with_test_sh", async () => {
@@ -438,36 +585,53 @@ void describe("eval task new", () => {
     await write("evals/support/tasks/refund/instruction.md", "Do it.\n");
     describeOk({ ...DESCRIPTION, grade_with_test_sh: true });
     const dir = path.join(root, "evals/support/tasks/refund");
-    await handleEvalTaskNew(dir, {});
+    const shown = path.relative(process.cwd(), dir);
+    await handleEvalTaskNew("support", "refund", evals());
     expect(logger.info).not.toHaveBeenCalledWith(
       expect.stringContaining("test.sh"),
     );
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining(`${dir} has no tests/test.sh`),
+      expect.stringContaining(`${shown} has no tests/test.sh`),
     );
 
     // --json too: the warning is on stderr, stdout stays the JSON.
     logger.warn.mockClear();
     const log = vi.spyOn(console, "log").mockReturnValue(undefined);
-    await handleEvalTaskNew(dir, { json: true });
+    await handleEvalTaskNew("support", "refund", { ...evals(), json: true });
     expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual({
       dir,
       files: [],
     });
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining(`${dir} has no tests/test.sh`),
+      expect.stringContaining(`${shown} has no tests/test.sh`),
     );
     log.mockRestore();
   });
 
-  void it("needs <dataset>/tasks/<name> of an eval.py dataset", async () => {
+  void it("needs a known eval.py dataset and a valid name", async () => {
     await write("evals/support/harbor.yaml");
     await expect(
-      handleEvalTaskNew(path.join(root, "evals/support/tasks/refund"), {}),
-    ).rejects.toThrow(expect.objectContaining({ code: "invalid_evals_dir" }));
-    await expect(
-      handleEvalTaskNew(path.join(root, "evals/support/refund"), {}),
-    ).rejects.toThrow(expect.objectContaining({ code: "invalid_evals_dir" }));
+      handleEvalTaskNew("support", "refund", evals()),
+    ).rejects.toThrow(
+      expect.objectContaining({
+        code: "invalid_evals_dir",
+        message: expect.stringMatching(
+          /^Dataset support has no agent\/eval\.py/,
+        ),
+      }),
+    );
+    await expect(handleEvalTaskNew("nope", "refund", evals())).rejects.toThrow(
+      expect.objectContaining({
+        code: "invalid_evals_dir",
+        message: expect.stringMatching(/^Unknown dataset nope/),
+      }),
+    );
+    for (const name of ["../escape", "a/b", ".hidden"]) {
+      await expect(handleEvalTaskNew("support", name, evals())).rejects.toThrow(
+        expect.objectContaining({ code: "invalid_evals_dir" }),
+      );
+    }
+    expect(captureCommand).not.toHaveBeenCalled();
   });
 });
 
@@ -495,7 +659,13 @@ void describe("eval describe", () => {
           },
         ],
       },
-      py: { kind: "registry", ref: "python:3.13-slim", steps: [] },
+      py: {
+        kind: "generated",
+        dockerfile_text: "FROM python:3.13-slim\n",
+        context: "/abs",
+        ignore_file: "/abs/py.Dockerfile.dockerignore",
+        steps: [],
+      },
     },
     services: [
       {
@@ -580,7 +750,10 @@ void describe("eval describe", () => {
         "      generated Dockerfile, kept by each run that builds it:",
         `        local:  ${path.join(jobs, "<job>", "support-evals.Dockerfile")}`,
         "        remote: support/agent/.generated/support-evals.Dockerfile in the run's files",
-        "    py (registry python:3.13-slim)",
+        "    py (generated, context /abs, ignore file /abs/py.Dockerfile.dockerignore)",
+        "      generated Dockerfile, kept by each run that builds it:",
+        `        local:  ${path.join(jobs, "<job>", "py.Dockerfile")}`,
+        "        remote: support/agent/.generated/py.Dockerfile in the run's files",
         "  services:",
         "    postgres: Postgres 16 from postgres:16-bookworm",
         "      env: DATABASE_URL",

@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { imagePusher } from "./docker";
 import { SANDBOX_PROXY_PLACEHOLDER } from "./env";
 import { type EvalDescription, setEvalDescription } from "./eval-py";
-import { runDatasets } from "./harbor";
+import { assertDatasetsPassed, runDatasets } from "./harbor";
 import type { ImageDef } from "./images";
 import { packEvalsDir } from "./pack";
 import {
@@ -54,6 +54,17 @@ vi.mock("@lmnr-ai/client", () => ({
 }));
 
 let root: string;
+
+/** The describe fields these tests don't look at. */
+const DESCRIBED = {
+  modules: [],
+  artifacts: [],
+  services: [],
+  classes: [],
+  mocks: [],
+  mock_dependencies: [],
+  laminar_layer: { python: "3.13", lmnr: "lmnr==0.9.3", build_contexts: {} },
+};
 
 const write = async (rel: string, content = "x") => {
   const file = path.join(root, rel);
@@ -239,11 +250,17 @@ void describe("startRemoteRun with generated images", () => {
       version: 1,
       runner: "SupportEval",
       images: {
-        app: { kind: "generated", dockerfile_text: text, context: root },
+        app: {
+          kind: "generated",
+          dockerfile_text: text,
+          context: root,
+          steps: [],
+        },
         unused: {
           kind: "generated",
           dockerfile_text: "FROM b\n",
           context: root,
+          steps: [],
         },
       },
       default_image: "app",
@@ -253,6 +270,7 @@ void describe("startRemoteRun with generated images", () => {
       new_task_toml: {},
       grade_with_test_sh: false,
       warnings: [],
+      ...DESCRIBED,
     };
     setEvalDescription(path.join(root, "support"), runner);
     const before = await hashed("support/tasks/refund");
@@ -310,7 +328,9 @@ void describe("runDatasets", () => {
       return 0;
     });
 
-    expect(await runDatasets(root, ["a", "b"], {}, {}, IMAGES)).toEqual([]);
+    expect(
+      (await runDatasets(root, ["a", "b"], {}, {}, IMAGES)).failed,
+    ).toEqual([]);
     expect(seen.map((s) => s.cwd)).toEqual([
       path.join(root, "a"),
       path.join(root, "b"),
@@ -321,28 +341,33 @@ void describe("runDatasets", () => {
     ]);
 
     seen.length = 0;
-    expect(await runDatasets(root, ["b"], {}, {})).toEqual([]);
+    expect((await runDatasets(root, ["b"], {}, {})).failed).toEqual([]);
     expect(seen).toEqual([{ cwd: path.join(root, "b"), images: undefined }]);
   });
 
-  void it("writes each dataset's job where onDatasetEnd reads it, failed or not", async () => {
+  void it("hands each dataset's job dir to onDatasetEnd, failed or not", async () => {
     await writeEvals();
     const configs: Record<string, unknown>[] = [];
     vi.mocked(runCommand).mockImplementation(async (_command, args) => {
-      const config = args[args.indexOf("-c") + 1];
-      configs.push(JSON.parse(await readFile(config, "utf8")));
+      const config = JSON.parse(
+        await readFile(args[args.indexOf("-c") + 1], "utf8"),
+      );
+      configs.push(config);
+      await mkdir(path.join(config.jobs_dir, "2026-11-27__10-00-00"), {
+        recursive: true,
+      });
       return configs.length === 1 ? 1 : 0;
     });
-    const ended: string[][] = [];
+    const ended: (string | undefined)[][] = [];
     const jobs = {
       dir: path.join(root, "jobs-out"),
-      onDatasetEnd: async (dataset: string, jobDir: string) => {
+      onDatasetEnd: async (dataset: string, jobDir: string | undefined) => {
         ended.push([dataset, jobDir]);
       },
     };
 
     expect(
-      await runDatasets(root, ["a", "b"], {}, {}, IMAGES, { jobs }),
+      (await runDatasets(root, ["a", "b"], {}, {}, IMAGES, { jobs })).failed,
     ).toEqual(["a"]);
     // The job keeps Harbor's name: the plugin names the evaluation after it.
     expect(configs.map((c) => [c.jobs_dir, c.job_name])).toEqual([
@@ -350,9 +375,101 @@ void describe("runDatasets", () => {
       [path.join(jobs.dir, "b"), undefined],
     ]);
     expect(ended).toEqual([
-      ["a", path.join(jobs.dir, "a")],
-      ["b", path.join(jobs.dir, "b")],
+      ["a", path.join(jobs.dir, "a", "2026-11-27__10-00-00")],
+      ["b", path.join(jobs.dir, "b", "2026-11-27__10-00-00")],
     ]);
+  });
+});
+
+void describe("errored trials", () => {
+  /** A `harbor run` that writes these trial results into its job dir. */
+  const harborWriting =
+    (byDataset: Record<string, Record<string, unknown>[]>, code = 0) =>
+    async (_command: string, _args: string[], opts?: { cwd?: string }) => {
+      const dataset = path.basename(opts?.cwd ?? "");
+      for (const [i, result] of (byDataset[dataset] ?? []).entries()) {
+        await write(
+          `${dataset}/jobs/2026-11-27__10-00-00/t${i}__x/result.json`,
+          JSON.stringify(result),
+        );
+      }
+      return code;
+    };
+  const raised = (type: string, message: string) => ({
+    exception_info: { exception_type: type, exception_message: message },
+    verifier_result: null,
+  });
+  const graded = {
+    exception_info: null,
+    verifier_result: { rewards: { r: 1 } },
+  };
+
+  void it("fails with 23 when every trial of a dataset errored, after every dataset ran", async () => {
+    await writeEvals();
+    vi.mocked(runCommand).mockImplementation(
+      harborWriting({
+        a: [
+          raised("RuntimeError", "app never started\nTraceback"),
+          raised("X", "y"),
+        ],
+        b: [graded, raised("AgentTimeoutError", "slow")],
+      }),
+    );
+
+    const outcome = await runDatasets(root, ["a", "b"], {}, {});
+    expect(outcome.failed).toEqual([]);
+    const jobDir = path.join(root, "a/jobs/2026-11-27__10-00-00");
+    expect(outcome.trials).toEqual({
+      a: {
+        total: 2,
+        errored: 2,
+        firstError: {
+          type: "RuntimeError",
+          message: "app never started\nTraceback",
+        },
+        jobDir,
+      },
+      b: expect.objectContaining({ total: 2, errored: 1 }),
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Dataset a: 2/2 trials errored (first: RuntimeError: app never started)",
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Dataset b: 1/2 trials errored (first: AgentTimeoutError: slow)",
+    );
+    expect(() => assertDatasetsPassed(outcome)).toThrow(
+      expect.objectContaining({
+        code: "trials_errored",
+        exitCode: 23,
+        message:
+          "Every trial errored, so nothing was graded, in: a (2 trials; " +
+          "first: RuntimeError: app never started; each trial's " +
+          `exception.txt in ${jobDir})`,
+      }),
+    );
+    // Only some errored: a warning, not a failure.
+    expect(() =>
+      assertDatasetsPassed({ failed: [], trials: { b: outcome.trials.b } }),
+    ).not.toThrow();
+  });
+
+  void it("keeps Harbor's own failure first and counts no job as no trials", async () => {
+    await writeEvals();
+    vi.mocked(runCommand).mockImplementation(
+      harborWriting({ a: [raised("X", "y")] }, 2),
+    );
+    const outcome = await runDatasets(root, ["a", "b"], {}, {}, IMAGES);
+    expect(outcome.failed).toEqual(["a", "b"]);
+    // Remote trials' job dirs go with their sandbox: not named.
+    expect(outcome.trials.a).toEqual({
+      total: 1,
+      errored: 1,
+      firstError: { type: "X", message: "y" },
+    });
+    expect(outcome.trials.b).toEqual({ total: 0, errored: 0 });
+    expect(() => assertDatasetsPassed(outcome)).toThrow(
+      expect.objectContaining({ code: "harbor_failed", exitCode: 18 }),
+    );
   });
 });
 
@@ -600,7 +717,14 @@ void describe("handleEvalOrchestrate", () => {
     const runner: EvalDescription = {
       version: 1,
       runner: "SupportEval",
-      images: { py: { kind: "registry", ref: "python:3.13" } },
+      images: {
+        py: {
+          kind: "generated",
+          dockerfile_text: "FROM python:3.13\n",
+          context: root,
+          steps: [],
+        },
+      },
       default_image: "py",
       model: null,
       env: {},
@@ -608,6 +732,7 @@ void describe("handleEvalOrchestrate", () => {
       new_task_toml: {},
       grade_with_test_sh: false,
       warnings: ['services["postgres"] uses version "latest"'],
+      ...DESCRIBED,
     };
     process.env.LMNR_EVAL_RUN = JSON.stringify({
       datasets: ["support"],

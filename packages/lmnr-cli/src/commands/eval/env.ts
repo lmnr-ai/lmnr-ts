@@ -6,13 +6,20 @@ import { envHttpPort, resolveBaseUrl } from "../../auth/resolve";
 import type { GlobalOpts } from "../../auth/with-client";
 import { missingEnv } from "../../errors";
 import { findEnvKey } from "../../utils/env-file";
+import { initializeLogger } from "../../utils/logger";
 import {
   findTemplateVars,
   type RunOverrides,
   type TemplateVars,
 } from "./datasets";
+import type { EvalDescription } from "./eval-py";
+
+const logger = initializeLogger();
 
 export const API_KEY_VAR = "LMNR_PROJECT_API_KEY";
+const RYSTIC_TOKEN = "RYSTIC_TOKEN";
+/** A Rystic mirror's service `kind` in describe (lmnr's `display_name`). */
+const RYSTIC_KIND = "Rystic";
 
 /**
  * What a secret variable reads as in a Laminar Agent sandbox; its outbound
@@ -52,6 +59,43 @@ export const parseEnvFlags = (
     out[key] = value;
   }
   return out;
+};
+
+/**
+ * The `--env` values with `RYSTIC_TOKEN` handled. A Rystic mirror pulls its
+ * twin with the user's own Rystic key on local runs, so when a selected
+ * eval.py dataset has one, `RYSTIC_TOKEN` is resolved like `--env
+ * RYSTIC_TOKEN` (shell, then `.env.local`, `.env`) unless `--env` already
+ * set it, and is missing → `missing_env` before anything is built. Remote
+ * runs never send it: Laminar gives each trial its own token, which a user
+ * value would replace, so `--env RYSTIC_TOKEN` is dropped with a warning.
+ */
+export const withRysticToken = async (
+  explicitEnv: Record<string, string>,
+  runners: Record<string, EvalDescription>,
+  remote: boolean,
+): Promise<Record<string, string>> => {
+  if (remote) {
+    if (!(RYSTIC_TOKEN in explicitEnv)) return explicitEnv;
+    logger.warn(
+      `Not sending --env ${RYSTIC_TOKEN}: remote runs do not need a Rystic token.`,
+    );
+    const { [RYSTIC_TOKEN]: _dropped, ...rest } = explicitEnv;
+    return rest;
+  }
+  const usesRystic = Object.values(runners).some((r) =>
+    r.services.some((s) => s.kind === RYSTIC_KIND),
+  );
+  if (!usesRystic || RYSTIC_TOKEN in explicitEnv) return explicitEnv;
+  const found = await findEnvKey(process.cwd(), RYSTIC_TOKEN);
+  if (!found) {
+    throw missingEnv(
+      "Rystic mirrors need Rystic access in local (not `--remote`) runs. " +
+        `Set ${RYSTIC_TOKEN} to your Rystic API key (in your shell, ` +
+        ".env.local or .env).",
+    );
+  }
+  return { ...explicitEnv, [RYSTIC_TOKEN]: found.value };
 };
 
 /**

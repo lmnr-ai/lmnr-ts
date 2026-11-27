@@ -6,7 +6,7 @@ import path from "node:path";
 import { errorMessage } from "@lmnr-ai/types";
 import { parse as parseToml } from "smol-toml";
 
-import { harborFailed, invalidEvalsDir } from "../../errors";
+import { harborFailed, invalidEvalsDir, trialsErrored } from "../../errors";
 import { findEnvKey } from "../../utils/env-file";
 import { initializeLogger } from "../../utils/logger";
 import { scanTasks, type TaskHashFile, taskHashFile } from "./dataset-state";
@@ -29,7 +29,12 @@ import {
   generatedDockerfiles,
   type RemoteImages,
 } from "./images";
-import { jobDirNames, newJobDir } from "./jobs";
+import {
+  jobDirNames,
+  newJobDir,
+  readTrialOutcomes,
+  type TrialOutcomes,
+} from "./jobs";
 import { type CommandOutput, runCommand } from "./run-command";
 
 const logger = initializeLogger();
@@ -231,7 +236,7 @@ const runHarborDataset = async (run: HarborRun): Promise<number> => {
         dataset,
         requirements: await pythonRequirements(run.datasetDir),
         runnerModules: (await hasEvalPy(run.datasetDir))
-          ? (evalDescription(run.datasetDir).modules ?? [])
+          ? evalDescription(run.datasetDir).modules
           : [],
       }),
       {
@@ -260,8 +265,11 @@ export interface JobOutput {
    * after it.
    */
   dir: string;
-  /** Called once the dataset's `harbor run` exits, whether it passed or not. */
-  onDatasetEnd: (dataset: string, jobsDir: string) => Promise<void>;
+  /**
+   * Called once the dataset's `harbor run` exits, whether it passed or not,
+   * with the job it wrote (`undefined` when Harbor wrote none).
+   */
+  onDatasetEnd: (dataset: string, jobDir: string | undefined) => Promise<void>;
 }
 
 /** What a remote run's orchestrator hooks into its datasets' Harbor runs. */
@@ -309,9 +317,28 @@ const keepGeneratedDockerfiles = async (
   );
 };
 
+/** How a run's datasets ended. */
+export interface DatasetsOutcome {
+  /** Datasets whose `harbor run` failed. */
+  failed: string[];
+  /**
+   * Every dataset's trials, from its Harbor job's trial results; `jobDir` for
+   * local runs.
+   */
+  trials: Record<string, TrialOutcomes & { jobDir?: string }>;
+}
+
+const describeError = ({ firstError }: TrialOutcomes): string => {
+  if (!firstError) return "";
+  const line = firstError.message.trim().split("\n")[0];
+  const message = line.length > 300 ? `${line.slice(0, 300)}...` : line;
+  return `${firstError.type}${message ? `: ${message}` : ""}`;
+};
+
 /**
  * Run each dataset with Harbor in turn. With `images`, trials run in Laminar
- * sandboxes; without, on local Docker. Returns the datasets that failed.
+ * sandboxes; without, on local Docker. Logs `N/M trials errored` for each
+ * dataset with errored trials.
  */
 export const runDatasets = async (
   evalsDir: string,
@@ -320,9 +347,9 @@ export const runDatasets = async (
   env: Record<string, string>,
   images?: RemoteImages,
   { jobs, output, taskHashes }: DatasetHooks = {},
-): Promise<string[]> => {
+): Promise<DatasetsOutcome> => {
   const grpcPort = (await findEnvKey(process.cwd(), "LMNR_GRPC_PORT"))?.value;
-  const failed: string[] = [];
+  const outcome: DatasetsOutcome = { failed: [], trials: {} };
   for (const dataset of datasets) {
     const datasetDir = path.join(evalsDir, dataset);
     const config = buildJobConfig(
@@ -364,21 +391,52 @@ export const runDatasets = async (
     });
     if (code !== 0) {
       logger.error(`harbor run failed for dataset ${dataset} (exit ${code})`);
-      failed.push(dataset);
+      outcome.failed.push(dataset);
     }
-    await keepGeneratedDockerfiles(
-      dataset,
-      await newJobDir(jobsDir, jobsBefore, config.job_name),
-      generated,
-    );
-    await jobs?.onDatasetEnd(dataset, path.join(jobs.dir, dataset));
+    const jobDir = await newJobDir(jobsDir, jobsBefore, config.job_name);
+    const trials = await readTrialOutcomes(jobDir);
+    // A remote trial's job dir is deleted with its sandbox: no use naming it.
+    outcome.trials[dataset] =
+      jobDir && !images ? { ...trials, jobDir } : trials;
+    if (trials.errored > 0) {
+      logger.warn(
+        `Dataset ${dataset}: ${trials.errored}/${trials.total} trials ` +
+          `errored (first: ${describeError(trials)})`,
+      );
+    }
+    await keepGeneratedDockerfiles(dataset, jobDir, generated);
+    await jobs?.onDatasetEnd(dataset, jobDir);
   }
-  return failed;
+  return outcome;
 };
 
-/** Fail the command when any dataset's `harbor run` failed. */
-export const assertDatasetsPassed = (failed: string[]): void => {
+/**
+ * Fail the command when any dataset's `harbor run` failed (18), else when
+ * every trial of a dataset errored (23): nothing was graded, so the
+ * evaluation says nothing about the agent. Some errored trials only warn
+ * (`runDatasets`).
+ */
+export const assertDatasetsPassed = ({
+  failed,
+  trials,
+}: DatasetsOutcome): void => {
   if (failed.length > 0) {
     throw harborFailed(`harbor run failed for: ${failed.join(", ")}`);
+  }
+  const broken = Object.entries(trials).filter(
+    ([, t]) => t.total > 0 && t.errored === t.total,
+  );
+  if (broken.length > 0) {
+    throw trialsErrored(
+      "Every trial errored, so nothing was graded, in: " +
+        broken
+          .map(
+            ([dataset, t]) =>
+              `${dataset} (${t.total} trials; first: ${describeError(t)}` +
+              (t.jobDir ? `; each trial's exception.txt in ${t.jobDir}` : "") +
+              ")",
+          )
+          .join("; "),
+    );
   }
 };

@@ -20,17 +20,19 @@ import {
 import {
   applyEvalRunner,
   type EvalDescription,
+  type GeneratedImage,
   LAMINAR_AGENT_IMPORT_PATH,
   LAMINAR_VERIFIER_IMPORT_PATH,
   parseDescription,
   parseScriptDependencies,
   setEvalDescription,
 } from "./eval-py";
-import { findTaskImages, loadImageDefs } from "./images";
+import { loadImageDefs } from "./images";
 import {
   ensureTaskFiles,
   INSTRUCTION_STUB,
   insertTomlKey,
+  logTaskFileChanges,
   TEST_SH_STUB,
 } from "./task-files";
 
@@ -52,18 +54,19 @@ const write = async (rel: string, content = "") => {
 
 const read = (rel: string) => readFile(path.join(root, rel), "utf8");
 
+const generated = (text: string): GeneratedImage => ({
+  kind: "generated",
+  dockerfile_text: text,
+  context: "/abs",
+  steps: [{ origin: "support/agent/eval.py:5", step: "python 3.13" }],
+});
+
 const description = (
   overrides: Partial<EvalDescription> = {},
 ): EvalDescription => ({
   version: 1,
   runner: "SupportEval",
-  images: {
-    "support-evals": {
-      kind: "dockerfile",
-      dockerfile: "/abs/support/agent/Dockerfile",
-      context: "/abs",
-    },
-  },
+  images: { "support-evals": generated("FROM python:3.13-slim\n") },
   default_image: "support-evals",
   model: "anthropic/claude-sonnet-5-5",
   env: { ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}", SUPPORT_TONE: "formal" },
@@ -71,6 +74,13 @@ const description = (
   new_task_toml: { agent: { timeout_sec: 300 } },
   grade_with_test_sh: false,
   warnings: [],
+  modules: ["support/agent/eval.py"],
+  artifacts: [],
+  services: [],
+  classes: [{ name: "SupportEval", file: "support/agent/eval.py" }],
+  mocks: [],
+  mock_dependencies: [],
+  laminar_layer: { python: "3.13", lmnr: "lmnr==0.9.3", build_contexts: {} },
   ...overrides,
 });
 
@@ -128,6 +138,33 @@ void describe("parseDescription", () => {
     );
   });
 
+  void it("requires every field lmnr always reports", () => {
+    const desc = description();
+    for (const field of [
+      "modules",
+      "artifacts",
+      "services",
+      "classes",
+      "mocks",
+      "mock_dependencies",
+      "laminar_layer",
+    ]) {
+      const { [field as keyof EvalDescription]: _, ...rest } = desc;
+      expect(() => parseDescription(JSON.stringify(rest), "eval.py")).toThrow(
+        /unexpected shape/,
+      );
+    }
+    expect(() =>
+      parseDescription(
+        JSON.stringify({
+          ...desc,
+          laminar_layer: { python: "3.13", build_contexts: {} },
+        }),
+        "eval.py",
+      ),
+    ).toThrow(/unexpected shape/);
+  });
+
   void it("reads generated images, steps, services and classes", () => {
     const desc = description({
       images: {
@@ -154,6 +191,9 @@ void describe("parseDescription", () => {
     expect(parseDescription(JSON.stringify(desc), "eval.py")).toEqual(desc);
     for (const image of [
       { kind: "generated", context: "/abs" },
+      { kind: "generated", dockerfile_text: "FROM x\n", context: "/abs" },
+      { kind: "registry", ref: "python:3.13-slim", steps: [] },
+      { kind: "dockerfile", dockerfile: "/abs/D", context: "/abs", steps: [] },
       { kind: "nix", ref: "x" },
     ]) {
       expect(() =>
@@ -305,8 +345,9 @@ void describe("eval.py datasets", () => {
     expect(await loadImageDefs(datasetDir)).toEqual([
       {
         name: "support-evals",
-        dockerfile: "/abs/support/agent/Dockerfile",
+        dockerfile: expect.stringMatching(/lmnr-generated.*Dockerfile$/),
         context: "/abs",
+        generated: true,
       },
     ]);
   });
@@ -331,22 +372,6 @@ void describe("eval.py datasets", () => {
       "TASK_VAR",
     ]);
     expect([...vars.optional].sort()).toEqual(["N", "OPT"]);
-  });
-
-  void it("start registry images like any docker_image", async () => {
-    await write("support/agent/eval.py");
-    const datasetDir = path.join(root, "support");
-    const desc = description({
-      images: { py: { kind: "registry", ref: "python:3.13-slim" } },
-      default_image: "py",
-    });
-    setEvalDescription(datasetDir, desc);
-    await write("support/tasks/refund/environment/case.json", "{}");
-    await ensureTaskFiles(datasetDir, desc);
-    expect(await loadImageDefs(datasetDir)).toEqual([]);
-    expect((await findTaskImages(datasetDir, {})).images).toEqual([
-      "python:3.13-slim",
-    ]);
   });
 });
 
@@ -380,6 +405,7 @@ void describe("task files", () => {
       await stat(path.join(root, "support/tasks/refund/tests/test.sh"))
     ).mode;
     expect(mode & 0o777).toBe(0o755);
+    logTaskFileChanges("support", changes);
     expect(logger.info).toHaveBeenCalledWith(
       "created support/tasks/refund/task.toml",
     );
@@ -440,16 +466,12 @@ void describe("task files", () => {
 
   void it("only allows docker_images the runner declares", async () => {
     const images: EvalDescription["images"] = {
-      "support-evals": {
-        kind: "dockerfile",
-        dockerfile: "/abs/Dockerfile",
-        context: "/abs",
-      },
-      slim: { kind: "registry", ref: "python:3.13-slim" },
+      "support-evals": generated("FROM python:3.13\n"),
+      slim: generated("FROM python:3.13-slim\n"),
     };
     await write(
       "support/tasks/ocr/task.toml",
-      '[task]\nname = "a/ocr"\n[environment]\ndocker_image = "python:3.13-slim"\n',
+      '[task]\nname = "a/ocr"\n[environment]\ndocker_image = "slim"\n',
     );
     await ensureTaskFiles(datasetDir(), description({ images }));
     await write(
@@ -488,17 +510,15 @@ void describe("task files", () => {
     );
   });
 
-  void it("lists changes without writing on a dry run", async () => {
+  void it("logs the changes, as a dry run would make them", async () => {
     await write("support/tasks/refund/environment/x.json", "{}");
-    const changes = await ensureTaskFiles(datasetDir(), description(), true);
+    const changes = await ensureTaskFiles(datasetDir(), description());
     expect(changes.map((c) => c.file)).toEqual([
       "tasks/refund/task.toml",
       "tasks/refund/instruction.md",
-      "tests/test.sh".replace(/^/, "tasks/refund/"),
+      "tasks/refund/tests/test.sh",
     ]);
-    await expect(
-      stat(path.join(root, "support/tasks/refund/task.toml")),
-    ).rejects.toThrow();
+    logTaskFileChanges("support", changes, true);
     expect(logger.info).toHaveBeenCalledWith(
       "would create support/tasks/refund/task.toml",
     );

@@ -1,6 +1,6 @@
 # Harbor evals (`eval`)
 
-- `lmnr-cli eval run [dataset] [--dir evals]` runs each dataset folder
+- `lmnr-cli eval run [dataset] [--dir evals]` (`--dir` is one `Option`, `evalsDirOption` in `src/index.ts`, shared by `run`, `describe`, `task new`, `dataset pull` / `push`; its default is commander's, so handlers take `dir` as given) runs each dataset folder
   (`<dir>/<folder>/harbor.yaml`, a Harbor JobConfig, and/or
   `<folder>/agent/eval.py`, see "eval.py datasets"; named by folder or by
   `[dataset] name`, formerly "suite") with **pinned** Harbor + the Laminar
@@ -63,8 +63,8 @@
     Log tab (`jobUploads` in `remote.ts`, `jobs.ts`): `runDatasets` gets a
     `JobOutput` that forces `jobs_dir` to `<tmp>/<dataset>` (never `job_name`:
     the plugin names the evaluation after it, a timestamp by default), and
-    after each `harbor run` exits (passed or not) the one job dir in there
-    (`findJobDir`) has its trial dirs packed with
+    after each `harbor run` exits (passed or not) the job dir `runDatasets`
+    found (`newJobDir`, passed to `onDatasetEnd`) has its trial dirs packed with
     `packFiles` and sent with `uploadJob` + `uploadJobIndex` (`LMNR_EVAL_UPLOAD_ID`,
     run key). Job-level files and `steps/*/artifacts` are left out;
     `<trial>/artifacts` is kept (an `eval.py` runner grades from it; the Files
@@ -82,7 +82,9 @@
   `eval-py.ts` (eval.py datasets: describe JSON types, PEP 723, the describe
   cache, the ownership merge, `logEvalWarnings`), `describe.ts` (runs
   `lmnr.evals.describe`), `describe-command.ts` (`eval describe`), `task-files.ts` (the
-  task files written for eval.py datasets, `eval task new`), `remote.ts` (`RunSpec`,
+  task files written for eval.py datasets), `task-command.ts` (`eval task
+  new`; its own module because it imports `selectDatasets` from `index.ts`,
+  which imports `task-files.ts`), `remote.ts` (`RunSpec`,
   `startRemoteRun`, `eval orchestrate`), `run-log.ts` (the run's log: shipper
   and follower), `run-log-lines.ts` (what the log shows of Harbor's output),
   `jobs.ts` (packing a finished Harbor
@@ -93,7 +95,7 @@
   `buildJobConfig`), `harbor.ts` (uvx/Harbor only), `images.ts` (harbor.yaml
   `images` and eval.py images, generated Dockerfiles' content addressing, what
   tasks start from, `ensureRemoteImages`), `client.ts` (login
-  or project key client), `dataset-toml.ts`, `task-hash.ts`, `dataset-state.ts`,
+  or project key client; `checkProjectKey`), `dataset-toml.ts`, `task-hash.ts`, `dataset-state.ts`,
   `dataset-sync.ts` (pure pull / push planning, download + extract,
   upload), `dataset-command.ts` (`eval dataset pull / push`, `checkRunTasks`),
   `docker.ts` (builds, the ignore guard, `imagePusher`), `push.ts` (`docker
@@ -203,12 +205,27 @@
   (also a missing or malformed `LMNR_EVAL_RUN` in `eval orchestrate`), 20
   `docker_failed` (build / pull / save, unreadable `docker save` output, a
   non-amd64 image, zstd layers), 21 `remote_run_failed` (a `--remote` run's
-  orchestrator exited with anything but 0 or 18, or its sandbox was lost; 18
-  from it stays `harbor_failed`), 22 `local_edits` (pull would overwrite
-  versions Laminar doesn't have; `--force`). The eval dataset API's
+  orchestrator exited with anything but 0, 18 or 23, or its sandbox was lost;
+  18 / 23 from it stay `harbor_failed` / `trials_errored`), 22 `local_edits`
+  (pull would overwrite versions Laminar doesn't have; `--force`), 23
+  `trials_errored` (every trial of a dataset errored; see "Errored trials"),
+  24 `laminar_key_rejected` (401 / 403) / `laminar_unreachable` (network
+  error, other status, no answer in 30 s) from the key check (see "Auth"). The eval dataset API's
   `storage_not_configured` and `version_not_found` exit 1 with their own
   `code`. Bad `--env` flags are
   commander `InvalidArgumentError`s.
+- **Errored trials** (`readTrialOutcomes` in `jobs.ts`, Harbor 0.25.0's
+  `TrialResult`): after each dataset's `harbor run` (local and in `eval
+  orchestrate`), `runDatasets` reads `<job>/<trial>/result.json` (the job dir
+  `newJobDir` finds; no `result.json` = not counted; Harbor deletes retried
+  attempts' dirs). A trial is errored when it raised (`exception_info`, or a
+  `step_results[].exception_info`) AND has no reward (`verifier_result.rewards`
+  null / empty): a graded agent timeout is a result. Any errored → `Dataset d:
+  N/M trials errored (first: <type>: <first message line>)` warning; local
+  `--json` has `trials: {<dataset>: {total, errored, firstError?, jobDir?}}`.
+  `assertDatasetsPassed` runs after every dataset: `harbor_failed` (18) first,
+  else datasets whose trials ALL errored (total > 0) → `trials_errored` (23),
+  naming each with its first exception (and, locally, the job dir).
 - **Secrets are Harbor `${VAR}` placeholders**, not flags: `findTemplateVars`
   scans harbor.yaml + the run's task.toml files (`findTaskTomls`, so a task
   `--task` leaves out needs none of its vars), `resolveTemplateEnv` reads ONLY those
@@ -230,7 +247,20 @@
 - `LMNR_GRPC_PORT` (env or `.env`) becomes `--pk grpc_port=`: the plugin
   exports spans over gRPC and defaults to 8443, so self-hosted traces need it.
 - Auth: local runs need `LMNR_PROJECT_API_KEY` (the plugin reports with it;
-  in the orchestrator it is the run key). `--remote` calls the API as the logged-in user and falls back to
+  in the orchestrator it is the run key). A local `eval run` checks it right
+  after `harborEnv` (missing key → 19 as before), before any build:
+  `checkProjectKey` (`client.ts`) sends `GET <LMNR_BASE_URL>/v1/datasets`
+  (read-only, the same project-key `/v1` scope as the plugin's evaluation
+  calls) with the Harbor env's key as a Bearer token, through plain `fetch`
+  (`AbortSignal.timeout`), not `LaminarClient`: its constructor runs
+  `loadEnv`, which copies every `.env` / `.env.local` / `.env.<NODE_ENV>`
+  variable into `process.env`, and a local run spreads `process.env` into
+  Harbor and Docker (`runDatasets`), whose env should only take what
+  lmnr-cli resolves (`${VAR}`s, `--env`, `harborEnv`). Without it a bad key or URL
+  let the run go ahead with its results going nowhere (the plugin only
+  logs). Not for `--remote` (it calls the API anyway) nor `eval
+  orchestrate`. Tests that run `handleEvalRun` locally stub `fetch`
+  (`describe.test.ts`). `--remote` calls the API as the logged-in user and falls back to
   the project key when there is no login (CI).
 - **The archive is a run of gzip members** (`packFiles`), so the UI can read
   one file without the whole archive: consecutive files of one directory share
@@ -271,10 +301,10 @@
 - **Ownership** (`applyEvalRunner`, applied inside `loadDatasetConfig`, before
   `buildJobConfig`'s CLI overrides, so `--model` / `--env` / `--task` still
   win): eval.py owns images (built from the description, see "Images from
-  describe"; registry images are no build, tasks name their ref), the agent (`LaminarAgent`, `kwargs.runner =
+  describe"; tasks name them by image name), the agent (`LaminarAgent`, `kwargs.runner =
   agent/eval.py:<Class>`, `env` = describe's env with secrets as `${NAME}`),
   `verifier.import_path` / `kwargs` (`LaminarVerifier`, unless
-  `grade_with_test_sh`), and the job-level `artifacts` (describe's optional `artifacts`,
+  `grade_with_test_sh`), and the job-level `artifacts` (describe's `artifacts`,
   Harbor entries; a task.toml's `artifacts` still add to them in Harbor).
   harbor.yaml defining any of those (images, an `agents` entry with
   `import_path` or `name` or `env`, verifier import path / kwargs,
@@ -286,6 +316,15 @@
   `${...}` are scanned (`findTemplateVars`), so they resolve exactly like
   harbor.yaml `${VAR}`s (shell, `.env.local`, `.env`; exit 19) and their values
   reach the Harbor process env, where `verify()` reads them.
+- **`RYSTIC_TOKEN`** (`withRysticToken` in `env.ts`, right after describe):
+  when a selected dataset's describe `services` has `kind: "Rystic"` (a
+  Rystic mirror's `display_name`) and the run is local, `RYSTIC_TOKEN` is
+  added to the `--env` values (`findEnvKey`: shell, `.env.local`, `.env`), so
+  it reaches every agent as `${RYSTIC_TOKEN}`; an explicit `--env
+  RYSTIC_TOKEN` wins. Unset → `missing_env` (19) before any build, worded
+  like lmnr-python's `mirrors/rystic.py` `NO_ACCESS`. `--remote` never sends
+  it (Laminar gives each trial its own token, which a user value would
+  replace): `--env RYSTIC_TOKEN` is dropped with a warning, mirror or not.
 - **Packages for the Harbor process** (`pythonRequirements` in `harbor.ts`,
   for describe AND `harbor run`, local and in the orchestrator, every
   dataset): eval.py and `verify()` run on the host, only their `ctx`
@@ -304,13 +343,16 @@
   by a non-comment line.
 - **Task files** (`ensureTaskFiles`, `task-files.ts`): before `checkRunTasks`
   in `eval run` (so before hashing and packing; the orchestrator never writes),
-  at the start of `eval dataset push` (`--dry-run` lists them, then plans
-  from a temp copy of `tasks/` with them written, since they add tasks and
-  change hashes; push only reads `tasks/`), and in `eval task
-  new <dataset>/tasks/<name>`. Every non-dot dir directly under `tasks/` gets a
+  at the start of `eval dataset push` (`--dry-run` writes them into a temp
+  copy of `tasks/` and plans from it, since they add tasks and change
+  hashes; push only reads `tasks/`), and in `eval task new <dataset>
+  <name> [--dir evals]` (`<dataset>` resolved by `selectDatasets` like `eval
+  run [dataset]`: folder or `[dataset] name`; writes
+  `<folder>/tasks/<name>`, `<name>` a `NAME_RULE` part, checked before
+  describe; JSON `{dir, files}`). It always writes and returns the changes; callers log them
+  (`logTaskFileChanges`, "would create" on a dry run). Every non-dot dir directly under `tasks/` gets a
   missing `task.toml` (`[task] name = <org of [dataset] name, else the folder
-  name>/<dir>`, `[environment] docker_image = <default image, or its registry
-  ref>`, then the runner's `new_task_toml` merged per table, via smol-toml), `instruction.md` and `tests/test.sh` (0755;
+  name>/<dir>`, `[environment] docker_image = <default image>`, then the runner's `new_task_toml` merged per table, via smol-toml), `instruction.md` and `tests/test.sh` (0755;
   not with `grade_with_test_sh`, where a stub would hide a missing real one).
   An existing `task.toml` missing `[task] name` / `docker_image` gets the key
   INSERTED AS TEXT (`insertTomlKey`): after the table's header, or as a new
@@ -320,22 +362,24 @@
   instead of writing.
 - **Task image rules** (`checkTaskImage`, main doc 2.1.2): a task of an
   eval.py dataset never brings its own image. An `environment/Dockerfile`, or
-  a `docker_image` not in `taskImageNames` (image names; a registry image's
-  ref), is `invalid_evals_dir` with a hint to declare a named image on the
+  a `docker_image` not in `taskImageNames` (the image names), is `invalid_evals_dir` with a hint to declare a named image on the
   runner. `ensureTaskFiles` checks every task before writing any file (so
   `eval run`, `eval dataset push` and its `--dry-run` fail first), and `eval
   task new` checks its dir. Harbor would otherwise build or pull that image
   itself, without what the runner adds (services, the Laminar layer).
 - **Images from describe** (`loadImageDefs` reads the description, not
   harbor.yaml's key: `applyEvalRunner` no longer writes `job.images`):
-  `registry` (no build), `dockerfile` (the user's), `generated`
-  (`{dockerfile_text, context, ignore_file?}`: builder steps or services;
-  BuildKit heredocs, bind mounts, multi-stage `COPY --from`; sources relative
-  to `context`). Every kind may carry `steps: [{origin, step}]`; describe
-  also has optional `services`, `classes`, `mocks` (`[{key, type, handler,
-  base_url_env?}]`), `mock_dependencies` and `laminar_layer` (`{python, lmnr,
-  build_contexts}`) (all new fields optional, still `version: 1`;
-  `parseDescription` rejects unknown image kinds).
+  every image is `generated` (`{dockerfile_text, context, ignore_file?,
+  steps: [{origin, step}]}`; BuildKit heredocs, bind mounts, multi-stage
+  `COPY --from`; sources relative to `context`): lmnr adds its Laminar layer
+  to every image, so a registry ref or the user's Dockerfile is only the
+  base (lmnr-python still has `registry` / `dockerfile` compiled kinds, but
+  describe never emits them; `parseDescription` rejects them). Describe always
+  emits, and `parseDescription` requires, `modules`, `artifacts`, `services`
+  (`[{name, kind, version, source, env, origin}]`), `classes`, `mocks`
+  (`[{key, type, handler, base_url_env?}]`), `mock_dependencies` and
+  `laminar_layer` (`{python, lmnr | null, build_contexts}`); still `version:
+  1`.
 - **The Laminar layer** (lmnr-python `evals/layer.py`): describe adds
   `/opt/lmnr` (Python, `lmnr`, the mock server) to every generated image.
   `layer.ts` decides which `lmnr`: `layerLmnrArgs()` passes describe
@@ -388,7 +432,7 @@
   (`isRunnableDataset`) nor skipped hold shared Python (`_shared/`); lmnr
   puts the evals root on `sys.path`. Discovery already ignores them and remote
   runs pack them (`remoteExclude` drops only OTHER dataset folders). Describe's
-  optional `modules` (the runner's files relative to the evals root) go to
+  `modules` (the runner's files relative to the evals root) go to
   the plugin as `--pk runner_modules=<JSON>` (`harborArgs`), local and in the
   orchestrator (from `RunSpec.runners`); the plugin puts the ones outside the
   dataset's `agent/` into `hosted_metadata.runnerModules` for the Files view's
