@@ -79,7 +79,7 @@ LMNR_{INSTRUMENT}_{OPTION}    # Per-instrumentation options, e.g. LMNR_LANGGRAPH
 
 - `test/AGENTS.md` - test runner, nock cassettes and `content-encoding` replay, standard span-export setup, `.lmnr/` leak guard
 - `src/debug/AGENTS.md` - debug mode / replay (server-cache v2), `.lmnr/debug-session.json`, propagated `debug` context, Python parity
-- `src/mock/AGENTS.md` - observe-level mocks (`LMNR_MOCK_URL`): async-only mocked functions, the synchronous key fetch (worker + `Atomics.wait`), `node:http` not `fetch`, Python parity, shared `spec/lmnr-mock/` (never edit here)
+- `src/mock/AGENTS.md` - observe-level mocks (`LMNR_MOCK_URL`): no up-front checks (non-async functions warn), async key loading and calls made before it, fail closed, `node:http` not `fetch`, Python parity, shared `spec/lmnr-mock/` (never edit here)
 - `src/trajectory/AGENTS.md` - lmnr-atif (ATIF trajectory) reader / normalizer / builder / writer: port of lmnr-python, shared `spec/lmnr-atif/` (never edit here), `py.ts` Python-semantics helpers, golden suite
 - `src/opentelemetry-lib/tracing/AGENTS.md` - `startActiveSpan` / context stack, byte-size batch flush, `forceFlush` awaiting in-flight exports, span payload size limit, release stamp, trajectory file (`LMNR_TRAJECTORY_PATH` modes, collector, exit hook, precise span times), per-instrumentation `instrumentOptions`
 - `src/opentelemetry-lib/bridges/AGENTS.md` - `bridges` option: `Bridge` interface + registry, disabling conflicting auto-instrumentations, Langfuse bridge (tracer-provider wrapper, shadow/copy mirroring, self-healing provider slot, attribute translation, 4.x–6.x test suites on aliased packages)

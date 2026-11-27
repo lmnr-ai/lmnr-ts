@@ -67,8 +67,8 @@ interface ObserveOptions {
  * @param options.tags - Tags to associate with the span.
  * @param options.mockKey - The key an eval's mocks use for this function. In an
  * eval run with mocks (`LMNR_MOCK_URL` set), a call whose key is mocked is answered
- * by the trial's mock server instead of running. Defaults to the span name. A mocked
- * function must be declared `async`.
+ * by the trial's mock server instead of running, and returns a Promise. Defaults to the
+ * span name.
  * @param options.mockable - Set to `false` so this function always runs, even when
  * its key is mocked. Defaults to `true`.
  * @param fn - The function to wrap

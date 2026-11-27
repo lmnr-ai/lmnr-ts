@@ -5,19 +5,8 @@
  *
  * The env var is read once, on the first observed call (`getMockClient`), so
  * an app without it pays one cached check per call and makes no request.
- *
- * Unlike Python, the keys are fetched synchronously, even for async
- * functions: `observe` must know whether a call is mocked before it runs the
- * function, and a sync function's result can't wait for a Promise. Node has
- * no sync HTTP, so a short-lived worker fetches them while this thread
- * blocks in `Atomics.wait` (once per process, or once per retry).
  */
 import { request } from "node:http";
-import {
-  MessageChannel,
-  receiveMessageOnPort,
-  Worker,
-} from "node:worker_threads";
 
 import { MOCK_FAILURE, MockedError } from "./errors";
 import { fnPath, type Outcome, parseKeys, parseOutcome } from "./protocol";
@@ -26,55 +15,17 @@ const MOCK_URL_ENV = "LMNR_MOCK_URL";
 const MOCK_TIMEOUT_ENV = "LMNR_MOCK_TIMEOUT_MS";
 const DEFAULT_TIMEOUT_MS = 30_000;
 const KEYS_TIMEOUT_MS = 2_000;
-// The worker's own startup on top of the request.
-const KEYS_WAIT_MS = KEYS_TIMEOUT_MS + 3_000;
 export const RETRY_BACKOFF_MS = 100;
 const MAX_RETRY_BACKOFF_MS = 2_000;
 
 type HttpResult = { status: number; body: string } | { error: string };
-
-// Runs in the worker (CommonJS, `eval: true`). `node:http`, never `fetch`:
-// the server is on loopback, never behind the app's proxy settings. Every
-// failure, `request()` throwing on a bad URL included, is reported through
-// `done` (once): an exception escaping the worker would reach the app as an
-// `'error'` event, and the main thread would wait out `KEYS_WAIT_MS`.
-const KEYS_WORKER = `
-const { request } = require("node:http");
-const { workerData } = require("node:worker_threads");
-const { url, timeoutMs, port, flag } = workerData;
-let sent = false;
-const done = (message) => {
-  if (sent) return;
-  sent = true;
-  try {
-    port.postMessage(message);
-  } finally {
-    Atomics.store(flag, 0, 1);
-    Atomics.notify(flag, 0);
-  }
-};
-const fail = (e) => done({ error: e.name + ": " + e.message });
-try {
-  const req = request(url, (res) => {
-    const chunks = [];
-    res.on("data", (chunk) => chunks.push(chunk));
-    res.on("end", () =>
-      done({ status: res.statusCode, body: Buffer.concat(chunks).toString("utf8") }));
-    res.on("error", fail);
-  });
-  req.setTimeout(timeoutMs, () => req.destroy(new Error("timed out after " + timeoutMs + " ms")));
-  req.on("error", fail);
-  req.end();
-} catch (e) {
-  fail(e);
-}
-`;
 
 export class MockClient {
   // Never log `url`: it holds the trial's token.
   readonly url: string;
   readonly timeoutMs: number;
   private keys: Set<string> | undefined;
+  private loading: Promise<Set<string>> | undefined;
   private retryAt = 0;
   private backoffMs = RETRY_BACKOFF_MS;
   private lastError = "";
@@ -86,12 +37,54 @@ export class MockClient {
 
   // Keys
 
-  mockedKeys(): Set<string> {
+  /** The key set, if it has loaded. */
+  loadedKeys(): Set<string> | undefined {
+    return this.keys;
+  }
+
+  /**
+   * The key set, loading it on the first call. Rejects while the server is
+   * unreachable, and retries after a growing backoff.
+   */
+  mockedKeys(): Promise<Set<string>> {
     if (this.keys !== undefined) {
-      return this.keys;
+      return Promise.resolve(this.keys);
     }
-    this.checkBackoff();
-    const result = getSync(`${this.url}/keys`, KEYS_TIMEOUT_MS, KEYS_WAIT_MS);
+    if (this.loading === undefined) {
+      try {
+        this.checkBackoff();
+      } catch (e) {
+        return Promise.reject(e);
+      }
+      this.loading = this.loadKeys().finally(() => {
+        this.loading = undefined;
+      });
+      this.loading.catch(() => {
+        // Callers that only start the load (`startLoading`) don't await it;
+        // the failure reaches the next call through the backoff.
+      });
+    }
+    return this.loading;
+  }
+
+  /**
+   * Start loading the keys without waiting. Throws the last failure while
+   * the server is unreachable and the backoff hasn't passed.
+   */
+  startLoading(): void {
+    if (this.keys === undefined && this.loading === undefined) {
+      this.checkBackoff();
+      void this.mockedKeys();
+    }
+  }
+
+  private async loadKeys(): Promise<Set<string>> {
+    const result = await httpRequest(
+      "GET",
+      `${this.url}/keys`,
+      undefined,
+      KEYS_TIMEOUT_MS,
+    );
     if ("error" in result) {
       throw this.unreachable(result.error);
     }
@@ -126,7 +119,12 @@ export class MockClient {
   // Calls
 
   async call(key: string, body: string): Promise<Outcome> {
-    const result = await post(this.url + fnPath(key), body, this.timeoutMs);
+    const result = await httpRequest(
+      "POST",
+      this.url + fnPath(key),
+      body,
+      this.timeoutMs,
+    );
     if ("error" in result) {
       throw new MockedError(
         MOCK_FAILURE,
@@ -137,70 +135,51 @@ export class MockClient {
   }
 }
 
-const post = (url: string, body: string, timeoutMs: number) =>
-  new Promise<HttpResult>((resolve) => {
-    const req = request(
-      url,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "content-length": Buffer.byteLength(body),
-        },
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (chunk: Buffer) => chunks.push(chunk));
-        res.on("end", () =>
-          resolve({
-            status: res.statusCode ?? 0,
-            body: Buffer.concat(chunks).toString("utf8"),
-          }),
-        );
-        res.on("error", (e) => resolve({ error: `${e.name}: ${e.message}` }));
-      },
-    );
-    req.setTimeout(timeoutMs, () =>
-      req.destroy(new Error(`timed out after ${timeoutMs} ms`)),
-    );
-    req.on("error", (e) => resolve({ error: `${e.name}: ${e.message}` }));
-    req.end(body);
-  });
-
-/** A blocking `GET`: a worker makes the request, this thread waits for it. */
-const getSync = (
+// `node:http`, never `fetch`: the server is on loopback, never behind the
+// app's proxy settings.
+const httpRequest = (
+  method: "GET" | "POST",
   url: string,
+  body: string | undefined,
   timeoutMs: number,
-  waitMs: number,
-): HttpResult => {
-  const flag = new Int32Array(new SharedArrayBuffer(4));
-  const { port1, port2 } = new MessageChannel();
-  let worker: Worker | undefined;
-  try {
-    worker = new Worker(KEYS_WORKER, {
-      eval: true,
-      workerData: { url, timeoutMs, port: port2, flag },
-      transferList: [port2],
-      // The app's `--require` / `--import` hooks have no business here.
-      execArgv: [],
-    });
-    worker.on("error", () => {
-      // The worker catches its own errors; anything else is already a failed
-      // fetch here (no answer), and unhandled it would crash the app.
-    });
-    worker.unref();
-    Atomics.wait(flag, 0, 0, waitMs);
-    const received = receiveMessageOnPort(port1);
-    return received === undefined
-      ? { error: `no answer within ${waitMs} ms` }
-      : (received.message as HttpResult);
-  } catch (e) {
-    return { error: `${(e as Error).name}: ${(e as Error).message}` };
-  } finally {
-    port1.close();
-    void worker?.terminate();
-  }
-};
+) =>
+  new Promise<HttpResult>((resolve) => {
+    const fail = (e: Error) => resolve({ error: `${e.name}: ${e.message}` });
+    try {
+      const req = request(
+        url,
+        {
+          method,
+          headers:
+            body === undefined
+              ? {}
+              : {
+                  "content-type": "application/json",
+                  "content-length": Buffer.byteLength(body),
+                },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () =>
+            resolve({
+              status: res.statusCode ?? 0,
+              body: Buffer.concat(chunks).toString("utf8"),
+            }),
+          );
+          res.on("error", fail);
+        },
+      );
+      req.setTimeout(timeoutMs, () =>
+        req.destroy(new Error(`timed out after ${timeoutMs} ms`)),
+      );
+      req.on("error", fail);
+      req.end(body);
+    } catch (e) {
+      // A malformed URL or an unsupported protocol throws synchronously.
+      fail(e as Error);
+    }
+  });
 
 let resolved = false;
 let client: MockClient | undefined;

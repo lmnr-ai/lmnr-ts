@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { createServer } from "node:net";
+import {
+  createServer as createHttpServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
+import { type AddressInfo, createServer } from "node:net";
 import path from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { Worker } from "node:worker_threads";
 
 import { context, trace } from "@opentelemetry/api";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
@@ -17,6 +22,7 @@ import {
 } from "../src";
 import { MOCK_FAILURE } from "../src/mock";
 import { RETRY_BACKOFF_MS, resetMockClient } from "../src/mock/client";
+import { warned } from "../src/mock/intercept";
 import {
   _resetConfiguration,
   initializeTracing,
@@ -28,92 +34,89 @@ const PREFIX = "/_lmnr/v1/" + "t".repeat(32);
 
 type Recorded = { method: string; key: string; body: any };
 
-// The SDK blocks this thread while it fetches `/keys`, so the server runs in
-// a worker of its own.
-const FAKE_SERVER = `
-const { createServer } = require("node:http");
-const { parentPort } = require("node:worker_threads");
-let state = { keys: [], keysStatus: [], replies: {}, delayMs: 0 };
-const requests = [];
-const send = (res, status, body) => {
-  const payload = typeof body === "string" ? body : JSON.stringify(body);
-  res.writeHead(status, { "content-length": Buffer.byteLength(payload) });
-  res.end(payload);
-};
-const server = createServer((req, res) => {
-  const chunks = [];
-  req.on("data", (c) => chunks.push(c));
-  req.on("end", () => {
-    const prefix = process.env.PREFIX;
-    if (req.method === "GET") {
-      requests.push({ method: "GET", key: req.url, body: null });
-      const status = state.keysStatus.length ? state.keysStatus.shift() : 200;
-      return send(res, status, status === 200 ? { keys: state.keys } : "busy");
-    }
-    const key = decodeURIComponent(req.url.slice((prefix + "/fn/").length));
-    requests.push({ method: "POST", key, body: JSON.parse(Buffer.concat(chunks).toString()) });
-    const [status, body] = state.replies[key].shift();
-    setTimeout(() => send(res, status, body), state.delayMs);
-  });
-});
-server.listen(0, "127.0.0.1", () => parentPort.postMessage({ port: server.address().port }));
-parentPort.on("message", (message) => {
-  if (message.type === "state") state = { ...state, ...message.state };
-  if (message.type === "reply") (state.replies[message.key] ??= []).push(message.reply);
-  if (message.type === "requests") parentPort.postMessage({ requests });
-  if (message.type === "close") server.close(() => process.exit(0));
-});
-`;
-
+/** Answers `/keys` with `keys` and each `/fn/<key>` with the next scripted
+ * `[status, body]` for that key; records every request. */
 class FakeServer {
+  private keys: string[] = [];
+  private keysStatus: number[] = [];
+  private delayMs = 0;
+  private readonly replies: Record<string, [number, unknown][]> = {};
+  private readonly recorded: Recorded[] = [];
+
   private constructor(
-    private readonly worker: Worker,
+    private readonly server: Server,
     readonly url: string,
   ) {}
 
   static async start(keys: string[]): Promise<FakeServer> {
-    const worker = new Worker(FAKE_SERVER, {
-      eval: true,
-      env: { PREFIX },
-      execArgv: [],
-    });
-    const { port } = await next(worker);
-    const server = new FakeServer(worker, `http://127.0.0.1:${port}${PREFIX}`);
-    await server.set({ keys });
-    return server;
+    let fake: FakeServer | undefined;
+    const server = createHttpServer((req, res) =>
+      fake?.handle(req, res).catch(() => res.destroy()),
+    );
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+    fake = new FakeServer(server, `http://127.0.0.1:${port}${PREFIX}`);
+    fake.keys = keys;
+    return fake;
   }
 
-  async set(state: Record<string, unknown>): Promise<void> {
-    this.worker.postMessage({ type: "state", state });
-    // Round trip, so the state is applied before the next request.
-    await this.requests();
+  private async handle(req: IncomingMessage, res: ServerResponse) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(chunk as Buffer);
+    }
+    if (req.method === "GET") {
+      this.recorded.push({ method: "GET", key: req.url ?? "", body: null });
+      const status = this.keysStatus.shift() ?? 200;
+      return send(res, status, status === 200 ? { keys: this.keys } : "busy");
+    }
+    const key = decodeURIComponent(
+      (req.url ?? "").slice((PREFIX + "/fn/").length),
+    );
+    const body = JSON.parse(Buffer.concat(chunks).toString());
+    this.recorded.push({ method: "POST", key, body });
+    const [status, reply] = this.replies[key].shift()!;
+    setTimeout(() => send(res, status, reply), this.delayMs);
+  }
+
+  async set(state: {
+    keys?: string[];
+    keysStatus?: number[];
+    delayMs?: number;
+  }): Promise<void> {
+    this.keys = state.keys ?? this.keys;
+    this.keysStatus = state.keysStatus ?? this.keysStatus;
+    this.delayMs = state.delayMs ?? this.delayMs;
   }
 
   async reply(key: string, status: number, body: unknown): Promise<void> {
-    this.worker.postMessage({ type: "reply", key, reply: [status, body] });
-    await this.requests();
+    this.replies[key] = [...(this.replies[key] ?? []), [status, body]];
   }
 
   respond = (key: string, value: unknown) =>
     this.reply(key, 200, { action: "respond", value });
 
   async requests(): Promise<Recorded[]> {
-    this.worker.postMessage({ type: "requests" });
-    return (await next(this.worker)).requests;
+    return [...this.recorded];
   }
 
   async calls(): Promise<Recorded[]> {
-    return (await this.requests()).filter((r) => r.method === "POST");
+    return this.recorded.filter((r) => r.method === "POST");
   }
 
   async close(): Promise<void> {
-    this.worker.postMessage({ type: "close" });
-    await new Promise((resolve) => this.worker.once("exit", resolve));
+    this.server.closeAllConnections();
+    await new Promise((resolve) => this.server.close(resolve));
   }
 }
 
-const next = (worker: Worker): Promise<any> =>
-  new Promise((resolve) => worker.once("message", resolve));
+const send = (res: ServerResponse, status: number, body: unknown) => {
+  const payload = typeof body === "string" ? body : JSON.stringify(body);
+  res.writeHead(status, { "content-length": Buffer.byteLength(payload) });
+  res.end(payload);
+};
 
 /** A port nothing listens on: bound by a server that is then closed. */
 const closedPortUrl = async (): Promise<string> => {
@@ -123,6 +126,9 @@ const closedPortUrl = async (): Promise<string> => {
   await new Promise((resolve) => server.close(resolve));
   return `http://127.0.0.1:${port}${PREFIX}`;
 };
+
+/** Load the key set: an async observed call waits for it. */
+const loadKeys = () => observe({ name: "warm.up" }, async () => undefined);
 
 const useMockUrl = (url: string | undefined) => {
   if (url === undefined) {
@@ -361,9 +367,28 @@ void describe("observe mocks", () => {
     const add = (x: number) => x + 1;
     assert.equal(observe({ name: "not.mocked" }, add, 1), 2);
     assert.equal(await observe({ name: "other" }, async () => 3), 3);
+    assert.equal(observe({ name: "not.mocked" }, add, 2), 3);
     assert.deepEqual(await server.requests(), [
       { method: "GET", key: PREFIX + "/keys", body: null },
     ]);
+  });
+
+  void it("runs a non-async function called before the keys load, then warns", async () => {
+    await server.respond("crm.get_customer", "mocked");
+    const lookup = () => "real";
+    // The keys aren't loaded yet: it can't wait, so it runs.
+    assert.equal(observe({ name: "crm.get_customer" }, lookup), "real");
+    await loadKeys();
+    assert.ok(
+      warned.has(
+        "crm.get_customer ran unmocked: it was called before the mock keys loaded",
+      ),
+    );
+    // Once they have, it is mocked.
+    assert.equal(
+      await (observe({ name: "crm.get_customer" }, lookup) as unknown),
+      "mocked",
+    );
   });
 
   void it("never consults the server for mockable: false", async () => {
@@ -379,7 +404,12 @@ void describe("observe mocks", () => {
 
   void it("fails closed while the server is unreachable, then retries after a backoff", async () => {
     useMockUrl(await closedPortUrl());
-    // Sync functions throw, async ones reject.
+    await rejectsMocked(
+      observe({ name: "anything" }, async () => "real"),
+      MOCK_FAILURE,
+      /^mock server unreachable \(Error: connect ECONNREFUSED/,
+    );
+    // Inside the backoff a non-async function throws too.
     assert.throws(
       () => observe({ name: "anything" }, () => "real"),
       (error: unknown) =>
@@ -411,8 +441,8 @@ void describe("observe mocks", () => {
     assert.equal((await server.requests()).length, 2);
   });
 
-  // `request()` throws inside the worker for these: the call must fail with a
-  // MockedError, and the worker's error must not crash the process.
+  // `request()` throws synchronously for these: the call must fail with a
+  // MockedError, not crash or hang.
   for (const url of ["not a url", "https://127.0.0.1:1" + PREFIX]) {
     void it(`fails closed on LMNR_MOCK_URL=${url.split("/_lmnr")[0]}`, async () => {
       useMockUrl(url);
@@ -423,8 +453,6 @@ void describe("observe mocks", () => {
         /^mock server unreachable \((TypeError|Error): /,
       );
       assert.ok(Date.now() - started < 2000);
-      // Let a stray worker 'error' event surface, if there is one.
-      await new Promise((resolve) => setTimeout(resolve, 200));
     });
   }
 
@@ -438,35 +466,38 @@ void describe("observe mocks", () => {
 
   // Function shapes
 
-  void it("refuses to mock a function that isn't async", async () => {
-    const message =
-      "crm.get_customer: mocked TypeScript functions must return a Promise " +
-      "(declare the function async)";
+  void it("mocks a function that isn't declared async, with a warning", async () => {
+    await server.respond("crm.get_customer", "first");
+    await server.respond("crm.get_customer", "second");
+    await loadKeys();
     let ran = false;
-    assert.throws(
-      () =>
-        observe({ name: "crm.get_customer" }, () => {
-          ran = true;
-          return "sync";
-        }),
-      { name: MOCK_FAILURE, message },
-    );
-    // A plain function returning a Promise can't be told apart before it runs.
-    assert.throws(
-      () =>
-        observe({ name: "crm.get_customer" }, () => {
-          ran = true;
-          return Promise.resolve("promise");
-        }),
-      { name: MOCK_FAILURE, message },
+    const sync = () => {
+      ran = true;
+      return "sync";
+    };
+    // A plain function returning a Promise works as if it were async.
+    const promising = () => {
+      ran = true;
+      return Promise.resolve("promise");
+    };
+    // The caller of a sync function gets a Promise.
+    const first = observe({ name: "crm.get_customer" }, sync) as unknown;
+    assert.ok(first instanceof Promise);
+    assert.equal(await first, "first");
+    assert.equal(
+      await observe({ name: "crm.get_customer" }, promising),
+      "second",
     );
     assert.equal(ran, false);
-    assert.deepEqual(await server.calls(), []);
-    const [span] = exporter.getFinishedSpans();
-    assert.equal(span.events[0].name, "exception");
+    assert.ok(
+      warned.has(
+        "crm.get_customer isn't declared async: its mocked calls return a Promise",
+      ),
+    );
   });
 
   void it("refuses to mock generators and leaves unmocked ones alone", async () => {
+    await loadKeys();
     function* gen() {
       yield 1;
     }
