@@ -96,7 +96,7 @@ void describe("discoverDatasets / packEvalsDir", () => {
     ]);
   });
 
-  void it("never uploads env files, VCS data, deps, caches or job output", async () => {
+  void it("never uploads env files, .git, deps, caches or job output", async () => {
     await write("hello/harbor.yaml");
     await write(".env", "SECRET=1");
     await write("hello/.env.local", "SECRET=1");

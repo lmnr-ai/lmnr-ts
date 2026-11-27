@@ -101,7 +101,25 @@ const formatDescription = (
       ]),
     );
   }
-  body.push("mocks: none");
+  const mocks = description.mocks ?? [];
+  body.push(`mocks:${mocks.length > 0 ? "" : " none"}`);
+  for (const m of mocks) {
+    body.push(
+      ...indent([
+        `${m.key} (${m.type}): ${m.handler}` +
+          (m.base_url_env ? `, base URL in ${m.base_url_env}` : ""),
+      ]),
+    );
+  }
+  if (description.mock_dependencies?.length) {
+    body.push(`mock_dependencies: ${list(description.mock_dependencies)}`);
+  }
+  const layer = description.laminar_layer;
+  if (layer) {
+    body.push(
+      `laminar layer: Python ${layer.python}, ${layer.lmnr ?? "lmnr wheel (local checkout)"}`,
+    );
+  }
   body.push(`secrets: ${list(description.secrets)}`);
   body.push(`env: ${list(Object.keys(description.env))}`);
   const toml = stringifyToml(description.new_task_toml).trimEnd();

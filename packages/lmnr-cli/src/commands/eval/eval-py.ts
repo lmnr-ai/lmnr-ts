@@ -106,6 +106,30 @@ export interface EvalDescription {
    * root, absolute outside it, null when unknown).
    */
   classes?: { name: string; file: string | null }[];
+  /** The runner's mocks. Optional, like the fields below (lmnr phase 3). */
+  mocks?: EvalMock[];
+  /** pip requirements installed next to the mock server. */
+  mock_dependencies?: string[];
+  /** The Laminar layer every image gets (Python + lmnr in `/opt/lmnr`). */
+  laminar_layer?: LaminarLayer;
+}
+
+/** A mock: `type` function (an observed function's span name) or http. */
+interface EvalMock {
+  key: string;
+  type: "function" | "http";
+  /** `<module>:<function>`, `__runner__` being eval.py. */
+  handler: string;
+  /** HTTP mocks: the env var the app reads the mock's base URL from. */
+  base_url_env?: string;
+}
+
+interface LaminarLayer {
+  python: string;
+  /** The lmnr requirement it installs; null for the `lmnr-dev` wheel. */
+  lmnr: string | null;
+  /** Named build contexts every generated image reads, and what goes there. */
+  build_contexts: Record<string, string>;
 }
 
 type EvalArtifact =
@@ -243,7 +267,14 @@ export const parseDescription = (
       !Array.isArray(description.artifacts)) ||
     (description.services !== undefined &&
       !Array.isArray(description.services)) ||
-    (description.classes !== undefined && !Array.isArray(description.classes))
+    (description.classes !== undefined &&
+      !Array.isArray(description.classes)) ||
+    (description.mocks !== undefined && !Array.isArray(description.mocks)) ||
+    (description.laminar_layer !== undefined &&
+      !(
+        isRecord(description.laminar_layer) &&
+        isRecord(description.laminar_layer.build_contexts)
+      ))
   ) {
     throw invalidEvalsDir(`Describing ${file} printed an unexpected shape.`);
   }

@@ -323,16 +323,28 @@
   runner. `ensureTaskFiles` checks every task before writing any file (so
   `eval run`, `eval dataset push` and its `--dry-run` fail first), and `eval
   task new` checks its dir. Harbor would otherwise build or pull that image
-  itself, without what the runner adds (services, the Laminar layer: phases
-  2-3).
+  itself, without what the runner adds (services, the Laminar layer).
 - **Images from describe** (`loadImageDefs` reads the description, not
   harbor.yaml's key: `applyEvalRunner` no longer writes `job.images`):
   `registry` (no build), `dockerfile` (the user's), `generated`
   (`{dockerfile_text, context, ignore_file?}`: builder steps or services;
   BuildKit heredocs, bind mounts, multi-stage `COPY --from`; sources relative
   to `context`). Every kind may carry `steps: [{origin, step}]`; describe
-  also has optional `services` and `classes` (all new fields optional, still
-  `version: 1`; `parseDescription` rejects unknown image kinds).
+  also has optional `services`, `classes`, `mocks` (`[{key, type, handler,
+  base_url_env?}]`), `mock_dependencies` and `laminar_layer` (`{python, lmnr,
+  build_contexts}`) (all new fields optional, still `version: 1`;
+  `parseDescription` rejects unknown image kinds).
+- **The Laminar layer** (lmnr-python `evals/layer.py`, phase 3): describe adds
+  `/opt/lmnr` (Python, `lmnr`, the mock server) to every generated image.
+  `layer.ts` decides which `lmnr`: `layerLmnrArgs()` passes describe
+  `--layer-lmnr=wheel` when `LMNR_EVAL_LMNR_SPEC` is a directory, the spec
+  itself otherwise (a git URL, installed in the layer's stage), nothing
+  without it (describe installs its own version). A generated image whose
+  `laminar_layer.build_contexts` lists `lmnr-dev` gets `--build-context
+  lmnr-dev=<dir>` (`buildContextArgs`, `docker.ts`): `uv build --wheel` of
+  the checkout into a temp dir, once per process. `ImageDef.buildContexts`
+  is part of `buildKey`. An unknown context name is `invalid_evals_dir`
+  (mismatched lmnr / lmnr-cli).
 - **Generated Dockerfiles are content-addressed** (`generatedImageDef`):
   written to `<os tmp>/lmnr-generated/<sha256>/Dockerfile` (written whole
   then renamed; never deleted, so a failed build's `docker_failed` message
@@ -365,7 +377,8 @@
   `selectDatasets` like `eval run`, describes each eval.py dataset
   (`logWarnings: false`: the output lists them) and prints the runner to
   stdout: class chain, images with steps + origins and where generated
-  Dockerfiles are kept, services, mocks (none until phase 3), secret / env
+  Dockerfiles are kept, services, mocks (key, type, `base_url_env`),
+  `mock_dependencies`, the Laminar layer (Python and `lmnr` spec), secret / env
   names, `new_task_toml` (as TOML), `grade_with_test_sh`, warnings.
   harbor.yaml-only datasets print one line; `--json` is `{<folder>:
   <describe JSON> | null}`. Builds and runs nothing.
@@ -386,11 +399,15 @@
   `lmnr==${LMNR_PYTHON_VERSION}` for describe and Harbor's `--with` (a checkout
   path, or `lmnr @ git+https://...@branch`), to test before an lmnr release. uv
   caches the build of a local path: after editing the checkout, `uv cache clean
-  lmnr` (it waits for other uv processes' cache lock). Local E2E (Docker
+  lmnr` (it waits for other uv processes' cache lock). A checkout also goes
+  into every image's Laminar layer as a wheel (above). Local E2E (Docker
   available in the agent sandbox): `LMNR_EVAL_LMNR_SPEC=/repos/lmnr-python node
   dist/index.cjs eval run` from a copy of lmnr-python's `examples/agent-evals`,
   with the shell's `LMNR_PROJECT_API_KEY` / `LMNR_LOG_LEVEL` unset (they beat
-  `.env`) and `LMNR_GRPC_PORT=8001` in its `.env`.
+  `.env`) and `LMNR_GRPC_PORT=8001` in its `.env`. On an empty local stack,
+  mint a project key with SQL: a `workspaces` row, a `projects` row, and a
+  `project_api_keys` row whose `hash` is the key's SHA3-256 hex (the value
+  isn't stored).
 - Release order: lmnr-python (with `lmnr.evals`) first, then bump
   `LMNR_PYTHON_VERSION` here; `--remote` runs `npx lmnr-cli@<version>`, so it
   can only be checked once both are published.

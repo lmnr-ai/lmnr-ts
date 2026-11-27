@@ -335,6 +335,71 @@ void describe("eval run with an eval.py dataset", () => {
     );
   });
 
+  void it("builds a local LMNR_EVAL_LMNR_SPEC into the Laminar layer's wheel", async () => {
+    const checkout = path.join(root, "lmnr-python");
+    await mkdir(checkout);
+    process.env.LMNR_EVAL_LMNR_SPEC = checkout;
+    await write("evals/support/agent/eval.py", EVAL_PY);
+    await write(
+      "evals/support/tasks/refund/task.toml",
+      '[task]\nname = "a/b"\n',
+    );
+    const description: EvalDescription = {
+      ...DESCRIPTION,
+      images: {
+        "support-evals": {
+          kind: "generated",
+          dockerfile_text:
+            "FROM python:3.13-slim\nCOPY --from=lmnr-dev / /tmp/\n",
+          context: path.join(root, "evals"),
+        },
+      },
+      laminar_layer: {
+        python: "3.13",
+        lmnr: null,
+        build_contexts: { "lmnr-dev": "lmnr wheel" },
+      },
+    };
+    const uvBuilds: string[][] = [];
+    vi.mocked(captureCommand).mockImplementation(async (command, args) => {
+      if (command === "uv") {
+        uvBuilds.push(args);
+        const out = args[args.indexOf("--out-dir") + 1];
+        await writeFile(path.join(out, "lmnr-0.9.3-py3-none-any.whl"), "");
+        return { code: 0, stdout: "", stderr: "" };
+      }
+      // describe asks for the wheel, not lmnr==<version>.
+      expect(args[args.length - 1]).toBe("--layer-lmnr=wheel");
+      return { code: 0, stdout: JSON.stringify(description), stderr: "" };
+    });
+    let contexts: string[] = [];
+    vi.mocked(runCommand).mockImplementation(async (command, args) => {
+      if (command === "docker") {
+        contexts = args.filter((_, i) => args[i - 1] === "--build-context");
+      }
+      return 0;
+    });
+
+    await handleEvalRun(undefined, { dir: path.join(root, "evals") });
+
+    expect(uvBuilds).toEqual([
+      ["build", "--wheel", "--out-dir", expect.any(String), checkout],
+    ]);
+    expect(contexts).toEqual([`lmnr-dev=${uvBuilds[0][3]}`]);
+  });
+
+  void it("passes any other LMNR_EVAL_LMNR_SPEC on to the layer", async () => {
+    process.env.LMNR_EVAL_LMNR_SPEC =
+      "lmnr @ git+https://github.com/lmnr-ai/lmnr-python@feat/x";
+    await write("evals/support/agent/eval.py", EVAL_PY);
+    describeOk();
+    await describeEvalPy(path.join(root, "evals/support"));
+    const args = vi.mocked(captureCommand).mock.calls[0][1];
+    expect(args[args.length - 1]).toBe(
+      "--layer-lmnr=lmnr @ git+https://github.com/lmnr-ai/lmnr-python@feat/x",
+    );
+  });
+
   void it("fails before running when a secret is unset", async () => {
     await write("evals/support/agent/eval.py", EVAL_PY);
     describeOk();
@@ -447,6 +512,25 @@ void describe("eval describe", () => {
       { name: "SupportRunner", file: "_shared/support.py" },
     ],
     new_task_toml: { agent: { timeout_sec: 300 } },
+    mocks: [
+      {
+        key: "crm.get_customer",
+        type: "function",
+        handler: "_shared.support:get_customer",
+      },
+      {
+        key: "https://api.zendesk.com",
+        type: "http",
+        handler: "__runner__:zendesk",
+        base_url_env: "ZENDESK_URL",
+      },
+    ],
+    mock_dependencies: ["anthropic"],
+    laminar_layer: {
+      python: "3.13",
+      lmnr: "lmnr==0.9.3",
+      build_contexts: {},
+    },
   };
 
   const stdout = () => {
@@ -501,7 +585,11 @@ void describe("eval describe", () => {
         "    postgres: Postgres 16 from postgres:16-bookworm",
         "      env: DATABASE_URL",
         "      declared at _shared/support.py:15 (SupportRunner)",
-        "  mocks: none",
+        "  mocks:",
+        "    crm.get_customer (function): _shared.support:get_customer",
+        "    https://api.zendesk.com (http): __runner__:zendesk, base URL in ZENDESK_URL",
+        "  mock_dependencies: anthropic",
+        "  laminar layer: Python 3.13, lmnr==0.9.3",
         "  secrets: APP_KEY, JUDGE_KEY",
         "  env: APP_KEY",
         "  new_task_toml:",
