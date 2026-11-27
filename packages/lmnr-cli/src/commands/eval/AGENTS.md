@@ -63,8 +63,8 @@
     Log tab (`jobUploads` in `remote.ts`, `jobs.ts`): `runDatasets` gets a
     `JobOutput` that forces `jobs_dir` to `<tmp>/<dataset>` (never `job_name`:
     the plugin names the evaluation after it, a timestamp by default), and
-    after each `harbor run` exits (passed or not) the one job dir in there
-    (`findJobDir`) has its trial dirs packed with
+    after each `harbor run` exits (passed or not) the job dir `runDatasets`
+    found (`newJobDir`, passed to `onDatasetEnd`) has its trial dirs packed with
     `packFiles` and sent with `uploadJob` + `uploadJobIndex` (`LMNR_EVAL_UPLOAD_ID`,
     run key). Job-level files and `steps/*/artifacts` are left out;
     `<trial>/artifacts` is kept (an `eval.py` runner grades from it; the Files
@@ -249,20 +249,18 @@
 - Auth: local runs need `LMNR_PROJECT_API_KEY` (the plugin reports with it;
   in the orchestrator it is the run key). A local `eval run` checks it right
   after `harborEnv` (missing key → 19 as before), before any build:
-  `checkProjectKey` (`client.ts`) calls `datasets.listDatasets()` (`GET
-  /v1/datasets`, read-only, the same project-key `/v1` scope as the plugin's
-  evaluation calls; the server's `GET /v1/project` has no client method)
-  with the Harbor env's key and `LMNR_BASE_URL`, through `isolatedClient`:
-  `new LaminarClient` runs `loadEnv`, which copies every `.env` /
-  `.env.local` / `.env.<NODE_ENV>` variable into `process.env`, and a local
-  run spreads `process.env` into Harbor and Docker (`runDatasets`), so the
-  check restores `process.env` after constructing it; a local run never
-  built a client before, and its env only takes what lmnr-cli resolves
-  (`${VAR}`s, `--env`, `harborEnv`). Without it a bad key or URL
+  `checkProjectKey` (`client.ts`) sends `GET <LMNR_BASE_URL>/v1/datasets`
+  (read-only, the same project-key `/v1` scope as the plugin's evaluation
+  calls) with the Harbor env's key as a Bearer token, through plain `fetch`
+  (`AbortSignal.timeout`), not `LaminarClient`: its constructor runs
+  `loadEnv`, which copies every `.env` / `.env.local` / `.env.<NODE_ENV>`
+  variable into `process.env`, and a local run spreads `process.env` into
+  Harbor and Docker (`runDatasets`), whose env should only take what
+  lmnr-cli resolves (`${VAR}`s, `--env`, `harborEnv`). Without it a bad key or URL
   let the run go ahead with its results going nowhere (the plugin only
   logs). Not for `--remote` (it calls the API anyway) nor `eval
-  orchestrate`. Tests that run `handleEvalRun` locally mock
-  `@lmnr-ai/client` (`describe.test.ts`). `--remote` calls the API as the logged-in user and falls back to
+  orchestrate`. Tests that run `handleEvalRun` locally stub `fetch`
+  (`describe.test.ts`). `--remote` calls the API as the logged-in user and falls back to
   the project key when there is no login (CI).
 - **The archive is a run of gzip members** (`packFiles`), so the UI can read
   one file without the whole archive: consecutive files of one directory share

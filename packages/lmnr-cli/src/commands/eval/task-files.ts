@@ -15,7 +15,12 @@ import { invalidEvalsDir } from "../../errors";
 import { initializeLogger } from "../../utils/logger";
 import { readDatasetToml } from "./dataset-toml";
 import { NAME_RULE, SKIPPED_DIRS, TASKS_DIR } from "./datasets";
-import { EVAL_PY, type EvalDescription, taskImageNames } from "./eval-py";
+import {
+  EVAL_PY,
+  type EvalDescription,
+  isRecord,
+  taskImageNames,
+} from "./eval-py";
 
 const logger = initializeLogger();
 
@@ -39,9 +44,6 @@ export const TEST_SH_STUB = `#!/bin/bash\necho "graded by ${EVAL_PY}"\n`;
 const NAME_PART = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const isNamePart = (part: string) =>
   NAME_PART.test(part) && !part.includes("..");
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const exists = (file: string) =>
   stat(file).then(
@@ -197,7 +199,7 @@ const checkTaskImage = async (
 
 /**
  * Write the files Harbor needs that `taskDir` lacks. With `dryRun`, only
- * report them. Checks the task's image first (`checkTaskImage`).
+ * report them. Callers check the task's image first (`checkTaskImage`).
  */
 const ensureTaskDirFiles = async (
   datasetDir: string,
@@ -219,7 +221,6 @@ const ensureTaskDirFiles = async (
       );
     }
   };
-  await checkTaskImage(datasetDir, taskDir, defaults);
 
   const tomlFile = path.join(taskDir, "task.toml");
   const toml = await readTaskToml(tomlFile);
@@ -341,8 +342,9 @@ export const assertTaskDirName = (name: string): void => {
 
 /**
  * Create `<datasetDir>/tasks/<name>` (if needed) with the files Harbor needs
- * that it lacks, for `eval task new`. `missingTestSh`: it has no
- * tests/test.sh and gets no stub (`grade_with_test_sh`).
+ * that it lacks, for `eval task new` (which checks `name` first,
+ * `assertTaskDirName`). `missingTestSh`: it has no tests/test.sh and gets no
+ * stub (`grade_with_test_sh`).
  */
 export const writeNewTask = async (
   datasetDir: string,
@@ -353,10 +355,10 @@ export const writeNewTask = async (
   changes: TaskFileChange[];
   missingTestSh: boolean;
 }> => {
-  assertTaskDirName(name);
   const defaults = await taskDefaults(datasetDir, description);
   const taskDir = path.join(datasetDir, TASKS_DIR, name);
   await mkdir(taskDir, { recursive: true });
+  await checkTaskImage(datasetDir, taskDir, defaults);
   const changes = await ensureTaskDirFiles(datasetDir, taskDir, defaults);
   const missingTestSh =
     !defaults.testShStub &&

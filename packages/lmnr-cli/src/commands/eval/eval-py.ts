@@ -126,7 +126,8 @@ type EvalArtifact =
   | string
   | { source: string; destination?: string; exclude?: string[] };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+/** A JSON / TOML object (not an array or null). */
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 export const evalPyPath = (datasetDir: string): string =>

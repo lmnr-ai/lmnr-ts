@@ -139,7 +139,7 @@ export const discoverDatasets = async (dir: string): Promise<string[]> => {
 };
 
 /** Whether `datasetDir` is a dataset folder for pull / push. */
-export const isDatasetFolder = async (datasetDir: string): Promise<boolean> =>
+const isDatasetFolder = async (datasetDir: string): Promise<boolean> =>
   (await isRunnableDataset(datasetDir)) ||
   (await isFile(path.join(datasetDir, TASKS_DIR, DATASET_TOML)));
 

@@ -345,18 +345,23 @@ void describe("runDatasets", () => {
     expect(seen).toEqual([{ cwd: path.join(root, "b"), images: undefined }]);
   });
 
-  void it("writes each dataset's job where onDatasetEnd reads it, failed or not", async () => {
+  void it("hands each dataset's job dir to onDatasetEnd, failed or not", async () => {
     await writeEvals();
     const configs: Record<string, unknown>[] = [];
     vi.mocked(runCommand).mockImplementation(async (_command, args) => {
-      const config = args[args.indexOf("-c") + 1];
-      configs.push(JSON.parse(await readFile(config, "utf8")));
+      const config = JSON.parse(
+        await readFile(args[args.indexOf("-c") + 1], "utf8"),
+      );
+      configs.push(config);
+      await mkdir(path.join(config.jobs_dir, "2026-11-27__10-00-00"), {
+        recursive: true,
+      });
       return configs.length === 1 ? 1 : 0;
     });
-    const ended: string[][] = [];
+    const ended: (string | undefined)[][] = [];
     const jobs = {
       dir: path.join(root, "jobs-out"),
-      onDatasetEnd: async (dataset: string, jobDir: string) => {
+      onDatasetEnd: async (dataset: string, jobDir: string | undefined) => {
         ended.push([dataset, jobDir]);
       },
     };
@@ -370,8 +375,8 @@ void describe("runDatasets", () => {
       [path.join(jobs.dir, "b"), undefined],
     ]);
     expect(ended).toEqual([
-      ["a", path.join(jobs.dir, "a")],
-      ["b", path.join(jobs.dir, "b")],
+      ["a", path.join(jobs.dir, "a", "2026-11-27__10-00-00")],
+      ["b", path.join(jobs.dir, "b", "2026-11-27__10-00-00")],
     ]);
   });
 });

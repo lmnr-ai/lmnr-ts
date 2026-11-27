@@ -46,7 +46,7 @@ import {
   generatedDockerfiles,
   type RemoteImages,
 } from "./images";
-import { findJobDir, packJobDir } from "./jobs";
+import { packJobDir } from "./jobs";
 import { fileEntry, type PackedFile, packEvalsDir } from "./pack";
 import { createRunLogShipper } from "./run-log";
 import { harborLogLine } from "./run-log-lines";
@@ -363,8 +363,7 @@ const jobUploads = async (
   uploadId: string,
 ): Promise<JobOutput> => ({
   dir: await mkdtemp(path.join(tmpdir(), "lmnr-jobs-")),
-  onDatasetEnd: async (dataset, jobsDir) => {
-    const jobDir = await findJobDir(jobsDir);
+  onDatasetEnd: async (dataset, jobDir) => {
     if (!jobDir) return;
     try {
       const { archive, index, skipped } = await packJobDir(jobDir);

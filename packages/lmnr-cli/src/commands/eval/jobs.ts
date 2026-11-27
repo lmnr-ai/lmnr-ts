@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
-
+import { isRecord } from "./eval-py";
 import {
   fileEntry,
   fileMode,
@@ -26,25 +26,6 @@ const STEP_ARTIFACTS_DIR = /^[^/]+\/steps\/[^/]+\/artifacts$/;
  * a log.
  */
 const TRIAL_ARTIFACTS_DIR = /^[^/]+\/artifacts$/;
-
-/**
- * The job Harbor wrote into a fresh `jobs_dir`, named as Harbor names it (a
- * timestamp unless harbor.yaml sets `job_name`). `undefined` when Harbor exited
- * before writing one, e.g. on an invalid config.
- */
-export const findJobDir = async (
-  jobsDir: string,
-): Promise<string | undefined> => {
-  const entries = await readdir(jobsDir, { withFileTypes: true }).catch(
-    () => [],
-  );
-  const jobs = entries
-    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
-    .map((e) => e.name)
-    .sort();
-  const latest = jobs[jobs.length - 1];
-  return latest === undefined ? undefined : path.join(jobsDir, latest);
-};
 
 /** The job dirs in `jobsDir` by name (none when it doesn't exist yet). */
 export const jobDirNames = async (jobsDir: string): Promise<Set<string>> => {
@@ -92,9 +73,6 @@ export interface TrialOutcomes {
   /** The first errored trial's exception, trial dirs in name order. */
   firstError?: TrialException;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const exceptionOf = (info: unknown): TrialException | undefined =>
   isRecord(info) && typeof info.exception_type === "string"

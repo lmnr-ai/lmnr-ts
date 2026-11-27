@@ -265,8 +265,11 @@ export interface JobOutput {
    * after it.
    */
   dir: string;
-  /** Called once the dataset's `harbor run` exits, whether it passed or not. */
-  onDatasetEnd: (dataset: string, jobsDir: string) => Promise<void>;
+  /**
+   * Called once the dataset's `harbor run` exits, whether it passed or not,
+   * with the job it wrote (`undefined` when Harbor wrote none).
+   */
+  onDatasetEnd: (dataset: string, jobDir: string | undefined) => Promise<void>;
 }
 
 /** What a remote run's orchestrator hooks into its datasets' Harbor runs. */
@@ -402,7 +405,7 @@ export const runDatasets = async (
       );
     }
     await keepGeneratedDockerfiles(dataset, jobDir, generated);
-    await jobs?.onDatasetEnd(dataset, path.join(jobs.dir, dataset));
+    await jobs?.onDatasetEnd(dataset, jobDir);
   }
   return outcome;
 };

@@ -4,7 +4,7 @@ import { errorMessage } from "@lmnr-ai/types";
 import { buildLaminarClient } from "../../auth/client";
 import { envHttpPort, resolveBaseUrl } from "../../auth/resolve";
 import type { GlobalOpts } from "../../auth/with-client";
-import { CliError, laminarKeyRejected, laminarUnreachable } from "../../errors";
+import { laminarKeyRejected, laminarUnreachable } from "../../errors";
 import { findEnvKey } from "../../utils/env-file";
 import { initializeLogger } from "../../utils/logger";
 import { API_KEY_VAR } from "./env";
@@ -39,98 +39,54 @@ export const buildEvalClient = async (
 /** How long the key check waits for Laminar. */
 const KEY_CHECK_TIMEOUT_MS = 30_000;
 
-/** The HTTP status of a failed client call (`<status> <body>` or `.status`). */
-const httpStatus = (error: unknown): number | undefined => {
-  const status = (error as { status?: unknown } | null)?.status;
-  if (typeof status === "number") return status;
-  const match = /^(\d{3}) /.exec(errorMessage(error));
-  return match ? Number(match[1]) : undefined;
-};
-
-/** A network error with its cause (`fetch failed: connect ECONNREFUSED ...`). */
-const networkReason = (error: unknown): string => {
-  const cause = (error as { cause?: unknown } | null)?.cause;
-  return cause
-    ? `${errorMessage(error)}: ${errorMessage(cause)}`
-    : errorMessage(error);
-};
-
-/**
- * A `LaminarClient` that leaves `process.env` as it found it. Its constructor
- * loads `.env`, `.env.local` and `.env.<NODE_ENV>` into `process.env`
- * (`loadEnv`), and a local run hands `process.env` to Harbor and Docker, so
- * every variable in those files (app secrets, `DOCKER_HOST`, `PYTHONPATH`)
- * would reach the builds and trials. The run's env only takes what it
- * resolves itself (`${VAR}`s, `--env`, `harborEnv`).
- */
-const isolatedClient = (
-  options: ConstructorParameters<typeof LaminarClient>[0],
-): LaminarClient => {
-  const before = { ...process.env };
-  try {
-    return new LaminarClient(options);
-  } finally {
-    for (const key of Object.keys(process.env)) {
-      if (!(key in before)) delete process.env[key];
-    }
-    Object.assign(process.env, before);
-  }
-};
-
 /**
  * Fail unless Laminar takes the project key of a local run (`env` is the
  * Harbor process env, `harborEnv`): the Laminar plugin creates the
  * evaluation with it, and when it can't, the run still goes ahead and its
- * results go nowhere. One read-only call with the key, against the same URL
- * the plugin uses: `GET /v1/datasets` (`datasets.listDatasets`), in the same
- * project-key scope as the plugin's evaluation calls.
+ * results go nowhere. One read-only request with the key, to the URL the
+ * plugin uses: `GET /v1/datasets`, in the same project-key scope as the
+ * plugin's evaluation calls. A plain `fetch`, not `LaminarClient`, whose
+ * constructor loads `.env` files into `process.env`, which a local run hands
+ * to Harbor and Docker.
  */
 export const checkProjectKey = async (
   env: Record<string, string>,
   timeoutMs = KEY_CHECK_TIMEOUT_MS,
 ): Promise<void> => {
   const baseUrl = env.LMNR_BASE_URL;
-  const client = isolatedClient({
-    baseUrl,
-    auth: { type: "apiKey", key: env[API_KEY_VAR] },
-  });
   const fix =
     "Check LMNR_BASE_URL / LMNR_HTTP_PORT (or --base-url / --port) and " +
     "that the server is up.";
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () =>
-        reject(
-          laminarUnreachable(
-            `No answer from Laminar at ${baseUrl} in ${timeoutMs / 1000} s, ` +
-              `so the run's results would go nowhere. ${fix}`,
-          ),
-        ),
-      timeoutMs,
-    );
-  });
+  let response: Response;
   try {
-    await Promise.race([client.datasets.listDatasets(), timeout]);
+    response = await fetch(`${baseUrl}/v1/datasets`, {
+      headers: { Authorization: `Bearer ${env[API_KEY_VAR]}` },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
   } catch (error) {
-    if (error instanceof CliError) throw error; // the timeout
-    const status = httpStatus(error);
-    if (status === 401 || status === 403) {
-      throw laminarKeyRejected(
-        `Laminar at ${baseUrl} rejected ${API_KEY_VAR} (${status}), so the ` +
-          "run's results would go nowhere. Use a key of the project the " +
-          "results belong to (`lmnr-cli setup` writes one to .env), or point " +
-          "LMNR_BASE_URL (or --base-url / --port) at the Laminar it belongs to.",
-      );
-    }
+    const cause = (error as { cause?: unknown } | null)?.cause;
     throw laminarUnreachable(
-      (status === undefined
-        ? `Can't reach Laminar at ${baseUrl} (${networkReason(error)})`
-        : `Laminar at ${baseUrl} failed a check of ${API_KEY_VAR} ` +
-          `(GET /v1/datasets: ${errorMessage(error).slice(0, 200)})`) +
+      ((error as Error | null)?.name === "TimeoutError"
+        ? `No answer from Laminar at ${baseUrl} in ${timeoutMs / 1000} s`
+        : `Can't reach Laminar at ${baseUrl} (${errorMessage(error)}` +
+          `${cause ? `: ${errorMessage(cause)}` : ""})`) +
         `, so the run's results would go nowhere. ${fix}`,
     );
-  } finally {
-    clearTimeout(timer);
   }
+  if (response.ok) return;
+  const { status } = response;
+  if (status === 401 || status === 403) {
+    throw laminarKeyRejected(
+      `Laminar at ${baseUrl} rejected ${API_KEY_VAR} (${status}), so the ` +
+        "run's results would go nowhere. Use a key of the project the " +
+        "results belong to (`lmnr-cli setup` writes one to .env), or point " +
+        "LMNR_BASE_URL (or --base-url / --port) at the Laminar it belongs to.",
+    );
+  }
+  const body = await response.text().catch(() => "");
+  throw laminarUnreachable(
+    `Laminar at ${baseUrl} failed a check of ${API_KEY_VAR} ` +
+      `(GET /v1/datasets: ${`${status} ${body}`.trim().slice(0, 200)}), so ` +
+      `the run's results would go nowhere. ${fix}`,
+  );
 };
