@@ -4,7 +4,6 @@ import { stringify as stringifyToml } from "smol-toml";
 
 import type { GlobalOpts } from "../../auth/with-client";
 import { emitData, outputJson } from "../../utils/output";
-import { DEFAULT_EVALS_DIR } from "./dataset-command";
 import { loadDatasetConfig } from "./datasets";
 import { describeEvalPy } from "./describe";
 import {
@@ -18,7 +17,7 @@ import { GENERATED_UPLOAD_DIR, generatedDockerfileName } from "./images";
 import { selectDatasets } from "./index";
 
 interface EvalDescribeOpts extends GlobalOpts {
-  dir?: string;
+  dir: string;
 }
 
 const list = (items: string[]) =>
@@ -127,7 +126,7 @@ export const handleEvalDescribe = async (
   dataset: string | undefined,
   opts: EvalDescribeOpts,
 ): Promise<void> => {
-  const evalsDir = path.resolve(opts.dir ?? DEFAULT_EVALS_DIR);
+  const evalsDir = path.resolve(opts.dir);
   const datasets = await selectDatasets(evalsDir, dataset);
   const described: Record<string, EvalDescription | null> = {};
   for (const folder of datasets) {

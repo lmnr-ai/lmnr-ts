@@ -1,6 +1,6 @@
 # Harbor evals (`eval`)
 
-- `lmnr-cli eval run [dataset] [--dir evals]` runs each dataset folder
+- `lmnr-cli eval run [dataset] [--dir evals]` (`--dir` is one `Option`, `evalsDirOption` in `src/index.ts`, shared by `run`, `describe`, `task new`, `dataset pull` / `push`; its default is commander's, so handlers take `dir` as given) runs each dataset folder
   (`<dir>/<folder>/harbor.yaml`, a Harbor JobConfig, and/or
   `<folder>/agent/eval.py`, see "eval.py datasets"; named by folder or by
   `[dataset] name`, formerly "suite") with **pinned** Harbor + the Laminar
@@ -343,13 +343,14 @@
   by a non-comment line.
 - **Task files** (`ensureTaskFiles`, `task-files.ts`): before `checkRunTasks`
   in `eval run` (so before hashing and packing; the orchestrator never writes),
-  at the start of `eval dataset push` (`--dry-run` lists them, then plans
-  from a temp copy of `tasks/` with them written, since they add tasks and
-  change hashes; push only reads `tasks/`), and in `eval task new <dataset>
+  at the start of `eval dataset push` (`--dry-run` writes them into a temp
+  copy of `tasks/` and plans from it, since they add tasks and change
+  hashes; push only reads `tasks/`), and in `eval task new <dataset>
   <name> [--dir evals]` (`<dataset>` resolved by `selectDatasets` like `eval
   run [dataset]`: folder or `[dataset] name`; writes
   `<folder>/tasks/<name>`, `<name>` a `NAME_RULE` part, checked before
-  describe; JSON `{dir, files}`). Every non-dot dir directly under `tasks/` gets a
+  describe; JSON `{dir, files}`). It always writes and returns the changes; callers log them
+  (`logTaskFileChanges`, "would create" on a dry run). Every non-dot dir directly under `tasks/` gets a
   missing `task.toml` (`[task] name = <org of [dataset] name, else the folder
   name>/<dir>`, `[environment] docker_image = <default image>`, then the runner's `new_task_toml` merged per table, via smol-toml), `instruction.md` and `tests/test.sh` (0755;
   not with `grade_with_test_sh`, where a stub would hide a missing real one).

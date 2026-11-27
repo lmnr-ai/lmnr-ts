@@ -560,14 +560,14 @@ void describe("eval task new", () => {
     );
   });
 
-  void it("finds the dataset by its [dataset] name, in evals by default", async () => {
+  void it("finds the dataset by its [dataset] name", async () => {
     await write("evals/support/agent/eval.py", EVAL_PY);
     await write(
       "evals/support/tasks/dataset.toml",
       '[dataset]\nname = "acme/support"\n',
     );
     describeOk();
-    await handleEvalTaskNew("acme/support", "refund", {});
+    await handleEvalTaskNew("acme/support", "refund", { dir: "evals" });
     expect(
       await readFile(
         path.join(root, "evals/support/tasks/refund/task.toml"),

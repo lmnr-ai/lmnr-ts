@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { errorMessage } from "@lmnr-ai/types";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 
 import { version } from "../package.json";
 import {
@@ -34,6 +34,7 @@ import {
   parsePositiveInt,
 } from "./commands/eval";
 import {
+  DEFAULT_EVALS_DIR,
   handleDatasetPull,
   handleDatasetPush,
 } from "./commands/eval/dataset-command";
@@ -604,6 +605,13 @@ Examples:
 `,
     );
 
+  /** `--dir` of every eval command that reads the evals folder. */
+  const evalsDirOption = () =>
+    new Option(
+      "--dir <dir>",
+      "Evals folder (one <dataset>/harbor.yaml or <dataset>/agent/eval.py per dataset)",
+    ).default(DEFAULT_EVALS_DIR);
+
   const evalCmd = program
     .command("eval")
     .alias("evals")
@@ -629,11 +637,7 @@ Examples:
     .command("run")
     .description("Run the evals folder's Harbor datasets")
     .argument("[dataset]", "Dataset to run. Omitted → every dataset")
-    .option(
-      "--dir <dir>",
-      "Evals folder (one <dataset>/harbor.yaml or <dataset>/agent/eval.py per dataset)",
-      "evals",
-    )
+    .addOption(evalsDirOption())
     .option(
       "--remote",
       "Run in Laminar sandboxes instead of local Docker, printing the run's log until it ends",
@@ -783,11 +787,7 @@ Examples:
     .command("describe")
     .description("Print each eval.py dataset's resolved runner")
     .argument("[dataset]", "Dataset to describe. Omitted → every dataset")
-    .option(
-      "--dir <dir>",
-      "Evals folder (one <dataset>/harbor.yaml or <dataset>/agent/eval.py per dataset)",
-      "evals",
-    )
+    .addOption(evalsDirOption())
     .action(withLocalOpts(handleEvalDescribe))
     .addHelpText(
       "after",
@@ -825,11 +825,7 @@ Examples:
     .description("Create a task dir with the files Harbor needs")
     .argument("<dataset>", "Dataset: its folder or its [dataset] name")
     .argument("<name>", "Task dir name: creates <dataset folder>/tasks/<name>")
-    .option(
-      "--dir <dir>",
-      "Evals folder (one <dataset>/harbor.yaml or <dataset>/agent/eval.py per dataset)",
-      "evals",
-    )
+    .addOption(evalsDirOption())
     .action(withLocalOpts(handleEvalTaskNew))
     .addHelpText(
       "after",
@@ -865,7 +861,7 @@ Examples:
     .command("pull")
     .description("Download tasks/ to match dataset.toml")
     .argument("[datasets...]", "Datasets to pull. Omitted → every dataset")
-    .option("--dir <dir>", "Evals folder", "evals")
+    .addOption(evalsDirOption())
     .option(
       "--task <glob>",
       "Task name glob to pull ([task] name, with or without its org; repeatable). Omitted → every task",
@@ -924,7 +920,7 @@ Examples:
     .command("push")
     .description("Upload local task versions to Laminar and pin them")
     .argument("[datasets...]", "Datasets to push. Omitted → every dataset")
-    .option("--dir <dir>", "Evals folder", "evals")
+    .addOption(evalsDirOption())
     .option(
       "--task <glob>",
       "Task name glob to push (repeatable). Omitted → every task",

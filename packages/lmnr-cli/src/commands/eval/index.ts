@@ -17,11 +17,7 @@ import { readLocalProjectFile } from "../../utils/local-project-file";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
 import { buildEvalClient, checkProjectKey } from "./client";
-import {
-  checkRunTasks,
-  DEFAULT_EVALS_DIR,
-  readDatasetFolders,
-} from "./dataset-command";
+import { checkRunTasks, readDatasetFolders } from "./dataset-command";
 import {
   DATASET_CONFIG,
   discoverDatasets,
@@ -46,12 +42,12 @@ import { LEGACY_IMAGES_FILE, localImageDefs } from "./images";
 import { startRemoteRun } from "./remote";
 import { type FollowResult, followRunLog } from "./run-log";
 import { type EvaluationLink, parseEvaluationLine } from "./run-log-lines";
-import { ensureTaskFiles } from "./task-files";
+import { ensureTaskFiles, logTaskFileChanges } from "./task-files";
 
 const logger = initializeLogger();
 
 interface EvalRunOpts extends GlobalOpts {
-  dir?: string;
+  dir: string;
   remote?: boolean;
   task?: string[];
   nAttempts?: number;
@@ -270,7 +266,7 @@ export const handleEvalRun = async (
 ): Promise<void> => {
   // Parse --env before anything slow so a missing variable fails fast.
   const flagEnv = opts.env ? parseEnvFlags(opts.env) : {};
-  const evalsDir = path.resolve(opts.dir ?? DEFAULT_EVALS_DIR);
+  const evalsDir = path.resolve(opts.dir);
   const datasets = await selectDatasets(evalsDir, dataset);
   if (opts.group && datasets.length > 1) {
     // One group per dataset: two datasets' runs in one group would be charted
@@ -290,7 +286,10 @@ export const handleEvalRun = async (
     opts.remote === true,
   );
   for (const [folder, description] of Object.entries(runners)) {
-    await ensureTaskFiles(path.join(evalsDir, folder), description);
+    logTaskFileChanges(
+      folder,
+      await ensureTaskFiles(path.join(evalsDir, folder), description),
+    );
   }
   // Runs the tasks on disk as they are; `eval dataset pull` syncs them.
   const taskHashes = await checkRunTasks(evalsDir, datasets, opts.task, opts);

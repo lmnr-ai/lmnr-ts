@@ -4,7 +4,6 @@ import type { GlobalOpts } from "../../auth/with-client";
 import { invalidEvalsDir } from "../../errors";
 import { initializeLogger } from "../../utils/logger";
 import { outputJson } from "../../utils/output";
-import { DEFAULT_EVALS_DIR } from "./dataset-command";
 import { describeEvalPy } from "./describe";
 import { EVAL_PY, hasEvalPy } from "./eval-py";
 import { selectDatasets } from "./index";
@@ -17,7 +16,7 @@ import {
 const logger = initializeLogger();
 
 interface EvalTaskNewOpts extends GlobalOpts {
-  dir?: string;
+  dir: string;
 }
 
 /**
@@ -32,7 +31,7 @@ export const handleEvalTaskNew = async (
   opts: EvalTaskNewOpts,
 ): Promise<void> => {
   assertTaskDirName(name);
-  const evalsDir = path.resolve(opts.dir ?? DEFAULT_EVALS_DIR);
+  const evalsDir = path.resolve(opts.dir);
   const [folder] = await selectDatasets(evalsDir, dataset);
   const datasetDir = path.join(evalsDir, folder);
   if (!(await hasEvalPy(datasetDir))) {

@@ -32,6 +32,7 @@ import {
   ensureTaskFiles,
   INSTRUCTION_STUB,
   insertTomlKey,
+  logTaskFileChanges,
   TEST_SH_STUB,
 } from "./task-files";
 
@@ -404,6 +405,7 @@ void describe("task files", () => {
       await stat(path.join(root, "support/tasks/refund/tests/test.sh"))
     ).mode;
     expect(mode & 0o777).toBe(0o755);
+    logTaskFileChanges("support", changes);
     expect(logger.info).toHaveBeenCalledWith(
       "created support/tasks/refund/task.toml",
     );
@@ -508,17 +510,15 @@ void describe("task files", () => {
     );
   });
 
-  void it("lists changes without writing on a dry run", async () => {
+  void it("logs the changes, as a dry run would make them", async () => {
     await write("support/tasks/refund/environment/x.json", "{}");
-    const changes = await ensureTaskFiles(datasetDir(), description(), true);
+    const changes = await ensureTaskFiles(datasetDir(), description());
     expect(changes.map((c) => c.file)).toEqual([
       "tasks/refund/task.toml",
       "tasks/refund/instruction.md",
-      "tests/test.sh".replace(/^/, "tasks/refund/"),
+      "tasks/refund/tests/test.sh",
     ]);
-    await expect(
-      stat(path.join(root, "support/tasks/refund/task.toml")),
-    ).rejects.toThrow();
+    logTaskFileChanges("support", changes, true);
     expect(logger.info).toHaveBeenCalledWith(
       "would create support/tasks/refund/task.toml",
     );

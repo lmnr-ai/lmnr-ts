@@ -198,14 +198,13 @@ const checkTaskImage = async (
 };
 
 /**
- * Write the files Harbor needs that `taskDir` lacks. With `dryRun`, only
- * report them. Callers check the task's image first (`checkTaskImage`).
+ * Write the files Harbor needs that `taskDir` lacks. Callers check the task's
+ * image first (`checkTaskImage`).
  */
 const ensureTaskDirFiles = async (
   datasetDir: string,
   taskDir: string,
   defaults: TaskDefaults,
-  dryRun = false,
 ): Promise<TaskFileChange[]> => {
   const changes: TaskFileChange[] = [];
   const rel = (file: string) =>
@@ -226,7 +225,7 @@ const ensureTaskDirFiles = async (
   const toml = await readTaskToml(tomlFile);
   if (toml === null) {
     assertNamePart();
-    if (!dryRun) await writeFile(tomlFile, newTaskToml(name, defaults));
+    await writeFile(tomlFile, newTaskToml(name, defaults));
     changes.push({ file: rel(tomlFile), change: "created" });
   } else {
     const { text, doc } = toml;
@@ -250,23 +249,21 @@ const ensureTaskDirFiles = async (
     }
     if (needsImage) added.push("[environment] docker_image");
     if (added.length > 0) {
-      if (!dryRun) await writeFile(tomlFile, updated);
+      await writeFile(tomlFile, updated);
       changes.push({ file: rel(tomlFile), change: "completed", added });
     }
   }
 
   const instruction = path.join(taskDir, "instruction.md");
   if (!(await exists(instruction))) {
-    if (!dryRun) await writeFile(instruction, INSTRUCTION_STUB);
+    await writeFile(instruction, INSTRUCTION_STUB);
     changes.push({ file: rel(instruction), change: "created" });
   }
   const testSh = path.join(taskDir, "tests", "test.sh");
   if (defaults.testShStub && !(await exists(testSh))) {
-    if (!dryRun) {
-      await mkdir(path.dirname(testSh), { recursive: true });
-      await writeFile(testSh, TEST_SH_STUB);
-      await chmod(testSh, 0o755);
-    }
+    await mkdir(path.dirname(testSh), { recursive: true });
+    await writeFile(testSh, TEST_SH_STUB);
+    await chmod(testSh, 0o755);
     changes.push({ file: rel(testSh), change: "created" });
   }
   return changes;
@@ -309,13 +306,12 @@ export const logTaskFileChanges = (
 
 /**
  * Write the missing task files of every task of an eval.py dataset (before a
- * run hashes or packs them, and before a push hashes them). Logs each one.
+ * run hashes or packs them, and before a push hashes them), and return them
+ * for `logTaskFileChanges`. `push --dry-run` runs it on a copy of `tasks/`.
  */
 export const ensureTaskFiles = async (
   datasetDir: string,
   description: EvalDescription,
-  dryRun = false,
-  log = true,
 ): Promise<TaskFileChange[]> => {
   const defaults = await taskDefaults(datasetDir, description);
   const dirs = await taskDirs(datasetDir);
@@ -325,11 +321,8 @@ export const ensureTaskFiles = async (
   }
   const changes: TaskFileChange[] = [];
   for (const taskDir of dirs) {
-    changes.push(
-      ...(await ensureTaskDirFiles(datasetDir, taskDir, defaults, dryRun)),
-    );
+    changes.push(...(await ensureTaskDirFiles(datasetDir, taskDir, defaults)));
   }
-  if (log) logTaskFileChanges(path.basename(datasetDir), changes, dryRun);
   return changes;
 };
 
