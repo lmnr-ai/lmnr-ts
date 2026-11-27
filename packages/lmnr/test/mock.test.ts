@@ -441,6 +441,41 @@ void describe("observe mocks", () => {
     assert.equal((await server.requests()).length, 2);
   });
 
+  void it("keeps non-async calls failing closed while a retry is in flight", async () => {
+    await server.respond("crm.get_customer", "mocked");
+    await server.set({ keysStatus: [503, 503] });
+    const busy =
+      /^mock server unreachable \(GET \/keys answered \[503\] busy\)$/;
+    const throwsBusy = () =>
+      assert.throws(
+        () => observe({ name: "crm.get_customer" }, () => "real"),
+        (error: unknown) =>
+          error instanceof MockedError && busy.test(error.message),
+      );
+    await rejectsMocked(
+      observe({ name: "anything" }, async () => "real"),
+      MOCK_FAILURE,
+      busy,
+    );
+
+    // The backoff has passed: the call starts a retry and still throws, as
+    // does a second one while that retry is in flight.
+    await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS + 50));
+    throwsBusy();
+    throwsBusy();
+    // The retry fails too; after the doubled backoff, the next one succeeds.
+    await new Promise((resolve) =>
+      setTimeout(resolve, 2 * RETRY_BACKOFF_MS + 50),
+    );
+    throwsBusy();
+    await loadKeys();
+    assert.equal((await server.requests()).length, 3);
+    assert.equal(
+      await (observe({ name: "crm.get_customer" }, () => "real") as unknown),
+      "mocked",
+    );
+  });
+
   // `request()` throws synchronously for these: the call must fail with a
   // MockedError, not crash or hang.
   for (const url of ["not a url", "https://127.0.0.1:1" + PREFIX]) {

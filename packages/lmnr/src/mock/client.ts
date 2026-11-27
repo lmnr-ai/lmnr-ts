@@ -68,13 +68,21 @@ export class MockClient {
   }
 
   /**
-   * Start loading the keys without waiting. Throws the last failure while
-   * the server is unreachable and the backoff hasn't passed.
+   * Start loading the keys without waiting. Once a load has failed, throws
+   * the last failure until one succeeds: inside the backoff, and while a
+   * retry is in flight. Only calls made before the first load finishes may
+   * run unmocked.
    */
   startLoading(): void {
-    if (this.keys === undefined && this.loading === undefined) {
+    if (this.keys !== undefined) {
+      return;
+    }
+    if (this.loading === undefined) {
       this.checkBackoff();
       void this.mockedKeys();
+    }
+    if (this.lastError !== "") {
+      throw this.unreachableError();
     }
   }
 
@@ -98,11 +106,15 @@ export class MockClient {
 
   private checkBackoff(): void {
     if (Date.now() < this.retryAt) {
-      throw new MockedError(
-        MOCK_FAILURE,
-        `mock server unreachable (${this.lastError})`,
-      );
+      throw this.unreachableError();
     }
+  }
+
+  private unreachableError(): MockedError {
+    return new MockedError(
+      MOCK_FAILURE,
+      `mock server unreachable (${this.lastError})`,
+    );
   }
 
   /**
@@ -113,7 +125,7 @@ export class MockClient {
     this.lastError = reason;
     this.retryAt = Date.now() + this.backoffMs;
     this.backoffMs = Math.min(this.backoffMs * 2, MAX_RETRY_BACKOFF_MS);
-    return new MockedError(MOCK_FAILURE, `mock server unreachable (${reason})`);
+    return this.unreachableError();
   }
 
   // Calls
