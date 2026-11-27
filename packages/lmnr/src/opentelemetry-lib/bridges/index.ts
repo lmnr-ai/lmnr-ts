@@ -3,6 +3,7 @@ import { errorMessage } from "@lmnr-ai/types";
 import { initializeLogger } from "../../utils";
 import { type InitializeOptions } from "../interfaces";
 import { LangfuseBridge } from "./langfuse";
+import { LangSmithBridge } from "./langsmith";
 import {
   type Bridge,
   type BridgeContext,
@@ -22,6 +23,7 @@ const logger = initializeLogger();
 
 const BRIDGES = new Map<string, () => Bridge>([
   ["langfuse", () => new LangfuseBridge()],
+  ["langsmith", () => new LangSmithBridge()],
 ] satisfies [LaminarBridge, () => Bridge][]);
 
 /**
@@ -119,6 +121,18 @@ export const flushBridges = (bridges: readonly Bridge[]): void => {
     } catch (e) {
       logger.debug(
         `Laminar ${bridge.name} bridge flush hook failed: ${errorMessage(e)}`,
+      );
+    }
+  }
+};
+
+export const shutdownBridges = (bridges: readonly Bridge[]): void => {
+  for (const bridge of bridges) {
+    try {
+      bridge.onShutdown?.();
+    } catch (e) {
+      logger.debug(
+        `Laminar ${bridge.name} bridge shutdown hook failed: ${errorMessage(e)}`,
       );
     }
   }

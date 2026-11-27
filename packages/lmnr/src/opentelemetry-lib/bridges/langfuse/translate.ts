@@ -99,8 +99,8 @@ const STRING_MODEL_PARAMETERS: [string, string][] = [
 ];
 
 // LangChain's `ls_provider` values that differ from the provider names in
-// Laminar's model prices.
-const LS_PROVIDER_ALIASES: Record<string, string> = {
+// Laminar's model prices. Shared with the LangSmith bridge.
+export const LS_PROVIDER_ALIASES: Record<string, string> = {
   amazon_bedrock: "bedrock",
   google_vertexai: "vertex_ai",
   google_genai: "gemini",
@@ -272,44 +272,58 @@ const metadataString = (value: unknown): string | undefined => {
 };
 
 /**
+ * Request attributes from a parsed model parameters object, and the
+ * parameters left unmapped (undefined when `params` isn't an object). Shared
+ * with the LangSmith bridge, which reads LangChain's invocation params or a
+ * wrapper's request kwargs. Same as lmnr-python's `model_parameter_attributes`.
+ */
+export const requestParameterAttributes = (
+  params: unknown,
+): { attributes: Record<string, AttributeValue>; rest: Json | undefined } => {
+  const attributes: Record<string, AttributeValue> = {};
+  if (!isObject(params)) return { attributes, rest: undefined };
+  const rest: Json = { ...params };
+  for (const [key, attr] of NUMBER_MODEL_PARAMETERS) {
+    const value = asNumber(rest[key]);
+    if (value !== undefined && !(attr in attributes)) {
+      attributes[attr] = value;
+      delete rest[key];
+    }
+  }
+  for (const [key, attr] of STRING_MODEL_PARAMETERS) {
+    const value = rest[key];
+    if (typeof value === "string" && value) {
+      attributes[attr] = value;
+      delete rest[key];
+    }
+  }
+  const stop = typeof rest.stop === "string" ? [rest.stop] : rest.stop;
+  if (
+    Array.isArray(stop) &&
+    stop.length > 0 &&
+    stop.every((s) => typeof s === "string")
+  ) {
+    attributes["gen_ai.request.stop_sequences"] = stop;
+    delete rest.stop;
+  }
+  return { attributes, rest };
+};
+
+/**
  * Request parameters from `langfuse.observation.model.parameters`.
  * `@langfuse/openai` records the Responses API's `reasoning` from the response
  * into the observation metadata instead, i.e. the effort that was applied
  * (a default when the request set none), so it goes to the response key.
  */
 export const modelParameterAttributes = (attrs: Attributes): Translated => {
-  const out: Translated = {};
-  const params = parseJson(attrs[OBSERVATION_MODEL_PARAMETERS]);
-  if (isObject(params)) {
-    const rest: Json = { ...params };
-    for (const [key, attr] of NUMBER_MODEL_PARAMETERS) {
-      const value = asNumber(rest[key]);
-      if (value !== undefined && !(attr in out)) {
-        out[attr] = value;
-        delete rest[key];
-      }
-    }
-    for (const [key, attr] of STRING_MODEL_PARAMETERS) {
-      const value = rest[key];
-      if (typeof value === "string" && value) {
-        out[attr] = value;
-        delete rest[key];
-      }
-    }
-    const stop = typeof rest.stop === "string" ? [rest.stop] : rest.stop;
-    if (
-      Array.isArray(stop) &&
-      stop.length > 0 &&
-      stop.every((s) => typeof s === "string")
-    ) {
-      out["gen_ai.request.stop_sequences"] = stop;
-      delete rest.stop;
-    }
-    // Only the parameters that have no request attribute stay.
-    if (Object.keys(out).length > 0) {
-      out[OBSERVATION_MODEL_PARAMETERS] =
-        Object.keys(rest).length > 0 ? toJson(rest) : undefined;
-    }
+  const { attributes, rest } = requestParameterAttributes(
+    parseJson(attrs[OBSERVATION_MODEL_PARAMETERS]),
+  );
+  const out: Translated = { ...attributes };
+  // Only the parameters that have no request attribute stay.
+  if (rest !== undefined && Object.keys(attributes).length > 0) {
+    out[OBSERVATION_MODEL_PARAMETERS] =
+      Object.keys(rest).length > 0 ? toJson(rest) : undefined;
   }
   const reasoning = parseJson(attrs[`${OBSERVATION_METADATA}.reasoning`]);
   if (isObject(reasoning) && typeof reasoning.effort === "string") {

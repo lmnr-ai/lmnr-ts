@@ -1,0 +1,1595 @@
+{
+  "a_traceable_nested_llm": [
+    {
+      "op": "create",
+      "args": {
+        "run": {
+          "id": "01a212c6-b361-7000-8000-00056963bdfe",
+          "name": "qa_chain",
+          "start_time": "2026-11-25T12:55:41.665001Z",
+          "run_type": "chain",
+          "extra": {
+            "metadata": {
+              "session_id": "sess-123",
+              "thread_id": "thread-9",
+              "user_id": "u1"
+            },
+            "runtime": {
+              "library": "langsmith",
+              "runtime": "node",
+              "sdk": "langsmith-js",
+              "sdk_version": "0.14.0"
+            }
+          },
+          "serialized": {},
+          "inputs": {
+            "input": "Weather in Paris?"
+          },
+          "session_name": "default",
+          "child_runs": [],
+          "trace_id": "01a212c6-b361-7000-8000-00056963bdfe",
+          "dotted_order": "20261125T125541665001Z01a212c6-b361-7000-8000-00056963bdfe",
+          "tags": ["prod", "qa"]
+        }
+      }
+    },
+    {
+      "op": "create",
+      "args": {
+        "run": {
+          "id": "01a212c6-b363-7000-8000-003bfa45e48b",
+          "name": "fake_llm",
+          "start_time": "2026-11-25T12:55:41.667002Z",
+          "run_type": "llm",
+          "extra": {
+            "metadata": {
+              "session_id": "sess-123",
+              "thread_id": "thread-9",
+              "user_id": "u1",
+              "ls_provider": "openai",
+              "ls_model_name": "gpt-4o-mini",
+              "ls_temperature": 0.2
+            },
+            "runtime": {
+              "library": "langsmith",
+              "runtime": "node",
+              "sdk": "langsmith-js",
+              "sdk_version": "0.14.0"
+            }
+          },
+          "serialized": {},
+          "inputs": {
+            "input": [
+              {
+                "role": "user",
+                "content": "Weather in Paris?"
+              }
+            ]
+          },
+          "session_name": "default",
+          "child_runs": [],
+          "parent_run_id": "01a212c6-b361-7000-8000-00056963bdfe",
+          "trace_id": "01a212c6-b361-7000-8000-00056963bdfe",
+          "dotted_order": "20261125T125541665001Z01a212c6-b361-7000-8000-00056963bdfe.20261125T125541667002Z01a212c6-b363-7000-8000-003bfa45e48b",
+          "tags": []
+        }
+      }
+    },
+    {
+      "op": "update",
+      "args": {
+        "runId": "01a212c6-b363-7000-8000-003bfa45e48b",
+        "run": {
+          "name": "fake_llm",
+          "run_type": "llm",
+          "start_time": "2026-11-25T12:55:41.667002Z",
+          "end_time": 1795611341668,
+          "outputs": {
+            "role": "assistant",
+            "content": "Paris is sunny",
+            "usage_metadata": {
+              "input_tokens": 12,
+              "output_tokens": 4,
+              "total_tokens": 16
+            }
+          },
+          "parent_run_id": "01a212c6-b361-7000-8000-00056963bdfe",
+          "extra": {
+            "metadata": {
+              "session_id": "sess-123",
+              "thread_id": "thread-9",
+              "user_id": "u1",
+              "ls_provider": "openai",
+              "ls_model_name": "gpt-4o-mini",
+              "ls_temperature": 0.2,
+              "usage_metadata": {
+                "input_tokens": 12,
+                "output_tokens": 4,
+                "total_tokens": 16
+              }
+            },
+            "runtime": {
+              "library": "langsmith",
+              "runtime": "node",
+              "sdk": "langsmith-js",
+              "sdk_version": "0.14.0"
+            }
+          },
+          "dotted_order": "20261125T125541665001Z01a212c6-b361-7000-8000-00056963bdfe.20261125T125541667002Z01a212c6-b363-7000-8000-003bfa45e48b",
+          "trace_id": "01a212c6-b361-7000-8000-00056963bdfe",
+          "tags": [],
+          "session_name": "default"
+        }
+      }
+    },
+    {
+      "op": "update",
+      "args": {
+        "runId": "01a212c6-b361-7000-8000-00056963bdfe",
+        "run": {
+          "name": "qa_chain",
+          "run_type": "chain",
+          "start_time": "2026-11-25T12:55:41.665001Z",
+          "end_time": 1795611341671,
+          "outputs": {
+            "answer": "Paris is sunny"
+          },
+          "extra": {
+            "metadata": {
+              "session_id": "sess-123",
+              "thread_id": "thread-9",
+              "user_id": "u1"
+            },
+            "runtime": {
+              "library": "langsmith",
+              "runtime": "node",
+              "sdk": "langsmith-js",
+              "sdk_version": "0.14.0"
+            }
+          },
+          "dotted_order": "20261125T125541665001Z01a212c6-b361-7000-8000-00056963bdfe",
+          "trace_id": "01a212c6-b361-7000-8000-00056963bdfe",
+          "tags": ["prod", "qa"],
+          "session_name": "default"
+        }
+      }
+    }
+  ],
+  "b_wrap_openai_tools": [
+    {
+      "op": "create",
+      "args": {
+        "run": {
+          "id": "01a212c6-b469-7000-8000-0093af304aea",
+          "name": "tool_agent",
+          "start_time": "2026-11-25T12:55:41.929001Z",
+          "run_type": "chain",
+          "extra": {
+            "metadata": {},
+            "runtime": {
+              "library": "langsmith",
+              "runtime": "node",
+              "sdk": "langsmith-js",
+              "sdk_version": "0.14.0"
+            }
+          },
+          "serialized": {},
+          "inputs": {},
+          "session_name": "default",
+          "child_runs": [],
+          "trace_id": "01a212c6-b469-7000-8000-0093af304aea",
+          "dotted_order": "20261125T125541929001Z01a212c6-b469-7000-8000-0093af304aea",
+          "tags": []
+        }
+      }
+    },
+    {
+      "op": "create",
+      "args": {
+        "run": {
+          "id": "01a212c6-b469-7000-8000-0047b10a93b7",
+          "name": "ChatOpenAI",
+          "start_time": "2026-11-25T12:55:41.929002Z",
+          "run_type": "llm",
+          "extra": {
+            "metadata": {
+              "ls_provider": "openai",
+              "ls_model_type": "chat",
+              "ls_model_name": "gpt-4o-mini",
+              "ls_invocation_params": {}
+            },
+            "runtime": {
+              "library": "langsmith",
+              "runtime": "node",
+              "sdk": "langsmith-js",
+              "sdk_version": "0.14.0"
+            }
+          },
+          "serialized": {},
+          "inputs": {
+            "model": "gpt-4o-mini",
+            "messages": [
+              {
+                "role": "user",
+                "content": "What's the weather in Paris?"
+              }
+            ],
+            "tools": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "get_weather",
+                  "description": "Get weather",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "city": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["city"]
+                  }
+                }
+              }
+            ]
+          },
+          "session_name": "default",
+          "child_runs": [],
+          "parent_run_id": "01a212c6-b469-7000-8000-0093af304aea",
+          "trace_id": "01a212c6-b469-7000-8000-0093af304aea",
+          "dotted_order": "20261125T125541929001Z01a212c6-b469-7000-8000-0093af304aea.20261125T125541929002Z01a212c6-b469-7000-8000-0047b10a93b7",
+          "tags": []
+        }
+      }
+    },
+    {
+      "op": "update",
+      "args": {
+        "runId": "01a212c6-b469-7000-8000-0047b10a93b7",
+        "run": {
+          "name": "ChatOpenAI",
+          "run_type": "llm",
+          "start_time": "2026-11-25T12:55:41.929002Z",
+          "end_time": 1795611341933,
+          "outputs": {
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1700000000,
+            "model": "gpt-4o-mini",
+            "choices": [
+              {
+                "index": 0,
+                "message": {
+                  "role": "assistant",
+                  "content": null,
+                  "tool_calls": [
+                    {
+                      "id": "call_abc123",
+                      "type": "function",
+                      "function": {
+                        "name": "get_weather",
+                        "arguments": "{\"city\":\"Paris\"}"
+                      }
+                    }
+                  ]
+                },
+                "finish_reason": "tool_calls"
+              }
+            ],
+            "usage_metadata": {
+              "input_tokens": 11,
+              "output_tokens": 7,
+              "total_tokens": 18,
+              "input_token_details": {},
+              "output_token_details": {}
+            }
+          },
+          "parent_run_id": "01a212c6-b469-7000-8000-0093af304aea",
+          "extra": {
+            "metadata": {
+              "ls_provider": "openai",
+              "ls_model_type": "chat",
+              "ls_model_name": "gpt-4o-mini",
+              "ls_invocation_params": {},
+              "usage_metadata": {
+                "input_tokens": 11,
+                "output_tokens": 7,
+                "total_tokens": 18,
+                "input_token_details": {},
+                "output_token_details": {}
+              }
+            },
+            "runtime": {
+              "library": "langsmith",
+              "runtime": "node",
+              "sdk": "langsmith-js",
+              "sdk_version": "0.14.0"
+            }
+          },
+          "dotted_order": "20261125T125541929001Z01a212c6-b469-7000-8000-0093af304aea.20261125T125541929002Z01a212c6-b469-7000-8000-0047b10a93b7",
+          "trace_id": "01a212c6-b469-7000-8000-0093af304aea",
+          "tags": [],
+          "session_name": "default"
+        }
+      }
+    },
+    {
+      "op": "create",
+      "args": {
+        "run": {
+          "id": "01a212c6-b46e-7000-8000-02ac018c6f21",
+          "name": "ChatOpenAI",
+          "start_time": "2026-11-25T12:55:41.934003Z",
+          "run_type": "llm",
+          "extra": {
+            "metadata": {
+              "ls_provider": "openai",
+              "ls_model_type": "chat",
+              "ls_model_name": "gpt-4o-mini",
+              "ls_invocation_params": {}
+            },
+            "runtime": {
+              "library": "langsmith",
+              "runtime": "node",
+              "sdk": "langsmith-js",
+              "sdk_version": "0.14.0"
+            }
+          },
+          "serialized": {},
+          "inputs": {
+            "model": "gpt-4o-mini",
+            "messages": [
+              {
+                "role": "user",
+                "content": "What's the weather in Paris?"
+              },
+              {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                  {
+                    "id": "call_abc123",
+                    "type": "function",
+                    "function": {
+                      "name": "get_weather",
+                      "arguments": "{\"city\":\"Paris\"}"
+                    }
+                  }
+                ]
+              },
+              {
+                "role": "tool",
+                "tool_call_id": "call_abc123",
+                "content": "sunny, 22C"
+              }
+            ],
+            "tools": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "get_weather",
+                  "description": "Get weather",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "city": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["city"]
+                  }
+                }
+              }
+            ]
+          },
+          "session_name": "default",
+          "child_runs": [],
+          "parent_run_id": "01a212c6-b469-7000-8000-0093af304aea",
+          "trace_id": "01a212c6-b469-7000-8000-0093af304aea",
+          "dotted_order": "20261125T125541929001Z01a212c6-b469-7000-8000-0093af304aea.20261125T125541934003Z01a212c6-b46e-7000-8000-02ac018c6f21",
+          "tags": []
+        }
+      }
+    },
+    {
+      "op": "update",
+      "args": {
+        "runId": "01a212c6-b46e-7000-8000-02ac018c6f21",
+        "run": {
+          "name": "ChatOpenAI",
+          "run_type": "llm",
+          "start_time": "2026-11-25T12:55:41.934003Z",
+          "end_time": 1795611341934,
+          "outputs": {
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1700000000,
+            "model": "gpt-4o-mini",
+            "choices": [
+              {
+                "index": 0,
+                "message": {
+                  "role": "assistant",
+                  "content": "It is sunny in Paris."
+                },
+                "finish_reason": "stop"
+              }
+            ],
+            "usage_metadata": {
+              "input_tokens": 11,
+              "output_tokens": 7,
+              "total_tokens": 18,
+              "input_token_details": {},
+              "output_token_details": {}
+            }
+          },
+          "parent_run_id": "01a212c6-b469-7000-8000-0093af304aea",
+          "extra": {
+            "metadata": {
+              "ls_provider": "openai",
+              "ls_model_type": "chat",
+              "ls_model_name": "gpt-4o-mini",
+              "ls_invocation_params": {},
+              "usage_metadata": {
+                "input_tokens": 11,
+                "output_tokens": 7,
+                "total_tokens": 18,
+                "input_token_details": {},
+                "output_token_details": {}
+              }
+            },
+            "runtime": {
+              "library": "langsmith",
+              "runtime": "node",
+              "sdk": "langsmith-js",
+              "sdk_version": "0.14.0"
+            }
+          },
+          "dotted_order": "20261125T125541929001Z01a212c6-b469-7000-8000-0093af304aea.20261125T125541934003Z01a212c6-b46e-7000-8000-02ac018c6f21",
+          "trace_id": "01a212c6-b469-7000-8000-0093af304aea",
+          "tags": [],
+          "session_name": "default"
+        }
+      }
+    },
+    {
+      "op": "update",
+      "args": {
+        "runId": "01a212c6-b469-7000-8000-0093af304aea",
+        "run": {
+          "name": "tool_agent",
+          "run_type": "chain",
+          "start_time": "2026-11-25T12:55:41.929001Z",
+          "end_time": 1795611341934,
+          "outputs": {
+            "outputs": "It is sunny in Paris."
+          },
+          "extra": {
+            "metadata": {},
+            "runtime": {
+              "library": "langsmith",
+              "runtime": "node",
+              "sdk": "langsmith-js",
+              "sdk_version": "0.14.0"
+            }
+          },
+          "dotted_order": "20261125T125541929001Z01a212c6-b469-7000-8000-0093af304aea",
+          "trace_id": "01a212c6-b469-7000-8000-0093af304aea",
+          "tags": [],
+          "session_name": "default"
+        }
+      }
+    }
+  ],
+  "c_wrap_openai_stream": [
+    {
+      "op": "create",
+      "args": {
+        "run": {
+          "id": "01a212c6-b473-7000-8000-00eb91d0830d",
+          "name": "ChatOpenAI",
+          "start_time": "2026-11-25T12:55:41.939001Z",
+          "run_type": "llm",
+          "extra": {
+            "metadata": {
+              "ls_provider": "openai",
+              "ls_model_type": "chat",
+              "ls_model_name": "gpt-4o-mini",
+              "ls_invocation_params": {
+                "stream_options": {
+                  "include_usage": true
+                }
+              },
+              "ls_agent_type": "root"
+            },
+            "runtime": {
+              "library": "langsmith",
+              "runtime": "node",
+              "sdk": "langsmith-js",
+              "sdk_version": "0.14.0"
+            }
+          },
+          "serialized": {},
+          "inputs": {
+            "model": "gpt-4o-mini",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Say hello"
+              }
+            ],
+            "stream": true,
+            "stream_options": {
+              "include_usage": true
+            }
+          },
+          "session_name": "default",
+          "child_runs": [],
+          "trace_id": "01a212c6-b473-7000-8000-00eb91d0830d",
+          "dotted_order": "20261125T125541939001Z01a212c6-b473-7000-8000-00eb91d0830d",
+          "tags": []
+        }
+      }
+    },
+    {
+      "op": "update",
+      "args": {
+        "runId": "01a212c6-b473-7000-8000-00eb91d0830d",
+        "run": {
+          "name": "ChatOpenAI",
+          "run_type": "llm",
+          "start_time": "2026-11-25T12:55:41.939001Z",
+          "end_time": 1795611341941,
+          "outputs": {
+            "id": "chatcmpl-stream1",
+            "object": "chat.completion.chunk",
+            "created": 1700000000,
+            "model": "gpt-4o-mini",
+            "choices": [
+              {
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {
+                  "role": "assistant",
+                  "content": "Hello world"
+                }
+              }
+            ],
+            "usage_metadata": {
+              "input_tokens": 11,
+              "output_tokens": 7,
+              "total_tokens": 18,
+              "input_token_details": {},
+              "output_token_details": {}
+            }
+          },
+          "extra": {
+            "metadata": {
+              "ls_provider": "openai",
+              "ls_model_type": "chat",
+              "ls_model_name": "gpt-4o-mini",
+              "ls_invocation_params": {
+                "stream_options": {
+                  "include_usage": true
+                }
+              },
+              "ls_agent_type": "root",
+              "usage_metadata": {
+                "input_tokens": 11,
+                "output_tokens": 7,
+                "total_tokens": 18,
+                "input_token_details": {},
+                "output_token_details": {}
+              }
+            },
+            "runtime": {
+              "library": "langsmith",
+              "runtime": "node",
+              "sdk": "langsmith-js",
+              "sdk_version": "0.14.0"
+            }
+          },
+          "events": [
+            {
+              "name": "new_token",
+              "kwargs": {
+                "token": {
+                  "id": "chatcmpl-stream1",
+                  "object": "chat.completion.chunk",
+                  "created": 1700000000,
+                  "model": "gpt-4o-mini",
+                  "choices": [
+                    {
+                      "index": 0,
+                      "delta": {
+                        "role": "assistant",
+                        "content": ""
+                      },
+                      "finish_reason": null
+                    }
+                  ]
+                }
+              },
+              "time": "2026-11-25T12:55:41.941Z"
+            },
+            {
+              "name": "new_token",
+              "kwargs": {
+                "token": {
+                  "id": "chatcmpl-stream1",
+                  "object": "chat.completion.chunk",
+                  "created": 1700000000,
+                  "model": "gpt-4o-mini",
+                  "choices": [
+                    {
+                      "index": 0,
+                      "delta": {
+                        "content": "Hel"
+                      },
+                      "finish_reason": null
+                    }
+                  ]
+                }
+              },
+              "time": "2026-11-25T12:55:41.941Z"
+            },
+            {
+              "name": "new_token",
+              "kwargs": {
+                "token": {
+                  "id": "chatcmpl-stream1",
+                  "object": "chat.completion.chunk",
+                  "created": 1700000000,
+                  "model": "gpt-4o-mini",
+                  "choices": [
+                    {
+                      "index": 0,
+                      "delta": {
+                        "content": "lo"
+                      },
+                      "finish_reason": null
+                    }
+                  ]
+                }
+              },
+              "time": "2026-11-25T12:55:41.941Z"
+            },
+            {
+              "name": "new_token",
+              "kwargs": {
+                "token": {
+                  "id": "chatcmpl-stream1",
+                  "object": "chat.completion.chunk",
+                  "created": 1700000000,
+                  "model": "gpt-4o-mini",
+                  "choices": [
+                    {
+                      "index": 0,
+                      "delta": {
+                        "content": " world"
+                      },
+                      "finish_reason": null
+                    }
+                  ]
+                }
+              },
+              "time": "2026-11-25T12:55:41.941Z"
+            },
+            {
+              "name": "new_token",
+              "kwargs": {
+                "token": {
+                  "id": "chatcmpl-stream1",
+                  "object": "chat.completion.chunk",
+                  "created": 1700000000,
+                  "model": "gpt-4o-mini",
+                  "choices": [
+                    {
+                      "index": 0,
+                      "delta": {},
+                      "finish_reason": "stop"
+                    }
+                  ]
+                }
+              },
+              "time": "2026-11-25T12:55:41.941Z"
+            },
+            {
+              "name": "new_token",
+              "kwargs": {
+                "token": {
+                  "id": "chatcmpl-stream1",
+                  "object": "chat.completion.chunk",
+                  "created": 1700000000,
+                  "model": "gpt-4o-mini",
+                  "choices": [
+                    {
+                      "index": 0,
+                      "finish_reason": "stop",
+                      "message": {
+                        "role": "assistant",
+                        "content": "Hello world"
+                      }
+                    }
+                  ],
+                  "usage": {
+                    "prompt_tokens": 11,
+                    "completion_tokens": 7,
+                    "total_tokens": 18
+                  }
+                }
+              },
+              "time": "2026-11-25T12:55:41.941Z"
+            }
+          ],
+          "dotted_order": "20261125T125541939001Z01a212c6-b473-7000-8000-00eb91d0830d",
+          "trace_id": "01a212c6-b473-7000-8000-00eb91d0830d",
+          "tags": [],
+          "session_name": "default"
+        }
+      }
+    }
+  ],
+  "d1_langchain_chatopenai_tools": [
+    {
+      "op": "create",
+      "args": {
+        "run": {
+          "id": "01a212c6-b56b-752b-b1de-4d35ba3a3e5c",
+          "name": "lc_lambda",
+          "start_time": "2026-11-25T12:55:42.187001Z",
+          "run_type": "chain",
+          "extra": {
+            "metadata": {
+              "thread_id": "lc-thread"
+            },
+            "runtime": {
+              "library": "langchain-js",
+              "runtime": "node"
+            }
+          },
+          "serialized": {
+            "lc": 1,
+            "type": "not_implemented",
+            "id": ["langchain_core", "runnables", "RunnableLambda"]
+          },
+          "inputs": {
+            "input": "Weather in Paris?"
+          },
+          "session_name": "default",
+          "child_runs": [],
+          "trace_id": "01a212c6-b56b-752b-b1de-4d35ba3a3e5c",
+          "dotted_order": "20261125T125542187001Z01a212c6-b56b-752b-b1de-4d35ba3a3e5c",
+          "tags": ["lc"],
+          "events": [
+            {
+              "name": "start",
+              "time": "2026-11-25T12:55:42.187Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "create",
+      "args": {
+        "run": {
+          "id": "01a212c6-b56e-7448-a86f-4066d3023aca",
+          "name": "ChatOpenAI",
+          "start_time": "2026-11-25T12:55:42.191002Z",
+          "run_type": "llm",
+          "extra": {
+            "options": {
+              "tools": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "description": "Get weather",
+                    "parameters": {
+                      "$schema": "https://json-schema.org/draft/2020-12/schema",
+                      "type": "object",
+                      "properties": {
+                        "city": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["city"],
+                      "additionalProperties": false
+                    }
+                  }
+                }
+              ]
+            },
+            "invocation_params": {
+              "model": "gpt-4o-mini",
+              "stream": false,
+              "tools": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "description": "Get weather",
+                    "parameters": {
+                      "$schema": "https://json-schema.org/draft/2020-12/schema",
+                      "type": "object",
+                      "properties": {
+                        "city": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["city"],
+                      "additionalProperties": false
+                    }
+                  }
+                }
+              ]
+            },
+            "batch_size": 1,
+            "metadata": {
+              "thread_id": "lc-thread",
+              "ls_provider": "openai",
+              "ls_model_name": "gpt-4o-mini",
+              "ls_model_type": "chat",
+              "ls_integration": "langchain_chat_model",
+              "versions": {
+                "@langchain/core": "1.3.4",
+                "@langchain/openai": "1.8.0"
+              },
+              "model": "gpt-4o-mini",
+              "stream": false
+            },
+            "runtime": {
+              "library": "langchain-js",
+              "runtime": "node"
+            }
+          },
+          "serialized": {
+            "lc": 1,
+            "type": "constructor",
+            "id": ["langchain", "chat_models", "openai", "ChatOpenAI"],
+            "kwargs": {
+              "model": "gpt-4o-mini",
+              "openai_api_key": {
+                "lc": 1,
+                "type": "secret",
+                "id": ["OPENAI_API_KEY"]
+              },
+              "configuration": {
+                "baseURL": "http://mock-llm.test/v1"
+              }
+            }
+          },
+          "inputs": {
+            "messages": [
+              [
+                {
+                  "lc": 1,
+                  "type": "constructor",
+                  "id": ["langchain_core", "messages", "HumanMessage"],
+                  "kwargs": {
+                    "content": "Weather in Paris?",
+                    "additional_kwargs": {},
+                    "response_metadata": {}
+                  }
+                }
+              ]
+            ]
+          },
+          "session_name": "default",
+          "child_runs": [],
+          "parent_run_id": "01a212c6-b56b-752b-b1de-4d35ba3a3e5c",
+          "trace_id": "01a212c6-b56b-752b-b1de-4d35ba3a3e5c",
+          "dotted_order": "20261125T125542187001Z01a212c6-b56b-752b-b1de-4d35ba3a3e5c.20261125T125542191002Z01a212c6-b56e-7448-a86f-4066d3023aca",
+          "tags": ["lc"],
+          "events": [
+            {
+              "name": "start",
+              "time": "2026-11-25T12:55:42.191Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "update",
+      "args": {
+        "runId": "01a212c6-b56e-7448-a86f-4066d3023aca",
+        "run": {
+          "name": "ChatOpenAI",
+          "run_type": "llm",
+          "start_time": "2026-11-25T12:55:42.191002Z",
+          "end_time": 1795611342194,
+          "outputs": {
+            "generations": [
+              [
+                {
+                  "text": "",
+                  "message": {
+                    "lc": 1,
+                    "type": "constructor",
+                    "id": ["langchain_core", "messages", "AIMessage"],
+                    "kwargs": {
+                      "id": "chatcmpl-1",
+                      "content": "",
+                      "additional_kwargs": {
+                        "tool_calls": [
+                          {
+                            "id": "call_abc123",
+                            "type": "function",
+                            "function": {
+                              "name": "get_weather",
+                              "arguments": "{\"city\":\"Paris\"}"
+                            }
+                          }
+                        ]
+                      },
+                      "response_metadata": {
+                        "tokenUsage": {
+                          "promptTokens": 11,
+                          "completionTokens": 7,
+                          "totalTokens": 18
+                        },
+                        "finish_reason": "tool_calls",
+                        "model_provider": "openai",
+                        "model_name": "gpt-4o-mini",
+                        "usage": {
+                          "prompt_tokens": 11,
+                          "completion_tokens": 7,
+                          "total_tokens": 18
+                        }
+                      },
+                      "type": "ai",
+                      "tool_calls": [
+                        {
+                          "name": "get_weather",
+                          "args": {
+                            "city": "Paris"
+                          },
+                          "type": "tool_call",
+                          "id": "call_abc123"
+                        }
+                      ],
+                      "invalid_tool_calls": [],
+                      "usage_metadata": {
+                        "output_tokens": 7,
+                        "input_tokens": 11,
+                        "total_tokens": 18,
+                        "input_token_details": {},
+                        "output_token_details": {}
+                      }
+                    }
+                  },
+                  "generationInfo": {
+                    "finish_reason": "tool_calls"
+                  }
+                }
+              ]
+            ],
+            "llmOutput": {
+              "tokenUsage": {
+                "promptTokens": 11,
+                "completionTokens": 7,
+                "totalTokens": 18
+              }
+            }
+          },
+          "parent_run_id": "01a212c6-b56b-752b-b1de-4d35ba3a3e5c",
+          "extra": {
+            "options": {
+              "tools": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "description": "Get weather",
+                    "parameters": {
+                      "$schema": "https://json-schema.org/draft/2020-12/schema",
+                      "type": "object",
+                      "properties": {
+                        "city": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["city"],
+                      "additionalProperties": false
+                    }
+                  }
+                }
+              ]
+            },
+            "invocation_params": {
+              "model": "gpt-4o-mini",
+              "stream": false,
+              "tools": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "description": "Get weather",
+                    "parameters": {
+                      "$schema": "https://json-schema.org/draft/2020-12/schema",
+                      "type": "object",
+                      "properties": {
+                        "city": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["city"],
+                      "additionalProperties": false
+                    }
+                  }
+                }
+              ]
+            },
+            "batch_size": 1,
+            "metadata": {
+              "thread_id": "lc-thread",
+              "ls_provider": "openai",
+              "ls_model_name": "gpt-4o-mini",
+              "ls_model_type": "chat",
+              "ls_integration": "langchain_chat_model",
+              "versions": {
+                "@langchain/core": "1.3.4",
+                "@langchain/openai": "1.8.0"
+              },
+              "model": "gpt-4o-mini",
+              "stream": false,
+              "usage_metadata": {
+                "input_tokens": 11,
+                "output_tokens": 7,
+                "total_tokens": 18,
+                "input_token_details": {},
+                "output_token_details": {}
+              }
+            },
+            "runtime": {
+              "library": "langchain-js",
+              "runtime": "node"
+            }
+          },
+          "events": [
+            {
+              "name": "start",
+              "time": "2026-11-25T12:55:42.191Z"
+            },
+            {
+              "name": "end",
+              "time": "2026-11-25T12:55:42.194Z"
+            }
+          ],
+          "dotted_order": "20261125T125542187001Z01a212c6-b56b-752b-b1de-4d35ba3a3e5c.20261125T125542191002Z01a212c6-b56e-7448-a86f-4066d3023aca",
+          "trace_id": "01a212c6-b56b-752b-b1de-4d35ba3a3e5c",
+          "tags": ["lc"],
+          "session_name": "default"
+        }
+      }
+    },
+    {
+      "op": "update",
+      "args": {
+        "runId": "01a212c6-b56b-752b-b1de-4d35ba3a3e5c",
+        "run": {
+          "name": "lc_lambda",
+          "run_type": "chain",
+          "start_time": "2026-11-25T12:55:42.187001Z",
+          "end_time": 1795611342194,
+          "outputs": {
+            "output": [
+              {
+                "name": "get_weather",
+                "args": {
+                  "city": "Paris"
+                },
+                "type": "tool_call",
+                "id": "call_abc123"
+              }
+            ]
+          },
+          "extra": {
+            "metadata": {
+              "thread_id": "lc-thread"
+            },
+            "runtime": {
+              "library": "langchain-js",
+              "runtime": "node"
+            }
+          },
+          "events": [
+            {
+              "name": "start",
+              "time": "2026-11-25T12:55:42.187Z"
+            },
+            {
+              "name": "end",
+              "time": "2026-11-25T12:55:42.194Z"
+            }
+          ],
+          "dotted_order": "20261125T125542187001Z01a212c6-b56b-752b-b1de-4d35ba3a3e5c",
+          "trace_id": "01a212c6-b56b-752b-b1de-4d35ba3a3e5c",
+          "tags": ["lc"],
+          "session_name": "default"
+        }
+      }
+    }
+  ],
+  "d2_langgraph_two_nodes": [
+    {
+      "op": "create",
+      "args": {
+        "run": {
+          "id": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "name": "LangGraph",
+          "start_time": "2026-11-25T12:55:42.200001Z",
+          "run_type": "chain",
+          "extra": {
+            "metadata": {
+              "ls_integration": "langgraph"
+            },
+            "runtime": {
+              "library": "langchain-js",
+              "runtime": "node"
+            }
+          },
+          "serialized": {
+            "lc": 1,
+            "type": "not_implemented",
+            "id": ["langgraph", "pregel", "CompiledStateGraph"]
+          },
+          "inputs": {
+            "n": 1
+          },
+          "session_name": "default",
+          "child_runs": [],
+          "trace_id": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "dotted_order": "20261125T125542200001Z01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "tags": [],
+          "events": [
+            {
+              "name": "start",
+              "time": "2026-11-25T12:55:42.200Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "create",
+      "args": {
+        "run": {
+          "id": "01a212c6-b57d-71e4-a543-c2f7ee980d1d",
+          "name": "__start__",
+          "start_time": "2026-11-25T12:55:42.205002Z",
+          "run_type": "chain",
+          "extra": {
+            "metadata": {
+              "ls_integration": "langgraph",
+              "langgraph_step": 0,
+              "langgraph_node": "__start__",
+              "langgraph_triggers": ["__start__"],
+              "langgraph_path": ["__pregel_pull", "__start__"],
+              "langgraph_checkpoint_ns": "__start__:44bcd1bb-e3fb-5844-8da8-f474524ec571",
+              "checkpoint_ns": "__start__:44bcd1bb-e3fb-5844-8da8-f474524ec571"
+            },
+            "runtime": {
+              "library": "langchain-js",
+              "runtime": "node"
+            }
+          },
+          "serialized": {
+            "lc": 1,
+            "type": "constructor",
+            "id": ["langchain_core", "runnables", "RunnableSequence"],
+            "kwargs": {
+              "first": {
+                "lc": 1,
+                "type": "not_implemented",
+                "id": ["langgraph", "ChannelWrite"]
+              },
+              "middle": [
+                {
+                  "lc": 1,
+                  "type": "not_implemented",
+                  "id": ["langgraph", "RunnableCallable"]
+                }
+              ],
+              "last": {
+                "lc": 1,
+                "type": "not_implemented",
+                "id": ["langgraph", "ChannelWrite"]
+              },
+              "omit_sequence_tags": true
+            }
+          },
+          "inputs": {
+            "n": 1
+          },
+          "session_name": "default",
+          "child_runs": [],
+          "parent_run_id": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "trace_id": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "dotted_order": "20261125T125542200001Z01a212c6-b578-735c-a36d-b0e8320b8c87.20261125T125542205002Z01a212c6-b57d-71e4-a543-c2f7ee980d1d",
+          "tags": ["graph:step:0", "langsmith:hidden"],
+          "events": [
+            {
+              "name": "start",
+              "time": "2026-11-25T12:55:42.205Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "update",
+      "args": {
+        "runId": "01a212c6-b57d-71e4-a543-c2f7ee980d1d",
+        "run": {
+          "name": "__start__",
+          "run_type": "chain",
+          "start_time": "2026-11-25T12:55:42.205002Z",
+          "end_time": 1795611342207,
+          "outputs": {
+            "n": 1
+          },
+          "parent_run_id": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "extra": {
+            "metadata": {
+              "ls_integration": "langgraph",
+              "langgraph_step": 0,
+              "langgraph_node": "__start__",
+              "langgraph_triggers": ["__start__"],
+              "langgraph_path": ["__pregel_pull", "__start__"],
+              "langgraph_checkpoint_ns": "__start__:44bcd1bb-e3fb-5844-8da8-f474524ec571",
+              "checkpoint_ns": "__start__:44bcd1bb-e3fb-5844-8da8-f474524ec571"
+            },
+            "runtime": {
+              "library": "langchain-js",
+              "runtime": "node"
+            }
+          },
+          "events": [
+            {
+              "name": "start",
+              "time": "2026-11-25T12:55:42.205Z"
+            },
+            {
+              "name": "end",
+              "time": "2026-11-25T12:55:42.207Z"
+            }
+          ],
+          "dotted_order": "20261125T125542200001Z01a212c6-b578-735c-a36d-b0e8320b8c87.20261125T125542205002Z01a212c6-b57d-71e4-a543-c2f7ee980d1d",
+          "trace_id": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "tags": ["graph:step:0", "langsmith:hidden"],
+          "session_name": "default"
+        }
+      }
+    },
+    {
+      "op": "create",
+      "args": {
+        "run": {
+          "id": "01a212c6-b580-711c-9423-7dc40818f7b9",
+          "name": "inc",
+          "start_time": "2026-11-25T12:55:42.208003Z",
+          "run_type": "chain",
+          "extra": {
+            "metadata": {
+              "ls_integration": "langgraph",
+              "langgraph_step": 1,
+              "langgraph_node": "inc",
+              "langgraph_triggers": ["branch:to:inc"],
+              "langgraph_path": ["__pregel_pull", "inc"],
+              "langgraph_checkpoint_ns": "inc:671c906c-517c-5389-b9d1-fc6022623c18",
+              "checkpoint_ns": "inc:671c906c-517c-5389-b9d1-fc6022623c18"
+            },
+            "runtime": {
+              "library": "langchain-js",
+              "runtime": "node"
+            }
+          },
+          "serialized": {
+            "lc": 1,
+            "type": "constructor",
+            "id": ["langchain_core", "runnables", "RunnableSequence"],
+            "kwargs": {
+              "first": {
+                "lc": 1,
+                "type": "not_implemented",
+                "id": ["langgraph", "RunnableCallable"]
+              },
+              "middle": [
+                {
+                  "lc": 1,
+                  "type": "not_implemented",
+                  "id": ["langgraph", "ChannelWrite"]
+                },
+                {
+                  "lc": 1,
+                  "type": "not_implemented",
+                  "id": ["langgraph", "RunnableCallable"]
+                }
+              ],
+              "last": {
+                "lc": 1,
+                "type": "not_implemented",
+                "id": ["langgraph", "ChannelWrite"]
+              },
+              "omit_sequence_tags": true
+            }
+          },
+          "inputs": {
+            "n": 1,
+            "log": []
+          },
+          "session_name": "default",
+          "child_runs": [],
+          "parent_run_id": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "trace_id": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "dotted_order": "20261125T125542200001Z01a212c6-b578-735c-a36d-b0e8320b8c87.20261125T125542208003Z01a212c6-b580-711c-9423-7dc40818f7b9",
+          "tags": ["graph:step:1"],
+          "events": [
+            {
+              "name": "start",
+              "time": "2026-11-25T12:55:42.208Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "update",
+      "args": {
+        "runId": "01a212c6-b580-711c-9423-7dc40818f7b9",
+        "run": {
+          "name": "inc",
+          "run_type": "chain",
+          "start_time": "2026-11-25T12:55:42.208003Z",
+          "end_time": 1795611342210,
+          "outputs": {
+            "n": 2,
+            "log": ["inc"]
+          },
+          "parent_run_id": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "extra": {
+            "metadata": {
+              "ls_integration": "langgraph",
+              "langgraph_step": 1,
+              "langgraph_node": "inc",
+              "langgraph_triggers": ["branch:to:inc"],
+              "langgraph_path": ["__pregel_pull", "inc"],
+              "langgraph_checkpoint_ns": "inc:671c906c-517c-5389-b9d1-fc6022623c18",
+              "checkpoint_ns": "inc:671c906c-517c-5389-b9d1-fc6022623c18"
+            },
+            "runtime": {
+              "library": "langchain-js",
+              "runtime": "node"
+            }
+          },
+          "events": [
+            {
+              "name": "start",
+              "time": "2026-11-25T12:55:42.208Z"
+            },
+            {
+              "name": "end",
+              "time": "2026-11-25T12:55:42.210Z"
+            }
+          ],
+          "dotted_order": "20261125T125542200001Z01a212c6-b578-735c-a36d-b0e8320b8c87.20261125T125542208003Z01a212c6-b580-711c-9423-7dc40818f7b9",
+          "trace_id": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "tags": ["graph:step:1"],
+          "session_name": "default"
+        }
+      }
+    },
+    {
+      "op": "create",
+      "args": {
+        "run": {
+          "id": "01a212c6-b583-711d-b40f-31e640699fd7",
+          "name": "dbl",
+          "start_time": "2026-11-25T12:55:42.211004Z",
+          "run_type": "chain",
+          "extra": {
+            "metadata": {
+              "ls_integration": "langgraph",
+              "langgraph_step": 2,
+              "langgraph_node": "dbl",
+              "langgraph_triggers": ["branch:to:dbl"],
+              "langgraph_path": ["__pregel_pull", "dbl"],
+              "langgraph_checkpoint_ns": "dbl:a6905dbb-015c-5687-bd78-254b21c7b8c0",
+              "checkpoint_ns": "dbl:a6905dbb-015c-5687-bd78-254b21c7b8c0"
+            },
+            "runtime": {
+              "library": "langchain-js",
+              "runtime": "node"
+            }
+          },
+          "serialized": {
+            "lc": 1,
+            "type": "constructor",
+            "id": ["langchain_core", "runnables", "RunnableSequence"],
+            "kwargs": {
+              "first": {
+                "lc": 1,
+                "type": "not_implemented",
+                "id": ["langgraph", "RunnableCallable"]
+              },
+              "middle": [
+                {
+                  "lc": 1,
+                  "type": "not_implemented",
+                  "id": ["langgraph", "ChannelWrite"]
+                }
+              ],
+              "last": {
+                "lc": 1,
+                "type": "not_implemented",
+                "id": ["langgraph", "RunnableCallable"]
+              },
+              "omit_sequence_tags": true
+            }
+          },
+          "inputs": {
+            "n": 2,
+            "log": ["inc"]
+          },
+          "session_name": "default",
+          "child_runs": [],
+          "parent_run_id": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "trace_id": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "dotted_order": "20261125T125542200001Z01a212c6-b578-735c-a36d-b0e8320b8c87.20261125T125542211004Z01a212c6-b583-711d-b40f-31e640699fd7",
+          "tags": ["graph:step:2"],
+          "events": [
+            {
+              "name": "start",
+              "time": "2026-11-25T12:55:42.211Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "update",
+      "args": {
+        "runId": "01a212c6-b583-711d-b40f-31e640699fd7",
+        "run": {
+          "name": "dbl",
+          "run_type": "chain",
+          "start_time": "2026-11-25T12:55:42.211004Z",
+          "end_time": 1795611342211,
+          "outputs": {
+            "n": 4,
+            "log": ["dbl"]
+          },
+          "parent_run_id": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "extra": {
+            "metadata": {
+              "ls_integration": "langgraph",
+              "langgraph_step": 2,
+              "langgraph_node": "dbl",
+              "langgraph_triggers": ["branch:to:dbl"],
+              "langgraph_path": ["__pregel_pull", "dbl"],
+              "langgraph_checkpoint_ns": "dbl:a6905dbb-015c-5687-bd78-254b21c7b8c0",
+              "checkpoint_ns": "dbl:a6905dbb-015c-5687-bd78-254b21c7b8c0"
+            },
+            "runtime": {
+              "library": "langchain-js",
+              "runtime": "node"
+            }
+          },
+          "events": [
+            {
+              "name": "start",
+              "time": "2026-11-25T12:55:42.211Z"
+            },
+            {
+              "name": "end",
+              "time": "2026-11-25T12:55:42.211Z"
+            }
+          ],
+          "dotted_order": "20261125T125542200001Z01a212c6-b578-735c-a36d-b0e8320b8c87.20261125T125542211004Z01a212c6-b583-711d-b40f-31e640699fd7",
+          "trace_id": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "tags": ["graph:step:2"],
+          "session_name": "default"
+        }
+      }
+    },
+    {
+      "op": "update",
+      "args": {
+        "runId": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+        "run": {
+          "name": "LangGraph",
+          "run_type": "chain",
+          "start_time": "2026-11-25T12:55:42.200001Z",
+          "end_time": 1795611342212,
+          "outputs": {
+            "n": 4,
+            "log": ["inc", "dbl"]
+          },
+          "extra": {
+            "metadata": {
+              "ls_integration": "langgraph"
+            },
+            "runtime": {
+              "library": "langchain-js",
+              "runtime": "node"
+            }
+          },
+          "events": [
+            {
+              "name": "start",
+              "time": "2026-11-25T12:55:42.200Z"
+            },
+            {
+              "name": "end",
+              "time": "2026-11-25T12:55:42.212Z"
+            }
+          ],
+          "dotted_order": "20261125T125542200001Z01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "trace_id": "01a212c6-b578-735c-a36d-b0e8320b8c87",
+          "tags": [],
+          "session_name": "default"
+        }
+      }
+    }
+  ],
+  "e_traceable_throws": [
+    {
+      "op": "create",
+      "args": {
+        "run": {
+          "id": "01a212c6-b66f-7000-8000-01d91d9134d6",
+          "name": "boom",
+          "start_time": "2026-11-25T12:55:42.447001Z",
+          "run_type": "chain",
+          "extra": {
+            "metadata": {},
+            "runtime": {
+              "library": "langsmith",
+              "runtime": "node",
+              "sdk": "langsmith-js",
+              "sdk_version": "0.14.0"
+            }
+          },
+          "serialized": {},
+          "inputs": {
+            "input": "y"
+          },
+          "session_name": "default",
+          "child_runs": [],
+          "trace_id": "01a212c6-b66f-7000-8000-01d91d9134d6",
+          "dotted_order": "20261125T125542447001Z01a212c6-b66f-7000-8000-01d91d9134d6",
+          "tags": []
+        }
+      }
+    },
+    {
+      "op": "update",
+      "args": {
+        "runId": "01a212c6-b66f-7000-8000-01d91d9134d6",
+        "run": {
+          "name": "boom",
+          "run_type": "chain",
+          "start_time": "2026-11-25T12:55:42.447001Z",
+          "end_time": 1795611342447,
+          "error": "Error: kaboom: y",
+          "extra": {
+            "metadata": {},
+            "runtime": {
+              "library": "langsmith",
+              "runtime": "node",
+              "sdk": "langsmith-js",
+              "sdk_version": "0.14.0"
+            }
+          },
+          "dotted_order": "20261125T125542447001Z01a212c6-b66f-7000-8000-01d91d9134d6",
+          "trace_id": "01a212c6-b66f-7000-8000-01d91d9134d6",
+          "tags": [],
+          "session_name": "default"
+        }
+      }
+    }
+  ]
+}
