@@ -15,6 +15,12 @@ import {
 export const API_KEY_VAR = "LMNR_PROJECT_API_KEY";
 
 /**
+ * What a secret variable reads as in a Laminar Agent sandbox; its outbound
+ * proxy fills in the headers that carry it.
+ */
+export const SANDBOX_PROXY_PLACEHOLDER = "injected-by-laminar-sandbox-proxy";
+
+/**
  * Turn repeatable `--env` flags into an env map. `KEY=VALUE` is taken as-is; a
  * bare `KEY` is read from the current environment, so secrets stay out of
  * shell history.
