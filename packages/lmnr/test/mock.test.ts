@@ -411,6 +411,23 @@ void describe("observe mocks", () => {
     assert.equal((await server.requests()).length, 2);
   });
 
+  // `request()` throws inside the worker for these: the call must fail with a
+  // MockedError, and the worker's error must not crash the process.
+  for (const url of ["not a url", "https://127.0.0.1:1" + PREFIX]) {
+    void it(`fails closed on LMNR_MOCK_URL=${url.split("/_lmnr")[0]}`, async () => {
+      useMockUrl(url);
+      const started = Date.now();
+      await rejectsMocked(
+        observe({ name: "anything" }, async () => "real"),
+        MOCK_FAILURE,
+        /^mock server unreachable \((TypeError|Error): /,
+      );
+      assert.ok(Date.now() - started < 2000);
+      // Let a stray worker 'error' event surface, if there is one.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+  }
+
   void it("never puts the token in errors", async () => {
     useMockUrl(await closedPortUrl());
     await assert.rejects(

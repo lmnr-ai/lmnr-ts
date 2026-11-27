@@ -34,26 +34,40 @@ const MAX_RETRY_BACKOFF_MS = 2_000;
 type HttpResult = { status: number; body: string } | { error: string };
 
 // Runs in the worker (CommonJS, `eval: true`). `node:http`, never `fetch`:
-// the server is on loopback, never behind the app's proxy settings.
+// the server is on loopback, never behind the app's proxy settings. Every
+// failure, `request()` throwing on a bad URL included, is reported through
+// `done` (once): an exception escaping the worker would reach the app as an
+// `'error'` event, and the main thread would wait out `KEYS_WAIT_MS`.
 const KEYS_WORKER = `
 const { request } = require("node:http");
 const { workerData } = require("node:worker_threads");
 const { url, timeoutMs, port, flag } = workerData;
+let sent = false;
 const done = (message) => {
-  port.postMessage(message);
-  Atomics.store(flag, 0, 1);
-  Atomics.notify(flag, 0);
+  if (sent) return;
+  sent = true;
+  try {
+    port.postMessage(message);
+  } finally {
+    Atomics.store(flag, 0, 1);
+    Atomics.notify(flag, 0);
+  }
 };
-const req = request(url, (res) => {
-  const chunks = [];
-  res.on("data", (chunk) => chunks.push(chunk));
-  res.on("end", () =>
-    done({ status: res.statusCode, body: Buffer.concat(chunks).toString("utf8") }));
-  res.on("error", (e) => done({ error: e.name + ": " + e.message }));
-});
-req.setTimeout(timeoutMs, () => req.destroy(new Error("timed out after " + timeoutMs + " ms")));
-req.on("error", (e) => done({ error: e.name + ": " + e.message }));
-req.end();
+const fail = (e) => done({ error: e.name + ": " + e.message });
+try {
+  const req = request(url, (res) => {
+    const chunks = [];
+    res.on("data", (chunk) => chunks.push(chunk));
+    res.on("end", () =>
+      done({ status: res.statusCode, body: Buffer.concat(chunks).toString("utf8") }));
+    res.on("error", fail);
+  });
+  req.setTimeout(timeoutMs, () => req.destroy(new Error("timed out after " + timeoutMs + " ms")));
+  req.on("error", fail);
+  req.end();
+} catch (e) {
+  fail(e);
+}
 `;
 
 export class MockClient {
@@ -170,6 +184,9 @@ const getSync = (
       // The app's `--require` / `--import` hooks have no business here.
       execArgv: [],
     });
+    // Anything the worker still throws (it catches its own errors) is
+    // already a failed fetch here; unhandled, it would crash the app.
+    worker.on("error", () => {});
     worker.unref();
     Atomics.wait(flag, 0, 0, waitMs);
     const received = receiveMessageOnPort(port1);
