@@ -18,3 +18,26 @@
   and its messages are shown verbatim (an unknown operator is a zod error naming the field).
   `--skip-similar` / `--type new-cluster` are not checked against clustering, same as the UI. Do not add a client-side operator list (see the `--filter` note in
   `src/commands/signal/AGENTS.md`).
+
+## Metric alerts (`alert metric`)
+
+- `alert metric create|list|update|delete` covers `METRIC` alerts (cost, tokens, traffic, LLM
+  errors and latency, all read from spans). Writes go through the same `/v1/cli/alerts` body with `type: "METRIC"`; a
+  metric alert has no signal, so `signalId` is `null` and the rule comes back in `rule`.
+- **The rule is a JSON object passed as `--rule` and is never checked here.** The server runs the
+  same validation as the UI form and its messages are shown verbatim, so don't add a client-side
+  list of metrics, windows or threshold rules beyond the help text. `--template <id>` is also
+  resolved by the server (an unknown id comes back with the list of valid ones).
+- `--rule` is a patch: on create its keys override the template's, on update they are merged over
+  the stored rule. Snooze is `--rule '{"snoozedUntil":"<ISO time>"}'`; mute is `--disabled`.
+- `list` is the one read command in the group. It runs SQL over `alerts` (`type = 'METRIC'`) and
+  only adds a one-line rule summary, so it stays inside the "reads are SQL" rule above. Alert
+  state and incident history are not in SQL, so the CLI cannot show whether a rule is firing.
+  It prints two lines per alert, not a `renderTable`: the table shortens ids to fit the terminal,
+  and `update` / `delete` need them whole.
+- A template that leaves a threshold out gets it from `--rule`; the server's 400 says which one is
+  missing. `condition` is merged one level down by the server, so `{"condition":{"compareTo":"1d"}}`
+  is enough to change what a `change` template compares with.
+- A stored rule leaves unset keys out (no `critical`, no `resolve`) when it was written through
+  this path, and holds explicit `null`s when the UI wrote it. Check with `!= null`.
+- `delete` is the plain `alert delete` handler.
