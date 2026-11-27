@@ -36,7 +36,7 @@ import {
   otelSpanIdToUUID,
   otelTraceIdToUUID,
 } from "../../utils";
-import { SPAN_INPUT, SPAN_OUTPUT, SPAN_TYPE } from "./attributes";
+import { SPAN_INPUT, SPAN_MOCKED, SPAN_OUTPUT, SPAN_TYPE } from "./attributes";
 import { getParentSpanId } from "./compat";
 
 const logger = initializeLogger();
@@ -155,7 +155,13 @@ const keep = (key: string, attributes: Attributes, kind: string): boolean => {
   if (key === SPAN_OUTPUT) {
     return !(kind === "LLM" && hasOwn(attributes, "gen_ai.output.messages"));
   }
-  return [SESSION_ID, RELEASE, SPAN_TYPE, ...AI_SDK_TOOL_CALL].includes(key);
+  return [
+    SESSION_ID,
+    RELEASE,
+    SPAN_TYPE,
+    SPAN_MOCKED,
+    ...AI_SDK_TOOL_CALL,
+  ].includes(key);
 };
 
 // OTel arrays are copied: the record outlives the span.

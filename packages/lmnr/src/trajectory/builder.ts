@@ -85,6 +85,8 @@ const LEGACY_ATTRIBUTES: Record<string, string> = {
   "gen_ai.usage.reasoning.output_tokens": "gen_ai.usage.reasoning_tokens",
 };
 const SYSTEM_ROLES = ["system", "developer"];
+// Set by `src/mock` on an observed call an evaluation's mock server answered.
+const MOCKED = "lmnr.span.mocked";
 
 export interface SpanError {
   type: string;
@@ -265,6 +267,11 @@ class Span {
     this.end = Math.max(parseTimeUs(record.end_time), this.start);
     this.isLlm = record.span_type === "LLM";
     this.isTool = record.span_type === "TOOL";
+  }
+
+  /** Answered by an evaluation's mock server (`src/mock`). */
+  get mocked(): boolean {
+    return get(this.attrs, MOCKED) === true;
   }
 
   get agentMarker(): string | null {
@@ -972,6 +979,9 @@ class Builder {
         lmnr.span_id = toolSpan.id;
         lmnr.start_time = formatTime(toolSpan.start);
         lmnr.end_time = formatTime(toolSpan.end);
+        if (toolSpan.mocked) {
+          lmnr.mocked = true;
+        }
       }
       if (truthy(lmnr)) {
         entry.extra = { lmnr };
@@ -1118,6 +1128,9 @@ class Builder {
       start_time: formatTime(span.start),
       end_time: formatTime(span.end),
     });
+    if (span.mocked) {
+      call.extra.lmnr.mocked = true;
+    }
     const result: JsonObject = {
       source_call_id: callId,
       content: this.toolOutput(span),
