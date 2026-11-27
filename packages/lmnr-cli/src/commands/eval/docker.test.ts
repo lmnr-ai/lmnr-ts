@@ -7,7 +7,7 @@ import type { LaminarClient } from "@lmnr-ai/client";
 import { packTar } from "modern-tar";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { imagePusher } from "./docker";
+import { buildLocalImages, imagePusher } from "./docker";
 import { runCommand } from "./run-command";
 
 vi.mock("./run-command", () => ({ runCommand: vi.fn() }));
@@ -156,5 +156,45 @@ void describe("imagePusher", () => {
     });
     expect(calls).toHaveLength(1);
     expect(existsSync(tempDirOf(calls[0]?.args ?? [], "-f"))).toBe(false);
+  });
+});
+
+void describe("buildLocalImages", () => {
+  void it("builds a definition once, tagged with each of its names", async () => {
+    await mkdir(path.join(root, "gen"));
+    await writeFile(path.join(root, "gen/Dockerfile"), "FROM alpine\n");
+    fakeDocker();
+    const def = {
+      name: "app",
+      dockerfile: path.join(root, "gen/Dockerfile"),
+      context: root,
+      generated: true,
+    };
+
+    await buildLocalImages([{ def, tags: ["app", "app-copy"] }]);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.args).toEqual([
+      "build",
+      "-f",
+      expect.stringMatching(/Dockerfile$/),
+      "-t",
+      "app",
+      "-t",
+      "app-copy",
+      root,
+    ]);
+
+    // A failed generated build names the Dockerfile to read.
+    calls = [];
+    fakeDocker(1);
+    await expect(
+      buildLocalImages([{ def, tags: ["app"] }]),
+    ).rejects.toMatchObject({
+      code: "docker_failed",
+      message:
+        "docker build of app failed (exit 1). Its generated Dockerfile: " +
+        path.join(root, "gen/Dockerfile"),
+    });
   });
 });

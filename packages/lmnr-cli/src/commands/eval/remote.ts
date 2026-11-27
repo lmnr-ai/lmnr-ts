@@ -1,5 +1,5 @@
 import { writeFileSync } from "node:fs";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -34,11 +34,20 @@ import {
 } from "./datasets";
 import { imagePusher } from "./docker";
 import { API_KEY_VAR, harborEnv, SANDBOX_PROXY_PLACEHOLDER } from "./env";
-import { type EvalDescription, setEvalDescription } from "./eval-py";
+import {
+  type EvalDescription,
+  logEvalWarnings,
+  setEvalDescription,
+} from "./eval-py";
 import { assertDatasetsPassed, type JobOutput, runDatasets } from "./harbor";
-import { ensureRemoteImages, type RemoteImages } from "./images";
+import {
+  ensureRemoteImages,
+  GENERATED_UPLOAD_DIR,
+  generatedDockerfiles,
+  type RemoteImages,
+} from "./images";
 import { findJobDir, packJobDir } from "./jobs";
-import { packEvalsDir } from "./pack";
+import { fileEntry, type PackedFile, packEvalsDir } from "./pack";
 import { createRunLogShipper } from "./run-log";
 import { harborLogLine } from "./run-log-lines";
 
@@ -160,6 +169,42 @@ export const remoteExclude = (
   };
 };
 
+/**
+ * The generated Dockerfiles of the run's eval.py datasets (as describe printed
+ * them, comments included), written to a temp dir `dir` and packed as
+ * `<folder>/agent/.generated/<image>.Dockerfile`, so Laminar's Files view
+ * shows what was built. Not under tasks/, so no task hash changes. The caller
+ * removes `dir`.
+ */
+const stageGeneratedDockerfiles = async (
+  evalsDir: string,
+  datasets: string[],
+  overrides: RunOverrides,
+): Promise<{ dir: string; files: PackedFile[] }> => {
+  const dir = await mkdtemp(path.join(tmpdir(), "lmnr-generated-upload-"));
+  const files: PackedFile[] = [];
+  for (const folder of datasets) {
+    const dockerfiles = await generatedDockerfiles(
+      path.join(evalsDir, folder),
+      overrides,
+    );
+    for (const [name, text] of Object.entries(dockerfiles)) {
+      const source = path.join(dir, folder, name);
+      await mkdir(path.dirname(source), { recursive: true });
+      await writeFile(source, text);
+      files.push(
+        fileEntry(
+          source,
+          `${folder}/${GENERATED_UPLOAD_DIR}/${name}`,
+          Buffer.byteLength(text),
+          0o644,
+        ),
+      );
+    }
+  }
+  return { dir, files };
+};
+
 const formatMiB = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 
 /**
@@ -204,6 +249,11 @@ export const startRemoteRun = async (
     0,
   );
   // Pack first: a too-large folder fails before minutes of image pushes.
+  const generated = await stageGeneratedDockerfiles(
+    evalsDir,
+    datasets,
+    overrides,
+  );
   const { archive, index, fileCount, skippedSymlinks } = await packEvalsDir(
     evalsDir,
     process.platform,
@@ -213,7 +263,8 @@ export const startRemoteRun = async (
       overrides,
       tasks.downloads,
     ),
-  );
+    generated.files,
+  ).finally(() => rm(generated.dir, { recursive: true, force: true }));
   if (skippedSymlinks.length > 0) {
     logger.warn(
       `Skipped ${skippedSymlinks.length} symlink(s): ` +
@@ -350,9 +401,16 @@ const jobUploads = async (
  */
 export const handleEvalOrchestrate = async (): Promise<void> => {
   const spec = readRunSpec();
-  for (const [folder, description] of Object.entries(spec.runners ?? {})) {
+  const runners = Object.entries(spec.runners ?? {});
+  for (const [folder, description] of runners) {
     setEvalDescription(path.join(process.cwd(), folder), description);
   }
+  // Logged on every run, once the run's log takes the logger's lines.
+  const warnRunners = () => {
+    for (const [folder, description] of runners) {
+      logEvalWarnings(folder, description);
+    }
+  };
   if (spec.lmnrSpec) process.env.LMNR_EVAL_LMNR_SPEC = spec.lmnrSpec;
   const env = await harborEnv(spec.env, {});
   const client = new LaminarClient({
@@ -366,6 +424,7 @@ export const handleEvalOrchestrate = async (): Promise<void> => {
       "LMNR_EVAL_UPLOAD_ID is not set; the run's log and trial logs won't " +
         "be uploaded.",
     );
+    warnRunners();
     await downloadTasks(client, cwd, spec.downloads);
     assertDatasetsPassed(
       await runDatasets(cwd, spec.datasets, spec.overrides, env, spec, {
@@ -384,6 +443,7 @@ export const handleEvalOrchestrate = async (): Promise<void> => {
   const unsubscribe = onStderr(shipper.writer().write);
   const links = new Set<string>();
   try {
+    warnRunners();
     await downloadTasks(client, cwd, spec.downloads);
     const failed = await runDatasets(
       cwd,

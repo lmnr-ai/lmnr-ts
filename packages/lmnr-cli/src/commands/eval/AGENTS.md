@@ -78,9 +78,10 @@
     exits, but only values from the agent's / verifier's env (not the task's
     `[environment] env`, resolved inside each environment backend). Uploads
     carry that gap as is; fixing it upstream is LAM-2534.
-- Modules: `index.ts` (`eval run` flow, reporting), `eval-py.ts` (eval.py
-  datasets: describe JSON types, PEP 723, the describe cache, the ownership
-  merge), `describe.ts` (runs `lmnr.evals.describe`), `task-files.ts` (the
+- Modules: `index.ts` (`eval run` flow, reporting, `selectDatasets`),
+  `eval-py.ts` (eval.py datasets: describe JSON types, PEP 723, the describe
+  cache, the ownership merge, `logEvalWarnings`), `describe.ts` (runs
+  `lmnr.evals.describe`), `describe-command.ts` (`eval describe`), `task-files.ts` (the
   task files written for eval.py datasets, `eval task new`), `remote.ts` (`RunSpec`,
   `startRemoteRun`, `eval orchestrate`), `run-log.ts` (the run's log: shipper
   and follower), `run-log-lines.ts` (what the log shows of Harbor's output),
@@ -89,7 +90,8 @@
   resolution, the Harbor process env), `datasets.ts` (dataset discovery, name
   rules, `.gitignore`, `SKIPPED_DIRS`, the run's tasks (`findTaskTomls`),
   `buildJobConfig`), `harbor.ts` (uvx/Harbor only), `images.ts` (harbor.yaml
-  `images`, what tasks start from, `ensureRemoteImages`), `client.ts` (login
+  `images` and eval.py images, generated Dockerfiles' content addressing, what
+  tasks start from, `ensureRemoteImages`), `client.ts` (login
   or project key client), `dataset-toml.ts`, `task-hash.ts`, `dataset-state.ts`,
   `dataset-sync.ts` (pure pull / push planning, download + extract,
   upload), `dataset-command.ts` (`eval dataset pull / push`, `checkRunTasks`),
@@ -128,6 +130,9 @@
   runs `docker build` the ones the run's tasks reference (`localImageDefs`)
   and let Harbor handle the rest; local builds are tagged by name, so two
   datasets of one run defining a name differently is `invalid_evals_dir`.
+  `localImageDefs` returns one `LocalBuild` per build key (Dockerfile path,
+  context, ignore file) with every name as a tag (one `docker build -t a -t
+  b`), so identical definitions build once locally too.
 - **Which tasks a run includes** (`findTaskTomls`, used for images and
   `${VAR}`s) mirrors Harbor's `JobPlan.resolve_task_configs` on the job config
   after overrides: `tasks` entries with a local `path`, plus each local
@@ -163,7 +168,9 @@
   `docs/internal/hosted-evals.md`). Each image has ONE display name for logs,
   errors and its local tag (`ImageDef.name`: the harbor.yaml name, the pulled
   ref, or `<dataset>/<env dir key>`). One run builds an image once per
-  Dockerfile + context and pulls a ref once. Docker is assumed for every
+  Dockerfile + context + ignore file (`buildKey`; generated Dockerfiles by
+  content, see "eval.py datasets") and pulls a ref once; every name and
+  dataset using it maps to the same digest. Docker is assumed for every
   mode: there is no fallback. Measured: an app change uploads one small
   layer; unchanged → nothing.
 - **Image map shape** (digest strings only): `RemoteImages = {images:
@@ -188,7 +195,8 @@
   reads a Dockerfile-specific ignore file instead of the context's, so the
   build runs `-f <tmp>/Dockerfile` from the real context, and it only sends
   what `COPY`/`ADD` reference. Needs BuildKit, Docker's default builder since
-  23.0.
+  23.0. `ImageDef.ignoreFile` (a generated image's `ignore_file`) replaces
+  both ignore-file lookups and must exist.
 - **Exit codes** (`errors.ts`): 16 `invalid_evals_dir` / `archive_too_large`,
   17 `missing_tool`, 18 `harbor_failed` (Harbor runs only), 19 `missing_env`
   (also a missing or malformed `LMNR_EVAL_RUN` in `eval orchestrate`), 20
@@ -244,7 +252,7 @@
   user names and times don't leak. Task version archives are packed from
   `collectTaskFiles` instead (Harbor's selection; see below).
 
-## eval.py datasets (LAM-2588 phase 1)
+## eval.py datasets (LAM-2588 phases 1-2)
 
 - A dataset folder with `agent/eval.py` (one `EvalRunner` subclass, lmnr-python
   `src/lmnr/evals/AGENTS.md`) is runnable with or without a harbor.yaml
@@ -260,8 +268,8 @@
   `DESCRIBE_VERSION` (1); bump both repos together.
 - **Ownership** (`applyEvalRunner`, applied inside `loadDatasetConfig`, before
   `buildJobConfig`'s CLI overrides, so `--model` / `--env` / `--task` still
-  win): eval.py owns images (→ our `images` key; registry images are no build,
-  tasks name their ref), the agent (`LaminarAgent`, `kwargs.runner =
+  win): eval.py owns images (built from the description, see "Images from
+  describe"; registry images are no build, tasks name their ref), the agent (`LaminarAgent`, `kwargs.runner =
   agent/eval.py:<Class>`, `env` = describe's env with secrets as `${NAME}`),
   `verifier.import_path` / `kwargs` (`LaminarVerifier`, unless
   `grade_with_test_sh`), and the job-level `artifacts` (describe's optional `artifacts`,
@@ -317,6 +325,50 @@
   task new` checks its dir. Harbor would otherwise build or pull that image
   itself, without what the runner adds (services, the Laminar layer: phases
   2-3).
+- **Images from describe** (`loadImageDefs` reads the description, not
+  harbor.yaml's key: `applyEvalRunner` no longer writes `job.images`):
+  `registry` (no build), `dockerfile` (the user's), `generated`
+  (`{dockerfile_text, context, ignore_file?}`: builder steps or services;
+  BuildKit heredocs, bind mounts, multi-stage `COPY --from`; sources relative
+  to `context`). Every kind may carry `steps: [{origin, step}]`; describe
+  also has optional `services` and `classes` (all new fields optional, still
+  `version: 1`; `parseDescription` rejects unknown image kinds).
+- **Generated Dockerfiles are content-addressed** (`generatedImageDef`):
+  written to `<os tmp>/lmnr-generated/<sha256>/Dockerfile` (written whole
+  then renamed; never deleted, so a failed build's `docker_failed` message
+  points at it), hash = `dockerfileForHash(text)` + context + ignore file path
+  + its content. `dockerfileForHash` drops `#` comment lines (lmnr's
+  provenance) but keeps BuildKit parser directives at the top
+  (`syntax|escape|check`, Python's `_PARSER_DIRECTIVE`) and every heredoc
+  line (lmnr's service bundles have `#` lines in `RUN <<'EOF'` scripts; a
+  shebang or a `COPY <<EOF` file is content). Same definition = same path =
+  same `buildKey`, so two images or datasets that differ only in comments
+  build and push once. The build uses whichever text was written last
+  (comments only differ).
+- **Generated Dockerfiles are kept for review**, as describe printed them
+  (comments included), for the images the run's tasks use
+  (`generatedDockerfiles`): local runs write `<image>.Dockerfile`
+  (`generatedDockerfileName`: chars outside `[A-Za-z0-9._-]` → `_`) into the
+  dataset's Harbor job dir, next to `config.json`, after `harbor run` exits
+  (`keepGeneratedDockerfiles` in `harbor.ts`; the job is harbor.yaml's
+  `job_name`, else the newest dir in `jobs_dir` that wasn't there before,
+  `newJobDir`). Files, not a subdir: Harbor's viewer, resume and downloader
+  count every dir in a job dir as a trial, and every dir in `jobs_dir` as a
+  job. Remote runs pack them as `<folder>/agent/.generated/<image>.Dockerfile`
+  (`GENERATED_UPLOAD_DIR`; `packEvalsDir`'s `extra` files, from a temp dir,
+  replacing any file at that path on disk) so the Files view shows them;
+  `pack.ts` skips no dot dirs but `SKIPPED_DIRS`, and `agent/` isn't hashed.
+- **Warnings** (`logEvalWarnings`): logged by `describeEvalPy` on every local
+  run / push / `task new`, and by `eval orchestrate` from `RunSpec.runners`
+  once the run's log is subscribed, so remote runs show them too.
+- **`eval describe [dataset] [--dir] [--json]`** (`describe-command.ts`):
+  `selectDatasets` like `eval run`, describes each eval.py dataset
+  (`logWarnings: false`: the output lists them) and prints the runner to
+  stdout: class chain, images with steps + origins and where generated
+  Dockerfiles are kept, services, mocks (none until phase 3), secret / env
+  names, `new_task_toml` (as TOML), `grade_with_test_sh`, warnings.
+  harbor.yaml-only datasets print one line; `--json` is `{<folder>:
+  <describe JSON> | null}`. Builds and runs nothing.
 - **Shared runners**: folders in the evals root that are neither a dataset
   (`isRunnableDataset`) nor skipped hold shared Python (`_shared/`); lmnr
   puts the evals root on `sys.path`. Discovery already ignores them and remote
