@@ -201,6 +201,11 @@ export const setResponseAttributes = (span: LaminarSpan, response: any) => {
     "gen_ai.usage.cache_read.input_tokens",
     usage.prompt_tokens_details?.cached_tokens ?? 0,
   );
+  safeSetAttribute(
+    span,
+    "gen_ai.usage.cache_write.input_tokens",
+    usage.prompt_tokens_details?.cache_write_tokens,
+  );
   if (usage.completion_tokens_details) {
     span.setAttribute(
       "gen_ai.usage.reasoning.output_tokens",
