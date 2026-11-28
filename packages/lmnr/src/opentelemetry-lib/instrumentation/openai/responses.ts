@@ -207,6 +207,11 @@ const setDataAttributes = (
       "gen_ai.usage.cache_read.input_tokens",
       usage.input_tokens_details?.cached_tokens,
     );
+    safeSetAttribute(
+      span,
+      "gen_ai.usage.cache_write.input_tokens",
+      usage.input_tokens_details?.cache_write_tokens,
+    );
     span.setAttribute(
       "gen_ai.usage.reasoning.output_tokens",
       usage.output_tokens_details?.reasoning_tokens ?? 0,

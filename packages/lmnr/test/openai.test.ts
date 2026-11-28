@@ -171,7 +171,7 @@ const CHAT_RESPONSE = {
     prompt_tokens: 20,
     completion_tokens: 10,
     total_tokens: 30,
-    prompt_tokens_details: { cached_tokens: 4 },
+    prompt_tokens_details: { cached_tokens: 4, cache_write_tokens: 8 },
     completion_tokens_details: { reasoning_tokens: 2 },
   },
 };
@@ -191,7 +191,12 @@ const CHAT_STREAM_CHUNKS = [
   chunk([{ index: 0, delta: { content: " in Paris." } }]),
   chunk([{ index: 0, delta: {}, finish_reason: "stop" }]),
   chunk([], {
-    usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16 },
+    usage: {
+      prompt_tokens: 12,
+      completion_tokens: 4,
+      total_tokens: 16,
+      prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 6 },
+    },
   }),
 ];
 
@@ -251,7 +256,7 @@ const response = (overrides: Record<string, unknown> = {}) => ({
     input_tokens: 10,
     output_tokens: 5,
     total_tokens: 15,
-    input_tokens_details: { cached_tokens: 2 },
+    input_tokens_details: { cached_tokens: 2, cache_write_tokens: 3 },
     output_tokens_details: { reasoning_tokens: 1 },
   },
   ...overrides,
@@ -450,6 +455,10 @@ void describe("openai instrumentation", () => {
       4,
     );
     assert.strictEqual(
+      span.attributes["gen_ai.usage.cache_write.input_tokens"],
+      8,
+    );
+    assert.strictEqual(
       span.attributes["gen_ai.usage.reasoning.output_tokens"],
       2,
     );
@@ -528,6 +537,10 @@ void describe("openai instrumentation", () => {
     assert.strictEqual(span.attributes["gen_ai.usage.input_tokens"], 12);
     assert.strictEqual(span.attributes["gen_ai.usage.output_tokens"], 4);
     assert.strictEqual(span.attributes["llm.usage.total_tokens"], 16);
+    assert.strictEqual(
+      span.attributes["gen_ai.usage.cache_write.input_tokens"],
+      6,
+    );
     assert.strictEqual(span.status.code, SpanStatusCode.OK);
     assert.deepStrictEqual(parseJsonAttr(span, "gen_ai.output.messages"), [
       {
@@ -781,6 +794,10 @@ void describe("openai instrumentation", () => {
     assert.strictEqual(
       span.attributes["gen_ai.usage.cache_read.input_tokens"],
       2,
+    );
+    assert.strictEqual(
+      span.attributes["gen_ai.usage.cache_write.input_tokens"],
+      3,
     );
     assert.strictEqual(
       span.attributes["gen_ai.usage.reasoning.output_tokens"],
